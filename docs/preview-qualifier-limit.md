@@ -27,9 +27,12 @@ possible failure, not its prevalence or measured harm on an owner task.
 
 ## Implemented slice
 
-Current context indexes seal `cairn.preview-compact/1`, combining the metadata
-fallback below with the existing boundary expansion. Historical
-`cairn.preview-boundaries/1` indexes retain their original behavior.
+Context indexes default to `cairn.preview-boundaries/1`. Marker-aware callers
+can opt in with `compact_preview_entities: true`; those indexes seal
+`cairn.preview-compact/1`, combining the metadata fallback below with the existing
+boundary expansion. False and omitted flags have identical request semantics.
+The flag is invalid outside a context index. Historical receipts retain their
+original presentation, including absent identifiers.
 After admission and final total-budget trimming have finished, the
 compiler considers each admitted advisory preview in its existing order:
 
@@ -120,19 +123,37 @@ seal even after a later edit. Unknown policy identifiers fail integrity checks.
 An older API reader cannot accept the new policy: it either loses an unfamiliar
 sealed field and fails the canonical seal check, or rejects the unknown
 presentation identifier (`INTEGRITY_FAILURE`).
-After an API rollback, perform a fresh search to obtain an old-policy receipt;
-do not reuse an unreadable handle. Existing JSON MCP facades do not seal these packages, but older typed facades
-drop the new `entities_omitted` field. Update the CLI and MCP facade as well as the
-API to preserve the explicit marker, verifying the running facade versions before
-claiming that contract; do not claim an already loaded old facade
-provides this presentation contract. Full pull handles remain unchanged.
+Old typed CLI/MCP facades drop `entities_omitted`. They therefore **do not opt in**:
+an updated API gives those clients the prior full-entity presentation and policy.
+No facade restart is needed to keep those clients usable. Deploy the compatible
+API before updated marker-aware adapters. Full pull handles remain unchanged.
 
-The existing request-UUID contract also remains: a search recalculates its
-package before accepting an idempotent retry. If a compiler policy changes its
-seal across upgrade or rollback, retrying the old UUID yields `STALE_PACKAGE`,
-even when source records are unchanged. An explicitly fresh request UUID obtains
-a new receipt. Same-policy retries retain their original receipt and accounting.
-This change does not silently reinterpret or overwrite earlier requests.
+The authenticated version response separately declares
+`preview_capabilities: {"schema":"cairn.preview-capabilities/1","entities_omitted":true}`.
+Updated `agent search` and `agent start` probe it once per invocation; the MCP
+facade probes once before its first search/preparation, or reuses its first
+successful `cairn_client_info` version response. Native OpenCode search and
+preparation use the updated CLI and preserve its marker. Missing, malformed,
+duplicate, extra-field or unknown-schema declarations do not opt in. A probe
+transport/authentication failure is an error, not permission to try a different
+request. Build revisions and protocol version are not capability evidence.
+
+A live MCP facade keeps its initial choice, including an absent/unknown choice,
+for all later searches, preparations, pages and retries. Raw `localapi.Client`
+calls, `agent index` and ordinary whole-context compile/run do not automatically
+opt in. An explicit caller must preserve the omission marker before setting the
+flag; this changes no access, mandatory-selection or byte-budget rule.
+
+An API rollback after a positive choice refuses the unsupported request field.
+There is no automatic resend with the flag removed or a new UUID. A fresh facade
+or CLI invocation can negotiate the old API and perform a new old-policy search;
+new-policy receipts still refuse old readers with `INTEGRITY_FAILURE`. A CLI
+retry across invocations whose negotiated choice changed returns
+`IDEMPOTENCY_CONFLICT`; reconcile and explicitly choose a fresh request UUID.
+The opt-in is part of the existing request digest and presentation is part of
+the canonical seal. Same-choice retries retain their receipt and accounting.
+Other compiler changes can still produce the existing `STALE_PACKAGE` refusal.
+Historical replay never negotiates a new presentation.
 
 ## Verification and limits
 
@@ -147,3 +168,17 @@ and instruction tests remain part of the disposable integration gate.
 This is a bounded presentation improvement. It does not establish general
 qualifier preservation, better retrieval ranking or improved real task outcomes.
 No model/provider experiment or production rollout is part of this slice.
+
+The opt-in compatibility check uses an independently retained d6 API/facade and
+an owned disposable PostgreSQL cluster:
+
+```sh
+bash scripts/trial-task-eval.sh -- python3 -B scripts/check_preview_compat.py   /absolute/current-cairn /absolute/d6-cairn /absolute/new-check-directory   --opencode /absolute/opencode
+```
+
+`--opencode` adds direct native tool-debug calls with inference disabled. The
+check covers old and new facades across API replacement, the old default's exact
+retry, new CLI/start/preparation markers, and rollback refusals. The API/CLI
+fixture uses synthetic notes; it does not establish task usefulness or production
+adoption. The separate declaration adds one authenticated version read to a new
+CLI search/start invocation or an uninitialized facade's first index call.

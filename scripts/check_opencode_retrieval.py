@@ -13,7 +13,7 @@ def check_presentation(invoke, settings_path, settings, root):
     executable.chmod(0o700)
     handles = {key: str(uuid.uuid4()) for key in ('request_id', 'receipt_id', 'handle')}
     source = dict(schema='cairn.agent-search/1', selected=[dict(body='whole 日本語 "required"\n\\ context')],
-                  index=[dict(summary='source', pull_arguments=handles, pull_command='unused')],
+                  index=[dict(summary='source', entities_omitted=2, body_sha256='a' * 64, summary_span=dict(offset=20,length=6), pull_arguments=handles, pull_command='unused')],
                   bytes_remaining=3000, source_seal='retained-seal', omitted={'OPTIONAL_BUDGET': 7})
 
     def reply(view):
@@ -44,6 +44,8 @@ def check_presentation(invoke, settings_path, settings, root):
             assert flag('--request-id') == request['request_id'] and flag('--task-class') == 'repair'
             assert 'create' not in argv and 'edit' not in argv
             assert result['selected'] == source['selected'] and result['omitted'] == source['omitted']
+            assert result['index'][0]['entities_omitted'] == 2 and result['index'][0]['summary_span'] == source['index'][0]['summary_span']
+            assert result['index'][0]['body_sha256'] == source['index'][0]['body_sha256']
             assert result['index'][0]['pull_arguments'] == handles and 'pull_command' not in result['index'][0]
             assert result['source_seal'] == source['source_seal'] and result['query_entities'] == []
             assert size(result) + result['bytes_remaining'] <= 6000

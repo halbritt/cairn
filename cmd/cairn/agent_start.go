@@ -158,7 +158,11 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if room < 256 {
 		return agentStartPlan{}, &core.Error{Code: "BUDGET_REFUSED", Message: "task and startup guidance leave insufficient memory input room"}
 	}
-	request := core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
+	compact, err := new(localapi.PreviewCapabilityChoice).Resolve(ctx, client)
+	if err != nil {
+		return agentStartPlan{}, err
+	}
+	request := core.CompileRequest{CompactPreviewEntities: compact, AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
 		Query: *query, Purpose: "context", AvailableTokens: room, Kinds: kinds, Context: &pins, Semantic: *semantic}
 	if *browse {
 		offset := 0

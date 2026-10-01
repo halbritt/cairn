@@ -1544,6 +1544,9 @@
               "null"
             ]
           },
+          "compact_preview_entities": {
+            "type": "boolean"
+          },
           "context": {
             "anyOf": [
               {
@@ -1653,6 +1656,12 @@
             "minimum": -9223372036854775808,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "compact_preview_entities": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -10062,6 +10071,22 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.WorkerSpec"
       },
+      "localapi.PreviewCapabilities": {
+        "properties": {
+          "entities_omitted": {
+            "type": "boolean"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entities_omitted",
+          "schema"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.PreviewCapabilities"
+      },
       "localapi.ProtocolRange": {
         "properties": {
           "current": {
@@ -10109,6 +10134,16 @@
           },
           "module_version": {
             "type": "string"
+          },
+          "preview_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.PreviewCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "protocol": {
             "anyOf": [
@@ -12366,6 +12401,12 @@
                         "maximum": 9999,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "compact_preview_entities": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
                       },
                       "context": {
                         "anyOf": [
@@ -16239,6 +16280,12 @@
                         "maximum": 9999,
                         "minimum": 1,
                         "type": "integer"
+                      },
+                      "compact_preview_entities": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
                       },
                       "context": {
                         "anyOf": [

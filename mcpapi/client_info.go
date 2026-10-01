@@ -44,6 +44,7 @@ func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ s
 	// not discard a valid build identity or expose untrusted response strings.
 	var version struct {
 		buildinfo.Info
+		PreviewCapabilities   json.RawMessage `json:"preview_capabilities"`
 		RetrievalCapabilities json.RawMessage `json:"retrieval_capabilities"`
 	}
 	var err error
@@ -51,21 +52,24 @@ func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ s
 		result.API.Diagnostic = "API_NOT_CONNECTED"
 	} else if err = t.client.Call(probe, "version", struct{}{}, &version); err != nil {
 		result.API.Diagnostic = clientInfoError(probe, err)
-	} else if !validDiagnosticBuild(version.Info) {
-		result.API.State, result.API.Diagnostic = "invalid_response", "INVALID_BUILD_IDENTITY"
 	} else {
-		result.API.State = "available"
-		result.API.Build = &version.Info
-		if capabilities, ok := recognizedRetrievalCapabilities(version.RetrievalCapabilities); ok {
-			support := func(value bool) string {
-				if value {
-					return "supported"
+		t.previewChoice.Observe(version.PreviewCapabilities)
+		if !validDiagnosticBuild(version.Info) {
+			result.API.State, result.API.Diagnostic = "invalid_response", "INVALID_BUILD_IDENTITY"
+		} else {
+			result.API.State = "available"
+			result.API.Build = &version.Info
+			if capabilities, ok := recognizedRetrievalCapabilities(version.RetrievalCapabilities); ok {
+				support := func(value bool) string {
+					if value {
+						return "supported"
+					}
+					return "unsupported"
 				}
-				return "unsupported"
+				result.API.SearchMemoryBudgetBytes = support(capabilities.SearchMemoryBudgetBytes)
+				result.API.SearchMinPullBytes = support(capabilities.SearchMinPullBytes)
+				result.API.SupportBasis = "api_retrieval_capabilities_v1"
 			}
-			result.API.SearchMemoryBudgetBytes = support(capabilities.SearchMemoryBudgetBytes)
-			result.API.SearchMinPullBytes = support(capabilities.SearchMinPullBytes)
-			result.API.SupportBasis = "api_retrieval_capabilities_v1"
 		}
 	}
 	return toolResult(result, nil, min(t.config.AvailableTokens, 4096))

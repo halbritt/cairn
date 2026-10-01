@@ -39,12 +39,47 @@ func TestPreviewCompactionStoreHandlesReplayAndCurrentness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "preview", "compact"}, Query: `"Handoff: Cairn retrieval usefulness"`, Purpose: "context", AvailableTokens: 6500}
+	req := CompileRequest{CompactPreviewEntities: true, RequestID: uuid.NewString(), Scope: Scope{repo, "preview", "compact"}, Query: `"Handoff: Cairn retrieval usefulness"`, Purpose: "context", AvailableTokens: 6500}
 	dest := Destination{"hosted", false}
+
+	// Absent/false remains the pre-compaction presentation for old typed clients.
+	legacyReq := req
+	legacyReq.CompactPreviewEntities = false
+	legacyReq.RequestID = uuid.NewString()
+	legacy, err := s.Index(ctx, legacyReq, dest)
+	if err != nil || legacy.Package.Semantic.Presentation != previewBoundariesV1 || len(legacy.Package.Semantic.Index) != 1 || legacy.Package.Semantic.Index[0].RecordID != second.RecordID || legacy.Package.Semantic.Index[0].EntitiesOmitted != 0 {
+		t.Fatalf("legacy default changed: %+v %v", legacy, err)
+	}
+	oldReplay, err := s.Recompile(ctx, RecompileRequest{ReceiptID: legacy.Package.ReceiptID, Query: req.Query})
+	if err != nil || oldReplay.Seal != legacy.Package.Seal {
+		t.Fatalf("v1 replay: %v", err)
+	}
+	changed := legacyReq
+	changed.CompactPreviewEntities = true
+	_, err = s.Index(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+	oldRetry, err := s.Index(ctx, legacyReq, dest)
+	if err != nil || oldRetry.Package.Seal != legacy.Package.Seal {
+		t.Fatalf("old retry: %v", err)
+	}
+	roomy := legacyReq
+	roomy.RequestID, roomy.AvailableTokens = uuid.NewString(), 9500
+	fullMetadata, err := s.Index(ctx, roomy, dest)
+	if err != nil || len(fullMetadata.Package.Semantic.Index) == 0 || fullMetadata.Package.Semantic.Index[0].RecordID != first.RecordID || !reflect.DeepEqual(fullMetadata.Package.Semantic.Index[0].Entities, d.Entities) {
+		t.Fatalf("old metadata missing: %+v %v", fullMetadata, err)
+	}
 	index, err := s.Index(ctx, req, dest)
 	if err != nil || len(index.Package.Semantic.Index) != 1 || len(index.Handles) != 1 {
 		t.Fatalf("index %+v %v", index, err)
 	}
+	compactRetry, err := s.Index(ctx, req, dest)
+	if err != nil || compactRetry.Package.Seal != index.Package.Seal {
+		t.Fatalf("compact retry: %v", err)
+	}
+	changed = req
+	changed.CompactPreviewEntities = false
+	_, err = s.Index(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 	entry := index.Package.Semantic.Index[0]
 	if entry.RecordID != first.RecordID || entry.EntitiesOmitted != 2 || entry.SummarySpan == nil || entry.RecordID == privateNote.RecordID {
 		t.Fatalf("wrong compact source: %+v", entry)

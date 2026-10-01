@@ -145,7 +145,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: &RetrievalCapabilities{Schema: RetrievalCapabilitiesSchema, SearchMemoryBudgetBytes: true, SearchMinPullBytes: true}}, nil
+			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: &RetrievalCapabilities{Schema: RetrievalCapabilitiesSchema, SearchMemoryBudgetBytes: true, SearchMinPullBytes: true}}, nil
 		})
 	case "/v1/create":
 		serveJSON(w, r, c.store.Create)

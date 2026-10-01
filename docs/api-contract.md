@@ -105,6 +105,16 @@ fields; [build identity](build-identity.md) specifies the recognized schema,
 by `cairn_client_info`. Unknown declarations do not establish support. This
 additive response field leaves the existing wire-protocol version unchanged.
 
+The independent optional `preview_capabilities` sibling declares
+`cairn.preview-capabilities/1` with the required boolean `entities_omitted`.
+Only an exact positive declaration (at most 256 bytes, no duplicate or unknown
+fields) permits a marker-aware adapter to send `compact_preview_entities: true`
+on a context index. Absent/false request flags preserve the full-entity v1
+presentation. This leaves the strict retrieval-capabilities reader unchanged.
+See [preview compatibility](preview-qualifier-limit.md#replay-and-compatibility)
+for cached facade choices and rollback/retry behavior. Generic API clients do
+not opt in on behalf of their callers.
+
 ## Requests
 
 - **Method and path.** Every operation is `POST /v1/OPERATION` with one JSON

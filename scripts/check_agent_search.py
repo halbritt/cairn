@@ -45,8 +45,11 @@ def check(binary, root, environment, grant, claim, support):
     assert view['schema'] == 'cairn.agent-search/1' and view['scope'] == scope
     assert view['credits_remaining'] == 4 and view['bytes_remaining'] <= 24000
     assert len(p.stdout.encode()) <= view['available_tokens']
-    canonical = call([*agent, 'index'], dict(request_id=request_id, scope=scope, query='socket',
-                     purpose='context', available_tokens=32000, context={}))['data']
+    canonical_request = dict(request_id=request_id, scope=scope, query='socket',
+                             purpose='context', available_tokens=32000, context={})
+    # Search negotiated marker-aware presentation; raw index never silently opts in.
+    assert call([*agent, 'index'], canonical_request, check=False)['status'] == 'IDEMPOTENCY_CONFLICT'
+    canonical = call([*agent, 'index'], dict(canonical_request, compact_preview_entities=True))['data']
     assert view['selected'] == canonical['package']['semantic']['selected']
     assert any(s['mandatory'] and s['record']['record_id'] == instruction['record_id'] for s in view['selected'])
     assert [{k: v for k, v in e.items() if k not in ('pull_command', 'pull_arguments')} for e in view['index']] == canonical['package']['semantic']['index']

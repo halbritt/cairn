@@ -43,6 +43,9 @@ func TestVersionRetrievalCapabilitiesAuthenticatedAndLegacyCompatible(t *testing
 		if !reflect.DeepEqual(capabilities, want) || len(current["retrieval_capabilities"]) > 256 {
 			t.Fatalf("declaration: %s", current["retrieval_capabilities"])
 		}
+		if !RecognizesCompactPreviews(current["preview_capabilities"]) {
+			t.Fatalf("preview declaration: %s", current["preview_capabilities"])
+		}
 		// Exact pre-declaration response shape: ordinary old decoders ignore the new field.
 		var legacy struct {
 			buildinfo.Info

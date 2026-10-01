@@ -155,7 +155,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	}
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
-	tools := memoryTools{client: client, config: config, facadeBuild: facadeBuild}
+	tools := memoryTools{previewChoice: new(localapi.PreviewCapabilityChoice), client: client, config: config, facadeBuild: facadeBuild}
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_prepare_note", Description: "Before saving reusable knowledge, inspect possible predecessors with a short subject query and known entities. Creates a bounded lexical search receipt, not a note. Returns eligible previews and complete pull_arguments; pull current bodies and check applicability before choosing cairn_edit for the same A note or cairn_remember for distinct knowledge. Similarity is not supersession. Hosted profiles cannot obtain the required protected impact preview; formal supersession needs the authorized local/operator workflow. No automatic save, edit, retirement or model call."}, tools.prepareNote)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
@@ -171,9 +171,10 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 }
 
 type memoryTools struct {
-	facadeBuild buildinfo.Info
-	client      *localapi.Client
-	config      Config
+	previewChoice *localapi.PreviewCapabilityChoice
+	facadeBuild   buildinfo.Info
+	client        *localapi.Client
+	config        Config
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
@@ -248,8 +249,12 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err != nil {
 		return nil, nil, err
 	}
+	compact, err := t.previewChoice.Resolve(ctx, t.client)
+	if err != nil {
+		return toolResult(nil, err, memoryRoom)
+	}
 	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
 	}

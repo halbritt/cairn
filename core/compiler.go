@@ -21,23 +21,24 @@ import (
 )
 
 type CompileRequest struct {
-	AdvisoryConflicts bool         `json:"advisory_conflicts,omitempty"`
-	Entities          []EntityRef  `json:"entities,omitempty"`
-	ErrorSignature    string       `json:"error_signature_sha256,omitempty"`
-	ExpansionReader   string       `json:"expansion_reader,omitempty"`
-	Kinds             []string     `json:"kinds,omitempty"`
-	Semantic          bool         `json:"semantic,omitempty"`
-	PageOffset        *int         `json:"page_offset,omitempty"`
-	BrowseOffset      *int         `json:"browse_offset,omitempty"`
-	Mode              string       `json:"mode,omitempty"`
-	Context           *ContextPins `json:"context,omitempty"`
-	RequestID         string       `json:"request_id"`
-	Scope             Scope        `json:"scope"`
-	Query             string       `json:"query"`
-	Purpose           string       `json:"purpose"`
-	AvailableTokens   int          `json:"available_tokens"`
-	MemoryBudgetBytes *int         `json:"memory_budget_bytes,omitempty"`
-	MinPullBytes      *int         `json:"min_pull_bytes,omitempty"`
+	CompactPreviewEntities bool         `json:"compact_preview_entities,omitempty"`
+	AdvisoryConflicts      bool         `json:"advisory_conflicts,omitempty"`
+	Entities               []EntityRef  `json:"entities,omitempty"`
+	ErrorSignature         string       `json:"error_signature_sha256,omitempty"`
+	ExpansionReader        string       `json:"expansion_reader,omitempty"`
+	Kinds                  []string     `json:"kinds,omitempty"`
+	Semantic               bool         `json:"semantic,omitempty"`
+	PageOffset             *int         `json:"page_offset,omitempty"`
+	BrowseOffset           *int         `json:"browse_offset,omitempty"`
+	Mode                   string       `json:"mode,omitempty"`
+	Context                *ContextPins `json:"context,omitempty"`
+	RequestID              string       `json:"request_id"`
+	Scope                  Scope        `json:"scope"`
+	Query                  string       `json:"query"`
+	Purpose                string       `json:"purpose"`
+	AvailableTokens        int          `json:"available_tokens"`
+	MemoryBudgetBytes      *int         `json:"memory_budget_bytes,omitempty"`
+	MinPullBytes           *int         `json:"min_pull_bytes,omitempty"`
 }
 
 // Destination comes from trusted host configuration, never request JSON.
@@ -104,6 +105,9 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if req.CompactPreviewEntities && (req.Mode != "index" || req.Purpose != "context") {
+		return Package{}, failure("INVALID_REQUEST", "compact_preview_entities requires a context index")
+	}
 	if req.AdvisoryConflicts && req.Purpose != "context" {
 		return Package{}, failure("INVALID_REQUEST", "advisory_conflicts requires context retrieval")
 	}
@@ -283,7 +287,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	if req.Mode == "index" {
 		p.Mode = "index"
 		if req.Purpose == "context" {
-			p.Presentation = previewCompactV1
+			p.Presentation = previewBoundariesV1
+			if req.CompactPreviewEntities {
+				p.Presentation = previewCompactV1
+			}
 		}
 		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"

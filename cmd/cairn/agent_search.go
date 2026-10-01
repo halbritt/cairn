@@ -125,8 +125,12 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if err != nil {
 		return agentSearchView{}, err
 	}
+	compact, err := new(localapi.PreviewCapabilityChoice).Resolve(ctx, client)
+	if err != nil {
+		return agentSearchView{}, err
+	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
 		Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Query: query, Purpose: "context", AvailableTokens: *options.tokens,
 		Context: &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability}}, &result); err != nil {
 		return agentSearchView{}, err

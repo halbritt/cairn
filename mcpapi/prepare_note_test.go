@@ -14,6 +14,10 @@ import (
 func TestPrepareNoteUsesOnlyBoundedAuthenticatedIndex(t *testing.T) {
 	calls := 0
 	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/version" {
+			json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": map[string]any{}})
+			return
+		}
 		calls++
 		if r.URL.Path != "/v1/index" {
 			t.Errorf("preparation performed mutation or another read: %s", r.URL.Path)
@@ -78,6 +82,10 @@ func TestPrepareNoteUnavailableAndOversizeDoNotBecomeClearance(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
 			client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/version" {
+					json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": map[string]any{}})
+					return
+				}
 				calls++
 				if mode == "unavailable" {
 					w.WriteHeader(http.StatusServiceUnavailable)
@@ -217,6 +225,10 @@ func TestPrepareNoteReserveChargesGuidanceAndEnvelopeOnce(t *testing.T) {
 func TestPrepareNoteReserveUnsupportedAPIDoesNotRetryWithoutReserve(t *testing.T) {
 	calls := 0
 	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/version" {
+			json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": map[string]any{}})
+			return
+		}
 		calls++
 		w.Write([]byte(`{"schema":"cairn.response/1","ok":false,"status":"INVALID_REQUEST","message":"unknown field min_pull_bytes"}`))
 	})

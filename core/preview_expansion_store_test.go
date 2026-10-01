@@ -26,7 +26,7 @@ func TestPreviewExpansionStoreCurrentnessAndHistoricalReplay(t *testing.T) {
 		t.Fatalf("index: %+v %v", index, err)
 	}
 	entry := index.Package.Semantic.Index[0]
-	if index.Package.Semantic.Presentation != previewCompactV1 || !strings.Contains(entry.Summary, "Do not") || entry.SummarySpan == nil {
+	if index.Package.Semantic.Presentation != previewBoundariesV1 || !strings.Contains(entry.Summary, "Do not") || entry.SummarySpan == nil {
 		t.Fatalf("new index did not improve qualifier visibility: %+v", entry)
 	}
 	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, entry.SummarySpan}
@@ -152,7 +152,7 @@ func TestPreviewPolicyUpgradeRetainsStalePackageRetryContract(t *testing.T) {
 	requireCode(t, err, "STALE_PACKAGE")
 	req.RequestID = uuid.NewString()
 	fresh, err := s.Index(ctx, req, Destination{"local", true})
-	if err != nil || fresh.Package.ReceiptID == index.Package.ReceiptID || fresh.Package.Semantic.Presentation != previewCompactV1 {
+	if err != nil || fresh.Package.ReceiptID == index.Package.ReceiptID || fresh.Package.Semantic.Presentation != previewBoundariesV1 {
 		t.Fatalf("explicit fresh search failed: %+v %v", fresh, err)
 	}
 	repeated, err := s.Index(ctx, req, Destination{"local", true})

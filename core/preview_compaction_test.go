@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/fxamacker/cbor/v2"
 	"reflect"
@@ -243,5 +244,24 @@ func TestPreviewCompactionDefersEntryThatFitsOnlyAnEmptyPage(t *testing.T) {
 	second := page(*first.Page.NextOffset)
 	if len(second.Index) != 1 || second.Index[0].RecordID != candidates[1].selection.Record.RecordID || second.Index[0].EntitiesOmitted != 2 || second.Page.NextOffset != nil {
 		t.Fatalf("next page did not admit compact source: %+v", second)
+	}
+}
+
+func TestPreviewOptInRequestBoundary(t *testing.T) {
+	legacy, err := json.Marshal(CompileRequest{})
+	if err != nil || bytes.Contains(legacy, []byte("compact_preview_entities")) {
+		t.Fatalf("changed absent request bytes: %s %v", legacy, err)
+	}
+	var explicitFalse CompileRequest
+	if err = json.Unmarshal([]byte(`{"compact_preview_entities":false}`), &explicitFalse); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := json.Marshal(explicitFalse)
+	if !bytes.Equal(legacy, again) {
+		t.Fatal("false differs from absence")
+	}
+	for _, req := range []CompileRequest{{CompactPreviewEntities: true}, {CompactPreviewEntities: true, Mode: "index", Purpose: "planning"}} {
+		_, err = (*Store)(nil).Compile(context.Background(), req, Destination{})
+		requireCode(t, err, "INVALID_REQUEST")
 	}
 }

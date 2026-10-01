@@ -237,8 +237,13 @@ func TestClientInfoDevelopmentAndSVNBuilds(t *testing.T) {
 }
 
 func TestSearchPullReserveForwardingAndValidation(t *testing.T) {
-	var calls atomic.Int32
+	var calls, versions atomic.Int32
 	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/version" {
+			versions.Add(1)
+			json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": map[string]any{}})
+			return
+		}
 		calls.Add(1)
 		var req core.CompileRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -269,8 +274,8 @@ func TestSearchPullReserveForwardingAndValidation(t *testing.T) {
 			t.Fatalf("invalid reserve accepted: %v result=%+v err=%v", args, result, err)
 		}
 	}
-	if calls.Load() != 1 {
-		t.Fatalf("invalid requests reached API: %d calls", calls.Load())
+	if calls.Load() != 1 || versions.Load() != 1 {
+		t.Fatalf("invalid requests reached API: %d indexes/%d probes", calls.Load(), versions.Load())
 	}
 }
 

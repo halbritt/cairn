@@ -50,6 +50,10 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 		ExpiresAt: time.Now().Add(time.Minute).UTC(), CreditsRemaining: 4, BytesRemaining: 24000}
 	requests := make(chan core.CompileRequest, 1)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/version" {
+			json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": map[string]any{"preview_capabilities": map[string]any{"schema": "cairn.preview-capabilities/1", "entities_omitted": true}}})
+			return
+		}
 		if r.URL.Path != "/v1/index" || r.Header.Get("Authorization") != "Bearer synthetic-agent" {
 			t.Error("search bypassed authenticated index")
 		}
@@ -92,7 +96,7 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 				"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID,
 				"--memory-budget-bytes", fmt.Sprint(room), "fixture query"}, strings.NewReader(""))
 			forwarded := <-requests
-			if forwarded.MemoryBudgetBytes == nil || *forwarded.MemoryBudgetBytes != room || forwarded.AvailableTokens != 32000 {
+			if !forwarded.CompactPreviewEntities || forwarded.MemoryBudgetBytes == nil || *forwarded.MemoryBudgetBytes != room || forwarded.AvailableTokens != 32000 {
 				t.Fatalf("memory allowance changed policy context: %+v", forwarded)
 			}
 			if room == 8000 && err != nil {
