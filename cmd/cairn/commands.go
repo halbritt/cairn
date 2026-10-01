@@ -52,6 +52,7 @@ Everyday commands:
   search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
   run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
+  adopt-context RECEIPT_UUID RUN_DIRECTORY (bring one historical run's context.txt under managed forgetting)
   assessments-page [--after-version VERSION] [--limit N] RECEIPT_UUID
   evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
@@ -158,7 +159,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return installOpenCode(args[1:], executable)
 	}
 	channel := core.Channel{Principal: "local-uid:" + strconv.Itoa(os.Geteuid()), Operator: true}
-	if args[0] == "run" || args[0] == "recover-run" || args[0] == "purge-deletion" {
+	if args[0] == "run" || args[0] == "recover-run" || args[0] == "purge-deletion" || args[0] == "adopt-context" {
 		channel.Instrumented = true
 	}
 	dsn, err := databaseURL()
@@ -240,6 +241,11 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, &core.Error{Code: "INTEGRITY_FAILURE", Message: "recovery record differs from the expected content digest"}
 		}
 		return store.ReapplyRecovery(ctx, core.RecoveryReapplyRequest{RequestID: *requestID, Record: record, Reason: *reason})
+	case "adopt-context":
+		if len(args) != 3 {
+			return nil, invalid("adopt-context requires a receipt UUID and its run directory")
+		}
+		return artifacts.AdoptContext(ctx, store, args[1], args[2])
 	case "recover-run":
 		if len(args) != 2 {
 			return nil, invalid("recover-run requires a receipt UUID")

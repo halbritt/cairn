@@ -16,6 +16,22 @@ and MCP processes.
 
 ## 2026-10-01
 
+- Add `cairn adopt-context RECEIPT_UUID RUN_DIRECTORY`, an operator command that
+  brings one historical run's `context.txt` into managed forgetting (CAIRN-15).
+  It accepts only a finished run of the invoking channel with a retained,
+  seal-verified package, a private local canonical run directory named by the
+  receipt, and a file whose bytes equal that package. It locks the directory,
+  checks the adoption read-only before touching anything, then creates a private
+  ownership marker and records ordinary `managed_context` custody marked
+  `adopted` with the file size, identity and modification time observed now
+  (migration 059). It records no launch, delivery or outcome, never changes
+  `context.txt` or `outcome.json`, and refuses mismatched, unsafe, conflicting,
+  restore-paused, pre-fence or forgotten cases without side effects. Identical
+  retries and interrupted adoptions resume; the adopted file is then inventoried
+  by `preview-delete` and removed by `purge-deletion` like a registered one. No
+  scanning, bulk, remote or moved-copy adoption. See
+  [managed context files](docs/managed-context.md#adopting-a-historical-context-file).
+
 - Record per-prompt recall latency and selector cost in `use-report`. The
   lifecycle hook (shared by Claude Code, Codex, OpenCode and Hermes) reports each
   invocation through a new authenticated `recall-observation` operation: status,

@@ -87,7 +87,9 @@ user files, provider deliveries and unregistered run directories can also retain
 copies. Supporting evidence, related records, scope/attribution metadata,
 observation details and audit reasons need separate review. Digests and identity
 metadata are not anonymization. No backup rotation or automatic purge timer is
-enabled. Historical run-file adoption, evidence and metadata redaction,
+enabled. Historical run-file adoption is limited to one explicitly named, verified
+local `context.txt` ([adopt-context](managed-context.md#adopting-a-historical-context-file));
+bulk discovery, evidence and metadata redaction,
 access-policy changes and retention scheduling remain roadmap work.
 
 The restore drill proves that a backup containing a pending deletion preserves

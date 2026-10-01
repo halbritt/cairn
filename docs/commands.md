@@ -230,6 +230,16 @@ observation. These commands are not exposed through the agent API.
 
 `ARTIFACT_CHANGED` and `ARTIFACT_UNSAFE` exit 4 when a registered directory or ownership marker no longer permits a safe slot purge. Resolve the recorded ownership failure before retrying; the command does not remove a replacement directory.
 
+`adopt-context RECEIPT_UUID RUN_DIRECTORY` brings one historical run's `context.txt`
+under the same managed forgetting. It needs the operator's own finished run, a
+private local run directory named by the receipt, and a file equal to the
+receipt's retained package; it creates only a private ownership marker. The
+result is the recorded custody (`custody_origin: adopted`, what was observed, and
+`already_adopted` on an exact retry). `ARTIFACT_MISMATCH` (the file is not that
+package), `CUSTODY_CONFLICT` (other custody exists), `ARTIFACT_CHANGED` and
+`ARTIFACT_UNSAFE` exit 4 and leave the directory as it was; see
+[adopting a historical context file](managed-context.md#adopting-a-historical-context-file).
+
 
 ## Authenticated process runs
 
