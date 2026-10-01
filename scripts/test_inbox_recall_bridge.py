@@ -59,7 +59,8 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.binding = self.root/'binding.json'
         common = dict(cairn=str(self.cli), socket=str(self.root/'api.sock'), token_file=str(self.root/'token'),
                       repo='fixture', harness='codex', inbox_recall_binding=str(self.binding))
-        self.mc = dict(common, state_dir=str(self.root/'memory'), context_bytes=9500, recall_mode='agent_tools')
+        # These tests assert the exact retrieval traffic, so they do not enable the recall observation report.
+        self.mc = dict(common, state_dir=str(self.root/'memory'), context_bytes=9500, recall_mode='agent_tools', recall_observations=False)
         self.cc = dict(common, state_dir=str(self.root/'coordination'), binding='fixture', native_delivery=True)
         self.process = dict(pid=os.getpid(), start=123, boot='fixture')
         self.native = TURN

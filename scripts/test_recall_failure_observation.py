@@ -17,7 +17,8 @@ class RecallFailureObservationTests(unittest.TestCase):
         (self.root / '.git').mkdir()
         self.session = '7ab28a48-92f3-4a4e-9da7-f8ca68229d37'
         self.config = dict(cairn='fixture', socket='fixture', token_file='fixture',
-                           repo='fixture', state_dir=str(self.root / 'state'))
+                           repo='fixture', state_dir=str(self.root / 'state'),
+                           recall_observations=False)  # asserts exact CLI traffic
         self.event = dict(hook_event_name='UserPromptSubmit', session_id=self.session,
                           cwd=str(self.root), prompt='private owner prompt')
         self.state_path = self.root / 'state' / (self.session + '.json')

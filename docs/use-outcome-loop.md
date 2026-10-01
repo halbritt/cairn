@@ -32,9 +32,66 @@ the API for authenticated reports, or the CLI for direct-store reports; no
 database migration is needed. [Verification](verification/expansion-observation-2026-09-10.md).
 
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
-Optional `task_id` and `run_id` narrow the retained receipt scope.
+Optional `task_id` and `run_id` narrow the retained receipt scope, and optional
+`rollup_days` (1–90, default 7; CLI `--days`) sets the recall rollup window.
 The report includes pagination metadata. It is an observational join, not a causal
 benefit score or a completed recurrence evaluation. Exposures never increase rank.
+
+## Recall latency and selector cost
+
+Each lifecycle recall hook measures its own invocation and reports it as
+`recall-observation`. `use-report` shows the latest report of each receipt as
+that row's `recall`, and `recall_rollups` summarizes every report in the
+repository by UTC day and harness (`claude`, `codex`, `opencode`, `hermes`) for the
+last `rollup_days` days, independent of the page and filters. An invocation that
+produced two receipts (lexical and semantic search) appears on both rows with
+`receipts: 2` and counts once in a rollup; an invocation that failed before any
+receipt existed counts in the rollup and on no row.
+
+A `recall` object has `status` (`completed`, `timeout` or `error`, with a fixed
+`error_class` identifier for the latter two), `hook_event`, `harness`, `method`
+(the reporting engine's version label), `elapsed_ms` (from the start of the hook
+handler through recall; not interpreter startup, state persistence or the report
+itself), `search_ms`, `selector_ms` and `pulls_ms` with `search_calls` and
+`pull_calls`, `injected_bytes` and `selector_calls`. Each selector call has `stage`
+(`preview` or `recall`), `outcome` (`completed`, `timeout` or `error`),
+`elapsed_ms`, `model` with `model_source` (`reported` by the provider, else the
+`requested` configuration), `input_tokens`, `output_tokens`,
+`cache_creation_input_tokens`, `cache_read_input_tokens` and `cost_usd`.
+`selector_cost_usd` totals the costs the provider reported for that invocation and
+`selector_calls_without_cost` counts the calls it leaves out.
+
+**Unknown is not zero.** Every figure is null unless the hook observed it, and a
+null `recall` means no report is retained, which says nothing about speed or
+cost. A hook that makes no selector call reports `selector_calls: []`: an
+observed none. A selector call with no reported usage or cost has null tokens and
+a null `cost_usd`; the hook never estimates a price. Reports from a hook that
+timed out under the host, or that could not reach the API, do not exist.
+
+In a rollup each metric (`elapsed_ms`, `search_ms`, `selector_ms`, `pulls_ms`,
+`injected_bytes`) has `known` and `unknown` counts and a `median`, `p95` and
+`total` over the known values only. Percentiles are nearest-rank, so they are
+values some invocation really had; they are null when nothing was known. The
+`selector` section counts the observations that did and did not report their
+selector work, the calls, timeouts, errors and calls without a model, per-model
+call counts, and token sums over the calls that reported usage. `cost_usd` is the
+sum of provider-reported costs only, null when no call reported one; read it with
+`calls_with_cost` and `calls_without_cost`, because it is not an estimate of the
+real spend. A harness with no report on a day has no row.
+
+These are the hook's own measurements under the profile's credential: testimony,
+not an independent trace. `injected_bytes` is what the hook emitted as additional
+context, not proof that the host delivered it or the model used it, and nothing
+here establishes that the guidance was useful, or that a faster or cheaper recall
+is better. Delivery, usage and task outcome keep their own streams. The OpenCode
+plugin runs the same engine, so its figures exclude the plugin's own host calls;
+the pinned inbox wake bridge and a hook killed by its host report nothing.
+
+The hook sends the report after recall, through the same profile as its other calls,
+and `cairn agent recall-observation` accepts it directly. Set
+`"recall_observations": false` to stop reporting. This is an operational
+observation for the owner's use-report; a one-week baseline needs elapsed
+observation that implementation and disposable verification do not supply.
 
 ## Page through use history
 

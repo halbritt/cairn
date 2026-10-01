@@ -5464,6 +5464,939 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.PublishEventRequest"
       },
+      "core.RecallMetric": {
+        "properties": {
+          "known": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "median": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p95": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "total": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "unknown": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "known",
+          "median",
+          "p95",
+          "total",
+          "unknown"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallMetric"
+      },
+      "core.RecallModelRollup": {
+        "properties": {
+          "calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "calls_with_cost": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "calls",
+          "calls_with_cost",
+          "cost_usd",
+          "model"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallModelRollup"
+      },
+      "core.RecallObservation": {
+        "properties": {
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness": {
+            "type": "string"
+          },
+          "hook_event": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "observation_id": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pull_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pulls_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "receipts": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "search_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_calls": {
+            "items": {
+              "$ref": "#/components/schemas/core.RecallSelectorCallView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "selector_calls_without_cost": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "selector_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "elapsed_ms",
+          "error_class",
+          "harness",
+          "hook_event",
+          "injected_bytes",
+          "method",
+          "observation_id",
+          "observed_at",
+          "pull_calls",
+          "pulls_ms",
+          "receipts",
+          "search_calls",
+          "search_ms",
+          "selector_calls",
+          "selector_calls_without_cost",
+          "selector_cost_usd",
+          "selector_ms",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallObservation"
+      },
+      "core.RecallObservationRequest": {
+        "properties": {
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error_class": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "hook_event": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "pull_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pulls_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "receipt_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "search_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_calls": {
+            "items": {
+              "$ref": "#/components/schemas/core.RecallSelectorCall"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "selector_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "harness",
+          "hook_event",
+          "method",
+          "repo",
+          "request_id",
+          "selector_calls",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallObservationRequest"
+      },
+      "core.RecallObservationRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hook_event": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "injected_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pull_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pulls_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "receipt_ids": {
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "search_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "selector_calls": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/core.RecallSelectorCall.accepted"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "selector_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallObservationRequest"
+      },
+      "core.RecallRollup": {
+        "properties": {
+          "completed": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "errors": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "injected_bytes": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "observations": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "pulls_ms": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "search_ms": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "selector": {
+            "$ref": "#/components/schemas/core.RecallSelectorRollup"
+          },
+          "selector_ms": {
+            "$ref": "#/components/schemas/core.RecallMetric"
+          },
+          "timeouts": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "completed",
+          "day",
+          "elapsed_ms",
+          "errors",
+          "harness",
+          "injected_bytes",
+          "observations",
+          "pulls_ms",
+          "search_ms",
+          "selector",
+          "selector_ms",
+          "timeouts"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallRollup"
+      },
+      "core.RecallRollups": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/core.RecallRollup"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "window_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "since",
+          "window_days"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallRollups"
+      },
+      "core.RecallSelectorCall": {
+        "properties": {
+          "cache_creation_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_read_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "model_source": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "stage"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallSelectorCall"
+      },
+      "core.RecallSelectorCall.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_creation_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_read_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallSelectorCall"
+      },
+      "core.RecallSelectorCallView": {
+        "properties": {
+          "cache_creation_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_read_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "elapsed_ms": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ordinal": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "cost_usd",
+          "elapsed_ms",
+          "input_tokens",
+          "model",
+          "model_source",
+          "ordinal",
+          "outcome",
+          "output_tokens",
+          "stage"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallSelectorCallView"
+      },
+      "core.RecallSelectorRollup": {
+        "properties": {
+          "cache_creation_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_read_input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls_with_cost": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls_with_usage": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls_without_cost": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls_without_model": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "calls_without_usage": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "errors": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/core.RecallModelRollup"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "observations_not_reporting_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "observations_reporting_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "observations_with_calls": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "output_tokens": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timeouts": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "calls",
+          "calls_with_cost",
+          "calls_with_usage",
+          "calls_without_cost",
+          "calls_without_model",
+          "calls_without_usage",
+          "cost_usd",
+          "errors",
+          "input_tokens",
+          "models",
+          "observations_not_reporting_calls",
+          "observations_reporting_calls",
+          "observations_with_calls",
+          "output_tokens",
+          "timeouts"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.RecallSelectorRollup"
+      },
       "core.RecompileRequest": {
         "properties": {
           "entities": {
@@ -9008,6 +9941,9 @@
             "minimum": -9223372036854775808,
             "type": "integer"
           },
+          "recall_rollups": {
+            "$ref": "#/components/schemas/core.RecallRollups"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/core.UseRow"
@@ -9022,6 +9958,7 @@
           "interpretation",
           "more",
           "next_offset",
+          "recall_rollups",
           "rows"
         ],
         "type": "object",
@@ -9044,6 +9981,11 @@
           },
           "repo": {
             "type": "string"
+          },
+          "rollup_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
           },
           "run_id": {
             "type": "string"
@@ -9088,6 +10030,14 @@
           "repo": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "rollup_days": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -9171,6 +10121,16 @@
           "purpose": {
             "type": "string"
           },
+          "recall": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.RecallObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "receipt_id": {
             "type": "string"
           },
@@ -9234,6 +10194,7 @@
           "failure_kind",
           "process_state",
           "purpose",
+          "recall",
           "receipt_id",
           "record_id",
           "scope",
@@ -17579,6 +18540,248 @@
         "x-cairn-source": "server.go"
       }
     },
+    "/v1/recall-observation": {
+      "post": {
+        "operationId": "recall-observation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "elapsed_ms": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "error_class": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "harness": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "hook_event": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "injected_bytes": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "pull_calls": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "pulls_ms": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "receipt_ids": {
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "search_calls": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "search_ms": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "selector_calls": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/core.RecallSelectorCall.accepted"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "selector_ms": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RecallObservationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.Observation"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.RecallObservationRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.RecallObservationRequest",
+          "response": "github.com/halbritt/cairn/core.Observation"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
+      }
+    },
     "/v1/recompile": {
       "post": {
         "operationId": "recompile",
@@ -21080,6 +22283,14 @@
                       "repo": {
                         "type": [
                           "string",
+                          "null"
+                        ]
+                      },
+                      "rollup_days": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
                           "null"
                         ]
                       },

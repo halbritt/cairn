@@ -18,7 +18,8 @@ class AgentToolRecallTests(unittest.TestCase):
         (self.root / '.git').mkdir()
         self.config = dict(cairn='fixture', claude='forbidden-selector', socket='fixture',
                            token_file='fixture', repo='fixture', state_dir=str(self.root / 'state'),
-                           context_bytes=9500, semantic_fallback=False, recall_mode='agent_tools')
+                           context_bytes=9500, semantic_fallback=False, recall_mode='agent_tools',
+                           recall_observations=False)  # these tests assert the exact retrieval traffic
         self.event = dict(hook_event_name='UserPromptSubmit', cwd=str(self.root),
                           session_id='caed9473-b01a-41e7-95ce-c3c1f28d66b3', prompt='Repair lease expiry')
         self.required = [dict(mandatory=True, record=dict(record_id='required', version=1,

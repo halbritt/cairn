@@ -16,6 +16,19 @@ and MCP processes.
 
 ## 2026-10-01
 
+- Record per-prompt recall latency and selector cost in `use-report`. The
+  lifecycle hook (shared by Claude Code, Codex, OpenCode and Hermes) reports each
+  invocation through a new authenticated `recall-observation` operation: status,
+  elapsed time, search/selector/pull time and counts, each selector call's model,
+  token usage and provider-reported cost, and injected bytes. `use-report` shows
+  the latest report per receipt and daily per-harness rollups (median, p95,
+  total, known/unknown counts; cost totals only from reported costs). Unobserved
+  values stay null, never zero, and a missing report is unknown. Latency stays
+  separate from delivery, usage and outcome. Reporting is best effort, bounded to
+  one second, metrics only, and opt-out with `recall_observations: false`;
+  migration 058. Installed hooks are unchanged until reinstalled. See
+  [recall latency and selector cost](docs/use-outcome-loop.md#recall-latency-and-selector-cost).
+
 - Add a principal-scoped, volatile view of declared client implementations.
   The CLI and MCP facade attach an optional, bounded, transport-only
   `Cairn-Client-Diagnostics` header (their own build, surface, an explicitly

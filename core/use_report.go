@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,6 +15,9 @@ type UseReportRequest struct {
 	RunID    string `json:"run_id,omitempty"`
 	Limit    int    `json:"limit"`
 	Offset   int    `json:"offset"`
+	// RollupDays is the number of UTC days, ending today, that the recall
+	// rollups cover. Zero selects the default.
+	RollupDays int `json:"rollup_days,omitempty"`
 }
 type UseRow struct {
 	RunReceiptID      string    `json:"run_receipt_id,omitempty"`
@@ -46,12 +50,17 @@ type UseRow struct {
 	TaskOutcome       string    `json:"task_outcome"`
 	CurrentVersion    int       `json:"current_version"`
 	CurrentLifecycle  string    `json:"current_lifecycle"`
+	// Recall is the latest hook-reported recall invocation that produced this
+	// receipt. Null means no observation is retained, which is unknown, not a
+	// fast, free or empty recall. An older server omits the field.
+	Recall *RecallObservation `json:"recall"`
 }
 type UseReport struct {
-	Rows           []UseRow `json:"rows"`
-	More           bool     `json:"more"`
-	NextOffset     int      `json:"next_offset"`
-	Interpretation string   `json:"interpretation"`
+	Rows           []UseRow      `json:"rows"`
+	More           bool          `json:"more"`
+	NextOffset     int           `json:"next_offset"`
+	RecallRollups  RecallRollups `json:"recall_rollups"`
+	Interpretation string        `json:"interpretation"`
 }
 
 // One row is one exposed record version in one retrieval. Aggregate each
@@ -60,6 +69,12 @@ type UseReport struct {
 func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport, error) {
 	if req.Repo == "" || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return UseReport{}, failure("INVALID_REQUEST", "repo, limit 1-200 and nonnegative offset required")
+	}
+	if req.RollupDays == 0 {
+		req.RollupDays = DefaultRecallRollupDays
+	}
+	if req.RollupDays < 1 || req.RollupDays > MaxRecallRollupDays {
+		return UseReport{}, failure("INVALID_REQUEST", "rollup_days must be 1-90")
 	}
 	if err := s.checkRepo(req.Repo); err != nil {
 		return UseReport{}, err
@@ -77,7 +92,7 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
 	rows, err := tx.Query(ctx, `SELECT u.receipt_id::text,u.record_id::text,u.version,r.scope,u.purpose,u.used_at,
  CASE WHEN d.contact THEN 'delivered' WHEN d.available THEN 'available' WHEN d.failed THEN 'failed' ELSE 'unknown' END,
  COALESCE(g.signal,CASE WHEN d.contact AND c.coverage='complete' THEN 'delivered_only' ELSE 'unknown' END),
- COALESCE(o.process_state,'unknown'),o.exit_code,o.duration_ms,COALESCE(a.task_outcome,o.task_outcome,'unknown'),m.current_version,m.lifecycle,COALESCE(b.task_class,'unknown'),COALESCE(b.binding_id,'unknown'),COALESCE(b.capability_id,'unknown'),COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(g.witness,'unknown'),COALESCE(g.method,''),COALESCE(c.coverage,'unknown'),u.exposure_kind,COALESCE(rr.run_receipt_id::text,''),COALESCE(rr.observer,''),COALESCE(rr.method,''),COALESCE(g.expansion_observed,false)
+ COALESCE(o.process_state,'unknown'),o.exit_code,o.duration_ms,COALESCE(a.task_outcome,o.task_outcome,'unknown'),m.current_version,m.lifecycle,COALESCE(b.task_class,'unknown'),COALESCE(b.binding_id,'unknown'),COALESCE(b.capability_id,'unknown'),COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(g.witness,'unknown'),COALESCE(g.method,''),COALESCE(c.coverage,'unknown'),u.exposure_kind,COALESCE(rr.run_receipt_id::text,''),COALESCE(rr.observer,''),COALESCE(rr.method,''),COALESCE(g.expansion_observed,false),q.summary
  FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
  JOIN cairn.memory_record m ON m.record_id=u.record_id
  LEFT JOIN cairn.run_retrieval rr ON rr.retrieval_receipt_id=u.receipt_id
@@ -87,18 +102,27 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
  LEFT JOIN LATERAL (SELECT bool_or(assurance='delivered') contact,bool_or(assurance='available') available,bool_or(assurance='failed') failed FROM cairn.delivery_receipt WHERE receipt_id=u.receipt_id) d ON true
  LEFT JOIN LATERAL (SELECT signal,witness,method,bool_or(signal='expanded' AND witness='instrumented') OVER () AS expansion_observed FROM cairn.usage_observation WHERE receipt_id=u.receipt_id AND record_id=u.record_id AND version=u.version ORDER BY CASE signal WHEN 'cited' THEN 3 WHEN 'expanded' THEN 2 ELSE 1 END DESC,observed_at DESC,observation_id DESC LIMIT 1) g ON true
  LEFT JOIN LATERAL (SELECT coverage FROM cairn.usage_coverage WHERE receipt_id=u.receipt_id ORDER BY sequence DESC LIMIT 1) c ON true
+ LEFT JOIN LATERAL (SELECT `+recallSummarySQL+` AS summary FROM cairn.recall_observation_receipt l JOIN cairn.recall_observation o USING(observation_id) WHERE l.receipt_id=u.receipt_id ORDER BY o.sequence DESC LIMIT 1) q ON true
  WHERE r.scope->>'repo'=$1 AND ($2='' OR u.record_id::text=$2)
  AND ($5='' OR r.scope->>'task_id'=$5) AND ($6='' OR r.scope->>'run_id'=$6)
  ORDER BY u.used_at,u.receipt_id,u.record_id,u.version LIMIT $3 OFFSET $4`, req.Repo, req.RecordID, req.Limit+1, req.Offset, req.TaskID, req.RunID)
 	if err != nil {
 		return UseReport{}, err
 	}
-	report := UseReport{Rows: []UseRow{}, Interpretation: "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Explicit host-linked retrievals retain their own exposure and usage but join the host run outcome and latest assessment. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."}
+	report := UseReport{Rows: []UseRow{}, Interpretation: "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Explicit host-linked retrievals retain their own exposure and usage but join the host run outcome and latest assessment. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit. recall and recall_rollups are measurements the lifecycle hook reported about its own invocations: they are not task latency, proof the host delivered the context, or evidence the guidance was useful. A null recall or an unreported value is unknown, never zero, and a cost is only what the provider reported."}
 	for rows.Next() {
 		var row UseRow
-		if err = rows.Scan(&row.ReceiptID, &row.RecordID, &row.Version, &row.Scope, &row.Purpose, &row.UsedAt, &row.Delivery, &row.Usage, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.CurrentVersion, &row.CurrentLifecycle, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.AssessmentVersion, &row.AssessmentWitness, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.UsageWitness, &row.UsageMethod, &row.UsageCoverage, &row.ExposureKind, &row.RunReceiptID, &row.RunLinkObserver, &row.RunLinkMethod, &row.ExpansionObserved); err != nil {
+		var recall []byte
+		if err = rows.Scan(&row.ReceiptID, &row.RecordID, &row.Version, &row.Scope, &row.Purpose, &row.UsedAt, &row.Delivery, &row.Usage, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.CurrentVersion, &row.CurrentLifecycle, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.AssessmentVersion, &row.AssessmentWitness, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.UsageWitness, &row.UsageMethod, &row.UsageCoverage, &row.ExposureKind, &row.RunReceiptID, &row.RunLinkObserver, &row.RunLinkMethod, &row.ExpansionObserved, &recall); err != nil {
 			rows.Close()
 			return report, err
+		}
+		if recall != nil {
+			row.Recall = new(RecallObservation)
+			if err = json.Unmarshal(recall, row.Recall); err != nil {
+				rows.Close()
+				return report, err
+			}
 		}
 		report.Rows = append(report.Rows, row)
 	}
@@ -112,5 +136,8 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
 		report.Rows = report.Rows[:req.Limit]
 	}
 	report.NextOffset = req.Offset + len(report.Rows)
+	if report.RecallRollups, err = recallRollups(ctx, tx, req.Repo, req.RollupDays); err != nil {
+		return report, err
+	}
 	return report, tx.Commit(ctx)
 }

@@ -56,7 +56,7 @@ Everyday commands:
   evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
-  list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] [--days N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)
@@ -312,13 +312,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		record := f.String("record", "", "filter by record UUID across retained versions")
 		task := f.String("task", "", "filter by exact task ID")
 		run := f.String("run", "", "filter by exact run ID")
+		days := f.Int("days", core.DefaultRecallRollupDays, "UTC days, ending today, covered by the recall rollups (1-90)")
 		if err := f.Parse(args[1:]); err != nil {
 			return nil, invalid(err.Error())
 		}
 		if f.NArg() != 1 {
 			return nil, invalid("use-report requires one repository")
 		}
-		return store.UseReport(ctx, core.UseReportRequest{Repo: f.Arg(0), RecordID: *record, TaskID: *task, RunID: *run, Limit: *limit, Offset: *offset})
+		if *days < 1 || *days > core.MaxRecallRollupDays {
+			return nil, invalid("--days must be 1-90")
+		}
+		return store.UseReport(ctx, core.UseReportRequest{Repo: f.Arg(0), RecordID: *record, TaskID: *task, RunID: *run, Limit: *limit, Offset: *offset, RollupDays: *days})
 	case "run-report", "runs":
 		f := flags("run-report")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")

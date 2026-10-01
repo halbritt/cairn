@@ -255,6 +255,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		serveJSON(w, r, c.store.RecordUsage)
 	case "/v1/usage-coverage":
 		serveJSON(w, r, c.store.RecordUsageCoverage)
+	case "/v1/recall-observation":
+		serveJSON(w, r, c.store.RecordRecallObservation)
 	case "/v1/evidence-impact":
 		if !c.destination.AllowLocal {
 			writeError(w, 403, "AUTHORITY_DENIED", "evidence impact inspection requires a local profile")

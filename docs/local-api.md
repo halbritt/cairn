@@ -256,7 +256,7 @@ own volatile client observations; see [observed clients](client-observations.md)
 Operations: `create`, `edit`, `revise`, `append`, `replace`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, `assessments-page`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
+`run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. Ordinary agent profiles, local or remote, may also report their own lifecycle hook's `recall-observation` (metrics only; see [recall latency and selector cost](use-outcome-loop.md#recall-latency-and-selector-cost)); the protected `use-report` that shows it stays local-profile-only. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
 `history` lists bounded retained version metadata or reads one exact body (optionally
 as a byte excerpt with `span`), under

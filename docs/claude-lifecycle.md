@@ -13,6 +13,20 @@ session-lock acquisition and status persistence, and is not a measurement of the
 model's response time. Input validation and lock failures before recall starts
 do not create a recall observation.
 
+Each recall hook (Claude Code, Codex, OpenCode and Hermes share this engine) also
+reports one per-prompt observation through the authenticated `recall-observation`
+operation, which `cairn use-report` shows per receipt and as daily per-harness
+rollups: [recall latency and selector cost](use-outcome-loop.md#recall-latency-and-selector-cost).
+It carries only metrics: status, elapsed time, search/selector/pull time and
+counts, each selector call's stage, outcome, model, token usage and
+provider-reported cost, and the bytes emitted as context. A figure the hook did
+not observe is omitted, never sent as zero. Reporting is best effort, bounded to
+one second and skipped within 0.75 seconds of the 13-second host timeout; it can
+neither change the hook's output nor fail it, and its own time is not part of the
+reported elapsed time. Set `"recall_observations": false` in the lifecycle
+configuration to stop reporting. The installed hooks are unchanged until they are
+reinstalled with this engine.
+
 A handled failure replaces an earlier success with `outcome: failed`, zero
 delivered bytes/records and a fixed `error_type` category. Available stage
 diagnostics are retained; prompt text, note bodies and exception messages are
@@ -437,7 +451,9 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   decision. These codes describe failed checks, not why a provider produced them.
   Session state keeps the latest recall; the existing evaluation
   observer preserves these fields per invocation. This does not add production
-  history to `use-report` or establish the cause of a slow provider call.
+  history to `use-report` or establish the cause of a slow provider call. The
+  per-prompt recall observation does report these times and selector figures
+  (without the validation codes) to `use-report`; it still does not establish a cause.
   Both selector inputs together remain capped at 24,000 UTF-8
   bytes; candidates that would exceed it are omitted whole. Preview admission
   has a five-second allowance; the body decision's eight-second allowance
