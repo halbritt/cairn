@@ -15,6 +15,15 @@ changes in known copy targets invalidate it. Inventories above 1,000 targets or
 the existing impact bounds refuse; no partial inventory authorizes forgetting.
 An ordinary retraction preview cannot authorize deletion.
 
+Before forgetting, bring any explicitly selected eligible historical
+`context.txt` into custody with
+[`cairn adopt-context RECEIPT_UUID RUN_DIRECTORY`](managed-context.md#adopting-a-historical-context-file).
+Then obtain a new deletion preview: adoption invalidates the previous inventory.
+The order is preview, adopt, re-preview, forget, purge. Once forgetting excludes
+the retained package, adoption refuses `PAYLOAD_UNAVAILABLE`; the unregistered
+file then requires separate operator handling. Adoption covers only the selected
+directory, so other original or copied run directories remain unmanaged copies.
+
 Submit the returned token with a live grant containing `redact`:
 
 ```json

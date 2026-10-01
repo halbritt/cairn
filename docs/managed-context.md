@@ -56,11 +56,19 @@ and takes only the two values you name. It does not scan, list or guess runs.
 
 ```sh
 cairn adopt-context 8f0c2d5e-6c60-4b0e-9d7c-1f8f7a1d2b34 \
-  "$CAIRN_ARTIFACTS/8f0c2d5e-6c60-4b0e-9d7c-1f8f7a1d2b34"
+  "${CAIRN_HOME:-$HOME/.local/share/cairn}/runs/8f0c2d5e-6c60-4b0e-9d7c-1f8f7a1d2b34"
 ```
 
-It accepts only a case where every one of these holds, and otherwise refuses
-with a code and changes nothing:
+Adopt the file before forgetting its source records: inspect `preview-delete`,
+adopt the selected historical file, obtain a fresh preview, then forget and
+purge. Adoption invalidates the earlier preview. After forgetting, the retained
+package is unavailable and this command cannot adopt the file; its removal then
+requires separate operator handling. Receipts behind a restore fence are also
+ineligible for this operation.
+
+The initial checks require all of the following. A refusal during these checks
+leaves the directory unchanged; a later failure can leave the ownership marker
+as described below.
 
 - **The run is yours and finished.** The receipt belongs to the invoking
   channel and repository, was launched, and has a recorded outcome. A receipt
@@ -71,7 +79,9 @@ with a code and changes nothing:
 - **The directory is a private local run directory.** It is an absolute
   canonical path (no symlink components) named by the receipt UUID, owned by
   the invoking user with no group or other permissions, on a local filesystem
-  (NFS, SMB/CIFS, Ceph, AFS, Coda and 9P are refused). It is locked with the
+  (NFS, SMB/CIFS, Ceph, AFS, Coda and 9P are refused). This filesystem check is a
+  denylist, not proof of local storage: the operator must select local custody;
+  other remote-backed types, including FUSE mounts, are not identified. It is locked with the
   same `flock` that writers and purge workers use, and the lock is held until
   the adoption is recorded.
 - **The file is what Cairn retained.** `context.txt` is a regular, private,
@@ -123,12 +133,20 @@ slot, refuses a replaced directory, and keeps `outcome.json` and the marker.
 
 Limits. The file is verified when it is read. The directory lock is advisory, so a
 process that ignores it can still change the file afterwards; as for registered
-custody, purge removes the reserved slot whatever it then holds. This adopts one explicitly named file for a launch of this operator's
-channel on this host; it accepts no remote or other-user custody, no moved copy
-whose directory name or identity differs, and no scan or bulk mode. It cannot
+custody, purge removes the reserved slot whatever it then holds. This adopts one
+explicitly named file for a launch of this operator's channel on this host.
+For an unregistered run, Cairn has no recorded original directory identity: a
+same-named copy with matching bytes can be adopted. Adoption records custody of
+the selected directory only; it neither proves that directory is the original
+nor brings other copies into custody. Once adopted, a different directory
+conflicts with that recorded custody. There is no other-user custody, scan or
+bulk mode. It cannot
 verify a file the current renderer would not reproduce byte for byte. Other copies
 (backups, snapshots, hard links elsewhere, in-process and provider copies) remain
-the residuals listed above. Adoption records custody from now on: a backup taken
+the residuals listed above. The generic `unmanaged_copies` residual includes any
+original or copied directory that was not selected, even when the receipt's
+specific `run_artifacts` residual is replaced by a `managed_context` effect.
+Adoption records custody from now on: a backup taken
 before it does not know the file, so deletion effects restored from that backup
 do not include it. Adoption is not general retention or redaction.
 
