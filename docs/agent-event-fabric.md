@@ -224,7 +224,17 @@ cairn event-stats
 ```
 
 `complete` accepts selected result text as an ordinary note; structured API calls
-accept a complete Draft. `ack --disposition ignored|failed --code CODE` records
+accept a complete Draft. `complete --task TASK [--run RUN]` sets the result's
+search scope. Both flags default to `*`, preserving repository-wide results
+when omitted; either label may be supplied independently. Labels must be
+nonblank, at most 256 UTF-8 bytes, and contain no NUL. They are exact search
+labels, not ACLs, inbox identities, or proof of task completion. Existing
+recipient, authentication and sensitivity checks still apply. Keep the same
+request UUID **and all arguments, including scope and result text**, on an
+uncertain retry. Select reusable guidance separately for repository-wide memory
+rather than widening a one-off result solely to make it appear in other tasks.
+
+`ack --disposition ignored|failed --code CODE` records
 terminal failure/ignore. Read the referenced body using `cairn agent history`.
 Optional kind values include update, request, response and notice. Event kind
 strings are bounded to the same topic-name syntax. CLI output follows the

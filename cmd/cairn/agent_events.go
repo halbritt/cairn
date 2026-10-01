@@ -30,7 +30,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--response-deadline RFC3339 --response-policy all|partial]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
-  complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] DELIVERY_UUID
+  complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
   retry --lease UUID DELIVERY_UUID
   renew --lease UUID [--lease-seconds N] DELIVERY_UUID
   subscribe --request-id UUID --topic TOPIC
@@ -44,6 +44,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
 
 Put flags before positional arguments. Source references accept UUID or cairn:UUID.
 Read the exact source with agent history using the returned ref.record_id and ref.version.
+complete defaults task/run to "*"; explicit flags select result search labels, not access grants.
 complete creates one ordinary result and records handling atomically. Other external
 effects need their own idempotency. ack reports handling, not verified task success.
 An empty inbox returns delivery:null. Expired leases refuse with STALE_LEASE.
@@ -77,6 +78,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	profile := f.String("profile", "", "provisioned event profile name")
 	socket := f.String("socket", "", "API socket")
 	repo := f.String("repo", "", "collection repository, defaults to profile")
+	task := f.String("task", "*", "result task search scope (complete only)")
+	runID := f.String("run", "*", "result run search scope (complete only)")
 	agent := f.String("agent", "", "assert authenticated inbox owner")
 	agentID := f.String("agent-id", "", "registered session UUID")
 	executionID := f.String("execution-id", "", "current session execution UUID")
@@ -123,7 +126,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "ack":
 		allowed += "request-id lease disposition code "
 	case "complete":
-		allowed += "repo request-id lease stdin shareable kind "
+		allowed += "repo request-id lease stdin shareable kind task run "
 	case "retry":
 		allowed += "lease "
 	case "renew":
@@ -319,6 +322,11 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		operation = "event-complete"
 		complete := core.CompleteEventRequest{RequestID: *request, DeliveryID: f.Arg(0), LeaseID: *lease, Disposition: *disposition, Code: *code}
 		if command == "complete" {
+			for _, label := range []string{*task, *runID} {
+				if strings.TrimSpace(label) == "" || len(label) > 256 || strings.ContainsRune(label, 0) {
+					return nil, invalid("result task and run scope require 1-256 nonblank bytes without NUL")
+				}
+			}
 			if !*stdin {
 				return nil, invalid("complete requires --stdin with selected result text")
 			}
@@ -337,7 +345,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			if resultKind == "" {
 				resultKind = "note"
 			}
-			complete.Draft = &core.Draft{Body: string(body), Kind: resultKind, ClaimType: "self", Sensitivity: sensitivity, Scope: core.Scope{Repo: *repo, TaskID: "*", RunID: "*"}}
+			complete.Draft = &core.Draft{Body: string(body), Kind: resultKind, ClaimType: "self", Sensitivity: sensitivity, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *runID}}
 		}
 		req = complete
 	}
