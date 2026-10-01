@@ -473,3 +473,28 @@ outputs and failed-hook output/error bytes remain part of prospective aggregate
 measurement; this grant does not enforce later native tool spending or guarantee
 that required refreshes fit the original task allowance. The key grants no inbox,
 source, or execution authority and is not enabled by ordinary installers.
+
+### A rejected inbox wake before admission
+
+An exact Claude channel wake vetoed during inbox activation now leaves an
+owner-only, content-hashed refusal receipt. This records the failure stage and
+an allowlisted exception class, not the prompt, exception text or note body.
+The hook still exits 2; it does not acknowledge or complete the notice/request.
+
+A matching retained wake can be cleared only while both existing host locks
+protect the check: the native process/session and submission must still match,
+no inbox attempt/intent/journal or corresponding memory grant may exist, and
+authenticated event status must report that exact delivery pending with zero
+attempts. Readiness alone is insufficient because it can include expired leases.
+The readiness event ID is retained only when the API supplies a valid value;
+older APIs leave the receipt and marker for explicit verified recovery. Neither
+path changes memory credits. Receipt or state-write failure preserves the marker.
+
+The two read-only API checks each have a one-second timeout and run before the
+memory lock; this failure path is not a 250 ms end-to-end guarantee. An exact
+native veto may precede transport acknowledgment: the receipt covers only that
+same submission's uncertain-to-submitted transition, never another uncertain
+wake. A late acknowledgment cannot recreate a cleared marker. The updated
+watcher can reconcile retained receipts after transient failures; already-loaded
+watchers retain their previous behavior until restarted. Historical vetoes with
+no receipt require separately reviewed exact evidence, not a general reset.

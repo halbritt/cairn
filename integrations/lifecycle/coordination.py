@@ -421,6 +421,8 @@ def prepare_idle_wake(config, state, path, cycle=None):
         return None
     if agent['metadata']['state'] != 'idle' or agent['metadata']['delivery_mode'] != 'existing-session':
         return None
+    if state.get('wake_rejection') and state.get('idle_wake'):
+        reconcile_rejected_wake(config, state, path)
     ready = call(config, 'session-inbox-ready', session_ref(agent))
     delivery = ready.get('delivery_id')
     if cycle is not None:
@@ -468,6 +470,9 @@ def prepare_idle_wake(config, state, path, cycle=None):
             transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
             parent=channel['parent'], native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
+        event_id = ready.get('event_id')
+        if isinstance(event_id, str) and re.fullmatch('[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', event_id):
+            state['idle_wake']['event_id'] = event_id
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
     opencode = opencode_idle_endpoint(config, state['process'], agent['native_session_id'], state)
@@ -2150,6 +2155,131 @@ def inbox_recall_wake(event):
                         prompt) is not None
 
 
+def refusal_error_class(exc):
+    # Fixed diagnostic vocabulary: never print exception messages or host paths.
+    name = type(exc).__name__
+    return name if name in ('BlockingIOError', 'PermissionError', 'FileNotFoundError',
+        'OSError', 'ValueError', 'KeyError', 'TypeError', 'JSONDecodeError', 'CoordinationError') else 'OtherError'
+
+
+def reconcile_rejected_wake(config, state, path):
+    """Caller owns the coordination lock. A receipt never acknowledges work."""
+    key = state.get('wake_rejection')
+    if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key):
+        return False
+    target = path.parent / 'wake-refusals' / (key + '.json')
+    if target.is_symlink() or target.stat().st_uid != os.getuid() or target.stat().st_mode & 0o077:
+        raise ValueError('wake refusal receipt must be owner-only')
+    receipt = json.loads(target.read_text())
+    if hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest() != key:
+        raise ValueError('wake refusal receipt changed')
+    wake = state.get('idle_wake')
+    recorded = receipt.get('wake')
+    # The transport may acknowledge after the native hook veto. No other
+    # transition or changed submission identity is covered by this receipt.
+    matches = wake == recorded or (isinstance(recorded, dict) and recorded.get('status') == 'uncertain'
+        and wake == dict(recorded, status='submitted'))
+    if (receipt.get('schema') != 'cairn.preadmission-wake-refusal/1'
+            or receipt.get('phase') != 'activation' or not matches
+            or not isinstance(wake, dict) or wake.get('status') not in ('uncertain', 'submitted')
+            or wake.get('transport') != 'claude-channel'
+            or wake.get('session') != session_ref(state['agent'])
+            or wake.get('native_id') != state['agent']['native_session_id']
+            or not same_process(state['process'], receipt['process'])
+            or not process_alive(state['process']) or state.get('ending') or state.get('retired')
+            or any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_result_policy',
+                                          'inbox_journals', 'inbox_close', 'active_prompt'))):
+        return False
+    # Older states have no journal index. Inspect their retained journals on a
+    # copy; neither recovery nor command replay belongs in this read check.
+    if 'inbox_journals' not in state:
+        for journal in (Path(config['state_dir']) / 'intents').glob('*.json'):
+            json.loads(journal.read_text())  # Corrupt ownership is unknown, not empty.
+        if session_journals(config, dict(state)):
+            return False
+    event_id = wake.get('event_id')
+    if not isinstance(event_id, str) or not re.fullmatch('[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', event_id):
+        return False  # Older APIs cannot establish custody; keep the receipt.
+    # Readiness also includes expired leases, so it is not zero-admission proof.
+    # Do the bounded read calls before acquiring the shared memory lock.
+    inspected = call(config, 'event-inspect', dict(event_id=event_id, limit=100),
+                     timeout=1, session=session_ref(state['agent']))
+    event = inspected.get('event', {})
+    matches = [d for d in inspected.get('deliveries', []) if d.get('delivery_id') == wake['delivery_id']]
+    if (event.get('event_id') != event_id or event.get('repo') != config['repo'] or len(matches) != 1
+            or matches[0].get('consumer') != state['agent']['inbox']
+            or matches[0].get('state') != 'pending' or type(matches[0].get('attempts')) is not int
+            or matches[0]['attempts'] != 0):
+        return False
+    ready = call(config, 'session-inbox-ready', session_ref(state['agent']), timeout=1)
+    if ready.get('delivery_id') != wake['delivery_id'] or ready.get('event_id') != event_id:
+        return False
+    bridge = load_inbox_recall(config, validate=False)
+    _, memory = bridge.binding(config)
+    directory = Path(memory['state_dir'])
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o022:
+        raise ValueError('inbox ledger directory is not owner-controlled')
+    native = wake['native_id']
+    with (directory / (native + '.lock')).open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        ledger = bridge.load_grants(directory / (native + '.inbox-recall.json'), native)
+        for grant in ledger['grants'].values():
+            identity = grant['identity']
+            if (identity.get('delivery_id') == wake['delivery_id']
+                    or identity.get('native_owner') == 'claude-channel:' + receipt['native_prompt_id']):
+                return False
+        updated = dict(state)
+        updated.pop('idle_wake')
+        updated.pop('wake_refusal', None)
+        updated['wake_reconciled'] = dict(receipt=key, at=time.time())
+        write_state(path, updated)
+        state.clear(); state.update(updated)
+    return True
+
+
+def record_activation_refusal(config, event, exc):
+    """Only a real, exact Claude channel veto before handle may make a receipt."""
+    if config.get('harness') != 'claude' or event.get('hook_event_name') != 'UserPromptSubmit':
+        return
+    native, prompt_id = event.get('session_id'), event.get('prompt_id')
+    if (not valid_native_session_id(native) or not isinstance(prompt_id, str)
+            or not prompt_id.strip() or len(prompt_id.encode()) > 256
+            or any(ord(c) < 32 for c in prompt_id)):
+        return
+    process = owner_process(config, event)
+    path = state_path(config, native)
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        wake = state.get('idle_wake', {})
+        session = session_ref(state['agent'])
+        if (wake.get('transport') != 'claude-channel' or wake.get('status') not in ('uncertain', 'submitted')
+                or wake.get('native_id') != native or wake.get('session') != session
+                or not same_process(process, state['process'])
+                or not same_process(process, wake.get('parent', {})) or not process_alive(process)
+                or state.get('ending') or state.get('retired')):
+            return
+        expected = (f'<channel source="cairn-events" native_session_id="{native}" '
+            f'agent_id="{session["agent_id"]}" execution_id="{session["execution_id"]}" '
+            f'delivery_id="{wake["delivery_id"]}">\n' + wake_message(wake) + '\n</channel>')
+        if event.get('prompt') != expected:
+            return
+        receipt = dict(schema='cairn.preadmission-wake-refusal/1', phase='activation',
+            error_class=refusal_error_class(exc), wake=wake, process={k: process[k] for k in ('pid', 'start', 'boot')},
+            native_prompt_id=prompt_id)
+        key = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        target = path.parent / 'wake-refusals' / (key + '.json')
+        target.parent.mkdir(mode=0o700, exist_ok=True)
+        if target.exists():
+            if json.loads(target.read_text()) != receipt:
+                raise ValueError('wake refusal receipt changed')
+        else:
+            write_state(target, receipt)
+        state['wake_rejection'] = key
+        write_state(path, state)  # Receipt survives unavailable pins/ledger/API.
+        reconcile_rejected_wake(config, state, path)
+
+
 def effective_inbox_config(config, event=None):
     """Snapshot the one-file activation decision for this hook invocation.
 
@@ -2608,6 +2738,11 @@ def main():
                 config = effective_inbox_config(config, event)
             except (ValueError, KeyError, TypeError, OSError) as exc:
                 if config.get('inbox_recall_binding') and inbox_recall_wake(event):
+                    print(f'Cairn coordination diagnostic: phase=activation error_class={refusal_error_class(exc)}', file=sys.stderr)
+                    try:
+                        record_activation_refusal(config, event, exc)
+                    except (CoordinationError, ValueError, KeyError, TypeError, OSError) as refusal_exc:
+                        print(f'Cairn coordination diagnostic: phase=refusal_record error_class={refusal_error_class(refusal_exc)}', file=sys.stderr)
                     raise NativePromptRefused('inbox activation decision unavailable') from exc
                 raise
             result = handle(config, event, args.event, _inbox_resolved=True)
