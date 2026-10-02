@@ -69,16 +69,18 @@ one pull call. A receipt-budget refusal permits one additional checked span pull
 with a fresh request ID. `source_extent: partial_span`, full source identity/hash,
 byte range and passage checksum remain explicit; omitted text supports no claims.
 Required instructions, Class C and competing positions remain whole or omitted.
-Changed/unavailable identities never trigger this fallback. An oversized passage
-does not displace a later source that fits under the normal admission rules. If
-normal inspection delivers no body, the last checked optional passage may supply
-a shorter exact UTF-8 prefix, only when it includes the complete original preview
-span and more source bytes than that preview. Missing or out-of-range preview
-spans, insufficient room and expired deadlines refuse this recovery. A later
-failed read or invalid identity cannot revive an earlier omitted passage.
+Changed/unavailable identities never trigger this fallback. An oversized checked optional
+passage is fitted before trying a lower-ranked source: it may supply a shorter
+exact UTF-8 prefix only when that prefix includes the complete original preview
+span and more source bytes than that preview. This prefers the earlier ranked
+excerpt over a later whole source that might fit. If the preview cannot fit,
+normal inspection may continue to later candidates. Missing or out-of-range
+preview spans, insufficient room and expired deadlines refuse fitting. Failed
+reads and invalid identities never revive an earlier omitted passage.
 Fitting measures the complete task/control/required envelope and keeps the native
-reserve. It makes no further reads or refunds: fetched bytes, receipt charges and
-attempted calls stay unchanged. The partial source offset, full source hash and
+reserve. Fitting itself performs no further reads or refunds: fetched bytes and
+receipt charges for calls already attempted remain accounted. Earlier admission
+can avoid later reads. The partial source offset, full source hash and
 size remain intact; its displayed end and checksum describe the shorter bytes.
 The passage remains `partial_span`, with no claim about omitted conditions or
 whole-note applicability. Search, pulls and optional fitting share a five-second

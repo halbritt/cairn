@@ -1089,7 +1089,6 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         return render_agent_candidates(selected, result, budget, status, measure=measure, observer=memory)
     inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
     bodies = []
-    oversized = None
     text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory)
     if status["outcome"] != "delegated":
         return text
@@ -1120,25 +1119,19 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         if inspection["delivered_records"] + len(group) > 2:
             inspection["refusals"]["record_limit"] = 1
             trace_observe(memory, 'route', 'record_limit', group)
-            oversized = None
             break
         if not all(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in group):
             inspection["refusals"]["unverifiable_identity"] = 1
             trace_observe(memory, 'route', 'unverifiable_identity', group)
-            oversized = None
             break
         if time.monotonic() >= deadline:
             inspection["refusals"]["deadline"] = 1
             trace_observe(memory, 'route', 'deadline', group)
-            oversized = None
             break
         if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
             inspection["refusals"]["pull_limit"] = 1
             trace_observe(memory, 'route', 'pull_limit', group)
             break
-        # A later read failure remains terminal; it cannot revive an earlier
-        # omitted passage. Only the last checked attempt can be recovered.
-        oversized = None
         pulled = None
         inspection["pull_calls"] += 1
         inspection["remaining_pull_calls"] = 4 - inspection["pull_calls"]
@@ -1217,29 +1210,27 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             # otherwise displace an already admitted body at the context limit.
             if bodies:
                 break
-            oversized = (entry, candidate)
+            # Preserve ranked priority before trying a later whole source.
+            # Fit only this already checked passage; failed reads never enter here.
+            trace_observe(memory, 'route', 'fit_start', [entry])
+            tentative = dict(inspection, delivered_records=1)
+            try:
+                fitted = fit_optional_excerpt(entry, candidate, lambda item: render_agent_candidates(
+                    selected, result, budget, status, [item], tentative, measure=measure, observer=memory), deadline)
+            except ContextRefused:
+                trace_observe(memory, 'route', 'fit_refused', [entry])
+                if time.monotonic() >= deadline:
+                    inspection["refusals"]["deadline"] = 1
+                    break
+            else:
+                trace_observe(memory, 'route', 'fit_admitted', [entry])
+                bodies.append(fitted)
+                inspection = tentative
             continue
         except HookError:
             inspection["refusals"]["span_unavailable"] = 1
             trace_observe(memory, 'route', 'span_unavailable', group)
             break
-    # Preserve the existing chance to deliver a later whole source. Only recover
-    # checked bytes when ordinary inspection ended without any supplied body.
-    if not bodies and oversized is not None:
-        entry, candidate = oversized
-        trace_observe(memory, 'route', 'fit_start', [entry])
-        tentative = dict(inspection, delivered_records=1)
-        try:
-            fitted = fit_optional_excerpt(entry, candidate, lambda item: render_agent_candidates(
-                selected, result, budget, status, [item], tentative, measure=measure, observer=memory), deadline)
-        except ContextRefused:
-            trace_observe(memory, 'route', 'fit_refused', [entry])
-            if time.monotonic() >= deadline:
-                inspection["refusals"]["deadline"] = 1
-        else:
-            trace_observe(memory, 'route', 'fit_admitted', [entry])
-            bodies.append(fitted)
-            inspection = tentative
     # Failure/omission metadata is part of the final measured context, never a
     # silent truncation or a relevance/success assertion.
     while True:

@@ -16,7 +16,6 @@ class SourceOpeningTests(unittest.TestCase):
         case = claude.ClaudeInboxRecallTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
-        case.mc['context_bytes'] = 6318
         opening = ('Historical audit handoff\nProject: fixture-engine (the audit tool was Surveyor).\n'
                    'Context: prior audit repair, not current report implementation.\n')
         passage = 'Report validation: preserve existing evidence and avoid new model calls. 日本語.\n'
@@ -31,6 +30,19 @@ class SourceOpeningTests(unittest.TestCase):
         case.fixture['search']['index'].append(dict(entry, record_id='00000000-0000-4000-8000-000000000199',
             summary='Another potentially useful report source. ' * 10,
             pull_arguments=dict(entry['pull_arguments'], handle='other-preview')))
+        # Calibrate the complete native envelope instead of pinning an old cue's
+        # byte count. The source pair fills half the grant; extra previews yield.
+        candidate = dict(pull_arguments=entry['pull_arguments'],
+                         response=eager.hook.excerpt_from_full(entry, case.fixture['pull']))
+        candidate['source_opening_excerpt'] = eager.hook.source_opening_excerpt(
+            entry, body.encode()[:768], candidate['response']['span'], 'whole_pull')
+        measure = lambda text: eager.hook.codex_hook_cost(case.event, text)
+        calibration = eager.hook.render_agent_candidates(case.fixture['search']['selected'],
+            dict(case.fixture['search'], index=[]), 9500, dict(rejected={}), [candidate],
+            dict(pull_calls=1, remaining_pull_calls=3, delivered_records=1,
+                 refusals=dict(whole_context_budget=1)), measure=measure)
+        budget = 2 * measure(calibration)
+        case.mc['context_bytes'] = budget
         case.freeze()
         event = dict(case.event, prompt='Inspect report fallback preservation.', prompt_id='source-opening-task')
         out = case.memory_main(event)
@@ -45,7 +57,7 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(context['origin'], 'whole_pull')
         self.assertEqual(context['span']['source_sha256'], entry['body_sha256'])
         self.assertEqual(context['span']['end'], len(opening.encode()))
-        self.assertLessEqual(len(out['stdout'].encode()) + view['remaining_memory_bytes'], 6318)
+        self.assertLessEqual(len(out['stdout'].encode()) + view['remaining_memory_bytes'], budget)
         self.assertIn(opening, text.replace('\\n', '\n'))
         self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 1)
         from trial_source_delivery import hook_delivery

@@ -171,7 +171,7 @@ class OptionalExcerptFitTests(unittest.TestCase):
                 self.assertEqual(len(case.calls), 2)
                 self.assertEqual(len(tentative), 1 if expiry == 'fitting' else 0)
 
-    def test_last_checked_excerpt_can_fit_after_call_cap_without_another_pull(self):
+    def test_checked_excerpt_fits_before_later_candidates_without_another_pull(self):
         fixture = self.fixture()
         case, _, _, _ = fixture
         case.result['index'] = case.entries
@@ -179,7 +179,11 @@ class OptionalExcerptFitTests(unittest.TestCase):
         self.assertEqual(len(view['candidate_bodies']), 1)
         self.assertEqual(len(case.calls), 2)
         self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
-        self.assertEqual(view['candidate_inspection']['refusals']['pull_limit'], 1)
+        self.assertEqual(view['candidate_bodies'][0]['response']['selection']['record']['record_id'],
+                         case.entries[0]['record_id'])
+        # Fitting already filled the optional allowance; later-call preflight stops
+        # before the pull-limit branch, without spending another receipt call.
+        self.assertNotIn('pull_limit', view['candidate_inspection']['refusals'])
 
     def test_bound_public_hooks_charge_complete_fitted_output_with_task_and_required_context(self):
         from pathlib import Path
