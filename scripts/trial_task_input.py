@@ -13,6 +13,7 @@ from trial_task_arms import validate_arms, checked_file
 
 SCHEMA = 'cairn.task-eval.input/1'
 SLUG = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}')
+ENTITY_KINDS = ('file', 'symbol')
 
 
 def _object(pairs):
@@ -33,6 +34,30 @@ def _relative(value):
     if not isinstance(value, str) or not value or Path(value).is_absolute() or '..' in Path(value).parts:
         raise ValueError('input paths must be relative and contained')
     return value
+
+
+def corpus_entities(note):
+    """A note's explicit file/symbol associations as (kind, name) pairs, in declared order.
+
+    Only the shape is checked here: a list of {"kind": "file"|"symbol", "name": str}
+    objects with no other key and no repeated pair, so nothing is dropped or guessed.
+    The real import hands each pair to `cairn remember`, whose core.NormalizeEntities
+    owns the name rules (canonical relative file paths, bounds, the 16-association
+    limit) and refuses what it cannot keep; the stored result is then compared.
+    """
+    entities = note.get('entities', [])
+    if not isinstance(entities, list):
+        raise ValueError('entities must be a list of file/symbol associations')
+    pairs = []
+    for entity in entities:
+        if (not isinstance(entity, dict) or set(entity) != {'kind', 'name'}
+                or entity['kind'] not in ENTITY_KINDS or not isinstance(entity['name'], str) or not entity['name']):
+            raise ValueError('each entity must be exactly {"kind": "file" or "symbol", "name": nonempty string}')
+        pair = (entity['kind'], entity['name'])
+        if pair in pairs:
+            raise ValueError('duplicate entity association')
+        pairs.append(pair)
+    return pairs
 
 
 def manifest(root):
@@ -67,7 +92,7 @@ def manifest(root):
     seen = set()
     for note in corpus['notes']:
         if (not isinstance(note, dict) or not {'id','body','kind'} <= set(note)
-                or set(note)-{'id','body','kind','shareable','repo','supersede_with','provenance'}):
+                or set(note)-{'id','body','kind','shareable','repo','supersede_with','provenance','entities'}):
             raise ValueError('unsupported corpus note; do not flatten source contracts')
         if not isinstance(note['id'],str) or not SLUG.fullmatch(note['id']) or note['id'] in seen:
             raise ValueError('invalid or duplicate note id')
@@ -76,6 +101,7 @@ def manifest(root):
             raise ValueError('invalid note body/kind')
         if 'shareable' in note and type(note['shareable']) is not bool:
             raise ValueError('shareable must be a boolean')
+        corpus_entities(note)
     ids = set()
     cases = document['cases']
     if not isinstance(cases,list) or not cases:
