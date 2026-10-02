@@ -14,6 +14,8 @@ func indexSummary(body, query, ranking string) string {
 }
 
 func indexPreview(body, query, ranking string) (string, ByteSpanRequest) {
+	// New IDF term evidence does not redefine historical preview selection.
+	ranking = legacyIDFRanking(ranking)
 	const limit = 160
 	prefix := body[:utf8Prefix(body, limit)]
 	span := ByteSpanRequest{Length: len(prefix)}

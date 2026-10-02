@@ -22,7 +22,7 @@ def check_cli(binary, root, environment):
                              '--run', scope['run_id'], '--request-id', request_id, query],
                             env=client_env, capture_output=True, text=True, check=True, timeout=15)
     view = json.loads(result.stdout)['data']
-    assert view['ranking'] == 'binary-idf-scope-recency/2'
+    assert view['ranking'] == 'binary-idf-scope-recency/6'
     assert [e['record_id'] for e in view['index']] == [exact['record_id'], other['record_id']]
     entry = view['index'][0]
     pulled = subprocess.run([*client, 'expand'], input=json.dumps(entry['pull_arguments']),
@@ -58,7 +58,7 @@ def check_harness(invoke):
     other = invoke('cairn_remember', dict(request_id=str(uuid.uuid4()),
                    body=literal.replace('/', ' ').replace('.', ' ') + ' repair review', shareable=True))
     view = invoke('cairn_search', dict(query='repair review "' + literal + '"'))
-    assert view['ranking'] == 'binary-idf-scope-recency/2'
+    assert view['ranking'] == 'binary-idf-scope-recency/6'
     assert view['index'][0]['record_id'] == exact['record_id']
     assert other['record_id'] in [e['record_id'] for e in view['index']]
     entry = view['index'][0]

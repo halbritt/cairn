@@ -93,8 +93,11 @@ framing words from lexical matches. New ordinary context index queries use the
 [binary-IDF ranking](index-and-pull.md#ordinary-lexical-ranking).
 Historical recompilation uses the ranking
 version retained in each receipt. The [retrieval comparison](verification/question-words-2026-09-08.md)
-records the measured improvements and regressions. Reusing a compile request ID
-across a ranking upgrade returns `STALE_PACKAGE`; use a new ID for current context.
+records the measured improvements and regressions. Same-request-ID retries of ordinary IDF receipts retain the sealed ranking
+version and still check current eligibility, intent and source state. A changed
+source package returns `STALE_PACKAGE`; use a new ID for current context and the
+current ranking policy. Older non-IDF ranking upgrades retain their previous
+retry behavior.
 
 [Quoted search](quoted-search.md) adds a soft exact-text preference for known
 identifiers, paths and error messages. It changes optional relevance after

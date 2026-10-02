@@ -198,7 +198,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if (entityIntent && (!entitySchema || original.Semantic.Browse != nil)) || entityIntent != hasEntityRanking(original.Semantic.Ranking) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical entity intent is invalid")
 	}
-	if idfSchema && (original.Semantic.Ranking != idfRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)) || original.Semantic.IDF == nil) {
+	if idfSchema && (legacyIDFRanking(original.Semantic.Ranking) != idfRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)) || original.Semantic.IDF == nil) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical IDF ranking identity is invalid")
 	}
 	signatureSchema := original.Semantic.ErrorSignature != ""
@@ -275,7 +275,8 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if err != nil {
 		return Package{}, err
 	}
-	terms := rankingTerms(req.Query, p.Ranking)
+	lexicon := newRankingLexicon(req.Query, p.Ranking)
+	terms := lexicon.terms
 	idfMembers := []idfMember{}
 	var literals []string
 	if hasLiteralRanking(p.Ranking) {
@@ -319,7 +320,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		if entity != e.EntityMatch {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical entity match changed")
 		}
-		words := rankingTerms(record.Body, p.Ranking)
+		words := lexicon.bodyTerms(record.Body)
 		score := 0
 		for word := range terms {
 			if words[word] {
@@ -392,7 +393,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 	}
 	if idfSchema {
-		if err = verifyFrozenIDF(p.IDF, req.Query, idfMembers, evaluations); err != nil {
+		if err = verifyFrozenIDF(p.IDF, req.Query, p.Ranking, idfMembers, evaluations); err != nil {
 			return Package{}, err
 		}
 		applyIDF(candidates, p.IDF, idfMembers, evaluations)

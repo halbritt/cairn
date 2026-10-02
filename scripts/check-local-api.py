@@ -143,7 +143,7 @@ try:
     detail = json.loads(inspected.stdout)['data']
     assert detail['code'] == 'BUDGET_REFUSED' and detail['explanation_version'] == 2
     assert detail['available_tokens'] == 256 and detail['optional_limit'] == 25
-    assert detail['ranking'] == 'binary-idf-scope-recency/1'
+    assert detail['ranking'] == 'binary-idf-scope-recency/5'
     assert detail['trace_complete'] is False and len(detail['candidates']) == 1
     candidate = detail['candidates'][0]
     assert candidate['record_id'] == record['record_id'] and candidate['lexical_matches'] == 1

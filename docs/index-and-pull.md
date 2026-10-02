@@ -195,7 +195,21 @@ prefix previews in older v4 packages.
 ## Ordinary lexical ranking
 
 New nonempty context index queries with `semantic: false` use semantic format
-v17 and `binary-idf-scope-recency/1..4`. Matching still uses the v4 tokenizer.
+v17 and `binary-idf-scope-recency/5..8`. These versions retain the v4 tokenizer
+and add query-specific adjacent compounds. A valid hyphenated query token such
+as `panel-board` also matches `panel board` or `panel\tboard` in a source. Each
+separator must be exactly one ASCII hyphen or a run of tabs / Unicode space
+separator characters (category Zs). Matching is case-insensitive using Go's
+Unicode lowercase mapping. Underscores stay inside compound segments.
+
+The source segments must be contiguous and complete. Newlines, punctuation,
+intervening words, repeated hyphens and mixed separators such as `panel - board`
+do not match. Surrounding letters, Unicode numbers, underscores and hyphens
+prevent a partial compound match. Existing word and underscore-component terms
+remain; a compound adds one distinct term, not an extra occurrence count.
+Quoted-text preference still requires the original exact substring: the spaced
+alias does not satisfy it. No new stop words are removed.
+
 Each distinct matching query term contributes an integer weight based on how
 rare it is in the eligible optional cohort. Repeated occurrences do not add
 weight. A raw lexical match remains eligible even when its weight is zero.
@@ -215,10 +229,17 @@ affect later pages. Follow the pagination rules above.
 
 The server seals cohort identity, term frequencies and integer weights for
 [historical reconstruction](currentness-and-replay.md#recompile-a-retained-read-set).
-Readers must support v17 before it is written; older binaries cannot reconstruct
-these receipts. Earlier accepted formats retain their historical behavior.
+Readers must support the sealed ranking version before it is written; support
+for v17 alone is insufficient. Older binaries cannot reconstruct new `/5..8`
+receipts. Earlier `/1..4` receipts retain their original word-only matching and
+can still be reconstructed by the new reader. No database migration is needed.
+A same-request-ID retry retains its existing IDF ranking version while checking
+current source state and disclosure; use a new ID to request current ranking.
 
 ## Previews and expansion limits
+
+Adjacent-compound IDF ranking uses the same preview policy as `/1..4`; alias
+evidence does not change preview windows or their source-byte spans.
 
 Search previews show a matching passage when it contains more distinct query
 terms than the note's opening 160 bytes. They use the ranker's existing word and

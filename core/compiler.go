@@ -360,7 +360,11 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	idfSearch := req.Mode == "index" && req.Purpose == "context" && strings.TrimSpace(req.Query) != "" && req.BrowseOffset == nil && !req.Semantic
 	if idfSearch {
 		p.Schema = "cairn.semantic/17"
-		p.Ranking = idfRanking(req.Entities, req.ErrorSignature, literals)
+		var err error
+		p.Ranking, err = s.retryIDFRanking(ctx, tx, req, adjacentIDFRanking(req.Entities, req.ErrorSignature, literals))
+		if err != nil {
+			return p, nil, err
+		}
 	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
@@ -406,7 +410,8 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	}
 	candidates := []candidate{}
 	policyKeys := map[string]string{}
-	terms := rankingTerms(req.Query, p.Ranking)
+	lexicon := newRankingLexicon(req.Query, p.Ranking)
+	terms := lexicon.terms
 	idfMembers := []idfMember{}
 	var chunk []candidateRecord
 	for position, id := range ids {
@@ -451,7 +456,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			}
 			continue
 		}
-		words := rankingTerms(record.Body, p.Ranking)
+		words := lexicon.bodyTerms(record.Body)
 		score := 0
 		for word := range terms {
 			if words[word] {
@@ -555,7 +560,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 	}
 	if idfSearch {
-		p.IDF, err = buildIDF(req.Query, idfMembers, evaluations)
+		p.IDF, err = buildIDF(req.Query, p.Ranking, idfMembers, evaluations)
 		if err != nil {
 			return p, nil, err
 		}

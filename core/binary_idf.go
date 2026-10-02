@@ -36,6 +36,7 @@ type idfMember struct {
 }
 
 func hasIDFRanking(r string) bool {
+	r = legacyIDFRanking(r)
 	return strings.HasPrefix(r, "binary-idf-scope-recency/") && (r == "binary-idf-scope-recency/1" || r == "binary-idf-scope-recency/2" || r == "binary-idf-scope-recency/3" || r == "binary-idf-scope-recency/4")
 }
 
@@ -96,7 +97,7 @@ func qualifiedIDFMembers(members []idfMember, evaluations map[string]*CandidateE
 	return qualified
 }
 
-func idfStatistics(query string, members []idfMember, evaluations map[string]*CandidateEvaluation) (*IDFSnapshot, error) {
+func idfStatistics(query, ranking string, members []idfMember, evaluations map[string]*CandidateEvaluation) (*IDFSnapshot, error) {
 	qualified := qualifiedIDFMembers(members, evaluations)
 	if len(qualified) > 10000 {
 		return nil, failure("BUDGET_REFUSED", "IDF cohort exceeds bounded scan")
@@ -105,7 +106,7 @@ func idfStatistics(query string, members []idfMember, evaluations map[string]*Ca
 	for i, m := range qualified {
 		identities[i] = idfMember{ID: m.ID, Version: m.Version, BodySHA256: m.BodySHA256}
 	}
-	terms := rankingTerms(query, "lexical-scope-recency/4")
+	terms := rankingQueryTerms(query, ranking)
 	words := make([]string, 0, len(terms))
 	for word := range terms {
 		words = append(words, word)
@@ -127,8 +128,8 @@ func idfStatistics(query string, members []idfMember, evaluations map[string]*Ca
 	return snapshot, nil
 }
 
-func buildIDF(query string, members []idfMember, evaluations map[string]*CandidateEvaluation) (*IDFSnapshot, error) {
-	snapshot, err := idfStatistics(query, members, evaluations)
+func buildIDF(query, ranking string, members []idfMember, evaluations map[string]*CandidateEvaluation) (*IDFSnapshot, error) {
+	snapshot, err := idfStatistics(query, ranking, members, evaluations)
 	if err != nil {
 		return nil, err
 	}
@@ -171,12 +172,12 @@ func applyIDF(candidates []candidate, snapshot *IDFSnapshot, members []idfMember
 	}
 }
 
-func verifyFrozenIDF(sealed *IDFSnapshot, query string, members []idfMember, evaluations map[string]*CandidateEvaluation) error {
+func verifyFrozenIDF(sealed *IDFSnapshot, query, ranking string, members []idfMember, evaluations map[string]*CandidateEvaluation) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical IDF cohort or scoring changed") }
 	if sealed == nil || sealed.Algorithm != idfAlgorithm || sealed.N < 0 || sealed.N > 10000 || len(sealed.Terms) > 4096 {
 		return invalid()
 	}
-	expected, err := idfStatistics(query, members, evaluations)
+	expected, err := idfStatistics(query, ranking, members, evaluations)
 	if err != nil || sealed.Algorithm != expected.Algorithm || sealed.N != expected.N || sealed.CohortSHA256 != expected.CohortSHA256 || len(sealed.Terms) != len(expected.Terms) {
 		return invalid()
 	}

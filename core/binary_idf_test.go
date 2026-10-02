@@ -111,7 +111,7 @@ func TestIDFSnapshotRejectsCorruptionAndCountsZeroMatches(t *testing.T) {
 	for _, m := range members {
 		evaluations[m.ID] = &CandidateEvaluation{Facts: &CandidateFacts{BodySHA256: m.BodySHA256}}
 	}
-	snapshot, err := buildIDF(query, members, evaluations)
+	snapshot, err := buildIDF(query, "binary-idf-scope-recency/1", members, evaluations)
 	if err != nil || snapshot.N != 3 || len(snapshot.Terms) != 2 {
 		t.Fatalf("snapshot: %+v %v", snapshot, err)
 	}
@@ -123,7 +123,7 @@ func TestIDFSnapshotRejectsCorruptionAndCountsZeroMatches(t *testing.T) {
 		value := score
 		evaluations[id].IDFScore = &value
 	}
-	if err := verifyFrozenIDF(snapshot, query, members, evaluations); err != nil {
+	if err := verifyFrozenIDF(snapshot, query, "binary-idf-scope-recency/1", members, evaluations); err != nil {
 		t.Fatal(err)
 	}
 	for _, mutate := range []func(*IDFSnapshot){
@@ -137,18 +137,18 @@ func TestIDFSnapshotRejectsCorruptionAndCountsZeroMatches(t *testing.T) {
 		copy := *snapshot
 		copy.Terms = slices.Clone(snapshot.Terms)
 		mutate(&copy)
-		if Code(verifyFrozenIDF(&copy, query, members, evaluations)) != "INTEGRITY_FAILURE" {
+		if Code(verifyFrozenIDF(&copy, query, "binary-idf-scope-recency/1", members, evaluations)) != "INTEGRITY_FAILURE" {
 			t.Fatalf("accepted corrupted snapshot: %+v", copy)
 		}
 	}
 	all := []idfMember{{ID: "one", Version: 1, BodySHA256: "a", Matches: []string{"common"}}, {ID: "two", Version: 1, BodySHA256: "b", Matches: []string{"common"}}}
 	allEval := map[string]*CandidateEvaluation{"one": {Facts: &CandidateFacts{}}, "two": {Facts: &CandidateFacts{}}}
-	allSnapshot, err := buildIDF("common", all, allEval)
+	allSnapshot, err := buildIDF("common", "binary-idf-scope-recency/1", all, allEval)
 	if err != nil || allSnapshot.N != 2 || allSnapshot.Terms[0].DF != 2 || allSnapshot.Terms[0].Weight != 0 {
 		t.Fatalf("ubiquitous term: %+v %v", allSnapshot, err)
 	}
 	allEval["two"].Facts = nil
-	filtered, err := buildIDF("common", all, allEval)
+	filtered, err := buildIDF("common", "binary-idf-scope-recency/1", all, allEval)
 	if err != nil || filtered.N != 1 || filtered.Terms[0].DF != 1 {
 		t.Fatalf("ineligible term counted: %+v %v", filtered, err)
 	}
@@ -211,7 +211,7 @@ func TestOrdinaryIDFSearchAndFrozenReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := index.Package
-	if p.Semantic.Schema != "cairn.semantic/17" || p.Semantic.Ranking != "binary-idf-scope-recency/1" || p.Semantic.IDF == nil || p.Semantic.IDF.N != 5 {
+	if p.Semantic.Schema != "cairn.semantic/17" || p.Semantic.Ranking != "binary-idf-scope-recency/5" || p.Semantic.IDF == nil || p.Semantic.IDF.N != 5 {
 		t.Fatalf("IDF contract: %+v", p.Semantic)
 	}
 	if len(p.Semantic.Index) < 2 || p.Semantic.Index[0].RecordID != rare.RecordID {
