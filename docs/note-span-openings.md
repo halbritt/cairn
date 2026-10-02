@@ -47,3 +47,28 @@ byte and budget tests do not establish better source application, task outcomes
 or fleet adoption. Both API and adapter versions matter; older APIs can reject
 an explicit `opening_bytes` field and running MCP sessions can retain old tool
 catalogs until a new session initializes.
+
+## Readers and relays
+
+An API client receiving a paired expansion must declare
+`Cairn-Accept-Source-Opening: 1`. The current Go client sends it for note pulls
+when decoding into `core.Expansion` or `json.RawMessage`, including the current
+MCP facade and CLI. Other response types do not implicitly declare support.
+Raw HTTP consumers must preserve both pieces before sending the declaration.
+This header conveys response support only; it grants no access or authority and
+does not change request identity.
+
+The API refuses a paired read with `426 PROTOCOL_UNSUPPORTED` when the declaration
+is absent. This check follows current access and integrity validation, precedes
+cached delivery and charging, and leaves the original request UUID reusable after
+upgrading the reader. Malformed or duplicate declarations return
+`400 INVALID_REQUEST`. Whole reads, spans starting at zero, and old-receipt spans
+without an explicit opening remain available without the declaration.
+
+Updated relays forward the declaration but never supply it themselves. Older
+relays may strip it, causing a refusal even for a capable client. Upgrading the
+relay permits the same request to succeed. This does not require a wire protocol
+version increase; existing clients and servers retain unrelated operations.
+Installing a new binary does not upgrade running MCP facades. Such facades must
+start with the new binary to receive paired expansions; an API-only upgrade will
+refuse their paired reads rather than charge for discarded context.

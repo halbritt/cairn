@@ -85,7 +85,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, in *http.Request) {
 	// nil GetBody, and the header allowlist also prevent idempotent replay.
 	out.ContentLength = int64(len(body))
 	out.GetBody = nil
-	for _, header := range []string{"Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID", ProtocolHeader} {
+	for _, header := range []string{"Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID", ProtocolHeader, SourceOpeningHeader} {
 		if values := in.Header.Values(header); len(values) > 1 {
 			writeError(w, 400, "INVALID_REQUEST", "duplicate protocol header")
 			return

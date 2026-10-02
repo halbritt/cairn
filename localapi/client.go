@@ -116,6 +116,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(ProtocolHeader, strconv.Itoa(Protocol.Current))
+	if operation == "expand" && preservesSourceOpening(response) {
+		req.Header.Set(SourceOpeningHeader, "1")
+	}
 	if c.diagnostics != "" {
 		req.Header.Set(ClientDiagnosticsHeader, c.diagnostics)
 	}

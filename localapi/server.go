@@ -222,7 +222,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		})
 	case "/v1/expand":
 		serveJSON(w, r, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
-			return c.store.Expand(ctx, req, c.destination)
+			accepts, err := acceptsSourceOpening(r.Header)
+			if err != nil {
+				return core.Expansion{}, err
+			}
+			return c.store.ExpandForReader(ctx, req, c.destination, accepts)
 		})
 	case "/v1/expand-evidence":
 		serveJSON(w, r, func(ctx context.Context, req core.ExpandEvidenceRequest) (core.EvidenceExpansion, error) {
@@ -458,6 +462,8 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 400
 		case "NOT_FOUND":
 			status = 404
+		case "PROTOCOL_UNSUPPORTED":
+			status = 426
 		case "STALE_WORKER", "WORKER_UNAVAILABLE", "POOL_FULL", "POOL_PAUSED", "STALE_RESOLUTION", "STALE_SESSION", "AGENT_BUSY", "DELIVERY_ACTIVE", "STALE_LEASE", "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
 			status = 409
 		case "STORE_ERROR", "REFUSAL_UNRECORDED":

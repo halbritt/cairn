@@ -558,6 +558,13 @@ func (s *Store) expansionAccess(ctx context.Context, tx pgx.Tx, id string) error
 }
 
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
+	return s.ExpandForReader(ctx, req, dest, true)
+}
+
+// ExpandForReader enforces the transport reader's ability to retain a paired
+// source opening. This declaration grants no authority and is not request intent:
+// an unsupported read can be retried with the same UUID after upgrading its reader.
+func (s *Store) ExpandForReader(ctx context.Context, req ExpandRequest, dest Destination, acceptsSourceOpening bool) (Expansion, error) {
 	if req.OpeningBytes < 0 || req.OpeningBytes > 768 || (req.OpeningBytes != 0 && req.Span == nil) {
 		return Expansion{}, failure("INVALID_REQUEST", "opening_bytes requires span and must be 0-768; zero uses receipt policy")
 	}
@@ -568,7 +575,15 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		return Expansion{}, err
 	}
 	var state expansionState
-	guard := func(tx pgx.Tx) error { return s.prepareExpansion(ctx, tx, req, dest, &state) }
+	guard := func(tx pgx.Tx) error {
+		if err := s.prepareExpansion(ctx, tx, req, dest, &state); err != nil {
+			return err
+		}
+		if !acceptsSourceOpening && req.Span != nil && req.Span.Offset > 0 && noteOpeningBytes(req, state.spanContext) > 0 {
+			return failure("PROTOCOL_UNSUPPORTED", "this partial read requires a reader and relay that preserve source_opening; upgrade them or request the whole note")
+		}
+		return nil
+	}
 	return privileged(ctx, s, "expand", req.RequestID, struct {
 		Request     ExpandRequest
 		Destination Destination
@@ -591,10 +606,7 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 			}
 			digest := sha256.Sum256(body)
 			span = &NoteSpan{ByteSpan: selectByteSpan(body, *req.Span), SourceSHA256: hex.EncodeToString(digest[:])}
-			openingBytes := req.OpeningBytes
-			if openingBytes == 0 && state.spanContext == sourceOpening96 {
-				openingBytes = 96
-			}
+			openingBytes := noteOpeningBytes(req, state.spanContext)
 			if openingBytes > 0 && req.Span.Offset > 0 {
 				prefix := selectByteSpan(body, ByteSpanRequest{Offset: 0, Length: min(openingBytes, req.Span.Offset)})
 				opening = &prefix

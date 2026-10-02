@@ -8,3 +8,10 @@ func validateSpanContext(p SemanticPackage) error {
 	}
 	return nil
 }
+
+func noteOpeningBytes(req ExpandRequest, policy string) int {
+	if req.OpeningBytes == 0 && policy == sourceOpening96 {
+		return 96
+	}
+	return req.OpeningBytes
+}

@@ -51,6 +51,18 @@
           "pattern": "^[1-9][0-9]{0,3}$",
           "type": "string"
         }
+      },
+      "SourceOpening": {
+        "description": "Response reader preserves source_opening. Required only when a partial note read returns an opening. Missing: 426 PROTOCOL_UNSUPPORTED before charging or cached delivery. Duplicate or any other value: 400 INVALID_REQUEST. Relays forward, never originate. Grants no authority; excluded from request identity.",
+        "in": "header",
+        "name": "Cairn-Accept-Source-Opening",
+        "required": false,
+        "schema": {
+          "enum": [
+            "1"
+          ],
+          "type": "string"
+        }
       }
     },
     "responses": {
@@ -17694,6 +17706,9 @@
           },
           {
             "$ref": "#/components/parameters/ClientDiagnostics"
+          },
+          {
+            "$ref": "#/components/parameters/SourceOpening"
           }
         ],
         "requestBody": {
@@ -24605,6 +24620,11 @@
       "http_status": 426,
       "code": "PROTOCOL_UNSUPPORTED",
       "source": "protocol.go"
+    },
+    {
+      "http_status": 426,
+      "code": "PROTOCOL_UNSUPPORTED",
+      "source": "serveJSON"
     },
     {
       "http_status": 500,
