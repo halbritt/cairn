@@ -31,6 +31,51 @@ def fixture(root):
 
 
 class ProspectiveInputTests(unittest.TestCase):
+    def test_memory_contract_is_delivered_and_charged_only_for_prospective_runs(self):
+        from types import SimpleNamespace
+        class NativeBoundary(Exception):
+            pass
+        for prospective in (False, True):
+            with self.subTest(prospective=prospective), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                prompt = 'Inspect the café project against its saved decisions.'
+                case = dict(id='contract', cwd='project', wordings={'task': prompt},
+                            preflight=[['true']])
+                binary = dict(path=sys.executable,
+                              sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest())
+                args = SimpleNamespace(harness='claude', model='fixture-model',
+                    reasoning_effort='high', max_turns=2, timeout=10, wording='task',
+                    semantic_recall=[], _prospective=dict(notes=[], document=dict(native=dict(binary=binary)))
+                    if prospective else None)
+                stores = {'baseline': dict(store=SimpleNamespace(binary=Path(sys.executable),
+                    sockdir=base/'sock', token_file=base/'token'), hook=__file__,
+                    configuration=dict(semantic_fallback=False, recall_mode='ambient'))}
+                commands = []
+                def sandbox(work, cwd, binds, env, argv, harness, **kwargs):
+                    if argv[0] == 'claude':
+                        commands.append(argv)
+                        raise NativeBoundary()
+                    return argv
+                with patch.object(te, 'prepare_workspace',
+                                  side_effect=lambda case, root: (root/'project').mkdir()), \
+                     patch.object(te, 'sandbox_command', side_effect=sandbox):
+                    with self.assertRaises(NativeBoundary):
+                        te.run_agent(case, 'baseline', 0, 0, args, stores, base)
+                command = commands[0]
+                instruction = command[command.index('--append-system-prompt')+1]
+                self.assertEqual(instruction, te.PROSPECTIVE_MEMORY_INSTRUCTION
+                                 if prospective else te.MEMORY_INSTRUCTION)
+                config = json.loads((base/'runs/contract.baseline.s0/hook-config.json').read_text())
+                if prospective:
+                    wire = (json.dumps(dict(type='user', message=dict(role='user', content=prompt)),
+                                       ensure_ascii=False)+'\n').encode()
+                    self.assertEqual(config['context_bytes'] + len(wire) + 512
+                                     + len(instruction.encode()), 9500)
+                    self.assertLess(config['context_bytes'],
+                                    9500-len(wire)-512-len(te.MEMORY_INSTRUCTION.encode()))
+                else:
+                    self.assertEqual(config['context_bytes'], te.CLAUDE_CONTEXT_BYTES)
+
     def test_public_validation_labels_are_frozen_and_already_in_common_prompt(self):
         from trial_task_input import load_input
         with tempfile.TemporaryDirectory() as directory:

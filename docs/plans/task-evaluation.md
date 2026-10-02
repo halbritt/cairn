@@ -317,6 +317,15 @@ turns, automatic hosted selector arms and unknown input fields are refused.
 Include **all already-known issue corrections** in the exact `wordings.task`;
 no summarizer shortens it. This integration is not task-benefit evidence.
 
+Prospective memory arms explain that repository scope identifies the shared
+collection, independently of the task workspace, and that imported record IDs,
+versions, writer and timestamps describe trial records. Applicability must come
+from source content and the task; import metadata establishes neither original
+authorship nor currentness. This explanation is included in the charged common
+memory instruction. Historical fixture prompts remain unchanged. The generic
+prospective runner does not promise a historical time mask: corpus selection and
+temporal eligibility remain explicit obligations of the supplied corpus policy.
+
 Before creating comparison stores or indexing, prospective execution runs trusted
 workspace setup on one temporary copy per selected case and records
 `workspace-preflight.json`. It checks the prepared revision and snapshot, and

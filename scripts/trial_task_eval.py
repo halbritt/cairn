@@ -54,6 +54,15 @@ MEMORY_INSTRUCTION = """# Shared memory
 Use the `cairn` MCP tools. Search for relevant prior decisions, preferences and
 lessons at the start of substantive work; pull relevant notes using the returned
 `pull_arguments` and check them against current source. Saved notes are fallible."""
+PROSPECTIVE_MEMORY_INSTRUCTION = MEMORY_INSTRUCTION + """
+
+A note's repository scope names the shared memory collection, independently of
+the current working directory. Determine project applicability from the note's
+content and the current task. Trial imports have fresh record IDs, version 1,
+writer and written_at metadata; these identify trial records, not their original
+authorship or date. Neither collection membership nor import metadata establishes
+relevance, currentness or authority. Preserve source conditions and uncertainty;
+use the supplied trial IDs and versions when citing retrieved evidence."""
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure")
 
 
@@ -996,6 +1005,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     prepare_workspace(case, root)
     cwd = root / case["cwd"]
     prospective = getattr(args, "_prospective", None)
+    memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
     corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
     prompt = case["wordings"][args.wording]
     home = Path.home()
@@ -1042,7 +1052,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     elif arm != "none":
         store = stores[arm]
         task_wire = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
-        context_limit = 9500 - len(task_wire) - 512 - len(MEMORY_INSTRUCTION.encode()) if prospective else (CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
+        context_limit = 9500 - len(task_wire) - 512 - len(memory_instruction.encode()) if prospective else (CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
         if context_limit < 1000:
             raise ValueError("task leaves insufficient hook allowance")
         session_state = base / "hook-state"
@@ -1081,7 +1091,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
                   (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
         if args.harness == "claude":
-            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", MEMORY_INSTRUCTION]
+            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", memory_instruction]
         else:
             # Only recall hooks; capture and production inbox hooks are absent.
             hooks = {event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13,
@@ -1092,7 +1102,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             provider += ["--dangerously-bypass-hook-trust",
                          "-c", "mcp_servers.cairn.command=" + json.dumps(server["command"]),
                          "-c", "mcp_servers.cairn.args=" + json.dumps(server["args"]),
-                         "-c", "developer_instructions=" + json.dumps(MEMORY_INSTRUCTION)]
+                         "-c", "developer_instructions=" + json.dumps(memory_instruction)]
     if prospective:
         settings_path, mcp_path = base / "settings.json", base / "mcp.json"
         settings = load_json(settings_path) if settings_path.exists() else {}
@@ -1119,7 +1129,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
                 raise RuntimeError("prospective prerequisite failed before provider launch")
     if prospective:
         native_input = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
-        input_charge = len(native_input) + 512 + (len(MEMORY_INSTRUCTION.encode()) if arm not in ("none", "direct") else 0)
+        input_charge = len(native_input) + 512 + (len(memory_instruction.encode()) if arm not in ("none", "direct") else 0)
         if input_charge > 8500:
             raise ValueError("task and framing leave less than1000 bytes; no provider launched")
     else:
