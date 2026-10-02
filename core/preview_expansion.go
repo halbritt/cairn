@@ -11,6 +11,9 @@ const previewBoundariesV1 = "cairn.preview-boundaries/1"
 const previewCompactV1 = "cairn.preview-compact/1"
 
 func validatePresentation(p SemanticPackage) error {
+	if err := validateSpanContext(p); err != nil {
+		return err
+	}
 	if p.Presentation != "" && ((p.Presentation != previewBoundariesV1 && p.Presentation != previewCompactV1) || p.Mode != "index" || p.Purpose != "context") {
 		return failure("INTEGRITY_FAILURE", "historical preview presentation contract is invalid")
 	}

@@ -406,6 +406,7 @@ type Expansion struct {
 }
 
 type expansionState struct {
+	spanContext        string
 	memoryBudget       *MemoryBudget
 	competing          []Selection
 	selection          Selection
@@ -530,7 +531,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 			companions = append(companions, other)
 		}
 	}
-	*state = expansionState{memoryBudget: original.MemoryBudget, selection: selection, competing: companions, credits: credits, remaining: remaining}
+	*state = expansionState{spanContext: original.SpanContext, memoryBudget: original.MemoryBudget, selection: selection, competing: companions, credits: credits, remaining: remaining}
 	return nil
 }
 
@@ -558,7 +559,7 @@ func (s *Store) expansionAccess(ctx context.Context, tx pgx.Tx, id string) error
 
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
 	if req.OpeningBytes < 0 || req.OpeningBytes > 768 || (req.OpeningBytes != 0 && req.Span == nil) {
-		return Expansion{}, failure("INVALID_REQUEST", "opening_bytes requires span and must be 0-768; zero omits the opening")
+		return Expansion{}, failure("INVALID_REQUEST", "opening_bytes requires span and must be 0-768; zero uses receipt policy")
 	}
 	if req.Span != nil && (req.Span.Offset < 0 || req.Span.Offset >= 65536 || req.Span.Length <= 0 || req.Span.Length > 65536) {
 		return Expansion{}, failure("INVALID_REQUEST", "note span requires byte offset 0-65535 and length 1-65536")
@@ -590,8 +591,12 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 			}
 			digest := sha256.Sum256(body)
 			span = &NoteSpan{ByteSpan: selectByteSpan(body, *req.Span), SourceSHA256: hex.EncodeToString(digest[:])}
-			if req.OpeningBytes > 0 && req.Span.Offset > 0 {
-				prefix := selectByteSpan(body, ByteSpanRequest{Offset: 0, Length: min(req.OpeningBytes, req.Span.Offset)})
+			openingBytes := req.OpeningBytes
+			if openingBytes == 0 && state.spanContext == sourceOpening96 {
+				openingBytes = 96
+			}
+			if openingBytes > 0 && req.Span.Offset > 0 {
+				prefix := selectByteSpan(body, ByteSpanRequest{Offset: 0, Length: min(openingBytes, req.Span.Offset)})
 				opening = &prefix
 			}
 			selection.Record.Body = ""

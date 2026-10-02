@@ -1809,7 +1809,33 @@ def checked_optional_span(entry, pulled, hint):
             or (entry.get("body_sha256") and span["source_sha256"] != entry["body_sha256"])):
         raise HookError("optional span identity or bytes changed")
     pulled["source_extent"] = "partial_span"
+    if "source_opening" in pulled:
+        checked_paired_opening(pulled["source_opening"], span)
     return pulled
+
+
+def checked_paired_opening(opening, match):
+    """Check the API's exact same-source companion before emitting it."""
+    if (not isinstance(opening, dict)
+            or set(opening) - {"offset", "end", "total_bytes", "sha256", "body", "body_base64"}
+            or type(opening.get("offset")) is not int or opening["offset"] != 0
+            or type(opening.get("end")) is not int
+            or not 0 < opening["end"] <= min(768, match["offset"])
+            or type(opening.get("total_bytes")) is not int
+            or opening["total_bytes"] != match["total_bytes"]
+            or len(set(opening) & {"body", "body_base64"}) != 1):
+        raise HookError("paired source opening boundary changed")
+    try:
+        if isinstance(opening.get("body"), str):
+            source = opening["body"].encode()
+        elif isinstance(opening.get("body_base64"), str):
+            source = base64.b64decode(opening["body_base64"], validate=True)
+        else:
+            raise ValueError("missing source opening bytes")
+    except (ValueError, TypeError) as exc:
+        raise HookError("paired source opening bytes invalid") from exc
+    if len(source) != opening["end"] or hashlib.sha256(source).hexdigest() != opening.get("sha256"):
+        raise HookError("paired source opening bytes changed")
 
 
 def source_opening_excerpt(entry, source, match, origin):
@@ -1867,6 +1893,8 @@ def pull_source_opening(memory, entry, match, length, inspection, deadline):
 def attach_source_opening(memory, entry, whole, candidate, inspection, deadline, render):
     """Keep original-task wording beside a checked optional passage, within its grant."""
     render(candidate)  # Do not spend an opening read on an already oversized passage.
+    if "source_opening" in candidate["response"]:
+        return candidate  # The checked API pair already carries its paid-for context.
     span = candidate["response"]["span"]
     length = min(768, span["offset"])
     if not length:

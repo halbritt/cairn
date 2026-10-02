@@ -172,7 +172,7 @@ func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
 	options.offset = f.Int("offset", 0, "source byte offset (requires --length)")
 	options.length = f.Int("length", 0, "maximum source bytes to return; clipped at EOF")
 	if operation == "pull" {
-		options.opening = f.Int("opening-bytes", 0, "also return up to 768 opening bytes of the same note; requires --length")
+		options.opening = f.Int("opening-bytes", 0, "override source opening length (1-768); zero uses receipt policy; requires --length")
 	}
 	return f, options
 }

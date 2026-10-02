@@ -58,6 +58,9 @@ type Selection struct {
 	Reason    string             `json:"reason"`
 }
 type SemanticPackage struct {
+	// SpanContext binds partial-read delivery to this receipt. It is sealed like
+	// Presentation; old receipts omit it and keep their original pull behavior.
+	SpanContext string `json:"-" cbor:"span_context,omitempty"`
 	// Presentation is sealed but does not spend public context room. Absence
 	// retains the historical preview algorithm and canonical bytes.
 	Presentation      string            `json:"-" cbor:"presentation,omitempty"`
@@ -291,6 +294,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	if req.Mode == "index" {
 		p.Mode = "index"
 		if req.Purpose == "context" {
+			p.SpanContext = sourceOpening96
 			p.Presentation = previewBoundariesV1
 			if req.CompactPreviewEntities {
 				p.Presentation = previewCompactV1
@@ -317,6 +321,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			if retained != nil {
 				retainedRanking = retained.Ranking
 				p.Presentation = retained.Presentation
+				p.SpanContext = retained.SpanContext
 			}
 			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking)
 			if err != nil {

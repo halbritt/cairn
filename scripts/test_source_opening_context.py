@@ -12,6 +12,32 @@ import test_eager_candidate_context as eager
 
 
 class SourceOpeningTests(unittest.TestCase):
+    def test_api_pair_is_preserved_without_another_opening_read(self):
+        case = self.span_case('界' * 31 + 'ab界')
+        entry = case.entries[0]
+        args = dict(entry['pull_arguments'], span=entry['match_span'])
+        response = case.pull('pull', payload=args, timeout=1)
+        raw = case.responses[entry['record_id']]['selection']['record']['body'].encode()[:96]
+        # An exact 96-byte prefix can end inside a UTF-8 character.
+        response['source_opening'] = dict(offset=0, end=96,
+            total_bytes=response['span']['total_bytes'], body_base64=base64.b64encode(raw).decode(),
+            sha256=hashlib.sha256(raw).hexdigest())
+        checked = eager.hook.checked_optional_span(entry, response, entry['match_span'])
+        candidate = dict(pull_arguments=entry['pull_arguments'], response=checked)
+        progress = dict(pull_calls=2, remaining_pull_calls=2)
+        result = eager.hook.attach_source_opening(SimpleNamespace(call=case.pull), entry, None,
+            candidate, progress, time.monotonic() + 5, lambda item: None)
+        self.assertIs(result, candidate)
+        self.assertEqual(len(case.calls), 1)
+        self.assertEqual(progress['pull_calls'], 2)
+        self.assertNotIn('source_opening_excerpt', result)
+        for change in (dict(offset=True), dict(end=0), dict(end=response['span']['offset']+1),
+                       dict(total_bytes=1), dict(sha256='0'*64), dict(body='duplicate'),
+                       dict(body_base64='bad!'), dict(source_sha256='unsupported')):
+            with self.subTest(change=change), self.assertRaises(eager.hook.HookError):
+                eager.hook.checked_optional_span(entry, dict(response,
+                    source_opening=dict(response['source_opening'], **change)), entry['match_span'])
+
     def test_tight_native_envelope_keeps_heading_and_match_before_extra_previews(self):
         case = claude.ClaudeInboxRecallTests()
         case.setUp()

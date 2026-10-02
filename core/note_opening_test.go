@@ -144,6 +144,7 @@ func TestNoteOpeningBudgetRefusalIsAtomic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			setTestSpanContext(t, op, &idx, "") // Exercise explicit opt-in on a legacy receipt.
 			before := 0
 			if err = op.pool.QueryRow(ctx, `SELECT remaining_bytes FROM cairn.index_session WHERE receipt_id=$1`, idx.Package.ReceiptID).Scan(&before); err != nil {
 				t.Fatal(err)
