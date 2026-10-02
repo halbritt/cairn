@@ -95,7 +95,7 @@ func TestIndexedQueryProjectionKeepsIntentAndReplays(t *testing.T) {
 	}
 	p := result.Package
 	sum := sha256.Sum256([]byte(query))
-	if p.Semantic.Schema != "cairn.semantic/18" || p.Semantic.Query != "sha256:"+hex.EncodeToString(sum[:]) || p.Semantic.Discovery.QueryProjection == nil || *p.Semantic.Discovery.QueryProjection != *projection {
+	if p.Semantic.Schema != "cairn.semantic/19" || p.Semantic.Query != "sha256:"+hex.EncodeToString(sum[:]) || p.Semantic.Discovery.QueryProjection == nil || *p.Semantic.Discovery.QueryProjection != *projection {
 		t.Fatalf("intent or projection lost: %+v", p.Semantic)
 	}
 	wire, err := json.Marshal(result)

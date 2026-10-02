@@ -309,7 +309,16 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			p.Page = &BrowsePage{Offset: *req.PageOffset}
 		}
 		if req.Semantic {
-			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations)
+			retained, lookupErr := s.retainedRetrievalContract(ctx, tx, req)
+			if lookupErr != nil {
+				return p, lookupErr
+			}
+			retainedRanking := ""
+			if retained != nil {
+				retainedRanking = retained.Ranking
+				p.Presentation = retained.Presentation
+			}
+			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking)
 			if err != nil {
 				return p, err
 			}

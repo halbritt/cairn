@@ -221,9 +221,10 @@ above the weighted score; conflict groups and scope, recency and identity ties
 retain their existing rules. Index packing can skip an entry that does not fit,
 so the returned entries need not be an uninterrupted ranking prefix.
 
-Browse, body compilation and `semantic: true` requests retain their separate
-ranking paths, including lexical fallback when semantic discovery is
-unavailable. Different modes can therefore rank the same query differently.
+Browse and body compilation retain separate ranking paths. Ready persistent
+`semantic: true` retrieval uses the same lexical features within its
+[interleaved channels](persistent-semantic-retrieval.md#ranking-and-delivery);
+unavailable semantic discovery retains its earlier lexical fallback. Different modes can therefore rank the same query differently.
 Each new page reads the current cohort, so changes to any eligible note can
 affect later pages. Follow the pagination rules above.
 

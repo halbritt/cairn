@@ -71,7 +71,7 @@ func TestIndexedDiscoveryFindsPassageBeyond64NotesAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := index.Package
-	if p.Semantic.Schema != "cairn.semantic/16" || p.Semantic.Ranking != "interleaved-scope-recency/1" || len(p.Semantic.Selected) != 1 || p.Semantic.Selected[0].Record.RecordID != mandatory.RecordID {
+	if p.Semantic.Schema != "cairn.semantic/19" || p.Semantic.Ranking != "interleaved-scope-recency/5" || len(p.Semantic.Selected) != 1 || p.Semantic.Selected[0].Record.RecordID != mandatory.RecordID {
 		t.Fatalf("new contract or mandatory context lost: %+v", p.Semantic)
 	}
 	if calls != 1 || p.Semantic.Discovery.State != "ready" || len(p.Semantic.Index) != 1 || p.Semantic.Index[0].RecordID != want.RecordID {
@@ -319,7 +319,7 @@ func TestIndexedDiscoveryHistoricalRRFAndInterleavedReceiptsReplaySeparately(t *
 				t.Fatal(err)
 			}
 			p.Mode = "index"
-			if _, err = s.rankIndexed(ctx, req.Query, &p, candidates, evaluations); err != nil {
+			if _, err = s.rankIndexed(ctx, req.Query, &p, candidates, evaluations, contract.ranking); err != nil {
 				t.Fatal(err)
 			}
 			p.Schema, p.Ranking = contract.schema, contract.ranking
@@ -354,6 +354,11 @@ func TestIndexedDiscoveryHistoricalRRFAndInterleavedReceiptsReplaySeparately(t *
 			replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: req.Query})
 			if err != nil || replayed.Seal != pkg.Seal || replayed.Semantic.Index[0].RecordID != contract.first {
 				t.Fatalf("contract replay: %v", err)
+			}
+			s.semanticRetriever = retriever
+			retry, err := s.Index(ctx, req, Destination{Name: "hosted"})
+			if err != nil || retry.Package.Seal != pkg.Seal || retry.Package.ReceiptID != pkg.ReceiptID {
+				t.Fatalf("historical ranking and preview retry: %v", err)
 			}
 			// The schema and ranking form one contract, never interchangeable labels.
 			mismatched := p

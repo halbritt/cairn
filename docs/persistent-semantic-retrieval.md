@@ -85,12 +85,17 @@ restricted environment without the database DSN and use prepared local files.
 
 ## Ranking and delivery
 
-New persistent searches use `cairn.semantic/16` and
-`interleaved-scope-recency/1` through `/4`. They retain up to 100 lexical candidates
+New ready persistent searches use `cairn.semantic/19` and
+`interleaved-scope-recency/5` through `/8`. They retain up to 100 lexical candidates
 and up to 100 dense matches. At each rank, lexical comes first and dense second;
 a record already exposed is skipped. Membership in both lists earns no extra
-position. If one list ends, the other continues. The original channel ordering
-is retained: lexical terms/scope/recency and dense cosine score/record ID.
+position. If one list ends, the other continues. The lexical channel uses the same distinct-term integer IDF and query-specific
+[adjacent-compound matching](index-and-pull.md) as ordinary lexical search.
+Its document frequencies include the complete eligible optional cohort, including
+zero-match notes and admitted competing positions, but exclude mandatory and
+rejected sources. Dense ordering remains cosine score/record ID. Weighted lexical
+scores choose positions in the lexical list; they do not become extra scores in
+the interleaved list.
 
 Existing entity, failure-signature and quoted-text preferences remain outside
 this ordering. Mandatory instructions remain independent of optional ranking.
@@ -100,7 +105,14 @@ deduplication of equal bodies and context budgets can change delivered positions
 This is candidate exposure, not an applicability or confidence judgment. It can
 promote a strong one-channel hit and demote a note favored by both channels.
 
-Historical `cairn.semantic/15` packages with `hybrid-scope-recency/1` through `/4`
+The four new ranking versions retain the ordinary, literal, failure-signature
+and entity preference tiers, respectively, and the existing preview policies of
+interleaved `/1` through `/4`. An adjacent spelling match does not satisfy an
+exact quoted substring. Neither ranking nor similarity establishes currentness.
+
+Historical `cairn.semantic/16` and `/18` packages retain interleaved `/1` through
+`/4` with their original unweighted lexical channel. Historical
+`cairn.semantic/15` packages with `hybrid-scope-recency/1` through `/4`
 retain reciprocal-rank fusion exactly: each bounded list contributes
 `floor(1,000,000 / (60 + rank))`, with ranks starting at one. Replay rejects mixed
 schema/ranking contracts; it never applies the new rule to an old receipt.
@@ -110,9 +122,13 @@ schema/ranking contracts; it never applies the new rule to an old receipt.
 set. New or changed notes that lack vectors can still appear through lexical
 matching. During startup, with no indexed eligible notes, or after a worker or
 index failure, the response is labelled `DEGRADED_NO_EMBEDDINGS` and uses lexical
-selection. Invalid index output is also discarded as a whole.
+selection. Invalid index output is also discarded as a whole. IDF/compound observations
+are applied only after a valid ready result; unavailable, invalid and not-needed
+paths retain their earlier lexical fallback contract. The older request-scoring
+semantic backend is unchanged.
 
-An entry's `summary_span` continues to address exactly its displayed preview.
+An entry's `summary_span` addresses the original source excerpt used in its
+preview; added omission markers are outside that span.
 When available, `match_span` addresses the complete scored passage and can be
 used as a bounded pull span. Class C instructions and marked competing positions
 require whole pulls and do not expose partial-pull hints. A similarity score or
@@ -161,3 +177,12 @@ shutdown. An optional real-model check uses `CAIRN_EMBEDDING_WORKER` together
 with the disposable PostgreSQL test harness. These checks establish implemented
 contracts. They do not establish fewer agent mistakes, lower owner intervention,
 or acceptable latency across real active agents; those are outcome-trial criteria.
+
+The new schema seals the IDF cohort, frequencies and integer scores alongside the
+existing dense digest and passage observations. Recompile verifies both without
+a model call. A same-request retry retains the sealed ranking and preview policy,
+while recomputing current eligibility and content and checking the original
+intent and exact seal. Changed sources, dense output or availability can still
+return `STALE_PACKAGE`; use a new request ID for current results. Unknown ranking
+versions refuse replay. Older readers cannot replay schema19, so reader support
+must precede writing it. No database migration or worker replacement is required.

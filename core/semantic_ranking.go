@@ -65,9 +65,9 @@ func semanticIdentityValid(d *DiscoveryRanking) bool {
 	return true
 }
 
-func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
+func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string) ([]candidate, error) {
 	if s.semanticRetriever != nil {
-		return s.rankIndexed(ctx, query, p, candidates, evaluations)
+		return s.rankIndexed(ctx, query, p, candidates, evaluations, retainedRanking)
 	}
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
@@ -187,7 +187,7 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
-	if p.Schema == "cairn.semantic/18" {
+	if p.Schema == "cairn.semantic/18" || (p.Schema == "cairn.semantic/19" && p.Discovery != nil && p.Discovery.QueryProjection != nil) {
 		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, query) != nil {
 			return failure("INTEGRITY_FAILURE", "historical query projection is invalid")
 		}
@@ -204,6 +204,12 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 			}
 		}
 		return nil
+	}
+	if p.Schema == "cairn.semantic/19" {
+		if !hasIndexedIDFRanking(p.Ranking) || p.IDF == nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
+			return failure("INTEGRITY_FAILURE", "historical indexed IDF intent is invalid")
+		}
+		return validateFrozenIndexed(p, evaluations)
 	}
 	if p.IDF != nil || hasIDFRanking(p.Ranking) {
 		return failure("INTEGRITY_FAILURE", "historical IDF metadata has the wrong schema")

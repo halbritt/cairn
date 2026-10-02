@@ -14,7 +14,7 @@ type FailureMatch struct {
 }
 
 func hasFailureRanking(version string) bool {
-	version = legacyIDFRanking(version)
+	version = legacyIndexedRanking(legacyIDFRanking(version))
 	return version == "lexical-scope-recency/6" || version == "semantic-scope-recency/3" || version == "hybrid-scope-recency/3" || version == "interleaved-scope-recency/3" || version == "binary-idf-scope-recency/3"
 }
 

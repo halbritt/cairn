@@ -258,7 +258,7 @@ ranking, eligibility, and the receipt's query digest. Suffix constraints can be
 absent from semantic input; preserved lexical matching does not make this
 projection equivalent to embedding the full query.
 
-A ready indexed result with a checked declaration uses `cairn.semantic/18` and
+A ready indexed result with a checked declaration carries
 `discovery.query_projection`:
 
 - `method: "original-prefix/1"` and `truncated` identify the projection.
@@ -272,9 +272,11 @@ Token counts remain a report by the trusted local worker. Malformed or unknown
 declarations are refused, with existing labelled lexical fallback; no request
 is silently retried with changed semantics. Ready metadata is sealed and replayed
 without a model call using the original query supplied to recompile. An absent
-legacy declaration means unreported, not untruncated, and retains the previous
-schema and canonical bytes. Unavailable, invalid, not-needed and empty-index
-fallbacks do not claim a successful projection. Existing query deadlines remain
+legacy declaration means unreported, not untruncated, and is accepted without
+inventing projection metadata. Historical schema18 receipts retain their canonical
+bytes; new ready indexed results use
+[schema19](persistent-semantic-retrieval.md#ranking-and-delivery). Unavailable,
+invalid, not-needed and empty-index fallbacks do not claim a successful projection. Existing query deadlines remain
 unchanged (two seconds at the persistent retrieval boundary).
 
 #### Deployment compatibility

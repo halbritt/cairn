@@ -173,7 +173,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16" && original.Semantic.Schema != "cairn.semantic/17" && original.Semantic.Schema != "cairn.semantic/18") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16" && original.Semantic.Schema != "cairn.semantic/17" && original.Semantic.Schema != "cairn.semantic/18" && original.Semantic.Schema != "cairn.semantic/19") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9" || original.Semantic.Schema == "cairn.semantic/10" || original.Semantic.Schema == "cairn.semantic/13" || original.Semantic.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
@@ -184,7 +184,8 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
-	indexedSchema := original.Semantic.Schema == "cairn.semantic/15" || original.Semantic.Schema == "cairn.semantic/16" || original.Semantic.Schema == "cairn.semantic/18"
+	indexedSchema := original.Semantic.Schema == "cairn.semantic/15" || original.Semantic.Schema == "cairn.semantic/16" || original.Semantic.Schema == "cairn.semantic/18" || original.Semantic.Schema == "cairn.semantic/19"
+	indexedIDFSchema := original.Semantic.Schema == "cairn.semantic/19"
 	idfSchema := original.Semantic.Schema == "cairn.semantic/17"
 	advisorySchema := original.Semantic.Schema == "cairn.semantic/14" || ((indexedSchema || idfSchema) && original.Semantic.AdvisoryConflicts)
 	if advisorySchema != original.Semantic.AdvisoryConflicts || (advisorySchema && original.Semantic.Purpose != "context") {
@@ -200,6 +201,9 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	}
 	if idfSchema && (legacyIDFRanking(original.Semantic.Ranking) != idfRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)) || original.Semantic.IDF == nil) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical IDF ranking identity is invalid")
+	}
+	if indexedIDFSchema && original.Semantic.Ranking != strings.Replace(adjacentIDFRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)), "binary-idf-", "interleaved-", 1) {
+		return Package{}, failure("INTEGRITY_FAILURE", "historical indexed IDF ranking identity is invalid")
 	}
 	signatureSchema := original.Semantic.ErrorSignature != ""
 	if (original.Semantic.Schema == "cairn.semantic/12" && !signatureSchema) || (signatureSchema && ((!entitySchema && original.Semantic.Schema != "cairn.semantic/12") || !digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || (!hasFailureRanking(original.Semantic.Ranking) && !hasEntityRanking(original.Semantic.Ranking)))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
@@ -276,7 +280,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, err
 	}
 	lexicon := newRankingLexicon(req.Query, p.Ranking)
-	terms := lexicon.terms
+	legacyLexicon := newRankingLexicon(req.Query, legacyIndexedRanking(p.Ranking))
 	idfMembers := []idfMember{}
 	var literals []string
 	if hasLiteralRanking(p.Ranking) {
@@ -320,7 +324,12 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		if entity != e.EntityMatch {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical entity match changed")
 		}
-		words := lexicon.bodyTerms(record.Body)
+		candidateLexicon := lexicon
+		if indexedIDFSchema && (e.Mandatory || e.Reason == "KIND_FILTERED") {
+			candidateLexicon = legacyLexicon
+		}
+		terms := candidateLexicon.terms
+		words := candidateLexicon.bodyTerms(record.Body)
 		score := 0
 		for word := range terms {
 			if words[word] {
@@ -384,6 +393,13 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		// collectCandidates does. A kind-filtered companion can still be required.
 		if advisorySchema {
 			candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
+		}
+		if indexedIDFSchema {
+			members := indexedIDFMembers(req.Query, p.Ranking, candidates, evaluations, false)
+			if err = verifyFrozenIDF(p.IDF, req.Query, p.Ranking, members, evaluations); err != nil {
+				return Package{}, err
+			}
+			applyIDF(candidates, p.IDF, members, evaluations)
 		}
 		candidates, err = rankIndexedCandidates(&p, candidates, evaluations)
 		if err != nil {

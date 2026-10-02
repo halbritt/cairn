@@ -21,7 +21,9 @@ func legacyIDFRanking(version string) string {
 	}
 	return version
 }
-func hasAdjacentCompoundRanking(version string) bool { return legacyIDFRanking(version) != version }
+func hasAdjacentCompoundRanking(version string) bool {
+	return legacyIDFRanking(version) != version || hasIndexedIDFRanking(version)
+}
 func adjacentIDFRanking(entities []EntityRef, signature string, literals []string) string {
 	switch idfRanking(entities, signature, literals) {
 	case "binary-idf-scope-recency/2":
