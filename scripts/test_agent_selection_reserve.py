@@ -99,7 +99,9 @@ class SelectionReserveTests(unittest.TestCase):
         self.assertEqual([item['response'] for item in view['candidate_bodies']],
                          [case.responses[earlier['record_id']]])
         self.assertEqual(len(case.calls), 1)
-        self.assertEqual(case.calls[0], earlier['pull_arguments'])
+        self.assertEqual({k: v for k, v in case.calls[0].items() if k != 'request_id'},
+                         {k: v for k, v in earlier['pull_arguments'].items() if k != 'request_id'})
+        self.assertNotEqual(case.calls[0]['request_id'], earlier['pull_arguments']['request_id'])
         self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 3)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], case.config['context_bytes'])
 
