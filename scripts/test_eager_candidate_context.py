@@ -55,6 +55,56 @@ class EagerCandidateTests(unittest.TestCase):
         view = json.loads(text[text.index('{"selected":'):]) if text else {}
         return text, view, state
 
+    def test_eager_whole_read_keeps_public_pull_id_unused_for_first_span(self):
+        import copy
+        import time
+        import uuid
+        from unittest.mock import Mock
+        self.result['index'] = self.entries[:1]
+        entry = self.entries[0]
+        entry['pull_arguments'].update(request_id=str(uuid.uuid4()), receipt_id=str(uuid.uuid4()))
+        original = copy.deepcopy(entry)
+        # A boundary double models the existing API's explicit request-ID contract.
+        # It is not a replacement for core's authenticated idempotency tests.
+        committed = {}
+        debits = []
+        def checked_pull(operation, *, payload, timeout):
+            key = payload['request_id']
+            intent = json.dumps(payload, sort_keys=True)
+            if key in committed and committed[key] != intent:
+                raise hook.HookError('IDEMPOTENCY_CONFLICT')
+            if key not in committed:
+                committed[key] = intent
+                debits.append(copy.deepcopy(payload))
+            return self.responses[payload['handle']]
+        self.pull = checked_pull
+        _, view, _ = self.invoke()
+        supplied = view['candidate_bodies'][0]['pull_arguments']
+        self.assertEqual(entry, original)
+        self.assertEqual(supplied, original['pull_arguments'])
+        self.assertEqual(len(debits), 1)
+        private_id = debits[0]['request_id']
+        self.assertNotEqual(private_id, supplied['request_id'])
+        self.assertEqual(str(uuid.UUID(private_id)), private_id)
+        memory = Mock()
+        memory.call.side_effect = checked_pull
+        hook.current_pull(memory, entry, time.monotonic() + 2)
+        self.assertEqual(memory.call.call_args.kwargs['payload']['request_id'], private_id)
+        self.assertEqual(len(debits), 1)
+        span = dict(supplied, span=dict(offset=0, length=16))
+        checked_pull('pull', payload=span, timeout=1)
+        checked_pull('pull', payload=span, timeout=1)
+        self.assertEqual(len(debits), 2)
+        with self.assertRaisesRegex(hook.HookError, 'IDEMPOTENCY_CONFLICT'):
+            checked_pull('pull', payload=dict(span, span=dict(offset=16, length=16)), timeout=1)
+        self.assertEqual(entry, original)
+        for field in ('request_id', 'receipt_id', 'handle'):
+            changed = copy.deepcopy(entry)
+            changed['pull_arguments'][field] = str(uuid.uuid4())
+            with patch.object(memory, 'call', return_value=self.responses[entry['record_id']]) as call:
+                hook.current_pull(memory, changed, time.monotonic() + 2)
+            self.assertNotEqual(call.call_args.kwargs['payload']['request_id'], private_id)
+
     def test_optional_delivery_view_preserves_sources_and_usable_handles(self):
         from trial_source_delivery import hook_delivery
         self.result['index'] = self.entries[:1]
@@ -413,7 +463,9 @@ class EagerCandidateTests(unittest.TestCase):
             if payload['handle'] == first['record_id']:
                 return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
             self.calls.append(payload)
-            self.assertEqual(payload, left['pull_arguments'])
+            self.assertEqual({k: v for k, v in payload.items() if k != 'request_id'},
+                             {k: v for k, v in left['pull_arguments'].items() if k != 'request_id'})
+            self.assertNotEqual(payload['request_id'], left['pull_arguments']['request_id'])
             return pair
         self.pull = pull
         text, view, _ = self.invoke()

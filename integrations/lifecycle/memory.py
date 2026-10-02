@@ -1726,7 +1726,13 @@ def recall_timeout(deadline, limit=2):
 
 
 def current_pull(memory, entry, deadline):
-    pulled = memory.call("pull", payload=entry["pull_arguments"], timeout=recall_timeout(deadline))
+    # Internal inspection must not consume the UUID supplied for the caller's
+    # first whole/span choice. Stable intent keeps our own retries idempotent.
+    args = dict(entry["pull_arguments"])
+    intent = json.dumps(["cairn.lifecycle.whole-pull/1", args], sort_keys=True,
+                        ensure_ascii=False, separators=(",", ":"))
+    args["request_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL, intent))
+    pulled = memory.call("pull", payload=args, timeout=recall_timeout(deadline))
     record = pulled.get("selection", {}).get("record", {})
     if (record.get("record_id") != entry["record_id"] or record.get("version") != entry["version"]
             or not isinstance(record.get("body"), str)):
