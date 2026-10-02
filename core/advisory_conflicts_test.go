@@ -83,6 +83,7 @@ func TestAdvisoryConflictDeliveryRequiresExplicitIntentAndWholePositions(t *test
 				}
 				pull.RequestID = uuid.NewString()
 				pull.Span = &ByteSpanRequest{Offset: 0, Length: 10}
+				pull.OpeningBytes = 96
 				_, err = s.Expand(ctx, pull, Destination{"hosted", false})
 				requireCode(t, err, "INVALID_REQUEST")
 			}

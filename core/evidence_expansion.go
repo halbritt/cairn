@@ -49,7 +49,7 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 	var state expansionState
 	var doc EvidenceDocument
 	guard := func(tx pgx.Tx) error {
-		if err := s.prepareExpansion(ctx, tx, ExpandRequest{req.RequestID, req.ReceiptID, req.Handle, nil}, dest, &state); err != nil {
+		if err := s.prepareExpansion(ctx, tx, ExpandRequest{req.RequestID, req.ReceiptID, req.Handle, nil, 0}, dest, &state); err != nil {
 			return err
 		}
 		var attached *Evidence

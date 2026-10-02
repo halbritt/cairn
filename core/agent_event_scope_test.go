@@ -108,7 +108,7 @@ func TestTaskScopedAssignmentDeliveryAndSearch(t *testing.T) {
 	for _, handle := range scoped.Handles {
 		if handle.RecordID == source.RecordID {
 			checkedStaleHandle = true
-			_, err = recipient.Expand(ctx, ExpandRequest{uuid.NewString(), scoped.Package.ReceiptID, handle.Handle, nil}, hosted)
+			_, err = recipient.Expand(ctx, ExpandRequest{uuid.NewString(), scoped.Package.ReceiptID, handle.Handle, nil, 0}, hosted)
 			requireCode(t, err, "STALE_HANDLE")
 		}
 	}

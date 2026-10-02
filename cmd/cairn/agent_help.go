@@ -144,7 +144,7 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 		f, _ := newAgentPullFlags(operation)
 		return agentFlagHelp(
 			"cairn agent [--token-file FILE] [--socket PATH] pull [OPTIONS] RECEIPT_UUID HANDLE_UUID\n       cairn agent [--token-file FILE] [--socket PATH] pull < request.json",
-			"Read a selected note from a search result. Pass the complete pull_arguments as JSON on stdin, or use the receipt and handle as positional arguments. --offset and --length select a bounded byte span in positional form.", f), nil
+			"Read a selected note from a search result. Pass the complete pull_arguments as JSON on stdin, or use the receipt and handle as positional arguments. --offset and --length select a bounded byte span in positional form. For notes, --opening-bytes adds a bounded same-source prefix.", f), nil
 	case "pull-evidence":
 		f, _ := newAgentPullFlags(operation)
 		return agentFlagHelp(

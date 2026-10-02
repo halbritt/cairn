@@ -69,7 +69,7 @@ func TestIndexKeepsSourceIdentityAndVisibilityAcrossReadChunks(t *testing.T) {
 		if len(index.Handles) == 0 {
 			t.Fatal("no source delivered")
 		}
-		pulled, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, Destination{Name: "hosted"})
+		pulled, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil, 0}, Destination{Name: "hosted"})
 		if err != nil {
 			t.Fatal(err)
 		}

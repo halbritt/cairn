@@ -281,8 +281,9 @@ export const assess = validatedTool({
 })
 
 export const pull = validatedTool({
-  description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
-  args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional() },
+  description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Optional opening_bytes (1-768, requires span) adds a separate exact source_opening prefix, clipped before the requested span; both share the same source/version and budget. Omit it or use zero for the original response. An opening does not establish applicability. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range or opening size. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
+  args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional(),
+    opening_bytes: z.number().int().min(0).max(768).optional().describe("Exact same-source prefix; requires span; zero omits") },
   async execute(args, context) {
     const config = await settings("pull", context)
     return render(await call(config, context, ["expand"], args), config)

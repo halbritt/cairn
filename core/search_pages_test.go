@@ -142,7 +142,7 @@ func checkSearchPages(t *testing.T, semantic bool) {
 		if err != nil || replay.Seal != index.Package.Seal || calls != beforeReplay {
 			t.Fatalf("page replay: %v", err)
 		}
-		pulled, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, Destination{"hosted", false})
+		pulled, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil, 0}, Destination{"hosted", false})
 		if err != nil || !want[pulled.Selection.Record.RecordID] {
 			t.Fatalf("page pull: %+v %v", pulled, err)
 		}

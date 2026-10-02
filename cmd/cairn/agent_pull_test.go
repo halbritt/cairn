@@ -73,3 +73,22 @@ func TestAgentPullRejectsInvalidInputBeforeAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentPullOpeningFlagForwarded(t *testing.T) {
+	var calls atomic.Int32
+	args := agentCaptureAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var got core.ExpandRequest
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Error(err)
+		}
+		if got.OpeningBytes != 96 || got.Span == nil || got.Span.Offset != 700 || got.Span.Length != 300 || got.RequestID != "retry-id" || r.URL.Path != "/v1/expand" {
+			t.Errorf("changed opening request: %+v", got)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": map[string]int{"credits_remaining": 3}})
+	})
+	_, err := run(context.Background(), append(args, "pull", "--request-id", "retry-id", "--offset", "700", "--length", "300", "--opening-bytes", "96", "receipt-id", "handle-id"), strings.NewReader(""))
+	if err != nil || calls.Load() != 1 {
+		t.Fatalf("opening flag: %v calls=%d", err, calls.Load())
+	}
+}

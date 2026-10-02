@@ -58,13 +58,13 @@ func TestIndexPullIsBoundedScopedAndChecksCurrentVersion(t *testing.T) {
 	if err != nil || (report.Rows[0].Usage != "expanded" || report.Rows[0].ExposureKind != "index") {
 		t.Fatalf("expansion not observed: %+v %v", report, err)
 	}
-	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), pull.ReceiptID, pull.Handle, nil}, Destination{"hosted", false})
+	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), pull.ReceiptID, pull.Handle, nil, 0}, Destination{"hosted", false})
 	requireCode(t, err, "AUTHORITY_DENIED")
 	d.Body = "compiler corrected advice"
 	if _, err = op.Edit(ctx, EditRequest{uuid.NewString(), r.RecordID, 1, d}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), pull.ReceiptID, pull.Handle, nil}, Destination{"local", true})
+	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), pull.ReceiptID, pull.Handle, nil, 0}, Destination{"local", true})
 	requireCode(t, err, "STALE_HANDLE")
 	outsider := testStore(t, Channel{Principal: "outsider:" + repo, Repo: repo})
 	_, err = outsider.Expand(ctx, pull, Destination{"local", true})
@@ -110,7 +110,7 @@ func TestExpansionCreditsSerializeAndInvalidateRetractionPreview(t *testing.T) {
 			if i%2 == 1 {
 				span = &ByteSpanRequest{Offset: 0, Length: 8}
 			}
-			_, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, span}, Destination{"local", true})
+			_, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, span, 0}, Destination{"local", true})
 			results <- err
 		}()
 	}
@@ -147,7 +147,7 @@ func TestExpansionRechecksMandatoryBootstrapAndAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil}
+	pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil, 0}
 	if _, err = op.Expand(ctx, pull, Destination{"local", true}); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestExpansionRechecksMandatoryBootstrapAndAuthority(t *testing.T) {
 	if _, err = op.RevokeGrant(ctx, RevokeGrantRequest{uuid.NewString(), grant.ID, root.ID, 1, "Revoke indexed instruction authority"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil}, Destination{"local", true})
+	_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil, 0}, Destination{"local", true})
 	requireCode(t, err, "STALE_HANDLE")
 }
 
@@ -183,7 +183,7 @@ func TestExpansionExpiryAndSizeRefusalDoNotDiscloseOrSpend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil}
+	pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, nil, 0}
 	_, err = op.Expand(ctx, pull, Destination{"local", true})
 	requireCode(t, err, "BUDGET_REFUSED")
 	var credits int

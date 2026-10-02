@@ -16,6 +16,30 @@ def selection(ident=RID,body=BODY):return {'record':{'record_id':ident,'version'
 def hook(view):return json.dumps({'hookSpecificOutput':{'additionalContext':'Cairn guidance\n'+json.dumps(view)}})
 
 class DeliveryTests(unittest.TestCase):
+    def test_native_span_opening_is_counted_and_invalid_pairs_are_unknown(self):
+        from trial_source_delivery import native_delivery
+        raw='aéz'.encode()
+        matched=dict(offset=3,end=4,total_bytes=4,body='z',sha256=sha(raw[3:]),source_sha256=sha(raw))
+        opening=dict(offset=0,end=2,total_bytes=4,body_base64=base64.b64encode(raw[:2]).decode(),sha256=sha(raw[:2]))
+        def observe(value):
+            return native_delivery('mcp__cairn__cairn_pull',dict(content=json.dumps(value)))
+        value=dict(selection=selection(body=''),span=matched,source_opening=opening)
+        result=observe(value)
+        self.assertEqual(result['status'],'observed')
+        self.assertEqual(len(result['items']),2)
+        item=result['items'][1]
+        self.assertEqual(item['source_component'],'source_opening')
+        self.assertEqual(item['delivered_bytes'],2)
+        self.assertEqual(item['delivered_sha256'],sha(raw[:2]))
+        self.assertEqual(item['source_sha256'],sha(raw))
+        self.assertNotIn('body',item)
+        for mutation in (dict(offset=1),dict(end=4),dict(total_bytes=5),dict(sha256='0'*64),
+                         dict(source_sha256='0'*64),dict(body='uncounted'),dict(end=0)):
+            bad=observe(dict(value,source_opening=dict(opening,**mutation)))
+            self.assertEqual(bad['status'],'unknown',mutation)
+            self.assertEqual(bad['items'],[],mutation)
+        self.assertEqual(observe(dict(value,span=None))['status'],'unknown')
+
     def test_observer_uses_only_emitted_payload_not_inspected_or_seen(self):
         observer=Path(__file__).with_name('trial_hook_observer.py')
         with tempfile.TemporaryDirectory() as directory:

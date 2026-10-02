@@ -116,6 +116,17 @@ class _Extract:
         if not isinstance(value,dict) or 'selection' not in value:
             raise ValueError('expansion')
         self.selection(value['selection'],value.get('span'))
+        if 'source_opening' in value:
+            opening,matched=value['source_opening'],value.get('span')
+            if (not isinstance(opening,dict) or not isinstance(matched,dict)
+                    or set(opening)-{'offset','end','total_bytes','sha256','body','body_base64'}
+                    or opening.get('offset')!=0
+                    or opening.get('total_bytes')!=matched.get('total_bytes')
+                    or not 0<_integer(opening.get('end'))<=min(768,_integer(matched.get('offset')))
+                    or value.get('competing')):
+                raise ValueError('source opening does not match span')
+            self.selection(value['selection'],dict(opening,source_sha256=matched.get('source_sha256')))
+            self.items[-1]['source_component']='source_opening'
         for selected in self.list(value,'competing'):
             self.selection(selected)
 

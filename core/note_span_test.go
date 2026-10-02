@@ -148,6 +148,10 @@ func TestNoteSpanBoundariesAndInstructionRefusal(t *testing.T) {
 	req = ExpandRequest{RequestID: uuid.NewString(), ReceiptID: idx.Package.ReceiptID, Handle: idx.Handles[0].Handle, Span: &ByteSpanRequest{Offset: 0, Length: 8}}
 	_, err = op.Expand(ctx, req, dest)
 	requireCode(t, err, "INVALID_REQUEST")
+	req.OpeningBytes = 96
+	_, err = op.Expand(ctx, req, dest)
+	requireCode(t, err, "INVALID_REQUEST")
+	req.OpeningBytes = 0
 	req.Span = nil
 	full, err := op.Expand(ctx, req, dest)
 	if err != nil || full.CreditsRemaining != 3 || full.Selection.Record.Body != instruction.Body || full.Span != nil {

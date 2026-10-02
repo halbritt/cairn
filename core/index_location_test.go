@@ -40,7 +40,7 @@ func TestIndexPreviewLocationSupportsBoundedPull(t *testing.T) {
 	if view.SummarySpan == nil || view.SummarySpan.Offset < 24000 {
 		t.Fatalf("matching preview cannot locate its buried source: %s", encoded)
 	}
-	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}
+	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil, 0}
 	if _, err := s.Expand(ctx, pull, Destination{"local", true}); err == nil || !strings.Contains(err.Error(), "BUDGET_REFUSED") {
 		t.Fatalf("expected long whole-body refusal: %v", err)
 	}

@@ -41,7 +41,7 @@ func TestCitedPassageSurvivesCorrectionAndHistoricalRecompile(t *testing.T) {
 	if err != nil || len(index.Handles) != 1 {
 		t.Fatalf("index: %+v %v", index, err)
 	}
-	pull, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, Destination{"local", true})
+	pull, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil, 0}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}

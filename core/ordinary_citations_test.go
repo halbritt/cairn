@@ -44,7 +44,7 @@ func TestOrdinaryCitationsRetainSourceThroughRevisionAndPull(t *testing.T) {
 		t.Fatalf("index: %+v %v", index, err)
 	}
 	handle := index.Handles[0].Handle
-	pull, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, handle, nil}, Destination{"hosted", false})
+	pull, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, handle, nil, 0}, Destination{"hosted", false})
 	if err != nil || len(pull.Selection.Evidence) != 1 {
 		t.Fatalf("source lost: %+v %v", pull, err)
 	}

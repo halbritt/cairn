@@ -162,6 +162,7 @@ type agentPullOptions struct {
 	request *string
 	offset  *int
 	length  *int
+	opening *int
 }
 
 func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
@@ -170,6 +171,9 @@ func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
 	options.request = f.String("request-id", uuid.NewString(), "pull retry identity")
 	options.offset = f.Int("offset", 0, "source byte offset (requires --length)")
 	options.length = f.Int("length", 0, "maximum source bytes to return; clipped at EOF")
+	if operation == "pull" {
+		options.opening = f.Int("opening-bytes", 0, "also return up to 768 opening bytes of the same note; requires --length")
+	}
 	return f, options
 }
 
@@ -190,7 +194,7 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 		if f.NArg() != 2 {
 			return nil, invalid("agent pull requires RECEIPT_UUID HANDLE_UUID")
 		}
-		payload = core.ExpandRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span}
+		payload = core.ExpandRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span, OpeningBytes: *options.opening}
 	} else {
 		if f.NArg() != 4 {
 			return nil, invalid("agent pull-evidence requires RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256")

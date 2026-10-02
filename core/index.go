@@ -383,10 +383,11 @@ func readIndex(ctx context.Context, tx pgx.Tx, p Package) (IndexResult, error) {
 }
 
 type ExpandRequest struct {
-	RequestID string           `json:"request_id"`
-	ReceiptID string           `json:"receipt_id"`
-	Handle    string           `json:"handle"`
-	Span      *ByteSpanRequest `json:"span,omitempty"`
+	RequestID    string           `json:"request_id"`
+	ReceiptID    string           `json:"receipt_id"`
+	Handle       string           `json:"handle"`
+	Span         *ByteSpanRequest `json:"span,omitempty"`
+	OpeningBytes int              `json:"opening_bytes,omitempty"`
 }
 
 // NoteSpan is partial source text; SourceSHA256 identifies the full indexed body.
@@ -401,6 +402,7 @@ type Expansion struct {
 	CreditsRemaining int         `json:"credits_remaining"`
 	BytesRemaining   int         `json:"bytes_remaining"`
 	Span             *NoteSpan   `json:"span,omitempty"`
+	SourceOpening    *ByteSpan   `json:"source_opening,omitempty"`
 }
 
 type expansionState struct {
@@ -555,6 +557,9 @@ func (s *Store) expansionAccess(ctx context.Context, tx pgx.Tx, id string) error
 }
 
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
+	if req.OpeningBytes < 0 || req.OpeningBytes > 768 || (req.OpeningBytes != 0 && req.Span == nil) {
+		return Expansion{}, failure("INVALID_REQUEST", "opening_bytes requires span and must be 0-768; zero omits the opening")
+	}
 	if req.Span != nil && (req.Span.Offset < 0 || req.Span.Offset >= 65536 || req.Span.Length <= 0 || req.Span.Length > 65536) {
 		return Expansion{}, failure("INVALID_REQUEST", "note span requires byte offset 0-65535 and length 1-65536")
 	}
@@ -571,6 +576,7 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		credits, remaining := state.credits, state.remaining
 		method := "authorized-body-pull/1"
 		var span *NoteSpan
+		var opening *ByteSpan
 		if len(companions) > 0 {
 			method = "authorized-advisory-group-pull/1"
 		}
@@ -584,12 +590,20 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 			}
 			digest := sha256.Sum256(body)
 			span = &NoteSpan{ByteSpan: selectByteSpan(body, *req.Span), SourceSHA256: hex.EncodeToString(digest[:])}
+			if req.OpeningBytes > 0 && req.Span.Offset > 0 {
+				prefix := selectByteSpan(body, ByteSpanRequest{Offset: 0, Length: min(req.OpeningBytes, req.Span.Offset)})
+				opening = &prefix
+			}
 			selection.Record.Body = ""
 			payload = struct {
-				Selection Selection `json:"selection"`
-				Span      *NoteSpan `json:"span"`
-			}{selection, span}
+				Selection     Selection `json:"selection"`
+				Span          *NoteSpan `json:"span"`
+				SourceOpening *ByteSpan `json:"source_opening,omitempty"`
+			}{selection, span, opening}
 			method = "authorized-body-span-pull/1"
+			if opening != nil {
+				method = "authorized-body-span-opening-pull/1"
+			}
 		}
 		encoded, err := json.Marshal(payload)
 		if err != nil {
@@ -611,7 +625,7 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 				return Expansion{}, err
 			}
 		}
-		return Expansion{Selection: selection, Competing: companions, CreditsRemaining: credits - 1, BytesRemaining: remaining - cost, Span: span}, nil
+		return Expansion{Selection: selection, Competing: companions, CreditsRemaining: credits - 1, BytesRemaining: remaining - cost, Span: span, SourceOpening: opening}, nil
 	}, guard)
 }
 func sameSelectionFacts(a, b []Selection) bool {

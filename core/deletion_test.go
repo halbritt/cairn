@@ -432,7 +432,7 @@ func TestForgetPreviewAuthorityConflictAndExpansionBoundaries(t *testing.T) {
 			}
 			_, err = s.Forget(ctx, req)
 			requireCode(t, err, "STALE_PREVIEW")
-			pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, mode.span}
+			pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, mode.span, 0}
 			_, err = s.Expand(ctx, pull, Destination{"local", true})
 			if err != nil {
 				t.Fatal(err)

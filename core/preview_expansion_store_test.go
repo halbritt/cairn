@@ -29,7 +29,7 @@ func TestPreviewExpansionStoreCurrentnessAndHistoricalReplay(t *testing.T) {
 	if index.Package.Semantic.Presentation != previewBoundariesV1 || !strings.Contains(entry.Summary, "Do not") || entry.SummarySpan == nil {
 		t.Fatalf("new index did not improve qualifier visibility: %+v", entry)
 	}
-	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, entry.SummarySpan}
+	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, entry.SummarySpan, 0}
 	partial, err := s.Expand(ctx, pull, Destination{"local", true})
 	span := *entry.SummarySpan
 	if err != nil || partial.Span == nil || partial.Span.Body != draft.Body[span.Offset:span.Offset+span.Length] || partial.Selection.Record.Body != "" {
