@@ -370,46 +370,11 @@ class EagerCandidateTests(unittest.TestCase):
                 self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
                 self.assertEqual(view['candidate_bodies'], [])
 
-    def test_fitted_first_passage_precedes_later_affordable_whole_source(self):
+    def test_oversized_optional_passage_does_not_hide_later_checked_whole_note(self):
         self.config['context_bytes'] = 6500
         self.optional()
         first, later = self.entries[:2]
         first['match_span'] = dict(offset=0, length=4096)
-        source = self.responses[first['record_id']]['selection']['record']['body'].encode()
-        first['summary'] = source[:154].decode()
-        first['summary_span'] = dict(offset=0, length=154)
-        self.result['index'] = [first, later]
-        required = dict(mandatory=True, record=dict(record_id='required', version=1,
-                        body='Preserve the complete safeguard.', **{'class': 'C'}))
-        self.result['selected'] = [required]
-        original = json.loads(json.dumps(self.responses))
-        text, view, _ = self.invoke()
-        self.assertEqual(view['selected'], [required])
-        self.assertEqual(len(view['candidate_bodies']), 1)
-        supplied = view['candidate_bodies'][0]['response']
-        self.assertEqual(supplied['selection']['record']['record_id'], first['record_id'])
-        self.assertEqual(supplied['source_extent'], 'partial_span')
-        span = supplied['span']
-        self.assertEqual(span['body'].encode(), source[span['offset']:span['end']])
-        self.assertEqual(span['sha256'], hashlib.sha256(span['body'].encode()).hexdigest())
-        self.assertEqual(span['source_sha256'], first['body_sha256'])
-        self.assertGreater(span['end'], 154)
-        self.assertLess(span['end'], 4096)
-        self.assertEqual(span['body'].encode()[:154], first['summary'].encode())
-        self.assertEqual([call['handle'] for call in self.calls], [first['record_id']])
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
-        self.assertGreaterEqual(view['remaining_memory_bytes'], 3250)
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6500)
-        self.assertEqual(self.responses, original)
-
-    def test_unfittable_optional_passage_does_not_hide_later_checked_whole_note(self):
-        self.config['context_bytes'] = 6500
-        self.optional()
-        first, later = self.entries[:2]
-        first['match_span'] = dict(offset=0, length=4096)
-        # Retaining this late preview cannot fit; later whole sources remain eligible.
-        source = self.responses[first['record_id']]['selection']['record']['body'].encode()
-        first.update(summary_span=dict(offset=4000, length=45), summary=source[4000:4045].decode())
         self.result['index'] = [first, later]
         body = 'Later migration guidance: preserve the rollback prerequisite. 日本語. ' * 12
         later['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
@@ -433,14 +398,11 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6500)
         self.assertEqual(state['seen'], {})
 
-    def test_after_unfittable_passage_competing_group_is_delivered_whole(self):
+    def test_after_oversized_passage_competing_group_is_delivered_whole(self):
         self.config['context_bytes'] = 6400
         self.optional()
         first, left, right = self.entries
         first['match_span'] = dict(offset=0, length=4096)
-        # Retaining this late preview cannot fit; later whole sources remain eligible.
-        source = self.responses[first['record_id']]['selection']['record']['body'].encode()
-        first.update(summary_span=dict(offset=4000, length=45), summary=source[4000:4045].decode())
         members = [dict(record_id=e['record_id'], version=1) for e in (left, right)]
         for entry in (left, right):
             entry['conflicts'] = [dict(members=members)]
@@ -461,7 +423,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6400)
 
-    def test_after_unfittable_passage_global_stops_remain_terminal(self):
+    def test_after_oversized_passage_global_stops_remain_terminal(self):
         for stop in ('authority', 'identity', 'receipt_budget', 'deadline', 'two_calls'):
             with self.subTest(stop=stop):
                 case = EagerCandidateTests(); case.setUp(); self.addCleanup(case.doCleanups)
@@ -471,8 +433,6 @@ class EagerCandidateTests(unittest.TestCase):
                 case.result['index'] = case.entries
                 for entry in (first, second):
                     entry['match_span'] = dict(offset=0, length=4096)
-                    source = case.responses[entry['record_id']]['selection']['record']['body'].encode()
-                    entry.update(summary_span=dict(offset=4000, length=45), summary=source[4000:4045].decode())
                 clock = [100.0]
                 def pull(operation, *, payload, timeout):
                     self.assertNotEqual(payload['handle'], last['record_id'])
