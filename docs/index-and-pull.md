@@ -31,8 +31,12 @@ cairn agent --token-file /path/to/agent.token search \
 ```
 
 When `page.next_offset` is present, repeat the query with `--offset N` using that
-value. Keep the query, semantic mode, kinds, scope, context and budget unchanged;
-use a new request UUID for each page and preserve it for identical retries.
+value. Keep the query, semantic mode, kinds, scope and context unchanged.
+Use a new request UUID for each page and preserve all arguments for identical
+retries. When sharing a memory allowance across pages, set `memory_budget_bytes`
+to the remaining allowance on each new request. Each receipt has its own pull
+balance; spending context on another page does not reduce an earlier receipt's
+balance. The caller must account for combined delivery before using either one.
 Native tools accept `{"query":"relevant query","offset":0}` and then the returned
 offset. Raw `index` requests use `page_offset`. This works with lexical search
 and optional semantic discovery. Check `discovery.state` on every semantic page:
@@ -44,8 +48,9 @@ number of previews. Each page reads current state; edits, captures or eligibilit
 changes can shift positions. Restart if necessary and deduplicate records across
 pages. There is no retained multi-page snapshot. Required instructions appear on
 every page. Each page has its own retrieval and pull budget; the host must account
-for their combined context. Paging cannot recover a lexical vocabulary miss or
-make an oversized preview fit.
+for their combined context. Reducing the allowance can make more entries fail
+to fit; reaching the final page does not prove every candidate was delivered.
+Paging cannot recover a lexical vocabulary miss or make an oversized preview fit.
 
 Omitting `offset` keeps the existing unpaged search behavior. Ranked pages use
 semantic format v11 and `omitted.PAGE_OFFSET` for eligible candidates before the
