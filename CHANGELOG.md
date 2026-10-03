@@ -14,6 +14,14 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-02
+
+- A Claude channel wake refused after claim and before any bridge grant no longer holds its delivery
+  forever. The hook settles that attempt as `turn_ended` (the store records `processing_failed`, never
+  replayed), only when the bridge ledger proves no grant and the prompt was not joined; otherwise it keeps
+  the hold and records a fixed-vocabulary `wake_refusal_diagnostic`. `coordination.py recover-refused-wake`
+  settles an already-stuck attempt from pinned refusal evidence under the same checks.
+
 ## 2026-10-01
 
 - The Python lifecycle memory module now reports its own origin on the existing

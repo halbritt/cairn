@@ -256,6 +256,19 @@ reconciling an uncertain claim on process/session end, preventing delayed claims
 from committing afterward. Empty polls are durable too: retrying a lost empty
 response cannot claim a message that arrived later.
 
+A Claude channel wake can be claimed and then refused before its bridge grant (for example a
+failed required search). That refused prompt never runs, so it never reaches a native `Stop`, and later
+prompts own different turns (`NATIVE_TURN_MISMATCH`). The hook therefore settles that attempt itself as
+`turn_ended`, which the store records as `processing_failed` with no automatic replay. It does so only when
+the claim belongs to exactly this unjoined refused prompt, nothing was completed, responded or journaled
+under it, and the bridge's own ledger, read under its session lock, has no grant for the attempt, delivery
+or prompt. Any doubt (a grant, a busy or unreadable ledger, a joined owner prompt) keeps the existing hold
+and records only `wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state,
+settlement). An attempt stuck before this repair is settled only by the operator command
+`coordination.py recover-refused-wake --config BINDING --evidence FILE --expect-evidence-sha256 SHA`, from
+root-retained `cairn.native-wake-refusal-evidence/1` that names the same session, process, attempt,
+delivery and refused prompt, under the same checks. It sends nothing to the native session.
+
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a
 confirmed end. It cannot use that attempt to finish a newer execution. A new

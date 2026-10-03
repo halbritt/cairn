@@ -1,0 +1,350 @@
+"""A Claude channel wake refused after claim and before any grant settles explicitly; doubt keeps the hold.
+
+Synthetic only: a real pinned bridge binding and ledger in a temporary directory, the API patched to record
+calls. No provider, live session or store is touched.
+"""
+import contextlib
+import fcntl
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+coord = module('postclaim_refusal_coord', ROOT / 'integrations/lifecycle/coordination.py')
+SESSION = '11111111-1111-4111-8111-111111111111'
+PROMPT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+OTHER_PROMPT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+AGENT = '33333333-3333-4333-8333-333333333333'
+EXEC = '44444444-4444-4444-8444-444444444444'
+DELIVERY = '55555555-5555-4555-8555-555555555555'
+ATTEMPT = '66666666-6666-4666-8666-666666666666'
+RECORD = '77777777-7777-4777-8777-777777777777'
+TURN = 'claude-channel:' + PROMPT
+FAIL_SEARCH = '''#!/usr/bin/env python3
+import json,pathlib,sys
+root=pathlib.Path(__file__).parent
+with (root/'calls.jsonl').open('a') as f:f.write(json.dumps(dict(args=sys.argv[1:]))+'\\n')
+print(json.dumps(dict(ok=False,status='TIMEOUT')));sys.exit(7)
+'''
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        (self.root / '.git').mkdir()
+        cli = self.root / 'cairn'
+        cli.write_text(FAIL_SEARCH)
+        cli.chmod(0o700)
+        self.binding = self.root / 'binding.json'
+        common = dict(cairn=str(cli), socket=str(self.root / 'api.sock'), token_file=str(self.root / 'token'),
+                      repo='fixture', harness='claude', inbox_recall_binding=str(self.binding))
+        self.memory_dir = self.root / 'memory'
+        self.mc = dict(common, state_dir=str(self.memory_dir), context_bytes=9500, recall_mode='agent_tools', recall_observations=False)
+        self.cc = dict(common, state_dir=str(self.root / 'coordination'), binding='fixture', native_delivery=True)
+        for name, value in (('memory.json', self.mc), ('coordination.json', self.cc)):
+            (self.root / name).write_text(json.dumps(value))
+            (self.root / name).chmod(0o600)
+        for name in ('memory.py', 'inbox_recall.py'):
+            target = self.root / name
+            target.write_bytes((ROOT / 'integrations/lifecycle' / name).read_bytes())
+            target.chmod(0o600)
+
+        def ref(path):
+            return dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        self.binding.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/1', enabled=True,
+            bridge=ref(self.root / 'inbox_recall.py'), engine=ref(self.root / 'memory.py'),
+            memory_config=ref(self.root / 'memory.json'), coordination_configs=[ref(self.root / 'coordination.json')])))
+        self.binding.chmod(0o600)
+        self.memory_dir.mkdir(mode=0o700)
+        self.process = dict(pid=os.getpid(), start=123, boot='fixture')
+        session = dict(agent_id=AGENT, execution_id=EXEC)
+        self.delivery = dict(delivery_id=DELIVERY, lease_id=ATTEMPT, state='leased', event=dict(
+            event_id=RECORD, kind='request', ref=dict(record_id=RECORD, version=1), **{'from': 'agent/sender'}))
+        self.state = dict(process=self.process, workspace=str(self.root), agent=dict(session, native_session_id=SESSION,
+            display_name='agent-fixture', inbox='agent/' + AGENT, context_revision=1,
+            metadata=dict(harness='claude', model='', project=self.root.name, workspace=str(self.root), state='busy',
+                          delivery_mode='existing-session')),
+            inbox_intent=dict(session=session, request_id=ATTEMPT, delivery_id=DELIVERY, native_turn_id=TURN),
+            inbox_attempt=dict(attempt_id=ATTEMPT, session=session, native_turn_id=TURN, delivery=self.delivery),
+            inbox_journals=[ATTEMPT], inbox_result_policy=dict(claim_request_id=ATTEMPT, version=1),
+            inbox_completion='88888888-8888-4888-8888-888888888888', inbox_response='99999999-9999-4999-8999-999999999990',
+            active_prompt=dict(id=TURN), delivered_since_idle=True)
+        self.path = coord.state_path(self.cc, SESSION)
+        self.save()
+        self.ops = []
+        self.fail_reconcile = False
+
+    def save(self):
+        coord.write_state(self.path, self.state)
+
+    def load(self):
+        return json.loads(self.path.read_text())
+
+    def api(self, config, op, request, **kwargs):
+        self.ops.append((op, request))
+        if op == 'session-inbox-reconcile':
+            if request['reason'] == 'delivery_completed':  # As the store: an uncompleted delivery is still active.
+                raise coord.CoordinationError('DELIVERY_ACTIVE', 'native delivery has not been explicitly completed')
+            if self.fail_reconcile:
+                raise coord.CoordinationError('API_UNAVAILABLE', 'fixture outage')
+            return dict(attempt_id=request['attempt_id'], finished_at='now', reason=request['reason'])
+        if op == 'event-renew':
+            return self.delivery
+        if op == 'agent-context':
+            return self.state['agent']
+        raise AssertionError('unexpected API operation ' + op)
+
+    @contextlib.contextmanager
+    def patched(self):
+        with patch.object(coord, 'call', side_effect=self.api), patch.object(coord, 'recover_inbox'), \
+             patch.object(coord, 'flush_inbox_intents', return_value=True), \
+             patch.object(coord, 'journal_committed', return_value=False):
+            yield
+
+    def refusal(self):
+        try:
+            raise ValueError('required/source inbox memory operation unavailable') from coord.CoordinationError('TIMEOUT', 'fixture')
+        except ValueError as exc:
+            return exc
+
+    def settle(self, turn=TURN, **kwargs):
+        state = self.load()
+        with self.patched(), coord.session_lock(self.path):
+            return coord.settle_refused_claude_wake(self.cc, state, self.path, turn, self.refusal(), **kwargs), state
+
+    def write_grant(self, **identity):
+        ledger = dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={'a' * 64: dict(
+            identity=dict(dict(attempt_id='x', delivery_id='y', native_owner='z'), **identity),
+            limit_bytes=9500, output_bytes=100, native_allowance_bytes=9400)}, active='a' * 64, pending_bytes=0)
+        (self.memory_dir / (SESSION + '.inbox-recall.json')).write_text(json.dumps(ledger))
+
+    def reconciles(self):
+        return [r for op, r in self.ops if op == 'session-inbox-reconcile']
+
+
+class SettlementTests(Base):
+    def test_postclaim_refusal_without_grant_settles_as_turn_ended(self):
+        diagnostic, state = self.settle()
+        self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('turn_ended', 'absent'))
+        self.assertEqual((diagnostic['error_class'], diagnostic['cause_class'], diagnostic['phase']), ('ValueError', 'CoordinationError', 'bridge_after_claim'))
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        saved = self.load()
+        self.assertFalse(any(k in saved for k in ('inbox_intent', 'inbox_attempt', 'inbox_turn_ended', 'active_prompt')))
+        self.assertEqual(saved['wake_refusal_diagnostic']['settlement'], 'turn_ended')
+        # Fixed vocabulary only: no message text, prompt or path is retained.
+        self.assertNotIn('memory operation', json.dumps(saved['wake_refusal_diagnostic']))
+
+    def test_no_automatic_replay_or_new_claim(self):
+        self.settle()
+        self.assertEqual({op for op, _ in self.ops}, {'session-inbox-reconcile'})
+        self.assertNotIn('idle_wake', self.load())
+
+    def test_pregenerated_command_ids_and_a_claim_only_journal_do_not_block(self):
+        target = coord.intent_path(self.cc['state_dir'], ATTEMPT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT, delivery_id=DELIVERY)))
+        diagnostic, _ = self.settle()
+        self.assertEqual(diagnostic['settlement'], 'turn_ended')
+
+    def test_unrelated_grants_do_not_block(self):
+        self.write_grant()
+        diagnostic, _ = self.settle()
+        self.assertEqual(diagnostic['grant'], 'absent')
+
+    def test_any_grant_for_the_attempt_delivery_or_prompt_keeps_the_hold(self):
+        for identity in (dict(attempt_id=ATTEMPT), dict(delivery_id=DELIVERY), dict(native_owner=TURN)):
+            with self.subTest(identity=identity):
+                self.setUp()
+                self.write_grant(**identity)
+                diagnostic, _ = self.settle()
+                self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('held', 'present'))
+                self.assertEqual(self.reconciles(), [])
+                saved = self.load()
+                self.assertEqual(saved['inbox_intent']['request_id'], ATTEMPT)
+                self.assertNotIn('inbox_turn_ended', saved)
+
+    def test_busy_or_corrupt_ledger_is_unknown_and_keeps_the_hold(self):
+        lock = (self.memory_dir / (SESSION + '.lock')).open('a')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            diagnostic, _ = self.settle()
+        finally:
+            lock.close()
+        self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('held', 'unknown'))
+        (self.memory_dir / (SESSION + '.inbox-recall.json')).write_text('{not json')
+        diagnostic, _ = self.settle()
+        self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('held', 'unknown'))
+        self.assertEqual(self.reconciles(), [])
+
+    def test_joined_owner_prompt_keeps_the_hold_for_its_own_stop(self):
+        self.state['active_prompt'] = dict(id=TURN, joined=True)
+        self.save()
+        diagnostic, _ = self.settle()
+        self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('held', 'not_checked'))
+        self.assertEqual(self.reconciles(), [])
+
+    def test_cross_turn_identity_and_progress_are_refused(self):
+        cases = {
+            'another prompt': dict(turn='claude-channel:' + OTHER_PROMPT),
+            'attempt identity': dict(change=lambda s: s['inbox_attempt'].update(attempt_id='99999999-9999-4999-8999-999999999999')),
+            'session identity': dict(change=lambda s: s['inbox_attempt'].update(session=dict(agent_id=AGENT, execution_id=AGENT))),
+            'completion journaled': dict(journal=dict(completion=dict(kind='complete', status='pending'))),
+            'response journaled': dict(journal=dict(response=dict(kind='respond', status='committed'))),
+            'unreadable journal': dict(journal='not json'),
+            'extra journal': dict(change=lambda s: s.update(inbox_journals=[ATTEMPT, 'later'])),
+            'cancel pending': dict(change=lambda s: s['inbox_attempt'].update(cancel=dict(by='op'))),
+            'prompt no longer active': dict(change=lambda s: s.update(active_prompt=dict(id='claude-channel:' + OTHER_PROMPT))),
+            'codex harness': dict(config=dict(harness='codex')),
+        }
+        for name, case in cases.items():
+            with self.subTest(case=name):
+                self.setUp()
+                if 'change' in case:
+                    case['change'](self.state)
+                    self.save()
+                if 'config' in case:
+                    self.cc = dict(self.cc, **case['config'])
+                if 'journal' in case:
+                    target = coord.intent_path(self.cc['state_dir'], ATTEMPT)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(case['journal'] if isinstance(case['journal'], str) else json.dumps(
+                        dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT, **case['journal'])))
+                diagnostic, _ = self.settle(turn=case.get('turn', TURN))
+                self.assertEqual(diagnostic['settlement'], 'held', name)
+                self.assertEqual(self.reconciles(), [], name)
+
+
+class TurnBoundaryTests(Base):
+    def stop_observation(self, prompt):
+        return dict(event='Stop', phase='idle', native_turn_id='claude-channel:' + prompt)
+
+    def test_actual_stop_from_another_prompt_mismatches_while_held_and_not_after_settlement(self):
+        self.write_grant(attempt_id=ATTEMPT)  # Ambiguous: hold kept.
+        self.settle()
+        state = self.load()
+        with self.patched(), patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
+            with self.assertRaises(coord.CoordinationError) as caught:
+                coord.inbox_context(self.cc, state, self.path, self.stop_observation(OTHER_PROMPT))
+        self.assertEqual(caught.exception.code, 'NATIVE_TURN_MISMATCH')
+        self.setUp()
+        self.settle()
+        state = self.load()
+        with self.patched(), patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
+            self.assertEqual(coord.inbox_context(self.cc, state, self.path, self.stop_observation(OTHER_PROMPT)), '')
+
+    def test_failed_reconcile_hands_settlement_to_the_watcher_which_never_renews(self):
+        self.fail_reconcile = True
+        diagnostic, _ = self.settle()
+        self.assertEqual(diagnostic['settlement'], 'turn_ended_pending')
+        saved = self.load()
+        self.assertTrue(saved['inbox_turn_ended'])
+        self.fail_reconcile = False
+        self.ops.clear()
+        with self.patched():
+            coord.watch_inbox(self.cc, saved, self.path)
+        self.assertNotIn('event-renew', [op for op, _ in self.ops])
+        self.assertEqual([r['reason'] for r in self.reconciles()], ['turn_ended'])
+        self.assertNotIn('inbox_intent', self.load())
+
+    def test_held_attempt_keeps_existing_renewal(self):
+        self.write_grant(attempt_id=ATTEMPT)
+        self.settle()
+        self.ops.clear()
+        with self.patched():
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        self.assertIn('event-renew', [op for op, _ in self.ops])
+        # Unchanged watcher behavior: only its refused completion probe, never a turn_ended settlement.
+        self.assertEqual({r['reason'] for r in self.reconciles()}, {'delivery_completed'})
+        self.assertEqual(self.load()['inbox_intent']['request_id'], ATTEMPT)
+
+
+class HandleTests(Base):
+    def test_actual_claude_hook_refuses_and_settles_after_a_failed_bridge_search(self):
+        wake = coord.wake_message(dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=DELIVERY))
+        event = dict(hook_event_name='UserPromptSubmit', session_id=SESSION, prompt_id=PROMPT, cwd=str(self.root),
+                     prompt=f'<channel source="cairn-events" native_session_id="{SESSION}" agent_id="{AGENT}" '
+                            f'execution_id="{EXEC}" delivery_id="{DELIVERY}">\n{wake}\n</channel>')
+        self.state.pop('active_prompt')  # The hook's own admission records this prompt.
+        self.save()
+        with self.patched(), patch.object(coord, 'owner_process', return_value=self.process), \
+             patch.object(coord, 'heartbeat', return_value=self.state['agent']), patch.object(coord, 'associate_wake'), \
+             patch.object(coord, 'inbox_context', return_value=''), \
+             patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
+            with self.assertRaises(coord.NativePromptRefused):
+                coord.handle(self.cc, event, _inbox_resolved=True)
+        saved = self.load()
+        self.assertEqual(saved['wake_refusal_diagnostic']['settlement'], 'turn_ended', saved.get('wake_refusal_diagnostic'))
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertFalse(any(k in saved for k in ('inbox_intent', 'active_prompt')))
+        self.assertFalse((self.memory_dir / (SESSION + '.inbox-recall.json')).exists() and json.loads(
+            (self.memory_dir / (SESSION + '.inbox-recall.json')).read_text())['grants'])
+
+
+class OperatorRecoveryTests(Base):
+    def evidence(self, **change):
+        value = dict(schema=coord.WAKE_REFUSAL_EVIDENCE_SCHEMA, native_session_id=SESSION, native_turn_id=TURN,
+                     attempt_id=ATTEMPT, delivery_id=DELIVERY, process=self.process, hook_code='NATIVE_PROMPT_REFUSED',
+                     refused_at='2026-10-03T00:12:59.893Z')
+        value.update(change)
+        path = self.root / 'evidence.json'
+        path.write_text(json.dumps(value))
+        return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def recover(self, path, digest):
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            return coord.recover_refused_wake(self.cc, path, digest)
+
+    def test_already_stuck_attempt_settles_from_pinned_evidence_even_after_later_prompts(self):
+        self.state['active_prompt'] = dict(id='claude-channel:' + OTHER_PROMPT)  # A later diagnostic prompt ran.
+        self.save()
+        result = self.recover(*self.evidence())
+        self.assertEqual((result['settlement'], result['origin'], result['grant']), ('turn_ended', 'operator_evidence', 'absent'))
+        self.assertEqual([r['reason'] for r in self.reconciles()], ['turn_ended'])
+
+    def test_mismatched_or_unpinned_evidence_changes_nothing(self):
+        before = self.path.read_bytes()
+        bad = {'other attempt': dict(attempt_id='99999999-9999-4999-8999-999999999999'),
+               'other delivery': dict(delivery_id='99999999-9999-4999-8999-999999999999'),
+               'other prompt': dict(native_turn_id='claude-channel:' + OTHER_PROMPT),
+               'other process': dict(process=dict(self.process, start=999)),
+               'not a refusal': dict(hook_code='OK'),
+               'not a channel prompt': dict(native_turn_id=PROMPT)}
+        for name, change in bad.items():
+            with self.subTest(case=name):
+                with self.assertRaises(coord.CoordinationError):
+                    self.recover(*self.evidence(**change))
+                self.assertEqual(self.path.read_bytes(), before, name)
+        path, _ = self.evidence()
+        with self.assertRaises(coord.CoordinationError):
+            self.recover(path, '0' * 64)
+        self.assertEqual(self.reconciles(), [])
+
+    def test_evidence_cannot_override_a_possible_grant(self):
+        self.write_grant(delivery_id=DELIVERY)
+        with self.assertRaises(coord.CoordinationError):
+            self.recover(*self.evidence())
+        self.assertEqual(self.load()['inbox_intent']['request_id'], ATTEMPT)
+        self.assertEqual(self.reconciles(), [])
+
+
+if __name__ == '__main__':
+    unittest.main()
