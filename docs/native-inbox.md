@@ -257,15 +257,17 @@ from committing afterward. Empty polls are durable too: retrying a lost empty
 response cannot claim a message that arrived later.
 
 A Claude channel wake can be claimed and then refused before its bridge grant (for example a
-failed required search). That refused prompt never runs, so it never reaches a native `Stop`, and later
-prompts own different turns (`NATIVE_TURN_MISMATCH`). The hook therefore settles that attempt itself as
+failed required search). Once the native client observes the hook's exit 2, it blocks that prompt;
+there is no native `Stop`, and later prompts own different turns (`NATIVE_TURN_MISMATCH`). The hook settles that attempt itself as
 `turn_ended`, which the store records as `processing_failed` with no automatic replay.
 
-Why `turn_ended` is faithful here, under the trusted-host contract: a Claude attempt is owned by the
-native prompt that claimed it (`claude-channel:<prompt_id>`), and the store's `turn_ended` means that
-owning turn ended without completion. The refusing hook *is* that prompt's own `UserPromptSubmit`, and its
-exit 2 blocks the prompt, so the owning turn ends, observed first-hand by the host, without running. No
-`Stop` is recorded or fabricated, and no other turn ends the attempt.
+Under the trusted-host contract, a Claude attempt is owned by the native prompt that claimed it
+(`claude-channel:<prompt_id>`), and the store's `turn_ended` means that owning turn ended without
+completion. The refusing hook is that prompt's own `UserPromptSubmit`. It records settlement before
+returning exit 2, so this is not an atomic transaction with the native client's observation of the
+refusal. A crash in that interval can leave a context-free native prompt after the attempt is recorded
+as failed. Settlement alone therefore does not prove that the model never saw the prompt. No `Stop`
+is recorded or fabricated, no other turn ends the attempt, and failure never causes automatic replay.
 
 It settles only when the claim belongs to exactly this unjoined, active refused prompt, no tool was
 observed, the attempt's command journal holds nothing but the claim, and the bridge's own ledger and its
