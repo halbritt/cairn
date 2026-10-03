@@ -60,7 +60,7 @@ func (o *mcpOptions) declaration() localapi.ClientDiagnostics {
 	if harness == "" {
 		harness = "unknown"
 	}
-	return localapi.ClientDiagnostics{Surface: "mcp", Harness: harness, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities()}
+	return localapi.ClientDiagnostics{Surface: "mcp", Harness: harness, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities(), ReaderCapabilities: localapi.CurrentReaderCapabilities()}
 }
 
 func serveMCP(ctx context.Context, args []string) error {

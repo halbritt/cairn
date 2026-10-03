@@ -19,6 +19,18 @@ func testOperator(t *testing.T) (*Store, Grant) {
 	}
 	return s, root
 }
+
+// testBoundOperator is testOperator on a channel the host has enabled for
+// source-opening receipt binding, which is the pre-gate default behavior.
+func testBoundOperator(t *testing.T) (*Store, Grant) {
+	t.Helper()
+	s := testStore(t, Channel{Principal: "operator:tests", Operator: true, SourceOpeningBinding: true})
+	root, err := s.Bootstrap(context.Background(), BootstrapRequest{"82bf5bce-dc6c-4d03-a49f-1677bdcc9a32", "Install synthetic test operator root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, root
+}
 func projectNote(repo string) Draft {
 	d := note()
 	d.Scope = Scope{repo, "*", "*"}

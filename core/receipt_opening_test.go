@@ -14,7 +14,7 @@ import (
 
 func TestReceiptOpeningSuppliesContextWithoutCallerOptIn(t *testing.T) {
 	ctx := context.Background()
-	s, _ := testOperator(t)
+	s, _ := testBoundOperator(t)
 	d := projectNote(uuid.NewString())
 	d.Body = "Project ai-newsroom.\n" + strings.Repeat("background ", 50) + "editorial condition"
 	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
@@ -80,7 +80,7 @@ func TestReceiptOpeningOldContractsAndUnknownPolicy(t *testing.T) {
 	for _, semantic := range []bool{false, true} {
 		t.Run(map[bool]string{false: "lexical", true: "semantic"}[semantic], func(t *testing.T) {
 			ctx := context.Background()
-			s, _ := testOperator(t)
+			s, _ := testBoundOperator(t)
 			d := projectNote(uuid.NewString())
 			d.Body = "Project fixture. " + strings.Repeat("context ", 30) + "tail"
 			if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {

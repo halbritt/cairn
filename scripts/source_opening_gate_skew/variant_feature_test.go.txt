@@ -1,0 +1,18 @@
+package core
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
+
+// The feature build before the gate: every new context-index receipt binds.
+func skewChannel(bool) Channel { return Channel{Principal: "skew:principal"} }
+
+func skewExpand(s *Store, req ExpandRequest, dest Destination, declared bool) (Expansion, error) {
+	return s.ExpandForReader(context.Background(), req, dest, declared)
+}
+
+func skewPull(receipt, handle string, span *ByteSpanRequest, opening int) ExpandRequest {
+	return ExpandRequest{RequestID: uuid.NewString(), ReceiptID: receipt, Handle: handle, Span: span, OpeningBytes: opening}
+}

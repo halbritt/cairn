@@ -36,6 +36,10 @@ type client struct {
 	principal   string
 	machineID   string
 	destination core.Destination
+	// sourceOpening is the profile's receipt-binding state as configured at start;
+	// the version declaration reads it here because an agent-session view of the
+	// store is a different principal.
+	sourceOpening bool
 }
 type expansionReader struct {
 	repo        string
@@ -60,20 +64,27 @@ func (s *Server) observation() *observer {
 	return s.obs
 }
 
-func New(ctx context.Context, dsn string, identities []Identity) (*Server, error) {
-	return NewWithSemanticRanker(ctx, dsn, identities, nil)
+func New(ctx context.Context, dsn string, identities []Identity, options ...Option) (*Server, error) {
+	return NewWithSemanticRanker(ctx, dsn, identities, nil, options...)
 }
 
-func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker) (*Server, error) {
-	return newWithSemantic(ctx, dsn, identities, ranker, nil)
+func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker, options ...Option) (*Server, error) {
+	return newWithSemantic(ctx, dsn, identities, ranker, nil, options)
 }
 
-func NewWithSemanticRetriever(ctx context.Context, dsn string, identities []Identity, retrieve core.SemanticRetriever) (*Server, error) {
-	return newWithSemantic(ctx, dsn, identities, nil, retrieve)
+func NewWithSemanticRetriever(ctx context.Context, dsn string, identities []Identity, retrieve core.SemanticRetriever, options ...Option) (*Server, error) {
+	return newWithSemantic(ctx, dsn, identities, nil, retrieve, options)
 }
 
-func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker, retrieve core.SemanticRetriever) (*Server, error) {
+func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker, retrieve core.SemanticRetriever, options []Option) (*Server, error) {
 	if err := ValidateIdentities(identities); err != nil {
+		return nil, err
+	}
+	var configured serverOptions
+	for _, option := range options {
+		option(&configured)
+	}
+	if err := configured.validate(identities); err != nil {
 		return nil, err
 	}
 	s := &Server{clients: map[[32]byte]client{}, readers: map[string]expansionReader{}, machines: map[string]string{}}
@@ -81,7 +92,7 @@ func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ran
 	for _, identity := range identities {
 		digest, _ := hex.DecodeString(identity.TokenSHA256)
 		key := [32]byte(digest)
-		channel := core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"}
+		channel := core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer", SourceOpeningBinding: configured.sourceOpening[identity.Principal]}
 		var store *core.Store
 		var err error
 		if retrieve != nil {
@@ -92,7 +103,7 @@ func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ran
 		if err != nil {
 			return fail(err)
 		}
-		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, role: identity.Role, principal: identity.Principal, machineID: identity.MachineID}
+		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, role: identity.Role, principal: identity.Principal, machineID: identity.MachineID, sourceOpening: channel.SourceOpeningBinding}
 		if identity.Role == "agent" {
 			s.readers[identity.Principal] = expansionReader{identity.Repo, s.clients[key].destination}
 		}
@@ -166,7 +177,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities()}, nil
+			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities(),
+				SourceOpeningCapabilities: &SourceOpeningCapabilities{Schema: SourceOpeningCapabilitiesSchema, ReaderGuard: true, ReceiptBinding: c.sourceOpening}}, nil
 		})
 	case "/v1/clients":
 		// A principal-scoped read of this process's volatile observations. The

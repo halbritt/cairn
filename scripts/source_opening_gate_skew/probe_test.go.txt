@@ -1,0 +1,134 @@
+package core
+
+// Copied into scratch exports of three builds by scripts/check_source_opening_gate_skew.py
+// (never compiled in the repository). Each variant file supplies the build-specific calls.
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+type skewOutcome struct {
+	OK      bool            `json:"ok"`
+	Code    string          `json:"code,omitempty"`
+	Message string          `json:"message,omitempty"`
+	Value   json.RawMessage `json:"value,omitempty"`
+}
+
+func skewResult(value any, err error) skewOutcome {
+	if err != nil {
+		return skewOutcome{Code: Code(err), Message: err.Error()}
+	}
+	encoded, marshalErr := json.Marshal(value)
+	if marshalErr != nil {
+		return skewOutcome{Code: "MARSHAL", Message: marshalErr.Error()}
+	}
+	return skewOutcome{OK: true, Value: encoded}
+}
+
+func skewWrite(t *testing.T, name string, value any) {
+	t.Helper()
+	encoded, err := json.MarshalIndent(value, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(os.Getenv("SKEW_DIR"), name), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func skewRead(t *testing.T, name string, into any) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("SKEW_DIR"), name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(raw, into); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const skewBody = "Project ai-newsroom.\nbackground background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background background editorial condition"
+
+func TestSkewProbe(t *testing.T) {
+	ctx := context.Background()
+	dest := Destination{"local", true}
+	s := testStore(t, skewChannel(os.Getenv("SKEW_GATE") == "on"))
+	var seed struct{ Repo string }
+	span := &ByteSpanRequest{Offset: strings.Index(skewBody, "editorial"), Length: 100}
+	switch os.Getenv("SKEW_PHASE") {
+	case "seed":
+		seed.Repo = uuid.NewString()
+		d := projectNote(seed.Repo)
+		d.Body = skewBody
+		if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
+			t.Fatal(err)
+		}
+		skewWrite(t, "seed.json", seed)
+	case "compile":
+		skewRead(t, "seed.json", &seed)
+		compile := func() IndexResult {
+			idx, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{seed.Repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}, dest)
+			if err != nil || len(idx.Handles) != 1 {
+				t.Fatalf("compile: %+v %v", idx, err)
+			}
+			return idx
+		}
+		request := uuid.NewString()
+		idx, err := s.Index(ctx, CompileRequest{RequestID: request, Scope: Scope{seed.Repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}, dest)
+		if err != nil || len(idx.Handles) != 1 {
+			t.Fatalf("compile: %+v %v", idx, err)
+		}
+		var body []byte
+		if err = s.pool.QueryRow(ctx, `SELECT semantic_body FROM cairn.retrieval_receipt WHERE receipt_id=$1`, idx.Package.ReceiptID).Scan(&body); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]any{"receipt": idx.Package.ReceiptID, "handle": idx.Handles[0].Handle, "request": request, "repo": seed.Repo,
+			"seal": idx.Package.Seal, "body_hex": hex.EncodeToString(body)}
+		if os.Getenv("SKEW_EXPAND") == "1" {
+			// One read per fresh receipt, so every answer starts from the same credits and bytes.
+			for _, c := range []struct {
+				name    string
+				opening int
+				whole   bool
+				decl    bool
+			}{{"span_declared", 0, false, true}, {"span_undeclared", 0, false, false}, {"explicit_undeclared", 40, false, false}, {"explicit_declared", 40, false, true}, {"whole", 0, true, false}} {
+				one := compile()
+				sp := span
+				if c.whole {
+					sp = nil
+				}
+				e, err := skewExpand(s, skewPull(one.Package.ReceiptID, one.Handles[0].Handle, sp, c.opening), dest, c.decl)
+				out[c.name] = skewResult(e, err)
+			}
+		}
+		skewWrite(t, os.Getenv("SKEW_OUT"), out)
+	case "read":
+		var in map[string]any
+		skewRead(t, os.Getenv("SKEW_IN"), &in)
+		receipt, handle := in["receipt"].(string), in["handle"].(string)
+		out := map[string]any{}
+		e, err := skewExpand(s, skewPull(receipt, handle, span, 0), dest, true)
+		out["span_declared"] = skewResult(e, err)
+		e, err = skewExpand(s, skewPull(receipt, handle, span, 0), dest, false)
+		out["span_undeclared"] = skewResult(e, err)
+		e, err = skewExpand(s, skewPull(receipt, handle, nil, 0), dest, false)
+		out["whole"] = skewResult(e, err)
+		p, err := s.Replay(ctx, receipt)
+		out["replay"] = skewResult(p.Seal, err)
+		p, err = s.Recompile(ctx, RecompileRequest{ReceiptID: receipt})
+		out["recompile"] = skewResult(p.Seal, err)
+		idx, err := s.Index(ctx, CompileRequest{RequestID: in["request"].(string), Scope: Scope{in["repo"].(string), "task", "run"}, Purpose: "context", AvailableTokens: 64000}, dest)
+		out["retry"] = skewResult(idx.Package.ReceiptID+"/"+idx.Package.Seal, err)
+		skewWrite(t, os.Getenv("SKEW_OUT"), out)
+	default:
+		t.Skip("run through scripts/check_source_opening_gate_skew.py")
+	}
+}

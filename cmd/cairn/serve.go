@@ -89,6 +89,10 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	if err = decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return invalid("expected one identity array")
 	}
+	sourceOpening, err := localapi.ParseSourceOpeningBinding(os.Getenv(localapi.SourceOpeningBindingEnv))
+	if err != nil {
+		return err
+	}
 	var ranker core.SemanticRanker
 	if *semanticCommand != "" {
 		ranker, err = semantic.Command(*semanticCommand)
@@ -113,9 +117,9 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 			return startErr
 		}
 		defer closeIndex()
-		handler, err = localapi.NewWithSemanticRetriever(ctx, dsn, identities, retrieve)
+		handler, err = localapi.NewWithSemanticRetriever(ctx, dsn, identities, retrieve, localapi.WithSourceOpeningBinding(sourceOpening))
 	} else {
-		handler, err = localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker)
+		handler, err = localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker, localapi.WithSourceOpeningBinding(sourceOpening))
 	}
 	if err != nil {
 		return err

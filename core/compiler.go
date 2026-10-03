@@ -294,7 +294,9 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	if req.Mode == "index" {
 		p.Mode = "index"
 		if req.Purpose == "context" {
-			p.SpanContext = sourceOpening96
+			if s.channel.SourceOpeningBinding {
+				p.SpanContext = sourceOpening96
+			}
 			p.Presentation = previewBoundariesV1
 			if req.CompactPreviewEntities {
 				p.Presentation = previewCompactV1

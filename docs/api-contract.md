@@ -105,6 +105,13 @@ fields; [build identity](build-identity.md) specifies the recognized schema,
 by `cairn_client_info`. Unknown declarations do not establish support. This
 additive response field leaves the existing wire-protocol version unchanged.
 
+The independent optional `source_opening_capabilities` sibling
+(`cairn.source-opening-capabilities/1`, required booleans `reader_guard` and
+`receipt_binding`) reports whether the server guards paired source-opening reads
+and whether new context-index receipts for the authenticated principal bind the
+policy now. It leaves `retrieval_capabilities` unchanged; see
+[source openings](note-span-openings.md#capability-declarations-and-reader-readiness).
+
 The independent optional `preview_capabilities` sibling declares
 `cairn.preview-capabilities/1` with the required boolean `entities_omitted`.
 Only an exact positive declaration (at most 256 bytes, no duplicate or unknown

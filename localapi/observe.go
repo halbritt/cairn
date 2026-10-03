@@ -90,6 +90,7 @@ type ClientDiagnostics struct {
 	TransportBuild        buildinfo.Info         `json:"transport_build"`
 	Origin                *ClientOrigin          `json:"origin,omitempty"`
 	RetrievalCapabilities *RetrievalCapabilities `json:"retrieval_capabilities,omitempty"`
+	ReaderCapabilities    *ReaderCapabilities    `json:"reader_capabilities,omitempty"`
 }
 
 // EncodeClientDiagnostics returns the header value for a declaration, or "" when
@@ -115,6 +116,13 @@ func EncodeClientDiagnostics(d ClientDiagnostics) string {
 			return ""
 		} else if _, ok := ParseRetrievalCapabilities(raw); !ok {
 			d.RetrievalCapabilities = nil
+		}
+	}
+	if d.ReaderCapabilities != nil {
+		if raw, err := json.Marshal(*d.ReaderCapabilities); err != nil {
+			return ""
+		} else if _, ok := ParseReaderCapabilities(raw); !ok {
+			d.ReaderCapabilities = nil
 		}
 	}
 	raw, err := json.Marshal(d)
@@ -270,6 +278,7 @@ func parseDiagnostics(values []string) (ClientDiagnostics, string) {
 		TransportBuild        *buildinfo.Info `json:"transport_build"`
 		Origin                *ClientOrigin   `json:"origin"`
 		RetrievalCapabilities json.RawMessage `json:"retrieval_capabilities"`
+		ReaderCapabilities    json.RawMessage `json:"reader_capabilities"`
 	}
 	if json.Unmarshal(decoded, &wire) != nil || wire.Surface == nil || wire.Harness == nil || wire.TransportBuild == nil || !wire.TransportBuild.Valid() {
 		return ClientDiagnostics{}, MetadataInvalid
@@ -294,6 +303,10 @@ func parseDiagnostics(values []string) (ClientDiagnostics, string) {
 			return ClientDiagnostics{}, MetadataInvalid
 		}
 		result.RetrievalCapabilities = &capabilities
+	}
+	// An unusable reader declaration reads as unknown; it never invalidates the rest.
+	if capabilities, ok := ParseReaderCapabilities(wire.ReaderCapabilities); ok {
+		result.ReaderCapabilities = &capabilities
 	}
 	return result, MetadataPresent
 }

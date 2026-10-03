@@ -80,7 +80,7 @@ func (s *Store) ForAgentSession(ref AgentSessionRef, dest Destination) (*Store, 
 	}
 	view := *s
 	view.session = &agentSessionChannel{Ref: ref, Profile: s.channel.Principal, Destination: dest}
-	view.channel = Channel{Principal: "agent/" + ref.AgentID, Repo: s.channel.Repo}
+	view.channel = Channel{Principal: "agent/" + ref.AgentID, Repo: s.channel.Repo, SourceOpeningBinding: s.channel.SourceOpeningBinding}
 	return &view, nil
 }
 

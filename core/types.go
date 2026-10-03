@@ -30,11 +30,15 @@ func Code(err error) string {
 
 // Channel is supplied by the trusted embedding host after authentication. Never
 // construct it from request JSON. Instrumented permits service-owned events.
+// SourceOpeningBinding makes new context-index receipts bind the source-opening
+// policy; it is off unless the host sets it, and it follows the authenticated
+// profile into agent-session views rather than the session's own principal.
 type Channel struct {
-	Principal    string
-	Instrumented bool
-	Operator     bool
-	Repo         string
+	Principal            string
+	Instrumented         bool
+	Operator             bool
+	Repo                 string
+	SourceOpeningBinding bool
 }
 
 type Scope struct {

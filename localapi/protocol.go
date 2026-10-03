@@ -98,6 +98,9 @@ type VersionResponse struct {
 	VersionInfo
 	RetrievalCapabilities  *RetrievalCapabilities  `json:"retrieval_capabilities,omitempty"`
 	InspectionCapabilities *InspectionCapabilities `json:"inspection_capabilities,omitempty"`
+	// SourceOpeningCapabilities is per authenticated principal: its binding
+	// state is the one that principal's next context index will use.
+	SourceOpeningCapabilities *SourceOpeningCapabilities `json:"source_opening_capabilities,omitempty"`
 }
 
 // ServerProtocol is a peer's declared range, or protocol 1 when it declared none.

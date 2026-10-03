@@ -36,6 +36,22 @@ predate them ignore or drop the header; clients get `NOT_FOUND` for the route an
 report unsupported diagnostics. The header never decides admission, bodies,
 retries or mutation identity. See [observed clients](client-observations.md).
 
+The authenticated version response's optional `source_opening_capabilities` object
+and the diagnostics header's optional `reader_capabilities` member are likewise
+additive: an older peer ignores them and a newer one reads their absence as
+unknown, never as support.
+
+`426 PROTOCOL_UNSUPPORTED` also answers a **capability refusal** on `expand`: a
+reader that did not declare `Cairn-Accept-Source-Opening: 1` asked for a partial
+read that would carry a source opening. It is not a wire-protocol range failure;
+the protocol range is unchanged, the message says "requires a reader and relay
+that preserve source_opening", and the CLI exits 7. The refusal follows current
+access and integrity checks and precedes cached delivery and charging; the
+declaration is excluded from the request digest, so the same request UUID succeeds
+once the reader or relay is upgraded. Which receipts can trigger it, why disabling
+binding does not make an older binary safe, and the reader-readiness conditions are
+in [source openings](note-span-openings.md#disabling-versus-downgrading).
+
 ## Rules for changes
 
 | Change | Protocol effect |

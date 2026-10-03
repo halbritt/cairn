@@ -456,3 +456,56 @@ func TestClientInfoInspectionDoesNotDependOnRetrievalDeclaration(t *testing.T) {
 		t.Fatalf("coupled declarations: %+v", info)
 	}
 }
+
+func TestClientInfoSourceOpeningDeclarationIsSeparateAndUnknownByDefault(t *testing.T) {
+	const valid = `{"schema":"cairn.source-opening-capabilities/1","reader_guard":true,"receipt_binding":false}`
+	for _, tc := range []struct{ name, declaration, support, binding string }{
+		{"guard without binding", valid, "supported", "disabled"},
+		{"guard and binding", strings.Replace(valid, `"receipt_binding":false`, `"receipt_binding":true`, 1), "supported", "enabled"},
+		{"no guard", strings.Replace(valid, `"reader_guard":true`, `"reader_guard":false`, 1), "unsupported", "disabled"},
+		{"absent", "", "unknown", "unknown"}, {"null", "null", "unknown", "unknown"}, {"array", "[]", "unknown", "unknown"},
+		{"future", strings.Replace(valid, "/1", "/2", 1), "unknown", "unknown"},
+		{"string flag", strings.Replace(valid, "true", `"true"`, 1), "unknown", "unknown"},
+		{"missing flag", `{"schema":"cairn.source-opening-capabilities/1","reader_guard":true}`, "unknown", "unknown"},
+		{"duplicate", strings.Replace(valid, `"reader_guard":true`, `"reader_guard":false,"reader_guard":true`, 1), "unknown", "unknown"},
+		{"unknown member", strings.TrimSuffix(valid, "}") + `,"private-canary":"private-canary"}`, "unknown", "unknown"},
+		{"oversized", "{" + strings.Repeat(" ", 256) + valid[1:], "unknown", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+				body := `{"schema":"cairn.response/1","ok":true,"data":{"schema":"cairn.build/1","go_version":"go1.25.0","retrieval_capabilities":{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":true}`
+				if tc.declaration != "" {
+					body += `,"source_opening_capabilities":` + tc.declaration
+				}
+				_, _ = w.Write([]byte(body + `}}`))
+			})
+			info := invokeDiagnostic(t, diagnosticSession(t, client, 32000))
+			basis := "api_source_opening_capabilities_v1"
+			if tc.support == "unknown" {
+				basis = "no_api_source_opening_capability_contract"
+			}
+			if info.API.SourceOpening != tc.support || info.API.SourceOpeningBinding != tc.binding || info.API.SourceOpeningBasis != basis {
+				t.Fatalf("API source opening = %q/%q/%q, want %s/%s/%s", info.API.SourceOpening, info.API.SourceOpeningBinding, info.API.SourceOpeningBasis, tc.support, tc.binding, basis)
+			}
+			// The facade's own local declaration and the other declarations are independent of it.
+			if info.Facade.SourceOpening != "supported" || info.Facade.SourceOpeningBasis != "registered_pull_contract" || info.API.SupportBasis != "api_retrieval_capabilities_v1" || info.API.State != "available" {
+				t.Fatalf("independent information changed: %+v", info)
+			}
+		})
+	}
+}
+
+func TestClientInfoSourceOpeningUnconnectedAndDeclarationOnlyAreUnknown(t *testing.T) {
+	info := invokeDiagnostic(t, diagnosticSession(t, nil, 32000))
+	if info.API.SourceOpening != "unknown" || info.API.SourceOpeningBinding != "unknown" || info.API.SourceOpeningBasis != "no_api_source_opening_capability_contract" || info.Facade.SourceOpening != "supported" {
+		t.Fatalf("unconnected support guessed: %+v", info)
+	}
+	// The declaration stands alone: it neither needs nor implies the other capability objects.
+	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"schema":"cairn.response/1","ok":true,"data":{"schema":"cairn.build/1","go_version":"go1.25.0","source_opening_capabilities":{"schema":"cairn.source-opening-capabilities/1","reader_guard":true,"receipt_binding":true}}}`))
+	})
+	info = invokeDiagnostic(t, diagnosticSession(t, client, 32000))
+	if info.API.SourceOpening != "supported" || info.API.SourceOpeningBinding != "enabled" || info.API.SupportBasis != "no_api_capability_contract" || info.API.InspectionSupportBasis != "no_api_inspection_capability_contract" {
+		t.Fatalf("coupled declarations: %+v", info)
+	}
+}

@@ -32,7 +32,7 @@ func TestOpeningReaderThroughRelay(t *testing.T) {
 	token := "synthetic-opening-reader"
 	digest := sha256.Sum256([]byte(token))
 	repo := uuid.NewString()
-	api, err := New(ctx, dsn, []Identity{{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "machine:opening/agent", Repo: repo, Role: "agent", Destination: "hosted", Remote: true, MachineID: "opening"}})
+	api, err := New(ctx, dsn, []Identity{{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "machine:opening/agent", Repo: repo, Role: "agent", Destination: "hosted", Remote: true, MachineID: "opening"}}, WithSourceOpeningBinding([]string{"machine:opening/agent"}))
 	if err != nil {
 		t.Fatal(err)
 	}

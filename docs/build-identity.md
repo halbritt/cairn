@@ -88,6 +88,16 @@ behavior. There is no wire-protocol version change or new request field on
 `/v1/version`. A running old facade still uses its old interpretation until
 replaced; upgrading only the API does not make that facade report support.
 
+`api.source_opening` and `api.source_opening_binding` come from the separate
+optional `source_opening_capabilities` declaration (`cairn.source-opening-capabilities/1`,
+at most 256 bytes, exactly the schema and the booleans `reader_guard` and
+`receipt_binding`): `supported`/`unsupported` and `enabled`/`disabled` for the
+authenticated principal, with `source_opening_basis: "api_source_opening_capabilities_v1"`.
+A missing, malformed or unrecognized declaration leaves both `unknown` with
+`no_api_source_opening_capability_contract`. `facade.source_opening: "supported"`
+is a local declaration (`registered_pull_contract`) that this facade preserves
+`source_opening`. Neither shows that any other reader is ready.
+
 The probe has a two-second timeout and never retries. An unavailable API leaves
 facade information intact with `api.state: "unavailable"` and a fixed diagnostic
 such as `API_CONNECTION_FAILED`, `API_TIMEOUT`, `API_ACCESS_DENIED`,

@@ -56,6 +56,12 @@ protocol_skew_dsn="host=$test_root/socket dbname=cairn_protocol_skew sslmode=dis
 CAIRN_DATABASE_URL="$protocol_skew_dsn" "$test_root/cairn" migrate
 CAIRN_TEST_DATABASE_URL="$protocol_skew_dsn" CAIRN_DATABASE_URL="$protocol_skew_dsn" \
     python3 scripts/check_protocol_skew.py "$test_root/cairn" "$test_root/protocol-skew-home"
+# Builds of the parent and the pre-gate feature read and write receipts beside this
+# commit's; skips with a notice when their git history is not present.
+"$pg_bin/createdb" -h "$test_root/socket" cairn_source_opening_skew
+source_opening_skew_dsn="host=$test_root/socket dbname=cairn_source_opening_skew sslmode=disable"
+CAIRN_TEST_DATABASE_URL="$source_opening_skew_dsn" CAIRN_DATABASE_URL="$source_opening_skew_dsn" \
+    python3 scripts/check_source_opening_gate_skew.py
 python3 scripts/check_native_cancel.py "$test_root/cairn" "$test_root/native-cancel-home"
 if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
     python3 scripts/check_wakeups.py "$test_root/cairn" "$test_root/wake-home"

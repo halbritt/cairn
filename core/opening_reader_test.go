@@ -10,7 +10,7 @@ import (
 
 func TestOpeningReaderRefusalPreservesBudgetAndRetry(t *testing.T) {
 	ctx := context.Background()
-	s, _ := testOperator(t)
+	s, _ := testBoundOperator(t)
 	d := projectNote(uuid.NewString())
 	d.Body = "Project test. " + strings.Repeat("context ", 40) + "tail"
 	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {

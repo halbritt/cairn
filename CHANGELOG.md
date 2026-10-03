@@ -14,6 +14,32 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-02
+
+- Source-opening receipt binding is now off by default and enabled per
+  authenticated profile (S1/S2/S4 of the rollout plan). `cairn serve` reads
+  `CAIRN_SOURCE_OPENING_BINDING` once at start, a comma-separated list of exact
+  profile principals with no spaces; unset or empty binds none, and a malformed
+  list or a principal that is not a configured identity stops the server at start
+  rather than enabling a partial or wider set. It is not an `identities.json`
+  member, so an older binary still starts on the same files. Changing it needs a
+  restart. Agent-session requests follow the authenticated profile; the operator
+  CLI and embedding hosts bind nothing unless they set `core.Channel.SourceOpeningBinding`
+  themselves. Ranking, selection, budgets, the reader guard, `426` behavior,
+  explicit `opening_bytes` and every existing receipt are unchanged; with the
+  setting off a receipt holds exactly the bytes the build before the feature
+  wrote. The version response gains the separate optional
+  `source_opening_capabilities` (`reader_guard`, and the authenticated principal's
+  `receipt_binding`), the client diagnostics header gains an optional
+  `reader_capabilities.source_opening`, and `cairn_client_info` and `cairn clients`
+  report them; a missing or unrecognized declaration stays unknown, never ready, and
+  `retrieval_capabilities/1` is untouched. The documentation now states that
+  disabling binding does not make an older binary safe once a receipt has been
+  bound (retained packages outlive the 15-minute live handles), the restart
+  semantics, the principal granularity and the reader-readiness conditions.
+  Passing checks do not show that openings improve relevance or that any
+  deployment is ready. See [source openings](docs/note-span-openings.md).
+
 ## 2026-10-01
 
 - The Python lifecycle memory module now reports its own origin on the existing

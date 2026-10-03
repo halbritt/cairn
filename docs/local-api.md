@@ -136,7 +136,10 @@ cairn serve
 
 The example refuses to overwrite existing credentials. For additional profiles,
 add a distinct principal and token digest to the configuration; up to 32 profiles
-are supported. Restart the server after changes. Use `destination: hosted` for a
+are supported. Restart the server after changes (profile configuration and the
+optional `CAIRN_SOURCE_OPENING_BINDING` principal list, see
+[source openings](note-span-openings.md#enabling-binding-default-off), are read only
+when the server starts). Use `destination: hosted` for a
 profile whose retrieved context goes to a remote model. Hosted profiles cannot
 read local record bodies or protected usage reports. As with the operator CLI,
 this is a cooperative local trust boundary; it does not isolate hostile processes

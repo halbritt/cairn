@@ -28,7 +28,7 @@ is denied or the API predates the view; observed clients remain unknown.`
 // the dedicated bounded caller value, validated against the fixed component
 // list; the CLI's own build is never presented as the caller's identity.
 func cliDiagnostics() localapi.ClientDiagnostics {
-	d := localapi.ClientDiagnostics{Surface: "cli", Harness: "unknown", RetrievalCapabilities: localapi.CurrentRetrievalCapabilities()}
+	d := localapi.ClientDiagnostics{Surface: "cli", Harness: "unknown", RetrievalCapabilities: localapi.CurrentRetrievalCapabilities(), ReaderCapabilities: localapi.CurrentReaderCapabilities()}
 	if origin, ok := localapi.ParseCallerOrigin(os.Getenv("CAIRN_CALLER_DIAGNOSTICS")); ok {
 		d.Origin = origin
 	}

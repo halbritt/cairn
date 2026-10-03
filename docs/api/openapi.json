@@ -11634,6 +11634,16 @@
               }
             ]
           },
+          "reader_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.ReaderCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "retrieval_capabilities": {
             "anyOf": [
               {
@@ -11912,6 +11922,22 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/localapi.ProtocolRange"
       },
+      "localapi.ReaderCapabilities": {
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "source_opening": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema",
+          "source_opening"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ReaderCapabilities"
+      },
       "localapi.RetrievalCapabilities": {
         "properties": {
           "schema": {
@@ -11931,6 +11957,26 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/localapi.RetrievalCapabilities"
+      },
+      "localapi.SourceOpeningCapabilities": {
+        "properties": {
+          "reader_guard": {
+            "type": "boolean"
+          },
+          "receipt_binding": {
+            "type": "boolean"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reader_guard",
+          "receipt_binding",
+          "schema"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.SourceOpeningCapabilities"
       },
       "localapi.VersionResponse": {
         "properties": {
@@ -11982,6 +12028,16 @@
           },
           "schema": {
             "type": "string"
+          },
+          "source_opening_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.SourceOpeningCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "vcs": {
             "type": "string"

@@ -1,0 +1,18 @@
+package core
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
+
+// The build before the feature: no reader declaration and no opening request.
+func skewChannel(bool) Channel { return Channel{Principal: "skew:principal"} }
+
+func skewExpand(s *Store, req ExpandRequest, dest Destination, declared bool) (Expansion, error) {
+	return s.Expand(context.Background(), req, dest)
+}
+
+func skewPull(receipt, handle string, span *ByteSpanRequest, opening int) ExpandRequest {
+	return ExpandRequest{RequestID: uuid.NewString(), ReceiptID: receipt, Handle: handle, Span: span}
+}
