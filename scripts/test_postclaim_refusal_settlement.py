@@ -386,5 +386,145 @@ class OperatorRecoveryTests(Base):
         self.assertEqual(self.reconciles(), [])
 
 
+class NativeRecordRecoveryTests(Base):
+    """Settlement of a pre-repair stuck attempt from three pinned native records (synthetic transcript)."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.root / 'claude-home'
+        self.cc = dict(self.cc, config_home=str(self.home))
+        self.config_path = self.root / 'coordination.json'
+        self.config_path.write_text(json.dumps(self.cc))
+        manifest = json.loads(self.binding.read_text())  # Re-pin the changed coordination config, as an installer would.
+        manifest['coordination_configs'] = [dict(path=str(self.config_path), sha256=hashlib.sha256(self.config_path.read_bytes()).hexdigest())]
+        self.binding.write_text(json.dumps(manifest))
+        self.state['active_prompt'] = None
+        self.state['inbox_attempt']['created_at'] = '2026-10-02T17:12:57.638562-07:00'
+        self.state['inbox_attempt']['delivery'] = dict(self.delivery, attempts=1)
+        self.save()
+        self.transcript = self.home / 'projects' / coord.re.sub(r'[^A-Za-z0-9]', '-', str(self.root)) / (SESSION + '.jsonl')
+        self.transcript.parent.mkdir(parents=True)
+        self.write_transcript()
+
+    def channel(self, delivery=DELIVERY):
+        return (f'<channel source="cairn-events" native_session_id="{SESSION}" agent_id="{AGENT}" execution_id="{EXEC}" delivery_id="{delivery}">\n'
+                + coord.wake_message(dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=delivery)) + '\n</channel>')
+
+    def records(self, *, refusal=None, enqueue=None, dequeue=None):
+        command = f'/usr/bin/python3 /opt/coordination.py hook --config {self.config_path}'
+        content = ('UserPromptSubmit operation blocked by hook:\n[' + command + ']: ' + coord.NATIVE_REFUSAL_MESSAGE
+                   + '\n\n\nOriginal prompt: ' + self.channel())
+        first = dict(type='queue-operation', operation='enqueue', timestamp='2026-10-03T00:12:57.360Z', sessionId=SESSION, content=self.channel())
+        second = dict(type='queue-operation', operation='dequeue', timestamp='2026-10-03T00:12:57.387Z', sessionId=SESSION)
+        third = dict(parentUuid='8d2e83c9-f054-4565-b380-6bbd87bbccb1', isSidechain=False, type='system', subtype='informational',
+                     content=content, isMeta=False, timestamp='2026-10-03T00:12:59.893Z', uuid='ff239a94-757c-44c5-b42a-b494ed1c7d7b',
+                     level='warning', preventContinuation=True, userType='external', entrypoint='cli', cwd=str(self.root),
+                     sessionId=SESSION, version='2.1.285', gitBranch='main', slug='fixture-slug')
+        for value, change in ((first, enqueue), (second, dequeue), (third, refusal)):
+            if change:
+                change(value)
+        return [json.dumps(r, separators=(',', ':')).encode() + b'\n' for r in (first, second, third)]
+
+    def write_transcript(self, raws=None, prefix=b'{"type":"user","note":"unrelated earlier line"}\n'):
+        raws = raws or self.records()
+        self.transcript.write_bytes(prefix + b''.join(raws))
+        offset, self.locators = len(prefix), []
+        for raw in raws:
+            self.locators.append(dict(offset=offset, length=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+            offset += len(raw)
+
+    def recover(self, locators=None, attempt=ATTEMPT):
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            return coord.recover_native_refused_wake(self.cc, str(self.config_path), SESSION, attempt, locators or self.locators)
+
+    def assert_refused(self, name, **kwargs):
+        before = self.path.read_bytes()
+        with self.assertRaises((coord.CoordinationError, OSError), msg=name):
+            self.recover(**kwargs)
+        self.assertEqual(self.path.read_bytes(), before, name)
+        self.assertEqual(self.reconciles(), [], name)
+
+    def test_pinned_native_records_settle_the_stuck_attempt(self):
+        result = self.recover()
+        self.assertEqual((result['settlement'], result['origin'], result['grant']), ('turn_ended', 'native_record', 'absent'))
+        self.assertEqual(result['native_record']['refusal_uuid'], 'ff239a94-757c-44c5-b42a-b494ed1c7d7b')
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertEqual({op for op, _ in self.ops}, {'session-inbox-reconcile'})  # No claim, wake or replay.
+
+    def test_wrong_file_bytes_or_locators_are_refused(self):
+        changed = [dict(item) for item in self.locators]
+        changed[2]['sha256'] = '0' * 64
+        self.assert_refused('changed pin', locators=changed)
+        shifted = [dict(item, offset=item['offset'] + 1) for item in self.locators]
+        self.assert_refused('shifted locators', locators=shifted)
+        gap = [dict(item) for item in self.locators]
+        gap[1] = dict(gap[1], offset=gap[1]['offset'] - 1, length=gap[1]['length'] + 1)
+        self.assert_refused('not one line', locators=gap)
+        self.transcript.write_bytes(self.transcript.read_bytes().replace(b'2026-10-03T00:12:59.893Z', b'2026-10-03T00:12:59.894Z'))
+        self.assert_refused('edited file')
+        self.write_transcript()
+        self.transcript.rename(self.transcript.with_name('elsewhere.jsonl'))
+        self.transcript.symlink_to(self.transcript.with_name('elsewhere.jsonl'))
+        self.assert_refused('symlinked session file')
+        self.transcript.unlink()
+        self.assert_refused('missing session file')
+
+    def test_records_for_another_session_delivery_or_binding_are_refused(self):
+        cases = {
+            'other session': dict(refusal=lambda r: r.update(sessionId='22222222-2222-4222-8222-222222222222')),
+            'other delivery wake': dict(enqueue=lambda r: r.update(content=self.channel('99999999-9999-4999-8999-999999999999'))),
+            'other binding command': dict(refusal=lambda r: r.update(content=r['content'].replace(str(self.config_path), '/other/binding.json'))),
+            'activation-phase refusal': dict(refusal=lambda r: r.update(content=r['content'].replace(
+                'bound inbox recall unavailable; no source or memory grant delivered', 'inbox activation decision unavailable'))),
+            'joined-wake refusal': dict(refusal=lambda r: r.update(content=r['content'].replace(
+                'bound inbox recall unavailable; no source or memory grant delivered', 'joined channel wake rejected; a fresh copy retries when idle'))),
+            'continuation not prevented': dict(refusal=lambda r: r.update(preventContinuation=False)),
+            'unknown extra key': dict(refusal=lambda r: r.update(extra=1)),
+            'unknown timestamp shape': dict(refusal=lambda r: r.update(timestamp='2026-10-03T00:12:59Z')),
+            'enqueue after dequeue': dict(enqueue=lambda r: r.update(timestamp='2026-10-03T00:12:57.400Z')),
+            'dequeue shape': dict(dequeue=lambda r: r.update(content='x')),
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.write_transcript(self.records(**change))
+                self.assert_refused(name)
+
+    def test_duplicate_keys_are_unknown_shape(self):
+        raws = self.records()
+        raws[1] = raws[1].replace(b'"operation":"dequeue"', b'"operation":"dequeue","operation":"dequeue"')
+        self.write_transcript(raws)
+        self.assert_refused('duplicate key')
+
+    def test_ambiguous_ownership_or_progress_is_refused(self):
+        cases = {
+            'second attempt': lambda s: s['inbox_attempt']['delivery'].update(attempts=2),
+            'claim before enqueue': lambda s: s['inbox_attempt'].update(created_at='2026-10-02T17:12:57.300000-07:00'),
+            'claim after refusal': lambda s: s['inbox_attempt'].update(created_at='2026-10-02T17:13:00.000000-07:00'),
+            'owning prompt still active': lambda s: s.update(active_prompt=dict(id=TURN)),
+            'intent owned by another prompt': lambda s: s['inbox_intent'].update(native_turn_id='claude-channel:' + OTHER_PROMPT),
+            'observed tools': lambda s: s.update(tool_calls=[dict(id='t')]),
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.setUp()
+                change(self.state)
+                self.save()
+                self.assert_refused(name)
+        self.setUp()
+        self.assert_refused('other attempt', attempt='99999999-9999-4999-8999-999999999999')
+
+    def test_records_cannot_override_a_grant_missing_ledger_or_journal(self):
+        self.write_grant(delivery_id=DELIVERY)
+        self.assert_refused('grant present')
+        self.setUp()
+        self.ledger.unlink()
+        self.assert_refused('missing ledger')
+        self.setUp()
+        target = coord.intent_path(self.cc['state_dir'], ATTEMPT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT, completion=dict(status='pending'))))
+        self.assert_refused('journaled completion')
+
+
 if __name__ == '__main__':
     unittest.main()

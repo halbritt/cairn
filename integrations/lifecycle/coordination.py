@@ -2234,7 +2234,7 @@ def refused_claude_wake_settleable(config, state, turn):
                 and attempt_commands_absent(config, attempt))
 
 
-def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook', require_active=True):
+def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook', require_active=True, evidence=None):
     """Close a claimed Claude channel attempt whose own prompt was refused before any grant.
 
     Caller owns the coordination lock. Under the trusted-host contract the
@@ -2254,6 +2254,8 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
                       cause_class=refusal_error_class(cause) if cause is not None else None,
                       attempt_id=attempt.get('attempt_id'), delivery_id=(attempt.get('delivery') or {}).get('delivery_id'),
                       native_turn_id=turn, at=time.time())
+    if evidence is not None:
+        diagnostic['native_record'] = evidence
     eligible = refused_claude_wake_settleable(config, state, turn)
     if eligible and require_active and (state.get('active_prompt') or {}).get('id') != turn:
         eligible = False
@@ -2311,6 +2313,145 @@ def recover_refused_wake(config, native_session_id, attempt_id, native_turn_id):
         state.pop('wake_refusal_diagnostic')
         return settle_refused_claude_wake(config, state, path, native_turn_id,
             CoordinationError('NATIVE_PROMPT_REFUSED', 'host-recorded refusal'), origin='operator_recorded', require_active=False)
+
+
+
+# The exact Claude Code native operational records written when this host's
+# UserPromptSubmit hook refuses a bound channel wake after claim (observed on
+# Claude Code 2.1.285). Only this shape is accepted; anything else is unknown.
+NATIVE_REFUSAL_MESSAGE = ('Cairn coordination: NATIVE_PROMPT_REFUSED: bound inbox recall unavailable; '
+                          'no source or memory grant delivered; channel text rejected, owner prompt continues')
+NATIVE_RECORD_LIMIT = 65536
+NATIVE_REFUSAL_KEYS = frozenset(('parentUuid', 'isSidechain', 'type', 'subtype', 'content', 'isMeta', 'timestamp', 'uuid',
+                                 'level', 'preventContinuation', 'userType', 'entrypoint', 'cwd', 'sessionId', 'version',
+                                 'gitBranch', 'slug'))
+NATIVE_HOOK_TIMEOUT_SECONDS = 15
+
+
+def native_locator(text):
+    """OFFSET:LENGTH:SHA256 for one bounded record; nothing else is read."""
+    match = re.fullmatch(r'(0|[1-9][0-9]{0,15}):([1-9][0-9]{0,5}):([0-9a-f]{64})', text or '')
+    if not match or int(match[2]) > NATIVE_RECORD_LIMIT:
+        raise CoordinationError('INVALID_REQUEST', 'native record locator must be OFFSET:LENGTH:SHA256 within bounds')
+    return dict(offset=int(match[1]), length=int(match[2]), sha256=match[3])
+
+
+def claude_transcript_path(config, state):
+    """Derive the session file from the trusted binding and held state; never from the caller."""
+    home, workspace, native = config.get('config_home'), state.get('workspace'), state['agent']['native_session_id']
+    if (not isinstance(home, str) or not Path(home).is_absolute() or not isinstance(workspace, str)
+            or not Path(workspace).is_absolute() or not re.fullmatch(r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', native)):
+        raise CoordinationError('INVALID_REQUEST', 'native session file cannot be derived from the binding')
+    return Path(home) / 'projects' / re.sub(r'[^A-Za-z0-9]', '-', workspace) / (native + '.jsonl')
+
+
+def read_native_record(path, locator):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or locator['offset'] + locator['length'] > info.st_size:
+            raise CoordinationError('INVALID_REQUEST', 'native session file is not a readable owner record source')
+        raw = os.pread(fd, locator['length'], locator['offset'])
+    finally:
+        os.close(fd)
+    if (len(raw) != locator['length'] or hashlib.sha256(raw).hexdigest() != locator['sha256']
+            or not raw.endswith(b'\n') or b'\n' in raw[:-1]):
+        raise CoordinationError('INVALID_REQUEST', 'native record bytes differ from their pin or are not one record')
+    def pairs(items):
+        keys = [k for k, _ in items]
+        if len(keys) != len(set(keys)):
+            raise ValueError('duplicate key')
+        return dict(items)
+    try:
+        value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise CoordinationError('INVALID_REQUEST', 'native record is not strict JSON') from exc
+    if not isinstance(value, dict):
+        raise CoordinationError('INVALID_REQUEST', 'native record is not an object')
+    return value
+
+
+def native_time(value):
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z', value):
+        raise CoordinationError('INVALID_REQUEST', 'native record timestamp shape is unknown')
+    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+
+def native_refusal_proof(config, config_path, state, attempt, locators):
+    """Prove, from three pinned contiguous native records, that this held attempt's wake was refused after claim.
+
+    The records carry no native prompt UUID. The join is the exact channel text
+    (session, agent, execution, delivery), the exact hook command of this binding
+    with the post-claim bridge refusal message, and chronology that brackets the
+    single claim attempt of that delivery. Anything else is refused.
+    """
+    enqueue, dequeue, refusal = locators
+    if (enqueue['offset'] + enqueue['length'] != dequeue['offset']
+            or dequeue['offset'] + dequeue['length'] != refusal['offset']):
+        raise CoordinationError('INVALID_REQUEST', 'native records are not one contiguous enqueue, dequeue, refusal sequence')
+    path = claude_transcript_path(config, state)
+    records = [read_native_record(path, item) for item in locators]
+    native, agent, delivery = state['agent']['native_session_id'], state['agent'], attempt['delivery']
+    channel = (f'<channel source="cairn-events" native_session_id="{native}" agent_id="{agent["agent_id"]}" '
+               f'execution_id="{agent["execution_id"]}" delivery_id="{delivery["delivery_id"]}">\n'
+               + wake_message(dict(session=session_ref(agent), delivery_id=delivery['delivery_id'])) + '\n</channel>')
+    first, second, third = records
+    if (set(first) != {'type', 'operation', 'timestamp', 'sessionId', 'content'} or first['type'] != 'queue-operation'
+            or first['operation'] != 'enqueue' or first['sessionId'] != native or first['content'] != channel):
+        raise CoordinationError('INVALID_REQUEST', 'native enqueue record is not this exact channel wake')
+    if (set(second) != {'type', 'operation', 'timestamp', 'sessionId'} or second['type'] != 'queue-operation'
+            or second['operation'] != 'dequeue' or second['sessionId'] != native):
+        raise CoordinationError('INVALID_REQUEST', 'native dequeue record shape is unknown')
+    command = re.fullmatch(r'(/[^\s\]]+) (/[^\s\]]+/coordination\.py) hook --config (/[^\s\]]+)', third.get('content', '').partition(
+        'UserPromptSubmit operation blocked by hook:\n[')[2].partition(']: ')[0])
+    if (set(third) != NATIVE_REFUSAL_KEYS or third['type'] != 'system' or third['subtype'] != 'informational'
+            or third['level'] != 'warning' or third['preventContinuation'] is not True or third['isSidechain'] is not False
+            or third['isMeta'] is not False or third['sessionId'] != native or not command
+            or Path(command[3]).resolve() != Path(config_path).resolve()
+            or third['content'] != ('UserPromptSubmit operation blocked by hook:\n[' + command[0] + ']: ' + NATIVE_REFUSAL_MESSAGE
+                                    + '\n\n\nOriginal prompt: ' + channel)):
+        raise CoordinationError('INVALID_REQUEST', 'native refusal record is not this binding\'s post-claim refusal of this wake')
+    enqueued, dequeued, refused = (native_time(r['timestamp']) for r in records)
+    try:
+        claimed = datetime.fromisoformat(attempt['created_at'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CoordinationError('INVALID_REQUEST', 'held attempt has no claim time') from exc
+    if (claimed.tzinfo is None or not enqueued <= dequeued <= claimed <= refused
+            or (refused - enqueued).total_seconds() > NATIVE_HOOK_TIMEOUT_SECONDS
+            or delivery.get('attempts') != 1 or delivery.get('state') != 'leased'):
+        raise CoordinationError('INVALID_REQUEST', 'native chronology does not bracket the single claim of this delivery')
+    return dict(refusal_uuid=third['uuid'], refused_at=third['timestamp'], claude_version=third['version'],
+                records=[dict(item) for item in locators])
+
+
+def recover_native_refused_wake(config, config_path, native_session_id, attempt_id, locators):
+    """Operator step: settle an attempt stuck before the repair, from pinned native refusal records.
+
+    The native session file is derived from the trusted binding; only the three
+    pinned byte ranges are read. The attempt's own host-recorded native owner is
+    used: the records do not name it. Every settlement check still applies, and the
+    command decides before writing. It sends nothing to the native session and never
+    claims or replays work.
+    """
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
+        turn = attempt.get('native_turn_id')
+        if (state.get('agent', {}).get('native_session_id') != native_session_id or state.get('ending') or state.get('retired')
+                or not process_alive(state['process']) or attempt.get('attempt_id') != attempt_id
+                or not isinstance(turn, str) or not turn.startswith('claude-channel:') or intent.get('native_turn_id') != turn
+                or (state.get('active_prompt') or {}).get('id') == turn):
+            raise CoordinationError('INVALID_REQUEST', 'held state does not name exactly one finished-owner claim for this attempt')
+        proof = native_refusal_proof(config, config_path, state, attempt, locators)
+        # Decide before writing: a refused recovery leaves the held state byte-identical.
+        if not refused_claude_wake_settleable(config, state, turn):
+            raise CoordinationError('INVALID_REQUEST', 'held attempt is not exactly this refused, unprocessed claim')
+        grant = recall_grant_state(config, state, attempt)
+        if grant != 'absent':
+            raise CoordinationError('INVALID_REQUEST', 'held attempt cannot be proven unprocessed (grant ' + grant + ')')
+        return settle_refused_claude_wake(config, state, path, turn, CoordinationError('NATIVE_PROMPT_REFUSED', 'native record'),
+                                          origin='native_record', require_active=False, evidence=proof)
 
 
 def reconcile_rejected_wake(config, state, path):
@@ -2886,7 +3027,7 @@ def main():
                                   message=f'INVALID_HOST: {type(exc).__name__} reading the native inbox context')))
             return 7
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake"))
+    parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
@@ -2894,8 +3035,17 @@ def main():
     parser.add_argument("--native-session-id", help="recover-refused-wake: the held native session")
     parser.add_argument("--attempt-id", help="recover-refused-wake: the held attempt")
     parser.add_argument("--native-turn-id", help="recover-refused-wake: the refused claude-channel prompt")
+    for name in ("enqueue", "dequeue", "refusal"):
+        parser.add_argument(f"--{name}-record", help=f"recover-native-refused-wake: {name} record OFFSET:LENGTH:SHA256")
     args = parser.parse_args()
     try:
+        if args.mode == "recover-native-refused-wake":
+            if None in (args.config, args.native_session_id, args.attempt_id, args.enqueue_record, args.dequeue_record, args.refusal_record):
+                parser.error("recover-native-refused-wake requires --config, --native-session-id, --attempt-id and three record locators")
+            locators = [native_locator(getattr(args, f"{name}_record")) for name in ("enqueue", "dequeue", "refusal")]
+            result = recover_native_refused_wake(load_config(args.config), args.config, args.native_session_id, args.attempt_id, locators)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode == "recover-refused-wake":
             if None in (args.config, args.native_session_id, args.attempt_id, args.native_turn_id):
                 parser.error("recover-refused-wake requires --config, --native-session-id, --attempt-id and --native-turn-id")

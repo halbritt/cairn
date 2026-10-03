@@ -21,7 +21,9 @@ and MCP processes.
   replayed), only when the bridge ledger proves no grant and the prompt was not joined; otherwise it keeps
   the hold and records a fixed-vocabulary `wake_refusal_diagnostic`. `coordination.py recover-refused-wake`
   can later settle a refusal the hook itself recorded as held, under the same checks. It does not accept
-  caller-written evidence.
+  caller-written evidence. `recover-native-refused-wake` settles an attempt stuck before the repair from
+  three pinned Claude Code operational records (enqueue, dequeue, hook refusal), using a binding-derived
+  session file and the exact observed record shape.
 
 ## 2026-10-01
 
