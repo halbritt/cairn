@@ -12,6 +12,7 @@ import re
 import selectors
 from pathlib import Path
 import signal
+import stat
 import shlex
 import subprocess
 import sys
@@ -2162,9 +2163,6 @@ def refusal_error_class(exc):
         'OSError', 'ValueError', 'KeyError', 'TypeError', 'JSONDecodeError', 'CoordinationError') else 'OtherError'
 
 
-WAKE_REFUSAL_EVIDENCE_SCHEMA = 'cairn.native-wake-refusal-evidence/1'
-
-
 def recall_grant_state(config, state, attempt):
     """What the bound bridge's own ledger says about this claimed attempt.
 
@@ -2182,7 +2180,14 @@ def recall_grant_state(config, state, attempt):
             return 'unknown'
         with (directory / (native + '.lock')).open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            ledger = bridge.load_grants(directory / (native + '.inbox-recall.json'), native)
+            ledger_path = directory / (native + '.inbox-recall.json')
+            # load_grants treats a missing ledger and marker as an empty ledger. Here
+            # absence of evidence is not evidence of absence: both must be real files.
+            for required in (ledger_path, ledger_path.with_suffix('.initialized')):
+                info = os.lstat(required)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                    return 'unknown'
+            ledger = bridge.load_grants(ledger_path, native)
             for grant in ledger['grants'].values():
                 identity = grant['identity']
                 if (identity.get('attempt_id') == attempt['attempt_id']
@@ -2207,7 +2212,9 @@ def attempt_commands_absent(config, attempt):
         return True
     except (OSError, ValueError, KeyError, TypeError):
         return False
-    return isinstance(journal, dict) and not journal.get('completion') and not journal.get('response')
+    claim_only = {'schema', 'attempt_id', 'delivery_id', 'kind', 'session'}
+    return (isinstance(journal, dict) and set(journal) <= claim_only
+            and journal.get('attempt_id', attempt['attempt_id']) == attempt['attempt_id'])
 
 
 def refused_claude_wake_settleable(config, state, turn):
@@ -2221,6 +2228,7 @@ def refused_claude_wake_settleable(config, state, turn):
                 and attempt.get('session') == session_ref(state['agent'])
                 and not attempt.get('finished_at') and not attempt.get('cancel') and not attempt.get('lease_lapsed')
                 and not active.get('joined')
+                and not state.get('tool_calls') and not attempt.get('tools')
                 and not any(state.get(k) for k in ('inbox_close', 'inbox_turn_ended'))
                 and set(state.get('inbox_journals') or []) <= {attempt.get('attempt_id')}
                 and attempt_commands_absent(config, attempt))
@@ -2229,12 +2237,16 @@ def refused_claude_wake_settleable(config, state, turn):
 def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook', require_active=True):
     """Close a claimed Claude channel attempt whose own prompt was refused before any grant.
 
-    Caller owns the coordination lock. The attempt's native turn is the refused
-    channel prompt itself, which ends here without running, so ``turn_ended`` is
-    the truthful existing reconciliation (the store records processing_failed; the
-    request is never replayed automatically). A grant that may have been written,
-    a joined prompt, or any other doubt leaves the existing hold untouched apart
-    from a fixed-vocabulary diagnostic. Returns the diagnostic.
+    Caller owns the coordination lock. Under the trusted-host contract the
+    attempt's native turn is the Claude prompt that owns it (claude-channel:<prompt_id>).
+    This hook is that prompt's own UserPromptSubmit and is refusing it with exit 2,
+    which blocks the prompt: the owning turn ends here, observed first-hand, without
+    running. ``turn_ended`` ("the owning turn ended without completion") is therefore
+    the faithful existing reason; no Stop is recorded or fabricated, and no other
+    turn is used. The store records processing_failed and never replays it. A grant
+    that may have been written, a joined prompt, or any other doubt leaves the
+    existing hold untouched apart from a fixed-vocabulary diagnostic. Returns the
+    diagnostic.
     """
     attempt = state.get('inbox_attempt') or {}
     cause = getattr(exc, '__cause__', None)
@@ -2266,44 +2278,39 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
     return state['wake_refusal_diagnostic']
 
 
-def recover_refused_wake(config, evidence_path, expect_sha256):
-    """Operator step for an attempt already stuck before this repair existed.
+def recover_refused_wake(config, native_session_id, attempt_id, native_turn_id):
+    """Operator step for a refusal this host recorded but could not settle at the time.
 
-    Settles only from root-retained exact refusal evidence (pinned by sha256) whose
-    session, process, attempt, delivery and refused native prompt equal the held
-    state, and only when the bridge ledger proves no grant. It sends nothing to the
-    native session and never claims or replays work.
+    The only accepted proof is the host's own ``wake_refusal_diagnostic``, written
+    under the session lock by the refusing hook itself (phase bridge_after_claim,
+    origin hook, settlement held), for exactly this attempt and refused prompt. A
+    caller-written claim or a self-hashed file is not historical proof, so an
+    attempt stuck before this repair has no supported recovery here. It decides
+    before writing, sends nothing to the native session, and never claims or
+    replays work.
     """
-    raw = Path(evidence_path).read_bytes()
-    if not re.fullmatch(r'[0-9a-f]{64}', expect_sha256 or '') or hashlib.sha256(raw).hexdigest() != expect_sha256:
-        raise CoordinationError('INVALID_REQUEST', 'refusal evidence does not match its pin')
-    evidence = json.loads(raw)
-    keys = {'schema', 'native_session_id', 'native_turn_id', 'attempt_id', 'delivery_id', 'process', 'hook_code', 'refused_at'}
-    if (not isinstance(evidence, dict) or set(evidence) != keys or evidence['schema'] != WAKE_REFUSAL_EVIDENCE_SCHEMA
-            or evidence['hook_code'] != 'NATIVE_PROMPT_REFUSED' or not isinstance(evidence['process'], dict)
-            or not isinstance(evidence['native_turn_id'], str) or not evidence['native_turn_id'].startswith('claude-channel:')):
-        raise CoordinationError('INVALID_REQUEST', 'unsupported refusal evidence')
-    path = state_path(config, evidence['native_session_id'])
+    path = state_path(config, native_session_id)
     with session_lock(path):
         state = json.loads(path.read_text())
         attempt = state.get('inbox_attempt') or {}
-        if (state.get('agent', {}).get('native_session_id') != evidence['native_session_id']
-                or state.get('ending') or state.get('retired')
-                or not same_process(evidence['process'], state['process']) or not process_alive(state['process'])
-                or attempt.get('attempt_id') != evidence['attempt_id']
-                or (attempt.get('delivery') or {}).get('delivery_id') != evidence['delivery_id']):
-            raise CoordinationError('INVALID_REQUEST', 'refusal evidence does not name the held attempt')
+        recorded = state.get('wake_refusal_diagnostic') or {}
+        if (state.get('agent', {}).get('native_session_id') != native_session_id
+                or state.get('ending') or state.get('retired') or not process_alive(state['process'])
+                or attempt.get('attempt_id') != attempt_id
+                or recorded.get('phase') != 'bridge_after_claim' or recorded.get('origin') != 'hook'
+                or recorded.get('settlement') != 'held' or recorded.get('attempt_id') != attempt_id
+                or recorded.get('native_turn_id') != native_turn_id
+                or recorded.get('delivery_id') != (attempt.get('delivery') or {}).get('delivery_id')):
+            raise CoordinationError('INVALID_REQUEST', 'no host-recorded refusal names this held attempt and prompt')
         # Decide before writing: a refused recovery leaves the held state byte-identical.
-        if not refused_claude_wake_settleable(config, state, evidence['native_turn_id']):
+        if not refused_claude_wake_settleable(config, state, native_turn_id):
             raise CoordinationError('INVALID_REQUEST', 'held attempt is not exactly this refused, unprocessed prompt')
         grant = recall_grant_state(config, state, attempt)
         if grant != 'absent':
             raise CoordinationError('INVALID_REQUEST', 'held attempt cannot be proven unprocessed (grant ' + grant + ')')
-        diagnostic = settle_refused_claude_wake(config, state, path, evidence['native_turn_id'],
-            CoordinationError('NATIVE_PROMPT_REFUSED', 'retained refusal evidence'), origin='operator_evidence', require_active=False)
-        if diagnostic['settlement'] == 'held':
-            raise CoordinationError('INVALID_REQUEST', 'held attempt cannot be proven unprocessed (grant ' + diagnostic['grant'] + ')')
-        return diagnostic
+        state.pop('wake_refusal_diagnostic')
+        return settle_refused_claude_wake(config, state, path, native_turn_id,
+            CoordinationError('NATIVE_PROMPT_REFUSED', 'host-recorded refusal'), origin='operator_recorded', require_active=False)
 
 
 def reconcile_rejected_wake(config, state, path):
@@ -2884,14 +2891,15 @@ def main():
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--evidence", type=Path, help="recover-refused-wake: root-retained refusal evidence JSON")
-    parser.add_argument("--expect-evidence-sha256", help="recover-refused-wake: pin of that evidence")
+    parser.add_argument("--native-session-id", help="recover-refused-wake: the held native session")
+    parser.add_argument("--attempt-id", help="recover-refused-wake: the held attempt")
+    parser.add_argument("--native-turn-id", help="recover-refused-wake: the refused claude-channel prompt")
     args = parser.parse_args()
     try:
         if args.mode == "recover-refused-wake":
-            if args.config is None or args.evidence is None:
-                parser.error("recover-refused-wake requires --config, --evidence and --expect-evidence-sha256")
-            result = recover_refused_wake(load_config(args.config), args.evidence, args.expect_evidence_sha256)
+            if None in (args.config, args.native_session_id, args.attempt_id, args.native_turn_id):
+                parser.error("recover-refused-wake requires --config, --native-session-id, --attempt-id and --native-turn-id")
+            result = recover_refused_wake(load_config(args.config), args.native_session_id, args.attempt_id, args.native_turn_id)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.mode == "hook":

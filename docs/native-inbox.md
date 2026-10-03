@@ -259,15 +259,27 @@ response cannot claim a message that arrived later.
 A Claude channel wake can be claimed and then refused before its bridge grant (for example a
 failed required search). That refused prompt never runs, so it never reaches a native `Stop`, and later
 prompts own different turns (`NATIVE_TURN_MISMATCH`). The hook therefore settles that attempt itself as
-`turn_ended`, which the store records as `processing_failed` with no automatic replay. It does so only when
-the claim belongs to exactly this unjoined refused prompt, nothing was completed, responded or journaled
-under it, and the bridge's own ledger, read under its session lock, has no grant for the attempt, delivery
-or prompt. Any doubt (a grant, a busy or unreadable ledger, a joined owner prompt) keeps the existing hold
-and records only `wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state,
-settlement). An attempt stuck before this repair is settled only by the operator command
-`coordination.py recover-refused-wake --config BINDING --evidence FILE --expect-evidence-sha256 SHA`, from
-root-retained `cairn.native-wake-refusal-evidence/1` that names the same session, process, attempt,
-delivery and refused prompt, under the same checks. It sends nothing to the native session.
+`turn_ended`, which the store records as `processing_failed` with no automatic replay.
+
+Why `turn_ended` is faithful here, under the trusted-host contract: a Claude attempt is owned by the
+native prompt that claimed it (`claude-channel:<prompt_id>`), and the store's `turn_ended` means that
+owning turn ended without completion. The refusing hook *is* that prompt's own `UserPromptSubmit`, and its
+exit 2 blocks the prompt, so the owning turn ends, observed first-hand by the host, without running. No
+`Stop` is recorded or fabricated, and no other turn ends the attempt.
+
+It settles only when the claim belongs to exactly this unjoined, active refused prompt, no tool was
+observed, the attempt's command journal holds nothing but the claim, and the bridge's own ledger and its
+initialization marker exist and, read under the bridge's session lock, contain no grant for the attempt,
+delivery or prompt. Any doubt (a grant, a missing, busy or unreadable ledger, a joined owner prompt, an
+observed tool, or any other journal content) keeps the existing hold and records only
+`wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state, settlement).
+
+A refusal held that way can be settled later only from that host-written record:
+`coordination.py recover-refused-wake --config BINDING --native-session-id S --attempt-id A
+--native-turn-id T`. It repeats every check, decides before writing, and sends nothing to the native
+session. A caller-written statement is not proof of a historical refusal, so an attempt stuck before
+this repair, which has no such record, has no supported recovery here. It needs a separately verified
+native refusal record contract.
 
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a

@@ -20,7 +20,8 @@ and MCP processes.
   forever. The hook settles that attempt as `turn_ended` (the store records `processing_failed`, never
   replayed), only when the bridge ledger proves no grant and the prompt was not joined; otherwise it keeps
   the hold and records a fixed-vocabulary `wake_refusal_diagnostic`. `coordination.py recover-refused-wake`
-  settles an already-stuck attempt from pinned refusal evidence under the same checks.
+  can later settle a refusal the hook itself recorded as held, under the same checks. It does not accept
+  caller-written evidence.
 
 ## 2026-10-01
 

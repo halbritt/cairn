@@ -75,6 +75,11 @@ class Base(unittest.TestCase):
             memory_config=ref(self.root / 'memory.json'), coordination_configs=[ref(self.root / 'coordination.json')])))
         self.binding.chmod(0o600)
         self.memory_dir.mkdir(mode=0o700)
+        # As the shared activation decision leaves them before any claim: an initialized, grant-free ledger.
+        self.ledger = self.memory_dir / (SESSION + '.inbox-recall.json')
+        self.ledger.write_text(json.dumps(dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={},
+                                               inbox_activation={TURN: True})))
+        self.ledger.with_suffix('.initialized').write_text(json.dumps(dict(schema='cairn.inbox-recall-initialized/1', session=SESSION)))
         self.process = dict(pid=os.getpid(), start=123, boot='fixture')
         session = dict(agent_id=AGENT, execution_id=EXEC)
         self.delivery = dict(delivery_id=DELIVERY, lease_id=ATTEMPT, state='leased', event=dict(
@@ -165,6 +170,19 @@ class SettlementTests(Base):
         diagnostic, _ = self.settle()
         self.assertEqual(diagnostic['settlement'], 'turn_ended')
 
+    def test_missing_or_substituted_ledger_is_unknown_not_absent(self):
+        for name, change in (('missing ledger', lambda: self.ledger.unlink()),
+                             ('missing marker', lambda: self.ledger.with_suffix('.initialized').unlink()),
+                             ('both missing', lambda: (self.ledger.unlink(), self.ledger.with_suffix('.initialized').unlink())),
+                             ('symlinked ledger', lambda: (self.ledger.rename(self.root / 'elsewhere.json'),
+                                                           self.ledger.symlink_to(self.root / 'elsewhere.json')))):
+            with self.subTest(case=name):
+                self.setUp()
+                change()
+                diagnostic, _ = self.settle()
+                self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('held', 'unknown'), name)
+                self.assertEqual(self.reconciles(), [])
+
     def test_unrelated_grants_do_not_block(self):
         self.write_grant()
         diagnostic, _ = self.settle()
@@ -210,6 +228,10 @@ class SettlementTests(Base):
             'completion journaled': dict(journal=dict(completion=dict(kind='complete', status='pending'))),
             'response journaled': dict(journal=dict(response=dict(kind='respond', status='committed'))),
             'unreadable journal': dict(journal='not json'),
+            'ambiguous journal content': dict(journal=dict(result=dict(status='uncertain'))),
+            'journal for another attempt': dict(journal=dict(attempt_id='99999999-9999-4999-8999-999999999999')),
+            'observed tool call': dict(change=lambda s: s.update(tool_calls=[dict(id='t')])),
+            'attempt tools': dict(change=lambda s: s['inbox_attempt'].update(tools=[dict(id='t')])),
             'extra journal': dict(change=lambda s: s.update(inbox_journals=[ATTEMPT, 'later'])),
             'cancel pending': dict(change=lambda s: s['inbox_attempt'].update(cancel=dict(by='op'))),
             'prompt no longer active': dict(change=lambda s: s.update(active_prompt=dict(id='claude-channel:' + OTHER_PROMPT))),
@@ -227,7 +249,7 @@ class SettlementTests(Base):
                     target = coord.intent_path(self.cc['state_dir'], ATTEMPT)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(case['journal'] if isinstance(case['journal'], str) else json.dumps(
-                        dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT, **case['journal'])))
+                        dict(dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT), **case['journal'])))
                 diagnostic, _ = self.settle(turn=case.get('turn', TURN))
                 self.assertEqual(diagnostic['settlement'], 'held', name)
                 self.assertEqual(self.reconciles(), [], name)
@@ -300,48 +322,66 @@ class HandleTests(Base):
 
 
 class OperatorRecoveryTests(Base):
-    def evidence(self, **change):
-        value = dict(schema=coord.WAKE_REFUSAL_EVIDENCE_SCHEMA, native_session_id=SESSION, native_turn_id=TURN,
-                     attempt_id=ATTEMPT, delivery_id=DELIVERY, process=self.process, hook_code='NATIVE_PROMPT_REFUSED',
-                     refused_at='2026-10-03T00:12:59.893Z')
-        value.update(change)
-        path = self.root / 'evidence.json'
-        path.write_text(json.dumps(value))
-        return path, hashlib.sha256(path.read_bytes()).hexdigest()
-
-    def recover(self, path, digest):
+    def recover(self, session=SESSION, attempt=ATTEMPT, turn=TURN):
         with self.patched(), patch.object(coord, 'process_alive', return_value=True):
-            return coord.recover_refused_wake(self.cc, path, digest)
+            return coord.recover_refused_wake(self.cc, session, attempt, turn)
 
-    def test_already_stuck_attempt_settles_from_pinned_evidence_even_after_later_prompts(self):
-        self.state['active_prompt'] = dict(id='claude-channel:' + OTHER_PROMPT)  # A later diagnostic prompt ran.
-        self.save()
-        result = self.recover(*self.evidence())
-        self.assertEqual((result['settlement'], result['origin'], result['grant']), ('turn_ended', 'operator_evidence', 'absent'))
+    def hold_with_busy_ledger(self):
+        lock = (self.memory_dir / (SESSION + '.lock')).open('a')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            diagnostic, _ = self.settle()
+        finally:
+            lock.close()
+        self.assertEqual((diagnostic['settlement'], diagnostic['grant'], diagnostic['origin']), ('held', 'unknown', 'hook'))
+
+    def test_host_recorded_hold_settles_later_once_no_grant_is_proven(self):
+        self.hold_with_busy_ledger()
+        state = self.load()
+        state['active_prompt'] = dict(id='claude-channel:' + OTHER_PROMPT)  # A later prompt ran meanwhile.
+        coord.write_state(self.path, state)
+        result = self.recover()
+        self.assertEqual((result['settlement'], result['origin'], result['grant']), ('turn_ended', 'operator_recorded', 'absent'))
         self.assertEqual([r['reason'] for r in self.reconciles()], ['turn_ended'])
+        self.assertNotIn('inbox_intent', self.load())
 
-    def test_mismatched_or_unpinned_evidence_changes_nothing(self):
-        before = self.path.read_bytes()
-        bad = {'other attempt': dict(attempt_id='99999999-9999-4999-8999-999999999999'),
-               'other delivery': dict(delivery_id='99999999-9999-4999-8999-999999999999'),
-               'other prompt': dict(native_turn_id='claude-channel:' + OTHER_PROMPT),
-               'other process': dict(process=dict(self.process, start=999)),
-               'not a refusal': dict(hook_code='OK'),
-               'not a channel prompt': dict(native_turn_id=PROMPT)}
-        for name, change in bad.items():
-            with self.subTest(case=name):
-                with self.assertRaises(coord.CoordinationError):
-                    self.recover(*self.evidence(**change))
-                self.assertEqual(self.path.read_bytes(), before, name)
-        path, _ = self.evidence()
+    def test_attempt_stuck_before_the_repair_has_no_supported_recovery(self):
+        before = self.path.read_bytes()  # No host-written refusal record exists, as on the live stuck host.
         with self.assertRaises(coord.CoordinationError):
-            self.recover(path, '0' * 64)
+            self.recover()
+        self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.reconciles(), [])
 
-    def test_evidence_cannot_override_a_possible_grant(self):
+    def test_mismatched_or_forged_records_change_nothing(self):
+        self.hold_with_busy_ledger()
+        before = self.path.read_bytes()
+        for name, kwargs in (('other session', dict(session='22222222-2222-4222-8222-222222222222')),
+                             ('other attempt', dict(attempt='99999999-9999-4999-8999-999999999999')),
+                             ('other prompt', dict(turn='claude-channel:' + OTHER_PROMPT))):
+            with self.subTest(case=name):
+                with self.assertRaises((coord.CoordinationError, FileNotFoundError)):
+                    self.recover(**kwargs)
+                self.assertEqual(self.path.read_bytes(), before, name)
+        for name, change in (('caller-written origin', dict(origin='operator')), ('already settled', dict(settlement='turn_ended')),
+                             ('other phase', dict(phase='activation'))):
+            with self.subTest(case=name):
+                state = json.loads(before)
+                state['wake_refusal_diagnostic'].update(change)
+                coord.write_state(self.path, state)
+                forged = self.path.read_bytes()
+                with self.assertRaises(coord.CoordinationError):
+                    self.recover()
+                self.assertEqual(self.path.read_bytes(), forged, name)
+        self.assertEqual(self.reconciles(), [])
+
+    def test_a_record_cannot_override_a_grant_or_missing_ledger(self):
+        self.hold_with_busy_ledger()
         self.write_grant(delivery_id=DELIVERY)
         with self.assertRaises(coord.CoordinationError):
-            self.recover(*self.evidence())
+            self.recover()
+        self.ledger.unlink()
+        with self.assertRaises(coord.CoordinationError):
+            self.recover()
         self.assertEqual(self.load()['inbox_intent']['request_id'], ATTEMPT)
         self.assertEqual(self.reconciles(), [])
 
