@@ -71,6 +71,15 @@ func newGateAPI(t *testing.T, enabled ...string) (gateAPI, map[string]string) {
 	if dsn == "" {
 		t.Skip("run make test-integration")
 	}
+	// The package's earlier tests migrate a shared database; a filtered run must not depend on that.
+	admin, err := core.Open(context.Background(), dsn, core.Channel{Principal: "gate-fixture", Operator: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	if err = admin.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	g := gateAPI{repo: map[string]string{}}
 	tokens := map[string]string{}
 	var identities []Identity
@@ -81,7 +90,6 @@ func newGateAPI(t *testing.T, enabled ...string) (gateAPI, map[string]string) {
 		identities = append(identities, Identity{TokenSHA256: hex.EncodeToString(digest[:]), Principal: principal, Repo: repo, Role: "agent", Destination: "hosted"})
 		tokens[principal], g.repo[principal] = token, repo
 	}
-	var err error
 	g.api, err = New(context.Background(), dsn, identities, WithSourceOpeningBinding(enabled))
 	if err != nil {
 		t.Fatal(err)
