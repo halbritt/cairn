@@ -19,7 +19,8 @@ and MCP processes.
 - Source-opening receipt binding is now off by default and enabled per
   authenticated profile (S1/S2/S4 of the rollout plan). `cairn serve` reads
   `CAIRN_SOURCE_OPENING_BINDING` once at start, a comma-separated list of exact
-  profile principals with no spaces; unset or empty binds none, and a malformed
+  profile principals with no leading or trailing whitespace in each entry; unset
+  or empty binds none, and a malformed
   list or a principal that is not a configured identity stops the server at start
   rather than enabling a partial or wider set. It is not an `identities.json`
   member, so an older binary still starts on the same files. Changing it needs a

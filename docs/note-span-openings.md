@@ -57,7 +57,9 @@ catalogs until a new session initializes.
 
 - **Setting.** `CAIRN_SOURCE_OPENING_BINDING` names the authenticated profile
   principals (the `principal` values in `identities.json`) whose new context-index
-  receipts bind the policy: exact principals separated by commas, with no spaces.
+  receipts bind the policy: exact principals separated by commas, with no leading
+  or trailing whitespace in each entry. Internal spaces are part of the exact
+  principal name; entries are never trimmed.
   Unset or empty enables none. It is deliberately not an `identities.json` member:
   an older binary refuses to start on an unknown identity field but ignores an
   unknown environment variable.
@@ -65,7 +67,8 @@ catalogs until a new session initializes.
   Editing the environment changes nothing until the server is restarted, which the
   operator performs separately. A restart also clears the volatile
   [client observations](client-observations.md).
-- **Malformed means refuse, not guess.** Empty entries, spaces, duplicates,
+- **Malformed means refuse, not guess.** Empty entries, leading or trailing
+  whitespace in entries, duplicates,
   control characters, more entries than the identity limit, or a principal that is
   not a configured identity stop `cairn serve` at startup with
   `invalid source-opening binding configuration`. A wildcard is just a name. The

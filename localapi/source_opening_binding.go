@@ -10,7 +10,8 @@ import (
 
 // SourceOpeningBindingEnv names the authenticated profile principals whose new
 // context-index receipts bind the source-opening policy: exact principals,
-// comma separated, no spaces. Unset or empty enables none. It is read once when
+// comma separated, with no surrounding whitespace. Unset or empty enables none.
+// It is read once when
 // `cairn serve` starts, so a change needs a restart, and it deliberately is not
 // an identities.json member: an older binary ignores an unknown environment
 // variable but refuses to start on an unknown identity field.
@@ -41,8 +42,8 @@ func invalidSourceOpeningBinding() error {
 }
 
 // ParseSourceOpeningBinding reads SourceOpeningBindingEnv. Anything other than a
-// list of distinct, exact, printable principals is an error, never a wider or
-// partial set.
+// list of distinct, exact principals without control characters or surrounding
+// whitespace is an error, never a wider or partial set.
 func ParseSourceOpeningBinding(value string) ([]string, error) {
 	if value == "" {
 		return nil, nil
