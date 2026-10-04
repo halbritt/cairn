@@ -40,6 +40,15 @@ and MCP processes.
   Passing checks do not show that openings improve relevance or that any
   deployment is ready. See [source openings](docs/note-span-openings.md).
 
+- A Claude channel wake refused after claim and before any bridge grant no longer holds its delivery
+  forever. The hook settles that attempt as `turn_ended` (the store records `processing_failed`, never
+  replayed), only when the bridge ledger proves no grant and the prompt was not joined; otherwise it keeps
+  the hold and records a fixed-vocabulary `wake_refusal_diagnostic`. `coordination.py recover-refused-wake`
+  can later settle a refusal the hook itself recorded as held, under the same checks. It does not accept
+  caller-written evidence. `recover-native-refused-wake` settles an attempt stuck before the repair from
+  three pinned Claude Code operational records (enqueue, dequeue, hook refusal), using a binding-derived
+  session file and the exact observed record shape.
+
 ## 2026-10-01
 
 - The Python lifecycle memory module now reports its own origin on the existing

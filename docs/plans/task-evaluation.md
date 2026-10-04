@@ -375,10 +375,19 @@ A reviewed directory contains `input.json`, `corpus.json` and
   is legitimate and is not a positive task-benefit claim.
 
 `corpus.json` is `{ "notes": [...] }`. Every note has `id`, `body`, `kind`;
-optional fields are `shareable`, `repo`, `supersede_with` and `provenance`.
+optional fields are `shareable`, `repo`, `supersede_with`, `provenance` and
+`entities`. `entities` is a list of exactly `{"kind": "file" | "symbol", "name": ...}`
+objects, the same explicit associations as `cairn remember --entity-file` and
+`--entity-symbol`. Freezing refuses any other shape (an unknown kind or key, a
+non-string name, a repeated pair); the import passes each pair to those flags, so
+core's entity rules (canonical repository-relative file paths, name bounds, at most
+16 associations) refuse what cannot be kept, and the import then compares the stored
+associations with the input. The import map records them. An association is an
+explicit, fallible hint for entity retrieval, not evidence of identity or relevance;
+an input without `entities` is unchanged.
 Lessons and other supported ordinary-note kinds are accepted without filtering.
 This representation creates fresh A records/version1 and keeps an import map;
-it does not recreate historical authority. Unsupported pins, entities, citations
+it does not recreate historical authority. Unsupported pins, citations, relations
 or authority fields are refused, not silently flattened. Declare exclusions in
 corpus policy; do not add expected-ID notes or refill after seeing rankings.
 

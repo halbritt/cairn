@@ -39,7 +39,7 @@ from trial_source_delivery import bind_origins
 from trial_corpus_fingerprint import corpus_stamp, same_corpus
 from trial_receipt_explanation import export_receipts, retain_hook_explanations, receipt_export_metadata
 from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
-from trial_task_input import freeze_input, load_input
+from trial_task_input import corpus_entities, freeze_input, load_input
 from trial_task_permissions import settings_permissions, command_metadata, error_metadata, denial_metadata, background_result
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +124,10 @@ def validate(cases, corpus, workspaces=TRIAL / "workspaces", *, prospective=Fals
     for note in corpus:
         if note.get("supersede_with") and note["supersede_with"] not in known:
             problems.append(note["id"] + ": unknown supersede_with")
+        try:
+            corpus_entities(note)
+        except ValueError as error:
+            problems.append(note["id"] + ": " + str(error))
     seen = set()
     for case in cases:
         cid = case["id"]
@@ -254,6 +258,20 @@ def disposable_pg():
     return socket
 
 
+def import_provenance(corpus, ids):
+    """The frozen import map: fixture note -> imported record. Explicit entity associations, when a
+    note declares any, are recorded as imported; inputs without them keep the earlier row shape."""
+    rows = []
+    for note in corpus:
+        row = dict(input_id=note["id"], imported_record_id=ids[note["id"]], imported_version=1,
+                   body_sha256=hashlib.sha256(note["body"].encode()).hexdigest(), provenance=note.get("provenance"))
+        entities = corpus_entities(note)
+        if entities:
+            row["entities"] = [dict(kind=kind, name=name) for kind, name in entities]
+        rows.append(row)
+    return rows
+
+
 class TrialStore:
     """One disposable database, one API server and one hosted agent token."""
 
@@ -316,11 +334,25 @@ class TrialStore:
                 "--request-id", str(uuid.uuid5(uuid.NAMESPACE_URL, "task-eval:" + note["id"]))]
         if note.get("shareable", True):
             args.insert(1, "--shareable")
+        # Explicit associations travel through the CLI's own flags, so core.NormalizeEntities
+        # validates them; `=` keeps a name that begins with "-" a value, not a flag.
+        entities = corpus_entities(note)
+        args += [f"--entity-{kind}={name}" for kind, name in entities]
         result = run([self.binary, *args], env=self.env, input=note["body"].encode(), timeout=60)
         record = json.loads(result.stdout)["data"]
+        if entities:
+            self.verify_entities(note["id"], record["record_id"], entities)
         self.ids[note["id"]] = record["record_id"]
         self.names[record["record_id"]] = note["id"]
         return record
+
+    def verify_entities(self, input_id, record_id, entities):
+        """Compare what the store kept with what the input declared; a drop or change refuses."""
+        stored = cairn_json(self.binary, ["get", record_id], self.env)
+        kept = {(e["kind"], e["name"]) for e in stored.get("entities") or []}
+        if kept != set(entities):
+            raise RuntimeError(f"{input_id}: imported entity associations differ from the input "
+                               f"({len(kept)} stored, {len(entities)} declared)")
 
     def seed(self, notes, workers=8):
         with concurrent.futures.ThreadPoolExecutor(workers) as pool:
@@ -1435,9 +1467,7 @@ def cmd_agent(args):
             cleanup.callback(store.stop)
             if prospective:
                 store.seed_corpus(corpus, workers=1)
-                (store.root / "import-provenance.json").write_text(json.dumps([dict(
-                    input_id=note["id"], imported_record_id=store.ids[note["id"]], imported_version=1,
-                    body_sha256=hashlib.sha256(note["body"].encode()).hexdigest(), provenance=note.get("provenance")) for note in corpus], indent=2))
+                (store.root / "import-provenance.json").write_text(json.dumps(import_provenance(corpus, store.ids), indent=2))
             else:
                 store.seed_corpus(corpus)
             store.grow(args.distractors, 0)

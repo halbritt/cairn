@@ -256,6 +256,50 @@ reconciling an uncertain claim on process/session end, preventing delayed claims
 from committing afterward. Empty polls are durable too: retrying a lost empty
 response cannot claim a message that arrived later.
 
+A Claude channel wake can be claimed and then refused before its bridge grant (for example a
+failed required search). Once the native client observes the hook's exit 2, it blocks that prompt;
+there is no native `Stop`, and later prompts own different turns (`NATIVE_TURN_MISMATCH`). The hook settles that attempt itself as
+`turn_ended`, which the store records as `processing_failed` with no automatic replay.
+
+Under the trusted-host contract, a Claude attempt is owned by the native prompt that claimed it
+(`claude-channel:<prompt_id>`), and the store's `turn_ended` means that owning turn ended without
+completion. The refusing hook is that prompt's own `UserPromptSubmit`. It records settlement before
+returning exit 2, so this is not an atomic transaction with the native client's observation of the
+refusal. A crash in that interval can leave a context-free native prompt after the attempt is recorded
+as failed. Settlement alone therefore does not prove that the model never saw the prompt. No `Stop`
+is recorded or fabricated, no other turn ends the attempt, and failure never causes automatic replay.
+
+It settles only when the claim belongs to exactly this unjoined, active refused prompt, no tool was
+observed, the attempt's command journal holds nothing but the claim, and the bridge's own ledger and its
+initialization marker exist and, read under the bridge's session lock, contain no grant for the attempt,
+delivery or prompt. Any doubt (a grant, a missing, busy or unreadable ledger, a joined owner prompt, an
+observed tool, or any other journal content) keeps the existing hold and records only
+`wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state, settlement).
+
+A refusal held that way can be settled later only from that host-written record:
+`coordination.py recover-refused-wake --config BINDING --native-session-id S --attempt-id A
+--native-turn-id T`. It repeats every check, decides before writing, and sends nothing to the native
+session. A caller-written statement is not proof of a historical refusal.
+
+An attempt stuck before this repair has no host record. It can be settled only from Claude Code's own
+operational records, using `coordination.py recover-native-refused-wake --config BINDING --native-session-id S
+--attempt-id A --enqueue-record OFF:LEN:SHA --dequeue-record OFF:LEN:SHA --refusal-record OFF:LEN:SHA`.
+- **Which file it reads:** the session file is derived from the trusted binding's `config_home`, the held
+  state's workspace and the session ID, never from the caller. It is opened without following symlinks,
+  and only the three pinned byte ranges are read.
+- **What it requires** (the shape observed on Claude Code 2.1.285; any other shape is refused):
+  - one contiguous enqueue, dequeue and refusal sequence;
+  - an enqueue whose content is exactly this session's channel wake for the held delivery;
+  - a `system`/`informational` warning with `preventContinuation`, whose content is exactly "UserPromptSubmit
+    operation blocked by hook", then this binding's hook command, then the post-claim bridge refusal message,
+    then that same wake;
+  - timestamps that bracket the delivery's single claim attempt.
+- **How the attempt is joined:** the records do not name the native prompt UUID. So the attempt's own
+  host-recorded owner is used, joined by the exact delivery, identities, command and chronology above.
+- **What it still checks:** every settlement check applies (no grant, no tools, no journal progress, the
+  owning prompt not active). It decides before writing.
+
+
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a
 confirmed end. It cannot use that attempt to finish a newer execution. A new
