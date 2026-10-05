@@ -18,7 +18,8 @@ and MCP processes.
 
 - A failed lifecycle recall now keeps two optional fixed fields in its local
   `last_recall` status, recorded from the original failure.
-  - `error_code`: a provider status, only when it is in the existing code allowlist.
+  - `error_code`: a fixed failure category from an allowlisted CLI status or a
+    locally detected timeout or command-start failure.
   - `error_reason`: the local check that failed, such as a nonzero command exit,
     invalid JSON, the output limit, a start failure, an unconfirmed result, or an
     unexpected search status or destination.

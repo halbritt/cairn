@@ -30,8 +30,9 @@ reinstalled with this engine.
 A handled failure replaces an earlier success with `outcome: failed`, zero
 delivered bytes/records and a fixed `error_type` category. Two optional fields
 may follow from the original failure, recorded before any required-context
-conversion. `error_code` is a provider status only when it is already in the fixed
-code allowlist. `error_reason` names the local check that failed (`NONZERO_EXIT`,
+conversion. `error_code` is a fixed failure category from an allowlisted CLI
+status or a locally detected timeout or command-start failure. `error_reason`
+names the local check that failed (`NONZERO_EXIT`,
 `INVALID_JSON`, `OUTPUT_LIMIT`, `START_FAILED`, `NOT_CONFIRMED`, `SEARCH_STATUS` or
 `NOT_HOSTED`). Both are checked again against their fixed sets when saved, and the
 next recall attempt clears them. An absent field means an unrecognised value, a
