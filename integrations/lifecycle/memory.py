@@ -3107,43 +3107,50 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
-    # Optional, default-off invocation trace. Every diagnostic step is isolated:
-    # a trace fault can never prevent _main, change its return value or output,
-    # or mask its exception. Real hook exceptions are never caught here.
+    # Optional, default-off invocation trace. Setup and the hook body share one
+    # cleanup lifetime: the ContextVar is reset and the descriptor closed on every
+    # path. Ordinary trace errors are absorbed; an interruption during setup still
+    # propagates (the hook does not run); a cleanup interruption never masks an
+    # already active failure, and propagates only after a normal body.
     trace = token = None
-    try:
-        trace = _InvocationTrace(args.config)
-        token = _TRACE.set(trace)
-        trace.entry()
-    except Exception:
-        pass
     code = None
+    failing = False
     try:
+        try:
+            trace = _InvocationTrace(args.config)
+            token = _TRACE.set(trace)
+            trace.entry()
+        except Exception:
+            pass
         code = _main(args)
         return code
+    except BaseException:
+        failing = True
+        raise
     finally:
-        # Reset and close run even if finishing is interrupted; an interruption
-        # still propagates (it is never swallowed to claim completion).
-        try:
-            if trace is not None:
-                try:
-                    trace.finish(code)
-                except Exception:
-                    pass
-        finally:
-            try:
-                if token is not None:
-                    try:
-                        _TRACE.reset(token)
-                    except Exception:
-                        pass
-            finally:
-                if trace is not None:
-                    try:
-                        trace.close()
-                    except Exception:
-                        pass
+        _trace_cleanup(trace, token, code, preserve_active_failure=failing)
 
+
+def _trace_cleanup(trace, token, code, *, preserve_active_failure):
+    """Finish, reset and close; every step runs even if an earlier one is interrupted."""
+    interruption = None
+    steps = []
+    if trace is not None:
+        steps.append(lambda: trace.finish(code))
+    if token is not None:
+        steps.append(lambda: _TRACE.reset(token))
+    if trace is not None:
+        steps.append(trace.close)
+    for step in steps:
+        try:
+            step()
+        except Exception:
+            pass
+        except BaseException as exc:
+            if interruption is None:
+                interruption = exc
+    if interruption is not None and not preserve_active_failure:
+        raise interruption
 
 def _main(args):
     config = event = None

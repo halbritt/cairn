@@ -84,7 +84,7 @@ def parse_line(line):
     if not isinstance(value, dict) or value.get('schema') != 'cairn.hook-invocation/1':
         return None
     kind = value.get('kind')
-    if kind not in FIELDS:
+    if not isinstance(kind, str) or kind not in FIELDS:
         return None
     fields = {k: v for k, v in value.items() if k not in ('schema', 'kind')}
     if not REQUIRED[kind] <= set(fields) or not set(fields) <= set(FIELDS[kind]):
@@ -145,11 +145,28 @@ class TraceFixture(unittest.TestCase):
     def kinds(self):
         return [r['kind'] for r in records(self.trace)[0]]
 
+    STABLE_RECALL = ('outcome', 'bytes', 'error_type', 'hook_event_name', 'records', 'candidate_body_records',
+                     'candidate_previews', 'cumulative_hook_bytes', 'native_allowance_bytes',
+                     'reserved_native_bytes', 'native_turn_id', 'candidate_inspection')
+    STABLE_GRANT = ('limit_bytes', 'emitted_hook_bytes', 'reserved_native_bytes', 'granted', 'required',
+                    'serialized_hook_bytes')
+    STABLE_INBOX_GRANT = ('identity', 'limit_bytes', 'output_bytes', 'coordination_bytes', 'native_allowance_bytes',
+                          'pull_calls', 'prior_hook_charge_bytes', 'required', 'status')
+
     def stable_state(self):
-        path = self.root / 'memory' / (self.event['session_id'] + '.json')
-        state = json.loads(path.read_text()) if path.exists() else {}
-        last = state.get('last_recall', {})
-        return {k: last.get(k) for k in ('outcome', 'bytes', 'error_type', 'event')}
+        """Named deterministic fields only; timestamps and durations are excluded by name."""
+        def load(suffix):
+            path = self.root / 'memory' / (self.event['session_id'] + suffix)
+            return json.loads(path.read_text()) if path.exists() else {}
+        state, ledger, inbox = load('.json'), load('.memory-budget.json'), load('.inbox-recall.json')
+        last, capture = state.get('last_recall', {}), state.get('last_capture', {})
+        return dict(
+            recall={k: last.get(k) for k in self.STABLE_RECALL}, seen=state.get('seen'),
+            capture={k: capture.get(k) for k in ('outcome', 'records', 'bytes')},
+            ledger=dict(active=ledger.get('active_turn_id'),
+                        pending={k: ledger.get('pending', {}).get(k) for k in self.STABLE_GRANT},
+                        turns={t: {k: g.get(k) for k in self.STABLE_GRANT} for t, g in ledger.get('turns', {}).items()}),
+            inbox={key: {k: g.get(k) for k in self.STABLE_INBOX_GRANT} for key, g in inbox.get('grants', {}).items()})
 
 
 class InvocationTraceTests(TraceFixture):
@@ -564,6 +581,62 @@ class InvocationTraceCorrectionTests(TraceFixture):
         self.assertNotIn('ppid', raw)
         self.assertNotIn('at', raw)
 
+    def test_entry_interruption_still_resets_and_closes(self):
+        self.enable()
+        closed = []
+        original_close = memory._InvocationTrace.close
+        def record_close(trace):
+            closed.append(trace.dfd)
+            original_close(trace)
+        with patch.object(memory._InvocationTrace, 'entry', side_effect=KeyboardInterrupt), \
+             patch.object(memory._InvocationTrace, 'close', record_close):
+            with self.assertRaises(KeyboardInterrupt):
+                self.case.memory_main(self.event)
+        self.assertIsNone(memory._TRACE.get())
+        self.assertEqual(len(closed), 1)
+        self.assertIsNotNone(closed[0])
+        with self.assertRaises(OSError):
+            os.fstat(closed[0])
+        self.assertEqual(self.case.calls(), [])  # the interrupted hook did not run
+
+    def test_cleanup_interruption_never_masks_a_body_failure(self):
+        self.enable()
+        with patch.object(memory, 'handle', side_effect=RuntimeError('real hook failure')), \
+             patch.object(memory._InvocationTrace, 'finish', side_effect=KeyboardInterrupt):
+            with self.assertRaises(RuntimeError):
+                self.case.memory_main(self.event)
+        self.assertIsNone(memory._TRACE.get())
+
+    def test_required_refusal_unchanged_with_trace_absent_enabled_or_broken(self):
+        observed = {}
+        for mode in ('absent', 'enabled', 'fifo', 'full'):
+            for name, event in (('UserPromptSubmit', dict(self.case.event, prompt=ORDINARY)),
+                                ('SessionStart', dict(self.case.event, hook_event_name='SessionStart', source='resume'))):
+                with self.subTest(mode=mode, event=name):
+                    self.setUp()
+                    if mode != 'absent':
+                        self.enable()
+                    if mode == 'fifo':
+                        os.mkfifo(self.trace, 0o600)
+                    elif mode == 'full':
+                        with self.trace.open('wb') as out:
+                            out.truncate(memory.TRACE_CAP)
+                        self.trace.chmod(0o600)
+                    self.case.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body='Keep the fixture instruction.'))]
+                    self.case.freeze()
+                    self.assertEqual(self.case.invoke(main=True)['code'], 0)
+                    directory = self.root / 'memory'; directory.mkdir(mode=0o700, exist_ok=True)
+                    with (directory / (self.case.event['session_id'] + '.lock')).open('a') as lock:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        result = self.run_hook(event)
+                    observed[(mode, name)] = (result.returncode, result.stdout, result.stderr,
+                                              json.dumps(self.stable_state(), sort_keys=True))
+        for name in ('UserPromptSubmit', 'SessionStart'):
+            baseline = observed[('absent', name)]
+            self.assertIn(baseline[0], (0, 2))
+            for mode in ('enabled', 'fifo', 'full'):
+                self.assertEqual(observed[(mode, name)], baseline, (mode, name))
+
     # 2. cause kept separately from the final required refusal
     def test_lock_busy_cause_survives_required_refusal(self):
         for name, event, code, stdout_prefix in (
@@ -599,16 +672,17 @@ class InvocationTraceCorrectionTests(TraceFixture):
         with open('/dev/full', 'wb') as full:
             result = subprocess.run([sys.executable, str(self.root / 'memory.py'), '--config', str(self.root / 'memory.json')],
                                     input=json.dumps(self.event).encode(), stdout=full, stderr=subprocess.PIPE, timeout=20)
+        traced = [r for r in records(self.trace)[0] if r['kind'] == 'exit']  # read before resetting the fixture
         self.setUp()
         with open('/dev/full', 'wb') as full:
             untraced = subprocess.run([sys.executable, str(self.root / 'memory.py'), '--config', str(self.root / 'memory.json')],
                                       input=json.dumps(self.event).encode(), stdout=full, stderr=subprocess.PIPE, timeout=20)
         self.assertEqual(result.returncode, untraced.returncode)
-        self.assertNotEqual(result.returncode, 0)  # flush failed at shutdown
-        exit_ = [r for r in records(self.trace)[0] if r['kind'] == 'exit'] if self.trace.exists() else []
-        # The trace never has a process-exit field; main_return_code is main()'s value only.
-        for record in exit_:
-            self.assertNotIn('exit_code', record)
+        self.assertNotEqual(result.returncode, 0)  # stdout flush failed after main() returned
+        self.assertEqual(len(traced), 1)
+        # main() returned 0 on its normal path; the OS exit status differs and is not recorded.
+        self.assertEqual((traced[0]['main_return_code'], traced[0]['outcome']), (0, 'engine_completed'))
+        self.assertNotIn('exit_code', traced[0])
 
 
 class StrictReaderTests(unittest.TestCase):
@@ -635,6 +709,8 @@ class StrictReaderTests(unittest.TestCase):
                                       '"session":"{11111111-1111-4111-8111-111111111111}"}'),
             'oversized': self.VALID[:-1] + ',"pad":"' + 'x' * 600 + '"}',
             'not json': '{"at":',
+            'list kind': self.VALID.replace('"entry"', '[]'),
+            'object kind': self.VALID.replace('"entry"', '{}'),
         }
         for name, line in bad.items():
             with self.subTest(name):
