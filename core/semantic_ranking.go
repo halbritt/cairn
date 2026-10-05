@@ -65,9 +65,9 @@ func semanticIdentityValid(d *DiscoveryRanking) bool {
 	return true
 }
 
-func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string) ([]candidate, error) {
+func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string, memo *semanticMemo) ([]candidate, error) {
 	if s.semanticRetriever != nil {
-		return s.rankIndexed(ctx, query, p, candidates, evaluations, retainedRanking)
+		return s.rankIndexed(ctx, query, p, candidates, evaluations, retainedRanking, memo)
 	}
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
@@ -85,7 +85,7 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 		return candidates, nil
 	}
 	if s.semanticRanker != nil && len(notes) <= 64 && bytes <= 1024*1024 {
-		result, err := s.semanticRanker(ctx, SemanticRankRequest{query, notes})
+		result, err := memo.rank(ctx, s.semanticRanker, SemanticRankRequest{query, notes})
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}

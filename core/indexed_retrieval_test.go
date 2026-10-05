@@ -319,7 +319,7 @@ func TestIndexedDiscoveryHistoricalRRFAndInterleavedReceiptsReplaySeparately(t *
 				t.Fatal(err)
 			}
 			p.Mode = "index"
-			if _, err = s.rankIndexed(ctx, req.Query, &p, candidates, evaluations, contract.ranking); err != nil {
+			if _, err = s.rankIndexed(ctx, req.Query, &p, candidates, evaluations, contract.ranking, &semanticMemo{}); err != nil {
 				t.Fatal(err)
 			}
 			p.Schema, p.Ranking = contract.schema, contract.ranking

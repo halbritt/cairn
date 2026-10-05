@@ -189,8 +189,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	if destination.Name == "hosted" && destination.AllowLocal {
 		return Package{}, failure("DESTINATION_PROHIBITED", "hosted binding cannot receive local content")
 	}
+	memo := &semanticMemo{}
 	for attempt := 0; attempt < 4; attempt++ {
-		pkg, err := s.compileOnce(ctx, req, destination)
+		pkg, err := s.compileOnce(ctx, req, destination, memo)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
 			return pkg, err
@@ -204,14 +205,14 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	return Package{}, failure("VERSION_CONFLICT", "compile retry limit reached")
 }
 
-func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination Destination, memo *semanticMemo) (Package, error) {
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
 		return Package{}, err
 	}
 	defer tx.Rollback(ctx)
 	evaluations := map[string]*CandidateEvaluation{}
-	semantic, err := s.compileSnapshot(ctx, tx, req, destination, evaluations)
+	semantic, err := s.compileSnapshot(ctx, tx, req, destination, evaluations, memo)
 	if err != nil {
 		if !durablePolicyRefusal(err) {
 			return Package{}, err
@@ -286,7 +287,7 @@ type candidate struct {
 	specificity int
 }
 
-func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
+func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation, memo *semanticMemo) (SemanticPackage, error) {
 	p, candidates, err := s.collectCandidates(ctx, tx, req, dest, evaluations)
 	if err != nil {
 		return p, err
@@ -325,7 +326,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 				p.Presentation = retained.Presentation
 				p.SpanContext = retained.SpanContext
 			}
-			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking)
+			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking, memo)
 			if err != nil {
 				return p, err
 			}

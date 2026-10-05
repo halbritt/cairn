@@ -59,7 +59,7 @@ func validPassage(body string, span ByteSpanRequest) bool {
 	return span.Offset >= 0 && span.Length > 0 && span.Offset <= len(body) && span.Length <= len(body)-span.Offset && utf8.ValidString(body[span.Offset:span.Offset+span.Length]) && (span.Offset == 0 || utf8.RuneStart(body[span.Offset]))
 }
 
-func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string) ([]candidate, error) {
+func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string, memo *semanticMemo) ([]candidate, error) {
 	p.Schema = "cairn.semantic/16"
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
@@ -75,7 +75,7 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 		p.Discovery.State = "not_needed"
 		return candidates, nil
 	}
-	r, err := s.semanticRetriever(ctx, SemanticRankRequest{query, notes})
+	r, err := memo.retrieve(ctx, s.semanticRetriever, SemanticRankRequest{query, notes})
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

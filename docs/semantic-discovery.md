@@ -25,6 +25,20 @@ default. Semantic discovery requires a nonempty query, cannot be combined with
 browsing and is available only for context index requests, not authority-bearing
 placement, capability or security decisions.
 
+Within one compile request, transaction retries reuse the last bounded semantic
+provider outcome when the exact query and ordered eligible source inputs remain
+unchanged. Each retry still checks current eligibility and authority, validates
+the provider result, and rebuilds the ranking and receipt. A changed source or
+candidate set requires new provider work; separate public requests share nothing.
+
+This avoids repeating slow semantic work after an exposure-write conflict. A
+busy worker, a not-ready index, an internal provider timeout or a zero-indexed
+result remains unavailable for that unchanged input during the same request,
+even if the backend recovers meanwhile. Successful results likewise need not
+include passages indexed later during the retry. Caller cancellation still ends
+the request. Oversized malformed results are validated without retention. This
+does not guarantee a five-second total search or increase any hook deadline.
+
 ## Local backend
 
 For collections beyond the request-scoring limits below, the

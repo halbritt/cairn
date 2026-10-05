@@ -148,7 +148,7 @@ func TestCompileSnapshotCannotCrossCommittedRestoreFence(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 	evaluations := map[string]*CandidateEvaluation{}
-	semantic, err := s.compileSnapshot(ctx, tx, req, Destination{"local", true}, evaluations)
+	semantic, err := s.compileSnapshot(ctx, tx, req, Destination{"local", true}, evaluations, &semanticMemo{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRestoreFenceWaitsForReceiptCommit(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 	evaluations := map[string]*CandidateEvaluation{}
-	semantic, err := s.compileSnapshot(ctx, tx, req, Destination{"local", true}, evaluations)
+	semantic, err := s.compileSnapshot(ctx, tx, req, Destination{"local", true}, evaluations, &semanticMemo{})
 	if err != nil {
 		t.Fatal(err)
 	}
