@@ -321,11 +321,18 @@ class InvocationTraceTests(TraceFixture):
         with self.trace.open('wb') as out:
             out.truncate(memory.TRACE_CAP - 2000)
         self.trace.chmod(0o600)
-        procs = [subprocess.Popen([sys.executable, str(self.root / 'memory.py'), '--config', str(self.root / 'memory.json')],
-                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                 for _ in range(16)]
-        for proc in procs:
-            proc.communicate(json.dumps(dict(self.event, session_id=str(uuid.uuid4()))).encode(), timeout=30)
+        procs = []
+        try:
+            for _ in range(16):
+                procs.append(subprocess.Popen([sys.executable, str(self.root / 'memory.py'), '--config', str(self.root / 'memory.json')],
+                                              stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+            for proc in procs:
+                proc.communicate(json.dumps(dict(self.event, session_id=str(uuid.uuid4()))).encode(), timeout=30)
+        finally:
+            for proc in procs:  # owned cleanup if a timeout or assertion interrupts the loop
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=10)
         self.assertLessEqual(self.trace.stat().st_size, memory.TRACE_CAP)
 
     # T8 trace-lock contention drops without waiting or touching the session lock
@@ -428,20 +435,34 @@ class InvocationTraceTests(TraceFixture):
         self.enable()
         real = self.root / 'real-cairn'
         self.case.cli.rename(real)
-        self.case.cli.write_text('#!/bin/sh\nsleep 30\n')
+        started = self.root / 'cli-started'
+        self.case.cli.write_text('#!/bin/sh\ntouch ' + str(started) + '\nexec sleep 30\n')
         self.case.cli.chmod(0o700)
         proc = subprocess.Popen([sys.executable, str(self.root / 'memory.py'), '--config', str(self.root / 'memory.json')],
                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 start_new_session=True)
-        proc.stdin.write(json.dumps(self.event).encode()); proc.stdin.close()
-        deadline = time.monotonic() + 10
-        while not records(self.trace)[0] and time.monotonic() < deadline:
-            time.sleep(0.05)
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=10)
-        # Fixture hygiene: the owned group is gone (verified separately from trace evidence).
-        with self.assertRaises(ProcessLookupError):
-            os.killpg(proc.pid, 0)
+        try:
+            proc.stdin.write(json.dumps(self.event).encode()); proc.stdin.close()
+            deadline = time.monotonic() + 10
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertTrue(started.exists(), 'fake CLI never started')  # killed during the sleeping CLI
+        finally:
+            # Owned-fixture cleanup on every path; separate from any trace evidence.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=10)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(proc.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)  # an unreaped descendant zombie may briefly remain
+        else:
+            self.fail('owned fixture process group still present')
         good, _ = records(self.trace)
         self.assertEqual([r['kind'] for r in good], ['entry', 'parsed'])
         # The parsed record attributes the entry-only invocation to its session.
@@ -513,6 +534,35 @@ class InvocationTraceCorrectionTests(TraceFixture):
                     exit_ = self.pair()[1]
                     self.assertEqual(exit_['outcome'], 'unexpected')
                     self.assertNotIn('main_return_code', exit_)
+
+    def test_finish_interruption_still_resets_and_closes(self):
+        self.enable()
+        closed = []
+        original_close = memory._InvocationTrace.close
+        def record_close(trace):
+            closed.append(trace.dfd)
+            original_close(trace)
+        with patch.object(memory._InvocationTrace, 'finish', side_effect=KeyboardInterrupt), \
+             patch.object(memory._InvocationTrace, 'close', record_close):
+            with self.assertRaises(KeyboardInterrupt):
+                self.case.memory_main(self.event)
+        self.assertIsNone(memory._TRACE.get())
+        self.assertEqual(len(closed), 1)
+        self.assertIsNotNone(closed[0])
+        with self.assertRaises(OSError):
+            os.fstat(closed[0])  # the pinned directory descriptor was closed
+
+    def test_out_of_range_numbers_are_omitted(self):
+        self.enable()
+        trace = memory._InvocationTrace(self.root / 'memory.json')
+        try:
+            with patch.object(memory.os, 'getppid', return_value=0), patch.object(memory.time, 'time', return_value=-5.0):
+                trace.entry()
+        finally:
+            trace.close()
+        raw = json.loads(self.trace.read_bytes().splitlines()[-1])
+        self.assertNotIn('ppid', raw)
+        self.assertNotIn('at', raw)
 
     # 2. cause kept separately from the final required refusal
     def test_lock_busy_cause_survives_required_refusal(self):

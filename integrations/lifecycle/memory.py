@@ -502,22 +502,26 @@ class _InvocationTrace:
                 pass
 
     def entry(self):
-        self.entry_recorded = self.write(dict(schema=TRACE_SCHEMA, kind="entry", inv=self.inv,
-                                              at=_trace_ms(), pid=os.getpid(), ppid=os.getppid()))
+        record = dict(schema=TRACE_SCHEMA, kind="entry", inv=self.inv)
+        _trace_bounded(record, "at", _trace_ms(), 0, 2 ** 53 - 1)
+        _trace_bounded(record, "pid", os.getpid(), 1, 4194304)
+        _trace_bounded(record, "ppid", os.getppid(), 1, 4194304)
+        self.entry_recorded = self.write(record)
 
     def parsed(self, event):
         """One droppable record joining this inv to the validated event identity."""
         self.fields.update(_trace_identity(event.get("hook_event_name"), event.get("session_id"),
                                            event.get("turn_id")))
-        self.write(dict(schema=TRACE_SCHEMA, kind="parsed", inv=self.inv, at=_trace_ms(),
-                        **_trace_identity(self.fields.get("event"), self.fields.get("session"),
-                                          self.fields.get("turn"))))
+        record = dict(schema=TRACE_SCHEMA, kind="parsed", inv=self.inv,
+                      **_trace_identity(self.fields.get("event"), self.fields.get("session"), self.fields.get("turn")))
+        _trace_bounded(record, "at", _trace_ms(), 0, 2 ** 53 - 1)
+        self.write(record)
 
     def finish(self, main_return_code):
         fields = self.fields
-        record = dict(schema=TRACE_SCHEMA, kind="exit", inv=self.inv, at=_trace_ms(),
-                      duration_ms=min(3600000, max(0, int((time.monotonic() - self.started) * 1000))),
-                      entry_recorded=self.entry_recorded)
+        record = dict(schema=TRACE_SCHEMA, kind="exit", inv=self.inv, entry_recorded=self.entry_recorded)
+        _trace_bounded(record, "at", _trace_ms(), 0, 2 ** 53 - 1)
+        _trace_bounded(record, "duration_ms", int((time.monotonic() - self.started) * 1000), 0, 3600000)
         if main_return_code is None:
             record["outcome"] = "unexpected"  # an exception escaped main(); no positive label
         else:
@@ -532,8 +536,7 @@ class _InvocationTrace:
             if fields.get(key) in allowed:
                 record[key] = fields[key]
         record.update(_trace_identity(fields.get("event"), fields.get("session"), fields.get("turn")))
-        if type(fields.get("context_bytes")) is int and 0 <= fields["context_bytes"] <= 1024 * 1024:
-            record["context_bytes"] = fields["context_bytes"]
+        _trace_bounded(record, "context_bytes", fields.get("context_bytes"), 0, 1024 * 1024)
         if type(fields.get("bound")) is bool:
             record["bound"] = fields["bound"]
         self.write(record)
@@ -548,7 +551,13 @@ class _InvocationTrace:
 
 
 def _trace_ms():
-    return max(0, min(2 ** 53 - 1, int(time.time() * 1000)))
+    return int(time.time() * 1000)
+
+
+def _trace_bounded(record, key, value, low, high):
+    """Add an exact int within bounds; anything else is omitted, never clamped."""
+    if type(value) is int and low <= value <= high:
+        record[key] = value
 
 
 def _trace_identity(event, session, turn):
@@ -3113,21 +3122,27 @@ def main():
         code = _main(args)
         return code
     finally:
-        if trace is not None:
+        # Reset and close run even if finishing is interrupted; an interruption
+        # still propagates (it is never swallowed to claim completion).
+        try:
+            if trace is not None:
+                try:
+                    trace.finish(code)
+                except Exception:
+                    pass
+        finally:
             try:
-                trace.finish(code)
-            except Exception:
-                pass
-        if token is not None:
-            try:
-                _TRACE.reset(token)
-            except Exception:
-                pass
-        if trace is not None:
-            try:
-                trace.close()
-            except Exception:
-                pass
+                if token is not None:
+                    try:
+                        _TRACE.reset(token)
+                    except Exception:
+                        pass
+            finally:
+                if trace is not None:
+                    try:
+                        trace.close()
+                    except Exception:
+                        pass
 
 
 def _main(args):
