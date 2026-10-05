@@ -1721,7 +1721,7 @@ def codex_agent_context(memory, event, result, budget, status, deadline):
 def recall_timeout(deadline, limit=2):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise HookError("retrieval time budget exhausted")
+        raise HookError("retrieval time budget exhausted", code="TIMEOUT")
     return min(limit, remaining)
 
 

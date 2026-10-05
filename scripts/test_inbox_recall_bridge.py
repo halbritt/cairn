@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -327,6 +327,71 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertIn('source_temporarily_unavailable',text)
         self.assertIn('No new optional lookup allowance',text)
         self.assertNotIn('search ordinary Cairn memory',text)
+
+    def test_expired_deadline_matches_timeout_without_dispatching(self):
+        required = 'Required checked instruction survives optional deadline exhaustion.'
+        for stage, completed, failure in (('required', 0, 'fail_search'),
+                                           ('history', 1, 'fail_history'),
+                                           ('optional_search', 2, 'fail_task_search')):
+            outcomes = []
+            for expired in (False, True):
+                with self.subTest(stage=stage, expired=expired):
+                    case = InboxRecallBridgeTests()
+                    case.setUp()
+                    self.addCleanup(case.doCleanups)
+                    case.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+                    if not expired:
+                        case.fixture[failure] = 'TIMEOUT'
+                    case.freeze()
+                    load_bridge = coord.load_inbox_recall
+
+                    def load_with_clock(config, **kwargs):
+                        bridge = load_bridge(config, **kwargs)
+                        bind = bridge.binding
+
+                        def bind_with_clock(config):
+                            engine, memory_config = bind(config)
+                            # Advance only this loaded engine's clock after a
+                            # completed fake CLI call. Keep the real deadline
+                            # helper and public coordination/bridge path intact.
+                            calls = 0
+                            clock = Mock(wraps=time)
+                            clock.monotonic.side_effect = lambda: time.monotonic() + (60 if calls >= completed else 0)
+                            engine.time = clock
+                            call = engine.Memory.call
+
+                            def counted_call(instance, *args, **kwargs):
+                                nonlocal calls
+                                result = call(instance, *args, **kwargs)
+                                calls += 1
+                                return result
+
+                            engine.Memory.call = counted_call
+                            return engine, memory_config
+
+                        bridge.binding = bind_with_clock
+                        return bridge
+
+                    with patch.object(coord, 'load_inbox_recall', side_effect=load_with_clock if expired else load_bridge):
+                        result = case.invoke(main=True)
+                    outcomes.append(result['stdout'].replace(str(case.root), '<ROOT>').replace(case.root.name, '<PROJECT>'))
+                    operations = ['search', 'history', 'search'][:completed + (not expired)]
+                    self.assertEqual([x['op'] for x in case.calls()], operations)
+                    if stage == 'required':
+                        self.assertEqual((result['code'], result['stdout']), (2, ''))
+                        self.assertFalse((case.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+                    else:
+                        self.assertEqual(result['code'], 0, result)
+                        text = json.loads(result['stdout'])['hookSpecificOutput']['additionalContext']
+                        self.assertIn(required, text)
+                        if stage == 'history':
+                            self.assertIn('source_temporarily_unavailable_read_exact_source', text)
+                            self.assertNotIn(case.body, text)
+                        else:
+                            self.assertIn('optional_recall_unavailable', text)
+                            self.assertIn(case.body, text)
+            with self.subTest(stage=stage, parity=True):
+                self.assertEqual(outcomes[0], outcomes[1])
 
     def test_coordination_opt_out_does_not_drop_required_memory(self):
         self.fixture['search']['selected']=[dict(mandatory=True,record=dict(body='Independent required context.'))]
