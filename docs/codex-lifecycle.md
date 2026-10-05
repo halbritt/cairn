@@ -139,6 +139,19 @@ installer does. Rerunning it updates the installation without duplicating
 hooks. Start a fresh Codex session afterward. Put `.cairn-no-memory` in a
 project to opt it out, or set `CAIRN_LIFECYCLE_DISABLED=1` for one run.
 
+## Optional invocation trace (diagnostic window)
+
+The lifecycle engine (`integrations/lifecycle/memory.py`, used by every harness) can record each invocation's fixed metadata before it reads its configuration or takes the session lock. Tracing is **off** unless the directory `invocation-trace/` exists beside the configuration file passed with `--config`, owned by you, with mode `0700`. The engine never creates it.
+
+- **Enable for a bounded window only.** Run `mkdir -m 0700 <config dir>/invocation-trace`, and write down the time you enabled and removed it. Nothing else records that tracing was on.
+- **One file for every session using that configuration.** `trace.jsonl` (mode `0600`) has `entry`, `parsed` and `exit` lines joined by a random `inv`. When reporting, filter to your own session and turn, and do not copy other sessions' lines.
+- **What it holds.** Fixed labels (`outcome`, `cause`, `phase`, `stage`, `error_class`), canonical session and turn UUIDs, timings, pid/ppid, `main_return_code` (the value `main()` returned, not the process exit status), and the delivered context byte count. It never holds prompts, paths, record text, tokens or exception text.
+- **Missing lines are unknown.** Writes are dropped, never retried or waited for, on trace-file contention, on failure, and when the size plus the record would exceed 8 MiB. Near the cap, any absence may be a cap drop.
+  - An entry with no exit, or no entry at all, does not show that a process died or was never started.
+  - `cause: lock_busy` proves only that a non-blocking session-lock attempt failed; it does not identify the holder.
+  - `engine_completed` means only that the engine's normal path returned; it is not evidence of useful recall or host receipt.
+- **No rotation or pruning.** To reset, remove or rename the file between windows. Filesystem latency is not bounded, so tracing adds a little time per invocation.
+
 ## Verification
 
 Unit tests in `scripts/test_codex_lifecycle.py` cover rollout filtering,

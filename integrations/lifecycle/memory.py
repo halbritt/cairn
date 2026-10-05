@@ -422,11 +422,18 @@ TRACE_SCHEMA = "cairn.hook-invocation/1"
 TRACE_CAP = 8 * 1024 * 1024
 TRACE_LINE_LIMIT = 512
 TRACE_PHASES = frozenset({"configuration", "input", "activation", "handle"})
-TRACE_STAGES = frozenset({"activation", "validated", "bridge", "lock_wait", "locked", "recall", "capture", "saved"})
+# stage is the last stage entered (not necessarily completed).
+TRACE_STAGES = frozenset({"activation", "validated", "bridge", "lock_attempt", "locked", "recall", "capture", "saved"})
+# outcome is the final disposition. engine_completed means only that the engine's
+# normal path returned and main() returned 0 after printing; it is not a claim of
+# successful recall, host receipt, flushed process output or usefulness.
 TRACE_OUTCOMES = frozenset({
-    "completed", "early_return:disabled_env", "early_return:no_memory_marker", "early_return:wake_coordinated",
+    "engine_completed", "early_return:disabled_env", "early_return:no_memory_marker", "early_return:wake_coordinated",
     "early_return:stop_not_boundary", "early_return:unsupported_event", "early_return:stop_too_little_dialogue",
-    "lock_busy_skip", "lock_busy_error", "required_refused", "error", "unexpected"})
+    "lock_busy_skip", "required_refused", "error", "unexpected", "unlabelled_return"})
+# cause is kept separately from the final disposition (e.g. lock_busy then required_refused).
+# lock_busy proves only a failed non-blocking session-lock attempt, never the holder.
+TRACE_CAUSES = frozenset({"lock_busy", "blocking_io"})
 TRACE_ERRORS = frozenset({"RequiredContextRefused", "HookError", "BlockingIOError", "OSError", "ValueError",
                           "KeyError", "TypeError"})
 TRACE_EVENTS = frozenset({"SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse",
@@ -498,23 +505,33 @@ class _InvocationTrace:
         self.entry_recorded = self.write(dict(schema=TRACE_SCHEMA, kind="entry", inv=self.inv,
                                               at=_trace_ms(), pid=os.getpid(), ppid=os.getppid()))
 
-    def finish(self, exit_code):
+    def parsed(self, event):
+        """One droppable record joining this inv to the validated event identity."""
+        self.fields.update(_trace_identity(event.get("hook_event_name"), event.get("session_id"),
+                                           event.get("turn_id")))
+        self.write(dict(schema=TRACE_SCHEMA, kind="parsed", inv=self.inv, at=_trace_ms(),
+                        **_trace_identity(self.fields.get("event"), self.fields.get("session"),
+                                          self.fields.get("turn"))))
+
+    def finish(self, main_return_code):
         fields = self.fields
         record = dict(schema=TRACE_SCHEMA, kind="exit", inv=self.inv, at=_trace_ms(),
                       duration_ms=min(3600000, max(0, int((time.monotonic() - self.started) * 1000))),
                       entry_recorded=self.entry_recorded)
-        outcome = fields.get("outcome") or ("completed" if exit_code == 0 else "unexpected")
-        record["outcome"] = outcome if outcome in TRACE_OUTCOMES else "unexpected"
-        if exit_code in (0, 1, 2):
-            record["exit_code"] = exit_code
-        for key, allowed in (("phase", TRACE_PHASES), ("stage", TRACE_STAGES), ("error_class", TRACE_ERRORS)):
+        if main_return_code is None:
+            record["outcome"] = "unexpected"  # an exception escaped main(); no positive label
+        else:
+            outcome = fields.get("outcome")
+            record["outcome"] = outcome if outcome in TRACE_OUTCOMES else "unlabelled_return"
+        # main()'s own return value, not the operating-system exit status: stdout
+        # flushing at interpreter shutdown can still fail after main() returns.
+        if type(main_return_code) is int and main_return_code in (0, 1, 2):
+            record["main_return_code"] = main_return_code
+        for key, allowed in (("phase", TRACE_PHASES), ("stage", TRACE_STAGES), ("error_class", TRACE_ERRORS),
+                             ("cause", TRACE_CAUSES)):
             if fields.get(key) in allowed:
                 record[key] = fields[key]
-        if isinstance(fields.get("event"), str):
-            record["event"] = fields["event"] if fields["event"] in TRACE_EVENTS else "other"
-        for key in ("session", "turn"):
-            if canonical_uuid(fields.get(key)):
-                record[key] = fields[key]
+        record.update(_trace_identity(fields.get("event"), fields.get("session"), fields.get("turn")))
         if type(fields.get("context_bytes")) is int and 0 <= fields["context_bytes"] <= 1024 * 1024:
             record["context_bytes"] = fields["context_bytes"]
         if type(fields.get("bound")) is bool:
@@ -534,14 +551,53 @@ def _trace_ms():
     return max(0, min(2 ** 53 - 1, int(time.time() * 1000)))
 
 
+def _trace_identity(event, session, turn):
+    """Validated event/session/turn only; invalid values are omitted, never coerced."""
+    identity = {}
+    if isinstance(event, str):
+        identity["event"] = event if event in TRACE_EVENTS else "other"
+    if canonical_uuid(session):
+        identity["session"] = session
+    if canonical_uuid(turn):
+        identity["turn"] = turn
+    return identity
+
+
 def _trace_note(**fields):
     """Record fixed labels for the active main() invocation; a no-op elsewhere."""
-    trace = _TRACE.get()
-    if trace is not None:
-        try:
+    try:
+        trace = _TRACE.get()
+        if trace is not None:
             trace.fields.update(fields)
-        except Exception:
-            pass
+    except Exception:
+        pass
+
+
+def _trace_note_default(**fields):
+    """Like _trace_note, but never replaces a label already recorded."""
+    try:
+        trace = _TRACE.get()
+        if trace is not None:
+            for key, value in fields.items():
+                trace.fields.setdefault(key, value)
+    except Exception:
+        pass
+
+
+def _trace_parsed(event):
+    try:
+        trace = _TRACE.get()
+        if trace is not None:
+            trace.parsed(event)
+    except Exception:
+        pass
+
+
+def _trace_context_bytes(result):
+    try:
+        _trace_note(context_bytes=injected_bytes(result))
+    except Exception:
+        pass
 
 
 def trace_observe(memory, method, *args):
@@ -2955,7 +3011,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                  if config.get("harness") == "hermes" else event["session_id"])
     lock_dir = Path(config["state_dir"])
     lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    _trace_note(stage="lock_wait")
+    _trace_note(stage="lock_attempt")
     with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -2964,9 +3020,9 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                     and event_name in ("SessionStart", "UserPromptSubmit")):
                 # Codex captures at an async Stop that can still hold the lock when
                 # the next prompt arrives; skip optional retrieval instead of failing.
-                _trace_note(outcome="lock_busy_skip")
+                _trace_note(outcome="lock_busy_skip", cause="lock_busy")
                 return {}
-            _trace_note(outcome="lock_busy_error")
+            _trace_note(cause="lock_busy")  # final disposition is decided in main()
             raise HookError("a memory hook is already running for this session") from exc
         _trace_note(stage="locked")
         path = lock_dir / (state_key + ".json")
@@ -3034,6 +3090,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
             raise
         if config.get("harness") == "hermes":
             result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})
+        _trace_note_default(outcome="engine_completed")  # positive normal-path mark only
         return result
 
 
@@ -3041,22 +3098,36 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
-    # Optional, default-off invocation trace; it never changes this invocation's
-    # return code, stdout, stderr, lock or recall behaviour.
-    trace = _InvocationTrace(args.config)
-    token = _TRACE.set(trace)
+    # Optional, default-off invocation trace. Every diagnostic step is isolated:
+    # a trace fault can never prevent _main, change its return value or output,
+    # or mask its exception. Real hook exceptions are never caught here.
+    trace = token = None
+    try:
+        trace = _InvocationTrace(args.config)
+        token = _TRACE.set(trace)
+        trace.entry()
+    except Exception:
+        pass
     code = None
     try:
-        trace.entry()
         code = _main(args)
         return code
     finally:
-        try:
-            trace.finish(code)
-        except Exception:
-            pass
-        _TRACE.reset(token)
-        trace.close()
+        if trace is not None:
+            try:
+                trace.finish(code)
+            except Exception:
+                pass
+        if token is not None:
+            try:
+                _TRACE.reset(token)
+            except Exception:
+                pass
+        if trace is not None:
+            try:
+                trace.close()
+            except Exception:
+                pass
 
 
 def _main(args):
@@ -3073,7 +3144,7 @@ def _main(args):
         event = json.loads(raw)
         if not isinstance(config, dict) or not isinstance(event, dict):
             raise HookError("configuration and host event must be objects")
-        _trace_note(event=event.get("hook_event_name"), session=event.get("session_id"), turn=event.get("turn_id"))
+        _trace_parsed(event)
         phase = "activation"
         _trace_note(phase=phase, stage="activation")
         config = effective_inbox_config(config, event)
@@ -3089,9 +3160,9 @@ def _main(args):
             (ValueError, "ValueError"), (KeyError, "KeyError"), (TypeError, "TypeError"),
         ) if isinstance(exc, kind))
         print(f"Cairn lifecycle diagnostic: phase={phase} error_class={error_class}", file=sys.stderr)
-        _trace_note(error_class=error_class,
-                    outcome="lock_busy_error" if (_TRACE.get() is not None
-                                                  and _TRACE.get().fields.get("outcome") == "lock_busy_error") else "error")
+        _trace_note(error_class=error_class, outcome="error")
+        if isinstance(exc, BlockingIOError):
+            _trace_note_default(cause="blocking_io")
         if isinstance(config, dict) and isinstance(event, dict):
             exc = (claude_boundary_error(config, event, exc) if bound_claude(config)
                    else codex_required_error(config, event, exc))
@@ -3110,7 +3181,7 @@ def _main(args):
         message = str(exc) if isinstance(exc, HookError) else "invalid lifecycle input or unavailable local file"
         print("Cairn lifecycle: " + message + "; use native tools or an explicit handoff.", file=sys.stderr)
         return 1
-    _trace_note(context_bytes=injected_bytes(result))
+    _trace_context_bytes(result)
     print(encoded(result))
     return 0
 
