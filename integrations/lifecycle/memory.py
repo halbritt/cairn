@@ -2,6 +2,7 @@
 """Selected Cairn memory at authorized host lifecycle boundaries (stdlib only)."""
 import argparse
 import base64
+import contextvars
 import copy
 import fcntl
 import hashlib
@@ -415,6 +416,132 @@ def is_timeout(error):
 
 def whole_ms(seconds):
     return max(0, int(round(seconds * 1000)))
+
+
+TRACE_SCHEMA = "cairn.hook-invocation/1"
+TRACE_CAP = 8 * 1024 * 1024
+TRACE_LINE_LIMIT = 512
+TRACE_PHASES = frozenset({"configuration", "input", "activation", "handle"})
+TRACE_STAGES = frozenset({"activation", "validated", "bridge", "lock_wait", "locked", "recall", "capture", "saved"})
+TRACE_OUTCOMES = frozenset({
+    "completed", "early_return:disabled_env", "early_return:no_memory_marker", "early_return:wake_coordinated",
+    "early_return:stop_not_boundary", "early_return:unsupported_event", "early_return:stop_too_little_dialogue",
+    "lock_busy_skip", "lock_busy_error", "required_refused", "error", "unexpected"})
+TRACE_ERRORS = frozenset({"RequiredContextRefused", "HookError", "BlockingIOError", "OSError", "ValueError",
+                          "KeyError", "TypeError"})
+TRACE_EVENTS = frozenset({"SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse",
+                          "PostToolUseFailure", "Stop"})
+_TRACE = contextvars.ContextVar("cairn_hook_invocation_trace", default=None)
+
+
+class _InvocationTrace:
+    """Optional fixed-metadata record of one main() invocation.
+
+    Enabled only when an owner-only <config parent>/invocation-trace directory
+    already exists. Every failure, contention or cap drops the record silently:
+    silence is unknown, never evidence. It never touches the session lock,
+    stdout, stderr or recall state, and it adds work, not a bounded time.
+    """
+    def __init__(self, config_path):
+        self.dfd = None
+        self.inv = uuid.uuid4().hex
+        self.started = time.monotonic()
+        self.fields = {}
+        self.entry_recorded = False
+        try:
+            dfd = os.open(Path(config_path).parent / "invocation-trace",
+                          os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        except Exception:
+            return
+        try:
+            info = os.fstat(dfd)
+            if stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077:
+                self.dfd, dfd = dfd, None
+        except Exception:
+            pass
+        finally:
+            if dfd is not None:
+                os.close(dfd)
+
+    def write(self, record):
+        """Append one complete line under a non-blocking trace-file lock, or drop it."""
+        if self.dfd is None:
+            return False
+        try:
+            line = (json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
+            if len(line) > TRACE_LINE_LIMIT:
+                return False
+            fd = os.open("trace.jsonl", os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+                         | os.O_CLOEXEC, 0o600, dir_fd=self.dfd)
+        except Exception:
+            return False
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                return False
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            size = os.fstat(fd).st_size
+            if size and os.pread(fd, 1, size - 1) != b"\n":
+                line = b"\n" + line  # start after a previously torn write
+            if size + len(line) > TRACE_CAP:
+                return False
+            return os.write(fd, line) == len(line)
+        except Exception:
+            return False
+        finally:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+
+    def entry(self):
+        self.entry_recorded = self.write(dict(schema=TRACE_SCHEMA, kind="entry", inv=self.inv,
+                                              at=_trace_ms(), pid=os.getpid(), ppid=os.getppid()))
+
+    def finish(self, exit_code):
+        fields = self.fields
+        record = dict(schema=TRACE_SCHEMA, kind="exit", inv=self.inv, at=_trace_ms(),
+                      duration_ms=min(3600000, max(0, int((time.monotonic() - self.started) * 1000))),
+                      entry_recorded=self.entry_recorded)
+        outcome = fields.get("outcome") or ("completed" if exit_code == 0 else "unexpected")
+        record["outcome"] = outcome if outcome in TRACE_OUTCOMES else "unexpected"
+        if exit_code in (0, 1, 2):
+            record["exit_code"] = exit_code
+        for key, allowed in (("phase", TRACE_PHASES), ("stage", TRACE_STAGES), ("error_class", TRACE_ERRORS)):
+            if fields.get(key) in allowed:
+                record[key] = fields[key]
+        if isinstance(fields.get("event"), str):
+            record["event"] = fields["event"] if fields["event"] in TRACE_EVENTS else "other"
+        for key in ("session", "turn"):
+            if canonical_uuid(fields.get(key)):
+                record[key] = fields[key]
+        if type(fields.get("context_bytes")) is int and 0 <= fields["context_bytes"] <= 1024 * 1024:
+            record["context_bytes"] = fields["context_bytes"]
+        if type(fields.get("bound")) is bool:
+            record["bound"] = fields["bound"]
+        self.write(record)
+
+    def close(self):
+        if self.dfd is not None:
+            try:
+                os.close(self.dfd)
+            except Exception:
+                pass
+            self.dfd = None
+
+
+def _trace_ms():
+    return max(0, min(2 ** 53 - 1, int(time.time() * 1000)))
+
+
+def _trace_note(**fields):
+    """Record fixed labels for the active main() invocation; a no-op elsewhere."""
+    trace = _TRACE.get()
+    if trace is not None:
+        try:
+            trace.fields.update(fields)
+        except Exception:
+            pass
 
 
 def trace_observe(memory, method, *args):
@@ -2780,6 +2907,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     if not _inbox_resolved:
         config = effective_inbox_config(config, event)
     if os.environ.get("CAIRN_LIFECYCLE_CHILD") == "1" or os.environ.get("CAIRN_LIFECYCLE_DISABLED") == "1":
+        _trace_note(outcome="early_return:disabled_env")
         return {}
     if not isinstance(event.get("session_id"), str) or not event["session_id"] or len(event["session_id"]) > 128:
         raise HookError("missing or invalid host session identity")
@@ -2795,10 +2923,13 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
         except ValueError as exc:
             raise HookError("host session identity must be a UUID") from exc
     event_name = event.get("hook_event_name")
+    _trace_note(stage="validated")
     if event_name == "Stop" and (config.get("harness") != "codex" or event.get("stop_hook_active")):
+        _trace_note(outcome="early_return:stop_not_boundary")
         return {}  # Only Codex captures at Stop; a Stop continuation is not a new boundary.
     if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse",
                           "PostToolUseFailure", "Stop"):
+        _trace_note(outcome="early_return:unsupported_event")
         return {}
     if not Path(event["cwd"]).is_dir():
         raise HookError("host working directory is unavailable")
@@ -2809,11 +2940,14 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     if not isinstance(topic, str) or len(topic.encode()) > 90 or any(c in topic for c in '\r\n"'):
         raise HookError("invalid explicit workstream")
     if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]), project_root(event))):
+        _trace_note(outcome="early_return:no_memory_marker")
         return {}
     if config.get("inbox_recall_binding") and event_name in ("UserPromptSubmit", "SessionStart"):
+        _trace_note(stage="bridge")
         bridge = load_inbox_recall(config)
         if (event_name == "UserPromptSubmit" and taskless_notification(event.get("prompt", ""))
                 and bridge.coordinates_wake(config, event)):
+            _trace_note(outcome="early_return:wake_coordinated")
             return {}  # Bound coordination owns required and optional wake context.
     memory = Memory(config, event["session_id"])
     # Host labels remain intact in Cairn scope; Hermes labels need not be paths.
@@ -2821,6 +2955,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                  if config.get("harness") == "hermes" else event["session_id"])
     lock_dir = Path(config["state_dir"])
     lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _trace_note(stage="lock_wait")
     with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -2829,8 +2964,11 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                     and event_name in ("SessionStart", "UserPromptSubmit")):
                 # Codex captures at an async Stop that can still hold the lock when
                 # the next prompt arrives; skip optional retrieval instead of failing.
+                _trace_note(outcome="lock_busy_skip")
                 return {}
+            _trace_note(outcome="lock_busy_error")
             raise HookError("a memory hook is already running for this session") from exc
+        _trace_note(stage="locked")
         path = lock_dir / (state_key + ".json")
         state = json.loads(path.read_text()) if path.exists() else {}
         binding = [event.get("project_path"), topic]
@@ -2839,6 +2977,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
         if topic:
             state["workstream"] = workstream_prefix(event) + topic
         if event_name in ("SessionStart", "UserPromptSubmit"):
+            _trace_note(stage="recall")
             previous_state = copy.deepcopy(state)
             recall_started = time.monotonic()
             try:
@@ -2874,8 +3013,10 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
         elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
+            _trace_note(outcome="early_return:stop_too_little_dialogue")
             result = {}  # Too little new dialogue to justify a selector call yet.
         else:
+            _trace_note(stage="capture")
             prior = state.pop("capture_snapshot_marker", None)
             result = capture(memory, event, state)
             if config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
@@ -2884,6 +3025,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                 state["capture_snapshot_marker"] = prior
         try:
             save_state(path, state)
+            _trace_note(stage="saved")
         except OSError:
             # No context can be returned when final state persistence fails.
             for report in reports:
@@ -2899,20 +3041,45 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
+    # Optional, default-off invocation trace; it never changes this invocation's
+    # return code, stdout, stderr, lock or recall behaviour.
+    trace = _InvocationTrace(args.config)
+    token = _TRACE.set(trace)
+    code = None
+    try:
+        trace.entry()
+        code = _main(args)
+        return code
+    finally:
+        try:
+            trace.finish(code)
+        except Exception:
+            pass
+        _TRACE.reset(token)
+        trace.close()
+
+
+def _main(args):
     config = event = None
     phase = "configuration"
+    _trace_note(phase=phase)
     try:
         config = json.loads(args.config.read_text())
         phase = "input"
+        _trace_note(phase=phase)
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise HookError("host event exceeds input limit")
         event = json.loads(raw)
         if not isinstance(config, dict) or not isinstance(event, dict):
             raise HookError("configuration and host event must be objects")
+        _trace_note(event=event.get("hook_event_name"), session=event.get("session_id"), turn=event.get("turn_id"))
         phase = "activation"
+        _trace_note(phase=phase, stage="activation")
         config = effective_inbox_config(config, event)
+        _trace_note(bound=bool(config.get("inbox_recall_binding")))
         phase = "handle"
+        _trace_note(phase=phase)
         result = handle(config, event, _inbox_resolved=True)
     except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
         # Fixed labels only: messages, paths and arbitrary subclass names may be private.
@@ -2922,6 +3089,9 @@ def main():
             (ValueError, "ValueError"), (KeyError, "KeyError"), (TypeError, "TypeError"),
         ) if isinstance(exc, kind))
         print(f"Cairn lifecycle diagnostic: phase={phase} error_class={error_class}", file=sys.stderr)
+        _trace_note(error_class=error_class,
+                    outcome="lock_busy_error" if (_TRACE.get() is not None
+                                                  and _TRACE.get().fields.get("outcome") == "lock_busy_error") else "error")
         if isinstance(config, dict) and isinstance(event, dict):
             exc = (claude_boundary_error(config, event, exc) if bound_claude(config)
                    else codex_required_error(config, event, exc))
@@ -2930,14 +3100,17 @@ def main():
             # SessionStart exit 1/2 does not stop compaction continuation. Codex
             # supports this explicit common-output stop decision instead.
             print(encoded({"continue": False, "stopReason": "Bound inbox recall cannot restore required context."}))
+            _trace_note(outcome="required_refused")
             return 0
         if isinstance(exc, RequiredContextRefused) and event.get("hook_event_name") == "UserPromptSubmit":
             print("Cairn: current required context could not be restored.", file=sys.stderr)
+            _trace_note(outcome="required_refused")
             return 2
         # Optional memory must not break the user's task. Surface a labelled failure.
         message = str(exc) if isinstance(exc, HookError) else "invalid lifecycle input or unavailable local file"
         print("Cairn lifecycle: " + message + "; use native tools or an explicit handoff.", file=sys.stderr)
         return 1
+    _trace_note(context_bytes=injected_bytes(result))
     print(encoded(result))
     return 0
 
