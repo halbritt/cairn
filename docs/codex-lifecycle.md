@@ -52,9 +52,19 @@ refuse stale metadata, and a newer workstream is retained. Short session-lock
 contention can still refuse a bound recall; known required-context failures keep
 their existing refusal behavior. Unbound Codex recall still skips on contention.
 
+Final capture commit alone can wait in at most 50 ms sleeps for up to five
+seconds. It also stops waiting five seconds before the known 150-second capture
+budget, measured from the original handler start. That budget applies to the
+installed Codex Stop/PreCompact and Claude PreCompact/SessionEnd hooks, and the
+Hermes/OpenCode capture adapters. Snapshot acquisition and recall remain
+nonblocking. Codex SessionEnd is not installed and has a shorter native limit;
+it and unknown-budget routes retain immediate commit refusal. This bounds lock
+waiting, not filesystem latency or arbitrary process startup time.
+
 Note writes retain the earlier event's snapshot scope. They are not rolled back
 if a later write or local state commit fails; only fully confirmed capture
-advances the marker, and the hook does not internally retry. Identical writes
+advances the marker. The hook does not internally repeat selection or note
+writes. Identical writes
 retain deterministic request IDs and revisions retain expected-version checks,
 but a new selector result is not an exactly-once capture. During upgrade, let old
 capture invocations finish before switching engines: old writers do not know the

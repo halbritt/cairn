@@ -2969,6 +2969,32 @@ def handle(config, event, *, _inbox_resolved=False):
 
 CAPTURE_STATE_FIELDS = ("captured_digest", "captured_messages", "capture_snapshot_marker",
                         "codex_capture_marker", "last_capture")
+CAPTURE_COMMIT_WAIT_SECONDS = 5
+CAPTURE_HOOK_SECONDS = 150  # installed Codex/Claude captures and Hermes/OpenCode adapters
+CAPTURE_COMMIT_MARGIN_SECONDS = 5
+
+
+def lock_capture_commit(lock, config, event, hook_started):
+    """Wait only for final state commit, within a known capture hook's remaining time."""
+    harness, name = config.get("harness"), event["hook_event_name"]
+    known_budget = ((harness == "codex" and name in ("Stop", "PreCompact"))
+                    or (harness in ("claude", "hermes", "opencode")
+                        and name in ("PreCompact", "SessionEnd")))
+    deadline = (min(time.monotonic() + CAPTURE_COMMIT_WAIT_SECONDS,
+                    hook_started + CAPTURE_HOOK_SECONDS - CAPTURE_COMMIT_MARGIN_SECONDS)
+                if known_budget else 0)
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError as exc:
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(0.05, remaining))
+                if time.monotonic() < deadline:
+                    continue
+            _trace_note(cause="lock_busy")
+            raise HookError("capture could not commit state; selected notes may already be saved") from exc
 
 
 def event_state(state, event):
@@ -2980,7 +3006,7 @@ def event_state(state, event):
     return state
 
 
-def capture_event(memory, event, path, lock_path):
+def capture_event(memory, event, path, lock_path, hook_started):
     """Serialize capture, but release shared state while selecting/saving notes.
 
     Notes belong to this event's snapshot. They cannot be rolled back if final
@@ -3012,11 +3038,7 @@ def capture_event(memory, event, path, lock_path):
             elif prior is not None:
                 state["capture_snapshot_marker"] = prior
         with lock_path.open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                _trace_note(cause="lock_busy")
-                raise HookError("capture could not commit state; selected notes may already be saved") from exc
+            lock_capture_commit(lock, memory.config, event, hook_started)
             current = json.loads(path.read_text()) if path.exists() else {}
             fields = lambda value: {key: value[key] for key in CAPTURE_STATE_FIELDS if key in value}
             same_binding = current.get("binding", [None, ""]) == original.get("binding", [None, ""])
@@ -3099,7 +3121,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     _trace_note(stage="lock_attempt")
     path = lock_dir / (state_key + ".json")
     if event_name in ("PreCompact", "SessionEnd", "Stop"):
-        return capture_event(memory, event, path, lock_dir / (state_key + ".lock"))
+        return capture_event(memory, event, path, lock_dir / (state_key + ".lock"), hook_started)
     with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
