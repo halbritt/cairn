@@ -28,7 +28,18 @@ configuration to stop reporting. The installed hooks are unchanged until they ar
 reinstalled with this engine.
 
 A handled failure replaces an earlier success with `outcome: failed`, zero
-delivered bytes/records and a fixed `error_type` category. Available stage
+delivered bytes/records and a fixed `error_type` category. Two optional fields
+may follow from the original failure, recorded before any required-context
+conversion. `error_code` is a provider status only when it is already in the fixed
+code allowlist. `error_reason` names the local check that failed (`NONZERO_EXIT`,
+`INVALID_JSON`, `OUTPUT_LIMIT`, `START_FAILED`, `NOT_CONFIRMED`, `SEARCH_STATUS` or
+`NOT_HOSTED`). Both are checked again against their fixed sets when saved, and the
+next recall attempt clears them. An absent field means an unrecognised value, a
+failure site without a reason, or a failure that is not a hook error; it never
+means "no failure". The command transport serves every memory operation, so a
+reason identifies a local check, not which operation failed. A `TIMEOUT` code
+without a reason does not distinguish a command timeout from an exhausted recall
+budget. The failure observation's `error_class` is unchanged. Available stage
 diagnostics are retained; prompt text, note bodies and exception messages are
 not copied into the failure observation. Prior delivery and hint state for the
 current project/workstream binding is preserved because no recall context was

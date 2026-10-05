@@ -14,6 +14,23 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-05
+
+- A failed lifecycle recall now keeps two optional fixed fields in its local
+  `last_recall` status, recorded from the original failure.
+  - `error_code`: a provider status, only when it is in the existing code allowlist.
+  - `error_reason`: the local check that failed, such as a nonzero command exit,
+    invalid JSON, the output limit, a start failure, an unconfirmed result, or an
+    unexpected search status or destination.
+  Unknown values are omitted, and the next recall clears both fields. No message,
+  stderr or provider text is kept. A reason names a check at the shared command
+  transport, not an operation; a local `TIMEOUT` stays ambiguous between a command
+  timeout and budget exhaustion. Exceptions, hook output and exit, the recall
+  observation and its `error_class`, the API, locking and budgets are unchanged.
+  This is a source-only diagnostic: installed hooks are unchanged until a new
+  rollout installs this engine. It classifies a recurrence; it makes no claim
+  about recall usefulness and does not explain earlier failures.
+
 ## 2026-10-02
 
 - Source-opening receipt binding is now off by default and enabled per
