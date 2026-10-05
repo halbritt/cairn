@@ -2967,6 +2967,82 @@ def handle(config, event, *, _inbox_resolved=False):
             report_recall(**report)
 
 
+CAPTURE_STATE_FIELDS = ("captured_digest", "captured_messages", "capture_snapshot_marker",
+                        "codex_capture_marker", "last_capture")
+
+
+def event_state(state, event):
+    binding = [event.get("project_path"), event.get("workstream", "")]
+    if state.get("binding", [None, ""]) != binding:
+        state = {"binding": binding}
+    if event.get("workstream"):
+        state["workstream"] = workstream_prefix(event) + event["workstream"]
+    return state
+
+
+def capture_event(memory, event, path, lock_path):
+    """Serialize capture, but release shared state while selecting/saving notes.
+
+    Notes belong to this event's snapshot. They cannot be rolled back if final
+    state commit conflicts or fails; only confirmed capture advances its marker.
+    """
+    with path.with_suffix(".capture.lock").open("a") as capture_lock:
+        try:
+            fcntl.flock(capture_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise HookError("a capture is already running for this session") from exc
+        with lock_path.open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                _trace_note(cause="lock_busy")
+                raise HookError("a memory hook is already running for this session") from exc
+            _trace_note(stage="locked")
+            original = json.loads(path.read_text()) if path.exists() else {}
+            state = event_state(copy.deepcopy(original), event)
+        if event["hook_event_name"] == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
+            _trace_note(outcome="early_return:stop_too_little_dialogue")
+            result = {}
+        else:
+            _trace_note(stage="capture")
+            prior = state.pop("capture_snapshot_marker", None)
+            result = capture(memory, event, state)
+            if memory.config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
+                state["codex_capture_marker"] = state["capture_snapshot_marker"]
+            elif prior is not None:
+                state["capture_snapshot_marker"] = prior
+        with lock_path.open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                _trace_note(cause="lock_busy")
+                raise HookError("capture could not commit state; selected notes may already be saved") from exc
+            current = json.loads(path.read_text()) if path.exists() else {}
+            fields = lambda value: {key: value[key] for key in CAPTURE_STATE_FIELDS if key in value}
+            same_binding = current.get("binding", [None, ""]) == original.get("binding", [None, ""])
+            changes_binding = state.get("binding", [None, ""]) != current.get("binding", [None, ""])
+            if (not same_binding or fields(current) != fields(original)
+                    or (changes_binding and current != original)):
+                raise HookError("capture state changed before commit; selected notes may already be saved")
+            workstream_unchanged = current.get("workstream") == original.get("workstream")
+            if changes_binding:
+                current = event_state(current, event)
+            if workstream_unchanged and "workstream" in state:
+                current["workstream"] = state["workstream"]
+            for key in CAPTURE_STATE_FIELDS:
+                if key in state:
+                    current[key] = state[key]
+                else:
+                    current.pop(key, None)
+            save_state(path, current)
+            _trace_note(stage="saved")
+            if memory.config.get("harness") == "hermes":
+                result = dict(result, cairn_status={key: current[key] for key in
+                              ("last_recall", "last_capture", "workstream") if key in current})
+            _trace_note_default(outcome="engine_completed")
+            return result
+
+
 def handle_event(config, event, reports, *, _inbox_resolved=False):
     hook_started = time.monotonic()
     if not _inbox_resolved:
@@ -3021,26 +3097,23 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     lock_dir = Path(config["state_dir"])
     lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     _trace_note(stage="lock_attempt")
+    path = lock_dir / (state_key + ".json")
+    if event_name in ("PreCompact", "SessionEnd", "Stop"):
+        return capture_event(memory, event, path, lock_dir / (state_key + ".lock"))
     with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             if (config.get("harness") == "codex" and not config.get("inbox_recall_binding")
                     and event_name in ("SessionStart", "UserPromptSubmit")):
-                # Codex captures at an async Stop that can still hold the lock when
-                # the next prompt arrives; skip optional retrieval instead of failing.
+                # Other recalls, short capture commits or an older engine can
+                # hold this lock; unbound optional retrieval still skips.
                 _trace_note(outcome="lock_busy_skip", cause="lock_busy")
                 return {}
             _trace_note(cause="lock_busy")  # final disposition is decided in main()
             raise HookError("a memory hook is already running for this session") from exc
         _trace_note(stage="locked")
-        path = lock_dir / (state_key + ".json")
-        state = json.loads(path.read_text()) if path.exists() else {}
-        binding = [event.get("project_path"), topic]
-        if state.get("binding", [None, ""]) != binding:
-            state = {"binding": binding}
-        if topic:
-            state["workstream"] = workstream_prefix(event) + topic
+        state = event_state(json.loads(path.read_text()) if path.exists() else {}, event)
         if event_name in ("SessionStart", "UserPromptSubmit"):
             _trace_note(stage="recall")
             previous_state = copy.deepcopy(state)
@@ -3077,17 +3150,6 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                                 status="completed", injected=injected_bytes(result)))
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
-        elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
-            _trace_note(outcome="early_return:stop_too_little_dialogue")
-            result = {}  # Too little new dialogue to justify a selector call yet.
-        else:
-            _trace_note(stage="capture")
-            prior = state.pop("capture_snapshot_marker", None)
-            result = capture(memory, event, state)
-            if config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
-                state["codex_capture_marker"] = state["capture_snapshot_marker"]
-            elif prior is not None:
-                state["capture_snapshot_marker"] = prior
         try:
             save_state(path, state)
             _trace_note(stage="saved")

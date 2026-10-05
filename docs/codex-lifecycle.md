@@ -44,8 +44,22 @@ the saved offset, counts all its dialogue as new. A failed capture leaves the ma
 it was, so the next Stop retries. A Stop continuation (`stop_hook_active`) is
 not treated as a new boundary.
 
-A prompt submitted while that background capture still holds the session lock
-skips optional retrieval for that prompt instead of reporting a hook failure.
+Capture events serialize on a separate session `.capture.lock`. They hold the
+ordinary session lock only to snapshot state and commit capture metadata, so a
+prompt can recall while background selection and note writes run. The commit
+preserves newer recall, hints and grant state; changed binding or capture fields
+refuse stale metadata, and a newer workstream is retained. Short session-lock
+contention can still refuse a bound recall; known required-context failures keep
+their existing refusal behavior. Unbound Codex recall still skips on contention.
+
+Note writes retain the earlier event's snapshot scope. They are not rolled back
+if a later write or local state commit fails; only fully confirmed capture
+advances the marker, and the hook does not internally retry. Identical writes
+retain deterministic request IDs and revisions retain expected-version checks,
+but a new selector result is not an exactly-once capture. During upgrade, let old
+capture invocations finish before switching engines: old writers do not know the
+new capture lock. Field comparisons detect conflicting capture metadata; they
+are not a general mixed-version fencing protocol.
 
 The transcript reader keeps only top-level `user` and `assistant` message
 items from the Codex rollout. Codex 0.156 labels each content part in

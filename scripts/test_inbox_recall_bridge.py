@@ -10,6 +10,8 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+import concurrent.futures
+import threading
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +52,53 @@ print(json.dumps(dict(ok=True,status='OK',data=result)))
 '''
 
 class InboxRecallBridgeTests(unittest.TestCase):
+    def test_bound_prompt_recalls_while_stop_selects_and_capture_preserves_grant(self):
+        transcript = self.root / 'synthetic-rollout.jsonl'
+        transcript.write_text(''.join(json.dumps(dict(type='response_item', payload=dict(
+            type='message', role=role, content=[dict(type='input_text' if role == 'user' else 'output_text',
+                                                   text=f'Fixture migration decision {n}.')]
+        ))) + '\n' for n in range(3) for role in ('user', 'assistant')))
+        stop = dict(self.event, hook_event_name='Stop', transcript_path=str(transcript))
+        prompt = dict(self.event, prompt='Inspect fixture migration guidance.')
+        state_path = Path(self.mc['state_dir']) / (SESSION + '.json')
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        memory.save_state(state_path, dict(seen={'already-seen-fixture': 7}))
+        entered, release = threading.Event(), threading.Event()
+
+        def select(*args, **kwargs):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('test did not release capture selector')
+            return dict(structured_output=dict(checkpoint=None, workstream=None, memories=[]))
+
+        with patch.object(memory, 'select_json', side_effect=select), \
+             concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(memory.handle, self.mc, stop)
+            try:
+                self.assertTrue(entered.wait(5), 'Stop did not reach its selector')
+                result = memory.handle(self.mc, prompt)
+                text = result['hookSpecificOutput']['additionalContext']
+                self.assertIn('remaining_memory_bytes', text)
+                view = json.loads(text[text.index('{"selected":'):])
+                delivered = [body['response']['selection']['record'] for body in view['candidate_bodies']]
+                self.assertEqual(delivered, [self.fixture['pull']['selection']['record']])
+                self.assertEqual(delivered[0]['record_id'], AGENT)
+                recalled = json.loads(state_path.read_text())
+                self.assertEqual(recalled['seen']['already-seen-fixture'], 7)
+                ledger = state_path.with_name(SESSION + '.memory-budget.json')
+                granted = ledger.read_bytes()
+                self.assertFalse(future.done(), 'recall ran only after capture finished')
+            finally:
+                release.set()
+            self.assertEqual(future.result(timeout=5), {})
+        final = json.loads(state_path.read_text())
+        self.assertEqual(final['last_recall'], recalled['last_recall'])
+        self.assertEqual(final['seen'], recalled['seen'])
+        self.assertEqual(final['seen']['already-seen-fixture'], 7)
+        self.assertEqual(ledger.read_bytes(), granted, 'Stop changed the independent native grant')
+        self.assertEqual(final['last_capture']['outcome'], 'nothing_selected')
+        self.assertEqual(final['codex_capture_marker']['offset'], transcript.stat().st_size)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
