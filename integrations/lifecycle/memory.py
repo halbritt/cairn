@@ -173,15 +173,34 @@ before relying on claims outside that passage.
 """
 
 
+HOOK_ERROR_CODES = frozenset({"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED", "AUTHORITY_DENIED", "NOT_FOUND",
+                              "PAYLOAD_UNAVAILABLE", "OPEN_CONFLICT", "POLICY_UNENFORCEABLE"})
+# Which local check failed, chosen at the raise site. It is never a provider status.
+HOOK_ERROR_REASONS = frozenset({"NONZERO_EXIT", "INVALID_JSON", "OUTPUT_LIMIT", "START_FAILED", "NOT_CONFIRMED",
+                                "SEARCH_STATUS", "NOT_HOSTED"})
+
+
 class HookError(Exception):
     """An expected host, transport or format failure, safe to report without payloads."""
 
-    def __init__(self, *args, code=None):
+    def __init__(self, *args, code=None, reason=None):
         super().__init__(*args)
         # Fixed categories only; never retain untrusted API messages or codes.
-        self.code = code if isinstance(code, str) and code in {"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED",
-                                    "AUTHORITY_DENIED", "NOT_FOUND", "PAYLOAD_UNAVAILABLE",
-                                    "OPEN_CONFLICT", "POLICY_UNENFORCEABLE"} else None
+        self.code = code if isinstance(code, str) and code in HOOK_ERROR_CODES else None
+        self.reason = reason if isinstance(reason, str) and reason in HOOK_ERROR_REASONS else None
+
+
+def failure_diagnostics(error):
+    """The fixed code and reason of an original failure; anything else is omitted."""
+    if not isinstance(error, HookError):
+        return {}
+    code, reason = getattr(error, "code", None), getattr(error, "reason", None)
+    result = {}
+    if type(code) is str and code in HOOK_ERROR_CODES:
+        result["error_code"] = code
+    if type(reason) is str and reason in HOOK_ERROR_REASONS:
+        result["error_reason"] = reason
+    return result
 
 
 class RequiredContextRefused(HookError):
@@ -291,9 +310,9 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
     except subprocess.TimeoutExpired as exc:
         raise HookError("command timed out; memory operation not confirmed", code="TIMEOUT") from exc
     except UnicodeError as exc:
-        raise HookError("memory command returned invalid JSON") from exc
+        raise HookError("memory command returned invalid JSON", reason="INVALID_JSON") from exc
     except OSError as exc:
-        raise HookError("could not start memory command", code="API_UNAVAILABLE") from exc
+        raise HookError("could not start memory command", code="API_UNAVAILABLE", reason="START_FAILED") from exc
     if process.returncode:
         if observation is not None:
             observation["outcome"] = "nonzero_exit"
@@ -305,7 +324,7 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
         if isinstance(refusal, dict) and refusal.get("status") == "BUDGET_REFUSED":
             raise BudgetRefused("memory expansion budget exhausted")
         raise HookError(f"memory command exited {process.returncode}; operation not confirmed",
-                        code=refusal.get("status") if isinstance(refusal, dict) else None)
+                        code=refusal.get("status") if isinstance(refusal, dict) else None, reason="NONZERO_EXIT")
     try:
         result = json.loads(process.stdout)
         if not isinstance(result, dict):
@@ -314,7 +333,7 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
     except ValueError as exc:
         if observation is not None:
             observation["outcome"] = "invalid_json"
-        raise HookError("memory command returned invalid JSON") from exc
+        raise HookError("memory command returned invalid JSON", reason="INVALID_JSON") from exc
 
 
 def bounded_command(command, *, body, timeout, env, cwd, observation=None):
@@ -366,7 +385,8 @@ def bounded_command(command, *, body, timeout, env, cwd, observation=None):
                         observation.setdefault("first_" + name + "_ms", round((time.monotonic() - started) * 1000, 3))
                     output[name].extend(chunk)
                     if len(output[name]) > COMMAND_OUTPUT_BYTES:
-                        raise HookError("memory command output exceeded limit; operation not confirmed")
+                        raise HookError("memory command output exceeded limit; operation not confirmed",
+                                        reason="OUTPUT_LIMIT")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise subprocess.TimeoutExpired(command, timeout)
@@ -768,7 +788,7 @@ class Memory:
             self.meter.operation(operation, started)
             trace_observe(self, 'rpc', operation, started, payload, result, outcome)
         if result.get("ok") is not True or not isinstance(result.get("data"), dict):
-            raise HookError("Cairn did not confirm the operation")
+            raise HookError("Cairn did not confirm the operation", reason="NOT_CONFIRMED")
         if operation == "search":
             self.meter.receipt(result["data"].get("receipt_id"))
         if receipt:
@@ -794,9 +814,9 @@ class Memory:
                 hints += [flag, value]
         result = self.call("search", [*self.scope, "--tokens", str(room), *hints, "--", query], timeout=timeout)
         if result.get("status") not in ("READY", "SCOPE_EMPTY", "DEGRADED_NO_EMBEDDINGS"):
-            raise HookError("Cairn retrieval is not ready")
+            raise HookError("Cairn retrieval is not ready", reason="SEARCH_STATUS")
         if result.get("destination", {}).get("name") != "hosted":
-            raise HookError("lifecycle hooks require a hosted-destination profile")
+            raise HookError("lifecycle hooks require a hosted-destination profile", reason="NOT_HOSTED")
         return result
 
     def checkpoint(self, title):
@@ -3151,8 +3171,10 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                               error_type=next(kind.__name__ for kind in
                                               (HookError, OSError, ValueError, KeyError, TypeError)
                                               if isinstance(exc, kind)))
-                for key in ("expanded", "partial_record", "source_extent"):
+                for key in ("expanded", "partial_record", "source_extent", "error_code", "error_reason"):
                     status.pop(key, None)
+                # From the original failure, before any required-context conversion.
+                status.update(failure_diagnostics(failure))
                 # No recall context was returned. Keep prior delivery/hint state,
                 # while replacing an older success with this attempt's diagnostics.
                 previous_state["last_recall"] = status
