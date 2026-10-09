@@ -1,10 +1,12 @@
 """New input and permission contracts; never launches a provider."""
 import contextlib
+import fcntl
 import io
 import json
 import os
 import hashlib
 import sys
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -358,6 +360,48 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                     self.assertEqual(record['execution_failure'],'process_custody_unknown')
                 else:
                     self.assertEqual(record['outcome'],'correct')
+
+    def test_valid_looking_final_cannot_hide_incomplete_frozen_input_delivery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory); root=fixture(base/'input')
+            document=json.loads((root/'input.json').read_text())
+            prompt='Inspect this synthetic workspace. '+('fixture text '*450)
+            document['cases'][0]['wordings']['task']=prompt
+            (root/'input.json').write_text(json.dumps(document))
+            with contextlib.redirect_stdout(io.StringIO()):
+                te.main(['freeze-input','--input',str(root)])
+            child=base/'native.py'
+            events=[dict(type='system',subtype='init',model='fixture-model'),
+                    dict(type='user',message=dict(role='user',content=prompt)),
+                    dict(type='result',is_error=False,result='inspected',permission_denials=[])]
+            child.write_text('import os,json\nos.close(0)\nfor event in '+repr(events)+': print(json.dumps(event))\n')
+            def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                return [sys.executable,str(child)] if argv[0]=='claude' else argv
+            original_capture=te.capture
+            original_popen=subprocess.Popen
+            def small_pipe(*args,**kwargs):
+                process=original_popen(*args,**kwargs)
+                fcntl.fcntl(process.stdin.fileno(),fcntl.F_SETPIPE_SZ,4096)
+                return process
+            def capture(*args,**kwargs):
+                with patch('trial_native_capture.subprocess.Popen',side_effect=small_pipe):
+                    return original_capture(*args,**kwargs)
+            with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,'capture',side_effect=capture), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                         '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+            record=json.loads((base/'out/agent.json').read_text())['records'][0]
+            custody=record['process_custody']
+            self.assertEqual(record['exit'],0)
+            self.assertEqual(custody['observed_returncode'],0)
+            self.assertEqual(custody['classification'],'completed')
+            self.assertLess(custody['input_bytes_written'],custody['input_bytes'])
+            self.assertEqual(record['check_outcome'],'correct')
+            self.assertEqual(record['outcome'],'harness_error')
+            self.assertEqual(record['execution_failure'],'input_delivery_incomplete')
+            retained=base/'out/runs/new-work.none.s0/native-process-custody.json'
+            self.assertEqual(json.loads(retained.read_text()),custody)
+            self.assertFalse((retained.parent/'stream.jsonl').exists())
 
     def test_direct_note_prompt_keeps_missing_source_channel_unknown(self):
         with tempfile.TemporaryDirectory() as directory:

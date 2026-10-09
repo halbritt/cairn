@@ -1199,6 +1199,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
             os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
     if prospective:
+        if process_custody["input_bytes_written"] != len(native_input):
+            failure = failure or "input_delivery_incomplete"
         if process_custody["cleanup"]["status"] != "observed_clear" or not process_custody["leader_reaped"]:
             failure = failure or "process_custody_unknown"
     if prospective:

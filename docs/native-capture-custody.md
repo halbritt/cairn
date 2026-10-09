@@ -49,6 +49,10 @@ Unavailable pidfd/waitid support, scan/identity failure, signal failure, a live
 observed member remaining, or inability to reap the leader produces fixed public errors
 and `cleanup.status: unknown`. A prospective grade is then marked harness_error
 while preserving the independent technical check outcome and legacy exit value.
+Successful execution also requires every byte of the frozen native input to be
+written. A child that closes stdin early and emits a valid-looking final result
+is marked `input_delivery_incomplete`; its actual exit and independent technical
+check remain available.
 
 `observed_clear` means no live member remained in the final bounded sample and
 the direct leader was reaped without a reported cleanup fault. Zombies retain
