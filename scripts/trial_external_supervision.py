@@ -20,6 +20,7 @@ import uuid
 from trial_task_eval import runtime_sandbox
 from trial_process_custody import validate_custody
 from trial_selected_native_mounts import reviewed_package
+from trial_owned_workers import WaitFact, OwnedCgroup, Child, Unavailable, CONTROLS, end_containment
 
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -33,7 +34,6 @@ SOURCE_PINS = {
     'retention.py':'38bdfc87770c56ede47a05eb6d9e23d8620f4dec24a22d95592cc9638977ffd2'}
 ACTOR_MODES = frozenset({'normal', 'privacy', 'never_read', 'early_close', 'nonzero', 'descendant', 'memory', 'pids', 'capture_report_loss'})
 SINK_MODES = frozenset({'normal', 'parse_hang', 'fsync_hang', 'after_prepared'})
-CONTROLS = dict(memory_max=512*1024*1024, memory_swap_max=0, pids_max=32, cpu_max='100000 100000')
 
 
 def encoded(value):
@@ -68,14 +68,6 @@ class FixtureRequest:
             raise ValueError('fixture_mode')
         if type(self.wall_seconds) not in {int, float} or not 2 <= self.wall_seconds <= 600:
             raise ValueError('fixture_budget')
-
-
-@dataclasses.dataclass(frozen=True)
-class WaitFact:
-    pid: int
-    start_ticks: int | None
-    raw_status: int | None
-    returncode: int | None
 
 
 @dataclasses.dataclass
@@ -119,10 +111,6 @@ def refuse_native():
         'coding_and_hook_reader_composition_unaccepted'])
 
 
-class Unavailable(Exception):
-    pass
-
-
 def fixture_service_delegation():
     """Enable controllers only in this newly owned fixture service's domain.
 
@@ -141,201 +129,6 @@ def fixture_service_delegation():
         raise Unavailable('resource_controllers_unavailable')
     (root/'cgroup.subtree_control').write_text('+cpu +memory +pids')
     return str(root)
-
-
-class OwnedCgroup:
-    """Only an exclusive new domain leaf; all effects use held directory/file FDs."""
-    def __init__(self, delegated):
-        self.name = 'cairn-fixture-'+str(uuid.uuid4())
-        self.parent = os.open(delegated, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        self.fd = None
-        self.files = {}
-        self.consumed = False
-        try:
-            os.mkdir(self.name, 0o700, dir_fd=self.parent)
-            self.consumed = True
-            self.fd = os.open(self.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=self.parent)
-            self.identity = (os.fstat(self.fd).st_dev, os.fstat(self.fd).st_ino)
-            self.path = str(Path(delegated)/self.name)
-            self.relative = self.path.removeprefix('/sys/fs/cgroup')
-            if self.read('cgroup.type').strip() != 'domain':
-                raise Unavailable('cgroup_domain_unavailable')
-            for field, value in CONTROLS.items():
-                name = field.replace('_', '.')
-                self.write(name, str(value).encode())
-                if self.read(name).strip() != str(value):
-                    raise Unavailable('resource_readback_unknown')
-            self.files['cgroup.procs'] = self.open('cgroup.procs', os.O_WRONLY)
-            self.files['cgroup.kill'] = self.open('cgroup.kill', os.O_WRONLY)
-            for name in ['cgroup.events', 'memory.events', 'pids.events']:
-                self.files[name] = self.open(name, os.O_RDONLY)
-            if self.populated():
-                raise Unavailable('new_cgroup_populated')
-        except (OSError, Unavailable):
-            self.close()
-            raise Unavailable('containment_or_resource_unavailable') from None
-
-    def open(self, name, flags):
-        if (os.fstat(self.fd).st_dev, os.fstat(self.fd).st_ino) != self.identity:
-            raise Unavailable('cgroup_identity_unknown')
-        return os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=self.fd)
-
-    def read(self, name):
-        fd = self.files.get(name)
-        owned = fd is None
-        if owned:
-            fd = self.open(name, os.O_RDONLY)
-        try:
-            data = os.pread(fd, 8192, 0)
-            if len(data) == 8192:
-                raise Unavailable('cgroup_status_bounds')
-            return data.decode('ascii')
-        finally:
-            if owned:
-                os.close(fd)
-
-    def write(self, name, data):
-        fd = self.files.get(name)
-        owned = fd is None
-        if owned:
-            fd = self.open(name, os.O_WRONLY)
-        try:
-            if os.write(fd, data) != len(data):
-                raise Unavailable('cgroup_write_unknown')
-        finally:
-            if owned:
-                os.close(fd)
-
-    def populated(self):
-        pairs = dict(line.split() for line in self.read('cgroup.events').splitlines())
-        if pairs.get('populated') not in {'0', '1'}:
-            raise Unavailable('cgroup_release_unknown')
-        return pairs['populated'] == '1'
-
-    def kill(self):
-        self.write('cgroup.kill', b'1')
-
-    def events(self):
-        return {name:dict(line.split() for line in self.read(name).splitlines())
-                for name in ['memory.events', 'pids.events']}
-
-    def close(self):
-        errors = []
-        for fd in self.files.values():
-            try:
-                os.close(fd)
-            except OSError:
-                errors.append('cgroup_descriptor_close_unknown')
-        self.files.clear()
-        if self.fd is not None:
-            try:
-                os.close(self.fd)
-            except OSError:
-                errors.append('cgroup_directory_close_unknown')
-            self.fd = None
-        if self.consumed:
-            try:
-                os.rmdir(self.name, dir_fd=self.parent)
-            except OSError:
-                # An unreleased leaf is preserved; never remove existing work.
-                errors.append('cgroup_directory_removal_unknown')
-        try:
-            os.close(self.parent)
-        except OSError:
-            errors.append('cgroup_parent_close_unknown')
-        return sorted(set(errors))
-
-
-class Child:
-    def __init__(self, group, argv):
-        status_read, status_write = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
-        command = ['/usr/bin/python3', str(FIXTURE/'launcher.py'), str(group.files['cgroup.procs']),
-                   'bwrap', '--json-status-fd', str(status_write), *argv]
-        try:
-            self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, pass_fds=(group.files['cgroup.procs'], status_write),
-                env={'PATH':'/usr/bin:/bin', 'LANG':'C.UTF-8'}, close_fds=True)
-        except OSError:
-            os.close(status_read)
-            raise
-        finally:
-            os.close(status_write)
-        self.status_fd = status_read
-        self.namespace_fds = []
-        self.namespace_identity = None
-        self.buffers = dict(stdout=bytearray(), stderr=bytearray(), status=bytearray())
-        self.eof = set()
-        self.verified = False
-        self.wait = None
-        try:
-            fields = Path(f'/proc/{self.process.pid}/stat').read_text().rsplit(') ', 1)[1].split()
-            self.start = int(fields[19])
-        except (OSError, ValueError, IndexError):
-            self.start = None
-        for stream in [self.process.stdin, self.process.stdout, self.process.stderr]:
-            os.set_blocking(stream.fileno(), False)
-
-    def observe_wait(self):
-        if self.wait is not None:
-            return self.wait
-        pid, raw = os.waitpid(self.process.pid, os.WNOHANG)
-        if pid:
-            code = os.waitstatus_to_exitcode(raw)
-            self.process.returncode = code
-            self.wait = WaitFact(pid, self.start, raw, code)
-        return self.wait
-
-    def verify_namespace(self, group):
-        if self.verified:
-            return True
-        if b'\n' not in self.buffers['status']:
-            return False
-        value = json.loads(self.buffers['status'].split(b'\n')[0])
-        pid = value['child-pid']
-        if type(pid) is not int or pid <= 0:
-            raise Unavailable('namespace_status_unknown')
-        # Reported IDs are checked against a living member of our cgroup,
-        # then anchored with namespace FDs; they are never signal authority.
-        before = Path(f'/proc/{pid}/stat').read_text().rsplit(') ',1)[1].split()[19]
-        if Path(f'/proc/{pid}/cgroup').read_text().strip() != '0::'+group.relative:
-            raise Unavailable('namespace_membership_unknown')
-        fds = []
-        identities = dict(host_init_pid=pid, host_init_start_ticks=int(before))
-        try:
-            for name in ['pid', 'mnt', 'net', 'user']:
-                fd = os.open(f'/proc/{pid}/ns/{name}', os.O_RDONLY | os.O_CLOEXEC)
-                fds.append(fd)
-                actual = os.fstat(fd).st_ino
-                identities[name] = actual
-                if actual == os.stat(f'/proc/self/ns/{name}').st_ino:
-                    raise Unavailable('namespace_isolation_unknown')
-                if name != 'user' and actual != value[name+'-namespace']:
-                    raise Unavailable('namespace_status_mismatch')
-            after = Path(f'/proc/{pid}/stat').read_text().rsplit(') ',1)[1].split()[19]
-            if before != after or Path(f'/proc/{pid}/cgroup').read_text().strip() != '0::'+group.relative:
-                raise Unavailable('namespace_identity_unknown')
-            self.namespace_fds = fds
-            fds = []
-            self.verified = True
-            self.namespace_identity = identities
-            return True
-        finally:
-            for fd in fds:
-                os.close(fd)
-
-    def close(self):
-        errors = []
-        for stream in [self.process.stdin, self.process.stdout, self.process.stderr]:
-            try:
-                stream.close()
-            except OSError:
-                errors.append('worker_stream_close_unknown')
-        for fd in [self.status_fd, *self.namespace_fds]:
-            try:
-                os.close(fd)
-            except OSError:
-                errors.append('worker_descriptor_close_unknown')
-        return sorted(set(errors))
 
 
 def sandbox(sources, bindings, args):
@@ -360,6 +153,7 @@ def source_manifest(package):
                  FIXTURE/'service_main.py', SCRIPTS/'trial_native_capture.py',
                  SCRIPTS/'trial_process_custody.py', SCRIPTS/'trial_fixture_service.py',
                  SCRIPTS/'trial_task_eval.py', SCRIPTS/'trial_selected_native_mounts.py',
+                 SCRIPTS/'trial_owned_workers.py',
                  Path(__file__).resolve()]:
         result[path.name] = digest(path.read_bytes())
     return result
@@ -390,37 +184,6 @@ def read_events(children, timeout, actor_raw=None):
 def control_lines(child):
     data = child.buffers['stdout']
     return [json.loads(line) for line in data.split(b'\n')[:-1]]
-
-
-def end_containment(group, children, deadline):
-    errors = []
-    try:
-        group.kill()
-    except (OSError, Unavailable):
-        errors.append('containment_kill_unknown')
-    released = None
-    while time.monotonic() < deadline:
-        try:
-            for child in children.values():
-                child.observe_wait()
-            if not group.populated():
-                released = True
-                if all(child.wait is not None for child in children.values()):
-                    break
-        except (OSError, Unavailable):
-            errors.append('containment_release_unknown')
-            break
-        time.sleep(.005)
-    if released is not True:
-        errors.append('containment_release_unknown')
-    for child in children.values():
-        try:
-            child.observe_wait()
-        except OSError:
-            errors.append('outer_wait_unknown')
-        if child.wait is None:
-            errors.append('outer_wait_unknown')
-    return released, errors
 
 
 def run_fixture(request, retained_root, workspace_root, *, delegated=None, source_root=SELECTED_PACKAGE, controller_loss_stage=None):
