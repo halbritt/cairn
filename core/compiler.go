@@ -28,6 +28,7 @@ type CompileRequest struct {
 	ExpansionReader        string       `json:"expansion_reader,omitempty"`
 	Kinds                  []string     `json:"kinds,omitempty"`
 	Semantic               bool         `json:"semantic,omitempty"`
+	SemanticQuery          string       `json:"semantic_query,omitempty"`
 	PageOffset             *int         `json:"page_offset,omitempty"`
 	BrowseOffset           *int         `json:"browse_offset,omitempty"`
 	Mode                   string       `json:"mode,omitempty"`
@@ -58,6 +59,7 @@ type Selection struct {
 	Reason    string             `json:"reason"`
 }
 type SemanticPackage struct {
+	QueryIntent *semanticQueryIntent `json:"-" cbor:"query_intent,omitempty"`
 	// SpanContext binds partial-read delivery to this receipt. It is sealed like
 	// Presentation; old receipts omit it and keep their original pull behavior.
 	SpanContext string `json:"-" cbor:"span_context,omitempty"`
@@ -139,6 +141,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	if err != nil {
 		return Package{}, err
 	}
+	if err = validateDistinctCompile(req, s != nil && s.semanticRetriever != nil); err != nil {
+		return Package{}, err
+	}
 	if req.Semantic && (req.Mode != "index" || req.Purpose != "context" || strings.TrimSpace(req.Query) == "" || req.BrowseOffset != nil) {
 		return Package{}, failure("INVALID_REQUEST", "semantic discovery requires a nonempty context index query without browsing")
 	}
@@ -211,6 +216,9 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 		return Package{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = s.distinctRetryIntent(ctx, tx, req, destination); err != nil {
+		return Package{}, err
+	}
 	evaluations := map[string]*CandidateEvaluation{}
 	semantic, err := s.compileSnapshot(ctx, tx, req, destination, evaluations, memo)
 	if err != nil {
@@ -245,6 +253,13 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 			Destination Destination
 		}{req, destination}
 		return Package{}, s.retainRefusal(ctx, intent, refusal, err)
+	}
+	// Validate the final packed wrapper before it can become a durable receipt.
+	// The pre-packing check cannot cover changes made during packing.
+	if req.SemanticQuery != "" {
+		if _, err = queryContract(semantic, req.Query, req.SemanticQuery); err != nil {
+			return Package{}, err
+		}
 	}
 	canonical, seal, err := sealPackage(semantic)
 	if err != nil {
@@ -326,8 +341,19 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 				p.Presentation = retained.Presentation
 				p.SpanContext = retained.SpanContext
 			}
-			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking, memo)
+			if req.SemanticQuery != "" {
+				candidates, err = s.rankIndexedInputs(ctx, req.Query, req.SemanticQuery, &p, candidates, evaluations, retainedRanking, memo)
+			} else {
+				candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations, retainedRanking, memo)
+			}
 			if err != nil {
+				return p, err
+			}
+		}
+		if req.SemanticQuery != "" {
+			p.QueryIntent = &semanticQueryIntent{Schema: "cairn.semantic-query-intent/1", SHA256: queryInputDigest(req.SemanticQuery), BaseSchema: p.Schema}
+			p.Schema = distinctQuerySchema
+			if _, err = queryContract(p, req.Query, req.SemanticQuery); err != nil {
 				return p, err
 			}
 		}
@@ -801,14 +827,10 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	if err != nil {
 		return Package{}, err
 	}
-	encoded, err := json.Marshal(struct {
-		Request     CompileRequest
-		Destination Destination
-	}{req, semantic.Destination})
+	digest, err := compileIntentDigest(req, semantic.Destination)
 	if err != nil {
 		return Package{}, err
 	}
-	digest := sha256.Sum256(encoded)
 	var oldDigest []byte
 	var oldSeal, id, nonce string
 	err = tx.QueryRow(ctx, `SELECT receipt_id::text,nonce::text,request_digest,seal FROM cairn.retrieval_receipt WHERE caller=$1 AND request_id=$2`, s.channel.Principal, req.RequestID).Scan(&id, &nonce, &oldDigest, &oldSeal)

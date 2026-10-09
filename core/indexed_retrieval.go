@@ -60,6 +60,10 @@ func validPassage(body string, span ByteSpanRequest) bool {
 }
 
 func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string, memo *semanticMemo) ([]candidate, error) {
+	return s.rankIndexedInputs(ctx, query, query, p, candidates, evaluations, retainedRanking, memo)
+}
+
+func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string, memo *semanticMemo) ([]candidate, error) {
 	p.Schema = "cairn.semantic/16"
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
@@ -75,7 +79,7 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 		p.Discovery.State = "not_needed"
 		return candidates, nil
 	}
-	r, err := memo.retrieve(ctx, s.semanticRetriever, SemanticRankRequest{query, notes})
+	r, err := memo.retrieve(ctx, s.semanticRetriever, SemanticRankRequest{semanticQuery, notes})
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -87,7 +91,7 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 	}
 	p.Discovery.State = "invalid_result"
 	id := &DiscoveryRanking{State: "ready", ModelSHA256: r.ModelSHA256, Algorithm: r.Algorithm}
-	valid := ValidateSemanticQueryProjection(r.QueryProjection, query) == nil && semanticIdentityValid(id) && r.Indexed > 0 && r.Indexed <= len(notes) && len(r.Hits) <= min(r.Indexed, 100)
+	valid := ValidateSemanticQueryProjection(r.QueryProjection, semanticQuery) == nil && semanticIdentityValid(id) && r.Indexed > 0 && r.Indexed <= len(notes) && len(r.Hits) <= min(r.Indexed, 100)
 	seen := map[string]bool{}
 	for _, h := range r.Hits {
 		e := evaluations[h.RecordID]

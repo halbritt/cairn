@@ -101,7 +101,7 @@ func entityReason(reason string, matched bool) string {
 }
 
 func withEntitySchema(p SemanticPackage) SemanticPackage {
-	if p.Schema == "cairn.semantic/15" || p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/17" || p.Schema == "cairn.semantic/18" || p.Schema == "cairn.semantic/19" {
+	if p.Schema == "cairn.semantic/15" || p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/17" || p.Schema == "cairn.semantic/18" || p.Schema == "cairn.semantic/19" || p.Schema == distinctQuerySchema {
 		return p
 	}
 	if p.AdvisoryConflicts {

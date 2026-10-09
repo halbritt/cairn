@@ -39,7 +39,8 @@ type client struct {
 	// sourceOpening is the profile's receipt-binding state as configured at start;
 	// the version declaration reads it here because an agent-session view of the
 	// store is a different principal.
-	sourceOpening bool
+	sourceOpening        bool
+	indexedSemanticQuery bool
 }
 type expansionReader struct {
 	repo        string
@@ -103,7 +104,7 @@ func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ran
 		if err != nil {
 			return fail(err)
 		}
-		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, role: identity.Role, principal: identity.Principal, machineID: identity.MachineID, sourceOpening: channel.SourceOpeningBinding}
+		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, role: identity.Role, principal: identity.Principal, machineID: identity.MachineID, sourceOpening: channel.SourceOpeningBinding, indexedSemanticQuery: retrieve != nil}
 		if identity.Role == "agent" {
 			s.readers[identity.Principal] = expansionReader{identity.Repo, s.clients[key].destination}
 		}
@@ -177,7 +178,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities(),
+			return VersionResponse{QueryInputCapabilities: &QueryInputCapabilities{Schema: QueryInputCapabilitiesSchema, IndexedSemanticQueryV1: c.indexedSemanticQuery}, PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities(),
 				SourceOpeningCapabilities: &SourceOpeningCapabilities{Schema: SourceOpeningCapabilitiesSchema, ReaderGuard: true, ReceiptBinding: c.sourceOpening}}, nil
 		})
 	case "/v1/clients":

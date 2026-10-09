@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -78,7 +77,7 @@ func readPackage(ctx context.Context, tx pgx.Tx, receiptID string) (Package, err
 	if err = tx.QueryRow(ctx, `SELECT semantic_body,seal,nonce::text FROM cairn.retrieval_receipt WHERE receipt_id=$1`, receiptID).Scan(&encoded, &p.Seal, &p.Nonce); err != nil {
 		return p, err
 	}
-	if err = cbor.Unmarshal(encoded, &p.Semantic); err != nil {
+	if err = decodeSemanticPackage(encoded, &p.Semantic); err != nil {
 		return p, err
 	}
 	_, seal, err := sealPackage(p.Semantic)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -28,7 +27,7 @@ func (s *Store) retainedRetrievalContract(ctx context.Context, tx pgx.Tx, req Co
 		return nil, err
 	}
 	var semantic SemanticPackage
-	if err = cbor.Unmarshal(body, &semantic); err != nil {
+	if err = decodeSemanticPackage(body, &semantic); err != nil {
 		return nil, failure("INTEGRITY_FAILURE", "retained semantic bytes are invalid")
 	}
 	_, storedSeal, err := sealPackage(semantic)

@@ -6,16 +6,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/jackc/pgx/v5"
 	"slices"
 	"strings"
 )
 
 type RecompileRequest struct {
-	Entities  []EntityRef `json:"entities,omitempty"`
-	ReceiptID string      `json:"receipt_id"`
-	Query     string      `json:"query"`
+	SemanticQuery string      `json:"semantic_query,omitempty"`
+	Entities      []EntityRef `json:"entities,omitempty"`
+	ReceiptID     string      `json:"receipt_id"`
+	Query         string      `json:"query"`
 }
 
 // Recompile reconstructs ranking/packing from the original read set and retained
@@ -38,6 +38,9 @@ func (s *Store) recompile(ctx context.Context, req RecompileRequest, dest *Desti
 	ctx = s.recoveryContext(ctx)
 	if len(req.Query) > 4096 {
 		return Package{}, failure("INVALID_REQUEST", "query exceeds limit")
+	}
+	if err := validateDistinctInputs(req.Query, req.SemanticQuery); err != nil {
+		return Package{}, err
 	}
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
@@ -153,7 +156,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if version != 2 {
 		return Package{}, failure("REPLAY_INCOMPLETE", "receipt lacks frozen candidate facts; saved-byte replay remains available")
 	}
-	if err = cbor.Unmarshal(encoded, &original.Semantic); err != nil {
+	if err = decodeSemanticPackage(encoded, &original.Semantic); err != nil {
 		return Package{}, err
 	}
 	_, storedSeal, err := sealPackage(original.Semantic)
@@ -173,10 +176,14 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16" && original.Semantic.Schema != "cairn.semantic/17" && original.Semantic.Schema != "cairn.semantic/18" && original.Semantic.Schema != "cairn.semantic/19") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
+	contract, err := queryContract(original.Semantic, req.Query, req.SemanticQuery)
+	if err != nil {
+		return Package{}, err
+	}
+	if (contract.Schema != "cairn.semantic/3" && contract.Schema != "cairn.semantic/4" && contract.Schema != "cairn.semantic/5" && contract.Schema != "cairn.semantic/6" && contract.Schema != "cairn.semantic/7" && contract.Schema != "cairn.semantic/8" && contract.Schema != "cairn.semantic/9" && contract.Schema != "cairn.semantic/10" && contract.Schema != "cairn.semantic/11" && contract.Schema != "cairn.semantic/12" && contract.Schema != "cairn.semantic/13" && contract.Schema != "cairn.semantic/14" && contract.Schema != "cairn.semantic/15" && contract.Schema != "cairn.semantic/16" && contract.Schema != "cairn.semantic/17" && contract.Schema != "cairn.semantic/18" && contract.Schema != "cairn.semantic/19") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
-	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9" || original.Semantic.Schema == "cairn.semantic/10" || original.Semantic.Schema == "cairn.semantic/13" || original.Semantic.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
+	if contract.Schema == "cairn.semantic/6" || ((contract.Schema == "cairn.semantic/8" || contract.Schema == "cairn.semantic/9" || contract.Schema == "cairn.semantic/10" || contract.Schema == "cairn.semantic/13" || contract.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
 		page := original.Semantic.Browse
 		if original.Semantic.Mode != "index" || req.Query != "" || page == nil || page.Offset < 0 || page.Offset > 10000 {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical browse page is invalid")
@@ -184,14 +191,14 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
-	indexedSchema := original.Semantic.Schema == "cairn.semantic/15" || original.Semantic.Schema == "cairn.semantic/16" || original.Semantic.Schema == "cairn.semantic/18" || original.Semantic.Schema == "cairn.semantic/19"
-	indexedIDFSchema := original.Semantic.Schema == "cairn.semantic/19"
-	idfSchema := original.Semantic.Schema == "cairn.semantic/17"
-	advisorySchema := original.Semantic.Schema == "cairn.semantic/14" || ((indexedSchema || idfSchema) && original.Semantic.AdvisoryConflicts)
+	indexedSchema := contract.Schema == "cairn.semantic/15" || contract.Schema == "cairn.semantic/16" || contract.Schema == "cairn.semantic/18" || contract.Schema == "cairn.semantic/19"
+	indexedIDFSchema := contract.Schema == "cairn.semantic/19"
+	idfSchema := contract.Schema == "cairn.semantic/17"
+	advisorySchema := contract.Schema == "cairn.semantic/14" || ((indexedSchema || idfSchema) && original.Semantic.AdvisoryConflicts)
 	if advisorySchema != original.Semantic.AdvisoryConflicts || (advisorySchema && original.Semantic.Purpose != "context") {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical advisory conflict intent is invalid")
 	}
-	entitySchema := original.Semantic.Schema == "cairn.semantic/13" || advisorySchema || indexedSchema || idfSchema
+	entitySchema := contract.Schema == "cairn.semantic/13" || advisorySchema || indexedSchema || idfSchema
 	entityIntent := original.Semantic.EntitiesSHA256 != ""
 	if original.Semantic.EntitiesSHA256 != entitiesDigest(req.Entities) {
 		return Package{}, failure("INVALID_REQUEST", "entities do not match the historical intent digest")
@@ -206,10 +213,10 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, failure("INTEGRITY_FAILURE", "historical indexed IDF ranking identity is invalid")
 	}
 	signatureSchema := original.Semantic.ErrorSignature != ""
-	if (original.Semantic.Schema == "cairn.semantic/12" && !signatureSchema) || (signatureSchema && ((!entitySchema && original.Semantic.Schema != "cairn.semantic/12") || !digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || (!hasFailureRanking(original.Semantic.Ranking) && !hasEntityRanking(original.Semantic.Ranking)))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
+	if (contract.Schema == "cairn.semantic/12" && !signatureSchema) || (signatureSchema && ((!entitySchema && contract.Schema != "cairn.semantic/12") || !digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || (!hasFailureRanking(original.Semantic.Ranking) && !hasEntityRanking(original.Semantic.Ranking)))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical failure signature is invalid")
 	}
-	pagedSchema := original.Semantic.Schema == "cairn.semantic/11" || ((signatureSchema || entitySchema) && original.Semantic.Page != nil)
+	pagedSchema := contract.Schema == "cairn.semantic/11" || ((signatureSchema || entitySchema) && original.Semantic.Page != nil)
 	page := original.Semantic.Page
 	if pagedSchema {
 		if original.Semantic.Mode != "index" || original.Semantic.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && !signatureSchema && !entityIntent) || original.Semantic.Browse != nil || page == nil || page.Offset < 0 || page.Offset > 10000 {
@@ -219,11 +226,11 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a search page")
 	}
 	normalized, kindErr := NormalizeKinds(original.Semantic.Kinds)
-	phaseSchema := original.Semantic.Schema == "cairn.semantic/10"
+	phaseSchema := contract.Schema == "cairn.semantic/10"
 	if (!entitySchema && !signatureSchema && !pagedSchema && phaseSchema != (original.Semantic.Context != nil && original.Semantic.Context.TaskPhase != "")) || original.Semantic.Context.validate() != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical task phase is invalid")
 	}
-	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (!entitySchema && !signatureSchema && !pagedSchema && !phaseSchema && (original.Semantic.Schema == "cairn.semantic/9") != (len(normalized) > 0)) {
+	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (!entitySchema && !signatureSchema && !pagedSchema && !phaseSchema && (contract.Schema == "cairn.semantic/9") != (len(normalized) > 0)) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical kind filter is invalid")
 	}
 	switch original.Semantic.Policy {
@@ -257,7 +264,11 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if err != nil {
 		return Package{}, err
 	}
-	if err = validateFrozenDiscovery(original.Semantic, evaluations, req.Query); err != nil {
+	semanticQuery := req.Query
+	if req.SemanticQuery != "" {
+		semanticQuery = req.SemanticQuery
+	}
+	if err = validateFrozenDiscoveryInputs(contract, evaluations, req.Query, semanticQuery); err != nil {
 		return Package{}, err
 	}
 	p := original.Semantic

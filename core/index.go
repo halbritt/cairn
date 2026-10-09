@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -156,7 +155,7 @@ func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[st
 		for _, member := range members {
 			entry := indexEntry(member.selection.Record)
 			entry.Conflicts = member.selection.Conflicts
-			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" || p.Schema == "cairn.semantic/15" || p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/17" || p.Schema == "cairn.semantic/18" || p.Schema == "cairn.semantic/19" {
+			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" || p.Schema == "cairn.semantic/15" || p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/17" || p.Schema == "cairn.semantic/18" || p.Schema == "cairn.semantic/19" || p.Schema == distinctQuerySchema {
 				var span ByteSpanRequest
 				entry.Summary, span = indexPreview(member.selection.Record.Body, query, p.Ranking)
 				if hit := evaluations[entry.RecordID].PassageHit; hit != nil && !member.literal {
@@ -443,7 +442,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	if err = tx.QueryRow(ctx, `SELECT semantic_body,seal FROM cairn.retrieval_receipt WHERE receipt_id=$1`, req.ReceiptID).Scan(&body, &storedSeal); err != nil {
 		return err
 	}
-	if err = cbor.Unmarshal(body, &original); err != nil {
+	if err = decodeSemanticPackage(body, &original); err != nil {
 		return err
 	}
 	_, seal, err := sealPackage(original)

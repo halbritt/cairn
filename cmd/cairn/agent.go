@@ -150,7 +150,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return prepareAgentStart(ctx, client, f.Args()[1:])
 	}
 	if operation == "search" {
-		return agentSearch(ctx, client, f.Args()[1:], socketPath, tokenPath)
+		return agentSearch(ctx, client, f.Args()[1:], socketPath, tokenPath, input)
 	}
 	if operation == "pull" || operation == "pull-evidence" {
 		if f.NArg() > 1 {
@@ -173,9 +173,59 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	if !json.Valid(body) {
 		return nil, invalid("expected a JSON request")
 	}
+	// The explicit JSON compile/replay commands need the same mixed-version
+	// guard as search. Legacy requests gain no additional version lookup.
+	distinct := false
+	if operation == "compile" || operation == "index" || operation == "recompile" {
+		var fields struct {
+			SemanticQuery string `json:"semantic_query"`
+		}
+		if err := json.Unmarshal(body, &fields); err != nil {
+			return nil, invalid("invalid query input request")
+		}
+		distinct = fields.SemanticQuery != ""
+		if distinct {
+			choice, err := new(localapi.PreviewCapabilityChoice).ResolveInputs(ctx, client)
+			if err != nil {
+				return nil, err
+			}
+			if err = choice.RequireDistinctInput(operation == "recompile"); err != nil {
+				return nil, err
+			}
+		}
+	}
 	var result json.RawMessage
 	if err = client.Call(ctx, operation, json.RawMessage(body), &result); err != nil {
 		return nil, err
+	}
+	if distinct {
+		var pkg core.Package
+		if operation == "index" {
+			var index core.IndexResult
+			if err = json.Unmarshal(result, &index); err == nil {
+				pkg = index.Package
+			}
+		} else if operation == "recompile" {
+			var replay struct {
+				Package core.Package `json:"package"`
+			}
+			if err = json.Unmarshal(result, &replay); err == nil {
+				pkg = replay.Package
+			}
+		} else {
+			err = json.Unmarshal(result, &pkg)
+		}
+		if err != nil {
+			return nil, invalid("invalid distinct query response; do not retry")
+		}
+		if operation == "recompile" {
+			err = localapi.ConfirmDistinctReplaySchema(pkg.Semantic.Schema)
+		} else {
+			err = localapi.ConfirmDistinctQuerySchema(pkg.Semantic.Schema)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }

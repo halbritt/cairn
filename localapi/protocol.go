@@ -94,7 +94,8 @@ type VersionInfo struct {
 // VersionResponse is the current producer shape. Keep it separate from the
 // build/protocol reader so optional capability formats cannot break those reads.
 type VersionResponse struct {
-	PreviewCapabilities *PreviewCapabilities `json:"preview_capabilities,omitempty"`
+	QueryInputCapabilities *QueryInputCapabilities `json:"query_input_capabilities,omitempty"`
+	PreviewCapabilities    *PreviewCapabilities    `json:"preview_capabilities,omitempty"`
 	VersionInfo
 	RetrievalCapabilities  *RetrievalCapabilities  `json:"retrieval_capabilities,omitempty"`
 	InspectionCapabilities *InspectionCapabilities `json:"inspection_capabilities,omitempty"`

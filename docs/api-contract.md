@@ -112,6 +112,15 @@ and whether new context-index receipts for the authenticated principal bind the
 policy now. It leaves `retrieval_capabilities` unchanged; see
 [source openings](note-span-openings.md#capability-declarations-and-reader-readiness).
 
+The independent optional `query_input_capabilities` sibling declares the closed
+`cairn.query-input-capabilities/1` contract. Its required boolean
+`indexed_semantic_query_v1` enables explicit `semantic_query` for indexed compile
+when true. A well-formed known declaration also establishes backend-free schema20
+replay when false. It does not declare worker health or relevance. Missing, malformed,
+duplicate and future declarations establish neither. Explicit clients require the
+new response schema after submission and never retry/downgrade an ignored input.
+See [semantic discovery](semantic-discovery.md) for input bounds and retention.
+
 The independent optional `preview_capabilities` sibling declares
 `cairn.preview-capabilities/1` with the required boolean `entities_omitted`.
 Only an exact positive declaration (at most 256 bytes, no duplicate or unknown

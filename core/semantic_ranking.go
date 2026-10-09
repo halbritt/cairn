@@ -187,8 +187,12 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
+	return validateFrozenDiscoveryInputs(p, evaluations, query, query)
+}
+
+func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query, semanticQuery string) error {
 	if p.Schema == "cairn.semantic/18" || (p.Schema == "cairn.semantic/19" && p.Discovery != nil && p.Discovery.QueryProjection != nil) {
-		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, query) != nil {
+		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, semanticQuery) != nil {
 			return failure("INTEGRITY_FAILURE", "historical query projection is invalid")
 		}
 	} else if p.Discovery != nil && p.Discovery.QueryProjection != nil {

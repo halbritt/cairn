@@ -49,17 +49,21 @@ func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ s
 	var version struct {
 		buildinfo.Info
 		PreviewCapabilities       json.RawMessage `json:"preview_capabilities"`
+		QueryInputCapabilities    json.RawMessage `json:"query_input_capabilities"`
 		RetrievalCapabilities     json.RawMessage `json:"retrieval_capabilities"`
 		InspectionCapabilities    json.RawMessage `json:"inspection_capabilities"`
 		SourceOpeningCapabilities json.RawMessage `json:"source_opening_capabilities"`
 	}
 	var err error
+	var rawVersion json.RawMessage
 	if t.client == nil {
 		result.API.Diagnostic = "API_NOT_CONNECTED"
-	} else if err = t.client.Call(probe, "version", struct{}{}, &version); err != nil {
+	} else if err = t.client.Call(probe, "version", struct{}{}, &rawVersion); err != nil {
 		result.API.Diagnostic = clientInfoError(probe, err)
+	} else if err = json.Unmarshal(rawVersion, &version); err != nil {
+		result.API.State, result.API.Diagnostic = "invalid_response", "INVALID_BUILD_IDENTITY"
 	} else {
-		t.previewChoice.Observe(version.PreviewCapabilities)
+		t.previewChoice.ObserveVersion(version.PreviewCapabilities, localapi.QueryInputDeclaration(rawVersion))
 		if !validDiagnosticBuild(version.Info) {
 			result.API.State, result.API.Diagnostic = "invalid_response", "INVALID_BUILD_IDENTITY"
 		} else {

@@ -1777,6 +1777,9 @@
           },
           "semantic": {
             "type": "boolean"
+          },
+          "semantic_query": {
+            "type": "string"
           }
         },
         "required": [
@@ -1944,6 +1947,12 @@
           "semantic": {
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "semantic_query": {
+            "type": [
+              "string",
               "null"
             ]
           }
@@ -6951,6 +6960,9 @@
           },
           "receipt_id": {
             "type": "string"
+          },
+          "semantic_query": {
+            "type": "string"
           }
         },
         "required": [
@@ -6986,6 +6998,12 @@
             ]
           },
           "receipt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "semantic_query": {
             "type": [
               "string",
               "null"
@@ -11922,6 +11940,22 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/localapi.ProtocolRange"
       },
+      "localapi.QueryInputCapabilities": {
+        "properties": {
+          "indexed_semantic_query_v1": {
+            "type": "boolean"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexed_semantic_query_v1",
+          "schema"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.QueryInputCapabilities"
+      },
       "localapi.ReaderCapabilities": {
         "properties": {
           "schema": {
@@ -12010,6 +12044,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/localapi.ProtocolRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "query_input_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.QueryInputCapabilities"
               },
               {
                 "type": "null"
@@ -14572,6 +14616,12 @@
                       "semantic": {
                         "type": [
                           "boolean",
+                          "null"
+                        ]
+                      },
+                      "semantic_query": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }
@@ -18832,6 +18882,12 @@
                           "boolean",
                           "null"
                         ]
+                      },
+                      "semantic_query": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "type": "object",
@@ -19766,6 +19822,12 @@
                         ]
                       },
                       "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "semantic_query": {
                         "type": [
                           "string",
                           "null"
@@ -24848,6 +24910,7 @@
     "STORE_UNREACHABLE",
     "TURN_ALREADY_BOUND",
     "UNSUPPORTED_CONTROL",
+    "UNSUPPORTED_QUERY_INPUT",
     "VERSION_CONFLICT",
     "WORKER_UNAVAILABLE"
   ]

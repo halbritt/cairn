@@ -1,5 +1,36 @@
 # Optional semantic discovery
 
+Explicit indexed searches can keep lexical keywords separate from natural-language
+semantic input. The lexical `query` still controls literals, IDF, eligibility and
+fallback packing. The optional `semantic_query` controls only indexed worker input
+and its projection validation. Empty or absent input keeps the legacy route.
+This does not change ordinary hooks or solve embedding-prefix coverage limits.
+
+CLI search accepts exact semantic text through `--semantic-query-file PATH` or
+`--semantic-query-stdin`, together with `--semantic` and a lexical query. File and
+stdin sources are mutually exclusive; files must be regular and cannot be symlinks.
+The combined inputs must fit 4096 UTF-8 bytes. Nonempty semantic text must be valid
+UTF-8, nonblank and contain no NUL. It is never clipped, rewritten, or supplied as
+raw text in argv. MCP search accepts the same optional structured field.
+
+The server separately declares `query_input_capabilities` of schema
+`cairn.query-input-capabilities/1`, with required boolean
+`indexed_semantic_query_v1`. A known declaration permits schema20 replay even when
+the flag is false; compile needs true, which means an indexed backend is configured,
+not healthy. Missing, malformed, duplicate or future declarations permit neither.
+Clients latch compile/replay support with compact previews from one version response.
+Explicit input refuses unsupported peers before submission and requires the response
+to acknowledge `cairn.semantic/20`. A rollback refusal may follow an already committed
+legacy receipt: do not retry, downgrade, undo it, or reuse that request UUID.
+
+Schema20 seals a private, versioned digest of the exact semantic input and its
+underlying indexed format, including fallback states. Recompile requires both exact
+original inputs and works without a backend; changed input conflicts before a worker
+on compile retries. Lexical, semantic and request digests can confirm low-entropy
+guesses; absence of raw text in receipts is not a secrecy guarantee. Old readers can
+refuse schema20 as an integrity failure on rollback; that refusal alone does not
+prove tampering. Do not downgrade retained receipts.
+
 Use semantic discovery when the query and saved note use different vocabulary:
 
 ```sh

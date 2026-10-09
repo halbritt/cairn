@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,27 +19,29 @@ type agentSearchEntry = indexview.Entry
 type agentSearchView = indexview.View
 
 type agentSearchOptions struct {
-	inspection *string
-	kinds      []string
-	entities   *[]core.EntityRef
-	repo       *string
-	task       *string
-	run        *string
-	request    *string
-	tokens     *int
-	memory     *int
-	minPull    *int
-	browse     *bool
-	advisory   *bool
-	signature  *string
-	semantic   *bool
-	offset     *int
-	revision   *string
-	workspace  *string
-	taskClass  *string
-	taskPhase  *string
-	binding    *string
-	capability *string
+	inspection    *string
+	kinds         []string
+	entities      *[]core.EntityRef
+	repo          *string
+	task          *string
+	run           *string
+	request       *string
+	tokens        *int
+	memory        *int
+	minPull       *int
+	browse        *bool
+	advisory      *bool
+	signature     *string
+	semantic      *bool
+	semanticFile  *string
+	semanticStdin *bool
+	offset        *int
+	revision      *string
+	workspace     *string
+	taskClass     *string
+	taskPhase     *string
+	binding       *string
+	capability    *string
 }
 
 func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
@@ -58,6 +61,8 @@ func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
 	options.advisory = f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	options.signature = f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 	options.semantic = f.Bool("semantic", false, "optional semantic discovery; labelled lexical fallback if unavailable")
+	options.semanticFile = f.String("semantic-query-file", "", "bounded exact natural-language input file for distinct indexed semantic search; not raw text in argv")
+	options.semanticStdin = f.Bool("semantic-query-stdin", false, "read bounded exact natural-language input from stdin; mutually exclusive with --semantic-query-file")
 	options.offset = f.Int("offset", 0, "ranked search page offset (0 to start), or next browse offset")
 	options.revision = f.String("revision", "", "declared repository revision")
 	options.workspace = f.String("workspace-sha256", "", "workspace digest")
@@ -68,12 +73,25 @@ func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
 	return f, options
 }
 
-func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
+func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string, input io.Reader) (agentSearchView, error) {
 	f, options := newAgentSearchFlags()
 	if err := f.Parse(args); err != nil {
 		return agentSearchView{}, invalid(err.Error())
 	}
 	query := strings.Join(f.Args(), " ")
+	fileSelected := false
+	f.Visit(func(fl *flag.Flag) {
+		if fl.Name == "semantic-query-file" {
+			fileSelected = true
+		}
+	})
+	semanticQuery, err := readSemanticQuery(query, *options.semanticFile, fileSelected, *options.semanticStdin, input)
+	if err != nil {
+		return agentSearchView{}, err
+	}
+	if semanticQuery != "" && (!*options.semantic || *options.browse || strings.TrimSpace(query) == "") {
+		return agentSearchView{}, invalid("distinct semantic input requires --semantic, a lexical query and no browsing")
+	}
 	if *options.semantic && *options.browse {
 		return agentSearchView{}, invalid("semantic discovery cannot be combined with browsing")
 	}
@@ -130,15 +148,25 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if err != nil {
 		return agentSearchView{}, err
 	}
-	compact, err := new(localapi.PreviewCapabilityChoice).Resolve(ctx, client)
+	choice, err := new(localapi.PreviewCapabilityChoice).ResolveInputs(ctx, client)
 	if err != nil {
 		return agentSearchView{}, err
 	}
+	if semanticQuery != "" {
+		if err = choice.RequireDistinctInput(false); err != nil {
+			return agentSearchView{}, err
+		}
+	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, InspectionPolicy: *options.inspection, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: choice.CompactPreview, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, InspectionPolicy: *options.inspection, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic, SemanticQuery: semanticQuery,
 		Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Query: query, Purpose: "context", AvailableTokens: *options.tokens,
 		Context: &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability}}, &result); err != nil {
 		return agentSearchView{}, err
+	}
+	if semanticQuery != "" {
+		if err = localapi.ConfirmDistinctQuerySchema(result.Package.Semantic.Schema); err != nil {
+			return agentSearchView{}, err
+		}
 	}
 	if minPull != nil {
 		room -= *minPull
