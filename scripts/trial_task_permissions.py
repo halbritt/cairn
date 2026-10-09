@@ -17,8 +17,14 @@ ALLOW = [
 DENY = ['mcp__cairn__'+name for name in ('cairn_remember','cairn_edit','cairn_assess','cairn_prepare_note')]
 
 
-def settings_permissions():
-    return dict(allow=list(ALLOW), deny=list(DENY))
+def settings_permissions(*, profile='existing/1'):
+    """Select declared rules; workspace confinement and admission belong to the runner."""
+    if profile not in ('existing/1', 'implementation/1'):
+        raise ValueError('permission_profile_unrecognized')
+    allow = list(ALLOW)
+    if profile == 'implementation/1':
+        allow += ['Bash(git add *)', 'Bash(git commit *)', 'Bash(make contract)']
+    return dict(allow=allow, deny=list(DENY))
 
 
 def command_metadata(value):
@@ -33,12 +39,12 @@ def command_metadata(value):
     category='other'
     if len(words)>=2 and words[0]=='go' and words[1] in ('version','build','test','vet'):
         category='go_'+words[1]
-    elif len(words)>=2 and words[0]=='make' and words[1] in ('check','test-integration'):
+    elif len(words)>=2 and words[0]=='make' and words[1] in ('check','test-integration','contract'):
         category='make_'+words[1].replace('-','_')
     elif words[:2]==['pg_config','--version']: category='postgres_version'
     elif len(words)>=2 and words[0]=='gofmt' and words[1] in ('-l','-w'):
         category='gofmt_check' if words[1]=='-l' else 'gofmt_write'
-    elif len(words)>=2 and words[0]=='git' and words[1] in ('status','diff','log','show','add'):
+    elif len(words)>=2 and words[0]=='git' and words[1] in ('status','diff','log','show','add','commit'):
         category='git_'+words[1]
     elif words and words[0] in ('python3','rg','which'):
         category={'python3':'scripted_shell','rg':'source_search','which':'executable_probe'}[words[0]]
