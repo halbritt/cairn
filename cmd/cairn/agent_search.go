@@ -56,7 +56,7 @@ func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
 	options.tokens = f.Int("tokens", 32000, "actual available input context in conservative UTF-8 bytes (not model capacity)")
 	options.memory = f.Int("memory-budget-bytes", 0, "optional smaller search and receipt memory allowance (256 through --tokens); --tokens remains available context for policy")
 	options.minPull = f.Int("min-pull-bytes", 0, "reserve 1..24000 charged expansion bytes within --memory-budget-bytes; not guaranteed body bytes or a successful pull")
-	options.inspection = f.String("inspection-policy", "", "first-fitting-whole/1 reserves a complete source/group within --memory-budget-bytes; mutually exclusive with --min-pull-bytes")
+	options.inspection = f.String("inspection-policy", "", "first-fitting-whole/2 uses declared room; /1 keeps the 24000-byte ceiling. Both reserve a complete source/group within --memory-budget-bytes; mutually exclusive with --min-pull-bytes")
 	options.browse = f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
 	options.advisory = f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	options.signature = f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
@@ -124,8 +124,8 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if minPull != nil && (memoryBudget == nil || *minPull < 1 || *minPull > min(24000, room)) {
 		return agentSearchView{}, invalid("min-pull-bytes requires --memory-budget-bytes and 1..min(24000, memory-budget-bytes)")
 	}
-	if *options.inspection != "" && (*options.inspection != "first-fitting-whole/1" || memoryBudget == nil || minPull != nil) {
-		return agentSearchView{}, invalid("inspection-policy requires first-fitting-whole/1, --memory-budget-bytes and no --min-pull-bytes")
+	if *options.inspection != "" && ((*options.inspection != "first-fitting-whole/1" && *options.inspection != "first-fitting-whole/2") || memoryBudget == nil || minPull != nil) {
+		return agentSearchView{}, invalid("inspection-policy requires first-fitting-whole/1 or /2, --memory-budget-bytes and no --min-pull-bytes")
 	}
 	if *options.browse {
 		browseOffset = options.offset

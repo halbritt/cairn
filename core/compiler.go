@@ -180,8 +180,8 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	if req.MinPullBytes != nil && (req.MemoryBudgetBytes == nil || *req.MinPullBytes <= 0 || *req.MinPullBytes > min(24000, *req.MemoryBudgetBytes)) {
 		return Package{}, failure("INVALID_REQUEST", "min_pull_bytes requires memory_budget_bytes and 1..min(24000,memory_budget_bytes) bytes")
 	}
-	if req.InspectionPolicy != "" && (req.InspectionPolicy != firstFittingWhole || req.MemoryBudgetBytes == nil || req.MinPullBytes != nil) {
-		return Package{}, failure("INVALID_REQUEST", "inspection_policy requires first-fitting-whole/1, memory_budget_bytes and no min_pull_bytes")
+	if req.InspectionPolicy != "" && ((req.InspectionPolicy != firstFittingWhole && req.InspectionPolicy != declaredRoomWhole) || req.MemoryBudgetBytes == nil || req.MinPullBytes != nil) {
+		return Package{}, failure("INVALID_REQUEST", "inspection_policy requires first-fitting-whole/1 or /2, memory_budget_bytes and no min_pull_bytes")
 	}
 	switch req.Purpose {
 	case "context", "planning", "placement", "capability", "security":
@@ -376,7 +376,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.MemoryBudget.Schema = "cairn.memory-budget/3"
 			p.MemoryBudget.InspectionPolicy = req.InspectionPolicy
 		}
-		if *req.MemoryBudgetBytes > 24000 {
+		if req.InspectionPolicy == declaredRoomWhole {
 			p.MemoryBudget.Schema = "cairn.memory-budget/4"
 		}
 	}

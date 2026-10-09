@@ -15,6 +15,7 @@ type MemoryBudget struct {
 }
 
 const firstFittingWhole = "first-fitting-whole/1"
+const declaredRoomWhole = "first-fitting-whole/2"
 
 // Explicit large allocations use the caller's room; older receipts retain
 // their original 24,000-byte expansion ceiling.
@@ -87,16 +88,12 @@ func validateMemoryBudget(p SemanticPackage) error {
 		if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) && b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 {
 			return nil
 		}
-	case "cairn.memory-budget/4":
-		if b.Bytes <= 24000 {
-			break
+	case "cairn.memory-budget/3", "cairn.memory-budget/4":
+		policy := firstFittingWhole
+		if b.Schema == "cairn.memory-budget/4" {
+			policy = declaredRoomWhole
 		}
-		if b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 && b.MinPullBytes >= 0 && b.MinPullBytes <= b.Bytes {
-			return nil
-		}
-		fallthrough
-	case "cairn.memory-budget/3":
-		if b.InspectionPolicy != firstFittingWhole || b.SkippedUnits < 0 || b.SkippedUnits > 10000 {
+		if b.InspectionPolicy != policy || b.SkippedUnits < 0 || b.SkippedUnits > 10000 {
 			break
 		}
 		switch b.InspectionStatus {

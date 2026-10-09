@@ -132,7 +132,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := largeSession.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "whole-handoff-needle", "available_tokens": 160000, "memory_budget_bytes": 160000, "inspection_policy": "first-fitting-whole/1"}})
+		result, err := largeSession.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "whole-handoff-needle", "available_tokens": 160000, "memory_budget_bytes": 160000, "inspection_policy": "first-fitting-whole/2"}})
 		if err != nil || result.IsError {
 			t.Fatalf("large search: %+v %v", result, err)
 		}

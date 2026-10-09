@@ -96,7 +96,7 @@ def check_presentation(invoke, settings_path, settings, root):
                 assert '--semantic' in flags()[0]
             else:
                 no_dispatch(name, dict(request, semantic=True))
-            for invalid in (None, True, '', 'first-fitting-whole/2'):
+            for invalid in (None, True, '', 'first-fitting-whole/3'):
                 no_dispatch(name, dict(request, inspection_policy=invalid))
             no_dispatch(name, dict(query='subject', inspection_policy=policy))
             no_dispatch(name, dict(request, min_pull_bytes=1))
@@ -262,7 +262,7 @@ def check_store(invoke, binary, environment, settings_path, settings):
         body += 'x' * (65536 - len((marker + ' ' + body).encode()))
         create(body)
         large = invoke('search', dict(query=needle, available_tokens=160000,
-                       memory_budget_bytes=160000, inspection_policy='first-fitting-whole/1'))
+                       memory_budget_bytes=160000, inspection_policy='first-fitting-whole/2'))
         assert large['memory_budget']['schema'] == 'cairn.memory-budget/4'
         assert large['bytes_remaining'] > 24000
         whole = invoke('pull', large['index'][0]['pull_arguments'])

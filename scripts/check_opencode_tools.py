@@ -131,7 +131,15 @@ def check(binary, root, environment, opencode, claim, support):
             assert result.returncode != 0 and error in result.stderr + result.stdout, (name, result.stderr, result.stdout)
             return
         assert result.returncode == 0, (name, result.stderr, result.stdout)
-        return json.loads(json.loads(result.stdout)['result']['output'])
+        tool_result = json.loads(result.stdout)['result']
+        output = tool_result['output']
+        if tool_result.get('metadata', {}).get('truncated'):
+            # OpenCode retains large tool responses in its own output artifact.
+            # The test reads only that isolated fixture's reported full output.
+            path = Path(tool_result['metadata']['outputPath']).resolve()
+            assert path.is_relative_to(Path(env['XDG_DATA_HOME']).resolve())
+            output = path.read_text()
+        return json.loads(output)
 
     check_search_budget(invoke, settings_path, settings, root)
     check_retrieval_presentation(invoke, settings_path, settings, root)
@@ -211,7 +219,8 @@ def check(binary, root, environment, opencode, claim, support):
         invoke('search', dict(query=marker, available_tokens=invalid), 'INVALID_REQUEST')
     enlarged = invoke('search', dict(query=marker, available_tokens=160000, memory_budget_bytes=160000))
     assert enlarged['available_tokens'] == 160000
-    assert enlarged['memory_budget']['schema'] == 'cairn.memory-budget/4'
+    assert enlarged['memory_budget']['schema'] == 'cairn.memory-budget/1'
+    assert enlarged['bytes_remaining'] <= 24000
     invoke('search', dict(query=marker, available_tokens=256), 'BUDGET_REFUSED')
     budgeted = invoke('search', dict(query=marker, available_tokens=32000, memory_budget_bytes=5000))
     assert budgeted['available_tokens'] == 32000 and budgeted['optional_limit'] == 3200

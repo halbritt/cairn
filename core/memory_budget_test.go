@@ -32,8 +32,13 @@ func TestExplicitBudgetReadsCompleteMaximumSizeHandoff(t *testing.T) {
 	}
 	_, err = op.Expand(ctx, ExpandRequest{RequestID: uuid.NewString(), ReceiptID: legacy.Package.ReceiptID, Handle: legacy.Handles[0].Handle}, Destination{"hosted", false})
 	requireCode(t, err, "BUDGET_REFUSED")
+	req.RequestID, req.MemoryBudgetBytes, req.InspectionPolicy = uuid.NewString(), ptrInt(160000), firstFittingWhole
+	priorPolicy, err := op.Index(ctx, req, Destination{"hosted", false})
+	if err != nil || len(priorPolicy.Handles) != 0 || priorPolicy.Package.Semantic.MemoryBudget.Schema != "cairn.memory-budget/3" {
+		t.Fatalf("v1 inspection changed its expansion ceiling: %v", err)
+	}
 	for _, budget := range []int{9500, 160000} {
-		req.RequestID, req.MemoryBudgetBytes, req.InspectionPolicy = uuid.NewString(), ptrInt(budget), firstFittingWhole
+		req.RequestID, req.MemoryBudgetBytes, req.InspectionPolicy = uuid.NewString(), ptrInt(budget), declaredRoomWhole
 		index, err := op.Index(ctx, req, Destination{"hosted", false})
 		if err != nil {
 			t.Fatal(err)

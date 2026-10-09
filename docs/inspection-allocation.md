@@ -27,8 +27,8 @@ reserves the calculated charge for the first unit whose preview and complete
 pull fit with required context and response metadata, then uses spare room for
 later previews. It does not pull any body automatically.
 
-The sealed `memory_budget` extension uses `cairn.memory-budget/3` for allocations
-up to 24,000 bytes and `cairn.memory-budget/4` for larger explicit allocations:
+The sealed `memory_budget` extension uses `cairn.memory-budget/3` for
+`first-fitting-whole/1` and `cairn.memory-budget/4` for `first-fitting-whole/2`:
 
 - `inspection_policy` identifies the allocation rule.
 - `inspection_status: "ready"` identifies the first indexed unit as the
@@ -51,9 +51,9 @@ planned read. A fitting source is not necessarily applicable or correct.
 
 ## Budget and compatibility
 
-The mode keeps the declared total budget. Explicit allocations above 24,000 bytes
-can use the remaining declared room for expansion; smaller and historical receipts
-retain the 24,000-byte ceiling.
+Both policies keep the declared total budget. `first-fitting-whole/2` can use
+the remaining declared room for expansion. `first-fitting-whole/1`, omission
+and historical receipts retain the 24,000-byte ceiling.
 Native adapters check their final serialized response alongside the receipt's
 remaining allowance. Note preparation includes its guidance overhead and stays
 lexical; ordinary search can use semantic discovery with its existing labelled
@@ -66,15 +66,19 @@ metadata and JSON escaping. For example, when 160,000 bytes of input room are
 available:
 
 ```json
-{"query":"specific handoff terms","available_tokens":160000,"memory_budget_bytes":160000,"inspection_policy":"first-fitting-whole/1"}
+{"query":"specific handoff terms","available_tokens":160000,"memory_budget_bytes":160000,"inspection_policy":"first-fitting-whole/2"}
 ```
 
 Use the first indexed entry's complete `pull_arguments` after checking that it
 is the intended source. The automatic hook's `remaining_memory_bytes` governs
 automatic recall; a task-requested handoff read can use a larger explicit budget.
-Existing receipts cannot be enlarged. Older APIs can return `no_whole_fits`
-under their 24,000-byte ceiling; a large declared budget alone does not establish
-that the running API supports whole handoffs.
+OpenCode can truncate a large tool response and report `metadata.outputPath`.
+Its saved artifact contains the complete response; read it within the explicit
+handoff allowance. This harness behavior is separate from the Cairn receipt limit.
+
+Existing receipts cannot be enlarged. Older APIs reject the new policy value.
+Do not retry by changing it to `/1` and claim the larger allocation: `/1` keeps
+its 24,000-byte ceiling even with a larger declared budget.
 
 The field is explicit: omitting it preserves the legacy preview allocation and
 numeric-reserve behavior. Changing it requires a new request UUID; old retries

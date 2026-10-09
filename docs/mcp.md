@@ -87,8 +87,8 @@ numeric reserve.
 For a task-requested full handoff, the automatic hook recall allowance does not
 cap the explicit read. Declare enough free room and memory allowance for the
 whole source and response overhead, for example `available_tokens: 160000` and
-`memory_budget_bytes: 160000` with `inspection_policy: "first-fitting-whole/1"`.
-New explicit allocations above 24,000 use `cairn.memory-budget/4` and permit a
+`memory_budget_bytes: 160000` with `inspection_policy: "first-fitting-whole/2"`.
+This new policy uses `cairn.memory-budget/4` and permits a
 larger whole pull. Historical receipts keep their original budgets; start a new
 search to enlarge an allocation.
 
