@@ -40,6 +40,10 @@ measurements are caller declarations until the external owner binds their
 actual process and transport origin. Accounting failure labels, native denials
 and missing actor work do not by themselves decide cell validity.
 
+Reported native hook success requires an explicit integer zero exit code.
+Missing or malformed exits remain unknown and produce no successful delivery
+projection; they do not invent a hook failure. Hook byte and call charges remain.
+
 The caller declares a frozen input charge. Impossible charges below the encoded
 single-message wire size plus the existing 512-byte reserve are refused, and at
 least 1,000 bytes remain for hook context. The owner must additionally bind the

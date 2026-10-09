@@ -234,9 +234,13 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                     unknown.append('duplicate_native_hook')
                 text = event.get('stdout')
                 hook_finished[ident] = (name, hashlib.sha256(text.encode()).hexdigest() if isinstance(text,str) else None)
-                if event.get('outcome') == 'success' and event.get('exit_code',0) == 0 and isinstance(text,str):
+                code = event.get('exit_code')
+                known_exit = type(code) is int and -128 <= code <= 255
+                if not known_exit:
+                    unknown.append('native_hook_exit_unobserved')
+                if event.get('outcome') == 'success' and known_exit and code == 0 and isinstance(text,str):
                     hook_sources[ident] = dict(delivery=hook_delivery(text), received_seconds=timing.get('received_seconds'))
-                if event.get('outcome') != 'success' or event.get('exit_code',0) != 0:
+                if event.get('outcome') != 'success' or (known_exit and code != 0):
                     fail('native_hook_failed')
         if event.get('type') == 'result':
             terminal_seen = True

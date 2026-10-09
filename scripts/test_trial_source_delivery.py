@@ -187,7 +187,7 @@ def main():
         text=hook({'selected':[selection()],'index':[]})+'\n'
         events=base()+[
             {'type':'system','subtype':'hook_started','hook_id':'hook','hook_event':'UserPromptSubmit'},
-            {'type':'system','subtype':'hook_response','hook_id':'hook','hook_event':'UserPromptSubmit','stdout':text,'outcome':'success'},
+            {'type':'system','subtype':'hook_response','hook_id':'hook','hook_event':'UserPromptSubmit','stdout':text,'outcome':'success','exit_code':0},
             {'type':'assistant','message':{'content':[{'type':'tool_use','id':'toolu_pull','name':'mcp__cairn__cairn_pull','input':{'PRIVATE_QUERY':'never retain'}}]}},
             {'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'toolu_pull','content':[{'type':'text','text':json.dumps({'selection':selection(OTHER,'second body')})}]}]}}]
         rows=[dict(event='UserPromptSubmit',stdout_bytes=len(text.encode()),stdout_sha256=sha(text.encode()),exit_code=0,process_seconds=.1,

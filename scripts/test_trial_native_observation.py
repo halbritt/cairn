@@ -24,6 +24,52 @@ def base():
 
 
 class NativeObservationTest(unittest.TestCase):
+    def hook_exit_observation(self, response_fields):
+        text = json.dumps(dict(hookSpecificOutput=dict(additionalContext=json.dumps(dict(
+            selected=[dict(record=dict(record_id='12345678-1234-4234-8234-123456789abc',
+                                       version=1, body='PRIVATE_SOURCE'), mandatory=False)]))))) + '\n'
+        response = dict(type='system', subtype='hook_response', hook_id='exit-case',
+                        hook_event='UserPromptSubmit', stdout=text, outcome='success')
+        response.update(response_fields)
+        events = base()[:-1] + [dict(type='system', subtype='hook_started',
+                                    hook_id='exit-case', hook_event='UserPromptSubmit'), response] + base()[-1:]
+        row = dict(event='UserPromptSubmit', stdout_bytes=len(text.encode()), stderr_bytes=3,
+                   stdout_sha256=hashlib.sha256(text.encode()).hexdigest(), exit_code=0, process_seconds=.1,
+                   memory_call_attempts=dict(search=1, pull=2, history=0, other=0, **{'pull-evidence': 0}))
+        return observe(events, [row]), len(text.encode()) + 3
+
+    def test_missing_or_malformed_native_hook_exit_cannot_project_delivery(self):
+        for fields in ({}, {'exit_code': None}, {'exit_code': False}, {'exit_code': True},
+                       {'exit_code': 0.0}, {'exit_code': '0'}, {'exit_code': -129}, {'exit_code': 256}):
+            with self.subTest(fields=fields):
+                result, charged = self.hook_exit_observation(fields)
+                self.assertEqual(result['status'], 'unknown')
+                self.assertIn('native_hook_exit_unobserved', result['unknown'])
+                self.assertNotIn('native_hook_failed', result['failures'])
+                self.assertEqual(result['source_deliveries'], [])
+                self.assertEqual((result['hook_wire_bytes'], result['total_bytes'],
+                                  result['hook_searches'], result['total_actual_pull_calls']),
+                                 (charged, 500 + charged, 1, 2))
+                self.assertNotIn('PRIVATE_SOURCE', json.dumps(result))
+
+    def test_known_zero_native_hook_exit_projects_only_successful_delivery(self):
+        result, charged = self.hook_exit_observation({'exit_code': 0})
+        self.assertEqual(result['status'], 'within_observed_limits')
+        self.assertEqual(result['source_deliveries'][0]['channel'], 'hook')
+        self.assertEqual(result['source_deliveries'][0]['delivery']['items'][0]['record_id'],
+                         '12345678-1234-4234-8234-123456789abc')
+        self.assertEqual(result['hook_wire_bytes'], charged)
+        self.assertNotIn('PRIVATE_SOURCE', json.dumps(result))
+
+    def test_known_nonzero_native_hook_exit_and_error_outcome_remain_failure(self):
+        for fields in ({'exit_code': 1}, {'exit_code': -9}, {'exit_code': 0, 'outcome': 'error'}):
+            with self.subTest(fields=fields):
+                result, charged = self.hook_exit_observation(fields)
+                self.assertIn('native_hook_failed', result['failures'])
+                self.assertNotIn('native_hook_exit_unobserved', result['unknown'])
+                self.assertEqual(result['source_deliveries'], [])
+                self.assertEqual(result['hook_wire_bytes'], charged)
+
     def mismatched_hook_observation(self, reverse=False):
         text = '{}\n'
         pair = [dict(type='system', subtype='hook_started', hook_id='same', hook_event='SessionStart'),
@@ -144,7 +190,7 @@ class NativeObservationTest(unittest.TestCase):
         events=base(); rows=[]
         for i,name in enumerate(('SessionStart','UserPromptSubmit')):
             events += [dict(type='system',subtype='hook_started',hook_id=str(i),hook_event=name),
-                       dict(type='system',subtype='hook_response',hook_id=str(i),hook_event=name,stdout=text,outcome='success')]
+                       dict(type='system',subtype='hook_response',hook_id=str(i),hook_event=name,stdout=text,outcome='success',exit_code=0)]
             rows.append(dict(event=name,stdout_bytes=3,stderr_bytes=0,stdout_sha256=digest,exit_code=0,process_seconds=.1,
                              memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0})))
         self.assertEqual(observe(events,rows,True)['status'],'within_observed_limits')
