@@ -7,76 +7,11 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import os
-import selectors
-import signal
-import subprocess
-import time
+from trial_native_capture import capture
 from trial_source_delivery import hook_delivery, native_delivery
 from trial_hook_observer import prompt_metadata, bounded_identity
 from trial_task_permissions import ALLOW, DENY, command_metadata, background_result
 
-
-def capture(command, timeout, timing_path, *, input_bytes=None):
-    """Capture one child once, with receipt times; no retry or provider fallback."""
-    started = time.monotonic()
-    stdout, stderr, pending = bytearray(), bytearray(), bytearray()
-    timings, lines, code = [], 0, None
-    with subprocess.Popen(command, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          start_new_session=True) as child, selectors.DefaultSelector() as selector:
-        if input_bytes is not None:
-            try:
-                child.stdin.write(input_bytes)
-                child.stdin.close()
-            except BrokenPipeError:
-                child.stdin.close()
-        selector.register(child.stdout, selectors.EVENT_READ, 'stdout')
-        selector.register(child.stderr, selectors.EVENT_READ, 'stderr')
-        try:
-            while selector.get_map():
-                if time.monotonic() - started >= timeout:
-                    code = 124
-                    break
-                for key, _ in selector.select(min(.1, max(0, timeout - (time.monotonic()-started)))):
-                    block = os.read(key.fileobj.fileno(),65536)
-                    if not block:
-                        selector.unregister(key.fileobj)
-                        continue
-                    if key.data == 'stderr':
-                        stderr.extend(block)
-                        del stderr[:-20000]
-                        continue
-                    stdout.extend(block)
-                    pending.extend(block)
-                    while b'\n' in pending:
-                        line, _, pending = pending.partition(b'\n')
-                        lines += 1
-                        timings.append(dict(line=lines, received_seconds=time.monotonic()-started,
-                                            bytes=len(line)+1, sha256=hashlib.sha256(line+b'\n').hexdigest()))
-                    if len(pending) > 8*1024*1024 or len(stdout) > 64*1024*1024:
-                        code = 125
-                        break
-                if code is not None:
-                    break
-            if pending:
-                lines += 1
-                timings.append(dict(line=lines, received_seconds=time.monotonic()-started,
-                                    bytes=len(pending), sha256=hashlib.sha256(pending).hexdigest()))
-            if code is None:
-                try:
-                    code = child.wait(timeout=max(.01,timeout-(time.monotonic()-started)))
-                except subprocess.TimeoutExpired:
-                    code = 124
-        finally:
-            if child.poll() is None:
-                os.killpg(child.pid,signal.SIGTERM)
-                try:
-                    child.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid,signal.SIGKILL)
-                    child.wait(timeout=2)
-            timing_path.write_text(json.dumps(timings,indent=2))
-    return bytes(stdout), bytes(stderr), code, timings
 
 
 def action_path(value, workspace):

@@ -1170,7 +1170,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
     started = time.monotonic()
     try:
         if prospective:
-            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input)
+            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
+                                                          custody_path=base / "native-process-custody.json")
+            process_custody = load_json(base / "native-process-custody.json")
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
         else:
             result = subprocess.run(command, capture_output=True, timeout=args.timeout)
@@ -1196,6 +1198,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
             retained.flush()
             os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
+    if prospective:
+        if process_custody["cleanup"]["status"] != "observed_clear" or not process_custody["leader_reaped"]:
+            failure = failure or "process_custody_unknown"
     if prospective:
         try:
             observation_phase = "hook_metadata"
@@ -1254,6 +1259,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
     if prospective:
         record["selected_input"] = selected_input
+        record["process_custody"] = process_custody
     if prospective:
         record["receipt_explanation_export"] = receipt_export
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]

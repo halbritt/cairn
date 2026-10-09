@@ -324,6 +324,40 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             self.assertEqual(report['records'][0]['memory']['relevance_status'],'unknown_unlabelled')
             self.assertNotIn('PRIVATE_',json.dumps(references))
             self.assertTrue((run/'selected-input.json').is_file())
+            custody=json.loads((run/'native-process-custody.json').read_text())
+            self.assertEqual(custody['observed_returncode'],0)
+            self.assertTrue(custody['leader_reaped'])
+            self.assertNotIn('PRIVATE',json.dumps(custody))
+
+    def test_prospective_run_keeps_custody_separate_and_refuses_unknown_cleanup(self):
+        for unknown in (False, True):
+            with self.subTest(unknown=unknown), tempfile.TemporaryDirectory() as directory:
+                base=Path(directory); root=fixture(base/'input')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['freeze-input','--input',str(root)])
+                child=base/'native.py'
+                child.write_text("import json,sys\nprint(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))\nprint(sys.stdin.readline().strip())\nprint(json.dumps({'type':'result','is_error':False,'result':'inspected','permission_denials':[]}))\n")
+                def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                    return [sys.executable,str(child)] if argv[0]=='claude' else argv
+                observation=(patch('trial_native_capture.process_identity',side_effect=PermissionError())
+                             if unknown else contextlib.nullcontext())
+                with patch.object(te,'sandbox_command',side_effect=sandbox), observation, contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                             '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+                record=json.loads((base/'out/agent.json').read_text())['records'][0]
+                custody=record['process_custody']
+                self.assertEqual(custody['observed_returncode'],0)
+                self.assertEqual(record['exit'],0)
+                self.assertFalse(custody['hard_io_deadline_attested'])
+                self.assertFalse(custody['cleanup']['complete_descendant_custody'])
+                retained=base/'out/runs/new-work.none.s0/native-process-custody.json'
+                self.assertEqual(custody,json.loads(retained.read_text()))
+                if unknown:
+                    self.assertEqual(record['outcome'],'harness_error')
+                    self.assertEqual(record['check_outcome'],'correct')
+                    self.assertEqual(record['execution_failure'],'process_custody_unknown')
+                else:
+                    self.assertEqual(record['outcome'],'correct')
 
     def test_direct_note_prompt_keeps_missing_source_channel_unknown(self):
         with tempfile.TemporaryDirectory() as directory:
