@@ -25,8 +25,14 @@ the distinct attempt writer may retain selected failure observations. This is
 not a retry of the original persistence operation.
 
 `AttemptRetention.prepare_coding` requires an exact completed, unpoisoned
-`CodingDecoder`. It retains the entire coding E and that decoder's bounded H
-projection, verifies its current running wire/native hashes and counts, and
+`CodingDecoder` and the separately held `ConsumedHooks` snapshot acquired from
+the actual H payload. The snapshot keeps a bounded canonical selected projection
+and the original framed H digest; valid noncanonical JSON retains its original
+wire digest. Before either success or observation persistence, the sink compares
+the current decoded H with this snapshot. The attempt writer repeats the check
+after consuming its preparation, rejects row/source/observation drift, and uses
+the frozen rows. These local state checks confer no runtime authority.
+It retains the entire coding E, verifies its current running wire/native hashes and counts, and
 checks the coding stream's native digest. Success observations additionally
 bind the original SELECTED/PREPARED receipt and exit snapshot. Common E APIs
 retain their earlier behavior; coding facts are never stripped into a seemingly
@@ -60,9 +66,10 @@ after READY. Runtime sources are copied to private readonly fixture snapshots
 and their digest manifest supplies the declared source hash. These tests do not
 observe a real actor, native hook, live capture clock or loaded provider profile.
 
-Thirteen additional local tests exercise disposable selected persistence and
+Seventeen additional local tests exercise disposable selected persistence and
 constructed packets: success/failure composition, unknown timing, missing/extra/
 drifted end, consumed decoder refusal, observation I/O fault, close failure and
-interrupted diagnostic cleanup. A declared complete input count for a different
+interrupted diagnostic cleanup, consumed-H state drift and valid noncanonical
+H wire. A declared complete input count for a different
 message remains control uncertainty, not successful delivery of the frozen
 input. They make no campaign or usefulness claim.

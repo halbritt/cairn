@@ -186,6 +186,54 @@ class SinkTests(unittest.TestCase):
         self.assertFalse((self.run/'ATTEMPT-EVIDENCE.json').exists())
         self.assertEqual(self.sink.writer.state,'failed')
 
+    def test_changed_consumed_hooks_refuse_before_success_or_observation_persistence(self):
+        for tag,payload in self.packets(successful=True,code=0):self.sink.feed(tag,payload)
+        self.sink.decoder.hooks['rows'] = [dict(event='PostToolUse', stdout_sha256='a'*64,
+            stdout_bytes=77, stderr_bytes=0, process_seconds=0, exit_code=0,
+            memory_call_attempts=dict(search=0,pull=0,**{'pull-evidence':0},history=0,other=0))]
+        with self.assertRaisesRegex(RetentionError,'attempt_coding_hook_binding'):
+            self.sink.finish()
+        self.assertFalse((self.run/'SELECTED.json').exists())
+        self.assertFalse((self.run/'PREPARED.json').exists())
+        self.assertFalse((self.run/'OBSERVATIONS.json').exists())
+        self.assertFalse((self.run/'ATTEMPT-EVIDENCE.json').exists())
+
+    def test_hook_source_drift_consumes_attempt_writer_without_persistence(self):
+        for tag,payload in self.packets():self.sink.feed(tag,payload)
+        self.sink.decoder.hooks['source_manifest_sha256']='e'*64
+        with self.assertRaisesRegex(RetentionError,'attempt_coding_hook_binding'):
+            self.sink.writer.prepare_coding(self.sink.composer,self.sink.decoder,
+                hook_snapshot=self.sink.hook_snapshot)
+        self.assertEqual(self.sink.writer.state,'failed')
+        self.assertFalse((self.run/'ATTEMPT-EVIDENCE.json').exists())
+        with self.assertRaisesRegex(RetentionError,'attempt_writer_unavailable'):
+            self.sink.writer.prepare(self.sink.composer,None)
+
+    def test_hook_observation_drift_between_h_and_e_withholds_closed(self):
+        packets = self.packets()
+        for tag,payload in packets[:-1]:self.sink.feed(tag,payload)
+        self.sink.decoder.hooks['observations']=['hook_measurements_unknown']
+        self.sink.feed(*packets[-1])
+        with self.assertRaisesRegex(RetentionError,'attempt_coding_hook_binding'):
+            self.sink.finish()
+        self.assertFalse((self.run/'ATTEMPT-EVIDENCE.json').exists())
+
+    def test_noncanonical_hook_wire_keeps_original_digest_and_selected_projection(self):
+        packets=self.packets()
+        packets[2]=b'H',json.dumps(json.loads(packets[2][1]),indent=2).encode()
+        framed=b''.join(coding_packet(tag,payload) for tag,payload in packets[:-1])
+        end=json.loads(packets[-1][1])
+        end.update(wire_sha256=hashlib.sha256(framed).hexdigest(),wire_bytes=len(framed),
+            hook_packet_sha256=hashlib.sha256(coding_packet(*packets[2])).hexdigest())
+        packets[-1]=b'E',encoded(end)
+        declaration=serve(self.sink,self.pipe(packets),io.BytesIO())
+        self.assertEqual(declaration['outcome'],'failure_evidence')
+        selected=json.loads((self.run/'ATTEMPT-EVIDENCE.json').read_bytes())
+        self.assertEqual(selected['end_observation']['hook_packet_sha256'],end['hook_packet_sha256'])
+        self.assertNotEqual(self.sink.hook_snapshot.packet_sha256,
+            hashlib.sha256(coding_packet(b'H',self.sink.hook_snapshot.selected)).hexdigest())
+        self.assertEqual(selected['stream']['selected_input']['hook_wire_bytes'],0)
+
     def test_declared_complete_input_for_different_message_cannot_enable_success(self):
         packets = self.packets(successful=True,code=0)
         end = json.loads(packets[-1][1]);end.update(input_bytes=7,input_bytes_written=7)

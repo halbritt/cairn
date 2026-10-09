@@ -14,6 +14,20 @@ from selected_native.retention import Retention, RetentionError, PreparedReceipt
 from selected_native.frames import parse, FrameError
 from trial_coding_stream import CodingStream
 from trial_worker_protocol import decode_end, ProtocolError
+from trial_coding_protocol import decode_hooks, validate_hooks, coding_packet, CodingDecoder
+
+
+@dataclasses.dataclass(frozen=True)
+class ConsumedHooks:
+    """Bounded selected projection and original framed digest; no authority."""
+    selected: bytes
+    packet_sha256: str
+
+    @classmethod
+    def consume(cls, payload, *, run_id, source_manifest_sha256):
+        selected = decode_hooks(payload, run_id=run_id,
+                                source_manifest_sha256=source_manifest_sha256)
+        return cls(encode(selected), hashlib.sha256(coding_packet(b'H', payload)).hexdigest())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -174,16 +188,39 @@ class AttemptRetention:
         return self._prepare(composer, hook_rows, end_payload=end_payload,
                              prepared_receipt=prepared_receipt)
 
-    def prepare_coding(self, composer, decoder, prepared_receipt=None):
+    def check_coding_hooks(self, decoder, snapshot):
+        """Check the consumed projection before either writer persists success.
+
+        This pure check never consumes a writer or authenticates the source.
+        Preparation repeats it after consuming the attempt writer.
+        """
+        require(type(decoder) is CodingDecoder and not decoder.poisoned
+                and decoder.pending is None and decoder.hooks is not None
+                and decoder.end is not None, 'attempt_coding_decoder_unavailable')
+        require(type(snapshot) is ConsumedHooks, 'attempt_coding_hook_binding')
+        try:
+            args = dict(run_id=self.intent.run_id,
+                        source_manifest_sha256=self.intent.source_manifest_sha256)
+            frozen = decode_hooks(snapshot.selected, **args)
+            current = validate_hooks(decoder.hooks, **args)
+            require(encode(frozen) == snapshot.selected == encode(current)
+                    and snapshot.packet_sha256 == decoder.hook_sha
+                    and snapshot.packet_sha256 == decoder.end['hook_packet_sha256'],
+                    'attempt_coding_hook_binding')
+        except (ProtocolError, KeyError, TypeError):
+            raise RetentionError('attempt_coding_hook_binding') from None
+        return frozen['rows']
+
+    def prepare_coding(self, composer, decoder, prepared_receipt=None, *, hook_snapshot=None):
         """Retain complete coding E and the bounded H from the consumed decoder.
 
         A typed local decoder is a shape/binding seam, never process authority.
         The fixed sink owns its packet source and observes pipe EOF separately.
         """
         return self._prepare(composer, None, prepared_receipt=prepared_receipt,
-                             coding_decoder=decoder, coding=True)
+                             coding_decoder=decoder, coding=True, hook_snapshot=hook_snapshot)
 
-    def _prepare(self, composer, hook_rows, *, end_payload=None, prepared_receipt=None, coding_decoder=None, coding=False):
+    def _prepare(self, composer, hook_rows, *, end_payload=None, prepared_receipt=None, coding_decoder=None, coding=False, hook_snapshot=None):
         require(self.state == 'open' and self.fd is not None, 'attempt_writer_unavailable')
         self.state = 'failed'  # A refusal, I/O fault or interrupt consumes this writer.
         code, report, data, receipt, end, success = None, None, b'', None, None, None
@@ -193,12 +230,8 @@ class AttemptRetention:
             require(composer.reader.expected['session_id'] == self.intent.run_id,
                     'attempt_run_mismatch')
             if coding:
-                from trial_coding_protocol import CodingDecoder
-                require(type(coding_decoder) is CodingDecoder and not coding_decoder.poisoned
-                        and coding_decoder.pending is None and coding_decoder.hooks is not None
-                        and coding_decoder.end is not None, 'attempt_coding_decoder_unavailable')
+                hook_rows = self.check_coding_hooks(coding_decoder, hook_snapshot)
                 end_payload = encode(coding_decoder.end)
-                hook_rows = coding_decoder.hooks['rows']
             if prepared_receipt is None:
                 require(self.retention.state != 'prepared', 'attempt_success_already_prepared')
             else:

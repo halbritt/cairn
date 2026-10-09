@@ -8,7 +8,7 @@ import json
 import struct
 
 from selected_native.retention import Intent, Retention, RetentionError, ExitSnapshot
-from trial_attempt_retention import AttemptRetention
+from trial_attempt_retention import AttemptRetention, ConsumedHooks
 from trial_coding_stream import CodingStream, TOTAL
 from trial_coding_protocol import CodingDecoder, T_LIMIT, H_LIMIT
 from trial_worker_protocol import encoded
@@ -30,6 +30,7 @@ class CodingSink:
             role='user', content=composer.prompt)), ensure_ascii=False)+'\n').encode())
         self.retention, self.writer = None, None
         self.decoder = CodingDecoder(intent.run_id, intent.source_manifest_sha256)
+        self.hook_snapshot = None
         self.state, self.close_unknown = 'opening', False
         try:
             self.retention = Retention.create(root_fd, intent)
@@ -59,6 +60,9 @@ class CodingSink:
             result = self.decoder.feed(tag, payload)
             if result[0] == 'data':
                 self.composer.feed(result[1], result[2])
+            elif result[0] == 'hooks':
+                self.hook_snapshot = ConsumedHooks.consume(payload, run_id=self.intent.run_id,
+                    source_manifest_sha256=self.intent.source_manifest_sha256)
         except BaseException:
             self.state = 'failed'
             raise
@@ -73,6 +77,7 @@ class CodingSink:
             self.state = 'failed'
             raise SinkError('coding_sink_end_missing')
         self.state = 'failed'  # Every preparation is consumed once.
+        self.writer.check_coding_hooks(self.decoder, self.hook_snapshot)
         end = self.decoder.end
         actor, capture = end['actor_wait'], end['capture_wait']
         if end['input_bytes'] != self.input_bytes:
@@ -95,7 +100,8 @@ class CodingSink:
                 # Original retention remains consumed and preserves its selected
                 # diagnostic/partial files. This is a separate failure channel.
                 self.composer.unknown.add('success_retention_refused')
-        receipt = self.writer.prepare_coding(self.composer, self.decoder, prepared)
+        receipt = self.writer.prepare_coding(self.composer, self.decoder, prepared,
+                                            hook_snapshot=self.hook_snapshot)
         outcome = 'success_retention' if prepared is not None else 'failure_evidence'
         declaration = dict(kind='CLOSED', run_id=self.intent.run_id,
             intent_sha256=self.retention.intent_sha256, outcome=outcome,
