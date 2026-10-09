@@ -93,10 +93,23 @@ class AttemptRetention:
             returned = source.read(SELECTED_LIMIT+1)
         require(returned == data, 'attempt_readback_mismatch')
 
-    def _end(self, payload, composer):
+    def _end(self, payload, composer, coding_decoder=None):
         try:
-            end = decode_end(payload, run_id=self.intent.run_id,
-                             source_manifest_sha256=self.intent.source_manifest_sha256)
+            if coding_decoder is None:
+                end = decode_end(payload, run_id=self.intent.run_id,
+                                 source_manifest_sha256=self.intent.source_manifest_sha256)
+            else:
+                from trial_coding_protocol import decode_coding_end
+                end = decode_coding_end(payload, run_id=self.intent.run_id,
+                                        source_manifest_sha256=self.intent.source_manifest_sha256)
+                require(end == coding_decoder.end
+                        and end['wire_sha256'] == coding_decoder.wire.hexdigest()
+                        and end['wire_bytes'] == coding_decoder.wire_bytes
+                        and end['stream_sha256'] == coding_decoder.stream.hexdigest()
+                        and end['stream_bytes'] == coding_decoder.stream_bytes
+                        and end['timing_packets'] == coding_decoder.timings
+                        and end['hook_packet_sha256'] == coding_decoder.hook_sha,
+                        'attempt_coding_wire_binding')
         except ProtocolError:
             raise RetentionError('attempt_end_refused') from None
         require(composer.digest_complete and end['stream_sha256'] == composer.hash.hexdigest()
@@ -161,7 +174,16 @@ class AttemptRetention:
         return self._prepare(composer, hook_rows, end_payload=end_payload,
                              prepared_receipt=prepared_receipt)
 
-    def _prepare(self, composer, hook_rows, *, end_payload=None, prepared_receipt=None):
+    def prepare_coding(self, composer, decoder, prepared_receipt=None):
+        """Retain complete coding E and the bounded H from the consumed decoder.
+
+        A typed local decoder is a shape/binding seam, never process authority.
+        The fixed sink owns its packet source and observes pipe EOF separately.
+        """
+        return self._prepare(composer, None, prepared_receipt=prepared_receipt,
+                             coding_decoder=decoder, coding=True)
+
+    def _prepare(self, composer, hook_rows, *, end_payload=None, prepared_receipt=None, coding_decoder=None, coding=False):
         require(self.state == 'open' and self.fd is not None, 'attempt_writer_unavailable')
         self.state = 'failed'  # A refusal, I/O fault or interrupt consumes this writer.
         code, report, data, receipt, end, success = None, None, b'', None, None, None
@@ -170,16 +192,24 @@ class AttemptRetention:
                     'attempt_composer_type')
             require(composer.reader.expected['session_id'] == self.intent.run_id,
                     'attempt_run_mismatch')
+            if coding:
+                from trial_coding_protocol import CodingDecoder
+                require(type(coding_decoder) is CodingDecoder and not coding_decoder.poisoned
+                        and coding_decoder.pending is None and coding_decoder.hooks is not None
+                        and coding_decoder.end is not None, 'attempt_coding_decoder_unavailable')
+                end_payload = encode(coding_decoder.end)
+                hook_rows = coding_decoder.hooks['rows']
             if prepared_receipt is None:
                 require(self.retention.state != 'prepared', 'attempt_success_already_prepared')
             else:
                 require(end_payload is not None, 'attempt_end_required')
             if end_payload is not None:
-                end = self._end(end_payload, composer)
+                end = self._end(end_payload, composer, coding_decoder)
             if prepared_receipt is not None:
                 success = self._success_receipt(prepared_receipt, end)
             if success is not None:
                 require(not end['observations'] and not end['capture_cleanup_observations']
+                        and not end.get('coding_observations', [])
                         and end['capture_released'] is True
                         and end['actor_wait'] is not None and end['capture_wait'] is not None
                         and all(value is not None for value in end['actor_wait'].values())
