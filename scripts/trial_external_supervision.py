@@ -19,15 +19,18 @@ import uuid
 
 from trial_task_eval import runtime_sandbox
 from trial_process_custody import validate_custody
+from trial_selected_native_mounts import reviewed_package
 
 
 SCRIPTS = Path(__file__).resolve().parent
 FIXTURE = SCRIPTS/'supervision_fixture'
-RETENTION_SOURCE = Path('/home/halbritt/git/cairn/.local/agent267-recovery-20261004/distinct-query-contract-20261009/native-resume-pilot/selected-evidence-prototype/selected-retention-v2')
-SOURCE_PINS = dict(
-    frames='fd79aa5aa4b8fdffd09daf30619706f923e39e89462528a4e1228315e8ee44e6',
-    evidence='f96e1596c3bf7a200a57cdfae7b44db04b0d0b394d7d130473c921b5e815136b',
-    retention='b3b99c7f0d6a94c969e77d5179ca4b9b5f75c8b42c9cdec0b9afb05f06832f36')
+SELECTED_PACKAGE = SCRIPTS/'selected_native'
+# Reviewed repository port 0e09fc6; only these default sink dependencies mount.
+SOURCE_PINS = {
+    '__init__.py':'d48ff6c00bcad5cfad5a597c723b0ee082cea567ecadeace18fc7c372c8a318a',
+    'evidence.py':'7f96bc5ee8418f6c93cb34de1175ec1c32c56e8ca8fdf8fa7185593eb2a77832',
+    'frames.py':'68973016ba4352c7114a25c69256d4d277c6d0ce5b084a66383c8823d1973abd',
+    'retention.py':'38bdfc87770c56ede47a05eb6d9e23d8620f4dec24a22d95592cc9638977ffd2'}
 ACTOR_MODES = frozenset({'normal', 'privacy', 'never_read', 'early_close', 'nonzero', 'descendant', 'memory', 'pids', 'capture_report_loss'})
 SINK_MODES = frozenset({'normal', 'parse_hang', 'fsync_hang', 'after_prepared'})
 CONTROLS = dict(memory_max=512*1024*1024, memory_swap_max=0, pids_max=32, cpu_max='100000 100000')
@@ -342,29 +345,22 @@ def sandbox(sources, bindings, args):
     command += ['--unshare-net', '--unshare-user', '--disable-userns', '--dir', '/sources',
                 '--setenv', 'PATH', '/usr/bin:/bin', '--setenv', 'HOME', '/tmp',
                 '--setenv', 'PYTHONPATH', '/sources', '--setenv', 'LANG', 'C.UTF-8']
+    if any(target.startswith('selected_native/') for _, target in sources):
+        command += ['--dir', '/sources/selected_native']
     for source, target in sources:
         command += ['--ro-bind', str(source), '/sources/'+target]
     for source, target in bindings:
         command += ['--bind', str(source), target]
-    return command[1:]+['--chdir', '/tmp', '/usr/bin/python3', '/sources/worker.py', *args]
+    return command[1:]+['--chdir', '/tmp', '/usr/bin/python3', '-B', '/sources/worker.py', *args]
 
 
-def source_manifest(source_root):
-    result = {}
-    for name, expected in SOURCE_PINS.items():
-        path = source_root/(name+'.py')
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(fd, 'rb') as source:
-            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                raise Unavailable('source_pin_unknown')
-            data = source.read(512*1024+1)
-        if digest(data) != expected:
-            raise Unavailable('source_pin_mismatch')
-        result[name+'.py'] = expected
+def source_manifest(package):
+    result = package.manifest.copy()
     for path in [FIXTURE/'launcher.py', FIXTURE/'worker.py', FIXTURE/'actor.py',
                  FIXTURE/'service_main.py', SCRIPTS/'trial_native_capture.py',
                  SCRIPTS/'trial_process_custody.py', SCRIPTS/'trial_fixture_service.py',
-                 SCRIPTS/'trial_task_eval.py', Path(__file__).resolve()]:
+                 SCRIPTS/'trial_task_eval.py', SCRIPTS/'trial_selected_native_mounts.py',
+                 Path(__file__).resolve()]:
         result[path.name] = digest(path.read_bytes())
     return result
 
@@ -427,7 +423,7 @@ def end_containment(group, children, deadline):
     return released, errors
 
 
-def run_fixture(request, retained_root, workspace_root, *, delegated=None, source_root=RETENTION_SOURCE, controller_loss_stage=None):
+def run_fixture(request, retained_root, workspace_root, *, delegated=None, source_root=SELECTED_PACKAGE, controller_loss_stage=None):
     """Only fixed fixtures; request/workspace hashes are fixture bindings, not live admission.
 
     Controller death/power loss leaves standalone UNKNOWN. This prototype does
@@ -444,7 +440,8 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
         return result
     try:
         request.validate()
-        manifest = source_manifest(Path(source_root))
+        package = reviewed_package(source_root, SOURCE_PINS)
+        manifest = source_manifest(package)
         for root in [Path(retained_root), Path(workspace_root)]:
             meta = root.lstat()
             if not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.getuid() or stat.S_IMODE(meta.st_mode) != 0o700:
@@ -480,7 +477,7 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
     cleanup_unknown = False
     try:
         base = [(FIXTURE/'worker.py','worker.py')]
-        sink_sources = base+[(Path(source_root)/(name+'.py'), name+'.py') for name in SOURCE_PINS]
+        sink_sources = base+list(package.sources)
         children['sink'] = Child(group, sandbox(sink_sources, [(retained_root,'/retention')],
             ['retention', request.sink, request.run_id, request.task_sha256, request.oracle_sha256,
              request.config_sha256, result.bindings['source_manifest_sha256'],

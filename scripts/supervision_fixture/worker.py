@@ -66,14 +66,14 @@ def capture_actor(mode, run_id, timeout):
 
 
 def retention_worker(mode, run_id, task_hash, oracle_hash, config_hash, source_hash, boot_id):
-    from frames import Frames
-    from retention import Retention, Intent, ExitSnapshot, RetentionError
+    from selected_native.frames import Frames
+    from selected_native.retention import Retention, Intent, ExitSnapshot, RetentionError
     root = os.open('/retention', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     writer = None
     try:
         writer = Retention.create(root, Intent(run_id, task_hash, oracle_hash, config_hash, source_hash))
         emit(dict(kind='READY', run_id=run_id, intent_sha256=writer.intent_sha256))
-        reader = Frames(run_id, 'fixture-model', 'fixture-cli')
+        reader = Frames(run_id, 'fixture-model', 'fixture-cli', profile=None)
         if mode == 'fsync_hang':
             def stalled_fsync(_):
                 emit(dict(kind='STAGE', stage='sink'))

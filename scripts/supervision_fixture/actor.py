@@ -34,6 +34,7 @@ if mode == 'pids':
 if mode == 'privacy':
     assert not os.path.exists('/retention')
     assert not os.path.exists('/sources/retention.py')
+    assert not os.path.exists('/sources/selected_native')
     assert not os.path.exists('/oracle')
     assert not os.path.exists('/home/halbritt/git/cairn')
     assert not os.path.exists('/sys/fs/cgroup')

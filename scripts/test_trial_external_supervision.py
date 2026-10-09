@@ -48,7 +48,13 @@ class ExternalSupervisionTests(unittest.TestCase):
         return result
 
     def test_normal_intent_full_input_wait_release_and_selected_privacy(self):
-        result = self.run_attempt()
+        with patch.object(s,'sandbox',wraps=s.sandbox) as mounts:
+            result = self.run_attempt()
+        roles = {call.args[2][0]:call.args[0] for call in mounts.call_args_list}
+        self.assertEqual({target for _,target in roles['retention']},
+            {'worker.py', *('selected_native/'+name for name in s.SOURCE_PINS)})
+        self.assertTrue(all(not target.startswith('selected_native/')
+            for role,sources in roles.items() if role != 'retention' for _,target in sources))
         self.assertEqual(result.status, 'fixture_complete', result.failures)
         self.assertTrue(result.intent['acknowledged_before_actor'])
         self.assertTrue(result.owned_fixture_observations)
@@ -58,11 +64,17 @@ class ExternalSupervisionTests(unittest.TestCase):
         run = self.retained/self.request.run_id
         self.assertEqual({p.name for p in run.iterdir()}, {'INTENT.json','SELECTED.json','PREPARED.json','SUPERVISOR.json'})
         selected = (run/'SELECTED.json').read_bytes()
+        self.assertIsNone(json.loads(selected)['init']['profile'])
         self.assertNotIn(b'PRIVATE_TRANSCRIPT_SENTINEL', selected)
         self.assertEqual(s.digest(selected), result.prepared_receipt['selected_sha256'])
         terminal = json.loads((run/'SUPERVISOR.json').read_bytes())
         self.assertEqual(terminal['persistence'], 'not_attempted')
         self.assertFalse(terminal['standalone_record_is_success'])
+        intent = json.loads((run/'INTENT.json').read_bytes())
+        manifest = s.source_manifest(s.reviewed_package(s.SELECTED_PACKAGE,s.SOURCE_PINS))
+        self.assertEqual(intent['source_manifest_sha256'],s.digest(s.encoded(manifest)))
+        self.assertEqual({key for key in manifest if key.startswith('selected_native/')},
+            {'selected_native/'+name for name in s.SOURCE_PINS})
 
     def test_never_reading_input_8500_pipe4096_stops_on_external_deadline(self):
         result = self.run_attempt(actor='never_read', wall_seconds=2)
@@ -161,7 +173,7 @@ class ExternalSupervisionTests(unittest.TestCase):
         self.assertEqual(result.status, 'refused_prelaunch')
         self.assertFalse(result.outer_waits)
         self.assertFalse((self.retained/self.request.run_id).exists())
-        with patch.object(s,'SOURCE_PINS',{**s.SOURCE_PINS,'frames':'0'*64}):
+        with patch.object(s,'SOURCE_PINS',{**s.SOURCE_PINS,'frames.py':'0'*64}):
             result = s.run_fixture(self.request,self.retained,self.workspace)
         self.assertEqual(result.status, 'refused_prelaunch')
         self.assertFalse(result.outer_waits)
