@@ -62,6 +62,18 @@ class WorkerTransport:
         except FrameError:
             raise Unavailable('worker_control_malformed') from None
 
+    def _capture_capacity(self):
+        return min(65536,max(0,128*1024-len(self.queue)-5))
+
+    def _capture_receive(self,fd,capacity):
+        return os.read(fd,capacity)
+
+    def _data_packets(self,admitted):
+        return packet(b'D',admitted)
+
+    def _terminal_packets(self,value):
+        return packet(b'E',encoded(value))
+
     def _read(self,role,name,block):
         child=self.domain.children[role]
         if not block:
@@ -76,11 +88,12 @@ class WorkerTransport:
                 self.transport_loss=True
                 raise Unavailable('stream_transport_bounds')
             admitted=block[:max(0,self.stream_limit-self.stream_bytes)]
-            if len(self.queue)+len(admitted)+5>128*1024:
+            framed=self._data_packets(admitted) if admitted else b''
+            if len(self.queue)+len(framed)>128*1024:
                 self.transport_loss=True
                 raise Unavailable('stream_transport_bounds')
             if admitted:
-                self.queue.extend(packet(b'D',admitted))
+                self.queue.extend(framed)
                 self.hash.update(admitted)
                 self.stream_bytes+=len(admitted)
             if len(admitted)!=len(block) and not self.budget_exhausted:
@@ -108,15 +121,17 @@ class WorkerTransport:
         with selectors.DefaultSelector() as selector:
             for role,child in live.items():
                 for name,stream in [('stdout',child.process.stdout),('stderr',child.process.stderr),('status',child.status_fd)]:
-                    if role=='capture' and name=='stdout' and len(self.queue)>=128*1024-5:
+                    if role=='capture' and name=='stdout' and self._capture_capacity()==0:
                         continue
                     if name not in child.eof:
                         fd=stream if type(stream) is int else stream.fileno()
                         selector.register(fd,selectors.EVENT_READ,(role,name))
             for key,_ in selector.select(timeout):
                 role,name=key.data
-                capacity=min(65536,128*1024-len(self.queue)-5) if role=='capture' and name=='stdout' else 65536
-                self._read(role,name,os.read(key.fd,capacity))
+                if role=='capture' and name=='stdout':
+                    self._read(role,name,self._capture_receive(key.fd,self._capture_capacity()))
+                else:
+                    self._read(role,name,os.read(key.fd,65536))
         for role,child in live.items():
             child.observe_wait()
         sink=live.get('composition')
@@ -263,7 +278,7 @@ class WorkerTransport:
             value=validate_end(value,run_id=self.run_id,source_manifest_sha256=self.source_manifest_sha256)
         except ProtocolError as exc:
             raise Unavailable(str(exc)) from None
-        terminal_packet=packet(b'E',encoded(value))
+        terminal_packet=self._terminal_packets(value)
         if len(self.queue)+len(terminal_packet)>128*1024:
             raise Unavailable('stream_transport_bounds')
         self.queue.extend(terminal_packet)
