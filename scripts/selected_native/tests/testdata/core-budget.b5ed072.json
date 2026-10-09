@@ -1,0 +1,154 @@
+{
+ "expansion_memory_cost_sample": {
+  "encoded_bytes": 39,
+  "with_budget": 307,
+  "without_budget": 295
+ },
+ "pilot_memory_budget_2": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 2032,
+  "index_memory_cost_error": "",
+  "index_memory_room": 4500,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/2",
+   "bytes": 9500,
+   "min_pull_bytes": 5000
+  },
+  "memory_room": 9500,
+  "validate_error": ""
+ },
+ "policy1_declared_under_schema4": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1630,
+  "index_memory_cost_error": "",
+  "index_memory_room": 5626,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 9500,
+   "min_pull_bytes": 3874,
+   "inspection_policy": "first-fitting-whole/1",
+   "inspection_status": "ready"
+  },
+  "memory_room": 9500,
+  "validate_error": "INTEGRITY_FAILURE: historical memory budget reserve is invalid"
+ },
+ "policy1_ready_32000_reserve_over_24000": {
+  "expansion_limit": 24000,
+  "index_memory_cost": 1632,
+  "index_memory_cost_error": "",
+  "index_memory_room": 7000,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/3",
+   "bytes": 32000,
+   "min_pull_bytes": 25000,
+   "inspection_policy": "first-fitting-whole/1",
+   "inspection_status": "ready"
+  },
+  "memory_room": 32000,
+  "validate_error": "INTEGRITY_FAILURE: historical memory budget reserve is invalid"
+ },
+ "policy1_ready_9500": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1630,
+  "index_memory_cost_error": "",
+  "index_memory_room": 5626,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/3",
+   "bytes": 9500,
+   "min_pull_bytes": 3874,
+   "inspection_policy": "first-fitting-whole/1",
+   "inspection_status": "ready"
+  },
+  "memory_room": 9500,
+  "validate_error": ""
+ },
+ "policy2_declared_under_schema3": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1630,
+  "index_memory_cost_error": "",
+  "index_memory_room": 5626,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/3",
+   "bytes": 9500,
+   "min_pull_bytes": 3874,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "ready"
+  },
+  "memory_room": 9500,
+  "validate_error": "INTEGRITY_FAILURE: historical memory budget reserve is invalid"
+ },
+ "policy2_no_candidates": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1120,
+  "index_memory_cost_error": "",
+  "index_memory_room": 9500,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 9500,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "no_candidates"
+  },
+  "memory_room": 9500,
+  "validate_error": ""
+ },
+ "policy2_no_whole_fits": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1140,
+  "index_memory_cost_error": "",
+  "index_memory_room": 9500,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 9500,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "no_whole_fits",
+   "skipped_units": 3
+  },
+  "memory_room": 9500,
+  "validate_error": ""
+ },
+ "policy2_ready_32000_reserve_over_24000": {
+  "expansion_limit": 32000,
+  "index_memory_cost": 1632,
+  "index_memory_cost_error": "",
+  "index_memory_room": 7000,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 32000,
+   "min_pull_bytes": 25000,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "ready"
+  },
+  "memory_room": 32000,
+  "validate_error": ""
+ },
+ "policy2_ready_9500": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1630,
+  "index_memory_cost_error": "",
+  "index_memory_room": 5626,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 9500,
+   "min_pull_bytes": 3874,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "ready"
+  },
+  "memory_room": 9500,
+  "validate_error": ""
+ },
+ "policy2_reserve_over_budget": {
+  "expansion_limit": 9500,
+  "index_memory_cost": 1630,
+  "index_memory_cost_error": "",
+  "index_memory_room": -1,
+  "memory_budget": {
+   "schema": "cairn.memory-budget/4",
+   "bytes": 9500,
+   "min_pull_bytes": 9501,
+   "inspection_policy": "first-fitting-whole/2",
+   "inspection_status": "ready"
+  },
+  "memory_room": 9500,
+  "validate_error": "INTEGRITY_FAILURE: historical memory budget reserve is invalid"
+ }
+}
