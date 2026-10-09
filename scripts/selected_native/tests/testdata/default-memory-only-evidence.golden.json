@@ -1,0 +1,123 @@
+{
+ "evidence": {
+  "calls": {
+   "m1": {
+    "arguments": {
+     "memory_budget_bytes": 9500,
+     "min_pull_bytes": 5000,
+     "query": "q",
+     "request_id": "40000000-0000-4000-8000-000000000001"
+    },
+    "canonical_arguments_sha256": "6d0a5249f070cc37420642c1db7685d1ee750ecaa0a9610a7695afc6a66b0941",
+    "name": "mcp__cairn__cairn_search"
+   },
+   "m2": {
+    "arguments": {
+     "handle": "30000000-0000-4000-8000-000000000001",
+     "receipt_id": "10000000-0000-4000-8000-000000000001",
+     "request_id": "40000000-0000-4000-8000-000000000002",
+     "span": {
+      "length": 12,
+      "offset": 14
+     }
+    },
+    "canonical_arguments_sha256": "89aec5635189797ee33535633b0a760538c481033f65e29ed670e497caaea354",
+    "name": "mcp__cairn__cairn_pull"
+   }
+  },
+  "limits": "native-visible evidence only; not server authentication, ranking trace, SDK charge or delivery attestation",
+  "responses": {
+   "m1": {
+    "available_tokens": 32000,
+    "bytes_remaining": 5000,
+    "credits_remaining": 4,
+    "index": [
+     {
+      "body_sha256": "38c6045e0a0836efa9bda37e3167fd47616fe369a3be69b122ecf2784f8fecb9",
+      "class": "A",
+      "kind": "note",
+      "pull_arguments": {
+       "handle": "30000000-0000-4000-8000-000000000001",
+       "receipt_id": "10000000-0000-4000-8000-000000000001",
+       "request_id": "40000000-0000-4000-8000-000000000002"
+      },
+      "record_id": "20000000-0000-4000-8000-000000000001",
+      "summary": "new decision",
+      "version": 7
+     }
+    ],
+    "memory_budget": {
+     "bytes": 9500,
+     "min_pull_bytes": 5000,
+     "schema": "cairn.memory-budget/2"
+    },
+    "metadata_basis": "reported MCP payload; not independently validated server state",
+    "optional_limit": 3200,
+    "policy_revision": {
+     "revision_id": "50000000-0000-4000-8000-000000000001"
+    },
+    "receipt_id": "10000000-0000-4000-8000-000000000001",
+    "request_id": "40000000-0000-4000-8000-000000000001",
+    "selected_sources": [],
+    "source_schema": "cairn.semantic/17"
+   },
+   "m2": {
+    "bytes_remaining": 3900,
+    "competing": [],
+    "credits_remaining": 3,
+    "handle": "30000000-0000-4000-8000-000000000001",
+    "matching_offered_requests": [
+     {
+      "arguments": {
+       "handle": "30000000-0000-4000-8000-000000000001",
+       "receipt_id": "10000000-0000-4000-8000-000000000001",
+       "request_id": "40000000-0000-4000-8000-000000000002"
+      },
+      "search_call_id": "m1"
+     }
+    ],
+    "metadata_basis": "reported MCP payload; not independently validated server state",
+    "offered_arguments": {
+     "handle": "30000000-0000-4000-8000-000000000001",
+     "receipt_id": "10000000-0000-4000-8000-000000000001",
+     "request_id": "40000000-0000-4000-8000-000000000002"
+    },
+    "offered_arguments_basis": "first delivered offer, not necessarily this request nonce",
+    "opening_expectation": "receipt policy not exposed; only returned range consistency checked",
+    "receipt_id": "10000000-0000-4000-8000-000000000001",
+    "request_id": "40000000-0000-4000-8000-000000000002",
+    "request_id_matches_offered": true,
+    "response_ids_present": [],
+    "source": {
+     "class": "A",
+     "conflicts": [],
+     "coverage": "returned_byte_range",
+     "record_id": "20000000-0000-4000-8000-000000000001",
+     "source_sha256": "38c6045e0a0836efa9bda37e3167fd47616fe369a3be69b122ecf2784f8fecb9",
+     "span": {
+      "body_base64": "cHJlc2VydmUgdGhl",
+      "end": 26,
+      "offset": 14,
+      "range_covers_source": false,
+      "sha256": "e4009c4dea1b28a021fb169cef7fa5c22822877c70fe73cda22c44421a26cb4d",
+      "total_bytes": 66
+     },
+     "version": 7
+    }
+   }
+  }
+ },
+ "init_tools": [
+  "mcp__cairn__cairn_pull",
+  "mcp__cairn__cairn_search"
+ ],
+ "schema": "agent248.default-memory-only-golden/1",
+ "source": {
+  "accepted_evidence_sha256": "f96e1596c3bf7a200a57cdfae7b44db04b0d0b394d7d130473c921b5e815136b",
+  "accepted_frames_sha256": "fd79aa5aa4b8fdffd09daf30619706f923e39e89462528a4e1228315e8ee44e6"
+ },
+ "stream": "init(search,pull) + search(9500) + partial pull + final",
+ "work_product": {
+  "ok": true
+ }
+}
