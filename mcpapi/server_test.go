@@ -120,6 +120,41 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		return body
 	}
 
+	t.Run("explicit whole handoff exceeds default room", func(t *testing.T) {
+		largeServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "handoff", RunID: "attempt"}, AvailableTokens: 32000, MaxTokens: 160000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		largeSession := connect(t, ctx, largeServer)
+		body := "whole-handoff-needle " + strings.Repeat("日本語 \"quoted\" \\path\n", 2500)
+		body += strings.Repeat("x", 65536-len(body))
+		_, err = op.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: body, Scope: core.Scope{Repo: repo, TaskID: "handoff", RunID: "*"}, ClaimType: "self", Sensitivity: "shareable"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := largeSession.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "whole-handoff-needle", "available_tokens": 160000, "memory_budget_bytes": 160000, "inspection_policy": "first-fitting-whole/1"}})
+		if err != nil || result.IsError {
+			t.Fatalf("large search: %+v %v", result, err)
+		}
+		var found searchResult
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &found); err != nil || len(found.Index) != 1 || found.BytesRemaining <= 32000 {
+			t.Fatalf("large search allocation: %v", err)
+		}
+		searchWire, _ := json.Marshal(result)
+		result, err = largeSession.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_pull", Arguments: found.Index[0].PullArguments})
+		if err != nil || result.IsError {
+			t.Fatalf("large whole pull: %+v %v", result, err)
+		}
+		var whole core.Expansion
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &whole); err != nil || whole.Selection.Record.Body != body {
+			t.Fatalf("whole handoff was not delivered: %v", err)
+		}
+		pullWire, _ := json.Marshal(result)
+		if len(searchWire)+len(pullWire)+whole.BytesRemaining > 160000 {
+			t.Fatal("complete wire delivery exceeded its explicit budget")
+		}
+	})
+
 	{
 		var found searchResult
 		if err := json.Unmarshal(invoke("cairn_search", searchArgs{Query: "review workflow"}, ""), &found); err != nil {

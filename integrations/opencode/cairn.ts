@@ -34,6 +34,7 @@ const settingsSchema = z.object({
   token_file: absolutePath,
   repo: z.string().min(1).refine(value => value !== "*"),
   tokens: z.number().int().min(256).max(1000000).default(32000),
+  max_tokens: z.number().int().min(256).max(1000000).default(1000000),
   task_id: declaredScope.optional(),
   run_id: declaredScope.optional(),
   context: z.object({
@@ -45,7 +46,8 @@ const settingsSchema = z.object({
     capability: z.string().optional(),
   }).strict().optional(),
 }).strict().refine(config => config.run_id === undefined || config.task_id !== undefined,
-  "A declared run_id requires task_id")
+  "A declared run_id requires task_id").refine(config => config.max_tokens >= config.tokens,
+  "max_tokens must cover the default tokens room")
 type Settings = ReturnType<typeof settingsSchema.parse>
 
 async function settings(name: string, context: ToolContext) {
@@ -89,7 +91,7 @@ function call(config: Settings, context: ToolContext, args: string[], input?: un
 
 function render(value: unknown, config: Settings) {
   const text = JSON.stringify(value)
-  if (Buffer.byteLength(text, "utf8") > config.tokens) {
+  if (Buffer.byteLength(text, "utf8") > config.max_tokens) {
     throw new Error("BUDGET_REFUSED: tool result exceeds memory input room")
   }
   return text
@@ -126,7 +128,7 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
   }
   const config = await settings(prepare ? "prepare_note" : "search", context)
   const room = args.available_tokens ?? config.tokens
-  if (room > config.tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.tokens)
+  if (room > config.max_tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.max_tokens)
   const allowance = args.memory_budget_bytes ?? room
   if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
   const receiptAllowance = allowance - (prepare ? preparationOverhead : 0)
@@ -170,24 +172,25 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
   const view = searchView.parse(await call(config, context, command))
   if (args.inspection_policy !== undefined) {
     const parsed = z.object({
-      schema: z.literal("cairn.memory-budget/3"), bytes: z.number().int(),
+      schema: z.enum(["cairn.memory-budget/3", "cairn.memory-budget/4"]), bytes: z.number().int(),
       inspection_policy: z.literal("first-fitting-whole/1"),
       inspection_status: z.enum(["ready", "no_whole_fits", "no_candidates"]),
-      min_pull_bytes: z.number().int().min(0).max(24000).optional(),
+      min_pull_bytes: z.number().int().min(0).max(1000000).optional(),
       skipped_units: z.number().int().min(0).optional(),
     }).safeParse(view.memory_budget)
     if (!parsed.success || parsed.data.bytes !== receiptAllowance) {
       throw new Error("INTEGRITY_FAILURE: inspection response did not preserve the requested policy and allowance")
     }
     reserve = parsed.data.min_pull_bytes ?? 0
-    if (reserve > receiptAllowance || (parsed.data.inspection_status === "ready"
+    const expansionLimit = parsed.data.schema === "cairn.memory-budget/4" ? receiptAllowance : Math.min(24000, receiptAllowance)
+    if ((parsed.data.schema === "cairn.memory-budget/4" && receiptAllowance <= 24000) || reserve > expansionLimit || (parsed.data.inspection_status === "ready"
         ? reserve === 0 || view.index.length === 0
         : reserve !== 0 || view.index.length !== 0)) {
       throw new Error("INTEGRITY_FAILURE: inspection response has inconsistent target or reserve")
     }
     const remaining = view.bytes_remaining
     if (typeof remaining !== "number" || !Number.isSafeInteger(remaining) || remaining < 0 ||
-        remaining > Math.min(24000, receiptAllowance)) {
+        remaining > expansionLimit) {
       throw new Error("INTEGRITY_FAILURE: inspection response has invalid remaining allowance")
     }
     // A retry can return a spent balance. The sealed derived minimum stays in

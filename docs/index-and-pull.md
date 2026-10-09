@@ -276,8 +276,11 @@ old one returns `STALE_PACKAGE`. See the [source-position verification](verifica
 The result supplies `package`, `handles`, `expires_at`, `credits_remaining` and
 `bytes_remaining`. Each handle is bound to one authenticated caller, receipt,
 record version and destination. A session lasts 15 minutes, permits four body/evidence
-pulls in total, and reserves at most 24,000 additional bytes within its declared context
-room. Limits use the same conservative UTF-8-byte upper bound as compilation.
+pulls in total. Legacy receipts reserve at most 24,000 additional bytes within
+their declared context room. New explicit `memory_budget_bytes` allocations above
+24,000 use `cairn.memory-budget/4` and can reserve the remaining declared memory
+room, including enough for a complete 65,536-byte handoff and its response overhead.
+Limits use the same conservative UTF-8-byte upper bound as compilation.
 These are per-retrieval limits; a real host must account for its overall task
 context and control when it starts another retrieval.
 
@@ -298,8 +301,8 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
   pull --request-id NEW_UUID --offset 0 --length 4096 RECEIPT_UUID HANDLE_UUID
 ```
 
-This makes selected text from a long saved note readable without increasing the
-24,000-byte session ceiling. Note offsets range from 0 to 65,535 and lengths from
+This makes selected text from a long saved note readable within the receipt's
+existing allowance. Note offsets range from 0 to 65,535 and lengths from
 1 to 65,536 bytes. The offset must be inside the body; only EOF clips the length.
 Class C instructions and marked competing advisory positions refuse partial delivery. Omitting the span retains the whole
 pull, including its original retry identity and budget accounting.

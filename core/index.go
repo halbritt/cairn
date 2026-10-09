@@ -254,7 +254,7 @@ func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[st
 			if err != nil {
 				return p, err
 			}
-			if excluded[id] || wholeCost > 24000 || indexCost > indexMemoryRoom(trial) {
+			if excluded[id] || wholeCost > expansionLimit(trial) || indexCost > indexMemoryRoom(trial) {
 				p.MemoryBudget.MinPullBytes = 0
 				p.MemoryBudget.InspectionStatus = "no_whole_fits"
 				p.MemoryBudget.SkippedUnits++
@@ -318,7 +318,7 @@ func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPac
 	if err != nil {
 		return err
 	}
-	budget := min(24000, max(0, memoryRoom(p)-cost))
+	budget := min(expansionLimit(p), max(0, memoryRoom(p)-cost))
 	if budget < minPullBytes(p) {
 		return failure("BUDGET_REFUSED", "index cannot preserve the requested pull allowance")
 	}

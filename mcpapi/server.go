@@ -22,6 +22,7 @@ import (
 type Config struct {
 	Scope           core.Scope
 	AvailableTokens int
+	MaxTokens       int
 	Context         *core.ContextPins
 	CodexThread     bool
 }
@@ -53,7 +54,17 @@ func (c Config) Validate() error {
 	if c.AvailableTokens < 256 || c.AvailableTokens > 1000000 {
 		return fmt.Errorf("MCP memory input room must be between 256 and 1000000")
 	}
+	if c.MaxTokens != 0 && (c.MaxTokens < c.AvailableTokens || c.MaxTokens > 1000000) {
+		return fmt.Errorf("MCP maximum input room must be between the default room and 1000000")
+	}
 	return nil
+}
+
+func (c Config) maxTokens() int {
+	if c.MaxTokens == 0 {
+		return c.AvailableTokens
+	}
+	return c.MaxTokens
 }
 
 type searchArgs struct {
@@ -187,8 +198,8 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.CallToolRequest, args searchArgs, prepare bool) (*mcp.CallToolResult, any, error) {
 	room := t.config.AvailableTokens
 	if args.AvailableTokens != nil {
-		if *args.AvailableTokens < 256 || *args.AvailableTokens > room {
-			return nil, nil, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", room)
+		if *args.AvailableTokens < 256 || *args.AvailableTokens > t.config.maxTokens() {
+			return nil, nil, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", t.config.maxTokens())
 		}
 		room = *args.AvailableTokens
 	}
@@ -327,7 +338,7 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
 	var result core.Expansion
 	err := t.client.Call(ctx, "expand", args, &result)
-	return toolResult(result, err, t.config.AvailableTokens)
+	return toolResult(result, err, t.config.maxTokens())
 }
 
 func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args historyArgs) (*mcp.CallToolResult, any, error) {
@@ -351,7 +362,7 @@ func (t memoryTools) assess(ctx context.Context, _ *mcp.CallToolRequest, args co
 func (t memoryTools) pullEvidence(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandEvidenceRequest) (*mcp.CallToolResult, any, error) {
 	var result json.RawMessage
 	err := t.client.Call(ctx, "expand-evidence", args, &result)
-	return toolResult(result, err, t.config.AvailableTokens)
+	return toolResult(result, err, t.config.maxTokens())
 }
 
 // searchScope resolves the host's grouping labels, not an execution attestation.

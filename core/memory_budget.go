@@ -16,6 +16,15 @@ type MemoryBudget struct {
 
 const firstFittingWhole = "first-fitting-whole/1"
 
+// Explicit large allocations use the caller's room; older receipts retain
+// their original 24,000-byte expansion ceiling.
+func expansionLimit(p SemanticPackage) int {
+	if p.MemoryBudget != nil && p.MemoryBudget.Schema == "cairn.memory-budget/4" {
+		return p.MemoryBudget.Bytes
+	}
+	return min(24000, memoryRoom(p))
+}
+
 func memoryRoom(p SemanticPackage) int {
 	if p.MemoryBudget != nil {
 		return p.MemoryBudget.Bytes
@@ -78,13 +87,21 @@ func validateMemoryBudget(p SemanticPackage) error {
 		if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) && b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 {
 			return nil
 		}
+	case "cairn.memory-budget/4":
+		if b.Bytes <= 24000 {
+			break
+		}
+		if b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 && b.MinPullBytes >= 0 && b.MinPullBytes <= b.Bytes {
+			return nil
+		}
+		fallthrough
 	case "cairn.memory-budget/3":
 		if b.InspectionPolicy != firstFittingWhole || b.SkippedUnits < 0 || b.SkippedUnits > 10000 {
 			break
 		}
 		switch b.InspectionStatus {
 		case "ready":
-			if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) && len(p.Index) > 0 {
+			if b.MinPullBytes > 0 && b.MinPullBytes <= expansionLimit(p) && len(p.Index) > 0 {
 				return nil
 			}
 		case "no_whole_fits":

@@ -14,6 +14,9 @@ func TestMCPScopeOptions(t *testing.T) {
 		{[]string{"--codex-thread", "--run", "run"}, false},
 		{[]string{"--codex-thread", "--repo", "*"}, false},
 		{[]string{"--codex-thread", "--tokens", "255"}, false},
+		{[]string{"--codex-thread", "--max-tokens", "160000"}, true},
+		{[]string{"--codex-thread", "--max-tokens", "31000"}, false},
+		{[]string{"--codex-thread", "--max-tokens", "1000001"}, false},
 	} {
 		f := flags("mcp")
 		o := mcpFlags(f)

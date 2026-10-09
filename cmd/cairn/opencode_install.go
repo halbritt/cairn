@@ -23,6 +23,7 @@ type openCodeSettings struct {
 	TokenFile  string            `json:"token_file"`
 	Repo       string            `json:"repo"`
 	Tokens     int               `json:"tokens"`
+	MaxTokens  int               `json:"max_tokens"`
 	TaskID     string            `json:"task_id,omitempty"`
 	RunID      string            `json:"run_id,omitempty"`
 	Context    map[string]string `json:"context,omitempty"`
@@ -56,6 +57,7 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	f.StringVar(&settings.TokenFile, "token-file", "", "provisioned ordinary agent token path (required)")
 	f.StringVar(&settings.Repo, "repo", "", "canonical repository identity (required)")
 	f.IntVar(&settings.Tokens, "tokens", 32000, "memory input room per tool result")
+	f.IntVar(&settings.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and tool output; --tokens remains the default")
 	f.StringVar(&settings.TaskID, "task", "", "optional declared task scope shared across native sessions")
 	f.StringVar(&settings.RunID, "run", "", "optional declared run scope; requires --task, otherwise use each native session ID")
 	pins := map[string]*string{}
@@ -70,6 +72,9 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	}
 	if settings.Tokens < 256 || settings.Tokens > 1000000 {
 		return result, invalid("memory input room must be between 256 and 1000000")
+	}
+	if settings.MaxTokens < settings.Tokens || settings.MaxTokens > 1000000 {
+		return result, invalid("maximum input room must be between the default room and 1000000")
 	}
 	for name, value := range map[string]string{"task": settings.TaskID, "run": settings.RunID} {
 		provided := false

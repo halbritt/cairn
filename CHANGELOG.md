@@ -14,6 +14,16 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-09
+
+- Full handoff reads can use an explicit budget beyond automatic lifecycle recall.
+  Allocations above 24,000 bytes use `cairn.memory-budget/4` and reserve the
+  remaining declared room for pulls. Existing receipts keep their original limits.
+  MCP and native OpenCode keep the 32,000-byte search default and accept larger
+  explicit input room up to `--max-tokens` / `max_tokens` (default 1,000,000).
+  The hook cue permits task-requested reads beyond automatic recall's byte and
+  call limits. See [whole source allocation](docs/inspection-allocation.md).
+
 ## 2026-10-05
 
 - A failed lifecycle recall now keeps two optional fixed fields in its local

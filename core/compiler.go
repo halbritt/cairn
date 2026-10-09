@@ -376,6 +376,9 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.MemoryBudget.Schema = "cairn.memory-budget/3"
 			p.MemoryBudget.InspectionPolicy = req.InspectionPolicy
 		}
+		if *req.MemoryBudgetBytes > 24000 {
+			p.MemoryBudget.Schema = "cairn.memory-budget/4"
+		}
 	}
 	literals := queryLiterals(req.Query)
 	if len(literals) > 0 {

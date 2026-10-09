@@ -255,5 +255,21 @@ def check_store(invoke, binary, environment, settings_path, settings):
         assert len(after['records']) == len(before['records']), 'preparation wrote a note'
         assert invoke('prepare_note', dict(query='absent' + uuid.uuid4().hex))['preparation']['note_saved'] is False
         print('Native real API: sealed reserve, checked pull, exact retries/spent balances, scope/privacy and stale handles passed; preparation writes no note')
+        # A task-requested handoff can exceed the default search and legacy pull
+        # allowances while retaining native response and remaining-byte checks.
+        body = 'wholehandoff' + uuid.uuid4().hex + ' 日本語 "quoted" \\path\n'
+        needle = body.split()[0]
+        body += 'x' * (65536 - len((marker + ' ' + body).encode()))
+        create(body)
+        large = invoke('search', dict(query=needle, available_tokens=160000,
+                       memory_budget_bytes=160000, inspection_policy='first-fitting-whole/1'))
+        assert large['memory_budget']['schema'] == 'cairn.memory-budget/4'
+        assert large['bytes_remaining'] > 24000
+        whole = invoke('pull', large['index'][0]['pull_arguments'])
+        assert whole['selection']['record']['body'] == marker + ' ' + body
+        assert (len(json.dumps(large, ensure_ascii=False, separators=(',', ':')).encode())
+                + len(json.dumps(whole, ensure_ascii=False, separators=(',', ':')).encode())
+                + whole['bytes_remaining'] <= 160000)
+        print('Native full handoff: explicit room above the default delivered the complete maximum-size note')
     finally:
         settings_path.write_text(json.dumps(settings))

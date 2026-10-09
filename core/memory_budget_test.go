@@ -13,6 +13,59 @@ import (
 	"github.com/zeebo/blake3"
 )
 
+func TestExplicitBudgetReadsCompleteMaximumSizeHandoff(t *testing.T) {
+	ctx := context.Background()
+	op, _ := testOperator(t)
+	repo := uuid.NewString()
+	draft := projectNote(repo)
+	draft.Sensitivity = "shareable"
+	draft.Body = "handoff-budget " + strings.Repeat("日本語 \"quoted\" \\path\n", 2500)
+	draft.Body += strings.Repeat("x", 65536-len(draft.Body))
+	record, err := op.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "handoff-budget", Purpose: "context", AvailableTokens: 160000}
+	legacy, err := op.Index(ctx, req, Destination{"hosted", false})
+	if err != nil || legacy.BytesRemaining > 24000 || len(legacy.Handles) != 1 {
+		t.Fatalf("legacy allocation: %+v %v", legacy, err)
+	}
+	_, err = op.Expand(ctx, ExpandRequest{RequestID: uuid.NewString(), ReceiptID: legacy.Package.ReceiptID, Handle: legacy.Handles[0].Handle}, Destination{"hosted", false})
+	requireCode(t, err, "BUDGET_REFUSED")
+	for _, budget := range []int{9500, 160000} {
+		req.RequestID, req.MemoryBudgetBytes, req.InspectionPolicy = uuid.NewString(), ptrInt(budget), firstFittingWhole
+		index, err := op.Index(ctx, req, Destination{"hosted", false})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if budget == 9500 {
+			if len(index.Handles) != 0 || index.Package.Semantic.MemoryBudget.InspectionStatus != "no_whole_fits" {
+				t.Fatalf("automatic allowance should refuse a whole handoff: %+v", index)
+			}
+			continue
+		}
+		if len(index.Handles) != 1 || index.Package.Semantic.MemoryBudget.Schema != "cairn.memory-budget/4" || index.BytesRemaining <= 24000 {
+			t.Fatalf("explicit whole allocation: %+v", index)
+		}
+		pull := ExpandRequest{RequestID: uuid.NewString(), ReceiptID: index.Package.ReceiptID, Handle: index.Handles[0].Handle}
+		whole, err := op.Expand(ctx, pull, Destination{"hosted", false})
+		if err != nil || whole.Selection.Record.RecordID != record.RecordID || whole.Selection.Record.Body != draft.Body {
+			t.Fatalf("complete handoff: %v", err)
+		}
+		if index.BytesRemaining-whole.BytesRemaining != index.Package.Semantic.MemoryBudget.MinPullBytes {
+			t.Fatal("whole read did not charge the reserved cost")
+		}
+		retry, err := op.Expand(ctx, pull, Destination{"hosted", false})
+		if err != nil || retry.BytesRemaining != whole.BytesRemaining {
+			t.Fatalf("retry replenished or double-charged the budget: %v", err)
+		}
+		replayed, err := op.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: req.Query})
+		if err != nil || replayed.Seal != index.Package.Seal {
+			t.Fatalf("large allocation replay: %v", err)
+		}
+	}
+}
+
 func TestIndexMemoryBudgetSeparatesContextPolicyFromReceiptRoom(t *testing.T) {
 	ctx := context.Background()
 	op, _ := testOperator(t)

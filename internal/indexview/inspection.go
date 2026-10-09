@@ -12,7 +12,11 @@ func InspectionViewRoom(result core.IndexResult, policy string, allowance, recei
 		return 0, &core.Error{Code: "INVALID_RESPONSE", Message: "API did not honor inspection allocation"}
 	}
 	b := result.Package.Semantic.MemoryBudget
-	if b == nil || b.Schema != "cairn.memory-budget/3" || b.InspectionPolicy != policy || policy != "first-fitting-whole/1" || b.Bytes != receiptCap || b.MinPullBytes < 0 || b.MinPullBytes > min(24000, receiptCap) || b.SkippedUnits < 0 || receiptCap > allowance || result.BytesRemaining < 0 || result.BytesRemaining > min(24000, receiptCap) {
+	limit := min(24000, receiptCap)
+	if b != nil && b.Schema == "cairn.memory-budget/4" && receiptCap > 24000 {
+		limit = receiptCap
+	}
+	if b == nil || (b.Schema != "cairn.memory-budget/3" && (b.Schema != "cairn.memory-budget/4" || receiptCap <= 24000)) || b.InspectionPolicy != policy || policy != "first-fitting-whole/1" || b.Bytes != receiptCap || b.MinPullBytes < 0 || b.MinPullBytes > limit || b.SkippedUnits < 0 || receiptCap > allowance || result.BytesRemaining < 0 || result.BytesRemaining > limit {
 		return invalid()
 	}
 	switch b.InspectionStatus {

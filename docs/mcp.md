@@ -84,6 +84,22 @@ It reserves the first affordable complete source/group, reports oversized
 omissions, and leaves the relevance decision to you. Do not combine it with a
 numeric reserve.
 
+For a task-requested full handoff, the automatic hook recall allowance does not
+cap the explicit read. Declare enough free room and memory allowance for the
+whole source and response overhead, for example `available_tokens: 160000` and
+`memory_budget_bytes: 160000` with `inspection_policy: "first-fitting-whole/1"`.
+New explicit allocations above 24,000 use `cairn.memory-budget/4` and permit a
+larger whole pull. Historical receipts keep their original budgets; start a new
+search to enlarge an allocation.
+
+`cairn mcp --tokens` still defaults to 32,000 for ordinary searches.
+`--max-tokens` bounds explicit `available_tokens` requests and pull output,
+defaulting to 1,000,000 bytes. Set it lower to enforce a host ceiling; it must be
+at least `--tokens`. OpenCode's native adapter uses the corresponding
+`tokens` and `max_tokens` settings. These are limits, not measurements of free
+conversation room. A running MCP process keeps its startup settings and code
+until it is restarted.
+
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
 It requires an explicit memory cap and must be between 1 and the smaller of

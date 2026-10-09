@@ -196,7 +196,7 @@ for guidance, describe the decision, constraint or failure the task needs help
 with, preserving its stated conditions and known project, files or errors.
 Do not assume a saved rule or its answer. Status and record lookups retain their
 requested identifiers. This is query advice, not an applicability guarantee.
-The aggregate budget is the
+The automatic recall budget is the
 configured `context_bytes`, counting the supplied lifecycle context plus all
 native search/pull result text and envelopes. The hook reports
 `remaining_memory_bytes` after conservatively subtracting the complete emitted
@@ -223,6 +223,13 @@ Required instructions stay whole: insufficient room means stop optional
 inspection and report the limitation, rather than truncate them. The aggregate
 task and call limits are instructions to the agent, **not enforcement by the host**. Native receipts each
 have their own budgets; a new receipt does not reset this requested task allowance.
+
+Task-requested memory reads, including complete handoffs, may exceed the automatic
+recall byte and call limits. Start a new search with an explicit budget sized for
+the complete source, metadata and escaping, within actual free context and the
+configured tool ceiling. See [whole source allocation](inspection-allocation.md).
+The hook output remains limited by `context_bytes`; increasing an explicit native
+read does not enlarge Claude's hook `additionalContext`.
 A pilot must measure aggregate exposure and actual compliance across tool calls
 and turns. It must also measure task-model/tool work: `last_recall.duration_ms`
 covers only the hook and does not establish total task delay or usefulness.

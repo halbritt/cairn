@@ -33,7 +33,7 @@ def check_search_budget(invoke, settings_path, settings, root):
     def reply(value):
         fixture.write_text(json.dumps(dict(schema='cairn.response/1', ok=True, data=value), ensure_ascii=True))
     try:
-        settings_path.write_text(json.dumps(dict(settings, executable=str(executable), tokens=32000)))
+        settings_path.write_text(json.dumps(dict(settings, executable=str(executable), tokens=32000, max_tokens=32000)))
         reply(view)
         result = invoke('search', dict(query='fixture', available_tokens=32000, memory_budget_bytes=2000))
         assert result['selected'] == view['selected'] and result['index'][0]['pull_arguments'] == handles
@@ -207,8 +207,11 @@ def check(binary, root, environment, opencode, claim, support):
     assert limited_pull['selection']['record']['body'] == capture['body']
     assert invoke('pull', limited['index'][0]['pull_arguments']) == limited_pull
     assert invoke('search', dict(query=marker))['available_tokens'] == settings['tokens']
-    for invalid in (0, -1, 255, 64001, 1000001, 300.5, '8000', True, None):
+    for invalid in (0, -1, 255, 1000001, 300.5, '8000', True, None):
         invoke('search', dict(query=marker, available_tokens=invalid), 'INVALID_REQUEST')
+    enlarged = invoke('search', dict(query=marker, available_tokens=160000, memory_budget_bytes=160000))
+    assert enlarged['available_tokens'] == 160000
+    assert enlarged['memory_budget']['schema'] == 'cairn.memory-budget/4'
     invoke('search', dict(query=marker, available_tokens=256), 'BUDGET_REFUSED')
     budgeted = invoke('search', dict(query=marker, available_tokens=32000, memory_budget_bytes=5000))
     assert budgeted['available_tokens'] == 32000 and budgeted['optional_limit'] == 3200
