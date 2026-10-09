@@ -57,8 +57,11 @@ has its own descriptor and close outcome. The fixed worker must close both
 writers before it can emit a CLOSED declaration.
 
 The immutable preparation receipt contains the selected file hash and byte
-count; `return_receipt` remains false. Neither that receipt nor the retained file
-establishes runtime closure. The actual worker must validate its bounded end
+count; `return_receipt` remains false.
+The receipt names this digest `selected_sha256`; it is distinct from the
+`source_manifest_sha256` carried inside the file. The existing wire CLOSED field
+`manifest_sha256` carries this selected artifact's digest explicitly.
+Neither that receipt nor the retained file establishes runtime closure. The actual worker must validate its bounded end
 packet and stream/source binding before preparation. The external controller
 must separately observe actual worker return, containment release, complete
 control-channel draining and the exact CLOSED declaration. This module alone

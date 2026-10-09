@@ -39,7 +39,7 @@ class AttemptRetentionTests(unittest.TestCase):
         saved = self.run/'ATTEMPT-EVIDENCE.json'
         raw = saved.read_bytes()
         selected = json.loads(raw)
-        self.assertEqual(receipt.manifest_sha256, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(receipt.selected_sha256, hashlib.sha256(raw).hexdigest())
         self.assertEqual(receipt.selected_bytes, len(raw))
         self.assertEqual(receipt.intent_sha256, hashlib.sha256((self.run/'INTENT.json').read_bytes()).hexdigest())
         self.assertEqual(stat.S_IMODE(saved.stat().st_mode), 0o600)

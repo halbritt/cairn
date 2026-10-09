@@ -99,7 +99,7 @@ class CodingSink:
         outcome = 'success_retention' if prepared is not None else 'failure_evidence'
         declaration = dict(kind='CLOSED', run_id=self.intent.run_id,
             intent_sha256=self.retention.intent_sha256, outcome=outcome,
-            manifest_sha256=receipt.manifest_sha256, selected_bytes=receipt.selected_bytes)
+            manifest_sha256=receipt.selected_sha256, selected_bytes=receipt.selected_bytes)
         self.close()
         if self.close_unknown:
             raise SinkError('coding_sink_close_unknown')

@@ -22,6 +22,16 @@ bounded chunks can still contribute hashes. Failed terminal counters and cost
 are reported values or explicit unknowns. They do not attest billing or enforce
 a spending limit.
 
+Every transport stop poisons and closes the success reader before returning,
+including invalid chunks, total/line/frame bounds and reader interruptions.
+Required capture timing uncertainty also poisons it while the independent
+failure-action and terminal channels continue. An already accepted ledger prefix
+remains diagnostic evidence; direct success retention cannot turn that prefix
+into successful whole-transport evidence. `whole_stream_consumed` additionally
+requires a complete digest and no composer stop. Post-stop hashing is bounded
+by each accepted chunk's size and the external owner's total stream/deadline
+contract; the composer alone does not bound all later hashing work.
+
 Hook measurements enter through a bounded projection containing only the event,
 stdout digest and byte count, stderr byte count, elapsed time, exit code and five
 memory-call counters. Extra payloads are not traversed or passed to accounting.

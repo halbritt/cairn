@@ -43,7 +43,7 @@ class AttemptEndTests(unittest.TestCase):
         self.assertEqual(saved['end_observation'], end)
         self.assertIsNone(saved['selected_success'])
         self.assertFalse(saved['standalone_file_is_closure'])
-        self.assertEqual(receipt.manifest_sha256,
+        self.assertEqual(receipt.selected_sha256,
                          hashlib.sha256((self.run/'ATTEMPT-EVIDENCE.json').read_bytes()).hexdigest())
 
     def test_end_binding_fault_prevents_output_and_consumes_writer(self):

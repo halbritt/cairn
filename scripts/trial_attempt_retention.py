@@ -20,7 +20,7 @@ from trial_worker_protocol import decode_end, ProtocolError
 class FailurePrepared:
     run_id: str
     intent_sha256: str
-    manifest_sha256: str
+    selected_sha256: str
     selected_bytes: int
     return_receipt: bool = False
 

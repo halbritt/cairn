@@ -134,9 +134,20 @@ class CodingStream:
         self.unknown, self.stopped, self.closed = set(), False, False
         self.last_received, self.digest_complete = None, True
 
+    def _poison_reader(self, code):
+        # Never leave a successful prefix available to Retention.prepare after
+        # the composer refuses transport or required capture timing. Preserve
+        # the already accepted ledger prefix as labelled diagnostic evidence.
+        self.frame_failure = self.frame_failure or code
+        self.reader.failure = self.reader.failure or code
+        self.reader.closed = True
+        self.reader.buffer.clear()
+        self.reader.scanned = 0
+
     def _stop(self, code):
         self.unknown.add(code)
         self.stopped = True
+        self._poison_reader(code)
         self.raw.clear()
         self.pending.clear()
         self.terminal.overflow = True
@@ -161,6 +172,7 @@ class CodingStream:
                 or not math.isfinite(received_seconds)
                 or self.last_received is not None and received_seconds < self.last_received):
             self.unknown.add('capture_timing_unknown')
+            self._poison_reader('capture_timing_unknown')
             received_seconds = None
         else:
             self.last_received = received_seconds
@@ -192,7 +204,7 @@ class CodingStream:
             except FrameError as exc:
                 self.frame_failure = str(exc)  # Fixed codes from the reviewed reader, no payload text.
             except BaseException:
-                self.unknown.add('success_reader_interrupted')
+                self._stop('success_reader_interrupted')
                 raise
 
     def observations(self, hook_observations):
@@ -234,7 +246,8 @@ class CodingStream:
                                  digest_complete=self.digest_complete),
                 profile=copy.deepcopy(self.profile.document), profile_sha256=self.profile.sha256,
                 success_reader=dict(refusal=self.frame_failure, consumed_prefix=prefix,
-                    whole_stream_consumed=prefix['stream_sha256']==self.hash.hexdigest()
+                    whole_stream_consumed=self.digest_complete and not self.stopped
+                                          and prefix['stream_sha256']==self.hash.hexdigest()
                                           and prefix['stream_bytes']==self.total),
                 reported_init=copy.deepcopy(self.reader.init),
                 accepted_prefix_memory=self.reader.ledger.selected(),
