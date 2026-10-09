@@ -13,7 +13,7 @@ from selected_native.frames import FrameError, parse
 OBSERVATIONS=frozenset({'actor_wait_unknown','capture_wait_unknown','capture_release_unknown',
     'capture_metadata_missing','stream_transport_unknown','input_delivery_incomplete',
     'capture_not_completed','observer_interrupted','stream_budget_exhausted'})
-CLEANUP_OBSERVATIONS=frozenset({'owned_launcher_handle_unknown','owned_launcher_stop_unknown',
+CLEANUP_OBSERVATIONS=frozenset({'owned_worker_setup_unknown','owned_launcher_handle_unknown','owned_launcher_stop_unknown',
     'containment_kill_unknown','containment_release_unknown','outer_wait_unknown',
     'worker_close_unknown','worker_stream_close_unknown','worker_descriptor_close_unknown',
     'resource_events_unknown','cgroup_close_unknown','cgroup_descriptor_close_unknown',

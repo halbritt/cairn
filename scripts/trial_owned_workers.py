@@ -230,23 +230,57 @@ class OwnedWaitFact(WaitFact):
 class OwnedWorker(Child):
     """Direct-launcher pidfd for the new domain; legacy Child stays unchanged."""
     def __init__(self, group, argv):
-        super().__init__(group,argv)
-        self.group_identity=group.identity
-        self.group_relative=group.relative
-        self.pidfd=None
+        # Legacy Child keeps its exact AST. This acquisition path stores each
+        # owned handle before another setup operation can fail.
+        self.group_identity,self.group_relative=group.identity,group.relative
+        self.process,self.pidfd,self.status_fd,self.pending_status_write=None,None,None,None
+        self.namespace_fds=[]
+        self.namespace_identity=None
+        self.buffers=dict(stdout=bytearray(),stderr=bytearray(),status=bytearray())
+        self.eof=set()
+        self.verified=False
+        self.wait,self.start,self.boot=None,None,None
+        self.acquisition_observations=[]
         try:
             boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
             self.boot=str(uuid.UUID(boot)) if str(uuid.UUID(boot))==boot else None
         except (OSError,ValueError):
-            self.boot=None
-        # Still unreaped: opening this handle cannot bind a reused PID.
+            pass
         try:
-            self.pidfd = os.pidfd_open(self.process.pid, 0)
+            self.status_fd,self.pending_status_write=os.pipe2(os.O_CLOEXEC|os.O_NONBLOCK)
+            command=['/usr/bin/python3',str(FIXTURE/'launcher.py'),str(group.files['cgroup.procs']),
+                     'bwrap','--json-status-fd',str(self.pending_status_write),*argv]
+            self.process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,pass_fds=(group.files['cgroup.procs'],self.pending_status_write),
+                env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},close_fds=True)
+            # No reaping or signal reconstruction occurs before this binding.
+            group.bootstrap_child=self
+            try:
+                self.pidfd=os.pidfd_open(self.process.pid,0)
+            except OSError:
+                self.acquisition_observations.append('owned_launcher_handle_unknown')
+                raise
+            try:
+                fields=Path(f'/proc/{self.process.pid}/stat').read_text().rsplit(') ',1)[1].split()
+                self.start=int(fields[19])
+            except (OSError,ValueError,IndexError):
+                pass
+            for stream in [self.process.stdin,self.process.stdout,self.process.stderr]:
+                os.set_blocking(stream.fileno(),False)
+            try:
+                os.close(self.pending_status_write)
+            except OSError:
+                self.acquisition_observations.append('worker_descriptor_close_unknown')
+                raise
+            self.pending_status_write=None
         except OSError:
-            # Preserve the direct child/streams for the caller's held leaf
-            # cleanup. No PID fallback, no actor gate, no invented wait.
-            group.bootstrap_child = self
-            raise Unavailable('owned_launcher_handle_unknown') from None
+            self.acquisition_observations.append('owned_worker_setup_unknown')
+            if self.process is None:
+                self.acquisition_observations.extend(self.close())
+            reason=('owned_launcher_handle_unknown' if 'owned_launcher_handle_unknown' in
+                    self.acquisition_observations else 'owned_worker_setup_unknown')
+            raise Unavailable(reason) from None
+        group.bootstrap_child=None
 
 
     def observe_wait(self):
@@ -257,13 +291,33 @@ class OwnedWorker(Child):
 
     def close(self):
         errors=[]
-        if self.pidfd is not None:
+        if self.pending_status_write is not None:
+            # Read end stays held while checking an indeterminate writer close:
+            # it pins this pipe inode, so a reused unrelated FD is never closed.
             try:
-                os.close(self.pidfd)
+                read=os.fstat(self.status_fd);write=os.fstat(self.pending_status_write)
+                if (read.st_dev,read.st_ino)!=(write.st_dev,write.st_ino):
+                    errors.append('worker_descriptor_close_unknown')
+                else:
+                    os.close(self.pending_status_write)
             except OSError:
                 errors.append('worker_descriptor_close_unknown')
-            self.pidfd=None
-        errors.extend(super().close())
+            self.pending_status_write=None
+        if self.process is not None:
+            for stream in [self.process.stdin,self.process.stdout,self.process.stderr]:
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        errors.append('worker_stream_close_unknown')
+        for fd in [self.pidfd,self.status_fd,*self.namespace_fds]:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    errors.append('worker_descriptor_close_unknown')
+        self.pidfd,self.status_fd=None,None
+        self.namespace_fds=[]
         return sorted(set(errors))
 
 
@@ -333,7 +387,7 @@ class AttemptDomain:
 
     def bind(self, role, child):
         group = self.groups.get(role)
-        if (not isinstance(child,OwnedWorker) or group is None or role in self.children or role in self.closed or
+        if (not isinstance(child,OwnedWorker) or child.acquisition_observations or group is None or role in self.children or role in self.closed or
                 child.group_identity != group.identity or child.group_relative != group.relative):
             raise Unavailable('owned_worker_binding')
         self.children[role] = child
@@ -351,7 +405,7 @@ class AttemptDomain:
             return self.closed[role]
         group = self.groups[role]
         child = self.children.get(role) or getattr(group,'bootstrap_child',None)
-        errors=['owned_launcher_handle_unknown'] if getattr(group,'bootstrap_child',None) else []
+        errors=list(child.acquisition_observations) if child else []
         if child and child.wait is None and child.pidfd is not None:
             try:
                 signal.pidfd_send_signal(child.pidfd,signal.SIGKILL)

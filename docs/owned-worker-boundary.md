@@ -16,7 +16,14 @@ external fixtures remain unchanged.
 
 The new internal `OwnedWorker` adds a pidfd for the actual direct unreaped
 launcher and an `OwnedWaitFact` with controller-observed boot identity. Legacy
-wait output stays unchanged. Missing pidfd refuses construction and saves the
+wait output stays unchanged. Its separate acquisition constructor stores every pipe before Popen and retains
+the actual child on its held leaf immediately after Popen, before further setup.
+A post-Popen setup fault refuses binding/gating with fixed
+owned_worker_setup_unknown; actual wait/release and any safe descriptor cleanup
+remain observable through that partial owned child. An indeterminate status-writer
+close is checked against the still-held read pipe before cleanup, so an unrelated
+reused FD is never closed. Legacy Child setup remains unchanged.
+Missing pidfd refuses construction and saves the
 partial owned child on its held leaf for cleanup; there is no PID fallback and
 no actor gate. Missing boot/start identity remains null with fixed unknown.
 These handles confer cleanup authority for owned processes, not native admission

@@ -354,6 +354,118 @@ class BoundaryTests(unittest.TestCase):
         self.assertIsNotNone(fact['wait'])
         self.assertNotEqual(fact['wait']['returncode'],0)
 
+    def setup_refusal(self,fail_call):
+        before=len(os.listdir('/proc/self/fd'))
+        group=self.domain.leaf('capture');original=os.set_blocking;calls=0
+        def refuse(fd,blocking):
+            nonlocal calls
+            calls+=1
+            if calls==fail_call:
+                raise OSError('disposable post-Popen setup refusal')
+            return original(fd,blocking)
+        with patch('trial_owned_workers.os.set_blocking',refuse):
+            with self.assertRaisesRegex(Unavailable,'worker_setup_unknown'):
+                Child(group,sandbox(SOURCES,[(self.output,'/output')],
+                    ['capture','normal',self.run,self.source,self.intent]))
+        child=group.bootstrap_child
+        self.assertIsNotNone(child.process)
+        self.assertIsNotNone(child.pidfd)
+        with self.assertRaisesRegex(Unavailable,'worker_binding'):
+            self.domain.bind('capture',child)
+        self.assertNotIn('capture',self.domain.children)
+        self.assertFalse(self.transport.gated)
+        pid=child.process.pid
+        fact=self.domain.close_role('capture',self.deadline)
+        self.assertEqual(fact['wait']['pid'],pid)
+        self.assertNotEqual(fact['wait']['returncode'],0)
+        self.assertEqual(os.waitstatus_to_exitcode(fact['wait']['raw_status']),fact['wait']['returncode'])
+        self.assertTrue(fact['released'])
+        self.assertIn('owned_worker_setup_unknown',fact['errors'])
+        self.assertNotIn('owned_launcher_handle_unknown',fact['errors'])
+        self.assertTrue(all(stream.closed for stream in (child.process.stdin,child.process.stdout,child.process.stderr)))
+        self.assertIsNone(child.status_fd)
+        self.assertIsNone(child.pidfd)
+        self.assertIsNone(child.pending_status_write)
+        self.assertEqual(len(os.listdir('/proc/self/fd')),before)
+
+    def test_post_popen_refusal_stops_actual_launcher_before_leaf_join(self):
+        before=len(os.listdir('/proc/self/fd'));group=self.domain.leaf('capture')
+        import subprocess
+        original=subprocess.Popen
+        def stopped_launcher(command,**kwargs):
+            # Fixed disposable process, deliberately stopped before any join.
+            # This is a test-only builder, never a public/native actor route.
+            process=original(['/usr/bin/python3','-c',
+                'import os,signal;os.kill(os.getpid(),signal.SIGSTOP)'],**kwargs)
+            until=time.monotonic()+.5
+            while time.monotonic()<until:
+                if Path(f'/proc/{process.pid}/stat').read_text().rsplit(') ',1)[1].split()[0]=='T':
+                    return process
+                time.sleep(.001)
+            raise AssertionError('disposable launcher failed to stop')
+        with patch('trial_owned_workers.subprocess.Popen',stopped_launcher), \
+             patch('trial_owned_workers.os.set_blocking',side_effect=OSError('disposable setup refusal')):
+            with self.assertRaisesRegex(Unavailable,'worker_setup_unknown'):
+                Child(group,sandbox(SOURCES,[(self.output,'/output')],
+                    ['capture','normal',self.run,self.source,self.intent]))
+        child=group.bootstrap_child
+        self.assertNotEqual(Path(f'/proc/{child.process.pid}/cgroup').read_text().strip(),'0::'+group.relative)
+        self.assertFalse(group.populated())
+        self.assertIsNotNone(child.pidfd)
+        self.assertNotIn('capture',self.domain.children)
+        fact=self.domain.close_role('capture',self.deadline)
+        self.assertTrue(fact['released'])
+        self.assertEqual(fact['wait']['raw_status'],9)
+        self.assertEqual(fact['wait']['returncode'],-9)
+        self.assertIsNone(fact['namespace_identity'])
+        self.assertIn('owned_worker_setup_unknown',fact['errors'])
+        self.assertEqual(len(os.listdir('/proc/self/fd')),before)
+
+    def test_post_popen_first_pipe_setup_refusal_retains_owned_wait(self):
+        self.setup_refusal(1)
+
+    def test_post_popen_last_pipe_setup_refusal_retains_owned_wait(self):
+        self.setup_refusal(3)
+
+    def writer_close_refusal(self,reused):
+        before=len(os.listdir('/proc/self/fd'))
+        group=self.domain.leaf('capture');original=os.close;state=dict(failed=False,sentinel=None)
+        def refuse(fd):
+            child=getattr(group,'bootstrap_child',None)
+            if child and fd==child.pending_status_write and not state['failed']:
+                state['failed']=True
+                if reused:
+                    original(fd)
+                    sentinel=os.open(self.output/'unrelated.txt',os.O_RDWR|os.O_CREAT|os.O_EXCL,0o600)
+                    if sentinel!=fd:
+                        os.dup2(sentinel,fd);original(sentinel)
+                    state['sentinel']=fd
+                raise OSError('disposable status writer close refusal')
+            return original(fd)
+        with patch('trial_owned_workers.os.close',refuse):
+            with self.assertRaisesRegex(Unavailable,'worker_setup_unknown'):
+                Child(group,sandbox(SOURCES,[(self.output,'/output')],
+                    ['capture','normal',self.run,self.source,self.intent]))
+        self.assertTrue(state['failed'])
+        child=group.bootstrap_child
+        fact=self.domain.close_role('capture',self.deadline)
+        self.assertTrue(fact['released'])
+        self.assertEqual(fact['wait']['pid'],child.process.pid)
+        self.assertNotEqual(fact['wait']['returncode'],0)
+        self.assertIn('owned_worker_setup_unknown',fact['errors'])
+        self.assertIn('worker_descriptor_close_unknown',fact['errors'])
+        if reused:
+            # Recovery must not close this deliberately reused unrelated FD.
+            self.assertEqual(os.fstat(state['sentinel']).st_ino,(self.output/'unrelated.txt').stat().st_ino)
+            original(state['sentinel'])
+        self.assertEqual(len(os.listdir('/proc/self/fd')),before)
+
+    def test_post_popen_status_writer_close_refusal_cleans_retained_pipe(self):
+        self.writer_close_refusal(False)
+
+    def test_post_popen_status_writer_close_refusal_does_not_close_reused_fd(self):
+        self.writer_close_refusal(True)
+
     def test_end_rejects_inconsistent_wait_and_input_binding(self):
         sink,capture=self.start('nonzero');self.pump(lambda:self.drained(capture))
         self.domain.close_role('capture',self.deadline)
