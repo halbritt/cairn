@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from trial_coding_stream import CodingStream, coding_profile, hook_measurements, reported_usage, TOTAL, LINE
 from trial_coding_launch import compile_launch
+from selected_native.frames import FrameError
 from test_trial_attempt_actions import SESSION, PRIVATE, init, call, result, event, wire
 
 
@@ -107,6 +108,8 @@ class CodingStreamTests(unittest.TestCase):
         self.assertEqual(report['accepted_prefix_hooks']['status'], 'observed')
         self.assertFalse(report['task_acceptance'])
         self.assertFalse(report['runtime_authenticated'])
+        with self.assertRaisesRegex(FrameError, 'reader_unavailable'):
+            stream.reader.finish(0)
 
     def test_transport_bounds_keep_hash_without_unbounded_terminal_buffers(self):
         stream = composer()

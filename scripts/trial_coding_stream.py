@@ -253,4 +253,5 @@ class CodingStream:
             self.terminal.result = None
             self.terminal.assistant_error = (None, '')
             self.reader.buffer.clear()
+            self.reader.closed = True  # Clearing a tail must never enable a later successful finish.
             self.prompt, self.commands = None, None
