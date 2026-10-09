@@ -113,7 +113,7 @@ class AttemptResult:
 def refuse_native():
     return AttemptResult(status='refused_prelaunch', failures=[
         'native_route_unadmitted', 'native_capacity_reservation_unestablished',
-        'coding_and_hook_reader_composition_unaccepted', 'external_observer_loss_recovery_unestablished'])
+        'coding_and_hook_reader_composition_unaccepted'])
 
 
 class Unavailable(Exception):

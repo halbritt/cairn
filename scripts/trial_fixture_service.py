@@ -62,6 +62,8 @@ def service_fixture(request, retained_root, workspace_root, *, loss_stage=None):
     buffers={'stdout':bytearray(),'stderr':bytearray()}
     ready=None
     phase='service_start'
+    body_restored=False
+    cleanup_errors=[]
     try:
         process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             close_fds=True,env={'PATH':'/usr/bin:/bin','XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}'})
@@ -143,6 +145,7 @@ def service_fixture(request, retained_root, workspace_root, *, loss_stage=None):
                 service_fact.update(waitid_code=code,waitid_status=status,returncode=status if code==1 else -status)
         if body is not None:
             result=AttemptResult(**body)
+            body_restored=True
             result.containment['service']=service_fact
             if service_fact['release'] is not True or service_fact['returncode']!=0:
                 result.status='unknown'
@@ -150,44 +153,74 @@ def service_fixture(request, retained_root, workspace_root, *, loss_stage=None):
         else:
             result.containment['released']=service_fact['release']
     except (OSError,ValueError,KeyError,TypeError,RecursionError,subprocess.TimeoutExpired):
+        if body is not None and not body_restored:
+            try:
+                if type(body) is not dict or set(body) != {f.name for f in dataclasses.fields(AttemptResult)}:
+                    raise ValueError('terminal_shape')
+                result=AttemptResult(**body)
+                body_restored=True
+            except (TypeError,ValueError):
+                result.fail('controller_body_malformed')
+        result.status='unknown'
         result.fail('service_owner_unknown')
         result.fail(phase+'_unknown')
     finally:
         # On observer error, stop only the pinned owned domain or identity. No
         # systemctl kill by reconstructed name and no signals to unbound PIDs.
-        if body is None and kill_fd is not None:
+        if body is None and service_fact['release'] is not True and kill_fd is not None:
             try:os.write(kill_fd,b'1')
-            except OSError:pass
-        elif ready is not None and body is None and pidfd is not None:
+            except OSError:cleanup_errors.append('service_containment_kill_unknown')
+        elif ready is not None and body is None and service_fact['release'] is not True and pidfd is not None:
             try:signal.pidfd_send_signal(pidfd,signal.SIGKILL)
-            except OSError:pass
+            except ProcessLookupError:pass  # Actual wait/release still required.
+            except OSError:cleanup_errors.append('service_controller_signal_unknown')
         for fd in [events_fd,kill_fd,group_fd,pidfd]:
-            if fd is not None:os.close(fd)
+            if fd is not None:
+                try:os.close(fd)
+                except OSError:cleanup_errors.append('service_descriptor_close_unknown')
         if ready is not None and body is not None:
             try:
                 props=manager_properties(unit)
                 if props.get('InvocationID')==ready['invocation_id']:
-                    subprocess.run(['systemctl','--user','stop',unit],stdout=subprocess.DEVNULL,
+                    stopped=subprocess.run(['systemctl','--user','stop',unit],stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,timeout=.3,env={'PATH':'/usr/bin:/bin','XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}'})
-            except (OSError,ValueError,subprocess.TimeoutExpired):pass
+                    if stopped.returncode:cleanup_errors.append('service_stop_unknown')
+                elif props.get('InvocationID'):
+                    cleanup_errors.append('service_cleanup_identity_changed')
+            except (OSError,ValueError,subprocess.TimeoutExpired):cleanup_errors.append('service_stop_unknown')
         if process is not None:
             # A refused bootstrap has no actor grant; closing its own gate pipe
             # lets the owned service finish before fixture metadata cleanup.
-            process.stdin.close()
+            try:process.stdin.close()
+            except OSError:cleanup_errors.append('service_gate_close_unknown')
             try:process.wait(timeout=.5)
             except subprocess.TimeoutExpired:
-                process.kill()  # This directly owned proxy, not the service PID.
-                process.wait(timeout=.5)
-            for stream in [process.stdin,process.stdout,process.stderr]:stream.close()
+                try:
+                    process.kill()  # Directly owned proxy, not the service PID.
+                    process.wait(timeout=.5)
+                except (OSError,subprocess.TimeoutExpired):
+                    cleanup_errors.append('service_proxy_wait_unknown')
+            except OSError:cleanup_errors.append('service_proxy_wait_unknown')
+            service_fact['proxy_returncode']=process.returncode
+            for stream in [process.stdin,process.stdout,process.stderr]:
+                try:stream.close()
+                except OSError:cleanup_errors.append('service_stream_close_unknown')
         if ready is not None:
             # Reset only this still-pinned failed invocation. Unit effects are
             # owned fixture cleanup, never an existing service repair.
             try:
                 props=manager_properties(unit)
                 if props.get('InvocationID')==ready['invocation_id']:
-                    subprocess.run(['systemctl','--user','reset-failed',unit],stdout=subprocess.DEVNULL,
+                    reset=subprocess.run(['systemctl','--user','reset-failed',unit],stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,timeout=.3,env={'PATH':'/usr/bin:/bin','XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}'})
-            except (OSError,ValueError,subprocess.TimeoutExpired):pass
+                    if reset.returncode:cleanup_errors.append('service_reset_unknown')
+                elif props.get('InvocationID'):
+                    cleanup_errors.append('service_cleanup_identity_changed')
+            except (OSError,ValueError,subprocess.TimeoutExpired):cleanup_errors.append('service_reset_unknown')
+    result.containment['service']=service_fact
+    if body is None:result.containment['released']=service_fact['release']
+    for code in cleanup_errors:result.fail(code)
+    if cleanup_errors:result.status='unknown'
     result.elapsed_seconds=time.monotonic()-started
     if body is None:
         if ready is None:result.fail('service_bootstrap_unobserved')

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import time
+import subprocess
 import unittest
 from unittest.mock import patch
 import uuid
@@ -235,6 +236,50 @@ class ExternalSupervisionTests(unittest.TestCase):
         self.assertIsNone(result.actor_wait)
         self.assertIsNone(result.containment['released'])
         self.assertFalse((self.retained/self.request.run_id).exists())
+
+    def test_service_cleanup_faults_preserve_observed_wait_release_and_unknown(self):
+        for fault in ['proxy_wait','stop','reset','post_release_query']:
+            with self.subTest(fault=fault):
+                self.request=dataclasses.replace(self.request,run_id=str(uuid.uuid4()),wall_seconds=6)
+                original_wait=subprocess.Popen.wait
+                original_run=subprocess.run
+                original_properties=fs.manager_properties
+                injected=[]
+                exited_queries=[]
+                def wait(process,*args,**kwargs):
+                    if fault=='proxy_wait' and process.args[0]=='systemd-run' and len(injected)<2:
+                        original_wait(process,*args,**kwargs)
+                        injected.append(True)
+                        raise subprocess.TimeoutExpired('PRIVATE_PROXY',.5)
+                    return original_wait(process,*args,**kwargs)
+                def run(argv,*args,**kwargs):
+                    value=original_run(argv,*args,**kwargs)
+                    selected=fault=='stop' and argv[:3]==['systemctl','--user','stop'] or fault=='reset' and argv[:3]==['systemctl','--user','reset-failed']
+                    if selected:
+                        injected.append(True)
+                        return subprocess.CompletedProcess(argv,1)
+                    return value
+                def properties(unit):
+                    value=original_properties(unit)
+                    if value.get('ExecMainCode')=='1' and value.get('ExecMainStatus')=='0':
+                        exited_queries.append(True)
+                        if fault=='post_release_query' and len(exited_queries)==2:
+                            injected.append(True)
+                            raise ValueError('PRIVATE_MANAGER_QUERY')
+                    return value
+                with patch.object(subprocess.Popen,'wait',wait),patch.object(subprocess,'run',run),patch.object(fs,'manager_properties',properties):
+                    result=service_fixture(self.request,self.retained,self.workspace,loss_stage='intent' if fault=='reset' else None)
+                self.assertTrue(injected)
+                self.assertEqual(result.status,'unknown',dataclasses.asdict(result))
+                if fault=='reset':
+                    self.assertIsNone(result.actor_wait)
+                    self.assertEqual(result.containment['service']['returncode'],-9)
+                else:
+                    self.assertEqual(result.actor_wait['returncode'],0)
+                    self.assertEqual(result.containment['service']['returncode'],0)
+                self.assertTrue(result.containment['service']['release'])
+                self.assertTrue(result.containment['released'])
+                self.assertNotIn('PRIVATE',json.dumps(dataclasses.asdict(result)))
 
 
 if __name__ == '__main__':
