@@ -11,7 +11,7 @@ import stat
 import subprocess
 
 from trial_paired_request import (Refusal, canonical_sha, identifier,
-                                  need, plain_path, read_bytes, shape, write_selected)
+                                  need, plain_path, read_bytes, scan_refusal, shape, write_selected)
 
 TOTAL_LIMIT = 64 * 1024 * 1024
 COUNT_LIMIT = 4096
@@ -47,7 +47,7 @@ def relative_name(text):
 
 def snapshot(root):
     files, total, entries = {}, 0, 0
-    for directory, names, filenames in os.walk(root, followlinks=False):
+    for directory, names, filenames in os.walk(root, followlinks=False, onerror=scan_refusal):
         for name in list(names):
             path = Path(directory)/name
             if name == '.git' and path == root/'.git':
@@ -122,7 +122,7 @@ def check_git_state(actor, prepared):
                  'CHERRY_PICK_HEAD','REVERT_HEAD','rebase-apply','rebase-merge')
     need(not any((gitdir/name).exists() or (gitdir/name).is_symlink() for name in forbidden), 'extra_git_state')
     count = 0
-    for directory, names, files in os.walk(gitdir, followlinks=False):
+    for directory, names, files in os.walk(gitdir, followlinks=False, onerror=scan_refusal):
         count += len(names)
         need(count <= 20000, 'extra_git_state')
         for name in names:

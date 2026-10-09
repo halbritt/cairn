@@ -147,5 +147,20 @@ print('fixture_access_blocked')
                     verify_terminal=lambda binding:proof)
             self.assertFalse((root/'export').exists())
 
+    @unittest.skipIf(os.geteuid()==0,'root can read permission-restricted fixture directories')
+    def test_unreadable_workspace_directory_cannot_be_silently_omitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);prepared=fixture(root);actor=root/'actor'
+            (actor/'DESIGN.md').write_text('Fixture.');(actor/'test.log').write_text('Fixture.')
+            hidden=actor/'unreadable';hidden.mkdir();(hidden/'unexpected').write_text('Unselected task change')
+            hidden.chmod(0)
+            try:
+                with self.assertRaisesRegex(product.Refusal,'filesystem_scan_failed'):
+                    product.export_work_product(prepared,root/'export',allowed_paths=['DESIGN.md','test.log'],test_log='test.log',
+                        verify_terminal=lambda binding:terminal(prepared))
+                self.assertFalse((root/'export').exists())
+            finally:
+                hidden.chmod(0o700)
+
 
 if __name__=='__main__':unittest.main()

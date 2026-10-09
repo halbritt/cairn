@@ -155,7 +155,8 @@ never proves that a real actor stopped or that containment was released.
 
 Export checks baseline ancestry, committed tree modes, initial Git configuration,
 extra Git state, symlinks, hardlinks and special files. It refuses work outside the
-explicit allowed paths, including committed changes restored in the working tree.
+explicit allowed paths and fails closed on directory-scan errors. It catches
+committed changes restored in the working tree.
 DESIGN.md and the selected test log must exist and be allowed. It records base and
 final commit IDs, selected files including untracked products, added/deleted paths,
 net base-to-working diff, base-to-HEAD committed patch and HEAD-to-working patch.

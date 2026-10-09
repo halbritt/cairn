@@ -196,7 +196,7 @@ def canonical_sha(document):
 
 def check_input_files(root):
     count, total = 0, 0
-    for directory, names, files in os.walk(root, followlinks=False):
+    for directory, names, files in os.walk(root, followlinks=False, onerror=scan_refusal):
         count += len(names) + len(files)
         need(count <= 4096, 'input_file_count')
         for name in names:
@@ -204,6 +204,10 @@ def check_input_files(root):
         for name in files:
             total += len(read_bytes(Path(directory)/name))
             need(total <= 64*1024*1024, 'input_byte_limit')
+
+
+def scan_refusal(_):
+    raise Refusal('filesystem_scan_failed')
 
 
 def plain_path(raw):
