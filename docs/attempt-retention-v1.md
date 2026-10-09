@@ -2,8 +2,8 @@
 
 `scripts/trial_attempt_retention.py` is a separate selected failure-channel
 writer for a fixed composition worker. It accepts a newly consumed `Retention`
-factory object and duplicates its held directory descriptor before processing
-the actor stream. It does not reopen the run by pathname, delete partial files,
+factory object and duplicates its held directory descriptor. The fixed worker
+must create it before admitting actor bytes. It does not reopen the run by pathname, delete partial files,
 launch processes or admit providers.
 
 `prepare(composer, hook_rows)` accepts the exact `CodingStream` type for the
