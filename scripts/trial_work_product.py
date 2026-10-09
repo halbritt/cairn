@@ -77,6 +77,14 @@ def check_tree(source, revision):
         relative_name(name.decode('utf-8'))
 
 
+def reachable_objects(actor, base_commit):
+    identities = {line.split(b' ', 1)[0].decode('ascii') for line in
+                  git(actor, 'rev-list', '--objects', base_commit).splitlines()}
+    need(0 < len(identities) <= 200000 and
+         all(re.fullmatch('[0-9a-f]{40}', value) for value in identities), 'git_object_inventory')
+    return identities
+
+
 def prepare_workspace(source, base_commit, actor, binding):
     source, actor = plain_path(str(source)), plain_path(str(actor))
     need(isinstance(base_commit, str) and re.fullmatch('[0-9a-f]{40}', base_commit), 'base_commit')
@@ -86,16 +94,23 @@ def prepare_workspace(source, base_commit, actor, binding):
              for k in ('request_sha256','supervisor_source_sha256')), 'workspace_binding_digest')
     need(not actor.exists() and source.is_dir() and source != actor and source not in actor.parents, 'workspace_target')
     check_tree(source, base_commit)
-    git(source, '-c', 'protocol.file.allow=always', 'clone', '--quiet', '--no-local',
-        '--no-hardlinks', '--no-checkout', '--template=', '--', source.as_uri(), str(actor))
-    actor.chmod(0o700)
-    git(actor, 'remote', 'remove', 'origin')
+    actor.mkdir(mode=0o700)
+    git(actor, 'init', '--quiet', '--template=')
+    git(actor, 'config', 'core.hooksPath', '/dev/null')
+    git(actor, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--no-tags',
+        '--no-write-fetch-head', '--no-recurse-submodules', '--', source.as_uri(), base_commit)
     git(actor, 'checkout', '--quiet', '--detach', base_commit)
+    need(git(actor, 'for-each-ref', '--format=%(refname)') == b'', 'unexpected_initial_refs')
+    need(git(actor, 'rev-parse', '--symbolic-full-name', 'HEAD').strip() == b'HEAD', 'base_not_detached')
+    objects = reachable_objects(actor, base_commit)
+    all_objects = set(git(actor, 'cat-file', '--batch-all-objects', '--batch-check=%(objectname)').decode('ascii').splitlines())
+    need(all_objects == objects, 'unexpected_initial_objects')
     initial = snapshot(actor)
     config_sha = hashlib.sha256(read_bytes(actor/'.git/config')).hexdigest()
     prepared = dict(schema='cairn.prepared-workspace/1', actor_path=str(actor),
                     base_commit=base_commit, binding=dict(binding), initial=initial,
-                    git_config_sha256=config_sha)
+                    git_config_sha256=config_sha, initial_refs={},
+                    initial_objects_sha256=canonical_sha(sorted(objects)), initial_objects_count=len(objects))
     prepared['workspace_sha256'] = canonical_sha(prepared)
     return prepared
 
@@ -134,11 +149,14 @@ def check_git_state(actor, prepared):
             need(count <= 20000 and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
                  and not name.endswith('.lock') and 'hooks' not in path.relative_to(gitdir).parts, 'extra_git_state')
     need(git(actor, 'merge-base', prepared['base_commit'], 'HEAD').decode().strip() == prepared['base_commit'], 'base_lineage')
+    objects = reachable_objects(actor, prepared['base_commit'])
+    need(canonical_sha(sorted(objects)) == prepared['initial_objects_sha256'] and
+         len(objects) == prepared['initial_objects_count'], 'base_objects_changed')
     check_tree(actor, 'HEAD')
 
 
 def export_work_product(prepared, output, *, allowed_paths, test_log, verify_terminal):
-    shape(prepared, 'schema actor_path base_commit binding initial git_config_sha256 workspace_sha256', 'prepared_shape')
+    shape(prepared, 'schema actor_path base_commit binding initial git_config_sha256 initial_refs initial_objects_sha256 initial_objects_count workspace_sha256', 'prepared_shape')
     need(prepared['schema'] == 'cairn.prepared-workspace/1' and prepared['workspace_sha256'] ==
          canonical_sha({k:v for k,v in prepared.items() if k != 'workspace_sha256'}), 'workspace_manifest_changed')
     terminal = closure(prepared, verify_terminal)

@@ -19,6 +19,9 @@ ORIGINAL_LIMITS = dict(selected_input_bytes=9500, final_answer_bytes=8192,
                       hook_seconds=5, last_native_memory_seconds=30)
 FILE_LIMIT = 8 * 1024 * 1024
 PIN_LIMIT = 512 * 1024 * 1024
+IMPLEMENTATION_SOURCE_COMMIT = '6fb0fcd07f9cd7f8959190088bb9d070ff863764'
+IMPLEMENTATION_SOURCE_SHA = '43a097332584a501b752e8fe15ded91d204bb8a62af34180ec5694b763b188b2'
+IMPLEMENTATION_SETTINGS_SHA = '98b58eec1a3554ec8604c9508867684bd63a78ab482c68acab1e90af2a09261d'
 
 
 class Refusal(ValueError):
@@ -146,8 +149,22 @@ def grading_check(grading, reviewers):
         pin(grading[name])
 
 
+def permission_profile_check(profile):
+    shape(profile, 'name source settings', 'permission_profile_shape')
+    need(profile['name'] == 'implementation/1', 'permission_profile_unknown')
+    source = read_json_pin(profile['source'])
+    need(isinstance(source, dict) and source.get('commit') == IMPLEMENTATION_SOURCE_COMMIT
+         and isinstance(source.get('files'), dict)
+         and source['files'].get('scripts/trial_task_permissions.py') == IMPLEMENTATION_SOURCE_SHA,
+         'permission_source_mismatch')
+    settings = read_json_pin(profile['settings'])
+    need(canonical_sha(settings) == IMPLEMENTATION_SETTINGS_SHA, 'permission_settings_mismatch')
+    # Manifest assertions and settings are source declarations. The runner must
+    # verify its actual loaded constructor, native settings and confinement.
+
+
 def validate(request, *, now):
-    shape(request, 'schema request_id campaign_id occurrence_id scheduled_at expires_at frozen_input plan interfaces dispositions limits capacity corpus_selection grading output reply supervisor_source', 'request_shape')
+    shape(request, 'schema request_id campaign_id occurrence_id scheduled_at expires_at frozen_input plan interfaces dispositions limits capacity corpus_selection grading output reply supervisor_source permission_profile', 'request_shape')
     need(request['schema'] == SCHEMA, 'request_schema')
     for name in ('request_id','campaign_id','occurrence_id'):
         identifier(request[name])
@@ -184,13 +201,15 @@ def validate(request, *, now):
             pin(reference)
     shape(request['dispositions'], ' '.join(REVIEWS), 'dispositions_shape')
     pin(request['supervisor_source'])
+    permission_profile_check(request['permission_profile'])
     grading_check(request['grading'], {review.get('reviewer_id') for review in request['dispositions'].values()
                                      if isinstance(review, dict)})
     subjects = dict(task=hashlib.sha256(read_bytes(input_root/'input.json')).hexdigest(),
         oracle=request['grading']['rubric']['sha256'],
         comparator=canonical_sha(dict(plan=plan, interfaces=request['interfaces'])),
         supervisor=request['supervisor_source']['sha256'],
-        native=bundle['document']['native']['binary']['sha256'],
+        native=canonical_sha(dict(binary_sha256=bundle['document']['native']['binary']['sha256'],
+                                  permission_profile=request['permission_profile'])),
         integration=request['frozen_input']['manifest_sha256'])
     for name, review in request['dispositions'].items():
         shape(review, 'artifact subject_sha256 reviewer_id state valid_until', 'review_shape')

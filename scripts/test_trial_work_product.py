@@ -34,6 +34,56 @@ def terminal(prepared):
 
 
 class ExportTests(unittest.TestCase):
+    def test_prepared_git_uses_the_empty_hook_path_for_actual_commits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);fixture(root);actor=root/'actor'
+            self.assertEqual(git(actor,'config','--get','core.hooksPath'),'/dev/null')
+            hooks=actor/'.git/hooks';hooks.mkdir()
+            hook=hooks/'pre-commit';hook.write_text('#!/bin/sh\ntouch hook-ran\n');hook.chmod(0o700)
+            (actor/'README.md').write_text('actual local commit fixture\n')
+            git(actor,'add','README.md');git(actor,'-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-qm','task')
+            self.assertFalse((actor/'hook-ran').exists())
+
+    def test_prepared_actor_cannot_read_other_branch_refs_or_objects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'source';source.mkdir()
+            git(source,'init','-q');(source/'README.md').write_text('ancestor\n')
+            git(source,'add','.');git(source,'-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-qm','ancestor')
+            ancestor=git(source,'rev-parse','HEAD')
+            (source/'README.md').write_text('base\n')
+            git(source,'add','.');git(source,'-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-qm','base')
+            base=git(source,'rev-parse','HEAD')
+            git(source,'checkout','-qb','private-oracle')
+            (source/'oracle.txt').write_text('private sibling-branch fixture answer\n')
+            git(source,'add','.');git(source,'-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','-qm','private')
+            private_blob=git(source,'rev-parse','HEAD:oracle.txt')
+            git(source,'tag','private-tag')
+            binding=dict(request_id=str(uuid.uuid4()),occurrence_id=str(uuid.uuid4()),request_sha256='a'*64,supervisor_source_sha256='b'*64)
+            prepared=product.prepare_workspace(source,base,root/'actor',binding)
+            actor=root/'actor'
+            result=subprocess.run(['git','-C',str(actor),'cat-file','-e',private_blob],capture_output=True,env=product.git_environment())
+            self.assertNotEqual(result.returncode,0,'private branch object leaked into the actor Git database')
+            self.assertEqual(git(actor,'for-each-ref','--format=%(refname)'), '')
+            self.assertEqual(git(actor,'show',ancestor+':README.md'),'ancestor')
+            self.assertEqual((actor/'README.md').read_text(),'base\n')
+            expected={line.split()[0] for line in git(source,'rev-list','--objects',base).splitlines()}
+            actual=set(git(actor,'cat-file','--batch-all-objects','--batch-check=%(objectname)').splitlines())
+            self.assertEqual(actual,expected)
+            self.assertEqual(prepared['initial_refs'],{})
+            probe='''import subprocess,sys
+for ident,available in ((sys.argv[1],True),(sys.argv[2],False)):
+    result=subprocess.run(['/usr/bin/git','-C','/actor','cat-file','-e',ident],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    assert (result.returncode==0) == available
+print('base_only_git_access')
+'''
+            command=runtime_sandbox()+['--unshare-net','--ro-bind',str(actor),'/actor',
+                '--chdir','/actor','--',str(Path(sys.executable).resolve()),'-c',probe,base,private_blob]
+            observed=subprocess.run(command,capture_output=True,text=True,timeout=20)
+            if observed.returncode and observed.stderr.startswith('bwrap:'):
+                self.skipTest('sandbox_unavailable: actual Git object access fixture could not run')
+            self.assertEqual(observed.returncode,0,observed.stderr)
+            self.assertEqual(observed.stdout.strip(),'base_only_git_access')
+
     def test_actual_sandbox_exposes_actor_workspace_and_hides_evaluator_siblings(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);fixture(root)

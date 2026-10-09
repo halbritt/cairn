@@ -11,6 +11,7 @@ import uuid
 
 from test_trial_task_prospective import fixture
 from trial_task_input import freeze_input
+from trial_task_permissions import settings_permissions
 import trial_paired_request as paired
 
 
@@ -36,6 +37,15 @@ def request_fixture(root):
     freeze_input(inputs)
     artifact = root / 'review.json'
     artifact.write_text('{"fixture_only":true}')
+    profile_source=root/'profile-source.json'
+    profile_source.write_text(json.dumps(dict(commit='6fb0fcd07f9cd7f8959190088bb9d070ff863764',
+        files={'scripts/trial_task_permissions.py':'43a097332584a501b752e8fe15ded91d204bb8a62af34180ec5694b763b188b2'})))
+    profile_settings=root/'profile-settings.json'
+    # The reviewed implementation profile retains the existing rules plus these
+    # three operations. This fixture uses the unchanged existing constructor.
+    settings=settings_permissions()
+    settings['allow'] += ['Bash(git add *)','Bash(git commit *)','Bash(make contract)']
+    profile_settings.write_text(json.dumps(settings))
     plan = dict(instrument='weekly-frozen-cases', cases=['new-work'], arms=['CURRENT','CAND'], seeds=[1], attempts=2)
     plan['sha256'] = paired.canonical_sha(plan)
     uid = lambda: str(uuid.uuid4())
@@ -74,16 +84,44 @@ def request_fixture(root):
             components={k:spec[k] for k in ('binary','hook')}) for arm,spec in doc['memory_arms'].items()},
         dispositions=dispositions, limits=dict(paired.ORIGINAL_LIMITS), capacity=pinned(capacity),
         corpus_selection=pinned(provenance), grading=graders, output=str(root/'output'),
-        reply=dict(event_id=uid(), recipient_id=uid(), correlation_id=uid()), supervisor_source=pinned(artifact))
+        reply=dict(event_id=uid(), recipient_id=uid(), correlation_id=uid()), supervisor_source=pinned(artifact),
+        permission_profile=dict(name='implementation/1',source=pinned(profile_source),settings=pinned(profile_settings)))
     subjects=dict(task=pinned(inputs/'input.json')['sha256'], oracle=pinned(artifact)['sha256'],
         comparator=paired.canonical_sha(dict(plan=plan, interfaces=request['interfaces'])),
-        supervisor=pinned(artifact)['sha256'], native=binary['sha256'],
+        supervisor=pinned(artifact)['sha256'], native=paired.canonical_sha(dict(binary_sha256=binary['sha256'],permission_profile=request['permission_profile'])),
         integration=pinned(inputs/'FROZEN.json')['sha256'])
     for name,subject in subjects.items():request['dispositions'][name]['subject_sha256']=subject
     return request
 
 
 class RequestTests(unittest.TestCase):
+    def test_request_cannot_omit_the_reviewed_implementation_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);request=request_fixture(root)
+            request.pop('permission_profile',None)
+            with self.assertRaisesRegex(paired.Refusal,'request_shape'):
+                paired.prepare(request,registry=root/'registry',now=NOW)
+            self.assertEqual(list((root/'registry').iterdir()),[])
+
+    def test_unreviewed_source_or_widened_permission_settings_cannot_prepare(self):
+        for mutation,code in [('name','permission_profile_unknown'),('source','permission_source_mismatch'),
+                              ('settings','permission_settings_mismatch')]:
+            with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);request=request_fixture(root)
+                profile=request['permission_profile']
+                if mutation=='name':profile['name']='existing/1'
+                elif mutation=='source':
+                    path=Path(profile['source']['path']);source=json.loads(path.read_text())
+                    source['files']['scripts/trial_task_permissions.py']='0'*64
+                    path.write_text(json.dumps(source));profile['source']=pinned(path)
+                else:
+                    path=Path(profile['settings']['path']);settings=json.loads(path.read_text())
+                    settings['allow'].append('Bash(*)')
+                    path.write_text(json.dumps(settings));profile['settings']=pinned(path)
+                with self.assertRaisesRegex(paired.Refusal,code):
+                    paired.prepare(request,registry=root/'registry',now=NOW)
+                self.assertEqual(list((root/'registry').iterdir()),[])
+
     def test_original_tool_room_is_required_and_cannot_be_widened(self):
         for mutation in ('missing','wide'):
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as directory:
