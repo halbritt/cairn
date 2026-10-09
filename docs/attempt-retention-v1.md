@@ -13,6 +13,34 @@ manifest digest to the single exclusive `ATTEMPT-EVIDENCE.json` leaf. There is
 no raw dictionary or file-content ingestion API. This path writes no success
 SELECTED or PREPARED record and makes no task-success or cell-validity claim.
 
+`prepare_with_end(composer, hook_rows, end_payload)` additionally decodes the
+closed common E/1 declaration and checks its run, source manifest, D-byte count
+and D-byte digest against the composer. A malformed declaration, incomplete
+composer digest or mismatched binding consumes the writer before output.
+Explicit unknown process/input observations may be retained on this failure
+path. Valid shape and matching declarations do not authenticate an exit.
+
+`prepare_success_observations(composer, hook_rows, end_payload, prepared_receipt)`
+requires the original retention writer to be prepared already. It checks the
+typed receipt's run and intent, and reads the existing private `SELECTED.json`
+back through its held directory descriptor to verify size and hash. The end
+actor identity and return code must also match the original private
+`PREPARED.json` exit snapshot; its receipt and false attestation flags are
+checked with a bounded duplicate-key-rejecting read. These comparisons bind
+the original declarations without granting them authentication. The end
+declaration must report known zero actor and capture waits, capture release,
+complete input delivery and no capture/end uncertainty. The worker must supply
+its actual observations; these declaration checks alone cannot establish them.
+This path writes `OBSERVATIONS.json` beside the success files and closes the
+composer without calling the success reader's finish operation again.
+
+Both extended paths retain the strict end declaration and a nullable selected
+success receipt. The observation receipt has the same selected hash/size shape
+as the failure receipt. Neither path grades the work. A success-observation
+write fault consumes this writer, preserves existing success files and any
+partial observation file, and permits no failure fallback or success replay.
+The fixed worker must treat that outcome as incomplete persistence.
+
 The writer checks its held directory identity, owner and 0700 permissions,
 creates the leaf with exclusive/no-follow access, flushes and fsyncs it and the
 directory, then reads it back. Readback requires the written inode, regular-file
@@ -43,3 +71,7 @@ They exercise selected-only output, descriptor ownership after original close
 or directory rename, run/type refusal, existing symlinks, lost privacy, fsync
 failure, hard links, replaced inodes, changed bytes, constructor interrupts and
 close uncertainty. They run no provider, campaign, production database or grade.
+End-binding tests additionally exercise source/stream drift, known nonzero exit,
+unknown exit and incomplete input declarations, changed success receipts,
+selected-file symlinks and success-observation fsync failure. Their process
+declarations are constructed fixtures; they do not observe an actual actor.

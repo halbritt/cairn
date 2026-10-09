@@ -1,16 +1,19 @@
-"""Selected failure-channel storage for a fixed owned composition worker.
+"""Selected observation storage for a fixed owned composition worker.
 
 No raw dictionary ingestion, executor, process authentication or grading API.
-The worker validates its end packet separately; its external owner observes
-actual return/release and binds this selected file to that closed attempt.
+Optional end binding checks the declaration against the consumed stream/source.
+The external owner must observe actual return/release and bind the selected
+file to that closed attempt.
 """
 import dataclasses
 import hashlib
 import os
 import stat
 
-from selected_native.retention import Retention, RetentionError, SELECTED_LIMIT, encode, require
+from selected_native.retention import Retention, RetentionError, PreparedReceipt, SELECTED_LIMIT, encode, require
+from selected_native.frames import parse, FrameError
 from trial_coding_stream import CodingStream
+from trial_worker_protocol import decode_end, ProtocolError
 
 
 @dataclasses.dataclass(frozen=True)
@@ -67,9 +70,10 @@ class AttemptRetention:
                 and meta.st_uid == os.geteuid() and stat.S_IMODE(meta.st_mode) == 0o700,
                 'attempt_directory_custody')
 
-    def _write(self, data):
+    def _write(self, data, name='ATTEMPT-EVIDENCE.json'):
+        require(name in ('ATTEMPT-EVIDENCE.json', 'OBSERVATIONS.json'), 'attempt_leaf_unavailable')
         self._check_directory()
-        fd = os.open('ATTEMPT-EVIDENCE.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                      0o600, dir_fd=self.fd)
         with os.fdopen(fd, 'wb') as target:
             target.write(data)
@@ -78,7 +82,7 @@ class AttemptRetention:
             written = os.fstat(target.fileno())
         os.fsync(self.fd)
         self._check_directory()
-        fd = os.open('ATTEMPT-EVIDENCE.json', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.fd)
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.fd)
         with os.fdopen(fd, 'rb') as source:
             actual = os.fstat(source.fileno())
             require(stat.S_ISREG(actual.st_mode) and actual.st_uid == os.geteuid()
@@ -89,25 +93,111 @@ class AttemptRetention:
             returned = source.read(SELECTED_LIMIT+1)
         require(returned == data, 'attempt_readback_mismatch')
 
+    def _end(self, payload, composer):
+        try:
+            end = decode_end(payload, run_id=self.intent.run_id,
+                             source_manifest_sha256=self.intent.source_manifest_sha256)
+        except ProtocolError:
+            raise RetentionError('attempt_end_refused') from None
+        require(composer.digest_complete and end['stream_sha256'] == composer.hash.hexdigest()
+                and end['stream_bytes'] == composer.total, 'attempt_stream_binding')
+        return end
+
+    def _success_receipt(self, receipt, end):
+        require(type(receipt) is PreparedReceipt and self.retention.state == 'prepared'
+                and receipt.run_id == self.intent.run_id and receipt.intent_sha256 == self.intent_sha256
+                and receipt.return_receipt is False, 'attempt_success_binding')
+        self._check_directory()
+        fd = os.open('SELECTED.json', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.fd)
+        with os.fdopen(fd, 'rb') as source:
+            meta = os.fstat(source.fileno())
+            require(type(receipt.selected_bytes) is int and 0 < receipt.selected_bytes <= SELECTED_LIMIT
+                    and stat.S_ISREG(meta.st_mode) and meta.st_uid == os.geteuid()
+                    and stat.S_IMODE(meta.st_mode) == 0o600 and meta.st_nlink == 1
+                    and meta.st_size == receipt.selected_bytes, 'attempt_success_custody')
+            data = source.read(SELECTED_LIMIT+1)
+        require(len(data) == receipt.selected_bytes and hashlib.sha256(data).hexdigest()
+                == receipt.selected_sha256, 'attempt_success_readback')
+        fd = os.open('PREPARED.json', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.fd)
+        with os.fdopen(fd, 'rb') as source:
+            meta = os.fstat(source.fileno())
+            require(stat.S_ISREG(meta.st_mode) and meta.st_uid == os.geteuid()
+                    and stat.S_IMODE(meta.st_mode) == 0o600 and meta.st_nlink == 1
+                    and 0 < meta.st_size <= 4096, 'attempt_success_terminal_custody')
+            terminal_bytes = source.read(4097)
+        try:
+            terminal = parse(terminal_bytes)
+        except FrameError:
+            raise RetentionError('attempt_success_terminal_malformed') from None
+        require(type(terminal) is dict and set(terminal) == set(dataclasses.asdict(receipt)) | {
+                'schema', 'status', 'exit_snapshot', 'exit_attested', 'task_success_claimed',
+                'standalone_terminal_is_success'}
+                and terminal.get('schema') == 'cairn.selected-retention-terminal/1'
+                and terminal.get('status') == 'prepared_to_return'
+                and all(terminal.get(key) == value for key, value in dataclasses.asdict(receipt).items())
+                and all(terminal.get(key) is False for key in
+                        ('return_receipt', 'exit_attested', 'task_success_claimed', 'standalone_terminal_is_success')),
+                'attempt_success_terminal_binding')
+        actor = end['actor_wait']
+        require(actor is not None and terminal.get('exit_snapshot') == dict(
+                pid=actor['pid'], start_ticks=actor['start_ticks'], boot_id=actor['boot_id'],
+                exit_code=actor['returncode'], signal_observed=False), 'attempt_success_exit_binding')
+        return dataclasses.asdict(receipt)
+
     def prepare(self, composer, hook_rows):
+        """Legacy selected failure-channel API; no end/actual closure claim."""
+        return self._prepare(composer, hook_rows)
+
+    def prepare_with_end(self, composer, hook_rows, end_payload):
+        """Fixed worker failure path: bind the strict end declaration to D bytes."""
+        return self._prepare(composer, hook_rows, end_payload=end_payload)
+
+    def prepare_success_observations(self, composer, hook_rows, end_payload, prepared_receipt):
+        """Keep accounting/end observations beside an already prepared success.
+
+        This does not retry success retention or establish process closure.
+        An observation-write fault leaves both consumed writers unavailable.
+        """
+        return self._prepare(composer, hook_rows, end_payload=end_payload,
+                             prepared_receipt=prepared_receipt)
+
+    def _prepare(self, composer, hook_rows, *, end_payload=None, prepared_receipt=None):
         require(self.state == 'open' and self.fd is not None, 'attempt_writer_unavailable')
         self.state = 'failed'  # A refusal, I/O fault or interrupt consumes this writer.
-        code, report, data, receipt = None, None, b'', None
+        code, report, data, receipt, end, success = None, None, b'', None, None, None
         try:
             require(type(composer) is CodingStream and not composer.closed,
                     'attempt_composer_type')
             require(composer.reader.expected['session_id'] == self.intent.run_id,
                     'attempt_run_mismatch')
-            require(self.retention.state != 'prepared', 'attempt_success_already_prepared')
+            if prepared_receipt is None:
+                require(self.retention.state != 'prepared', 'attempt_success_already_prepared')
+            else:
+                require(end_payload is not None, 'attempt_end_required')
+            if end_payload is not None:
+                end = self._end(end_payload, composer)
+            if prepared_receipt is not None:
+                success = self._success_receipt(prepared_receipt, end)
+            if success is not None:
+                require(not end['observations'] and not end['capture_cleanup_observations']
+                        and end['capture_released'] is True
+                        and end['actor_wait'] is not None and end['capture_wait'] is not None
+                        and all(value is not None for value in end['actor_wait'].values())
+                        and all(value is not None for value in end['capture_wait'].values())
+                        and end['actor_wait']['returncode'] == 0
+                        and end['capture_wait']['returncode'] == 0
+                        and end['input_bytes'] is not None
+                        and end['input_bytes_written'] == end['input_bytes'], 'attempt_success_end_conflict')
             report = composer.observations(hook_rows)
             data = encode(dict(schema='cairn.selected-attempt-evidence/1', run_id=self.intent.run_id,
                 intent_sha256=self.intent_sha256, source_manifest_sha256=self.intent.source_manifest_sha256,
-                stream=report, success_claimed=False, validity_decided=False, task_acceptance=False,
+                stream=report, end_observation=end, selected_success=success,
+                success_claimed=False, validity_decided=False, task_acceptance=False,
                 return_receipt=False, standalone_file_is_closure=False,
                 basis='selected reported channels; external owner must bind end packet, '
                       'actual worker return/release and process/input observations'))
             require(len(data) <= SELECTED_LIMIT, 'attempt_selected_bounds')
-            self._write(data)
+            self._write(data, 'OBSERVATIONS.json' if success is not None else 'ATTEMPT-EVIDENCE.json')
             receipt = FailurePrepared(self.intent.run_id, self.intent_sha256,
                                       hashlib.sha256(data).hexdigest(), len(data))
             self.state = 'prepared'
@@ -121,7 +211,7 @@ class AttemptRetention:
         except BaseException:
             # Preserve interrupt; never log its traceback or private locals.
             raise
-        report, data, receipt, composer, hook_rows = None, b'', None, None, None
+        report, data, receipt, composer, hook_rows, end, success = None, b'', None, None, None, None, None
         raise RetentionError(code)
 
     def close(self):
