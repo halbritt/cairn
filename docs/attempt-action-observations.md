@@ -17,8 +17,11 @@ exit. Missing terminal output remains a separate owner observation.
 
 Denials are processed even on native error results. Matching requires an observed
 call with the same tool and unambiguous hashed ID. Required-operation labels use
-exact command equality against caller declarations. A compound command or native
-denial payload cannot supply that match. The selected output contains command
+exact command equality against caller declarations. A compound command that is
+not exactly declared cannot supply that match; a native denial payload cannot
+create the match. Even an exactly declared compound is only a declaration match,
+with its shell form still reported, and supplies no permission or validity
+decision. The selected output contains command
 hashes, fixed categories, declared operation labels and reported action states;
 it omits raw commands, tool contents, final answers and private transcript text.
 It neither validates the effective native permission matcher nor authenticates

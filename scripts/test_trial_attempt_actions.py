@@ -105,6 +105,18 @@ class AttemptActionTests(unittest.TestCase):
         self.assertEqual(fact['reported_command_consistency'], 'matched')
         self.assertEqual(fact['declared_required_operation'], 'make_check')
 
+    def test_exact_declared_compound_is_a_declaration_match_without_authority(self):
+        command = 'make check && true'
+        observer = AttemptActions(SESSION, None, {'make_check':command})
+        for number, value in enumerate((init(), call(command),
+                result([dict(tool_name='Bash', tool_use_id='toolu_check')]))):
+            observer.feed(wire(value), number)
+        report = observer.finish()
+        self.assertEqual(report['native_reported_denials'][0]['declared_required_operation'], 'make_check')
+        self.assertEqual(report['actions']['actions'][0]['shell_form'], 'compound_or_redirect')
+        self.assertFalse(report['runtime_authenticated'])
+        self.assertFalse(report['validity_decided'])
+
     def test_wrong_tool_unknown_id_and_ambiguous_id_never_match(self):
         for calls, denial in (([call()], dict(tool_name='Read', tool_use_id='toolu_check')),
                               ([call()], dict(tool_name='Bash', tool_use_id='toolu_other')),
