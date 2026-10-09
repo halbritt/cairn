@@ -35,6 +35,7 @@ import time
 import uuid
 
 from trial_native_observation import capture, measure
+from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
 from trial_corpus_fingerprint import corpus_stamp, same_corpus
 from trial_receipt_explanation import export_receipts, retain_hook_explanations, receipt_export_metadata
@@ -1168,11 +1169,13 @@ def run_agent(case, arm, seed, order, args, stores, out):
         provider += ["--", prompt]
     command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
     started = time.monotonic()
+    capture_error = None
+    raw_stdout, raw_stderr = b'', b''
+    timings = []
     try:
         if prospective:
             raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
                                                           custody_path=base / "native-process-custody.json")
-            process_custody = load_json(base / "native-process-custody.json")
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
         else:
             result = subprocess.run(command, capture_output=True, timeout=args.timeout)
@@ -1180,14 +1183,35 @@ def run_agent(case, arm, seed, order, args, stores, out):
     except subprocess.TimeoutExpired as expired:
         stdout = (expired.stdout or b"").decode(errors="replace")
         stderr, code = "timeout", 124
+        if prospective:
+            capture_error = 'capture_timeout_exception'
+    except Exception:
+        if not prospective:
+            raise
+        stdout, stderr, code = '', '', 125
+        capture_error = 'capture_exception'
+    except (KeyboardInterrupt, SystemExit):
+        if not prospective:
+            raise
+        stdout, stderr, code = '', '', 125
+        capture_error = 'observer_interrupted'
+    if prospective:
+        process_custody = read_custody(base / "native-process-custody.json")
+        if process_custody['classification'] == 'unknown' or capture_error:
+            selected_failure = dict(schema='cairn.process-custody-unknown/1',
+                                    reason=capture_error or 'process_custody_unknown', process_custody=process_custody)
+            retain_observation_error(base, selected_failure, name='process-custody-unknown.json')
     elapsed = time.monotonic() - started
     if not prospective:
         (base / "stream.jsonl").write_text(stdout)
         (base / "stderr.txt").write_text(stderr[-20000:])
     else:
         (base / "native-output-metadata.json").write_text(json.dumps(dict(
-            stdout_bytes=len(raw_stdout), stdout_sha256=hashlib.sha256(raw_stdout).hexdigest(),
-            stderr_bytes=len(raw_stderr), stderr_sha256=hashlib.sha256(raw_stderr).hexdigest(),
+            stdout_bytes=len(raw_stdout) if capture_error is None else None,
+            stdout_sha256=hashlib.sha256(raw_stdout).hexdigest() if capture_error is None else None,
+            stderr_bytes=len(raw_stderr) if capture_error is None else None,
+            stderr_sha256=hashlib.sha256(raw_stderr).hexdigest() if capture_error is None else None,
+            capture_returned=capture_error is None,
             raw_stream_retained=False)))
     trace = parse_stream(stdout, args.harness)
     if prospective:
@@ -1198,11 +1222,15 @@ def run_agent(case, arm, seed, order, args, stores, out):
             retained.flush()
             os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
+    failures = [failure] if failure else []
     if prospective:
-        if process_custody["input_bytes_written"] != len(native_input):
-            failure = failure or "input_delivery_incomplete"
+        if process_custody["input_bytes_written"] is not None and process_custody["input_bytes_written"] != len(native_input):
+            failures.append("input_delivery_incomplete")
         if process_custody["cleanup"]["status"] != "observed_clear" or not process_custody["leader_reaped"]:
-            failure = failure or "process_custody_unknown"
+            failures.append("process_custody_unknown")
+        if capture_error:
+            failures.append(capture_error)
+        failure = failures[0] if failures else None
     if prospective:
         try:
             observation_phase = "hook_metadata"
@@ -1262,6 +1290,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
     if prospective:
         record["selected_input"] = selected_input
         record["process_custody"] = process_custody
+        record["execution_failures"] = failures
+        record["observer_integrity_unknown"] = bool(capture_error or process_custody['cleanup']['status'] != 'observed_clear')
     if prospective:
         record["receipt_explanation_export"] = receipt_export
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
@@ -1508,13 +1538,13 @@ def cmd_agent(args):
         before = {label: value["store"].fingerprint() for label, value in stores.items()} if prospective else None
         if prospective:
             (out / "corpus-before.json").write_text(json.dumps(before, indent=2))
-        records, next_run, stop = [], 0, None
+        records, next_run, stop, observer_stop = [], 0, None, None
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
             futures = {}
-            while futures or (stop is None and next_run < len(plan)):
+            while futures or (stop is None and observer_stop is None and next_run < len(plan)):
                 # Keep no queued backlog: after a confirmed failure only the
                 # already admitted window may finish. Never cancel its evidence.
-                while stop is None and len(futures) < args.parallel and next_run < len(plan):
+                while stop is None and observer_stop is None and len(futures) < args.parallel and next_run < len(plan):
                     c, a, s, p = plan[next_run]
                     futures[pool.submit(run_agent, c, a, s, p, args, stores, out)] = next_run
                     next_run += 1
@@ -1527,10 +1557,21 @@ def cmd_agent(args):
                     except Exception as error:  # keep failed runs in the record
                         cid = c["id"]
                         record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
-                                      outcome="harness_error", error=type(error).__name__ if prospective else str(error)[-600:],
+                                      outcome="harness_error", error=selected_observation_error('runner', error)['exception_type'] if prospective else str(error)[-600:],
                                       harness=args.harness, model=args.model)
                         # A later grading failure must not hide a provider stop.
                         base = out / "runs" / record["run_id"]
+                        if prospective:
+                            record['process_custody'] = read_custody(base / 'native-process-custody.json')
+                            record['execution_failures'] = ['runner_exception']
+                            record['observer_integrity_unknown'] = record['process_custody']['cleanup']['status'] != 'observed_clear'
+                            if record['observer_integrity_unknown']:
+                                record['execution_failures'].append('process_custody_unknown')
+                            custody = record['process_custody']
+                            if custody['legacy_exit_code']:
+                                record['execution_failures'].append('timeout' if custody['legacy_exit_code'] == 124 else 'nonzero_exit')
+                            if custody['input_delivery_complete'] is False:
+                                record['execution_failures'].append('input_delivery_incomplete')
                         terminal = base / "native-terminal.json"
                         stream = base / "stream.jsonl"
                         if prospective and terminal.is_file():
@@ -1566,6 +1607,9 @@ def cmd_agent(args):
                     if stop is None and failure:
                         stop = dict(run_id=record["run_id"], **failure)
                         print(json.dumps(dict(admission_stop=stop)), flush=True)
+                    if observer_stop is None and record.get('observer_integrity_unknown'):
+                        observer_stop = dict(run_id=record['run_id'], reason='observer_custody_unknown')
+                        print(json.dumps(dict(observer_admission_stop=observer_stop)), flush=True)
                     print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
         if prospective:
             after = {}
@@ -1577,10 +1621,12 @@ def cmd_agent(args):
                 corpus_integrity = dict(observed=False, unchanged=None, error_type=type(error).__name__)
             (out / "corpus-after.json").write_text(json.dumps(after, indent=2))
             execution["corpus_integrity"] = corpus_integrity
-        admission = dict(state="stopped_provider_failure" if stop else "complete", stop=stop,
+        admission = dict(state="stopped_provider_failure" if stop else ("stopped_observer_failure" if observer_stop else "complete"), stop=stop,
                          planned=len(plan), admitted=next_run,
                          not_started=[dict(run_id=f"{c['id']}.{a}.s{s}", case=c["id"], arm=a, seed=s, order=p)
                                       for c, a, s, p in plan[next_run:]])
+        if prospective:
+            admission['observer_stop'] = observer_stop
         report = dict(schema="cairn.task-eval.agent/1", frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
                       distractors=args.distractors, memory={k: dict(cairn=str(v["store"].binary), hook=v["hook"],
                       hook_sha256=hashlib.sha256(Path(v["hook"]).read_bytes()).hexdigest(),

@@ -282,11 +282,14 @@ def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=Non
             cleanup = owner.cleanup()
         finally:
             owner.close()
+            for stream in (child.stdin, child.stdout, child.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        owner.errors.add('stream_close_unknown')
         cleanup['errors'] = sorted(owner.errors)
         cleanup['status'] = 'unknown' if owner.errors else 'observed_clear'
-        for stream in (child.stdin, child.stdout, child.stderr):
-            if stream is not None:
-                stream.close()
         if code is None:
             code = child.returncode if child.returncode is not None else 125
         metadata = dict(schema='cairn.native-process-custody/1', classification=classification,
@@ -294,6 +297,7 @@ def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=Non
                         observed_wait_status=owner.wait_status, returncode_basis='waitpid_status_to_exitcode',
                         leader_reaped=owner.wait_status is not None, cleanup=cleanup,
                         input_bytes=0 if input_bytes is None else len(input_bytes), input_bytes_written=sent,
+                        input_delivery_complete=sent == (0 if input_bytes is None else len(input_bytes)),
                         stdout_bytes=len(stdout), stderr_bytes=stderr_total,
                         stdout_eof='stdout' in pipe_eof, stderr_eof='stderr' in pipe_eof,
                         raw_stream_retained=False, hard_io_deadline_attested=False)

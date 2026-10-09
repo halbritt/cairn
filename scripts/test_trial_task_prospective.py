@@ -403,6 +403,100 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             self.assertEqual(json.loads(retained.read_text()),custody)
             self.assertFalse((retained.parent/'stream.jsonl').exists())
 
+    def test_cleanup_exception_or_missing_malformed_custody_is_typed_unknown_and_stops_admission(self):
+        for fault in ('cleanup', 'missing', 'malformed', 'deep_json', 'interrupted'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                base=Path(directory); root=fixture(base/'input')
+                document=json.loads((root/'input.json').read_text())
+                document['cases'][0]['correct']=[dict(type='file',path='fixed.txt',pattern='fixed')]
+                document['cases'].append(dict(document['cases'][0],id='later-work'))
+                (root/'input.json').write_text(json.dumps(document))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['freeze-input','--input',str(root)])
+                child=base/'native.py'
+                child.write_text("import json,sys\nfrom pathlib import Path\nprompt=sys.stdin.read().strip()\nPath(sys.argv[1],'fixed.txt').write_text('fixed')\nprint(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))\nprint(prompt)\nprint(json.dumps({'type':'result','is_error':False,'result':'inspected','permission_denials':[]}))\n")
+                launches=[]
+                def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                    if argv[0]=='claude':
+                        launches.append(argv)
+                        return [sys.executable,str(child),str(Path(work)/cwd)]
+                    return argv
+                original=te.capture
+                def capture(*args,**kwargs):
+                    if fault=='cleanup':
+                        with patch('trial_native_capture.os.waitstatus_to_exitcode',side_effect=ValueError('PRIVATE cleanup exception')):
+                            return original(*args,**kwargs)
+                    result=original(*args,**kwargs)
+                    if fault=='missing':
+                        kwargs['custody_path'].unlink()
+                    elif fault=='malformed':
+                        kwargs['custody_path'].write_text('{"PRIVATE":"payload","observed_returncode":0}')
+                    elif fault=='deep_json':
+                        kwargs['custody_path'].write_text('['*2000+'0'+']'*2000)
+                    elif fault=='interrupted':
+                        raise KeyboardInterrupt('PRIVATE interruption')
+                    return result
+                with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,'capture',side_effect=capture), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                             '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+                report=json.loads((base/'out/agent.json').read_text())
+                record=report['records'][0]
+                self.assertEqual(len(launches),1)
+                self.assertEqual(record['outcome'],'harness_error')
+                self.assertEqual(record['check_outcome'],'correct')
+                self.assertTrue(record['observer_integrity_unknown'])
+                self.assertEqual(report['admission']['state'],'stopped_observer_failure')
+                self.assertIsNone(report['admission']['stop'])
+                self.assertEqual(len(report['admission']['not_started']),1)
+                self.assertNotIn('PRIVATE',json.dumps(report))
+                custody=record['process_custody']
+                if fault!='interrupted':
+                    self.assertIsNone(custody['observed_returncode'])
+                    self.assertIsNone(custody['observed_wait_status'])
+                    self.assertIsNone(custody['leader_reaped'])
+                    self.assertIn('process_custody_unknown',record['execution_failures'])
+                unknown_file=base/'out/runs/new-work.none.s0/process-custody-unknown.json'
+                self.assertTrue(unknown_file.is_file())
+                self.assertNotIn('PRIVATE',unknown_file.read_text())
+                if fault=='cleanup':
+                    self.assertIn('capture_exception',record['execution_failures'])
+                if fault=='interrupted':
+                    self.assertIn('observer_interrupted',record['execution_failures'])
+
+    def test_all_execution_reasons_and_both_provider_observer_stops_survive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory); root=fixture(base/'input')
+            document=json.loads((root/'input.json').read_text())
+            document['cases'][0]['wordings']['task']='Fixture task '+('padding '*750)
+            (root/'input.json').write_text(json.dumps(document))
+            with contextlib.redirect_stdout(io.StringIO()):
+                te.main(['freeze-input','--input',str(root)])
+            child=base/'native.py'
+            child.write_text("import os,json,sys\nos.close(0)\nprint(json.dumps({'type':'result','is_error':True,'terminal_reason':'api_error','api_error_status':401,'result':'PRIVATE provider failure'}))\nsys.exit(17)\n")
+            def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                return [sys.executable,str(child)] if argv[0]=='claude' else argv
+            original=te.capture; original_popen=subprocess.Popen
+            def small_pipe(*args,**kwargs):
+                child=original_popen(*args,**kwargs)
+                fcntl.fcntl(child.stdin.fileno(),fcntl.F_SETPIPE_SZ,4096)
+                return child
+            def capture(*args,**kwargs):
+                with patch('trial_native_capture.process_identity',side_effect=PermissionError()), \
+                     patch('trial_native_capture.subprocess.Popen',side_effect=small_pipe):
+                    return original(*args,**kwargs)
+            with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,'capture',side_effect=capture), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                         '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+            report=json.loads((base/'out/agent.json').read_text()); record=report['records'][0]
+            self.assertEqual(set(record['execution_failures']),{'nonzero_exit','input_delivery_incomplete','process_custody_unknown'})
+            self.assertEqual(record['process_custody']['observed_returncode'],17)
+            self.assertEqual(report['admission']['state'],'stopped_provider_failure')
+            self.assertEqual(report['admission']['stop']['reason'],'authentication_failed')
+            self.assertEqual(report['admission']['observer_stop']['reason'],'observer_custody_unknown')
+            self.assertNotIn('PRIVATE',json.dumps(report))
+
     def test_direct_note_prompt_keeps_missing_source_channel_unknown(self):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory);root=fixture(base/'input')

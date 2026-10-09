@@ -53,6 +53,17 @@ Successful execution also requires every byte of the frozen native input to be
 written. A child that closes stdin early and emits a valid-looking final result
 is marked `input_delivery_incomplete`; its actual exit and independent technical
 check remain available.
+`input_delivery_complete` describes bytes written to the pipe; it does not prove
+that the native process read them or accepted the prompt.
+
+Capture and cleanup exceptions, absent/malformed custody metadata, and Python
+interrupts produce selected typed unknowns in the prospective caller. The
+aggregate retains every observed execution failure, with unknown actual wait
+status left null. An observer-integrity stop prevents further planned calls while
+already admitted cells retain their evidence. That stop is distinct from the
+confirmed provider 401/429 admission stop; both can appear in one report.
+The outer future exception handler also retains aggregate harness_error records
+and recovers available custody even when later grading raises.
 
 `observed_clear` means no live member remained in the final bounded sample and
 the direct leader was reaped without a reported cleanup fault. Zombies retain
@@ -73,6 +84,11 @@ This correction neither imports that sink nor establishes its peak-memory
 reservation, hard I/O wall clock, external terminal closure, or crash/power-loss
 durability. The current runner still holds a bounded raw stream in memory for
 its existing parsers; it does not become the selected-retention V2 runtime.
+Unhandled SIGTERM, SIGHUP or SIGKILL sent to the observer skips its Python cleanup
+and can leave the separate child session alive. Main-thread SIGINT can also
+interrupt the overall controller. Only an external supervisor can detect those
+terminations and close the whole containment boundary; this module provides no
+such signal guarantee.
 
 Before a runtime can claim those contracts, a separate owner must supervise
 capture, parsing, and retention in a disposable process boundary with an
