@@ -1,0 +1,51 @@
+# External supervision fixture prototype
+
+This source implements a closed provider-free prototype. `refuse_native()` has no argv or provider entry and always refuses before a provider launch. `run_fixture()` accepts only fixed disposable fixture modes. No native run, grading, usefulness claim, current/candidate release comparison, export authority or CAIRN-107 completion follows from a fixture result.
+
+The custody prerequisite is commit `26bb63c` on this branch. It preserves actual child wait separately from classification, input delivery, typed unknowns and all observed failures. The frozen coding task base remains `554037b`; this prototype uses fresh empty runner-owned fixture workspaces and does not refreeze or exercise that task.
+
+## Concrete host interface
+
+The ordinary agent lives in `session-6.scope`. A new leaf under the writable user-manager subtree accepted memory, swap, PID and CPU limits, but a real launcher failed to write its PID to that sibling leaf: the common migration ancestor is not delegated. Writable controls alone did not establish launch custody. That attempt refused before an actor launch. There is no sibling-cgroup fallback.
+
+The tested interface is a new `cairn-fixture-<UUID>.service`, created through the user manager with `Delegate=yes`, `DelegateSubgroup=controller` and `KillMode=control-group`. The controller runs in the service's `controller` subgroup. It enables CPU, memory and PID controllers only in that newly owned service root, then creates an exclusive private domain leaf for workers. No existing agent or service process is moved, and no existing service property is changed. The ordinary session refuses this interface unless it starts through the owned-service adapter.
+
+The worker leaf reads back memory.max=512 MiB, memory.swap.max=0, pids.max=32 and cpu.max=one core. The outer owned service is bounded by 1 GiB, no swap and 64 tasks, covering the controller and its private worker leaf. These are ceilings, not a reservation of physical RAM, disk space or provider capacity. The controller retains cgroup directory, kill, events and launch-membership FDs. The launcher joins the private leaf before exec and closes the membership FD. Actors receive no cgroup mount or control descriptor.
+
+Kernel `cgroup.kill` covers concurrent forks in an owned subtree, and `cgroup.events populated=0` observes absence of live members. The prototype uses this kernel boundary instead of manufacturing complete custody from `/proc` sampling. [Linux cgroup v2 documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html). This is a Linux-specific contract, subject to supported controllers, cgroup domain semantics and host/kernel availability.
+
+## Attempt order and worker boundaries
+
+1. Verify accepted reader/retention source hashes and fixture inputs. Create a fresh empty workspace in a runner-owned root. Source hashing and preparation precede the launch budget and are not a claim of bounded arbitrary host filesystem I/O.
+2. Start the parser/sink worker in its own user, PID, mount and network namespaces. Existing `runtime_sandbox` shares host networking; this fixture explicitly adds `--unshare-net`, `--unshare-user` and `--disable-userns`.
+3. The accepted retention factory exclusively consumes the target and fsyncs INTENT before it emits READY. The controller checks READY against the exact expected intent digest and verifies namespace metadata against a living member of its owned cgroup. It holds namespace FDs; reported bwrap status alone is insufficient.
+4. Start a separate actor/capture sandbox. The fixture actor remains gated until that sandbox passes the same checks. It sees only system runtimes, pinned actor/capture helper sources, its fresh workspace and private temporary files. It cannot read the sink, evaluator oracle, admission files, memory/coordination artifacts, repository origin or credentials. There is no networking or live memory call.
+5. The pinned capture worker owns and waits for the actual disposable child. It uses 8,500 bytes of input and a real pipe reduced to 4,096 bytes. Raw stdout travels only through transient memory and bounded pipes to the parser. Actor stderr stays transient inside capture. The parent's parser transport is capped at 128 KiB queued and 4 MiB total; source reader limits remain unchanged.
+6. The retention worker receives a selected exit snapshot from the trusted capture transport, prepares selected evidence, closes its owned writer and returns a receipt. The snapshot remains caller testimony to the original sink. The external controller separately records actual raw wait statuses for its actor/capture and parser/sink children and observes whole-leaf release. PREPARED without the worker's returned receipt and actual exit is a failure.
+7. A separate bounded diagnostic worker writes a fixed selected SUPERVISOR record. Its returned exit and containment release are independently observed. A diagnostic hang leaves persistence unknown while preserving the original failure and actual statuses. Its retained file says persistence was not yet confirmed and never attests its own return.
+
+The wall budget is at most the existing 600-second ceiling. Work reserves one second within that budget for cleanup and diagnostics. Retention/parser/fsync work cannot block the owning controller because it runs in workers. Kernel scheduling, controller administrative calls and host loss are not a realtime guarantee. Timing hashes, custody files and captured streams inside the actor sandbox's tmpfs disappear with the disposable sandbox; no raw native output or private sessions are retained.
+
+## Outer owner and loss
+
+`service_fixture()` starts only the fixed source controller through an exclusively requested UUID service. Before opening the actor gate, it checks manager MainPID and InvocationID against the bootstrap, opens a pidfd and whole-unit cgroup FDs, and rechecks the live process identity and membership. Changed identity refuses the gate. Signals target held owned cgroup FDs or a verified pidfd; the systemd client proxy's wait is never a controller wait.
+
+RemainAfterExit retains a successful owned invocation until the outer observer has read manager ExecMainCode/ExecMainStatus and observed release. The outer observer then stops that still-pinned invocation. Failed owned invocations are reset only after their identity is checked. No replay follows any failure or consumed target.
+
+Controller SIGKILL at intent, capture, parser or sink stages produces UNKNOWN inner facts. The manager's CLD_KILLED/9 is recorded separately. Release is observed either as populated=0 on the held FD or as ENODEV plus the kernel's exact deleted annotation on that same held cgroup directory FD. A path lookup miss or generic read failure is insufficient. The latter Linux kernfs removal case needs independent source review; if its contract cannot be established, that release must remain unknown. Linux permits removing only a cgroup without live processes and active children; zombies are outside the live-population claim. [Linux cgroup v2 documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html).
+
+Outer-observer death, host loss, power loss and automatic reconstruction of custody are unsupported. The source refuses a native route while those admission requirements remain open. Ordinary unhandled signals in the original local capture can skip cleanup; this external owned-service layer addresses demonstrated controller death for fixtures, not a recovered observer or provider execution.
+
+## Remaining admission and integration
+
+The original source-only accepted `frames.py`, `evidence.py` and `retention.py` are pinned exactly. Current candidate and coding-reader composition artifacts were inspected as provisional author-owned inputs; none is silently treated as accepted. The accepted reader allows only Cairn search/pull, whereas a coding actor requires independently accepted action and hook channels. Synthetic fixture usage counters are not provider cost or account room.
+
+Fixture request/task/oracle/config hashes are caller declarations. Workspace hashes describe a fresh empty fixture; they do not export the frozen coding task. Source mounts are checked against a source manifest but are not sealed against an interfering host process of the same UID. `runtime_evidence_authenticated` stays false. Agent341's frozen paired-request preparation and work-product export require a reviewed trusted adapter that binds real occurrence, request, workspace, intent and source hashes to owning-supervisor observations. Serialized declarations cannot provide that authority; root owns the final bridge.
+
+Further native gates include frozen eligible memory and contamination exclusions, exact current/candidate build identities, real capacity/reservation, source acceptance of coding/hook readers, task-oracle sealing, observer requirements, bounded export and independent blind grading. Validity, correctness and usefulness remain separate. Original memory grants and one-attempt/no-retry policy are unchanged.
+
+## Local validation
+
+Run `sh scripts/test-external-supervision.sh`. It starts a new disposable owned test service and propagates unittest's exit status directly. Missing real namespace, user-manager, delegation or resource support fails the suite; it is not a mocked or skipped pass. The public API still returns a prelaunch refusal when those interfaces are absent.
+
+Tests exercise real normal/nonzero children, incomplete input, the original-bound never-reading pipe, session escape/reparenting, parser/fsync hangs, PREPARED followed by death, lost capture metadata, diagnostic hangs, actual memory OOM and PID exhaustion, privacy, consumed-target collision, changed source/namespace/controller identity, explicit unknown release, and controller SIGKILL at four stages. These checks establish only the tested fixture behavior and failure closure.
