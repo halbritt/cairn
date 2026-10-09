@@ -385,6 +385,9 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
         unknown.append('required_hook_observations_missing')
     if set(hook_started) != set(hook_finished):
         unknown.append('unfinished_native_hooks')
+    for ident in set(hook_started) & set(hook_finished):
+        if hook_started[ident] != hook_finished[ident][0]:
+            unknown.append('native_hook_event_mismatch')
     unmatched_hooks = list(hook_finished.values())
     for row in hook_rows:
         identity = (row.get('event'),row.get('stdout_sha256'))

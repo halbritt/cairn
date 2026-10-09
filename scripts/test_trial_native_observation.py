@@ -24,6 +24,29 @@ def base():
 
 
 class NativeObservationTest(unittest.TestCase):
+    def mismatched_hook_observation(self, reverse=False):
+        text = '{}\n'
+        pair = [dict(type='system', subtype='hook_started', hook_id='same', hook_event='SessionStart'),
+                dict(type='system', subtype='hook_response', hook_id='same', hook_event='UserPromptSubmit',
+                     stdout=text, outcome='success', exit_code=0)]
+        row = dict(event='UserPromptSubmit', stdout_bytes=3, stderr_bytes=0,
+                   stdout_sha256=hashlib.sha256(text.encode()).hexdigest(), exit_code=0, process_seconds=.1,
+                   memory_call_attempts=dict(search=1, pull=0, history=0, other=0, **{'pull-evidence': 0}))
+        return observe(base() + (pair[::-1] if reverse else pair), [row])
+
+    def test_mismatched_hook_events_are_unknown_without_losing_accounting(self):
+        result = self.mismatched_hook_observation()
+        self.assertEqual(result['status'], 'unknown')
+        self.assertIn('native_hook_event_mismatch', result['unknown'])
+        self.assertEqual(result['source_deliveries'], [])
+        self.assertEqual((result['hook_wire_bytes'], result['total_bytes'], result['hook_searches'],
+                          result['total_actual_pull_calls']), (3, 503, 1, 0))
+
+    def test_response_before_start_with_mismatched_hook_events_is_unknown(self):
+        result = self.mismatched_hook_observation(reverse=True)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertIn('native_hook_event_mismatch', result['unknown'])
+
     def test_native_prompt_provenance_is_bounded_and_never_inferred_from_absence(self):
         events=base()+[
             dict(type='user',promptId='native-next',source='system',isSynthetic=True,isReplay=False,
