@@ -281,6 +281,52 @@ class ExternalSupervisionTests(unittest.TestCase):
                 self.assertTrue(result.containment['released'])
                 self.assertNotIn('PRIVATE',json.dumps(dataclasses.asdict(result)))
 
+    def test_inner_worker_and_cgroup_close_faults_keep_facts_and_continue_cleanup(self):
+        for fault in ['primary_child','primary_descriptor','diagnostic_child','diagnostic_group']:
+            with self.subTest(fault=fault):
+                self.request=dataclasses.replace(self.request,run_id=str(uuid.uuid4()))
+                child_close=s.Child.close
+                group_close=s.OwnedCgroup.close
+                children=[]
+                groups=[]
+                closed=[]
+                expected=[]
+                original_close=os.close
+                def close_child(child):
+                    errors=child_close(child)
+                    children.append(child.process.pid)
+                    if fault=='primary_child' and len(children)==1 or fault=='diagnostic_child' and len(children)==3:
+                        raise OSError('PRIVATE_CHILD_CLOSE')
+                    return errors
+                def close_group(group):
+                    groups.append(group.identity)
+                    if fault=='primary_descriptor' and len(groups)==1:
+                        expected.extend([*group.files.values(),group.fd,group.parent])
+                        def one_close_failure(fd):
+                            closed.append(fd)
+                            original_close(fd)
+                            if fd==expected[0]:raise OSError('PRIVATE_DESCRIPTOR_CLOSE')
+                        with patch.object(os,'close',side_effect=one_close_failure):
+                            return group_close(group)
+                    errors=group_close(group)
+                    if fault=='diagnostic_group' and len(groups)==2:
+                        raise OSError('PRIVATE_GROUP_CLOSE')
+                    return errors
+                with patch.object(s.Child,'close',close_child),patch.object(s.OwnedCgroup,'close',close_group):
+                    result=s.run_fixture(self.request,self.retained,self.workspace)
+                self.assertEqual(result.status,'unknown',dataclasses.asdict(result))
+                self.assertEqual(result.actor_wait['returncode'],0)
+                self.assertEqual(result.outer_waits['sink']['returncode'],0)
+                self.assertEqual(result.outer_waits['diagnostic']['returncode'],0)
+                self.assertTrue(result.containment['released'])
+                self.assertTrue(result.containment['diagnostic']['released'])
+                self.assertEqual(len(children),3)
+                self.assertEqual(len(groups),2)
+                if fault=='primary_descriptor':self.assertEqual(closed,expected)
+                self.assertTrue(result.failures)
+                self.assertNotIn('PRIVATE',json.dumps(dataclasses.asdict(result)))
+                self.assertFalse(any(Path(self.delegated).glob('cairn-fixture-*')))
+
 
 if __name__ == '__main__':
     unittest.main()

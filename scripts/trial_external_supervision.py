@@ -217,19 +217,30 @@ class OwnedCgroup:
                 for name in ['memory.events', 'pids.events']}
 
     def close(self):
+        errors = []
         for fd in self.files.values():
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError:
+                errors.append('cgroup_descriptor_close_unknown')
         self.files.clear()
         if self.fd is not None:
-            os.close(self.fd)
+            try:
+                os.close(self.fd)
+            except OSError:
+                errors.append('cgroup_directory_close_unknown')
             self.fd = None
         if self.consumed:
             try:
                 os.rmdir(self.name, dir_fd=self.parent)
             except OSError:
                 # An unreleased leaf is preserved; never remove existing work.
-                pass
-        os.close(self.parent)
+                errors.append('cgroup_directory_removal_unknown')
+        try:
+            os.close(self.parent)
+        except OSError:
+            errors.append('cgroup_parent_close_unknown')
+        return sorted(set(errors))
 
 
 class Child:
@@ -310,10 +321,18 @@ class Child:
                 os.close(fd)
 
     def close(self):
+        errors = []
         for stream in [self.process.stdin, self.process.stdout, self.process.stderr]:
-            stream.close()
+            try:
+                stream.close()
+            except OSError:
+                errors.append('worker_stream_close_unknown')
         for fd in [self.status_fd, *self.namespace_fds]:
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError:
+                errors.append('worker_descriptor_close_unknown')
+        return sorted(set(errors))
 
 
 def sandbox(sources, bindings, args):
@@ -458,6 +477,7 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
     input_queue = bytearray()
     stream_bytes = 0
     end_sent = False
+    cleanup_unknown = False
     try:
         base = [(FIXTURE/'worker.py','worker.py')]
         sink_sources = base+[(Path(source_root)/(name+'.py'), name+'.py') for name in SOURCE_PINS]
@@ -568,6 +588,7 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
         result.containment['released'] = released
         for error in errors:
             result.fail(error)
+        cleanup_unknown = bool(errors)
         try:
             result.containment['resource_events'] = group.events()
         except (OSError, Unavailable):
@@ -578,11 +599,24 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
                 result.outer_waits[role]['namespace_identity'] = child.namespace_identity
             if child.wait is not None and child.wait.returncode != 0:
                 result.fail(role+'_outer_nonzero')
-            child.close()
-        group.close()
+            try:
+                close_errors = child.close()
+            except OSError:
+                close_errors = ['worker_close_unknown']
+            for error in close_errors:
+                result.fail(role+'_'+error)
+            cleanup_unknown = cleanup_unknown or bool(close_errors)
+        try:
+            close_errors = group.close()
+        except OSError:
+            close_errors = ['cgroup_close_unknown']
+        for error in close_errors:
+            result.fail(error)
+        cleanup_unknown = cleanup_unknown or bool(close_errors)
+        result.containment['cleanup'] = 'unknown' if cleanup_unknown else 'observed_closed'
     if ready is None and not children.get('actor'):
         result.status = 'refused_prelaunch'
-    elif result.containment['released'] is not True or any(v is None for v in result.outer_waits.values()):
+    elif cleanup_unknown or result.containment['released'] is not True or any(v is None for v in result.outer_waits.values()):
         result.status = 'unknown'
     elif result.failures:
         result.status = 'failed'
@@ -623,12 +657,38 @@ def run_fixture(request, retained_root, workspace_root, *, delegated=None, sourc
             if diagnostic_group is not None:
                 released, errors = end_containment(diagnostic_group,
                     {'diagnostic':diagnostic_child} if diagnostic_child else {}, final_deadline)
+                result.containment['diagnostic'] = dict(released=released, errors=errors,
+                    identity=list(diagnostic_group.identity))
+                for error in errors:
+                    result.fail('diagnostic_'+error)
                 if released is not True or errors:
                     result.persistence = 'unknown'
                 if diagnostic_child is not None:
-                    diagnostic_child.close()
-                diagnostic_group.close()
+                    result.outer_waits['diagnostic'] = dataclasses.asdict(diagnostic_child.wait) if diagnostic_child.wait else None
+                    try:
+                        close_errors = diagnostic_child.close()
+                    except OSError:
+                        close_errors = ['worker_close_unknown']
+                    for error in close_errors:
+                        result.fail('diagnostic_'+error)
+                    if close_errors:
+                        result.persistence = 'unknown'
+                        if result.status == 'fixture_complete':
+                            result.status = 'unknown'
+                try:
+                    close_errors = diagnostic_group.close()
+                except OSError:
+                    close_errors = ['cgroup_close_unknown']
+                for error in close_errors:
+                    result.fail('diagnostic_'+error)
+                if close_errors:
+                    result.persistence = 'unknown'
+                    if result.status == 'fixture_complete':
+                        result.status = 'unknown'
     elif ready is not None:
         result.persistence = 'unknown'
+    if result.persistence == 'unknown' and result.status == 'fixture_complete':
+        result.status = 'unknown'
+        result.fail('diagnostic_return_or_cleanup_unknown')
     result.elapsed_seconds = time.monotonic()-started
     return result
