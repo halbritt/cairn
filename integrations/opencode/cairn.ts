@@ -89,9 +89,9 @@ function call(config: Settings, context: ToolContext, args: string[], input?: un
   })
 }
 
-function render(value: unknown, config: Settings) {
+function render(value: unknown, config: Settings, room = config.tokens) {
   const text = JSON.stringify(value)
-  if (Buffer.byteLength(text, "utf8") > config.max_tokens) {
+  if (Buffer.byteLength(text, "utf8") > room) {
     throw new Error("BUDGET_REFUSED: tool result exceeds memory input room")
   }
   return text
@@ -202,7 +202,7 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
   // Presentation metadata for repeatable retries/pages, not part of the seal.
   const result = render({ ...view, schema: "cairn.opencode-search/1", query_entities: args.entities ?? [], index,
     ...(prepare ? { preparation } : {}),
-  }, { ...config, tokens: allowance - reserve })
+  }, config, allowance - reserve)
   if (args.memory_budget_bytes !== undefined || prepare) {
     const remaining = view.bytes_remaining
     if (typeof remaining !== "number" || !Number.isSafeInteger(remaining) || remaining < 0 ||
@@ -289,7 +289,7 @@ export const pull = validatedTool({
     opening_bytes: z.number().int().min(0).max(768).optional().describe("Exact same-source prefix override; requires span; zero uses receipt policy") },
   async execute(args, context) {
     const config = await settings("pull", context)
-    return render(await call(config, context, ["expand"], args), config)
+    return render(await call(config, context, ["expand"], args), config, config.max_tokens)
   },
 })
 
@@ -299,7 +299,7 @@ export const pull_evidence = validatedTool({
     span: z.object({ offset: z.number().int().min(0).max(1048575), length: z.number().int().min(1).max(1048576) }).strict().optional() },
   async execute(args, context) {
     const config = await settings("pull_evidence", context)
-    return render(await call(config, context, ["expand-evidence"], args), config)
+    return render(await call(config, context, ["expand-evidence"], args), config, config.max_tokens)
   },
 })
 
