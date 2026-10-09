@@ -16,6 +16,17 @@ class AcquisitionRefusal(Refusal):
         self.cleanup_faults = cleanup_faults
 
 
+def record_cleanup(primary, faults):
+    """Best-effort annotation; the owner retains facts if a primary is immutable."""
+    try:
+        primary.cleanup_faults = faults
+    except BaseException:
+        # Even a custom failing setter cannot replace the original failure.
+        # Snapshot.cleanup_faults remains the authoritative owner-side result.
+        return False
+    return True
+
+
 def identity(observed):
     return (observed.st_dev, observed.st_ino, observed.st_mode,
             observed.st_uid, observed.st_gid)
@@ -152,7 +163,7 @@ class Snapshot:
                     else 'preparation_io_or_shape_unknown')
             raise AcquisitionRefusal(code, cleanup) from None
         except BaseException as primary:
-            primary.cleanup_faults = self.close()
+            record_cleanup(primary, self.close())
             raise
 
     def _destination(self, name):

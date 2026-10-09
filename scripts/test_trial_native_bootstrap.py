@@ -479,6 +479,60 @@ class PreparationTests(unittest.TestCase):
         self.assertIs(caught.exception, primary)
         self.assertEqual(caught.exception.cleanup_faults, ('descriptor_cleanup_unknown',))
 
+    def test_frozen_primary_context_failure_is_preserved_with_owner_cleanup(self):
+        @dataclasses.dataclass(frozen=True)
+        class FrozenFailure(Exception):
+            reason: str
+        owner = self.prepare()
+        actual = os.close
+        target = owner._snapshot.files['prompt.txt'][0].fd
+        primary = FrozenFailure('constructed frozen primary')
+        def failed_close(fd):
+            actual(fd)
+            if fd == target:
+                raise OSError('private close details')
+        with patch.object(custody.os, 'close', side_effect=failed_close):
+            with self.assertRaises(FrozenFailure) as caught:
+                with owner:
+                    raise primary
+        self.assertIs(caught.exception, primary)
+        self.assertEqual(owner.close(), ('descriptor_cleanup_unknown',))
+        self.assertFalse(hasattr(primary, 'cleanup_faults'))
+
+    def test_frozen_preparation_failure_never_replaced_by_diagnostic_setter(self):
+        @dataclasses.dataclass(frozen=True)
+        class FrozenFailure(Exception):
+            reason: str
+        primary = FrozenFailure('constructed frozen primary')
+        snapshots = []
+        actual = bootstrap.Snapshot
+        def retain_owner(output):
+            owner = actual(output)
+            snapshots.append(owner)
+            return owner
+        with patch.object(bootstrap, 'Snapshot', side_effect=retain_owner), \
+                patch.object(custody.os, 'write', side_effect=primary):
+            with self.assertRaises(FrozenFailure) as caught:
+                self.prepare()
+        self.assertIs(caught.exception, primary)
+        self.assertTrue(snapshots[0].closed)
+        self.assertEqual(snapshots[0].cleanup_faults, ())
+
+    def test_custom_cleanup_setter_cannot_mask_review_failure(self):
+        class SetterFailure(Exception):
+            def __setattr__(self, name, value):
+                if name == 'cleanup_faults':
+                    raise RuntimeError('constructed failing setter')
+                super().__setattr__(name, value)
+        owner = self.prepare()
+        primary = SetterFailure('constructed primary')
+        with patch.object(owner._snapshot, 'bindings', side_effect=primary):
+            with self.assertRaises(SetterFailure) as caught:
+                owner.review_bindings()
+        self.assertIs(caught.exception, primary)
+        self.assertTrue(owner._snapshot.closed)
+        self.assertEqual(owner.close(), ())
+
     def test_unanchored_setup_refuses_close_and_preserves_primary_unknown(self):
         tree = custody.HeldTree()
         source = self.source / 'prompt.txt'

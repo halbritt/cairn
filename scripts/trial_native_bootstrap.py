@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import re
 
-from trial_bootstrap_snapshot import Snapshot
+from trial_bootstrap_snapshot import Snapshot, record_cleanup
 from trial_coding_launch import compile_launch
 from trial_paired_request import (IMPLEMENTATION_SETTINGS_SHA,
                                  IMPLEMENTATION_SOURCE_SHA, ORIGINAL_LIMITS,
@@ -184,7 +184,7 @@ class ReviewPreparation:
             cleanup = self.close()
             raise PreparationRefusal('review_custody_unknown', cleanup) from None
         except BaseException as primary:
-            primary.cleanup_faults = self.close()
+            record_cleanup(primary, self.close())
             raise
         return dict(schema=SCHEMA, status='source_prepared_for_review',
                     complete_bootstrap=False, runtime_attested=False,
@@ -213,7 +213,7 @@ class ReviewPreparation:
         cleanup = self.close()
         if cleanup:
             if primary is not None:
-                primary.cleanup_faults = cleanup
+                record_cleanup(primary, cleanup)
                 return False
             raise PreparationRefusal('descriptor_cleanup_unknown', cleanup)
 
@@ -247,5 +247,5 @@ def prepare_review(document, output):
         raise PreparationRefusal(code, cleanup) from None
     except BaseException as primary:
         cleanup = snapshot.close() if snapshot else getattr(primary, 'cleanup_faults', ())
-        primary.cleanup_faults = cleanup
+        record_cleanup(primary, cleanup)
         raise

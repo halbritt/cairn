@@ -121,6 +121,10 @@ after close or custody fault refuses; primary refusal and cleanup uncertainty
 remain separate fixed facts with no exception text. Preparation/review interrupts
 close all bound leases and propagate the primary exception, with fixed cleanup
 facts attached. Context cleanup does not mask a primary body exception. Cleanup
+annotation is best effort for immutable/custom exceptions: the owner retains its
+fixed cleanup result even when the primary cannot accept a `cleanup_faults`
+attribute. A failed annotation never replaces that primary.
+Cleanup
 itself continues across any close failure/interruption and returns fixed unknown.
 The source-review operation
 does not claim hostile same-UID isolation, proof of open-file-description identity
