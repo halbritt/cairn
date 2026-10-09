@@ -54,7 +54,7 @@ The closed `cairn.paired-eval.request/1` object accepts these fields only:
 | `plan` | Exact `instrument`, frozen case IDs, `arms`, unique integer `seeds`, `attempts`, canonical `sha256`. Arms must be CURRENT and CAND; attempts equal cases × two arms × seeds. |
 | `interfaces` | CURRENT and CAND each specify `api_revision`, `actor_base`, `components`, matching the frozen memory-arm declaration and actor baseline. Component file pins are rechecked. |
 | `dispositions` | Exactly task, oracle, comparator, supervisor, native and integration. Each has a pinned `artifact`, exact `subject_sha256`, `reviewer_id`, accepted `state` and unexpired `valid_until`. |
-| `limits` | Selected input 9500 bytes, final answer 8192 bytes, two native searches, four pulls, five hook seconds, thirty seconds for the last native memory call. |
+| `limits` | Selected input 9500 bytes, final answer 8192 bytes, tool room 32000 bytes (`tool_room_bytes`), two native searches, four pulls, five hook seconds, thirty seconds for the last native memory call. |
 | `capacity` | Pin of the whole-plan capacity declaration described below. |
 | `corpus_selection` | Pin of the source identity and exclusion artifact, checked against the frozen corpus. |
 | `grading` | Primary and secondary agent/model declarations; excluded agents; pinned rubric, changed-pair definition, blinding policy and review budget; dispute owner. |
@@ -77,6 +77,22 @@ and integration to the frozen manifest. Grader agents must differ and cannot
 be any declared source reviewer, excluded agent or dispute owner. This verifies
 declarations, not fresh-session identity, author exclusion completeness or actual
 blinding. The integration reviewer must establish those facts independently.
+
+`mcp_arguments(binding)` builds the paired facade arguments with explicit
+`--tokens 32000` and `--max-tokens 32000`. Its closed binding has `socket`,
+`token_file`, `repo`, `task` and `run`; no argument extension or limit override
+is accepted. The first three paths must be absolute without symlink ancestors;
+task/run are nonempty bounded UTF-8 strings. It starts no process. The integrator
+must use these arguments with the pinned arm binary and authenticated disposable
+trial binding; this helper does not prove that any loaded process used them.
+
+These CLI flags are named tokens but preserve the tool response room measured in
+bytes in this workstream. They are separate from the 9500-byte selected-input
+verdict and from provider token/quota estimates. Both must be explicit: the
+inspected facade defaults `--max-tokens` to 1000000. Pinning the server ceiling
+does not repair a reader that drops invalid tool arguments before retaining the
+server error evidence. Root's native-profile integration must retain that
+evidence and its invalid/unknown disposition independently.
 
 ## Whole-plan capacity declarations
 

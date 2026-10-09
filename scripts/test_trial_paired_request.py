@@ -84,6 +84,29 @@ def request_fixture(root):
 
 
 class RequestTests(unittest.TestCase):
+    def test_original_tool_room_is_required_and_cannot_be_widened(self):
+        for mutation in ('missing','wide'):
+            with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);request=request_fixture(root)
+                if mutation=='missing':request['limits'].pop('tool_room_bytes',None)
+                else:request['limits']['tool_room_bytes']=1000000
+                with self.assertRaisesRegex(paired.Refusal,'limits_changed'):
+                    paired.prepare(request,registry=root/'registry',now=NOW)
+                self.assertEqual(list((root/'registry').iterdir()),[])
+                self.assertFalse((root/'output').exists())
+
+    def test_mcp_arguments_pin_both_limits_instead_of_using_the_facade_default(self):
+        binding=dict(socket='/tmp/trial/sock/api.sock',token_file='/tmp/trial/agent.token',
+                     repo='/trial/project',task='task-eval/fixture',run='fixture')
+        arguments=paired.mcp_arguments(binding)
+        self.assertEqual(arguments,['mcp','--socket','/tmp/trial/sock/api.sock',
+            '--token-file','/tmp/trial/agent.token','--repo','/trial/project',
+            '--task','task-eval/fixture','--run','fixture','--tokens','32000','--max-tokens','32000'])
+        self.assertNotIn('1000000',arguments)
+        with self.assertRaisesRegex(paired.Refusal,'mcp_binding'):
+            paired.mcp_arguments(dict(binding,extra_args=['--max-tokens','1000000']))
+
+
     def test_cli_rejects_launch_and_private_malformed_input_with_selected_errors(self):
         script = Path(paired.__file__)
         with tempfile.TemporaryDirectory() as directory:

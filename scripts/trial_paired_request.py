@@ -15,7 +15,8 @@ from trial_task_input import corpus_entities
 SCHEMA = 'cairn.paired-eval.request/1'
 REVIEWS = ('task', 'oracle', 'comparator', 'supervisor', 'native', 'integration')
 ORIGINAL_LIMITS = dict(selected_input_bytes=9500, final_answer_bytes=8192,
-                      native_searches=2, pulls=4, hook_seconds=5, last_native_memory_seconds=30)
+                      tool_room_bytes=32000, native_searches=2, pulls=4,
+                      hook_seconds=5, last_native_memory_seconds=30)
 FILE_LIMIT = 8 * 1024 * 1024
 PIN_LIMIT = 512 * 1024 * 1024
 
@@ -48,6 +49,24 @@ def identifier(text):
         need(isinstance(text, str) and str(uuid.UUID(text)) == text, 'canonical_uuid')
     except (ValueError, AttributeError):
         raise Refusal('canonical_uuid') from None
+
+
+def mcp_arguments(binding):
+    """Compile the fixed paired MCP ceiling; this function runs no process.
+
+    The integrator owns authenticated trial bindings and the binary source pin.
+    Caller-supplied argument extensions cannot override the original limits.
+    """
+    shape(binding, 'socket token_file repo task run', 'mcp_binding')
+    for name in ('socket','token_file','repo'):
+        plain_path(binding[name])
+    for name in ('task','run'):
+        need(isinstance(binding[name], str) and 0 < len(binding[name].encode()) <= 256
+             and '\0' not in binding[name], 'mcp_scope')
+    return ['mcp','--socket',binding['socket'],'--token-file',binding['token_file'],
+            '--repo',binding['repo'],'--task',binding['task'],'--run',binding['run'],
+            '--tokens',str(ORIGINAL_LIMITS['tool_room_bytes']),
+            '--max-tokens',str(ORIGINAL_LIMITS['tool_room_bytes'])]
 
 
 def capacity_check(reference, plan, now, models):
