@@ -422,9 +422,16 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                         return [sys.executable,str(child),str(Path(work)/cwd)]
                     return argv
                 original=te.capture
+                native_children=[]
                 def capture(*args,**kwargs):
                     if fault=='cleanup':
-                        with patch('trial_native_capture.os.waitstatus_to_exitcode',side_effect=ValueError('PRIVATE cleanup exception')):
+                        original_popen=subprocess.Popen
+                        def tracked_popen(*arguments,**options):
+                            process=original_popen(*arguments,**options)
+                            native_children.append(process)
+                            return process
+                        with patch('trial_native_capture.os.waitstatus_to_exitcode',side_effect=ValueError('PRIVATE cleanup exception')), \
+                             patch('trial_native_capture.subprocess.Popen',side_effect=tracked_popen):
                             return original(*args,**kwargs)
                     result=original(*args,**kwargs)
                     if fault=='missing':
@@ -436,10 +443,21 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                     elif fault=='interrupted':
                         raise KeyboardInterrupt('PRIVATE interruption')
                     return result
-                with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,'capture',side_effect=capture), \
-                     contextlib.redirect_stdout(io.StringIO()):
-                    te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
-                             '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+                try:
+                    with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,'capture',side_effect=capture), \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                                 '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+                finally:
+                    # The injected conversion fault follows waitpid, leaving the
+                    # Popen bookkeeping unfinished. Own test cleanup separately;
+                    # it must not repair the product's unknown custody evidence.
+                    for process in native_children:
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=2)
                 report=json.loads((base/'out/agent.json').read_text())
                 record=report['records'][0]
                 self.assertEqual(len(launches),1)
