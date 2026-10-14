@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import trial_bootstrap_snapshot as custody
 import trial_native_bootstrap as bootstrap
-from trial_coding_launch import compile_launch
+from trial_coding_launch import compile_launch, compile_sdk_launch
 from trial_paired_request import (IMPLEMENTATION_SETTINGS_SHA, ORIGINAL_LIMITS,
                                  Refusal, canonical_sha, mcp_arguments)
 
@@ -119,6 +119,15 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(observed['source_identity']['bytes'], origin.st_size)
         with self.assertRaisesRegex(bootstrap.PreparationRefusal, '^hook_interface_unavailable$'):
             owner.require_complete()
+
+    def test_command_bootstrap_refuses_sdk_writer_before_creating_a_user_file(self):
+        sdk = compile_sdk_launch(session_id=self.document['binding']['session_id'],
+                                 model='fixture-model', effort='high', prompt='Task.',
+                                 memory_instruction='Inspect source.')
+        with patch.object(bootstrap, 'compile_launch', return_value=sdk):
+            self.refused('bootstrap_launch_profile')
+        self.assertFalse(Path(self.output, 'input.jsonl').exists())
+        self.assertFalse(sdk.control.ledger()['initialize_written'])
 
     def test_never_opens_mcp_socket_token_repository_or_executes_cli(self):
         opened = []

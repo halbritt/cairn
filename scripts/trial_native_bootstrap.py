@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 
 from trial_bootstrap_snapshot import Snapshot, record_cleanup
-from trial_coding_launch import compile_launch
+from trial_coding_launch import CodingLaunch, compile_launch
 from trial_paired_request import (IMPLEMENTATION_SETTINGS_SHA,
                                  IMPLEMENTATION_SOURCE_SHA, ORIGINAL_LIMITS,
                                  PIN_LIMIT, Refusal, canonical_sha, identifier,
@@ -141,6 +141,7 @@ def _compile(snapshot, document, mcp_args):
     except ValueError as error:
         # compile_launch and the text reader expose fixed codes only.
         raise Refusal(str(error)) from None
+    need(type(launch) is CodingLaunch, 'bootstrap_launch_profile')
     settings = _json(snapshot.read('settings.json'))
     shape(settings, 'permissions hooks autoMemoryEnabled claudeMdExcludes', 'bootstrap_settings')
     need(settings['permissions'] == _json(launch.permission_json)
@@ -159,6 +160,7 @@ def _compile(snapshot, document, mcp_args):
 class ReviewPreparation:
     """Own copied sources and compiled declarations, never an execution capability."""
     def __init__(self, snapshot, launch, declaration):
+        need(type(launch) is CodingLaunch, 'bootstrap_launch_profile')
         self._snapshot = snapshot
         self._launch = launch
         self._launch_sha = canonical_sha(list(launch.argv))

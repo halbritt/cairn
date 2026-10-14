@@ -36,8 +36,18 @@ class CodingLaunch:
 
 
 @dataclasses.dataclass(frozen=True)
-class SDKLaunch(CodingLaunch):
+class SDKLaunch:
+    """Control-writer declaration; deliberately has no writable user message."""
+    argv: tuple
+    permission_json: bytes
+    user_message_bytes: int
+    user_message_sha256: str
+    guaranteed_context_bytes: int
     control: object
+
+    @property
+    def permission_sha256(self):
+        return hashlib.sha256(self.permission_json).hexdigest()
 
 
 def compile_launch(*, session_id, model, effort, prompt, memory_instruction):
@@ -93,8 +103,9 @@ def compile_sdk_launch(*, session_id, model, effort, prompt, memory_instruction)
     """Compile sdk-hooks/1 with one user and bounded control-only continuation.
 
     The controller owns initialization and subsequent writes. The owner must
-    consume its write queue, rather than write input_message a second time or
-    close stdin after that user. This declaration does not admit a runtime.
+    consume only its write queue and keep stdin open for control replies. There
+    is no separate input_message or command-hook capacity. This declaration
+    does not admit a runtime.
     """
     from trial_sdk_control import SDKControl
 
@@ -104,5 +115,6 @@ def compile_sdk_launch(*, session_id, model, effort, prompt, memory_instruction)
                             prompt=prompt, memory_instruction=memory_instruction)
     control = SDKControl(session_id, coding.input_message,
                          len(memory_instruction.encode('utf-8')))
-    return SDKLaunch(coding.argv, coding.input_message, coding.permission_json,
+    return SDKLaunch(coding.argv, coding.permission_json,
+                     len(coding.input_message), hashlib.sha256(coding.input_message).hexdigest(),
                      control.guaranteed_context_bytes, control)

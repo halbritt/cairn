@@ -1,8 +1,9 @@
 """Offline input/permission controls; no native process or provider call."""
+import hashlib
 import json
 import unittest
 
-from trial_coding_launch import compile_launch, compile_sdk_launch
+from trial_coding_launch import CodingLaunch, compile_launch, compile_sdk_launch
 from trial_task_permissions import settings_permissions
 
 
@@ -63,7 +64,10 @@ class SDKInputTests(unittest.TestCase):
         sdk = compile_sdk_launch(session_id='90000000-0000-4000-8000-000000000001',
                                  model='claude-opus-5-5', effort='high', prompt='Check\0source.',
                                  memory_instruction='Inspect the task.')
-        self.assertEqual(json.loads(sdk.input_message)['message']['content'], 'Check\0source.')
+        sdk.control.written(len(sdk.control.pending_write()))
+        sdk.control.receive(dict(type='control_response', response=dict(subtype='success',
+            request_id=sdk.control.bindings['initialize_request_id'], response={})))
+        self.assertEqual(json.loads(sdk.control.pending_write())['message']['content'], 'Check\0source.')
         self.assertTrue(all('\0' not in argument for argument in sdk.argv))
 
     def test_sdk_keeps_frozen_tools_permissions_and_turns_but_accounts_for_control(self):
@@ -73,16 +77,26 @@ class SDKInputTests(unittest.TestCase):
         command = compile_launch(**fields)
         sdk = compile_sdk_launch(**fields)
         self.assertEqual(sdk.argv, command.argv)
-        self.assertEqual(sdk.input_message, command.input_message)
+        self.assertNotIsInstance(sdk, CodingLaunch)
+        self.assertFalse(hasattr(sdk, 'input_message'))
+        self.assertFalse(hasattr(sdk, 'hook_context_bytes'))
+        self.assertEqual(sdk.user_message_bytes, len(command.input_message))
+        self.assertEqual(sdk.user_message_sha256, hashlib.sha256(command.input_message).hexdigest())
         self.assertEqual(sdk.permission_json, command.permission_json)
         self.assertEqual(sdk.permission_sha256, command.permission_sha256)
         initialize = sdk.control.pending_write()
         self.assertEqual(json.loads(initialize)['request']['subtype'], 'initialize')
-        self.assertLess(sdk.hook_context_bytes, command.hook_context_bytes)
-        self.assertEqual(sdk.hook_context_bytes, sdk.control.guaranteed_context_bytes)
-        self.assertGreater(sdk.hook_context_bytes, 0)
+        self.assertLess(sdk.guaranteed_context_bytes, command.hook_context_bytes)
+        self.assertEqual(sdk.guaranteed_context_bytes, sdk.control.guaranteed_context_bytes)
+        self.assertGreater(sdk.guaranteed_context_bytes, 0)
         self.assertGreaterEqual(sdk.control.remaining_wire_bytes, 1000)
         self.assertGreaterEqual(sdk.control.remaining_selected_bytes, 1000)
+        sdk.control.written(len(initialize))
+        sdk.control.receive(dict(type='control_response', response=dict(subtype='success',
+            request_id=sdk.control.bindings['initialize_request_id'], response={})))
+        self.assertEqual(sdk.control.pending_write(), command.input_message)
+        sdk.control.written(len(sdk.control.pending_write()))
+        self.assertIsNone(sdk.control.pending_write())
 
     def test_sdk_refuses_when_initialization_would_spend_minimum_hook_room(self):
         fields = dict(session_id='90000000-0000-4000-8000-000000000001',
@@ -92,7 +106,7 @@ class SDKInputTests(unittest.TestCase):
         # same allowance and must not silently borrow another input budget.
         command = compile_launch(prompt='x' * 7800, **fields)
         self.assertGreaterEqual(command.hook_context_bytes, 1000)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, '^sdk_input_budget$'):
             compile_sdk_launch(prompt='x' * 7800, **fields)
 
 

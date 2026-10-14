@@ -15,6 +15,14 @@ registers only SessionStart, UserPromptSubmit, PostToolUse and PostToolUseFailur
 each with the existing five-second hook timeout. The controller creates the
 request identities; callers cannot add hooks, users or control commands.
 
+`SDKLaunch` is distinct from the command-route `CodingLaunch`. It exposes a
+control writer and `guaranteed_context_bytes`, with no separate `input_message`
+or command-hook `hook_context_bytes`. Its owner writes only the controller's
+queue. The command bootstrap rejects an SDK launch before generating a user
+file. An SDK owner must bind empty command hooks (`hooks: {}`), empty setting
+sources and the reviewed settings/MCP mounts; an argv declaration alone does
+not establish that native loaded those settings.
+
 ## Control and write contract
 
 Initialization must be fully written before accepting its response or any hook
@@ -29,6 +37,12 @@ written. A failed or zero-progress write makes the controller unusable. Frame
 bytes never interleave, including when a callback arrives during a partial write.
 Unknown, malformed, duplicate, cancelled or out-of-order control traffic refuses
 explicitly. A failed controller cannot be reopened or silently retried.
+
+`receive` accepts only the three control frame types: `control_request`,
+`control_response` and `control_cancel_request`. The owner must demultiplex
+ordinary system, assistant, user, stream and terminal records before calling
+it, and refuse unknown outer record types. Sending an ordinary record to this
+control-only interface poisons the controller.
 
 The driver must serialize controller calls and report each actual write before
 another state transition. A callback can defer an unstarted user frame and
@@ -58,6 +72,17 @@ SessionStart and UserPromptSubmit. Additional tool events reserve an empty reply
 when observed; preparation does not predict their count. Context can spend only
 the smaller remaining allowance after these reservations. Per-callback capacity
 distinguishes escaped JSON content bytes from conservative raw UTF-8 bytes.
+`reply_wire_bytes` reports the exact profile envelope cost, including escaping
+and the newline. With empty context it gives this profile's minimum reply,
+not a source-verified minimum for every native encoding. `reply_budget` is a
+read-only snapshot separating pending empty replies, mandatory unobserved
+replies and room for escaped context. It remains available after refusal;
+it grants no bytes and does not count external producer or memory charges.
+There is no unconditional remaining-tool-event count: event names, request-ID
+lengths, context and startup reservations affect that count. Eight turns does
+not bound tool calls. A workload-fit claim requires a separately supported
+callback bound and its encoded replies within both original limits. An empty
+reply still spends bytes and cannot be written after exhaustion.
 The SDK compiler's hook context capacity uses the conservative value, allowing
 for worst-case six-byte JSON escaping of one UTF-8 byte. It can be below the
 1000-byte minimum raw hook room because envelopes and escaping consume space.

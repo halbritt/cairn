@@ -44,6 +44,28 @@ def _reply_wire(request_id, event, context):
     return _canonical(response) + b'\n'
 
 
+def reply_wire_bytes(request_id, event, additional_context=''):
+    """Exact sdk-hooks/1 reply cost, including JSON escaping and final newline.
+
+    Empty context gives this profile's minimum envelope, not a claim that the
+    native protocol has no smaller valid encoding. This pure query reserves or
+    writes nothing and establishes no callback count or native compatibility.
+    """
+    if (type(request_id) is not str or not 0 < len(request_id) <= REQUEST_ID_BYTES
+            or re.fullmatch(r'[A-Za-z0-9._:-]+', request_id) is None):
+        raise SDKControlError('sdk_callback_identity')
+    if type(event) is not str or event not in EVENTS:
+        raise SDKControlError('sdk_callback_binding')
+    if type(additional_context) is not str:
+        raise SDKControlError('sdk_context_shape')
+    if len(additional_context) > CAPTURE_LIMIT:
+        raise SDKControlError('sdk_input_budget')
+    try:
+        return len(_reply_wire(request_id, event, additional_context))
+    except UnicodeError:
+        raise SDKControlError('sdk_context_shape') from None
+
+
 def _plain(frame):
     """Freeze a bounded plain caller graph before encoding or inspecting it."""
     nodes, text_bytes = 0, 0
@@ -197,6 +219,25 @@ class SDKControl:
 
     def _context_json_bytes(self):
         return min(self.remaining_wire_bytes, self.remaining_selected_bytes) - self._held_reply_bytes()
+
+    def reply_budget(self):
+        """Read-only exact current reservations, also available after refusal.
+
+        Tool events are reserved only when observed. These diagnostics do not
+        predict remaining callbacks or include external producer/memory charges.
+        """
+        pending = sum(self._empty_replies.values())
+        required = self._future_reply_bytes(self._future_required)
+        return dict(pending_callbacks=len(self._empty_replies),
+                    pending_empty_reply_bytes=pending,
+                    mandatory_callbacks_unobserved=sorted(self._future_required),
+                    mandatory_empty_reply_bytes=required,
+                    reserved_empty_reply_bytes=pending + required,
+                    remaining_wire_bytes=self.remaining_wire_bytes,
+                    remaining_selected_bytes=self.remaining_selected_bytes,
+                    context_json_bytes=self._context_json_bytes(),
+                    additional_tool_callback_count=None,
+                    external_selected_charges_included=False)
 
     @property
     def guaranteed_context_bytes(self):
