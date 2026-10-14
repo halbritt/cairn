@@ -281,6 +281,30 @@ class LineAssemblerTest(unittest.TestCase):
                              else 'incoming_feed_abandoned')
             self.assertEqual(assembler.refusal['code'], 'incoming_feed_abandoned')
 
+    def test_outstanding_generators_stop_after_interleaving_refusal(self):
+        for started in (False, True):
+            for interleave in ('feed', 'finish'):
+                assembler = LineAssembler(64)
+                old = assembler.feed(b'{}\n{}\n', 0)
+                if started:
+                    self.assertEqual(next(old).text, '{}')
+                with self.assertRaises(IncomingError) as caught:
+                    if interleave == 'feed':
+                        assembler.feed(b'{}\n', 1)
+                    else:
+                        assembler.finish()
+                self.assertEqual(caught.exception.code, 'incoming_feed_abandoned')
+                emitted = []
+                with self.assertRaises(IncomingError) as caught:
+                    for line in old:
+                        emitted.append(line)
+                self.assertEqual((caught.exception.code, emitted), ('incoming_unusable', []))
+                self.assertEqual(assembler.refusal['code'], 'incoming_feed_abandoned')
+                self.assertEqual(list(old), [])
+                with self.assertRaises(IncomingError) as caught:
+                    assembler.feed(b'{}\n', 2)
+                self.assertEqual(caught.exception.code, 'incoming_unusable')
+
     def test_no_retained_raw_and_bounded_transient_raw(self):
         raw = b'x' * (70 * 1024)
         pieces = chunks(b'{"k":"' + raw + b'"}', MAX_CHUNK_BYTES)

@@ -209,6 +209,7 @@ class LineAssembler:
         self._first_ns = None
         self._clock = None
         self._busy = False
+        self._generation = 0
         self._refusal = None
         self._closed = False
 
@@ -258,7 +259,13 @@ class LineAssembler:
             self._fail(dict(code='incoming_clock', hash_complete=False, origin_attested=False))
         self._clock = first_byte_ns
         self._busy = True
-        return self._lines(view, first_byte_ns)
+        self._generation += 1
+        return self._lines(view, first_byte_ns, self._generation)
+
+    def _current(self, generation):
+        # An outstanding generator stops once the assembler is refused or closed.
+        if self._refusal is not None or self._closed or generation != self._generation:
+            raise IncomingError('incoming_unusable')
 
     def _segment(self, view, received):
         if self._decoder is None:
@@ -271,9 +278,10 @@ class LineAssembler:
                 refusal = self._decoder.refusal
                 self._fail(refusal)
 
-    def _lines(self, view, received):
+    def _lines(self, view, received, generation):
         completed = False
         try:
+            self._current(generation)
             start = 0
             while (match := _LF.search(view, start)) is not None:
                 end = match.start()
@@ -286,17 +294,19 @@ class LineAssembler:
                 except IncomingError:
                     self._fail(decoder.refusal)
                 yield DecodedLine(text, decoder.raw_bytes, decoder.raw_sha256, first)
+                self._current(generation)
                 start = end + 1
             if start < len(view):
                 self._segment(view[start:], received)
             completed = True
         finally:
             view.release()
-            if self._refusal is None and not completed:
-                self._refusal = dict(code='incoming_feed_abandoned', hash_complete=False,
-                                     origin_attested=False)
-                self._decoder = None
-            self._busy = False
+            if generation == self._generation:
+                if self._refusal is None and not completed:
+                    self._refusal = dict(code='incoming_feed_abandoned', hash_complete=False,
+                                         origin_attested=False)
+                    self._decoder = None
+                self._busy = False
 
     def finish(self):
         self._usable()
