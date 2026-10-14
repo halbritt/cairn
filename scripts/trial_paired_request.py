@@ -12,7 +12,7 @@ import uuid
 from trial_task_input import load_input
 from trial_task_input import corpus_entities
 
-SCHEMA = 'cairn.paired-eval.request/1'
+SCHEMA = 'cairn.paired-eval.request/2'
 REVIEWS = ('task', 'oracle', 'comparator', 'supervisor', 'native', 'integration')
 ORIGINAL_LIMITS = dict(selected_input_bytes=9500, final_answer_bytes=8192,
                       tool_room_bytes=32000, native_searches=2, pulls=4,
@@ -72,7 +72,8 @@ def mcp_arguments(binding):
             '--max-tokens',str(ORIGINAL_LIMITS['tool_room_bytes'])]
 
 
-def capacity_check(reference, plan, now, models):
+def capacity_check_v1(reference, plan, now, models):
+    """Historical source-only /1 validation; never used by request preparation."""
     capacity = read_json_pin(reference)
     shape(capacity, 'schema plan_sha256 state observed_at valid_until account_binding route_binding quota_policy reservation resources demands', 'capacity_shape')
     need(capacity['schema'] == 'cairn.paired-capacity-evidence/1' and capacity['state'] == 'supported', 'capacity_unknown')
@@ -132,6 +133,159 @@ def capacity_check(reference, plan, now, models):
          and reservation['resources_sha256'] == canonical_sha(resources), 'reservation_unknown')
 
 
+PROVIDER_COUNTERS = ('provider_requests', 'input_tokens', 'output_tokens',
+                     'cache_read_input_tokens', 'cache_creation_input_tokens')
+CAPACITY_ROLES = ('CURRENT', 'CAND', 'primary', 'secondary',
+                  'selector', 'control', 'retry', 'dispute', 'auxiliary')
+CAPACITY_INTEGER_MAX = 2**63 - 1
+CAPACITY_METRICS = {counter: (counter,) for counter in PROVIDER_COUNTERS}
+CAPACITY_METRICS.update(total_tokens=PROVIDER_COUNTERS[1:],
+                        input_and_cache_creation_tokens=('input_tokens', 'cache_creation_input_tokens'))
+
+
+def capacity_integer(value, minimum=0):
+    return type(value) is int and minimum <= value <= CAPACITY_INTEGER_MAX
+
+
+def capacity_name(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}', value) is not None
+
+
+def provider_workload(plan, models):
+    need('workload' in plan, 'workload_required')
+    workload = read_json_pin(plan['workload'])
+    shape(workload, 'schema roles', 'workload_shape')
+    need(workload['schema'] == 'cairn.paired-provider-workload/2', 'workload_schema')
+    shape(workload['roles'], ' '.join(CAPACITY_ROLES), 'workload_roles')
+    shape(models, 'CURRENT CAND primary secondary', 'workload_models')
+    need(capacity_integer(plan['attempts'], 2) and plan['attempts'] % 2 == 0, 'attempt_count')
+    jobs = {}
+    for role, group in workload['roles'].items():
+        shape(group, 'state basis jobs', 'workload_group')
+        pin(group['basis'])
+        need(isinstance(group['jobs'], list) and len(group['jobs']) <= 64, 'workload_jobs')
+        if group['state'] == 'not_applicable':
+            need(role not in models and not group['jobs'], 'workload_not_applicable')
+            continue
+        need(group['state'] == 'included' and bool(group['jobs']), 'workload_unknown')
+        if role in models:
+            need(len(group['jobs']) == 1, 'workload_primary_count')
+        for job in group['jobs']:
+            shape(job, 'id model count per_job', 'workload_job')
+            need(capacity_name(job['id']) and job['id'] not in jobs, 'workload_job_identity')
+            need(capacity_name(job['model']) and capacity_integer(job['count'], 1), 'workload_job_bound')
+            if role in models:
+                need(job['model'] == models[role] and job['count'] == plan['attempts']//2,
+                     'workload_role_mismatch')
+            shape(job['per_job'], ' '.join(PROVIDER_COUNTERS), 'workload_counters')
+            need(all(capacity_integer(value, 1 if name == 'provider_requests' else 0)
+                     for name, value in job['per_job'].items()), 'workload_counter_bound')
+            if role in models:
+                need(sum(job['per_job'][name] for name in PROVIDER_COUNTERS if name not in
+                         ('provider_requests', 'output_tokens')) > 0 and job['per_job']['output_tokens'] > 0,
+                     'workload_inference_tokens')
+            jobs[job['id']] = job
+    return jobs
+
+
+def provider_demands(reference, plan, jobs, accounts):
+    binding = read_json_pin(reference)
+    shape(binding, 'schema plan_sha256 state routes', 'route_binding_shape')
+    need(binding['schema'] == 'cairn.paired-route-binding/2' and
+         binding['plan_sha256'] == plan['sha256'] and binding['state'] == 'complete',
+         'route_binding_unknown')
+    routes = binding['routes']
+    need(isinstance(routes, dict) and set(routes) == set(jobs), 'route_workloads')
+    totals, used_accounts, window_metrics = {}, set(), {}
+    for ident, job in jobs.items():
+        route = routes[ident]
+        shape(route, 'account_id model windows', 'route_shape')
+        need(capacity_name(route['account_id']) and route['model'] == job['model'], 'route_model_mismatch')
+        need(route['account_id'] in accounts, 'account_route_unknown')
+        used_accounts.add(route['account_id'])
+        need(isinstance(route['windows'], list) and 0 < len(route['windows']) <= 64, 'route_windows')
+        seen, covered = set(), set()
+        for window in route['windows']:
+            shape(window, 'pool_id window_id metrics', 'route_window_shape')
+            need(capacity_name(window['pool_id']) and capacity_name(window['window_id']), 'route_window_identity')
+            identity = (window['pool_id'], window['window_id'])
+            need(identity not in seen, 'duplicate_window')
+            seen.add(identity)
+            metrics = window['metrics']
+            need(isinstance(metrics, list) and 0 < len(metrics) <= len(CAPACITY_METRICS)
+                 and all(isinstance(m, str) and m in CAPACITY_METRICS for m in metrics)
+                 and len(set(metrics)) == len(metrics), 'route_metrics')
+            metric_set = frozenset(metrics)
+            need(identity not in window_metrics or window_metrics[identity] == metric_set,
+                 'route_window_metrics_mismatch')
+            window_metrics[identity] = metric_set
+            for metric in metrics:
+                counters = CAPACITY_METRICS[metric]
+                covered.update(counters)
+                key = (*identity, metric)
+                units = job['count'] * sum(job['per_job'][counter] for counter in counters)
+                totals[key] = totals.get(key, 0) + units
+                need(capacity_integer(totals[key]), 'capacity_total_bound')
+        need(covered == set(PROVIDER_COUNTERS), 'route_counter_coverage')
+    need(used_accounts == accounts, 'account_route_unknown')
+    return totals
+
+
+def provider_resources(resources, totals):
+    need(isinstance(resources, list) and 0 < len(resources) <= 1024, 'capacity_resources')
+    seen = set()
+    for resource in resources:
+        shape(resource, 'pool_id window_id metric remaining required', 'capacity_resource_shape')
+        need(all(capacity_name(resource[k]) for k in ('pool_id', 'window_id', 'metric')),
+             'capacity_binding_unknown')
+        key = tuple(resource[k] for k in ('pool_id', 'window_id', 'metric'))
+        need(key in totals and key not in seen, 'capacity_resource_mapping')
+        seen.add(key)
+        need(capacity_integer(resource['remaining']) and capacity_integer(resource['required']), 'capacity_resource_bound')
+        need(resource['required'] == totals[key], 'capacity_estimate_mismatch')
+        need(resource['remaining'] >= resource['required'], 'capacity_insufficient')
+    need(seen == set(totals), 'capacity_resource_mapping')
+
+
+def capacity_accounts(reference):
+    accounts = read_json_pin(reference)
+    shape(accounts, 'schema accounts', 'account_binding_shape')
+    need(accounts['schema'] == 'cairn.paired-account-binding/1' and
+         isinstance(accounts['accounts'], list) and 0 < len(accounts['accounts']) <= 64,
+         'account_binding_unknown')
+    identities = set()
+    for account in accounts['accounts']:
+        shape(account, 'account_id dedicated interactive_use', 'account_shape')
+        need(capacity_name(account['account_id']) and account['dedicated'] is True
+             and account['interactive_use'] is False, 'dedicated_account_unknown')
+        need(account['account_id'] not in identities, 'duplicate_account')
+        identities.add(account['account_id'])
+    return identities
+
+
+def capacity_check(reference, plan, now, models):
+    """Validate /2 declarations against the plan's separately pinned workload.
+
+    This neither authenticates the declarations nor admits provider execution.
+    """
+    capacity = read_json_pin(reference)
+    need(isinstance(capacity, dict) and capacity.get('schema') == 'cairn.paired-capacity-evidence/2', 'capacity_v2_required')
+    shape(capacity, 'schema plan_sha256 state observed_at valid_until account_binding route_binding reservation resources', 'capacity_shape')
+    need(capacity['state'] == 'declared', 'capacity_unknown')
+    need(capacity['plan_sha256'] == plan['sha256'], 'capacity_plan_mismatch')
+    need(utc(capacity['observed_at']) <= now < utc(capacity['valid_until']), 'capacity_stale')
+    jobs = provider_workload(plan, models)
+    accounts = capacity_accounts(capacity['account_binding'])
+    totals = provider_demands(capacity['route_binding'], plan, jobs, accounts)
+    provider_resources(capacity['resources'], totals)
+    reservation = read_json_pin(capacity['reservation'])
+    shape(reservation, 'schema plan_sha256 resources_sha256 state valid_until', 'reservation_shape')
+    need(reservation['schema'] == 'cairn.paired-reservation/2' and reservation['state'] == 'held'
+         and utc(reservation['valid_until']) >= utc(capacity['valid_until'])
+         and reservation['plan_sha256'] == plan['sha256']
+         and reservation['resources_sha256'] == canonical_sha(capacity['resources']), 'reservation_unknown')
+
+
 def grading_check(grading, reviewers):
     shape(grading, 'primary secondary excluded_agents rubric changed_pair_definition blinding_policy dispute_owner review_budget', 'grading_shape')
     identities = []
@@ -181,7 +335,7 @@ def validate(request, *, now):
     except (ValueError, TypeError, KeyError):
         raise Refusal('frozen_input_invalid') from None
     plan = request['plan']
-    shape(plan, 'instrument cases arms seeds attempts sha256', 'plan_shape')
+    shape(plan, 'instrument cases arms seeds attempts workload sha256', 'plan_shape')
     need(plan['sha256'] == canonical_sha({k:v for k,v in plan.items() if k != 'sha256'}), 'plan_mismatch')
     need(plan['instrument'] in ('weekly-frozen-cases','supplemental-fresh-tasks'), 'instrument_unknown')
     need(plan['arms'] == ['CURRENT','CAND'] and bundle['document']['arms'] == plan['arms'], 'paired_arms')

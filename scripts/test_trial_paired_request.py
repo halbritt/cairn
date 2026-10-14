@@ -12,6 +12,7 @@ import uuid
 from test_trial_task_prospective import fixture
 from trial_task_input import freeze_input
 from trial_task_permissions import settings_permissions
+from test_trial_paired_capacity import capacity_fixture, save_capacity
 import trial_paired_request as paired
 
 
@@ -22,7 +23,7 @@ def pinned(path):
     return {'path': str(path.resolve()), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
-def request_fixture(root):
+def request_fixture(root, *, historical_capacity=False):
     (root/'registry').mkdir(mode=0o700)
     inputs = fixture(root / 'input')
     doc = json.loads((inputs / 'input.json').read_text())
@@ -70,6 +71,9 @@ def request_fixture(root):
         route_binding=pinned(routes), quota_policy=pinned(policy), reservation=pinned(reservation),
         resources=resources,demands={role:[dict(resource_index=0,max_units_per_attempt=1)]
             for role in ('CURRENT','CAND','primary','secondary')})))
+    if not historical_capacity:
+        plan, capacity_v2, _, _ = capacity_fixture(root, plan)
+        capacity = Path(save_capacity(root, capacity_v2)['path'])
     provenance = root / 'corpus-selection.json'
     _, selection=paired.freeze_corpus([],dict(description='Empty fixture corpus',excluded_record_ids=[],
         forbidden_text=['fixture evaluator answer'],excluded_artifacts=[pinned(artifact)]))
@@ -95,6 +99,38 @@ def request_fixture(root):
 
 
 class RequestTests(unittest.TestCase):
+    def test_current_requests_never_fall_back_to_legacy_schema(self):
+        for mutation, code in [('request', 'request_schema'), ('capacity', 'capacity_v2_required')]:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                request = request_fixture(root)
+                if mutation == 'request':
+                    request['schema'] = 'cairn.paired-eval.request/1'
+                else:
+                    path = Path(request['capacity']['path'])
+                    capacity = json.loads(path.read_text())
+                    capacity['schema'] = 'cairn.paired-capacity-evidence/1'
+                    path.write_text(json.dumps(capacity))
+                    request['capacity'] = pinned(path)
+                with self.assertRaisesRegex(paired.Refusal, '^' + code + '$'):
+                    paired.prepare(request, registry=root/'registry', now=NOW)
+                self.assertEqual(list((root/'registry').iterdir()), [])
+                self.assertFalse((root/'output').exists())
+
+    def test_historical_v1_is_source_only_and_cannot_prepare_a_prospective_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = request_fixture(root, historical_capacity=True)
+            models = dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'fixture-model')
+            # Retain the historical one-call/no-token source behavior explicitly.
+            paired.capacity_check_v1(request['capacity'], request['plan'], NOW, models)
+            with self.assertRaisesRegex(paired.Refusal, '^capacity_v2_required$'):
+                paired.capacity_check(request['capacity'], request['plan'], NOW, models)
+            with self.assertRaises(paired.Refusal):
+                paired.prepare(request, registry=root/'registry', now=NOW)
+            self.assertEqual(list((root/'registry').iterdir()), [])
+            self.assertFalse((root/'output').exists())
+
     def test_request_cannot_omit_the_reviewed_implementation_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);request=request_fixture(root)

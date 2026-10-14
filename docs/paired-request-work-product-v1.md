@@ -1,4 +1,4 @@
-# Offline paired requests and selected work products, version 1
+# Offline paired requests, version 2, and selected work products, version 1
 
 This source slice prepares reviewed requests and exports selected local work.
 It has no provider launcher, scheduler, deployed admission path or supervisor
@@ -43,7 +43,12 @@ refused. The CLI reports fixed codes without paths, source text or exception
 messages. Argument syntax errors use standard argparse help. Success exits 0;
 refusal exits 2. Callers must inspect both exit status and selected JSON.
 
-The closed `cairn.paired-eval.request/1` object accepts these fields only:
+Prospective preparation requires `cairn.paired-eval.request/2` and the
+[version 2 provider capacity contract](paired-capacity-v2.md). Version 1
+capacity is retained only in `capacity_check_v1` for historical source inspection;
+neither request preparation nor the current `capacity_check` calls it.
+
+The closed `cairn.paired-eval.request/2` object accepts these fields only:
 
 | Field | Contract |
 | --- | --- |
@@ -51,11 +56,11 @@ The closed `cairn.paired-eval.request/1` object accepts these fields only:
 | `request_id`, `campaign_id`, `occurrence_id` | Canonical UUID strings. |
 | `scheduled_at`, `expires_at` | UTC timestamps; the current time must be in the interval. |
 | `frozen_input` | Absolute input `path` and exact `manifest_sha256` of `FROZEN.json`; existing prospective input validation must also pass. |
-| `plan` | Exact `instrument`, frozen case IDs, `arms`, unique integer `seeds`, `attempts`, canonical `sha256`. Arms must be CURRENT and CAND; attempts equal cases × two arms × seeds. |
+| `plan` | Exact `instrument`, frozen case IDs, `arms`, unique integer `seeds`, `attempts`, pinned `workload`, canonical `sha256`. The hash includes the workload pin. Arms must be CURRENT and CAND; attempts equal cases × two arms × seeds. |
 | `interfaces` | CURRENT and CAND each specify `api_revision`, `actor_base`, `components`, matching the frozen memory-arm declaration and actor baseline. Component file pins are rechecked. |
 | `dispositions` | Exactly task, oracle, comparator, supervisor, native and integration. Each has a pinned `artifact`, exact `subject_sha256`, `reviewer_id`, accepted `state` and unexpired `valid_until`. |
 | `limits` | Selected input 9500 bytes, final answer 8192 bytes, tool room 32000 bytes (`tool_room_bytes`), two native searches, four pulls, five hook seconds, thirty seconds for the last native memory call. |
-| `capacity` | Pin of the whole-plan capacity declaration described below. |
+| `capacity` | Pin of the [whole-plan capacity v2 declaration](paired-capacity-v2.md). |
 | `corpus_selection` | Pin of the source identity and exclusion artifact, checked against the frozen corpus. |
 | `grading` | Primary and secondary agent/model declarations; excluded agents; pinned rubric, changed-pair definition, blinding policy and review budget; dispute owner. |
 | `output` | Absolute fresh private preparation output path. |
@@ -115,7 +120,13 @@ rules do not prove effective native permission matching. Actual denials and
 control failures must remain evidence. These source declarations never enable
 runtime admission.
 
-## Whole-plan capacity declarations
+## Historical whole-plan capacity declarations, version 1
+
+The following describes preserved source behavior, not a usable prospective
+capacity contract. It permits omitted token demand and assumes one call per
+attempt. `capacity_check_v1` preserves those semantics for historical inspection.
+New requests must use v2; there is no automatic conversion, fallback or inferred
+provider-request/token estimate.
 
 `cairn.paired-capacity-evidence/1` has exactly `schema`, `plan_sha256`, `state`,
 `observed_at`, `valid_until`, four pins (`account_binding`, `route_binding`,
@@ -232,7 +243,7 @@ acceptance requirement.
 From the scripts directory:
 
 ```sh
-python3 -m unittest -v test_trial_paired_request test_trial_work_product test_trial_task_prospective
+python3 -B -m unittest -v test_trial_paired_capacity test_trial_paired_request test_trial_work_product test_trial_task_prospective
 ```
 
 Tests use owned disposable inputs and local Git repositories, with explicit
