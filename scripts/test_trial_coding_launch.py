@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from trial_coding_launch import compile_launch
+from trial_coding_launch import compile_launch, compile_sdk_launch
 from trial_task_permissions import settings_permissions
 
 
@@ -50,6 +50,50 @@ class CodingInputTests(unittest.TestCase):
         for change in ({'max_turns': 9}, {'tools': ['Bash']}, {'extra_args': ['--permission-mode', 'bypassPermissions']}):
             with self.subTest(change=change), self.assertRaises(TypeError):
                 launch(**change)
+
+
+class SDKInputTests(unittest.TestCase):
+    def test_sdk_rejects_nul_in_instruction_before_constructing_invalid_argv(self):
+        with self.assertRaisesRegex(ValueError, '^coding_input$'):
+            compile_sdk_launch(session_id='90000000-0000-4000-8000-000000000001',
+                               model='claude-opus-5-5', effort='high', prompt='Implement.',
+                               memory_instruction='Check\0source.')
+
+    def test_sdk_can_encode_nul_in_json_prompt_without_putting_it_in_argv(self):
+        sdk = compile_sdk_launch(session_id='90000000-0000-4000-8000-000000000001',
+                                 model='claude-opus-5-5', effort='high', prompt='Check\0source.',
+                                 memory_instruction='Inspect the task.')
+        self.assertEqual(json.loads(sdk.input_message)['message']['content'], 'Check\0source.')
+        self.assertTrue(all('\0' not in argument for argument in sdk.argv))
+
+    def test_sdk_keeps_frozen_tools_permissions_and_turns_but_accounts_for_control(self):
+        fields = dict(session_id='90000000-0000-4000-8000-000000000001',
+                      model='claude-sonnet-5-5', effort='high', prompt='Implement the task.',
+                      memory_instruction='Check guidance against source.')
+        command = compile_launch(**fields)
+        sdk = compile_sdk_launch(**fields)
+        self.assertEqual(sdk.argv, command.argv)
+        self.assertEqual(sdk.input_message, command.input_message)
+        self.assertEqual(sdk.permission_json, command.permission_json)
+        self.assertEqual(sdk.permission_sha256, command.permission_sha256)
+        initialize = sdk.control.pending_write()
+        self.assertEqual(json.loads(initialize)['request']['subtype'], 'initialize')
+        self.assertLess(sdk.hook_context_bytes, command.hook_context_bytes)
+        self.assertEqual(sdk.hook_context_bytes, sdk.control.guaranteed_context_bytes)
+        self.assertGreater(sdk.hook_context_bytes, 0)
+        self.assertGreaterEqual(sdk.control.remaining_wire_bytes, 1000)
+        self.assertGreaterEqual(sdk.control.remaining_selected_bytes, 1000)
+
+    def test_sdk_refuses_when_initialization_would_spend_minimum_hook_room(self):
+        fields = dict(session_id='90000000-0000-4000-8000-000000000001',
+                      model='claude-sonnet-5-5', effort='high',
+                      memory_instruction='Use guidance.')
+        # This fits the command contract; SDK initialization needs more of the
+        # same allowance and must not silently borrow another input budget.
+        command = compile_launch(prompt='x' * 7800, **fields)
+        self.assertGreaterEqual(command.hook_context_bytes, 1000)
+        with self.assertRaises(ValueError):
+            compile_sdk_launch(prompt='x' * 7800, **fields)
 
 
 if __name__ == '__main__':

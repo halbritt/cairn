@@ -35,6 +35,11 @@ class CodingLaunch:
         return hashlib.sha256(self.permission_json).hexdigest()
 
 
+@dataclasses.dataclass(frozen=True)
+class SDKLaunch(CodingLaunch):
+    control: object
+
+
 def compile_launch(*, session_id, model, effort, prompt, memory_instruction):
     """One frozen user message and fixed original flags, for a future owner.
 
@@ -82,3 +87,22 @@ def compile_launch(*, session_id, model, effort, prompt, memory_instruction):
             '--settings', '/config/settings.json', '--mcp-config', '/config/mcp.json',
             '--max-turns', str(MAX_TURNS), '--append-system-prompt', memory_instruction)
     return CodingLaunch(argv, message, permission_json, context_bytes)
+
+
+def compile_sdk_launch(*, session_id, model, effort, prompt, memory_instruction):
+    """Compile sdk-hooks/1 with one user and bounded control-only continuation.
+
+    The controller owns initialization and subsequent writes. The owner must
+    consume its write queue, rather than write input_message a second time or
+    close stdin after that user. This declaration does not admit a runtime.
+    """
+    from trial_sdk_control import SDKControl
+
+    if isinstance(memory_instruction, str) and '\0' in memory_instruction:
+        raise ValueError('coding_input')
+    coding = compile_launch(session_id=session_id, model=model, effort=effort,
+                            prompt=prompt, memory_instruction=memory_instruction)
+    control = SDKControl(session_id, coding.input_message,
+                         len(memory_instruction.encode('utf-8')))
+    return SDKLaunch(coding.argv, coding.input_message, coding.permission_json,
+                     control.guaranteed_context_bytes, control)
