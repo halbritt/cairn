@@ -134,25 +134,26 @@ long-context endpoint alternative uses component-wise price maxima and charges
 the account's full work to its additional pool, yielding 846150. Tests use these
 independent worked expectations, not a second implementation of the arithmetic.
 
-## Producer wiring proposal (outside this lane)
+## Producer wiring and remaining evidence
 
-The bridge is deliberately not wired into `trial_paired_request.prepare` here.
-Root can add a required pinned companion review document binding
-`canonical_sha(request)` to the spend-request and account/quote mapping pins.
-That companion needs its own closed schema and review coverage; do not add
-unrecognized fields to request/2 or accept a missing companion by fallback.
+The weekly paths of `trial_paired_request.check` and `prepare` call this bridge
+through `checked_request` and `trial_paired_companion.validate_companion`, after
+base request validation and before registry markers or output writes. They
+require independently selected companion and review file pins. The companion
+binds the whole canonical request to the spend-request and account/quote mapping;
+preparation retains the checked inputs and projection. See the
+[companion contract](paired-companion-v1.md) for the closed schemas and CLI.
 
-In `scripts/trial_paired_request.py:prepare`, the concrete insertion point is
-after `bundle = validate(request, now=now)` and **before** any registry marker or
-output write. Verify the companion's request hash, derive models exactly as the
-existing capacity call in `validate` does (frozen native model for both arms;
-request grading models for primary/secondary), then call this bridge with
-`request['plan']` and `request['capacity']`. Pin the resulting projection in the
-reviewed preparation output. Apply the same check to the prospective `check`
-path. These are proposed source changes for root, not implemented side effects.
+The separate original-weekly producer, `trial_weekly_request.check` and
+`prepare`, uses the same companion boundary after rebuilding its weekly bundle.
+It derives the native model from that bundle's execution sidecar; request/2
+continues to derive it from its prospective input. Both derive grader models
+from the validated request. See [weekly requests](weekly-request-v1.md).
 
-Before such a projection can support runtime admission, root needs actual
-producer evidence for:
+These paths validate declarations. Accepted review fields and pinned artifacts
+do not authenticate accounts, funds or reviewer independence. Successful checks
+and preparations still report no runtime admission, and launch remains
+unavailable. Runtime admission needs actual producer evidence for:
 
 - Complete role/job inventory, retry and unknown-outcome policy, and calibrated
   positive provider-request plus disjoint token/cache upper bounds. A pinned

@@ -201,10 +201,12 @@ self-service and a separate dedicated account. Supplemental fresh tasks do not
 replace these requirements. Existing 8500/9500/8192/32000 and all other limits stay
 unchanged.
 
-This fixture demonstrates wiring with the current input loader; it does not
-establish actual original weekly loader/corpus identity/count compatibility. That
-loader's original1900/control mismatch is a separate root-owned lane. Actual
-provider request/cache calibration, authenticated account routing/dedication,
+This request/2 boundary continues to use prospective input. The separately
+implemented [weekly request](weekly-request-v1.md) and
+[weekly input](weekly-input-bundle-v1.md) boundaries handle the original weekly
+shape without redirecting request/2. Their source checks do not establish actual
+weekly freeze custody, corpus acceptance or campaign results. Actual provider
+request/cache calibration, authenticated account routing/dedication,
 qualified prices and fees, funded balances, enforceable reservation and cumulative
 debit before forwarding remain root-owned obligations. Pinned source declarations
 and a passing check do not prove them. This implementation has no runtime launch,
