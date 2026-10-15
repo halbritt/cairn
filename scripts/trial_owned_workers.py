@@ -4,6 +4,10 @@ Only trusted fixed runner builders create Child commands. Held cgroup/process
 handles are observations and cleanup authority, never provider admission.
 """
 import dataclasses
+import errno
+import io
+import socket
+import stat
 import json
 import os
 from pathlib import Path
@@ -227,11 +231,118 @@ class OwnedWaitFact(WaitFact):
     boot_id: str | None
 
 
+def _socket_identity(fd):
+    info = os.fstat(fd)
+    if not stat.S_ISSOCK(info.st_mode):
+        return None
+    view = socket.socket(fileno=fd)
+    try:
+        # Linux SO_COOKIE identifies this endpoint across descriptor reuse.
+        # Peer socket inodes differ; neither peer identity nor a bare saved inode
+        # can guard an indeterminate close of this endpoint.
+        cookie = view.getsockopt(socket.SOL_SOCKET, getattr(socket, 'SO_COOKIE', 57), 8)
+    finally:
+        view.detach()
+    return info.st_dev, info.st_ino, cookie
+
+
+class _SocketEndpoint:
+    def __init__(self, sock):
+        self.fd = sock.detach()
+        self.identity = None
+        self.close_attempted = False
+        self.faults = set()
+
+    def close(self):
+        if self.fd is not None:
+            try:
+                if self.identity is None and self.close_attempted:
+                    raise OSError('unidentified_socket_close')
+                if self.identity is not None and _socket_identity(self.fd) != self.identity:
+                    self.faults.add('worker_descriptor_close_unknown')
+                    self.fd = None  # This descriptor no longer names our endpoint.
+                else:
+                    self.close_attempted = True
+                    os.close(self.fd)
+                    self.fd = None
+            except OSError as error:
+                if error.errno == errno.EBADF:
+                    self.fd = None
+                # Keep the number and identity for safe retry. Never retry a
+                # raw number after an uncertain close without checking identity.
+                self.faults.add('worker_descriptor_close_unknown')
+        return sorted(self.faults)
+
+
+class _SocketStream(io.FileIO):
+    def __init__(self, endpoint, mode):
+        self.endpoint = endpoint
+        # Endpoint custody, not FileIO/destructor ownership, decides whether a
+        # descriptor still belongs to us after an indeterminate close.
+        super().__init__(endpoint.fd, mode, closefd=False)
+
+    def close(self):
+        if not self.closed:
+            faults = self.endpoint.close()
+            super().close()
+            if faults:
+                raise OSError('worker_stream_close_unknown')
+
+
+class _SocketChannels:
+    def __init__(self):
+        self.ends, self.parents, self.children, self.streams = [], {}, {}, {}
+
+    def allocate(self):
+        for name in ('stdin', 'stdout', 'stderr', 'status'):
+            parent, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM | socket.SOCK_CLOEXEC)
+            for side, sock in ((self.parents, parent), (self.children, child)):
+                endpoint = _SocketEndpoint(sock)
+                self.ends.append(endpoint)
+                side[name] = endpoint
+            for endpoint in (self.parents[name], self.children[name]):
+                endpoint.identity = _socket_identity(endpoint.fd)
+            for endpoint, direction in ((self.parents[name], socket.SHUT_RD if name == 'stdin' else socket.SHUT_WR),
+                                        (self.children[name], socket.SHUT_WR if name == 'stdin' else socket.SHUT_RD)):
+                view = socket.socket(fileno=endpoint.fd)
+                try:
+                    view.shutdown(direction)
+                finally:
+                    view.detach()
+            if name == 'status':
+                os.set_blocking(self.parents[name].fd, False)
+                os.set_blocking(self.children[name].fd, False)
+            else:
+                raw = _SocketStream(self.parents[name], 'wb' if name == 'stdin' else 'rb')
+                self.streams[name] = io.BufferedWriter(raw) if name == 'stdin' else io.BufferedReader(raw)
+
+    def close_children(self):
+        faults = []
+        for endpoint in self.children.values():
+            faults.extend(endpoint.close())
+        if faults:
+            raise OSError('worker_descriptor_close_unknown')
+
+    def close(self):
+        faults = []
+        for stream in self.streams.values():
+            try:
+                stream.close()
+            except OSError:
+                faults.append('worker_stream_close_unknown')
+        for endpoint in self.ends:
+            faults.extend(endpoint.close())
+        return sorted(set(faults))
+
+
 class OwnedWorker(Child):
     """Direct-launcher pidfd for the new domain; legacy Child stays unchanged."""
-    def __init__(self, group, argv):
+    def __init__(self, group, argv, *, channels='pipes/1'):
         # Legacy Child keeps its exact AST. This acquisition path stores each
         # owned handle before another setup operation can fail.
+        if type(channels) is not str or channels not in ('pipes/1', 'unix-stream/1'):
+            raise Unavailable('owned_worker_channel_profile')
+        self._socket_channels = None
         self.group_identity,self.group_relative=group.identity,group.relative
         self.process,self.pidfd,self.status_fd,self.pending_status_write=None,None,None,None
         self.namespace_fds=[]
@@ -246,6 +357,9 @@ class OwnedWorker(Child):
             self.boot=str(uuid.UUID(boot)) if str(uuid.UUID(boot))==boot else None
         except (OSError,ValueError):
             pass
+        if channels == 'unix-stream/1':
+            self._start_socket_worker(group, argv)
+            return
         try:
             self.status_fd,self.pending_status_write=os.pipe2(os.O_CLOEXEC|os.O_NONBLOCK)
             command=['/usr/bin/python3',str(FIXTURE/'launcher.py'),str(group.files['cgroup.procs']),
@@ -283,7 +397,57 @@ class OwnedWorker(Child):
         group.bootstrap_child=None
 
 
+    def _start_socket_worker(self, group, argv):
+        if getattr(group, 'bootstrap_child', None) is not None:
+            raise Unavailable('owned_worker_bootstrap_held')
+        self._socket_channels = _SocketChannels()
+        # Retain construction custody even before Popen: allocation and channel
+        # close failures also need a discoverable owner.
+        group.bootstrap_child = self
+        try:
+            self._socket_channels.allocate()
+            self.status_fd = self._socket_channels.parents['status'].fd
+            self.pending_status_write = self._socket_channels.children['status'].fd
+            command = ['/usr/bin/python3', str(FIXTURE/'launcher.py'), str(group.files['cgroup.procs']),
+                       'bwrap', '--json-status-fd', str(self.pending_status_write), *argv]
+            self.process = subprocess.Popen(command,
+                **{name: self._socket_channels.children[name].fd for name in ('stdin', 'stdout', 'stderr')},
+                pass_fds=(group.files['cgroup.procs'], self.pending_status_write),
+                env={'PATH':'/usr/bin:/bin', 'LANG':'C.UTF-8'}, close_fds=True)
+            # The actual process is held by bootstrap_child before stream
+            # installation, pidfd acquisition or any later setup can fail.
+            for name, stream in self._socket_channels.streams.items():
+                setattr(self.process, name, stream)
+            try:
+                self.pidfd = os.pidfd_open(self.process.pid, 0)
+            except OSError:
+                self.acquisition_observations.append('owned_launcher_handle_unknown')
+                raise
+            try:
+                fields = Path(f'/proc/{self.process.pid}/stat').read_text().rsplit(') ', 1)[1].split()
+                self.start = int(fields[19])
+            except (OSError, ValueError, IndexError):
+                pass
+            for stream in self._socket_channels.streams.values():
+                os.set_blocking(stream.fileno(), False)
+            self._socket_channels.close_children()
+            self.pending_status_write = None
+        except BaseException as error:
+            self.acquisition_observations.extend(sorted({fault for endpoint in self._socket_channels.ends
+                                                         for fault in endpoint.faults}))
+            self.acquisition_observations.append('owned_worker_setup_unknown')
+            if self.process is None:
+                self.acquisition_observations.extend(self.close())
+            if not isinstance(error, OSError):
+                raise
+            reason = ('owned_launcher_handle_unknown' if 'owned_launcher_handle_unknown' in
+                      self.acquisition_observations else 'owned_worker_setup_unknown')
+            raise Unavailable(reason) from None
+        group.bootstrap_child = None
+
     def observe_wait(self):
+        if self.process is None:
+            return None
         fact=super().observe_wait()
         if fact is not None and not isinstance(fact,OwnedWaitFact):
             self.wait=OwnedWaitFact(fact.pid,fact.start_ticks,fact.raw_status,fact.returncode,self.boot)
@@ -291,7 +455,12 @@ class OwnedWorker(Child):
 
     def close(self):
         errors=[]
-        if self.pending_status_write is not None:
+        if self._socket_channels is not None:
+            errors.extend(self._socket_channels.close())
+            self.pending_status_write = self._socket_channels.children.get('status')
+            if self.pending_status_write is not None:
+                self.pending_status_write = self.pending_status_write.fd
+        elif self.pending_status_write is not None:
             # Read end stays held while checking an indeterminate writer close:
             # it pins this pipe inode, so a reused unrelated FD is never closed.
             try:
@@ -303,14 +472,14 @@ class OwnedWorker(Child):
             except OSError:
                 errors.append('worker_descriptor_close_unknown')
             self.pending_status_write=None
-        if self.process is not None:
+        if self._socket_channels is None and self.process is not None:
             for stream in [self.process.stdin,self.process.stdout,self.process.stderr]:
                 if stream is not None:
                     try:
                         stream.close()
                     except OSError:
                         errors.append('worker_stream_close_unknown')
-        for fd in [self.pidfd,self.status_fd,*self.namespace_fds]:
+        for fd in [self.pidfd, self.status_fd if self._socket_channels is None else None, *self.namespace_fds]:
             if fd is not None:
                 try:
                     os.close(fd)
