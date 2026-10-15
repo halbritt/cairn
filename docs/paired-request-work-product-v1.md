@@ -16,6 +16,11 @@ python3 scripts/trial_paired_request.py check /absolute/path/request.json
 python3 scripts/trial_paired_request.py prepare /absolute/path/request.json --registry /absolute/path/private-registry
 ```
 
+Those commands without companion arguments apply to `supplemental-fresh-tasks`.
+Weekly requests additionally require explicit companion and independently
+selected review file pins on **both** check and prepare; see the closed
+[weekly companion contract](paired-companion-v1.md). Request/2 itself is unchanged.
+
 `check` validates without registering or creating output. `prepare` snapshots
 the supplied JSON, validates it, exclusively registers the occurrence and request
 IDs, then creates the requested private output directory. The registry must have
@@ -40,7 +45,7 @@ It exits 2 and writes:
 
 Malformed JSON, duplicate keys, nonfinite numbers and unavailable files are
 refused. The CLI reports fixed codes without paths, source text or exception
-messages. Argument syntax errors use standard argparse help. Success exits 0;
+messages. Argument syntax errors also use a fixed refusal code. Success exits 0;
 refusal exits 2. Callers must inspect both exit status and selected JSON.
 
 Prospective preparation requires `cairn.paired-eval.request/2` and the

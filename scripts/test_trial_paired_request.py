@@ -47,7 +47,7 @@ def request_fixture(root, *, historical_capacity=False):
     settings=settings_permissions()
     settings['allow'] += ['Bash(git add *)','Bash(git commit *)','Bash(make contract)']
     profile_settings.write_text(json.dumps(settings))
-    plan = dict(instrument='weekly-frozen-cases', cases=['new-work'], arms=['CURRENT','CAND'], seeds=[1], attempts=2)
+    plan = dict(instrument='supplemental-fresh-tasks', cases=['new-work'], arms=['CURRENT','CAND'], seeds=[1], attempts=2)
     plan['sha256'] = paired.canonical_sha(plan)
     uid = lambda: str(uuid.uuid4())
     dispositions = {name: dict(artifact=pinned(artifact), subject_sha256='3'*64,

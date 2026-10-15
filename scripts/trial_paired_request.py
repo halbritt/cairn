@@ -419,8 +419,12 @@ def read_bytes(path):
 
 
 def read_json(path):
+    return decode_json(read_bytes(path))
+
+
+def decode_json(content):
     try:
-        return json.loads(read_bytes(path), object_pairs_hook=unique_object,
+        return json.loads(content, object_pairs_hook=unique_object,
                           parse_constant=reject_nonfinite)
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise Refusal('invalid_json') from None
@@ -444,16 +448,16 @@ def pin(reference):
     need(digest.hexdigest() == reference['sha256'], 'pin_mismatch')
 
 
-def read_json_pin(reference):
-    # Read and parse the same bytes that were hashed, without a second open.
+def read_pin_bytes(reference):
+    # Callers parse or retain these exact hashed bytes without a second open.
     pin_shape(reference)
     content = read_bytes(reference['path'])
     need(hashlib.sha256(content).hexdigest() == reference['sha256'], 'pin_mismatch')
-    try:
-        return json.loads(content, object_pairs_hook=unique_object,
-                          parse_constant=reject_nonfinite)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise Refusal('invalid_json') from None
+    return content
+
+
+def read_json_pin(reference):
+    return decode_json(read_pin_bytes(reference))
 
 
 def unique_object(pairs):
@@ -469,10 +473,17 @@ def reject_nonfinite(_):
 
 
 def write_selected(path, document):
-    with path.open('x', encoding='utf-8') as target:
+    write_selected_bytes(path, selected_bytes(document))
+
+
+def selected_bytes(document):
+    return (json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True)+'\n').encode('utf-8')
+
+
+def write_selected_bytes(path, content):
+    with path.open('xb') as target:
         os.chmod(path, 0o600)
-        json.dump(document, target, ensure_ascii=False, allow_nan=False, sort_keys=True)
-        target.write('\n')
+        target.write(content)
         target.flush()
         os.fsync(target.fileno())
 
@@ -551,9 +562,32 @@ def check_selection(selection, notes):
     need(corpus['notes'] == notes and rebuilt['notes'] == selection['notes'], 'selection_contamination')
 
 
-def prepare(request, *, registry, now):
+def checked_request(request, *, now, companion=None, review=None):
     request = json.loads(json.dumps(request, ensure_ascii=False, allow_nan=False))
     bundle = validate(request, now=now)
+    evidence, retained = None, {}
+    if request['plan']['instrument'] == 'weekly-frozen-cases':
+        need(companion is not None and review is not None, 'weekly_companion_required')
+        # Lazy boundary: mapping reuses this module's validators. The CLI below
+        # dispatches through the canonical import so Refusal has one identity.
+        from trial_paired_companion import validate_companion
+        evidence, retained = validate_companion(request, bundle, companion, review, now=now)
+    else:
+        need(companion is None and review is None, 'supplemental_companion_unsupported')
+    return request, bundle, evidence, retained
+
+
+def check(request, *, now, companion=None, review=None):
+    request, _, evidence, _ = checked_request(request, now=now, companion=companion, review=review)
+    result = dict(status='validated_for_review', runtime_admitted=False,
+                  request_sha256=canonical_sha(request))
+    if evidence is not None:
+        result['provider_evidence'] = evidence
+    return result
+
+
+def prepare(request, *, registry, now, companion=None, review=None):
+    request, bundle, evidence, retained = checked_request(request, now=now, companion=companion, review=review)
     output = plain_path(request['output'])
     need(not output.exists(), 'target_exists')
     registry = plain_path(str(registry))
@@ -577,29 +611,46 @@ def prepare(request, *, registry, now):
     selected = dict(schema='cairn.paired-eval.preparation/1', status='prepared_for_review',
                     request_sha256=canonical_sha(request), runtime_admitted=False,
                     evidence_basis='declared pinned input; no authorization or runtime attestation')
+    if evidence is not None:
+        selected['provider_evidence'] = evidence
+        for name, content in retained.items():
+            write_selected_bytes(output/name, content)
     write_selected(output/'preparation.json', selected)
     return selected
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    class PublicParser(argparse.ArgumentParser):
+        def error(self, message):
+            raise Refusal('invalid_arguments')
+
+    parser = PublicParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('check').add_argument('request')
+    checking = commands.add_parser('check')
+    checking.add_argument('request')
     preparation = commands.add_parser('prepare')
     preparation.add_argument('request')
     preparation.add_argument('--registry', required=True)
+    for command in (checking, preparation):
+        command.add_argument('--companion')
+        command.add_argument('--companion-sha256')
+        command.add_argument('--review')
+        command.add_argument('--review-sha256')
     commands.add_parser('launch').add_argument('request')
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         need(args.command != 'launch', 'provider_execution_unavailable')
+        references = {}
+        for name in ('companion', 'review'):
+            path, digest = getattr(args, name), getattr(args, name+'_sha256')
+            need((path is None) == (digest is None), 'explicit_pin_required')
+            references[name] = None if path is None else dict(path=path, sha256=digest)
         request = read_json(args.request)
         now = dt.datetime.now(dt.timezone.utc)
         if args.command == 'prepare':
-            selected = prepare(request, registry=args.registry, now=now)
+            selected = prepare(request, registry=args.registry, now=now, **references)
         else:
-            validate(request, now=now)
-            selected = dict(status='validated_for_review', runtime_admitted=False,
-                            request_sha256=canonical_sha(request))
+            selected = check(request, now=now, **references)
     except Refusal as error:
         selected = dict(status='refused', code=str(error))
     except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
@@ -610,4 +661,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    from trial_paired_request import main
     raise SystemExit(main())
