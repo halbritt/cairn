@@ -178,13 +178,14 @@ def _inspect_paths(prepared, output, allowed_paths):
     return actor, output, current, allowed, changed
 
 
-def _inspect_bytes(actor, prepared, current, allowed):
+def _inspect_bytes(actor, prepared, current, allowed, *, literal_paths=False):
     commit = git(actor, 'rev-parse', 'HEAD').decode().strip()
-    patch = git(actor, 'diff', '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
+    diff = ('--literal-pathspecs', 'diff') if literal_paths else ('diff',)
+    patch = git(actor, *diff, '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
                 prepared['base_commit'], '--', *sorted(allowed))
-    committed_patch = git(actor, 'diff', '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
+    committed_patch = git(actor, *diff, '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
                           prepared['base_commit'], 'HEAD', '--', *sorted(allowed))
-    working_patch = git(actor, 'diff', '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
+    working_patch = git(actor, *diff, '--binary', '--no-ext-diff', '--no-textconv', '--no-renames',
                         'HEAD', '--', *sorted(allowed))
     exported = {name:read_bytes(actor/name) for name in sorted(allowed) if name in current}
     patches = {'diff.patch':patch, 'committed.patch':committed_patch, 'working.patch':working_patch}
@@ -285,6 +286,34 @@ def export_attempt_evidence(prepared, output, *, allowed_paths, required_paths, 
     not become an absent-file claim. Exclusive fsynced writes are not a batch
     atomic publication: later I/O failure may leave a consumed partial target.
     """
+    return _export_attempt_evidence(prepared, output, allowed_paths=allowed_paths,
+        required_paths=required_paths, verify_attempt=verify_attempt, observe_index=False)
+
+
+def export_attempt_evidence_v2(prepared, output, *, allowed_paths, required_paths, verify_attempt):
+    """V1's closure/export contract plus selected staged state; not a task grade."""
+    return _export_attempt_evidence(prepared, output, allowed_paths=allowed_paths,
+        required_paths=required_paths, verify_attempt=verify_attempt, observe_index=True)
+
+
+def _index_files(actor):
+    # Git refreshes shared-index timestamps on reads, even with optional locks
+    # disabled. Refuse these dependencies before any Git inspection, including
+    # unused shared files; do not silently export an incomplete index identity.
+    gitdir = plain_path(str(actor/'.git'))
+    need(not any(p.name.startswith('sharedindex.') for p in gitdir.iterdir()), 'unsupported_split_index')
+    metadata = (gitdir/'index').lstat()
+    need(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, 'index_special_file')
+    content = read_bytes(gitdir/'index')
+    need(len(content) >= 32 and content[:4] == b'DIRC' and
+         int.from_bytes(content[4:8], 'big') in (2, 3, 4) and
+         int.from_bytes(content[8:12], 'big') <= COUNT_LIMIT and
+         hashlib.sha1(content[:-20]).digest() == content[-20:], 'index_format')
+    return {'index': dict(sha256=hashlib.sha256(content).hexdigest(), bytes=len(content))}
+
+
+def _export_attempt_evidence(prepared, output, *, allowed_paths, required_paths,
+                             verify_attempt, observe_index):
     _check_prepared(prepared)
     terminal = attempt_closure(prepared, verify_attempt)
     need(isinstance(required_paths, list) and len(required_paths) <= COUNT_LIMIT and
@@ -294,9 +323,21 @@ def export_attempt_evidence(prepared, output, *, allowed_paths, required_paths, 
          all(isinstance(name, str) for name in allowed_paths), 'allowed_paths')
     try:
         required = {relative_name(name) for name in required_paths}
+        if observe_index:
+            index_files = _index_files(plain_path(prepared['actor_path']))
         actor, output, current, allowed, changed = _inspect_paths(prepared, output, allowed_paths)
         need(required <= allowed, 'required_paths_unselected')
-        commit, exported, patches = _inspect_bytes(actor, prepared, current, allowed)
+        if observe_index:
+            head = git(actor, 'rev-parse', 'HEAD').decode().strip()
+            staged = sorted(relative_name(name.decode('utf-8')) for name in filter(None,
+                git(actor, 'diff', '--cached', '--name-only', '-z',
+                    '--no-ext-diff', '--no-textconv', head, '--').split(b'\0')))
+            staged_changes = sorted(relative_name(name.decode('utf-8')) for name in filter(None,
+                git(actor, 'diff', '--cached', '--name-only', '-z', '--no-renames',
+                    '--no-ext-diff', '--no-textconv', head, '--').split(b'\0')))
+            need(set(staged_changes) <= allowed, 'unexpected_staged_path')
+        commit, exported, patches = _inspect_bytes(actor, prepared, current, allowed,
+                                                  literal_paths=observe_index)
         selected = dict(schema='cairn.work-product-attempt-evidence/1', status='evidence_exported',
             base_commit=prepared['base_commit'], commit=commit,
             files={name:current[name] for name in exported},
@@ -309,11 +350,23 @@ def export_attempt_evidence(prepared, output, *, allowed_paths, required_paths, 
             workspace_sha256=prepared['workspace_sha256'], task_acceptance=False,
             basis='trusted caller attempt adapter; reported stop/facts are observations, not validity; '
                   'schema and hashes are not runtime authentication')
+        if observe_index:
+            content_sha = canonical_sha(selected)
+            selected['schema'] = 'cairn.work-product-attempt-evidence/2'
+            selected['index_observation'] = dict(schema='cairn.work-product-index-observation/1',
+                state='observed', binding=dict(prepared['binding']),
+                workspace_sha256=prepared['workspace_sha256'], head_commit=head,
+                attempt_content_sha256=content_sha, staged_paths=staged,
+                staged_change_paths=staged_changes, index_files=index_files)
         # The new presence/terminal metadata also fits the unchanged total cap.
         metadata_bytes = len(json.dumps(selected, ensure_ascii=False, allow_nan=False,
                                         sort_keys=True).encode('utf-8'))+1
         need(sum(map(len, exported.values()))+sum(map(len, patches.values()))+
              metadata_bytes <= TOTAL_LIMIT, 'export_limit')
+        if observe_index:
+            need(_index_files(actor) == index_files and commit == head and
+                 git(actor, 'rev-parse', 'HEAD').decode().strip() == head,
+                 'index_or_head_changed_during_export')
         _write_export_files(output, exported, patches)
         write_selected(output/'attempt-evidence.json', selected)
         return selected
