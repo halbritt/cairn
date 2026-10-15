@@ -14,13 +14,15 @@ import uuid
 
 from selected_native.evidence import EvidenceError
 from selected_native.frames import FrameError, parse
+from trial_sdk_incoming import (IncomingError, OwnedJSON, canonical_chunks,
+                                canonical_size_sha256, parse_document)
 
 
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure')
 REQUIRED_EVENTS = frozenset({'SessionStart', 'UserPromptSubmit'})
 HOOK_SECONDS = 5
 CAPTURE_LIMIT, SELECTED_LIMIT, RESERVE = 8500, 9500, 512
-FRAME_LIMIT, LEDGER_LIMIT, ROW_LIMIT = 65536, 65536, 128
+FRAME_LIMIT, LEDGER_LIMIT, ROW_LIMIT = 128 * 1024, 65536, 128
 REQUEST_ID_BYTES = 128
 
 
@@ -37,11 +39,14 @@ def _sha(content):
     return hashlib.sha256(content).hexdigest()
 
 
-def _reply_wire(request_id, event, context):
-    response = dict(type='control_response', response={'subtype': 'success',
+def _reply_document(request_id, event, context):
+    return dict(type='control_response', response={'subtype': 'success',
                     'request_id': request_id, 'response': {'continue': True,
                     'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}})
-    return _canonical(response) + b'\n'
+
+
+def _reply_wire(request_id, event, context):
+    return _canonical(_reply_document(request_id, event, context)) + b'\n'
 
 
 def reply_wire_bytes(request_id, event, additional_context=''):
@@ -61,8 +66,8 @@ def reply_wire_bytes(request_id, event, additional_context=''):
     if len(additional_context) > CAPTURE_LIMIT:
         raise SDKControlError('sdk_input_budget')
     try:
-        return len(_reply_wire(request_id, event, additional_context))
-    except UnicodeError:
+        return canonical_size_sha256(_reply_document(request_id, event, additional_context))[0] + 1
+    except (UnicodeError, IncomingError):
         raise SDKControlError('sdk_context_shape') from None
 
 
@@ -73,24 +78,25 @@ def _plain(frame):
     def clone(entry, depth):
         nonlocal nodes, text_bytes
         nodes += 1
-        if nodes > 2048 or depth > 16:
+        if nodes > FRAME_LIMIT or depth > 32:
             raise SDKControlError('sdk_frame_bounds')
         if type(entry) is str:
             if len(entry) > FRAME_LIMIT:
                 raise SDKControlError('sdk_frame_bounds')
-            text_bytes += len(entry.encode('utf-8'))
-            if text_bytes > FRAME_LIMIT:
-                raise SDKControlError('sdk_frame_bounds')
+            for offset in range(0, len(entry), 2048):
+                text_bytes += len(entry[offset:offset + 2048].encode('utf-8'))
+                if text_bytes > FRAME_LIMIT:
+                    raise SDKControlError('sdk_frame_bounds')
             return entry
         if entry is None or type(entry) is bool:
             return entry
-        if type(entry) is int and entry.bit_length() <= 64:
+        if type(entry) is int and entry.bit_length() <= 1024:
             return entry
         if type(entry) is float and math.isfinite(entry):
             return entry
-        if type(entry) is dict and len(entry) <= 64 and all(type(k) is str for k in entry):
+        if type(entry) is dict and len(entry) <= FRAME_LIMIT and all(type(k) is str for k in entry):
             return {clone(k, depth + 1): clone(v, depth + 1) for k, v in entry.items()}
-        if type(entry) is list and len(entry) <= 256:
+        if type(entry) is list and len(entry) <= FRAME_LIMIT:
             return [clone(v, depth + 1) for v in entry]
         raise SDKControlError('sdk_frame_shape')
 
@@ -101,7 +107,39 @@ def _plain(frame):
 class Callback:
     request_id: str
     event: str
-    input_json: bytes = dataclasses.field(repr=False)
+    _input: dict = dataclasses.field(repr=False)
+    input_bytes: int
+    input_sha256: str
+    frame_raw_bytes: int
+    frame_raw_sha256: str
+    frame_encoding: str
+
+    def iter_input_json(self):
+        """Full canonical input in bounded chunks; owner charges actual transport.
+
+        This is semantic JSON, not byte-identical original wire. The owner must
+        drain producer output while writing, enforce deadlines and account for
+        each emitted chunk and its actual write progress.
+        """
+        return canonical_chunks(self._input)
+
+    def diagnostic_projection(self):
+        """Explicit reduced view for the fixed marker producer only.
+
+        Full input was validated and hashed. This view is not equivalent to
+        delivering the complete input to a general producer.
+        """
+        result = dict(schema='cairn.sdk-marker-input-projection/1', event=self.event,
+                      session_id=self._input['session_id'], input_bytes=self.input_bytes,
+                      input_sha256=self.input_sha256, frame_raw_bytes=self.frame_raw_bytes,
+                      frame_raw_sha256=self.frame_raw_sha256, frame_encoding=self.frame_encoding)
+        if self.event.startswith('PostToolUse'):
+            for name, limit in (('tool_name', 128), ('tool_use_id', 256)):
+                value = self._input.get(name)
+                if type(value) is not str or not 0 < len(value) <= limit:
+                    raise SDKControlError('sdk_projection_shape')
+                result[name] = value
+        return result
 
 
 @dataclasses.dataclass(frozen=True)
@@ -212,7 +250,7 @@ class SDKControl:
     def _future_reply_bytes(self, events):
         # These two events are mandatory observations in the existing evaluator,
         # not predictions of native event counts. Additional events reserve at receipt.
-        return sum(len(_reply_wire('r' * REQUEST_ID_BYTES, event, '')) for event in events)
+        return sum(reply_wire_bytes('r' * REQUEST_ID_BYTES, event) for event in events)
 
     def _held_reply_bytes(self):
         return sum(self._empty_replies.values()) + self._future_reply_bytes(self._future_required)
@@ -324,28 +362,74 @@ class SDKControl:
         error = None
         try:
             if type(frame) is dict:
-                raw = _canonical(_plain(frame))
+                frozen = _plain(frame)
+                length, digest = canonical_size_sha256(frozen)
+                encoding = 'canonical_caller_frame'
             elif type(frame) is bytes:
-                raw = frame
+                if len(frame) > FRAME_LIMIT:
+                    raise SDKControlError('sdk_frame_bounds')
+                frozen = _plain(parse_document(frame.decode('utf-8'), len(frame)))
+                length, digest = len(frame), _sha(frame)
+                encoding = 'supplied_frame_bytes'
             else:
                 raise SDKControlError('sdk_frame_shape')
-            if len(raw) > FRAME_LIMIT:
-                raise SDKControlError('sdk_frame_bounds')
-            frozen = _plain(parse(raw))
-            if len(_canonical(frozen)) > FRAME_LIMIT:
+            if length > FRAME_LIMIT or canonical_size_sha256(frozen)[0] > FRAME_LIMIT:
                 raise SDKControlError('sdk_frame_bounds')
         except SDKControlError as exc:
             error = str(exc)
+        except IncomingError as exc:
+            error = ('sdk_frame_bounds' if exc.code in ('incoming_depth', 'incoming_graph_bounds',
+                     'incoming_document_bytes', 'canonical_depth', 'canonical_graph_bounds')
+                     else 'sdk_frame_shape')
         except (FrameError, EvidenceError, UnicodeError, ValueError, TypeError, RecursionError):
             error = 'sdk_frame_shape'
         if error is not None:
             self._refuse(error)
-        return frozen
+        return frozen, (length, digest, encoding)
 
     def receive(self, frame):
         self._live()
         self._need(self._initialize_written, 'sdk_before_initialize_write')
-        frame = self._frame(frame)
+        frame, metadata = self._frame(frame)
+        return self._receive(frame, metadata)
+
+    def receive_owned(self, document):
+        """Consume one fully validated stream document, including on refusal.
+
+        The owner demultiplexes document.kind first, then relinquishes the token.
+        Ownership and supplied wire metadata establish no native authentication.
+        Direct bytes/dict receive remains a pure compatibility entry point, not
+        a bounded transport driver.
+        """
+        error = None
+        try:
+            if type(document) is not OwnedJSON:
+                raise SDKControlError('sdk_frame_shape')
+            metadata = document.raw_bytes, document.raw_sha256, 'stream_line_without_lf'
+            value = document.take()
+        except (IncomingError, SDKControlError):
+            error = 'sdk_frame_shape'
+        self._live()
+        if error is not None:
+            self._refuse(error)
+        self._need(self._initialize_written, 'sdk_before_initialize_write')
+        self._need(type(metadata[0]) is int and 0 < metadata[0] <= FRAME_LIMIT,
+                   'sdk_frame_bounds')
+        self._need(type(metadata[1]) is str and re.fullmatch(r'[a-f0-9]{64}', metadata[1]) is not None,
+                   'sdk_frame_shape')
+        try:
+            frozen = _plain(value)
+            length, _ = canonical_size_sha256(frozen)
+        except SDKControlError as exc:
+            error = str(exc)
+        except (IncomingError, UnicodeError, ValueError, TypeError, RecursionError):
+            error = 'sdk_frame_shape'
+        if error is not None:
+            self._refuse(error)
+        self._need(length <= FRAME_LIMIT, 'sdk_frame_bounds')
+        return self._receive(frozen, metadata)
+
+    def _receive(self, frame, metadata):
         kind = frame.get('type')
         if kind == 'control_response':
             self._response(frame)
@@ -357,7 +441,7 @@ class SDKControl:
             self._callbacks[ident]['cancelled'] = True
             self._refuse('sdk_callback_cancelled')
         self._need(kind == 'control_request', 'sdk_unknown_control')
-        return self._callback(frame)
+        return self._callback(frame, metadata)
 
     def _response(self, frame):
         self._need(set(frame) == {'type', 'response'} and type(frame['response']) is dict,
@@ -379,11 +463,11 @@ class SDKControl:
         self._need(not row['replayed'], 'sdk_duplicate_replay')
         self._need(row['reply_written'], 'sdk_early_replay')
         self._need(subtype != 'error', 'sdk_callback_response_error')
-        self._need(_canonical(frame) == self._expected_replays[ident], 'sdk_reply_content_drift')
+        self._need(canonical_size_sha256(frame) == self._expected_replays[ident], 'sdk_reply_content_drift')
         row['replayed'] = True
         del self._expected_replays[ident]
 
-    def _callback(self, frame):
+    def _callback(self, frame, metadata):
         self._need(set(frame) == {'type', 'request_id', 'request'}, 'sdk_callback_shape')
         ident, request = frame['request_id'], frame['request']
         self._need(type(ident) is str and 0 < len(ident) <= REQUEST_ID_BYTES
@@ -408,25 +492,27 @@ class SDKControl:
             self._need(key not in request or (type(request[key]) is int and
                        request[key] >= (1 if key == 'deadline_ms' else 0)), 'sdk_callback_shape')
         self._need(len(self._rows) < ROW_LIMIT, 'sdk_ledger_bounds')
-        empty_reply = len(_reply_wire(ident, event, ''))
+        empty_reply = reply_wire_bytes(ident, event)
         future_required = self._future_required - {event}
         held = sum(self._empty_replies.values()) + empty_reply + self._future_reply_bytes(future_required)
         self._need(held <= min(self.remaining_wire_bytes, self.remaining_selected_bytes),
                    'sdk_input_budget')
-        input_json = _canonical(payload)
+        input_bytes, input_digest = canonical_size_sha256(payload)
         row = dict(event=event, request_sha256=_sha(ident.encode()),
-                   input_sha256=_sha(input_json), input_bytes=len(input_json),
+                   input_sha256=input_digest, input_bytes=input_bytes,
+                   frame_raw_bytes=metadata[0], frame_raw_sha256=metadata[1],
+                   frame_encoding=metadata[2],
                    reply_sha256=None, context_sha256=None, context_bytes=None,
                    reply_bytes=None, reply_written_bytes=0, reply_written=False,
                    replayed=False, cancelled=False, timed_out=False)
-        self._need(len(_canonical(self.ledger() | {'rows': self._rows + [row]})) <= LEDGER_LIMIT,
+        self._need(canonical_size_sha256(self.ledger() | {'rows': self._rows + [row]})[0] <= LEDGER_LIMIT,
                    'sdk_ledger_bounds')
         self._callbacks[ident] = row
         self._rows.append(row)
         self._future_required = future_required
         self._empty_replies[ident] = empty_reply
         self._defer_unstarted_user()
-        return Callback(ident, event, input_json)
+        return Callback(ident, event, payload, input_bytes, input_digest, *metadata)
 
     def reply(self, request_id, additional_context):
         self._live()
@@ -436,24 +522,25 @@ class SDKControl:
         capacity = self.context_capacity(request_id)
         self._need(type(additional_context) is str, 'sdk_context_shape')
         self._need(len(additional_context) <= capacity.json_content_bytes, 'sdk_input_budget')
-        error = False
+        error = None
         try:
-            content = additional_context.encode('utf-8')
-        except UnicodeError:
-            error = True
-        if error:
-            self._refuse('sdk_context_shape')
-        wire = _reply_wire(request_id, row['event'], additional_context)
-        canonical = wire[:-1]
-        self._need(len(wire) - capacity.empty_reply_wire_bytes <= capacity.json_content_bytes,
+            cost = reply_wire_bytes(request_id, row['event'], additional_context)
+        except SDKControlError as exc:
+            error = str(exc)
+        if error is not None:
+            self._refuse(error)
+        self._need(cost - capacity.empty_reply_wire_bytes <= capacity.json_content_bytes,
                    'sdk_input_budget')
+        # Exact cost is checked before allocating either complete raw value.
+        content = additional_context.encode('utf-8')
+        wire = _reply_wire(request_id, row['event'], additional_context)
         # Replacing this callback's empty reservation cannot spend another reply.
         self._reserved_wire += len(wire)
         del self._empty_replies[request_id]
         self._queued_bytes += len(wire)
-        row.update(reply_sha256=_sha(canonical), context_sha256=_sha(content),
+        row.update(reply_sha256=_sha(memoryview(wire)[:-1]), context_sha256=_sha(content),
                    context_bytes=len(content), reply_bytes=len(wire))
-        self._expected_replays[request_id] = canonical
+        self._expected_replays[request_id] = len(wire) - 1, row['reply_sha256']
         self._queue.append(_Write('reply', request_id, wire))
 
     def callback_timeout(self, request_id):
@@ -465,7 +552,7 @@ class SDKControl:
         self._refuse('sdk_callback_timeout')
 
     def ledger(self):
-        return dict(schema='cairn.sdk-hook-delivery/1', profile='sdk-hooks/1',
+        return dict(schema='cairn.sdk-hook-delivery/2', profile='sdk-hooks/1',
                     failure=self._failure, closed=self._closed,
                     initialize_written=self._initialize_written, initialized=self._initialized,
                     user_queued=self._user_queued, user_written=self._user_written,

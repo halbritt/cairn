@@ -50,8 +50,9 @@ invalidate a previously offered suffix. The driver must reacquire that suffix
 after receiving or replying to a callback; a byte count cannot authenticate a
 stale write buffer.
 
-Known replayed replies may be correlated by their exact canonical content after
-the local reply write completes. A replay is not schema acceptance, settlement,
+Known replayed replies may be correlated by canonical byte count and SHA-256
+after the local reply write completes. The writer retains this bounded digest
+instead of another raw reply copy. A replay is not schema acceptance, settlement,
 hook continuation or model delivery: the inspected native parser can replay a
 response even after rejecting the pending promise. An unmatched response is an
 error, rather than a reason to repeat the consumed diagnostic or relax its
@@ -90,6 +91,56 @@ The existing stream/queue, 128-hook/64-KiB ledger, five-second hook, capture-rel
 30-second last native result, native-search two and combined-expansion four
 ceilings remain applicable. Hook searches are counted separately; forbidden
 native history does not become available through this profile.
+
+## Incoming documents and producer input
+
+Incoming document size is separate from the 64-KiB retained ledger. The selected
+SDK entry accepts at most 128 KiB of original JSON wire and canonical frame
+content, including whitespace in the original count. This supports an otherwise
+valid 70-KiB callback. It is an explicit input restriction, not a native-schema
+bound or proof that all original tasks fit. Larger callbacks require separately
+reviewed working-set and producer semantics; they must not be truncated.
+Graph validation permits dictionaries and lists that fit the selected document
+bound, with at most 131072 nodes including keys, depth 32, finite floats and
+integer magnitudes of at most 1024 bits. These are explicit parser restrictions,
+whose compatibility with arbitrary native tool results remains unproved; they
+replace the earlier unsupported 64-key/256-entry/2048-node restrictions.
+
+The transport owner incrementally decodes bounded UTF-8 blocks, releases raw
+blocks, validates the complete document and demultiplexes it before transferring
+an `OwnedJSON` token to `receive_owned`. The token is consumed once, including
+when the controller refuses. Direct bytes/dictionary `receive` is a pure
+compatibility entry point; it does not implement raw transport accounting.
+Duplicate keys, malformed tails, invalid UTF-8, nonfinite numbers and unpaired
+surrogates refuse before callback retention or producer execution. A prefix is
+never a validated document.
+
+Raw read blocks, decoder carry, output queues, temporary byte copies and producer
+transport chunks share the original aggregate 128-KiB queue. A complete raw line
+or canonical producer body must not be assembled by the driver. Decoded Unicode,
+parsed graphs and encoder Unicode tokens are explicit working allocations under
+the same 512-MiB aggregate attempt limit as native, backend and producer processes.
+Moving data into Unicode grants no extra process memory. Kernel pipe/socket
+buffering is separate from the userspace queue counter and remains within the
+composed resource boundary. Pure Python allocation estimates do not establish
+whole-attempt memory use or effective runtime containment.
+
+Callbacks expose bounded `iter_input_json` chunks for complete canonical semantic
+JSON delivery. The owner must count new producer-input transport volume, actual
+short writes and output while preserving the five-second deadline from the first
+incoming byte through validation, hashing, producer work and complete reply write.
+Canonical delivery does not promise byte-identical original wire. The explicitly
+named `diagnostic_projection` is only for the fixed marker producer: it keeps
+binding/tool metadata and whole-input hashes after full validation. It omits the
+body and cannot stand in for complete input to a general producer.
+
+Delivery ledger `/2` keeps original-frame byte count/hash and its encoding source
+separate from canonical input count/hash. A stream-line hash excludes LF while
+the aggregate stream charge includes it. Direct bytes are hashed as supplied;
+dictionary callers have a labelled canonical-frame hash. These are local
+correlations, with no native-origin authentication. The ledger retains no input
+body. Queue, stream, producer and working-memory composition still requires an
+independently reviewed owner before runtime admission.
 
 The controller retains bounded correlation and local-write facts. A producer's
 actual stdout, stderr and wait belong to its producer observation. They must not

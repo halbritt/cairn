@@ -1,10 +1,13 @@
 """Provider-free control protocol tests; no native invocation or settlement proof."""
 import fcntl
+import hashlib
 import json
 import os
 import unittest
+from unittest.mock import patch
 
 from trial_sdk_control import SDKControl, SDKControlError, reply_wire_bytes
+from trial_sdk_incoming import DecodedLine, IncomingError, LineAssembler, validate_line
 
 
 SESSION = '90000000-0000-4000-8000-000000000001'
@@ -51,6 +54,11 @@ def user_ready(control):
     write_one(control)
     control.receive(initialized(control))
     return write_one(control)
+
+
+def input_bytes(descriptor):
+    """Materialize only in offline tests; production streams bounded chunks."""
+    return b''.join(descriptor.iter_input_json())
 
 
 class SDKControlTests(unittest.TestCase):
@@ -522,6 +530,17 @@ class SDKControlTests(unittest.TestCase):
             with self.subTest(kind=code):
                 self.refuses(control, code, lambda: control.reply('call-1', context))
 
+    def test_escaped_overbudget_reply_refuses_before_materializing_its_wire(self):
+        control = controller()
+        user_ready(control)
+        control.receive(callback(control))
+        capacity = control.context_capacity('call-1')
+        with patch('trial_sdk_control._reply_wire') as materialize:
+            self.refuses(control, 'sdk_input_budget',
+                         lambda: control.reply('call-1', '\x00' * capacity.json_content_bytes))
+        materialize.assert_not_called()
+        self.assertIsNone(control.ledger()['rows'][0]['reply_bytes'])
+
     def test_ledger_and_descriptor_freeze_inputs_without_retaining_private_content(self):
         secret = 'SELECTED_TEST_SECRET_DO_NOT_RETAIN'
         control = controller(prompt=secret)
@@ -530,9 +549,9 @@ class SDKControlTests(unittest.TestCase):
         write_one(control)
         request = callback(control, transcript_path='/private/' + secret, prompt=secret)
         descriptor = control.receive(request)
-        frozen = descriptor.input_json
+        frozen = input_bytes(descriptor)
         request['request']['input']['prompt'] = 'mutated'
-        self.assertEqual(descriptor.input_json, frozen)
+        self.assertEqual(input_bytes(descriptor), frozen)
         self.assertIn(secret.encode(), frozen)
         self.assertNotIn(secret, repr(descriptor))
         control.reply('call-1', secret)
@@ -561,7 +580,7 @@ class SDKControlTests(unittest.TestCase):
                       b'{"type":"control_response","response":NaN}',
                       b'{"type":"control_response","response":"\xff"}',
                       dict(type='control_response', response=deeply_nested), cycle,
-                      dict(type='control_response', response='x' * 65537)):
+                      dict(type='control_response', response='x' * 131073)):
             control = controller()
             write_one(control)
             with self.subTest(kind=type(frame)), self.assertRaises(SDKControlError):
@@ -572,12 +591,12 @@ class SDKControlTests(unittest.TestCase):
 
     def test_bytes_and_dict_frames_share_depth_list_integer_and_node_bounds(self):
         deep = 0
-        for _ in range(17):
+        for _ in range(33):
             deep = [deep]
         cases = [('depth', deep, 'sdk_frame_bounds'),
-                 ('list', list(range(257)), 'sdk_frame_shape'),
-                 ('integer', 1 << 64, 'sdk_frame_shape'),
-                 ('nodes', [list(range(256)) for _ in range(8)], 'sdk_frame_bounds')]
+                 ('list', [0] * 131072, 'sdk_frame_bounds'),
+                 ('integer', 1 << 1024, 'sdk_frame_shape'),
+                 ('nodes', [[] for _ in range(131072)], 'sdk_frame_bounds')]
         for label, sample, code in cases:
             for as_bytes in (False, True):
                 control = controller()
@@ -590,7 +609,7 @@ class SDKControlTests(unittest.TestCase):
                     self.assertEqual(control.ledger()['rows'], [])
 
     def test_equivalent_near_boundary_values_are_accepted_on_both_transports(self):
-        for sample in (list(range(256)), (1 << 64) - 1,
+        for sample in (list(range(256)), list(range(1024)), (1 << 64), (1 << 1024) - 1,
                        [list(range(256)) for _ in range(7)]):
             for as_bytes in (False, True):
                 control = controller()
@@ -600,11 +619,11 @@ class SDKControlTests(unittest.TestCase):
                     frame = json.dumps(frame).encode()
                 with self.subTest(kind=type(sample), as_bytes=as_bytes):
                     descriptor = control.receive(frame)
-                    self.assertEqual(json.loads(descriptor.input_json)['sample'], sample)
+                    self.assertEqual(json.loads(input_bytes(descriptor))['sample'], sample)
                     self.assertIsNone(control.ledger()['failure'])
 
-    def test_bytes_and_dict_share_dictionary_width_bound(self):
-        for width in (64, 65):
+    def test_bytes_and_dict_accept_large_dictionaries_within_document_bounds(self):
+        for width in (64, 65, 512):
             for as_bytes in (False, True):
                 control = controller()
                 user_ready(control)
@@ -614,13 +633,10 @@ class SDKControlTests(unittest.TestCase):
                 if as_bytes:
                     frame = json.dumps(frame).encode()
                 with self.subTest(width=width, as_bytes=as_bytes):
-                    if width == 64:
-                        self.assertEqual(len(json.loads(control.receive(frame).input_json)), 64)
-                    else:
-                        self.refuses(control, 'sdk_frame_shape', lambda: control.receive(frame))
+                    self.assertEqual(len(json.loads(input_bytes(control.receive(frame)))), width)
 
     def test_compact_numeric_wire_cannot_expand_past_canonical_frame_limit(self):
-        for canonical_size in (65536, 65537):
+        for canonical_size in (131072, 131073):
             for as_bytes in (False, True):
                 control = controller()
                 user_ready(control)
@@ -630,14 +646,106 @@ class SDKControlTests(unittest.TestCase):
                 encoded = json.dumps(frame, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
                 self.assertEqual(len(encoded), canonical_size)
                 compact = encoded.replace(b'1000000000000000.0', b'1e15')
-                self.assertLess(len(compact), 65536)
+                self.assertLess(len(compact), 131072)
                 self.assertEqual(json.loads(compact), frame)
                 incoming = compact if as_bytes else frame
                 with self.subTest(canonical_size=canonical_size, as_bytes=as_bytes):
-                    if canonical_size == 65536:
-                        self.assertEqual(len(json.loads(control.receive(incoming).input_json)['samples']), 256)
+                    if canonical_size == 131072:
+                        self.assertEqual(len(json.loads(input_bytes(control.receive(incoming)))['samples']), 256)
                     else:
                         self.refuses(control, 'sdk_frame_bounds', lambda: control.receive(incoming))
+
+    def test_70kib_full_input_and_explicit_projection_across_three_entry_points(self):
+        sample = 'é\n"\\' * 10000 + 'TAIL_SENTINEL'
+        for transport in ('bytes', 'dict', 'owned'):
+            control = controller()
+            user_ready(control)
+            frame = callback(control, 'PostToolUse', 'large-tool', tool_name='Read',
+                             tool_use_id='tool-1', tool_response=sample)
+            wire = json.dumps(frame, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+            self.assertGreater(len(wire), 70 * 1024)
+            expected = json.dumps(frame['request']['input'], ensure_ascii=False,
+                                  sort_keys=True, separators=(',', ':')).encode()
+            if transport == 'dict':
+                descriptor = control.receive(frame)
+            elif transport == 'bytes':
+                descriptor = control.receive(wire)
+            else:
+                reader = LineAssembler(128 * 1024)
+                documents = []
+                for offset in range(0, len(wire) + 1, 997):
+                    documents.extend(reader.feed((wire + b'\n')[offset:offset + 997], 123))
+                reader.finish()
+                self.assertEqual(len(documents), 1)
+                token = validate_line(documents[0])
+                self.assertEqual(token.kind, 'control_request')
+                descriptor = control.receive_owned(token)
+                with self.assertRaises(IncomingError):
+                    token.take()
+            with self.subTest(transport=transport):
+                chunks = list(descriptor.iter_input_json())
+                self.assertTrue(all(type(chunk) is bytes and 0 < len(chunk) <= 8192 for chunk in chunks))
+                self.assertEqual(b''.join(chunks), expected)
+                self.assertEqual(descriptor.input_bytes, len(expected))
+                self.assertEqual(descriptor.input_sha256, hashlib.sha256(expected).hexdigest())
+                projection = descriptor.diagnostic_projection()
+                self.assertEqual(projection['tool_name'], 'Read')
+                self.assertEqual(projection['tool_use_id'], 'tool-1')
+                self.assertNotIn('tool_response', projection)
+                self.assertEqual(projection['input_sha256'], descriptor.input_sha256)
+                row = control.ledger()['rows'][0]
+                self.assertEqual(row['frame_raw_bytes'], len(wire))
+                self.assertEqual(row['frame_raw_sha256'], hashlib.sha256(wire).hexdigest())
+                self.assertNotIn('TAIL_SENTINEL', json.dumps(control.ledger()))
+                self.assertFalse(hasattr(descriptor, 'input_json'))
+                self.assertIsNone(control.ledger()['failure'])
+
+    def test_owned_refusal_consumes_token_without_committing_a_callback(self):
+        control = controller()
+        user_ready(control)
+        frame = callback(control, session_marker='large-prefix' * 7000)
+        frame['request']['input']['session_id'] = 'wrong-session'
+        wire = json.dumps(frame).encode() + b'\n'
+        reader = LineAssembler(128 * 1024)
+        documents = []
+        for offset in range(0, len(wire), 8192):
+            documents.extend(reader.feed(wire[offset:offset + 8192], 7))
+        token = validate_line(documents[0])
+        self.refuses(control, 'sdk_callback_binding', lambda: control.receive_owned(token))
+        self.assertEqual(control.ledger()['rows'], [])
+        with self.assertRaises(IncomingError):
+            token.take()
+
+    def test_owned_metadata_has_bounded_shape_without_becoming_authentication(self):
+        for digest in ('x', b'0' * 64, {'x': 1}, '1' * 65):
+            control = controller()
+            user_ready(control)
+            wire = json.dumps(callback(control)).encode()
+            token = validate_line(DecodedLine(wire.decode(), len(wire), digest, 3))
+            with self.subTest(kind=type(digest)):
+                self.refuses(control, 'sdk_frame_shape', lambda: control.receive_owned(token))
+                self.assertEqual(control.ledger()['rows'], [])
+                with self.assertRaises(IncomingError):
+                    token.take()
+
+    def test_owned_mixed_stream_demux_and_malformed_tail_do_not_create_callbacks(self):
+        control = controller()
+        user_ready(control)
+        reader = LineAssembler(128 * 1024)
+        ordinary = list(reader.feed(b'{"type":"assistant","message":{"content":[]}}\n', 9))[0]
+        token = validate_line(ordinary)
+        self.assertEqual(token.kind, 'assistant')
+        self.assertEqual(token.take()['message'], {'content': []})
+        self.assertEqual(control.ledger()['rows'], [])
+        prefix = json.dumps(callback(control, padding='x' * (70 * 1024))).encode()
+        malformed = prefix[:-1] + b',"bad":{"key":1,"key":2}}\n'
+        documents = []
+        for offset in range(0, len(malformed), 8192):
+            documents.extend(reader.feed(malformed[offset:offset + 8192], 10))
+        with self.assertRaises(IncomingError):
+            validate_line(documents[0])
+        self.assertEqual(control.ledger()['rows'], [])
+        self.assertIsNone(control.ledger()['failure'])
 
     def test_only_one_strict_user_object_can_enter_constructor(self):
         for wire in (user_message() + user_message('another'),
