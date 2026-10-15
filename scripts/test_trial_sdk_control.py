@@ -28,6 +28,12 @@ def initialized(control, response=None):
                 response={} if response is None else response))
 
 
+def native_initialized(control, response=None):
+    frame = initialized(control, response)
+    frame['response'].update(pending_permission_requests=[], pending_user_dialog_requests=[])
+    return frame
+
+
 def callback(control, event='UserPromptSubmit', ident='call-1', **payload):
     return dict(type='control_request', request_id=ident,
                 request=dict(subtype='hook_callback',
@@ -380,23 +386,105 @@ class SDKControlTests(unittest.TestCase):
                     control.reply('call-1', 'late retry')
                 self.assertEqual(control.ledger()['failure'], code)
 
-    def test_unknown_initialize_error_duplicate_and_unbound_responses_refuse(self):
-        for kind in ('error', 'duplicate', 'unknown'):
+    def test_empty_native_initialize_pending_lists_allow_the_single_frozen_user(self):
+        # Selected native source adds these two fields during initialize.
+        discovery = dict(commands=[], models=[], account='é\n"\\' * 10000 + 'PRIVATE_INIT_TAIL')
+        for transport in ('dict', 'bytes', 'owned'):
+            with self.subTest(transport=transport):
+                control = controller()
+                write_one(control)
+                frame = native_initialized(control, discovery)
+                wire = json.dumps(frame, ensure_ascii=False).encode()
+                self.assertGreater(len(wire), 70 * 1024)
+                if transport == 'dict':
+                    control.receive(frame)
+                elif transport == 'bytes':
+                    control.receive(wire)
+                else:
+                    reader = LineAssembler(128 * 1024)
+                    documents = []
+                    for offset in range(0, len(wire) + 1, 997):
+                        documents.extend(reader.feed((wire + b'\n')[offset:offset + 997], 123))
+                    reader.finish()
+                    token = validate_line(documents[0])
+                    self.assertEqual(token.raw_bytes, len(wire))
+                    self.assertEqual(token.raw_sha256, hashlib.sha256(wire).hexdigest())
+                    control.receive_owned(token)
+                    with self.assertRaises(IncomingError):
+                        token.take()
+                self.assertTrue(control.ledger()['initialized'])
+                self.assertFalse(control.ledger()['user_written'])
+                self.assertNotIn('PRIVATE_INIT_TAIL', json.dumps(control.ledger()))
+                self.assertEqual(write_one(control), user_message())
+                self.assertIsNone(control.pending_write())
+
+    def test_pending_work_or_unrecognized_initialize_extensions_never_queue_a_user(self):
+        fields = ('pending_permission_requests', 'pending_user_dialog_requests')
+        variants = [({fields[0]: []}, 'sdk_initialize_shape'),
+                    ({fields[1]: []}, 'sdk_initialize_shape'),
+                    ({fields[0]: [], fields[1]: [], 'unknown': []}, 'sdk_initialize_shape')]
+        for field in fields:
+            for value in (None, {}, True, 0, 'pending', [{}]):
+                pending = {name: [] for name in fields}
+                pending[field] = value
+                variants.append((pending, 'sdk_initialize_pending' if type(value) is list else 'sdk_initialize_shape'))
+        for pending, code in variants:
+            with self.subTest(pending=pending):
+                control = controller()
+                write_one(control)
+                frame = initialized(control)
+                frame['response'].update(pending)
+                self.refuses(control, code, lambda: control.receive(frame))
+                for state in ('initialized', 'user_queued', 'user_written'):
+                    self.assertFalse(control.ledger()[state])
+
+    def test_initialize_extensions_do_not_normalize_callback_replays(self):
+        control = controller()
+        write_one(control)
+        control.receive(native_initialized(control))
+        write_one(control)
+        control.receive(callback(control))
+        control.reply('call-1', 'context')
+        replay = json.loads(write_one(control))
+        replay['response'].update(pending_permission_requests=[], pending_user_dialog_requests=[])
+        self.refuses(control, 'sdk_reply_content_drift', lambda: control.receive(replay))
+        self.assertFalse(control.ledger()['rows'][0]['replayed'])
+
+    def test_native_initialize_requires_the_complete_strict_document(self):
+        for variant in ('tail', 'duplicate', 'utf8'):
             control = controller()
             write_one(control)
-            response = initialized(control)
-            if kind == 'error':
-                response['response'] = dict(subtype='error', request_id=control.bindings['initialize_request_id'],
-                                            error='private account details')
-                code = 'sdk_initialize_error'
-            elif kind == 'duplicate':
-                control.receive(response)
-                code = 'sdk_duplicate_initialize'
+            wire = json.dumps(native_initialized(control)).encode()
+            if variant == 'tail':
+                wire += b' false'
+            elif variant == 'duplicate':
+                wire = wire.replace(b'"pending_permission_requests": []',
+                                    b'"pending_permission_requests": [], "pending_permission_requests": []')
             else:
-                response['response']['request_id'] = 'unbound'
-                code = 'sdk_unknown_response'
-            with self.subTest(kind=kind):
-                self.refuses(control, code, lambda: control.receive(response))
+                wire += b'\xff'
+            with self.subTest(variant=variant):
+                self.refuses(control, 'sdk_frame_shape', lambda: control.receive(wire))
+                self.assertFalse(control.ledger()['initialized'])
+                self.assertFalse(control.ledger()['user_queued'])
+
+    def test_unknown_initialize_error_duplicate_and_unbound_responses_refuse(self):
+        for factory in (initialized, native_initialized):
+            for kind in ('error', 'duplicate', 'unknown'):
+                control = controller()
+                write_one(control)
+                response = factory(control)
+                if kind == 'error':
+                    response['response'].update(subtype='error', error='private account details')
+                    response['response'].pop('response')
+                    code = 'sdk_initialize_error'
+                elif kind == 'duplicate':
+                    control.receive(response)
+                    code = 'sdk_duplicate_initialize'
+                else:
+                    response['response']['request_id'] = 'unbound'
+                    code = 'sdk_unknown_response'
+                with self.subTest(kind=kind, factory=factory.__name__):
+                    self.refuses(control, code, lambda: control.receive(response))
 
     def test_zero_invalid_or_failed_write_poison_without_fabricated_completion(self):
         for count in (0, -1, True, 1000000, None):

@@ -452,9 +452,14 @@ class SDKControl:
         if ident == self._initialize_id:
             self._need(not self._initialized, 'sdk_duplicate_initialize')
             self._need(subtype != 'error', 'sdk_initialize_error')
-            self._need(set(response) == {'subtype', 'request_id', 'response'}
+            fields = {'subtype', 'request_id', 'response'}
+            pending = {'pending_permission_requests', 'pending_user_dialog_requests'}
+            self._need(set(response) in (fields, fields | pending)
                        and subtype == 'success' and type(response['response']) is dict,
                        'sdk_initialize_shape')
+            if pending <= response.keys():
+                self._need(all(type(response[key]) is list for key in pending), 'sdk_initialize_shape')
+                self._need(not any(response[key] for key in pending), 'sdk_initialize_pending')
             self._initialized = True
             self._queue_user()
             return

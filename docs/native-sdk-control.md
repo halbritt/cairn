@@ -31,6 +31,17 @@ completion of any earlier reply writes. SessionStart can arrive before the user;
 other selected events require the complete user write. A callback must match a
 frozen callback ID, event and session. Request IDs cannot be reused.
 
+The matched initialize success response accepts the original three fields
+`subtype`, `request_id` and `response`, or exactly those fields plus both
+`pending_permission_requests` and `pending_user_dialog_requests`, as constructed
+by the selected native source. Both added values must be empty lists. Nonempty
+lists refuse with `sdk_initialize_pending` before queuing the user; this profile
+has no permission/dialog request handler. Partial extensions, other keys and
+wrong types still refuse. The nested `response` remains a bounded opaque
+dictionary; account, permission and discovery declarations establish no authority.
+This extension applies only to initialization. Callback replay comparison still
+covers the complete reply envelope and content.
+
 Writes are incremental. Attempted/queued bytes and completed local writes are
 separate facts. A callback reply is complete only after every byte is reported
 written. A failed or zero-progress write makes the controller unusable. Frame
