@@ -73,43 +73,43 @@ def load_json(path):
     return json.loads(Path(path).read_text())
 
 
-def revision_files(version=None):
+def revision_files(version=None, *, root=TRIAL):
     """Labelled revision overlays (revisions/vN.json), in order, up to version."""
-    files = sorted((TRIAL / "revisions").glob("v*.json"), key=lambda p: int(p.stem[1:]))
+    files = sorted((Path(root) / "revisions").glob("v*.json"), key=lambda p: int(p.stem[1:]))
     return [p for p in files if version is None or int(p.stem[1:]) <= version]
 
 
-def latest_version():
-    files = revision_files()
+def latest_version(*, root=TRIAL):
+    files = revision_files(root=root)
     return int(files[-1].stem[1:]) if files else 1
 
 
-def load_cases(version=None, path=TRIAL / "cases.json"):
+def load_cases(version=None, path=None, *, root=TRIAL):
     """Cases with every revision overlay up to version applied (default: latest)."""
-    cases = load_json(path)["cases"]
-    for revision in revision_files(version):
+    cases = load_json(path if path is not None else Path(root) / "cases.json")["cases"]
+    for revision in revision_files(version, root=root):
         changes = load_json(revision)["cases"]
         for case in cases:
             case.update(changes.get(case["id"], {}))
     return cases
 
 
-def load_corpus(version=None, path=TRIAL / "corpus.json"):
+def load_corpus(version=None, path=None, *, root=TRIAL):
     """Corpus with revision `corpus` overlays up to version (default: latest) applied by note id."""
-    notes = load_json(path)["notes"]
-    for revision in revision_files(version):
+    notes = load_json(path if path is not None else Path(root) / "corpus.json")["notes"]
+    for revision in revision_files(version, root=root):
         changes = load_json(revision).get("corpus", {})
         for note in notes:
             note.update(changes.get(note["id"], {}))
     return notes
 
 
-def workspace_dir(case):
+def workspace_dir(case, *, root=TRIAL):
     """Fixture directory: frozen workspaces/NAME, or revisions/vN/... for a later labelled version."""
     if "_prospective_workspace" in case:
         return Path(case["_prospective_workspace"])
     name = case["workspace"]
-    return TRIAL / name if name.startswith("revisions/") else TRIAL / "workspaces" / name
+    return Path(root) / name if name.startswith("revisions/") else Path(root) / "workspaces" / name
 
 
 CHECK_TYPES = {"command", "tool_output", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
@@ -160,34 +160,35 @@ def iter_checks(checks):
             yield from iter_checks(check["checks"])
 
 
-def tree_digest(paths):
+def tree_digest(paths, *, root=TRIAL):
     digest = hashlib.sha256()
     for path in sorted(paths):
-        rel = path.relative_to(TRIAL).as_posix()
+        rel = path.relative_to(root).as_posix()
         digest.update(rel.encode() + b"\0" + hashlib.sha256(path.read_bytes()).hexdigest().encode() + b"\n")
     return digest.hexdigest()
 
 
-def frozen_path(version):
-    return TRIAL / ("FROZEN.json" if version == 1 else f"FROZEN-v{version}.json")
+def frozen_path(version, *, root=TRIAL):
+    return Path(root) / ("FROZEN.json" if version == 1 else f"FROZEN-v{version}.json")
 
 
-def label_manifest(version=1):
-    files = [TRIAL / "cases.json", TRIAL / "corpus.json", *revision_files(version)]
-    for revision in revision_files(version):  # fixtures and grader assets of later versions
+def label_manifest(version=1, *, root=TRIAL):
+    root = Path(root)
+    files = [root / "cases.json", root / "corpus.json", *revision_files(version, root=root)]
+    for revision in revision_files(version, root=root):  # fixtures and grader assets of later versions
         assets = revision.with_suffix("")
         files += [p for p in assets.rglob("*") if p.is_file() and "__pycache__" not in p.parts] if assets.is_dir() else []
-    files += [p for p in (TRIAL / "workspaces").rglob("*") if p.is_file() and "__pycache__" not in p.parts]
-    return dict(schema="cairn.task-eval.frozen/1", labels_sha256=tree_digest(files), files=len(files),
-                cases_sha256=hashlib.sha256((TRIAL / "cases.json").read_bytes()).hexdigest(),
-                corpus_sha256=hashlib.sha256((TRIAL / "corpus.json").read_bytes()).hexdigest(),
-                baseline_commit=load_json(TRIAL / "cases.json")["baseline_commit"], label_version=version)
+    files += [p for p in (root / "workspaces").rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+    return dict(schema="cairn.task-eval.frozen/1", labels_sha256=tree_digest(files, root=root), files=len(files),
+                cases_sha256=hashlib.sha256((root / "cases.json").read_bytes()).hexdigest(),
+                corpus_sha256=hashlib.sha256((root / "corpus.json").read_bytes()).hexdigest(),
+                baseline_commit=load_json(root / "cases.json")["baseline_commit"], label_version=version)
 
 
-def verify_frozen(version=None):
-    version = version or latest_version()
-    frozen = load_json(frozen_path(version))
-    current = label_manifest(version)
+def verify_frozen(version=None, *, root=TRIAL):
+    version = version or latest_version(root=root)
+    frozen = load_json(frozen_path(version, root=root))
+    current = label_manifest(version, root=root)
     if frozen["labels_sha256"] != current["labels_sha256"]:
         raise SystemExit("labels changed after freezing; record a new labelled version instead of editing silently")
     return frozen
