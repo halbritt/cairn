@@ -17,8 +17,9 @@ path. Do not rebind the module's `TRIAL` global. The existing numeric overlay
 order, shallow updates by ID, workspace paths and manifest digest stay intact.
 Digest ordering uses `Path` components, including revision asset directories
 before their corresponding JSON files. `verify_frozen` retains its original
-labels-only comparison; a new weekly input boundary must also verify the full
-selected manifest identity. Its retained `frozen_at` metadata is not a new label.
+labels-only comparison. The separate [weekly bundle loader](weekly-input-bundle-v1.md)
+checks the full selected manifest identity; retained `frozen_at` metadata is not
+a new label.
 
 This reader change does not dispatch paired requests to a weekly loader.
 `trial_paired_request.validate` still loads prospective input unconditionally.

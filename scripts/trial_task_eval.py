@@ -115,7 +115,7 @@ def workspace_dir(case, *, root=TRIAL):
 CHECK_TYPES = {"command", "tool_output", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
 
 
-def validate(cases, corpus, workspaces=TRIAL / "workspaces", *, prospective=False):
+def validate(cases, corpus, workspaces=TRIAL / "workspaces", *, prospective=False, root=TRIAL):
     """Return a list of problems; empty means the fixtures are consistent."""
     problems = []
     ids = [n["id"] for n in corpus]
@@ -143,7 +143,7 @@ def validate(cases, corpus, workspaces=TRIAL / "workspaces", *, prospective=Fals
             problems.append(cid + ": expected and forbidden overlap")
         if set(case["wordings"]) != ({"task"} if prospective else {"task", "paraphrase", "direct"}):
             problems.append(cid + ": wordings must be task, paraphrase and direct")
-        if not workspace_dir(case).is_dir():
+        if not workspace_dir(case, root=root).is_dir():
             problems.append(cid + ": missing workspace")
         if case["provenance"]["type"] not in ("actual", "adapted", "synthetic"):
             problems.append(cid + ": provenance type")
