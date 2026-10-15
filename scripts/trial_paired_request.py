@@ -571,7 +571,8 @@ def checked_request(request, *, now, companion=None, review=None):
         # Lazy boundary: mapping reuses this module's validators. The CLI below
         # dispatches through the canonical import so Refusal has one identity.
         from trial_paired_companion import validate_companion
-        evidence, retained = validate_companion(request, bundle, companion, review, now=now)
+        evidence, retained = validate_companion(request, companion, review, now=now,
+            native_model=bundle['document']['native']['model'])
     else:
         need(companion is None and review is None, 'supplemental_companion_unsupported')
     return request, bundle, evidence, retained

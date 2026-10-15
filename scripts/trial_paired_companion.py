@@ -8,12 +8,13 @@ import trial_provider_spend as spend
 from trial_provider_mapping import project_provider_mapping
 
 
-def validate_companion(request, bundle, companion_reference, review_reference, *, now):
+def validate_companion(request, companion_reference, review_reference, *, now, native_model):
     """Called only after request validation; retain exact checked file bytes.
 
     The operator selects the two pins independently. File pins and declared
     reviewer IDs establish correspondence, not authorship or review authority.
-    Borrowed request/bundle and operator-owned files must remain quiescent.
+    The validated request entry point supplies its native model; grader models
+    come only from the request. No schema fallback. Inputs remain quiescent.
     """
     retained, inputs = {}, {}
 
@@ -60,7 +61,7 @@ def validate_companion(request, bundle, companion_reference, review_reference, *
         capture(name, capacity[field])
     binding = capture('spend-binding', mapping['spend_binding'])
     prices = capture('prices', mapping['prices'])
-    models = dict(CURRENT=bundle['document']['native']['model'], CAND=bundle['document']['native']['model'],
+    models = dict(CURRENT=native_model, CAND=native_model,
                   **{role: request['grading'][role]['model'] for role in ('primary', 'secondary')})
     try:
         projection = project_provider_mapping(request['plan'], models, request['capacity'],

@@ -21,14 +21,14 @@ labels-only comparison. The separate [weekly bundle loader](weekly-input-bundle-
 checks the full selected manifest identity; retained `frozen_at` metadata is not
 a new label.
 
-This reader change does not dispatch paired requests to a weekly loader.
-`trial_paired_request.validate` still loads prospective input unconditionally.
-The next integration must explicitly bind the original frozen root/version,
-execution configuration and reviews, preserve all case wordings and private
-grading assets, and select only the task wording for actor attempts. It must
-retain the original corpus controls and deterministic 1900 distractors, the
-same embedding route in both stores, and all 21 cases, three selected seeds and
-two arms. Supplemental prospective inputs keep their own semantics. The
+The separate [weekly request/1 boundary](weekly-request-v1.md) binds the original
+frozen root/version, execution configuration, exact plan/schedule and reviews
+for offline check/preparation. `trial_paired_request.validate` still loads
+prospective input unconditionally. Weekly source preparation retains all case
+wordings/private grading identities, original corpus controls and deterministic
+1900 distractor identity, the common embedding declaration and the full
+21-case/three-seed/two-arm schedule. Runtime execution and store import remain
+unavailable. Supplemental prospective inputs keep their own semantics. The
 [task-evaluation plan](plans/task-evaluation.md) defines that instrument.
 
 The synthetic reader tests cover root/version selection, overlay cutoff,
