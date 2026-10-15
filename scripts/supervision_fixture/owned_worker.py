@@ -59,7 +59,10 @@ def capture(mode,run):
         if mode=='descendant':
             if os.fork()==0:
                 os.setsid();time.sleep(1000);os._exit(0)
-        payload=b'partial disposable work\n' if mode!='stream' else b'x'*(256*1024)
+        if mode=='backpressure':
+            payload=b'x'*(1024*1024)
+        else:
+            payload=b'partial disposable work\n' if mode!='stream' else b'x'*(256*1024)
         while payload:
             payload=payload[os.write(1,payload):]
         if mode=='signal':
@@ -153,7 +156,7 @@ def auxiliary(role,mode):
 
 if __name__=='__main__':
     role,mode,run,source,intent=sys.argv[1:]
-    if role=='capture' and mode in ('normal','nonzero','missing','descendant','stream','signal'):
+    if role=='capture' and mode in ('normal','nonzero','missing','descendant','stream','backpressure','signal'):
         code=capture(mode,run)
     elif role=='composition' and mode in ('normal','hang','lost','nonzero','overflow'):
         code=composition(mode,run,source,intent)

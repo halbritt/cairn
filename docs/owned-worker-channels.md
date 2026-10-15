@@ -101,6 +101,17 @@ They do not launch bwrap, create namespaces/cgroups or execute native/provider
 work. The namespace boundary suite is a separate validation obligation before
 fixture adoption.
 
+`sh scripts/test-owned-worker-boundary.sh` also exercises real socket-profile
+backpressure with a fixed 1-MiB disposable producer and a hanging sink. The
+earlier 256-KiB pipe workload can fit in a socket's kernel buffer and need not
+fill the application queue. The socket check retains the 128-KiB userspace
+queue and 4-MiB stream ceilings, checks that capture pauses at saturation, and
+observes actual worker waits and containment release. It reports kernel socket
+buffer settings separately from the userspace queue counter. Buffer settings
+are not payload-capacity measurements; kernel charge ownership and aggregate
+memory accounting require separate runtime verification. This is a tested
+fixture load, not a universal bound on socket payload capacity or native admission.
+
 Protected channels are one integrity condition, not native invocation origin,
 consumer settlement, account dedication, capacity, admission or usefulness
 proof. Root owns fixture selection and the remaining native witness conditions.

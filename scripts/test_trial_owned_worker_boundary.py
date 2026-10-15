@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import socket
 import tempfile
 import time
 import unittest
@@ -47,10 +48,10 @@ class BoundaryTests(unittest.TestCase):
         self.assertTrue(all(not buf for child in self.domain.children.values() for buf in child.buffers.values()))
         self.tmp.cleanup()
 
-    def fixed(self,role,mode='normal'):
+    def fixed(self,role,mode='normal',*,channels='pipes/1'):
         group=self.domain.leaf(role)
         child=Child(group,sandbox(SOURCES,[(self.output,'/output')],
-            [role,mode,self.run,self.source,self.intent]))
+            [role,mode,self.run,self.source,self.intent]),channels=channels)
         self.domain.bind(role,child)
         return child
 
@@ -183,6 +184,38 @@ class BoundaryTests(unittest.TestCase):
         self.assertFalse(self.transport.transport_loss)
         self.assertFalse(self.transport.budget_exhausted)
         self.assertEqual(self.transport.observed_bytes,self.transport.stream_bytes)
+        self.domain.close_role('capture',self.deadline)
+        fact=self.domain.close_role('composition',self.deadline)
+        self.assertTrue(fact['released'])
+        self.assertEqual(fact['wait']['returncode'],-9)
+        self.assertIsNone(self.transport.closed_sink())
+        self.assertFalse((self.output/'FAILURE.json').exists())
+
+    def test_socket_backpressure_pauses_capture_and_keeps_original_queue_limit(self):
+        sink=self.fixed('composition','hang',channels='unix-stream/1')
+        self.pump(lambda:self.transport.ready)
+        capture=self.fixed('capture','backpressure',channels='unix-stream/1')
+        self.pump(lambda:self.transport.gate_capture(b'frozen input') if not self.transport.gated else True)
+        view=socket.socket(fileno=sink.process.stdin.fileno())
+        try:
+            print('SELECTED_SOCKET_BUFFERS',json.dumps(dict(
+                sndbuf=view.getsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF),
+                rcvbuf=view.getsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF))),flush=True)
+        finally:
+            view.detach()
+        # The old 256-KiB pipe fixture can fit in the socket's kernel buffer.
+        # This fixed 1-MiB producer stays below the original 4-MiB stream cap.
+        self.pump(lambda:len(self.transport.queue)>=128*1024-5)
+        observed=self.transport.observed_bytes
+        until=time.monotonic()+.03
+        while time.monotonic()<until:
+            self.transport.step()
+        self.assertEqual(self.transport.observed_bytes,observed)
+        self.assertLessEqual(len(self.transport.queue),128*1024)
+        self.assertFalse(self.transport.transport_loss)
+        self.assertFalse(self.transport.budget_exhausted)
+        self.assertEqual(self.transport.observed_bytes,self.transport.stream_bytes)
+        self.assertLess(self.transport.observed_bytes,1024*1024)
         self.domain.close_role('capture',self.deadline)
         fact=self.domain.close_role('composition',self.deadline)
         self.assertTrue(fact['released'])
