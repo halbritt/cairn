@@ -215,12 +215,21 @@ class Peer:
                 bad = True
         return bad or credentials != 1, unknown
 
+    def fileno(self):
+        """Borrow for serialized readiness only; no dup/close/transfer/rebind."""
+        self._enter()
+        try:
+            self._options()
+            return self._socket.fileno()
+        finally:
+            self._busy = False
+
     def receive_into(self, destination):
         loan = ancillary = address = None
         acquired = held = False
         try:
             if (type(destination) is not memoryview or destination.readonly or destination.ndim != 1
-                    or destination.format != 'B' or not destination.c_contiguous or len(destination) != 544):
+                    or destination.format != 'B' or not destination.c_contiguous or not 32 <= len(destination) <= 544):
                 raise PeerError('peer_destination')
             loan = memoryview(destination)
             self._enter()
@@ -247,7 +256,7 @@ class Peer:
                 self._fail('peer_receive_unknown', True)
             bad, unknown = self._ancillary(ancillary)
             self._cleanup_unknown |= unknown
-            if bad or unknown or not 32 <= n <= 544 or flags & ~(socket.MSG_EOR | socket.MSG_CMSG_CLOEXEC):
+            if bad or unknown or not 32 <= n <= len(loan) or flags & ~(socket.MSG_EOR | socket.MSG_CMSG_CLOEXEC):
                 self._fail('peer_record_refused')
             try:
                 self._live()

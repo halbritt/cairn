@@ -18,11 +18,15 @@ Use fresh instances and serialized calls. Constructor callbacks must not expose 
 reenter the partially constructed instance. External aliases must not replace,
 close or reconfigure the endpoint during use.
 
-The caller precharges stable writable 512-byte construction scratch and 544-byte
+The caller precharges stable writable 512-byte construction scratch and its actual
 receive storage. `send()` borrows immutable bytes or a stable readonly contiguous
 byte view of 32–544 bytes. `receive_into()` borrows a writable contiguous byte view
-of exactly 544 bytes. It requires exactly one matching SCM_CREDENTIALS record;
-unexpected, missing, duplicate or truncated ancillary traffic refuses. Installed
+of 32–544 bytes: a 33-byte control reply can use its own 33-byte storage, while a
+full 512-byte body needs 544 bytes. It receives into that exact view without a
+larger bounce buffer. A record exceeding the view is refused, the selected view
+is erased and received rights are closed once. It requires exactly one matching
+SCM_CREDENTIALS record; unexpected, missing, duplicate or truncated ancillary
+traffic refuses. Installed
 SCM_RIGHTS descriptors are closed once. UID/GID retain the full unsigned 32-bit
 range; an explicit Linux representation check guards the selected credential ABI.
 High-ID tests use synthetic records, not privileged identity changes.
@@ -44,9 +48,19 @@ uncertainty. Descriptor close detaches owned numbers before one attempt each;
 an uncertain close cannot later close a reused number. Closing duplicates proves
 neither endpoint EOF nor native stdin closure, child wait or context delivery.
 
+`fileno()` borrows the held socket descriptor for serialized readiness observation.
+It rechecks busy state, process protection, the absolute deadline, held-pidfd
+liveness and socket options. It neither consumes a record nor duplicates a
+descriptor. The integer is not ownership or a liveness lease: do not close,
+duplicate, rebind, transfer it or use it for raw record I/O. No concurrent poll or
+persistent watcher may outlive mutation or close. An inactive transient poll list
+may be used only when its driver step was idle and its tickets remain current;
+discard it after any action or close. Later Peer operations recheck their gates.
+
 Pure credential tests run with the normal Python suite. Explicit ordinary-host
 checks also exercise actual sockets/pidfds, rights cleanup, credit denial,
-reentry, deadline crossing, injected post-I/O faults and descriptor reuse:
+reentry, deadline crossing, injected post-I/O faults, exact short control storage,
+truncated control with rights, descriptor reuse and nonconsuming readiness borrows:
 
 ```sh
 make test-sdk-peer SDK_PEER_TEST_OUTPUT=/absolute/fresh/absent-directory

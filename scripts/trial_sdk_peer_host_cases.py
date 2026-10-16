@@ -7,6 +7,7 @@ from unittest.mock import patch
 import trial_sdk_peer as peer_module
 import sys
 import socket
+import select
 import time
 import unittest
 from trial_sdk_peer import Peer, PeerError, CreditDenied, AUXILIARY
@@ -400,5 +401,180 @@ class PeerTests(unittest.TestCase):
             # The first record was actually consumed despite refusal.
             with self.assertRaises(BlockingIOError): left.recv(544,socket.MSG_DONTWAIT)
             self.assertEqual(ledger.used,0)
+
+    def test_control_record_uses_exact_caller_storage_without_bounce(self):
+        with self.fixture() as (peer, right, left, ledger):
+            backing = bytearray(b'L' + b'x' * 33 + b'R')
+            destination = memoryview(backing)[1:-1]
+            try:
+                self.assertEqual(peer.receive_into(destination), -1)
+                self.assertEqual(right.send(b'C' * 33), 33)
+                self.assertEqual(peer.receive_into(destination), 33)
+                self.assertEqual(backing, b'L' + b'C' * 33 + b'R')
+                self.assertEqual(ledger.used, 0)
+            finally:
+                destination.release()
+
+    def test_header_and_full_record_fit_the_selected_destination(self):
+        for width in (32, 544):
+            with self.subTest(width=width), self.fixture() as (peer, right, left, ledger):
+                backing = bytearray(b'L' + b'x' * width + b'R')
+                destination = memoryview(backing)[1:-1]
+                try:
+                    right.send(b'B' * width)
+                    self.assertEqual(peer.receive_into(destination), width)
+                    self.assertEqual(backing, b'L' + b'B' * width + b'R')
+                    self.assertEqual(ledger.used, 0)
+                finally:
+                    destination.release()
+
+    def test_invalid_capacity_leaves_record_queued_and_peer_usable(self):
+        with self.fixture() as (peer, right, left, ledger):
+            right.send(b'C' * 33)
+            for width in (31, 545):
+                backing = bytearray(b'x' * width)
+                destination = memoryview(backing)
+                try:
+                    with self.assertRaisesRegex(PeerError, '^peer_destination$'):
+                        peer.receive_into(destination)
+                finally:
+                    destination.release()
+                self.assertEqual(backing, b'x' * width)
+                self.assertFalse(peer.snapshot()['failed'])
+                self.assertEqual(ledger.used, 0)
+            destination = memoryview(bytearray(33))
+            try:
+                self.assertEqual(peer.receive_into(destination), 33)
+                self.assertEqual(destination, b'C' * 33)
+            finally:
+                destination.release()
+
+    def test_truncated_control_is_terminal_erased_and_received_rights_closed(self):
+        for width in (32, 33):
+            for rights in (0, 1, 32):
+                with self.subTest(width=width, rights=rights), self.fixture() as (peer, right, left, ledger):
+                    source = os.open('/dev/null', os.O_RDONLY | os.O_CLOEXEC)
+                    destination = None
+                    try:
+                        before = self.fds()
+                        ancillary = [] if not rights else [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                                            array.array('i', [source] * rights))]
+                        right.sendmsg([b'B' * (width + 1)], ancillary)
+                        backing = bytearray(b'L' + b'x' * width + b'R')
+                        destination = memoryview(backing)[1:-1]
+                        with self.assertRaisesRegex(PeerError, '^peer_record_refused$'):
+                            peer.receive_into(destination)
+                        self.assertEqual(backing, b'L' + bytes(width) + b'R')
+                        self.assertEqual(self.fds(), before)
+                        self.assertEqual(ledger.used, 0)
+                        self.assertTrue(peer.snapshot()['failed'])
+                        right.send(b'C' * 33)
+                        with self.assertRaises(PeerError):
+                            peer.receive_into(destination)
+                        self.assertEqual(left.recv(544), b'C' * 33)
+                        self.assertEqual(self.fds(), before)
+                    finally:
+                        if destination is not None:
+                            destination.release()
+                        os.close(source)
+
+    def test_borrow_poll_does_not_consume_record_or_create_descriptors(self):
+        before = self.fds()
+        with self.fixture() as (peer, right, left, ledger):
+            held = self.fds()
+            fd = peer.fileno()
+            self.assertNotEqual(fd, left.fileno())
+            poll = select.poll()
+            poll.register(fd, select.POLLIN | select.POLLOUT)
+            self.assertTrue(any(flags & select.POLLOUT for _, flags in poll.poll(0)))
+            self.assertFalse(any(flags & select.POLLIN for _, flags in poll.poll(0)))
+            self.assertEqual(right.send(b'C' * 33), 33)
+            self.assertTrue(any(flags & select.POLLIN for _, flags in poll.poll(0)))
+            self.assertEqual(peer.fileno(), fd)
+            self.assertEqual(self.fds(), held)
+            output = bytearray(33)
+            self.assertEqual(peer.receive_into(memoryview(output)), 33)
+            self.assertEqual(output, b'C' * 33)
+            self.assertFalse(any(flags & select.POLLIN for _, flags in poll.poll(0)))
+            poll.unregister(fd)
+            self.assertEqual(ledger.used, 0)
+        self.assertEqual(self.fds(), before)
+
+    def test_reentrant_borrow_refuses_without_clearing_outer_guard(self):
+        instance, calls = [None], []
+        ledger = Ledger()
+        def nested():
+            if instance[0] is not None:
+                with self.assertRaisesRegex(PeerError, '^peer_busy$'):
+                    instance[0].fileno()
+                calls.append('busy')
+        def reserve(n):
+            nested()
+            return ledger.reserve(n)
+        def release(n):
+            nested()
+            ledger.release(n)
+        with self.fixture(reserve=reserve, release=release) as (peer, right, left, unused):
+            instance[0] = peer
+            right.send(b'C' * 33)
+            self.assertEqual(peer.receive_into(memoryview(bytearray(33))), 33)
+            self.assertEqual(calls, ['busy', 'busy'])
+            self.assertEqual(ledger.used, 0)
+            self.assertGreaterEqual(peer.fileno(), 0)
+            self.assertEqual(peer.send(b'R' * 32), 32)
+            self.assertEqual(right.recv(544), b'R' * 32)
+
+    def test_closed_borrow_refuses_without_touching_reused_owned_fd(self):
+        with self.fixture() as (peer, right, left, ledger):
+            fd = peer.fileno()
+            peer.close()
+            replacement = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+            try:
+                self.assertIn(fd, replacement)
+                with self.assertRaisesRegex(PeerError, '^peer_unusable$'):
+                    peer.fileno()
+                for held in replacement:
+                    os.fstat(held)
+                self.assertEqual(os.write(replacement[1], b'X'), 1)
+                self.assertEqual(os.read(replacement[0], 1), b'X')
+                self.assertEqual(ledger.used, 0)
+            finally:
+                for held in replacement:
+                    os.close(held)
+
+    def test_protection_and_expired_deadline_refuse_without_consuming(self):
+        for boundary in ('protection', 'deadline'):
+            with self.subTest(boundary=boundary), self.fixture() as (peer, right, left, ledger):
+                right.send(b'C' * 33)
+                if boundary == 'protection':
+                    self.assertEqual(peer_module._prctl(4, 1), 0)
+                    try:
+                        with self.assertRaisesRegex(PeerError, '^peer_boundary$'):
+                            peer.fileno()
+                    finally:
+                        Peer.protect()
+                else:
+                    # Disclosed clock injection tests the real gate, without waiting out its bound.
+                    with patch.object(peer_module.time, 'monotonic_ns', return_value=time.monotonic_ns()+3_000_000_000):
+                        with self.assertRaisesRegex(PeerError, '^peer_boundary$'):
+                            peer.fileno()
+                self.assertTrue(peer.snapshot()['failed'])
+                with self.assertRaisesRegex(PeerError, '^peer_boundary$'):
+                    peer.fileno()
+                self.assertEqual(left.recv(544), b'C' * 33)
+                self.assertEqual(ledger.used, 0)
+
+    def test_changed_socket_options_and_failed_peer_refuse(self):
+        with self.fixture() as (peer, right, left, ledger):
+            left.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 0)
+            right.send(b'C' * 33)
+            with self.assertRaisesRegex(PeerError, '^peer_options$'):
+                peer.fileno()
+            left.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+            with self.assertRaisesRegex(PeerError, '^peer_options$'):
+                peer.fileno()
+            self.assertTrue(peer.snapshot()['failed'])
+            self.assertEqual(left.recv(544), b'C' * 33)
+            self.assertEqual(ledger.used, 0)
 
 if __name__ == '__main__': unittest.main()
