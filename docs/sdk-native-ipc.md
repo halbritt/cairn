@@ -6,6 +6,9 @@ no SDK, launches no native child, and defines no message-body authority. It is
 not wired into the trial runtime. Use the [framing codec](sdk-ipc-codec.md) and
 separate semantic gates after authenticating each record.
 
+The [Python peer](sdk-python-peer.md) supplies the corresponding credential-aware
+record boundary for a future parent reactor. The reactor is still unwired.
+
 `protect()` sets and verifies dumpable0 in the calling Node process; `now()` reads
 monotonic nanoseconds. `openPeer(fd,pidfd,pid,uid,gid,deadline,scratch512)` creates
 owned CLOEXEC duplicates and binds an unnamed credential-enabled Unix SEQPACKET

@@ -1,4 +1,4 @@
-.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-integration test-lifecycle check contract
+.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-peer test-integration test-lifecycle check contract
 build:
 	go build -o bin/cairn ./cmd/cairn
 test:
@@ -19,6 +19,9 @@ test-sdk-spawn:
 test-sdk-native-ipc:
 	@test -n "$(SDK_IPC_TEST_OUTPUT)" || { echo 'Set SDK_IPC_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
 	python3 -B scripts/test_trial_sdk_native_ipc.py --output "$(SDK_IPC_TEST_OUTPUT)"
+test-sdk-peer:
+	@test -n "$(SDK_PEER_TEST_OUTPUT)" || { echo 'Set SDK_PEER_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
+	python3 -B scripts/check_trial_sdk_peer.py --output "$(SDK_PEER_TEST_OUTPUT)"
 test-integration:
 	bash scripts/test-postgres.sh
 test-lifecycle: build
