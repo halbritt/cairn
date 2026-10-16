@@ -185,3 +185,6 @@ native launch. The [original-line forwarder](sdk-original-line-forwarding.md)
 preserves validated JSON spelling for the future transport owner.
 The [diagnostic launch mapper](sdk-launch-mapping.md) validates the fixed spawn
 tuple and proposes its executable/print mapping without starting native.
+The [whole-record IPC codec](sdk-ipc-codec.md) supplies fixed framing and local
+loan/sequence checks. It supplies no authenticated transport or message-body
+admission, and does not report native writes or waits.
