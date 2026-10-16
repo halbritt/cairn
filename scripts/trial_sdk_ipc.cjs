@@ -12,6 +12,11 @@ const TABLE=Object.freeze({
  201:['N2P_CONTROL',1,1,true],202:['P2N_CONTROL',1,1,true]
 });
 for(const row of Object.values(TABLE))Object.freeze(row);
+const TABLE_PROFILE_2={...TABLE,
+ 9:['N2P_DATA',1,512,true],140:['P2N_DATA',2,2,true],133:['P2N_DATA',5,5,true]};
+delete TABLE_PROFILE_2[4];delete TABLE_PROFILE_2[131];
+for(const row of Object.values(TABLE_PROFILE_2))Object.freeze(row);
+Object.freeze(TABLE_PROFILE_2);
 const DIRECTIONS=new Set(Object.values(TABLE).map(row=>row[0]));
 class CodecError extends Error {constructor(code){super(code);this.code=code;}}
 class CreditDenied extends CodecError {}
@@ -31,11 +36,13 @@ class Frame {
  release(){const size=this.record.byteLength;this.#record=null;this.#finish(size);}
 }
 class Codec {
- #direction;#reserve;#release;#next;#busy=false;#failed=false;#cleanupUnknown=false;
- constructor(direction,reserve,release,firstSequence=1n){
+ #direction;#reserve;#release;#next;#profile;#table;#busy=false;#failed=false;#cleanupUnknown=false;
+ constructor(direction,reserve,release,firstSequence=1n,profile=1){
   if(!DIRECTIONS.has(direction)||typeof reserve!=='function'||typeof release!=='function'||
-    typeof firstSequence!=='bigint'||firstSequence<1n||firstSequence>MAX_SEQUENCE)throw new CodecError('frame_configuration');
+    typeof firstSequence!=='bigint'||firstSequence<1n||firstSequence>MAX_SEQUENCE||
+    ![1,2].includes(profile))throw new CodecError('frame_configuration');
   this.#direction=direction;this.#reserve=reserve;this.#release=release;this.#next=firstSequence;
+  this.#profile=profile;this.#table=profile===1?TABLE:TABLE_PROFILE_2;
  }
  get failed(){return this.#failed;}
  get cleanupUnknown(){return this.#cleanupUnknown;}
@@ -46,8 +53,8 @@ class Codec {
   this.#busy=true;
  }
  #check(kind,operation,size){
-  if(!Number.isInteger(kind)||!Object.hasOwn(TABLE,kind))throw new CodecError('frame_kind');
-  const [direction,low,high,correlated]=TABLE[kind];
+  if(!Number.isInteger(kind)||!Object.hasOwn(this.#table,kind))throw new CodecError('frame_kind');
+  const [direction,low,high,correlated]=this.#table[kind];
   if(direction!==this.#direction)throw new CodecError('frame_direction');
   if(size<low||size>high)throw new CodecError('frame_length');
   if(!Number.isSafeInteger(operation)||operation<0||operation>MAX_OPERATION||((operation!==0)!==correlated))throw new CodecError('frame_operation');
@@ -79,7 +86,7 @@ class Codec {
    if(destination.buffer===body.buffer)throw new CodecError('frame_alias');
    this.#acquire(size);acquired=size;
    const d=new DataView(destination.buffer,destination.byteOffset,destination.byteLength);
-   d.setUint32(0,0x43495043);d.setUint8(4,1);d.setUint8(5,kind);d.setUint16(6,0);
+   d.setUint32(0,0x43495043);d.setUint8(4,this.#profile);d.setUint8(5,kind);d.setUint16(6,0);
    d.setBigUint64(8,this.#next);d.setBigUint64(16,BigInt(operation));d.setUint32(24,body.byteLength);d.setUint32(28,0);
    destination.set(body,32);return this.#issue(destination,kind,operation);
   }catch(e){this.#refuse(e,acquired);throw e;}
@@ -90,7 +97,7 @@ class Codec {
    record=view(record);if(record.byteLength<32||record.byteLength>544)throw new CodecError('frame_length');
    const d=new DataView(record.buffer,record.byteOffset,record.byteLength);
    if(d.getUint32(0)!==0x43495043)throw new CodecError('frame_magic');
-   if(d.getUint8(4)!==1)throw new CodecError('frame_version');
+   if(d.getUint8(4)!==this.#profile)throw new CodecError('frame_version');
    if(d.getUint16(6)||d.getUint32(28))throw new CodecError('frame_reserved');
    const kind=d.getUint8(5),sequence=d.getBigUint64(8),op=d.getBigUint64(16),size=d.getUint32(24);
    if(record.byteLength!==32+size)throw new CodecError('frame_length');

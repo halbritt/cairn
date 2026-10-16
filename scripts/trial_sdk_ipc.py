@@ -20,6 +20,12 @@ TABLE = MappingProxyType({
  202:('P2N_CONTROL',1,1,True),
 })
 DIRECTIONS = frozenset(row[0] for row in TABLE.values())
+TABLE_PROFILE_2 = MappingProxyType({
+    **{kind: row for kind, row in TABLE.items() if kind not in (4, 131)},
+    9: ('N2P_DATA', 1, 512, True),
+    140: ('P2N_DATA', 2, 2, True),
+    133: ('P2N_DATA', 5, 5, True),
+})
 
 class CodecError(ValueError):
     pass
@@ -62,13 +68,16 @@ class Codec:
     first_sequence is a caller-selected test/checkpoint seam, not resume authority.
     A fresh production endpoint starts at one. reserve/release are trusted hooks.
     """
-    def __init__(self, direction, reserve, release, first_sequence=1):
+    def __init__(self, direction, reserve, release, first_sequence=1, profile=1):
         if (type(direction) is not str or direction not in DIRECTIONS
                 or not callable(reserve) or not callable(release)
-                or type(first_sequence) is not int or not 1 <= first_sequence <= MAX_SEQUENCE):
+                or type(first_sequence) is not int or not 1 <= first_sequence <= MAX_SEQUENCE
+                or type(profile) is not int or profile not in (1, 2)):
             raise CodecError('frame_configuration')
         self._direction, self._reserve, self._release = direction, reserve, release
         self._next = first_sequence
+        self._profile = profile
+        self._table = TABLE if profile == 1 else TABLE_PROFILE_2
         self._busy = False
         self.failed = False
         self.cleanup_unknown = False
@@ -80,8 +89,8 @@ class Codec:
         self._busy = True
 
     def _check(self, kind, operation, size):
-        if type(kind) is not int or kind not in TABLE: raise CodecError('frame_kind')
-        direction, low, high, correlated = TABLE[kind]
+        if type(kind) is not int or kind not in self._table: raise CodecError('frame_kind')
+        direction, low, high, correlated = self._table[kind]
         if direction != self._direction: raise CodecError('frame_direction')
         if not low <= size <= high: raise CodecError('frame_length')
         if (type(operation) is not int or not 0 <= operation <= MAX_OPERATION
@@ -123,7 +132,7 @@ class Codec:
             if len(destination) != size: raise CodecError('frame_length')
             if destination.obj is body.obj: raise CodecError('frame_alias')
             self._acquire(size); acquired = size
-            HEADER.pack_into(destination,0,0x43495043,1,kind,0,self._next,operation,len(body),0)
+            HEADER.pack_into(destination,0,0x43495043,self._profile,kind,0,self._next,operation,len(body),0)
             destination[32:] = body
             return self._issue(destination,kind,operation)
         except BaseException as exc:
@@ -137,7 +146,7 @@ class Codec:
             if not 32 <= len(record) <= 544: raise CodecError('frame_length')
             magic, version, kind, flags, sequence, operation, size, reserved = HEADER.unpack_from(record)
             if magic != 0x43495043: raise CodecError('frame_magic')
-            if version != 1: raise CodecError('frame_version')
+            if version != self._profile: raise CodecError('frame_version')
             if flags or reserved: raise CodecError('frame_reserved')
             if len(record) != 32 + size: raise CodecError('frame_length')
             self._check(kind,operation,size)

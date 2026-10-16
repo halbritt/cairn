@@ -16,7 +16,7 @@ Big endian fixed 32-byte header, followed by exactly body_length bytes:
 | Offset | Width | Field |
 |---|---:|---|
 | 0 | 4 | ASCII CIPC (43 49 50 43) |
-| 4 | 1 | version 1 |
+| 4 | 1 | explicitly selected profile/version 1 or 2 |
 | 5 | 1 | closed kind below |
 | 6 | 2 | flags, zero |
 | 8 | 8 | unsigned sequence, 1..2^64-1 |
@@ -31,6 +31,8 @@ permits boundary tests or an independently authorized checkpoint; it supplies no
 resume authority. Reinstantiating a codec never makes a replay safe. Each direction
 uses a separate instance and a separate sequence space. Do not share an instance
 between independent send and receive streams.
+
+The following table is profile 1, which remains the constructor default.
 
 | Kind | Name | Direction | Body bytes | Operation |
 |---:|---|---|---:|---|
@@ -56,6 +58,15 @@ between independent send and receive streams.
 | 201 | SIGNAL | N2P_CONTROL | 1 | positive |
 | 202 | SIGNAL_RESULT | P2N_CONTROL | 1 | positive |
 
+Profile 2 removes kinds 4 and 131, adds kind 9 INPUT_CUSTODY (N2P_DATA, 1..512 bytes,
+positive operation) and kind 140 INPUT_CUSTODY_RESULT (P2N_DATA, 2 bytes, positive
+operation), and changes kind 133 to exactly 5 bytes. All other rows are unchanged.
+Both endpoints must select the same profile before traffic. An incoming version
+does not select or negotiate a profile; a mismatch permanently fails that codec.
+There is no downgrade or legacy-write fallback. The separate
+[input profile 2 helpers](sdk-input-profile.md) validate custody and end bodies;
+framing itself continues to treat body contents as opaque.
+
 These are framing envelopes. Body contents are opaque in this slice: even a
 correctly sized CREDIT can contain zero or an excessive allowance and MUST be
 rejected by the future semantic adapter before effects. WAIT's eight bytes do not
@@ -66,8 +77,11 @@ from codec success without authentication and semantic admission.
 
 ## API and borrowed lifetime
 
-Python: Codec(direction, reserve, release, first_sequence=1).
-CommonJS: new Codec(direction, reserve, release, firstSequence=1n).
+Python: Codec(direction, reserve, release, first_sequence=1, profile=1).
+CommonJS: new Codec(direction, reserve, release, firstSequence=1n, profile=1).
+Only explicit profile=2 selects custody framing. Python rejects bool/coerced
+profile values; CommonJS requires the Number 1 or 2. Existing four-argument calls
+and profile 1 wire bytes retain their meaning.
 
 - encode_into(destination, kind, operation, body) / encodeInto returns a Frame.
   Destination has exactly 32+body length bytes and is writable. Body and destination
@@ -140,15 +154,20 @@ facts. No API here establishes either peer's identity.
 ## Evidence
 
 Run `make test-sdk-ipc` for the Python and guarded CommonJS suites; `make test`
-includes both. The 16 Python methods and 15 CommonJS groups share 21 synthetic
+includes both. The original 16 Python methods and 15 CommonJS groups share 21 synthetic
 wire vectors in `scripts/trial_sdk_ipc_vectors.json` plus an explicit literal
 vector. They check encoding/decoding, malformed headers, sequence/operation/body
 bounds, view lifetimes and credit failures. These are local source checks, not
 sender authentication or a deployed IPC protocol. The CommonJS preload is an
 effect regression guard, not hostile-code isolation.
+Profile 2 adds five groups in each language for literal custody/end frames,
+semantic receipt correlation, unchanged-kind compatibility, cross-profile
+refusal, removed-kind/body bounds and reservation refusal. Its semantic helper
+suite is described separately. These checks do not establish actual native
+write counts, stdin closure or sender identity.
 
 The conditional complete-line admission versus single-flight512 native-write
-problem remains unsolved by framing. All original full126/1900/two-week campaigns,
+problem remains unsolved by framing. All original full 126/1900/two-week campaigns,
 fresh independent blind grading, capacity/custody, publication30275/32768 and
 capture HOLD remain unchanged. No SDK/vendor/model/provider/native/build/addon,
 namespace or socket effects are part of this component.
