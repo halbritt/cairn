@@ -350,11 +350,10 @@ def _unique(pairs):
 
 
 def _utf8_length(text):
-    # Bounded slices; never one whole encoded copy.
-    total = 0
-    for start in range(0, len(text), _SLICE_CHARS):
-        total += len(text[start:start + _SLICE_CHARS].encode('utf-8'))
-    return total
+    # parse_document rejects surrogates first. Count scalar widths without
+    # allocating encoded scratch that a forwarding caller would need to reserve.
+    return sum(1 if ord(char) < 0x80 else 2 if ord(char) < 0x800
+               else 3 if ord(char) < 0x10000 else 4 for char in text)
 
 
 def parse_document(text, raw_bytes, max_bytes=MAX_DOCUMENT_BYTES):
