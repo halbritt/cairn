@@ -183,3 +183,5 @@ checks cover bounded decoding, backpressure and returned/uncertain write loans.
 It supplies no control-frame writer, callback schema, IPC authentication or actual
 native launch. The [original-line forwarder](sdk-original-line-forwarding.md)
 preserves validated JSON spelling for the future transport owner.
+The [diagnostic launch mapper](sdk-launch-mapping.md) validates the fixed spawn
+tuple and proposes its executable/print mapping without starting native.
