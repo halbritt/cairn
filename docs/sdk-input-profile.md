@@ -32,7 +32,9 @@ line even after acknowledging earlier fragments. This helper does not implement
 that receiver. The [decoded custody component](sdk-input-custody.md) implements
 staging and counted writes. The separately named
 [Node custody factory](sdk-spawn-proxy.md) implements the producer-facing source
-interface; a live protocol/receiver/native-owner adapter is still unavailable.
+interface. The [receiver and descriptor-owner source](sdk-input-receiver.md)
+compose staging, replies and counted native writes; the live authenticated
+transport/reactor adapter remains unavailable.
 The existing `createSpawner` factory retains actual-write callback semantics.
 
 `begin_end(op)` / `beginEnd` is ready-only, with no outstanding request. A successful

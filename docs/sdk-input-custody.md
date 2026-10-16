@@ -5,7 +5,9 @@ validation and bounded counted writes. It creates no process, closes no descript
 opens no IPC and imports no SDK. It does not implement an authenticated receiver
 or native ownership. The [input profile2](sdk-input-profile.md) and separately named
 [Node custody factory](sdk-spawn-proxy.md) define its intended upstream contract;
-a live adapter between them remains unavailable.
+the [receiver assembly and descriptor owner](sdk-input-receiver.md) compose those
+source contracts. The live authenticated transport/reactor adapter remains
+unavailable.
 
 `InputCustody(validate,reserve,release,max_bytes=128*1024)` borrows exact bytes or a
 readonly contiguous byte memoryview of1..512 bytes in `offer(fragment,first_byte_ns)`.
