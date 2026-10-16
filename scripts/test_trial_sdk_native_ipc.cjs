@@ -66,7 +66,7 @@ try {
   if (mode === 'api') {
     refuses(() => native.protect(1), 'ipc_argument');
     refuses(() => native.closePeer({}), 'ipc_peer_argument');
-    refuses(() => native.receive(peer, new Uint8Array(543)), 'ipc_argument');
+    refuses(() => native.receive(peer, new Uint8Array(31)), 'ipc_argument');
     refuses(() => native.sendRecord(peer, new Uint16Array(32)), 'ipc_argument');
     refuses(() => native.sendRecord(peer, new DataView(new ArrayBuffer(32))), 'ipc_argument');
     refuses(() => native.sendRecord(peer, new Uint8Array(new SharedArrayBuffer(32))), 'ipc_argument');

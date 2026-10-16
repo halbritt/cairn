@@ -2,9 +2,37 @@
 #define CAIRN_BINDING_UTIL_H
 #include <node_api.h>
 #include <math.h>
+#include <uv.h>
+#include <stdatomic.h>
 #include "peer_record.h"
 
-static const napi_type_tag peer_tag = {UINT64_C(0x3c06d4a7e99c42b1), UINT64_C(0xb8a8d3fd662590af)};
+typedef struct binding_peer binding_peer;
+typedef struct peer_wait peer_wait;
+typedef struct {
+    napi_env env;
+    uv_loop_t *loop;
+    napi_async_cleanup_hook_handle hook;
+    binding_peer *peers;
+    unsigned refs, peer_count, wait_count;
+    int closing;
+} addon_state;
+struct binding_peer {
+    ipc_peer core;
+    addon_state *state;
+    binding_peer *next;
+    peer_wait *armed;
+    unsigned refs;
+};
+#define IPC_MAX_PEERS 8
+#define IPC_MAX_WAITS 16
+/* One loaded image across Node environments; refuse contention, never spin. */
+static atomic_uint retained_peers, retained_waits;
+static int reserve_metadata(atomic_uint *count, unsigned maximum) {
+    unsigned expected = atomic_load(count);
+    return expected < maximum && atomic_compare_exchange_strong(count, &expected, expected + 1);
+}
+static void finalize(napi_env env, void *data, void *hint);
+static const napi_type_tag peer_tag = {UINT64_C(0xa19d94bf4ea24865), UINT64_C(0xba098883663f354d)};
 static napi_value error(napi_env env, const char *code) {
     bool pending = false;
     if (napi_is_exception_pending(env, &pending) == napi_ok && pending) {
@@ -47,12 +75,6 @@ static ipc_peer *peer(napi_env env, napi_value value) {
     bool tagged = false; void *p = NULL;
     if (napi_check_object_type_tag(env, value, &peer_tag, &tagged) != napi_ok || !tagged
         || napi_unwrap(env, value, &p) != napi_ok || !p) return NULL;
-    return p;
-}
-static void finalize(napi_env env, void *data, void *hint) {
-    (void)env; (void)hint;
-    ipc_peer *p = data;
-    (void)ipc_close(p); /* Best effort only; explicit close is the observable path. */
-    free(p);
+    return &((binding_peer *)p)->core;
 }
 #endif

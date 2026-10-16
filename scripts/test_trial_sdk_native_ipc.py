@@ -5,6 +5,7 @@ This does not run the SDK, native CLI, namespaces, providers, or an evaluation.
 import argparse
 import array
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -129,8 +130,10 @@ def helper(mode, fd=None):
                             pass_fds=inherited, start_new_session=True)
 
 
-def case(mode, binary):
+def case(mode, binary, suite_deadline=None):
     deadline = time.monotonic() + 3
+    if suite_deadline is not None:
+        deadline = min(deadline, suite_deadline)
     kind = socket.SOCK_STREAM if mode == 'stream' else socket.SOCK_SEQPACKET
     parent, node = socket.socketpair(socket.AF_UNIX, kind)
     for endpoint in (parent, node):
@@ -281,19 +284,55 @@ def main():
     out = args.output
     if not out.is_absolute():
         parser.error('output must be absolute')
-    source_names = ('binding.c', 'binding_util.h', 'peer_identity.h', 'peer_record.h')
+    source_names = ('binding.c', 'binding_util.h', 'peer_identity.h', 'peer_record.h', 'readiness.h')
     harness_names = ('test_trial_sdk_native_ipc.py', 'test_trial_sdk_native_ipc.cjs',
-                     'test_trial_sdk_native_ipc_helper.py')
+                     'test_trial_sdk_native_ipc_helper.py',
+                     'trial_sdk_native_ipc_readiness_cases.py', 'trial_sdk_native_ipc_control_cases.py',
+                     'test_trial_sdk_native_ipc_readiness.cjs', 'test_trial_sdk_native_ipc_teardown.cjs',
+                     'test_trial_sdk_native_ipc_aggregate.cjs', 'test_trial_sdk_native_ipc_aggregate_worker.cjs',
+                     'test_trial_sdk_native_ipc_control.cjs')
     def selected():
         return {'source': pins(SOURCE, source_names), 'harness': pins(ROOT, harness_names)}
     before = selected()
     out.mkdir(mode=0o700)  # Atomic refusal for existing directory or dangling symlink.
+    snapshot = out / 'source'
+    snapshot.mkdir(mode=0o700)
+    for group, base in (('source', SOURCE), ('harness', ROOT)):
+        for name, expected in before[group].items():
+            body = read(base / name)
+            if digest(body) != expected:
+                raise ValueError('selected_source_changed')
+            descriptor = os.open(snapshot / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o400)
+            try:
+                pending = memoryview(body)
+                while pending:
+                    count = os.write(descriptor, pending)
+                    if count <= 0:
+                        raise ValueError('snapshot_short_write')
+                    pending = pending[count:]
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+    def snapshot_module(name):
+        spec = importlib.util.spec_from_file_location(name, snapshot / (name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+    # Only the fixed case functions run. The snapshotted runner's main is inert.
+    legacy = snapshot_module('test_trial_sdk_native_ipc')
+    readiness = snapshot_module('trial_sdk_native_ipc_readiness_cases')
+    control = snapshot_module('trial_sdk_native_ipc_control_cases')
+    suites = (('legacy', legacy.CASES, legacy.case), ('readiness', readiness.CASES, readiness.case),
+              ('control', control.CASES, control.case))
+    if tuple(len(modes) for _, modes, _ in suites) != (16, 12, 10):
+        raise ValueError('selected_case_counts')
     binary = out / 'binding.node'
     command = ['/usr/bin/cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
                '-fPIC', '-shared', '-fmax-errors=8', '-I/usr/include/node',
-               str(SOURCE / 'binding.c'), '-o', str(binary), '-lm']
+               str(snapshot / 'binding.c'), '-o', str(binary), '-lm']
     exclusive(out / 'INTENT.json', {'request_id': str(uuid.uuid4()), 'selected': before,
-              'command': command, 'cases': CASES,
+              'command': command, 'cases': {name: modes for name, modes, _ in suites},
               'scope': 'fresh ordinary owned processes only; no SDK/native CLI/namespace/provider/admission'})
     start = time.monotonic()
     child = subprocess.Popen(command, cwd=ROOT, env=ENV, stdin=subprocess.DEVNULL,
@@ -313,17 +352,22 @@ def main():
             (out / ('build-' + name + '.log')).write_bytes(body)
         if result['build']['ok']:
             os.chmod(binary, 0o400)
-            for mode in CASES:
-                if time.monotonic() - start > 55:
-                    result['failure'] = 'overall_case_bound'
-                    break
-                row = case(mode, binary)
-                result['cases'].append(row)
-                if not row['ok']:
+            suite_deadline = time.monotonic() + 10
+            for name, modes, run_case in suites:
+                for mode in modes:
+                    if time.monotonic() >= suite_deadline:
+                        result['failure'] = 'overall_case_bound'
+                        break
+                    row = run_case(mode, binary, suite_deadline)
+                    row['suite'] = name
+                    result['cases'].append(row)
+                    if not row['ok']:
+                        break
+                if result.get('failure') or not result['cases'][-1]['ok']:
                     break
         result['pins_stable'] = before == selected()
         result['ok'] = (result['build']['ok'] and result['pins_stable']
-                        and len(result['cases']) == len(CASES)
+                        and len(result['cases']) == sum(len(modes) for _, modes, _ in suites)
                         and all(row['ok'] for row in result['cases']))
     finally:
         output.close()

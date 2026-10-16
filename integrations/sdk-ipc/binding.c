@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #define NAPI_VERSION 8
 #include "binding_util.h"
+#include "readiness.h"
 
 static napi_value protect(napi_env env, napi_callback_info info) {
     if (arguments(env, info, 0, NULL)) return error(env, "ipc_argument");
@@ -24,18 +25,25 @@ static napi_value open_peer(napi_env env, napi_callback_info info) {
         || integer(env,a[3],UINT32_MAX,&uid) || integer(env,a[4],UINT32_MAX,&gid)
         || bigint(env,a[5],&deadline) || view(env,a[6],&scratch) || scratch.size != 512)
         return error(env, "ipc_argument");
-    ipc_peer *p = calloc(1, sizeof(*p));
-    if (!p) return error(env, "ipc_allocation");
+    addon_state *state = state_for(env);
+    if (!state || state->closing) return error(env, "ipc_environment_closed");
+    if (!reserve_metadata(&retained_peers, IPC_MAX_PEERS)) return error(env, "ipc_peer_capacity");
+    binding_peer *owner = calloc(1, sizeof(*owner));
+    ipc_peer *p = owner ? &owner->core : NULL;
+    if (!p) {atomic_fetch_sub(&retained_peers, 1); return error(env, "ipc_allocation");}
     int result = ipc_open(p, (int)fd, (int)pidfd, (pid_t)pid, (uid_t)uid,
         (gid_t)gid, deadline, scratch.data);
     memset(scratch.data, 0, scratch.size);
     if (result || napi_create_object(env, &object) != napi_ok
         || napi_type_tag_object(env, object, &peer_tag) != napi_ok
-        || napi_wrap(env, object, p, finalize, NULL, NULL) != napi_ok) {
+        || napi_wrap(env, object, owner, finalize, NULL, NULL) != napi_ok) {
         const char *code = p->error ? p->error : "ipc_wrap";
         if (ipc_close(p)) code = "ipc_setup_cleanup_unknown";
-        free(p); return error(env, code);
+        free(p); atomic_fetch_sub(&retained_peers, 1); return error(env, code);
     }
+    owner->state = state; owner->refs = 1;
+    owner->next = state->peers; state->peers = owner;
+    ++state->peer_count; ++state->refs;
     return object;
 }
 static napi_value close_peer(napi_env env, napi_callback_info info) {
@@ -44,6 +52,8 @@ static napi_value close_peer(napi_env env, napi_callback_info info) {
     ipc_peer *p = peer(env, a[0]);
     if (!p) return error(env, "ipc_peer_argument");
     if (p->fd < 0 && p->pidfd < 0) return error(env, "ipc_peer_closed");
+    binding_peer *owner = (binding_peer *)p;
+    if (owner->armed) finish_wait(owner->armed, "ipc_wait_closed", 0, 1);
     if (ipc_close(p)) return error(env, p->error);
     if (napi_get_undefined(env, &result) != napi_ok) return error(env, "ipc_result");
     return result;
@@ -53,7 +63,8 @@ static napi_value record(napi_env env, napi_callback_info info, int receiving) {
     if (arguments(env, info, 2, a)) return error(env, "ipc_argument");
     ipc_peer *p = peer(env, a[0]);
     if (!p) return error(env, "ipc_peer_argument");
-    if (view(env, a[1], &bytes) || (receiving ? bytes.size != 544 : bytes.size < 32 || bytes.size > 544))
+    if (((binding_peer *)p)->armed) return error(env, "ipc_wait_armed");
+    if (view(env, a[1], &bytes) || bytes.size < 32 || bytes.size > 544)
         return error(env, "ipc_argument");
     int n = receiving ? ipc_receive(p, bytes.data, bytes.size) : ipc_send(p, bytes.data, bytes.size);
     if (n == -2) return error(env, p->error);
@@ -69,12 +80,13 @@ static napi_value exchange(napi_env env, napi_callback_info info) {
     if (arguments(env, info, 4, a)) return error(env, "ipc_argument");
     ipc_peer *p = peer(env, a[0]);
     if (!p) return error(env, "ipc_peer_argument");
+    if (((binding_peer *)p)->armed) return error(env, "ipc_wait_armed");
     if (view(env,a[1],&request) || view(env,a[2],&reply)
-        || request.size < 32 || request.size > 544 || reply.size != 544
+        || request.size < 32 || request.size > 544 || reply.size < 32 || reply.size > 544
         || bigint(env,a[3],&deadline)
         || napi_strict_equals(env,request.backing,reply.backing,&same) != napi_ok || same)
         return error(env, "ipc_argument");
-    int n = ipc_exchange(p, request.data, request.size, reply.data, deadline);
+    int n = ipc_exchange(p, request.data, request.size, reply.data, reply.size, deadline);
     if (n < 0) return error(env, p->error);
     if (napi_create_int32(env,n,&result) != napi_ok) {
         ipc_fail(p, "ipc_result_unknown"); return error(env, p->error);
@@ -82,6 +94,7 @@ static napi_value exchange(napi_env env, napi_callback_info info) {
     return result; /* Authenticated record length, NOT signal-acceptance Boolean. */
 }
 static napi_value init(napi_env env, napi_value exports) {
+    if (init_readiness(env)) return error(env, "ipc_environment_setup");
     const napi_property_descriptor methods[] = {
         {"protect",NULL,protect,NULL,NULL,NULL,napi_default,NULL},
         {"now",NULL,now,NULL,NULL,NULL,napi_default,NULL},
@@ -89,7 +102,9 @@ static napi_value init(napi_env env, napi_value exports) {
         {"closePeer",NULL,close_peer,NULL,NULL,NULL,napi_default,NULL},
         {"sendRecord",NULL,send_record,NULL,NULL,NULL,napi_default,NULL},
         {"receive",NULL,receive,NULL,NULL,NULL,napi_default,NULL},
-        {"exchange",NULL,exchange,NULL,NULL,NULL,napi_default,NULL}
+        {"exchange",NULL,exchange,NULL,NULL,NULL,napi_default,NULL},
+        {"waitPeer",NULL,wait_peer,NULL,NULL,NULL,napi_default,NULL},
+        {"cancelWait",NULL,cancel_wait,NULL,NULL,NULL,napi_default,NULL}
     };
     if (napi_define_properties(env,exports,sizeof(methods)/sizeof(methods[0]),methods) != napi_ok)
         return error(env, "ipc_exports");

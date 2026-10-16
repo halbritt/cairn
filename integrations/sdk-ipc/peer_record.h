@@ -72,7 +72,7 @@ static int ipc_ready(ipc_peer *p, short event, int64_t deadline) {
     }
 }
 static int ipc_exchange(ipc_peer *p, const unsigned char *request, size_t size,
-                        unsigned char *reply, int64_t deadline) {
+                        unsigned char *reply, size_t capacity, int64_t deadline) {
     if (deadline <= 0 || deadline > p->deadline) return ipc_fail(p, "ipc_exchange_deadline");
     int sent;
     do {
@@ -85,10 +85,10 @@ static int ipc_exchange(ipc_peer *p, const unsigned char *request, size_t size,
     int received;
     do {
         if (ipc_ready(p, POLLIN, deadline) || ipc_exchange_live(p, deadline)) return -2;
-        received = ipc_receive(p, reply, 544);
+        received = ipc_receive(p, reply, capacity);
         if (received == -2) return -2;
         if (ipc_exchange_live(p, deadline)) {
-            memset(reply, 0, 544);
+            memset(reply, 0, capacity);
             return -2;
         }
     } while (received == -1);
