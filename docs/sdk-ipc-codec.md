@@ -7,7 +7,9 @@ This source component defines one shared Python/CommonJS whole
 record. It does not open sockets, authenticate senders, clean ancillary rights,
 select SOCK_SEQPACKET, implement stream reassembly, signal a child, acknowledge
 native writes, launch a process, parse SDK JSON or authorize a provider operation.
-The future owner supplies transport, authentication and shared accounting.
+The owner supplies transport, authentication and shared accounting. The separate
+[Linux Node transport binding](sdk-native-ipc.md) has ordinary-host checks; it is
+not yet connected to this codec or the trial runtime.
 
 ## Wire
 

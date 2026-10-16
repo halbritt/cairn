@@ -1,4 +1,4 @@
-.PHONY: build test test-sdk-spawn test-sdk-ipc test-integration test-lifecycle check contract
+.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-integration test-lifecycle check contract
 build:
 	go build -o bin/cairn ./cmd/cairn
 test:
@@ -16,6 +16,9 @@ test-sdk-spawn:
 	@set -e; for suite in scripts/test_trial_sdk_spawn_bridge.cjs scripts/test_trial_sdk_spawn_utf8.cjs scripts/test_trial_sdk_spawn_invalid_utf8.cjs scripts/test_trial_sdk_spawn_lifetime.cjs; do \
 		node --permission --allow-fs-read=./scripts --no-global-search-paths --disable-sigusr1 --require ./scripts/guard_trial_sdk_spawn_bridge.cjs "$$suite"; \
 	done
+test-sdk-native-ipc:
+	@test -n "$(SDK_IPC_TEST_OUTPUT)" || { echo 'Set SDK_IPC_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
+	python3 -B scripts/test_trial_sdk_native_ipc.py --output "$(SDK_IPC_TEST_OUTPUT)"
 test-integration:
 	bash scripts/test-postgres.sh
 test-lifecycle: build
