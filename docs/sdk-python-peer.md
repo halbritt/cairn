@@ -1,9 +1,10 @@
 # Python SDK IPC peer
 
-`scripts/trial_sdk_peer.py` supplies a Linux record endpoint for a future parent
-reactor. It authenticates record credentials against independently supplied
+`scripts/trial_sdk_peer.py` supplies a Linux record endpoint for the
+[parent reactor source](sdk-parent-reactor.md). It authenticates record credentials against independently supplied
 PID/UID/GID and a held pidfd. It does not launch a process, dispatch an SDK frame,
-write native stdin or establish hook delivery. The reactor is not implemented.
+write native stdin or establish hook delivery. The reactor's runtime adapters are
+not wired into the trial runtime.
 
 `Peer.protect()` explicitly sets and checks process dumpability zero. Construction
 requires that protection, a future absolute monotonic deadline within 140 seconds,
