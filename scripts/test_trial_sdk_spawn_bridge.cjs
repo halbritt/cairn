@@ -1,19 +1,24 @@
 "use strict";
 const assert=require("node:assert/strict");
 const {Buffer}=require("node:buffer");
-const {createSpawner,LIMITS}=require("./trial_sdk_spawn_bridge.cjs");
+const {createSpawner,createCustodySpawner,LIMITS}=require("./trial_sdk_spawn_bridge.cjs");
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const tests=[]; const test=(name,fn)=>tests.push([name,fn]);
-function fixture(overrides={}) {
+function fixture(overrides={},custody=false) {
   const calls={launch:[],writes:[],ends:[],credits:[],signals:[],aborts:0,stderr:[],release:0};
   const owner={
     launch(tuple,events) { calls.launch.push(tuple); calls.events=events; return Promise.resolve({launched:true}); },
-    write(id,body,done) { calls.writes.push({id,body,done}); },
-    end(done) { calls.ends.push(done); }, credit(n) {calls.credits.push(n);},
+    ...(custody ? {
+      custody(id,body,done) { calls.writes.push({id,body,done}); },
+      endCustody(done) { calls.ends.push(done); }
+    } : {
+      write(id,body,done) { calls.writes.push({id,body,done}); },
+      end(done) { calls.ends.push(done); }
+    }), credit(n) {calls.credits.push(n);},
     signal(sig) { calls.signals.push(sig); return true; }, abort() {calls.aborts++;},
     stderr(body) {calls.stderr.push(Buffer.from(body));}, release(done) {calls.release++;done();}, ...overrides
   };
-  const api=createSpawner(owner); const controller=new AbortController();
+  const api=(custody?createCustodySpawner:createSpawner)(owner); const controller=new AbortController();
   const options={command:"/unavailable/claude",args:["--opaque","value"],cwd:"/synthetic",env:{A:"B"},signal:controller.signal};
   const proc=api.spawn(options); const errors=[];proc.on("error",e=>errors.push(e.code||e.message));
   return {calls,owner,api,proc,controller,options,errors};
@@ -256,6 +261,133 @@ test("decoded staging fits encoder share while an outgoing loan and conversion c
   assert.equal(received,Buffer.concat([initial,source]).toString("utf8"));
   f.calls.events.wait({code:0,signal:null});await tick();
   assert.equal(f.api.inspect(f.proc).used.encoder,0);assert.equal(f.calls.release,1);peaks(f);
+});
+test("custody callbacks release producer fragments without claiming native writes; final waits for native closure",async()=>{
+  const f=fixture({},true);await tick();let wrote=false,ended=false;
+  f.proc.stdin.write("abc",e=>{assert.ifError(e);wrote=true;});await tick();
+  assert.equal(wrote,false);assert.equal(f.calls.writes.length,1);
+  f.calls.writes[0].done({custodied:3});await tick();
+  assert.equal(wrote,true);let s=f.api.inspect(f.proc);
+  assert.equal(s.custodied,3);assert.equal(s.accepted,0);assert.equal(s.nativeOutcomeUnknown,true);
+  f.proc.stdin.end(()=>{ended=true;});await tick();
+  assert.equal(f.calls.ends.length,1);assert.equal(ended,false);assert.equal(s.inputDone,false);
+  f.calls.events.stdoutEOF();f.calls.events.wait({code:0,signal:null});await tick();
+  assert.equal(f.calls.release,0,"wait/EOF cannot substitute for observed native stdin closure");
+  f.calls.ends[0](null,{closed:true,nativeWritten:3});await tick();
+  s=f.api.inspect(f.proc);assert.equal(ended,true);assert.equal(s.inputDone,true);
+  assert.equal(s.accepted,3);assert.equal(s.nativeOutcomeUnknown,false);assert.equal(f.calls.release,1);peaks(f);
+});
+test("custody receipt uses its own exact field and never accepts a legacy or inherited count",async()=>{
+  const inherited=Object.assign(Object.create({custodied:3}),{other:1});
+  for(const receipt of [undefined,{accepted:3},{custodied:-1},{custodied:4},{custodied:true},
+    {custodied:NaN},{custodied:1.5},{custodied:3,accepted:3},inherited]) {
+    const f=fixture({},true);await tick();let outcome;
+    f.proc.stdin.write("abc",e=>{outcome=e;});await tick();f.calls.writes[0].done(receipt);await tick();
+    const s=f.api.inspect(f.proc);assert.equal(outcome.code,"custody_completion_unknown");
+    assert.equal(s.custodied,0);assert.equal(s.accepted,0);assert.equal(s.custodyUncertain,3);
+    assert.equal(s.nativeOutcomeUnknown,true);assert.equal(s.used.ipc,0);assert.equal(s.used.encoder,0);
+    assert.equal(f.calls.writes.length,1);peaks(f);
+  }
+});
+test("pending custody close loan survives transport failure until its explicit completion",async()=>{
+  const f=fixture({},true);await tick();let outcome;
+  f.proc.stdin.end("abc",e=>{outcome=e;});await tick();
+  f.calls.writes[0].done({custodied:3});await tick();assert.equal(f.calls.ends.length,1);
+  f.calls.events.error();f.calls.events.stdoutEOF();f.calls.events.wait({code:7,signal:null});await tick();
+  assert.equal(outcome.code,"owner_transport_failed");assert.equal(f.calls.release,0);
+  assert.equal(f.api.inspect(f.proc).inputDone,false);
+  f.calls.ends[0](null,{closed:true,nativeWritten:3});await tick();
+  const s=f.api.inspect(f.proc);assert.equal(s.primary,"owner_transport_failed");assert.equal(s.inputDone,false);
+  assert.equal(s.accepted,3);assert.equal(s.nativeOutcomeUnknown,false);assert.equal(f.calls.release,1);peaks(f);
+});
+test("custody partial and zero receipts preserve suffix order and require explicit readiness",async()=>{
+  const f=fixture({},true);await tick();let done=0;
+  f.proc.stdin.write(Buffer.from("abcdef"),e=>{assert.ifError(e);done++;});await tick();
+  f.calls.writes[0].done({custodied:2});await tick();
+  assert.equal(f.calls.writes[1].body.toString(),"cdef");f.calls.writes[1].done({custodied:0});
+  await tick();await tick();assert.equal(f.calls.writes.length,2);assert.equal(done,0);
+  assert.equal(f.api.inspect(f.proc).custodied,2);assert.equal(f.api.inspect(f.proc).accepted,0);
+  f.calls.events.writable();await tick();assert.equal(f.calls.writes[2].body.toString(),"cdef");
+  f.calls.writes[2].done({custodied:4});await tick();assert.equal(done,1);
+  f.proc.stdin.end();await tick();f.calls.ends[0](null,{closed:true,nativeWritten:6});await tick();
+  assert.equal(f.api.inspect(f.proc).accepted,6);assert.equal(f.api.inspect(f.proc).custodied,6);peaks(f);
+});
+test("custody end refuses missing, malformed, mismatched or error receipts without native success",async()=>{
+  const variants=[undefined,{closed:false,nativeWritten:3},{closed:true,nativeWritten:2},
+    {closed:true,nativeWritten:4},{closed:true,nativeWritten:true},{closed:true,nativeWritten:NaN},
+    {closed:true,nativeWritten:3,extra:1},{closed:true},{nativeWritten:3}];
+  for(const receipt of variants) {
+    const f=fixture({},true);await tick();let outcome;
+    f.proc.stdin.end("abc",e=>{outcome=e;});await tick();f.calls.writes[0].done({custodied:3});await tick();
+    f.calls.ends[0](null,receipt);await tick();const s=f.api.inspect(f.proc);
+    assert.equal(outcome.code,"native_close_completion_unknown");assert.equal(s.inputDone,false);
+    assert.equal(s.accepted,0);assert.equal(s.custodied,3);assert.equal(s.nativeOutcomeUnknown,true);
+    assert.equal(s.endPending,false);assert.equal(f.calls.ends.length,1);peaks(f);
+  }
+  const f=fixture({},true);await tick();let outcome;f.proc.stdin.end(e=>{outcome=e;});await tick();
+  f.calls.ends[0](new Error("owner close fault"),{closed:true,nativeWritten:0});await tick();
+  assert.equal(outcome.code,"owner_end_failed");assert.equal(f.api.inspect(f.proc).inputDone,false);peaks(f);
+});
+test("callback-gated fragments can carry an original 128KiB line without a Node whole-line queue",async()=>{
+  const wire=Buffer.from('{"v":"'+"x".repeat(128*1024-8)+'"}\n');assert.equal(wire.length,131073);
+  let received=0,previous=0;
+  const f=fixture({custody(id,body,done){
+    assert.ok(id>previous);previous=id;assert.ok(body.length>0&&body.length<=512);
+    assert.deepEqual(body,wire.subarray(received,received+body.length));received+=body.length;
+    done({custodied:body.length});
+  }},true);await tick();
+  for(let at=0;at<wire.length;at+=511) {
+    await new Promise((resolve,reject)=>f.proc.stdin.write(wire.subarray(at,at+511),e=>e?reject(e):resolve()));
+    const s=peaks(f);assert.equal(s.accepted,0);assert.equal(s.used.offered,0);assert.equal(s.used.encoder,0);
+  }
+  assert.equal(received,wire.length);assert.equal(f.api.inspect(f.proc).custodied,wire.length);
+  let ended=false;f.proc.stdin.end(()=>{ended=true;});await tick();assert.equal(ended,false);
+  f.calls.ends[0](null,{closed:true,nativeWritten:wire.length});await tick();
+  assert.equal(ended,true);assert.equal(f.api.inspect(f.proc).accepted,wire.length);
+  assert.ok(f.api.inspect(f.proc).peak.offered<=1024);peaks(f);
+});
+test("a custody throw keeps its raw loan charged until a late known custody receipt returns",async()=>{
+  let completion;const f=fixture({custody(id,body,done){completion=done;throw Error("owner boundary fault");}},true);
+  await tick();let outcome;f.proc.stdin.write("abc",e=>{outcome=e;});await tick();
+  let s=f.api.inspect(f.proc);assert.equal(s.primary,"owner_write_threw_uncertain");
+  assert.ok(s.used.ipc>0);assert.equal(outcome,undefined);assert.equal(s.accepted,0);
+  f.calls.events.stdoutEOF();f.calls.events.wait({code:2,signal:null});assert.equal(f.calls.release,0);
+  completion({custodied:1});await tick();s=f.api.inspect(f.proc);
+  assert.equal(outcome.code,"owner_write_threw_uncertain");assert.equal(s.custodied,1);assert.equal(s.accepted,0);
+  assert.equal(s.used.ipc,0);assert.equal(s.used.encoder,0);assert.equal(s.nativeOutcomeUnknown,true);
+  assert.equal(f.calls.release,1);peaks(f);
+});
+test("custody duplicate completions cannot count bytes or successful finalization twice",async()=>{
+  const f=fixture({},true);await tick();let writes=0;
+  f.proc.stdin.write("abc",e=>{assert.ifError(e);writes++;});await tick();
+  const done=f.calls.writes[0].done;done({custodied:3});await tick();done({custodied:3});await tick();
+  assert.equal(writes,1);assert.equal(f.api.inspect(f.proc).custodied,3);
+  assert.equal(f.api.inspect(f.proc).accepted,0);assert.equal(f.api.inspect(f.proc).primary,"duplicate_write_completion");peaks(f);
+  const g=fixture({},true);await tick();let ends=0;g.proc.stdin.end(()=>{ends++;});await tick();
+  const close=g.calls.ends[0];close(null,{closed:true,nativeWritten:0});await tick();
+  close(null,{closed:true,nativeWritten:0});await tick();
+  assert.equal(ends,1);assert.equal(g.api.inspect(g.proc).primary,"duplicate_end_completion");
+  assert.equal(g.api.inspect(g.proc).inputDone,true);assert.equal(g.api.inspect(g.proc).accepted,0);peaks(g);
+});
+test("factory choice requires its named custody or actual-write owner boundary with no fallback",async()=>{
+  const common={launch(){},credit(){},signal(){},abort(){},stderr(){},release(){}};
+  assert.throws(()=>createCustodySpawner({...common,write(){},end(){}}),e=>e.code==="owner_boundary_missing");
+  assert.throws(()=>createSpawner({...common,custody(){},endCustody(){}}),e=>e.code==="owner_boundary_missing");
+  const f=fixture({},true);await tick();let ended=0;f.proc.stdin.end(()=>{ended++;});await tick();
+  f.calls.ends[0](null,{closed:true,nativeWritten:0});await tick();
+  assert.equal(ended,1);assert.equal(f.api.inspect(f.proc).inputDone,true);
+  assert.equal(f.api.inspect(f.proc).nativeOutcomeUnknown,false);peaks(f);
+});
+test("a malformed late loan return preserves the primary throw for both input contracts",async()=>{
+  for(const custody of [false,true]) {
+    let completion;const operation=(id,body,done)=>{completion=done;throw Error("primary boundary fault");};
+    const f=fixture(custody?{custody:operation}:{write:operation},custody);await tick();let outcome;
+    f.proc.stdin.write("abc",e=>{outcome=e;});await tick();assert.equal(outcome,undefined);
+    completion(undefined);await tick();const s=f.api.inspect(f.proc);
+    assert.equal(outcome.code,"owner_write_threw_uncertain");assert.equal(s.primary,"owner_write_threw_uncertain");
+    assert.equal(s.accepted,0);assert.equal(s.used.ipc,0);assert.equal(s.used.encoder,0);
+    if(custody) assert.equal(s.custodyUncertain,3);else assert.equal(s.uncertain,3);peaks(f);
+  }
 });
 (async()=>{let failed=0;for(const [name,fn] of tests) {try{await fn();console.log("PASS "+name);}catch(e){failed++;console.error("FAIL "+name+"\n"+e.stack);}}
  console.log(JSON.stringify({tests:tests.length,failed,qualification:"synthetic source only"}));if(failed)process.exitCode=1;

@@ -29,8 +29,11 @@ Custody means ownership of staged input, not native acceptance. The intended
 receiver collects original spelling as decoded Python working text, validates
 the entire line, then drains its bounded native writer. It may refuse a complete
 line even after acknowledging earlier fragments. This helper does not implement
-that receiver. The separately named Node custody factory also remains outside
-this implemented slice; the existing main spawn factory still means actual writes.
+that receiver. The [decoded custody component](sdk-input-custody.md) implements
+staging and counted writes. The separately named
+[Node custody factory](sdk-spawn-proxy.md) implements the producer-facing source
+interface; a live protocol/receiver/native-owner adapter is still unavailable.
+The existing `createSpawner` factory retains actual-write callback semantics.
 
 `begin_end(op)` / `beginEnd` is ready-only, with no outstanding request. A successful
 end result must carry status 1 and total equal to all custodied bytes. Only then is

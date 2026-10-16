@@ -12,8 +12,15 @@ const TEXT_BODY = Math.floor((LIMITS.encoder-WRITE_ENCODER-DECODER_BYTES-2*DECOD
 const error = code => Object.assign(new Error(code), { code });
 
 function createSpawner(owner) {
+  return createBridge(owner,false);
+}
+function createCustodySpawner(owner) {
+  return createBridge(owner,true);
+}
+function createBridge(owner,custodyMode) {
   // No permissive fallback: these functions are the external owner boundary.
-  for (const name of ["launch","write","end","credit","signal","abort","stderr","release"])
+  const inputMethod=custodyMode?"custody":"write", endMethod=custodyMode?"endCustody":"end";
+  for (const name of ["launch",inputMethod,endMethod,"credit","signal","abort","stderr","release"])
     if (typeof owner[name] !== "function") throw error("owner_boundary_missing");
   const states = new WeakMap();
   let consumed=false;
@@ -29,6 +36,7 @@ function createSpawner(owner) {
     let credit = 0, paused = false, finalCB = null, ending = false, inputDone = false;
     let releaseStarted = false, released = false, abortPending = false, abortSent = false;
     let abortSignal = null, spawnCharge = 0, accepted = 0, uncertain = 0;
+    let custodied=0, custodyUncertain=0, nativeOutcomeUnknown=custodyMode, endReturned=false, endPending=false;
     let launchLoan = null, textOutput = false, decoderReserved = false;
     let textDecoder = null, textTail = null, stdoutEnded = false, textBusy = 0;
     const activeOffers = new Set();
@@ -55,7 +63,8 @@ function createSpawner(owner) {
       settle();
     }
     function settle() {
-      if (!launchDone || !exited || !eof || flight || (!inputDone && !primary) || releaseStarted) return;
+      if (!launchDone || !exited || !eof || flight || (custodyMode&&endPending) ||
+        (!inputDone && !primary) || releaseStarted) return;
       releaseStarted = true;
       if (abortSignal) abortSignal.removeEventListener("abort", onAbort);
       try {
@@ -105,9 +114,20 @@ function createSpawner(owner) {
       if (!current) {
         if (finalCB && !ending) {
           ending=true;
-          try { owner.end(err => {
-            if (inputDone) { failure(error("duplicate_end_completion")); return; }
+          if(custodyMode) endPending=true;
+          try { owner[endMethod]((err,result) => {
+            if (custodyMode?endReturned:inputDone) { failure(error("duplicate_end_completion")); return; }
+            endReturned=true;endPending=false;
             if (err) { failure(error("owner_end_failed")); return; }
+            if(custodyMode) {
+              if(!result || Object.keys(result).sort().join(",")!=="closed,nativeWritten" ||
+                result.closed!==true || !Number.isSafeInteger(result.nativeWritten) ||
+                result.nativeWritten!==custodied) {
+                failure(error("native_close_completion_unknown"));return;
+              }
+              accepted=result.nativeWritten;nativeOutcomeUnknown=false;
+              if(primary) {settle();return;}
+            }
             inputDone=true; const cb=finalCB; finalCB=null; if(cb) cb(); settle();
           }); } catch (_) { failure(error("owner_end_failed")); }
         }
@@ -125,20 +145,25 @@ function createSpawner(owner) {
       reserve("ipc",body.length+LIMITS.header);
       flight={id,bytes:body.length,charge:body.length+LIMITS.header,completed:false};
       const pending=flight;
-      try { owner.write(id,body, result => {
+      try { owner[inputMethod](id,body, result => {
         if (pending.completed) { failure(error("duplicate_write_completion")); return; }
         pending.completed=true;
         if (flight !== pending) { failure(error("late_write_completion")); return; }
         flight=null; unreserve("ipc",pending.charge);
-        const n=result && result.accepted;
-        if (!result || Object.keys(result).length!==1 || !Number.isSafeInteger(n) || n<0 || n>pending.bytes) {
-          uncertain+=pending.bytes;
+        const n=result && result[custodyMode?"custodied":"accepted"];
+        if (!result || (custodyMode?Object.keys(result).join(",")!=="custodied":Object.keys(result).length!==1) ||
+          !Number.isSafeInteger(n) || n<0 || n>pending.bytes) {
+          if(custodyMode) custodyUncertain+=pending.bytes;
+          else uncertain+=pending.bytes;
           unreserve("encoder",1536); write.encoded=null;
-          failure(error("write_completion_unknown"));
-          if (current===write) finishWrite(error("write_completion_unknown"));
+          const code=custodyMode?"custody_completion_unknown":"write_completion_unknown";
+          failure(error(code));
+          if (current===write) finishWrite(error(primary||code));
           return;
         }
-        accepted+=n; write.part+=n;
+        if(custodyMode) custodied+=n;
+        else accepted+=n;
+        write.part+=n;
         if (write.part === write.encoded.length) {
           write.offset=typeof write.chunk === "string" ? write.nextOffset : write.offset+write.encoded.length;
           write.encoded=null; unreserve("encoder",1536);
@@ -348,6 +373,7 @@ function createSpawner(owner) {
     }
     function onAbort() { abortPending=true; forwardAbort(); }
     states.set(proc, () => ({used:{...used},peak:{...peak},accepted,uncertain,primary,cleanup,
+      ...(custodyMode?{custodied,custodyUncertain,nativeOutcomeUnknown,endPending}:{}),
       launched,exited,eof,stdoutEnded,inputDone,released,killed,qualification:"unqualified"}));
     // Snapshot the borrowed tuple at the call boundary, after reservation. Only
     // the owner request/error is deferred so listeners can attach to the proxy.
@@ -397,4 +423,4 @@ function createSpawner(owner) {
   }
   return Object.freeze({spawn,inspect(proc) { const state=states.get(proc); if(!state) throw error("foreign_proxy"); return state(); }});
 }
-module.exports={createSpawner,LIMITS};
+module.exports={createSpawner,createCustodySpawner,LIMITS};
