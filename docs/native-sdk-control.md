@@ -176,3 +176,10 @@ separate implementation and verification work. Complete bootstrap and provider
 launch remain unavailable until that composition exists. Missing evidence is
 work to resolve; it is not a requirement to ask the owner to select routine
 implementation details.
+
+The separate [SDK process proxy](sdk-spawn-proxy.md) supplies the public stream
+and lifecycle seam for a future Python-owned native adapter. Its synthetic local
+checks cover bounded decoding, backpressure and returned/uncertain write loans.
+It supplies no control-frame writer, callback schema, IPC authentication or actual
+native launch. The [original-line forwarder](sdk-original-line-forwarding.md)
+preserves validated JSON spelling for the future transport owner.
