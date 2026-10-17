@@ -179,10 +179,10 @@ class CommandJob:
             if self._primary is None:self._primary='command_launch_unknown'
             raise
 
-    def _room(self):
+    def _room(self,*,allow_empty=False):
         room=self.budgets.stream_room()
         if type(room) is not int or not 0<=room<=STREAM_LIMIT:self._fail('command_stream_unknown',True)
-        if room==0:self._fail('command_stream_exhausted')
+        if room==0 and not allow_empty:self._fail('command_stream_exhausted')
         return min(CHUNK,room)
 
     def _charge_stream(self,count):
@@ -238,7 +238,20 @@ class CommandJob:
 
     def _read(self,name):
         if self._eof[name]:return False
-        room=min(self._room(),OUTPUT_LIMIT+1-self._counts[name])
+        room=min(self._room(allow_empty=True),OUTPUT_LIMIT+1-self._counts[name])
+        if room==0:
+            self._pending=name+'_eof_probe'
+            with memoryview(self._raw) as scratch:
+                result=self.owner.probe_output_eof(name,scratch)
+            if result=='data':
+                self._pending=None
+                self._fail('command_stream_exhausted')
+            if result=='eof':
+                self._eof[name]=True
+                self._text[name].eof()
+            elif result!='pending':self._fail('command_read_unknown',True)
+            self._pending=None;self._now()
+            return result=='eof'
         if room<=0:self._fail('command_output_limit')
         with memoryview(self._raw) as backing:
             view=backing[:room]

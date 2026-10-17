@@ -21,10 +21,11 @@ class Budget:
 
 
 class OwnerModel:
-    def __init__(self,stdout=b'',stderr=b'',code=0,*,early=False,epipe=False,width=512):
+    def __init__(self,stdout=b'',stderr=b'',code=0,*,early=False,epipe=False,width=512,after_input=False):
         self.data=dict(stdout=stdout,stderr=stderr)
         self.offset=dict(stdout=0,stderr=0);self.eof=dict(stdout=False,stderr=False)
         self.code,self.early,self.epipe,self.width=code,early,epipe,width
+        self.after_input=after_input
         self.launched=self.closed=self.rejected=self.released=False
         self.input=bytearray();self.writes=0
     def start(self,argv,cwd,env):self.launched=True
@@ -38,11 +39,18 @@ class OwnerModel:
         return count
     def close_stdin(self):self.closed=True
     def read_into(self,name,view):
+        if self.after_input and not self.closed:return -1
         offset=self.offset[name]
         data=self.data[name][offset:offset+min(len(view),self.width)]
         view[:len(data)]=data;self.offset[name]+=len(data)
         if not data:self.eof[name]=True
         return len(data)
+    def probe_output_eof(self,name,scratch):
+        assert len(scratch)==512
+        if self.after_input and not self.closed:return 'pending'
+        if self.offset[name]<len(self.data[name]):return 'data'
+        self.eof[name]=True
+        return 'eof'
     def observe_wait(self):
         if self.launched and (self.early or self.closed):
             return {'pid':123,'raw_status':self.code<<8,'returncode':self.code}
@@ -210,6 +218,49 @@ class JobTests(unittest.TestCase):
         self.assertLess(budget.queue,128*1024)
         self.assertEqual(job.snapshot()['streams']['stdout']['raw_sha256'],
                          hashlib.sha256(owner.data['stdout']).hexdigest())
+
+    def test_exact_aggregate_limit_still_requires_both_owner_eofs(self):
+        owner=OwnerModel(b'a'*module.OUTPUT_LIMIT,b'\xff'*module.OUTPUT_LIMIT,after_input=True)
+        job,budget=self.job(owner,'B'*(2*module.OUTPUT_LIMIT))
+        outcome=self.finish(job)
+        self.assertEqual(budget.stream,module.STREAM_LIMIT)
+        self.assertEqual(job.snapshot()['input_written'],2*module.OUTPUT_LIMIT)
+        self.assertTrue(all(row['eof'] for row in job.snapshot()['streams'].values()))
+        self.assertTrue(owner.released)
+        self.assertEqual((outcome.stdout,outcome.stderr),
+                         ('a'*module.OUTPUT_LIMIT,'\ufffd'*module.OUTPUT_LIMIT))
+
+    def test_aggregate_overflow_refuses_without_reading_the_queued_extra_byte(self):
+        owner=OwnerModel(b'a'*module.OUTPUT_LIMIT,b'e'*module.OUTPUT_LIMIT+b'!',after_input=True)
+        job,budget=self.job(owner,'B'*(2*module.OUTPUT_LIMIT))
+        with self.assertRaisesRegex(module.CommandJobError,'^command_stream_exhausted$'):
+            self.finish(job)
+        state=job.snapshot()
+        self.assertEqual((budget.stream,owner.offset['stderr']),(module.STREAM_LIMIT,module.OUTPUT_LIMIT))
+        self.assertFalse(state['streams']['stderr']['eof'])
+        self.assertFalse(state['streams']['stderr']['hash_complete'])
+        self.assertEqual(state['streams']['stderr']['raw_sha256'],
+                         hashlib.sha256(b'e'*module.OUTPUT_LIMIT).hexdigest())
+        self.assertIsNone(state['release'])
+        self.assertFalse(state['outcome_unknown'])
+
+    def test_live_empty_output_at_exhausted_shared_budget_stays_pending(self):
+        owner=OwnerModel()
+        budget=Budget();budget.stream=module.STREAM_LIMIT
+        job,budget=self.job(owner,budget=budget)
+        calls={'stdout':0,'stderr':0}
+        def pending(name,scratch):
+            calls[name]+=1
+            return 'pending'
+        owner.probe_output_eof=pending
+        self.assertTrue(job.step())  # Explicit stdin close, not output progress.
+        self.assertFalse(job.step())
+        state=job.snapshot()
+        self.assertIsNotNone(state['wait'])
+        self.assertIsNone(state['release'])
+        self.assertFalse(any(row['eof'] for row in state['streams'].values()))
+        self.assertEqual(calls,{'stdout':2,'stderr':2})
+        self.assertEqual(budget.stream,module.STREAM_LIMIT)
 
     def test_malformed_stdout_is_deferred_until_wait_and_stream_completion(self):
         owner=OwnerModel(b'\xf4\x90\x80\x80',b'tail',3,width=1)

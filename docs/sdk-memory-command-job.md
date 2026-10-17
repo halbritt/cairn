@@ -44,6 +44,15 @@ Raw counts/hashes describe the CLI bytes, not a later re-encoding of text.
 Replacement stderr can require three times as many UTF-8 bytes in transport.
 Every such transport byte still needs its own original aggregate charge.
 
+At zero aggregate traffic room, output completion uses the owned Linux stream's
+`probe_output_eof` with the existing scratch slot. A live empty stream remains
+pending. Queued data refuses without consuming another payload byte. Permanent
+peer send-side closure and an empty queue permit only a bounded confirming read;
+actual read zero is still required before EOF. This conditional owned-endpoint
+mechanism does not invent EOF from child wait, readiness, or a zero-sized read.
+The queue/custody assumptions and unexpected-byte uncertainty are documented in
+the owner seam. No additional admitted traffic or raw allocation is granted.
+
 Malformed stdout is latched while bounded capture continues. It does not
 override an earlier output-limit, communication or deadline failure. Only after
 actual wait, both EOFs and known owner release does `take_outcome()` materialize
