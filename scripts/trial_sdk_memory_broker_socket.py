@@ -55,6 +55,7 @@ class RecordSocket:
         self._creator=os.getpid()
         self._transfer_sequence=0
         self._last_transfer=None
+        self._terminal_eof=False
 
     def _begin_transfer(self,direction,maximum):
         if self._transfer_sequence >= 2**53-1:
@@ -219,6 +220,85 @@ class RecordSocket:
                 self._fail('broker_receive_unknown',True)
             raise
 
+    def receive_terminal_into(self,destination):
+        """Observe terminal peer read EOF, never a protocol record or permit.
+
+        The real caller must already have sent its terminal BYE. This method
+        accepts only actual zero receive, no ancillary/semantic flags, observed
+        shutdown readiness and a still-live original peer. Ordinary record
+        reception remains unchanged. A zero-length credentialed packet refuses.
+        """
+        view=ancillary=address=None
+        acquired=held=attempted=False
+        count=None
+        try:
+            try:
+                try:
+                    if self._terminal_eof:
+                        raise BrokerSocketError('broker_terminal_consumed')
+                    if (type(destination) is not memoryview or destination.readonly
+                            or destination.ndim!=1 or destination.format!='B'
+                            or not destination.c_contiguous or not 32<=len(destination)<=544):
+                        raise BrokerSocketError('broker_record_view')
+                    view=memoryview(destination)
+                    self._enter();acquired=True
+                    self._cleanup.add('auxiliary_reserve_unknown')
+                    grant=self._reserve(AUXILIARY)
+                    if type(grant) is not bool:self._fail('broker_auxiliary_unknown',True)
+                    if not grant:
+                        self._cleanup.discard('auxiliary_reserve_unknown')
+                        raise BrokerCreditDenied('broker_auxiliary_credit')
+                    held=True
+                    self._cleanup.discard('auxiliary_reserve_unknown')
+                    self._begin_transfer('receive',len(view));attempted=True
+                    try:
+                        count,ancillary,flags,address=self._socket.recvmsg_into(
+                            [view],CONTROL,socket.MSG_DONTWAIT|socket.MSG_CMSG_CLOEXEC)
+                    except (BlockingIOError,InterruptedError):
+                        attempted=False;self._retain_transfer(0)
+                        return -1
+                    self._retain_transfer(count)
+                    if ancillary:
+                        _,unknown=check_ancillary(ancillary,self._credentials)
+                        if unknown:self._cleanup.add('received_right_close_unknown')
+                        self._fail('broker_terminal_refused',unknown)
+                    if count!=0 or flags & ~socket.MSG_CMSG_CLOEXEC:
+                        self._fail('broker_terminal_refused')
+                    poll=select.poll()
+                    fd=self._socket.fileno()
+                    poll.register(fd,select.POLLIN|select.POLLRDHUP)
+                    ready=dict(poll.poll(0)).get(fd,0)
+                    if (not ready & (select.POLLHUP|select.POLLRDHUP)
+                            or ready & (select.POLLERR|select.POLLNVAL)):
+                        self._fail('broker_terminal_refused')
+                    self._live()
+                finally:
+                    try:
+                        if held:
+                            self._cleanup.add('auxiliary_release_unknown')
+                            self._release(AUXILIARY)
+                            self._cleanup.discard('auxiliary_release_unknown')
+                    finally:
+                        if acquired:self._busy=False
+            except BaseException:
+                if acquired:
+                    for i in range(len(view)):view[i]=0
+                raise
+            finally:
+                ancillary=address=None
+                if view is not None:view.release()
+                destination=None
+            # Promote only after all owned receive/auxiliary/view cleanup.
+            # Later channel-close uncertainty does not erase this EOF fact.
+            self._terminal_eof=True
+            return 0
+        except BaseException:
+            if attempted:self._retain_transfer(count)
+            if any(name in self._cleanup for name in ('auxiliary_reserve_unknown','auxiliary_release_unknown')):
+                self._fail('broker_auxiliary_unknown',True)
+            if attempted and self._failure is None:self._fail('broker_terminal_unknown',True)
+            raise
+
     def close(self):
         if self._busy: raise BrokerSocketError('broker_socket_busy')
         self._closed=True
@@ -230,6 +310,7 @@ class RecordSocket:
     def snapshot(self):
         return dict(primary=self._failure,outcome_unknown=self._unknown,closed=self._closed,
                     last_transfer=self._last_transfer,
+                    terminal_eof=self._terminal_eof,
                     cleanup=tuple(sorted(self._cleanup)),peer=self._credentials,
                     has_handles=self._socket is not None or self._parent_pidfd is not None,
                     closed_known=self._closed and not self._cleanup and self._socket is None

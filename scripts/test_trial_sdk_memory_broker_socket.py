@@ -1,5 +1,6 @@
 """Pure I/O-boundary faults; fake endpoints do not attest kernel identity."""
 import socket
+import select
 import sys
 import unittest
 from unittest.mock import patch
@@ -287,6 +288,120 @@ class SocketBoundaryTests(unittest.TestCase):
         self.assertIn('parent_pidfd_acquire_unknown',value.snapshot()['cleanup'])
         with self.assertRaisesRegex(broker.BrokerSocketError,'^broker_connect_consumed$'):
             value.connect_parent('/unused',1,lambda n:True,lambda n:None)
+
+    def terminal(self,*,count=0,ancillary=(),flags=0,ready=select.POLLHUP,release=lambda n:None):
+        class TerminalEndpoint(Endpoint):
+            def fileno(self):return 731
+            def recvmsg_into(self,views,control,options):
+                self.receives+=1
+                views[0][:count]=b'x'*count
+                return count,ancillary,flags,None
+        endpoint=TerminalEndpoint();value=self.bound(endpoint,release)
+        class Poll:
+            def register(self,*args):pass
+            def poll(self,*args):return [(731,ready)] if ready else []
+        return value,endpoint,patch.object(broker.select,'poll',Poll)
+
+    def test_terminal_eof_requires_actual_zero_shutdown_and_clean_auxiliary(self):
+        for flags in (0,socket.MSG_CMSG_CLOEXEC):
+            with self.subTest(flags=flags):
+                value,endpoint,poll=self.terminal(flags=flags)
+                with poll,memoryview(bytearray(544)) as view:
+                    self.assertEqual(value.receive_terminal_into(view),0)
+                    with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+                self.assertEqual(endpoint.receives,1)
+                self.assertTrue(value.snapshot()['terminal_eof'])
+                self.assertFalse(value.snapshot()['outcome_unknown'])
+
+    def test_terminal_zero_record_without_shutdown_or_with_credentials_is_not_eof(self):
+        credentials=[(socket.SOL_SOCKET,socket.SCM_CREDENTIALS,peer.CREDENTIAL.pack(123,1000,1000))]
+        for arguments in ({'ready':0},{'ancillary':credentials},{'flags':socket.MSG_EOR}):
+            with self.subTest(arguments=arguments):
+                value,endpoint,poll=self.terminal(**arguments)
+                with poll,memoryview(bytearray(544)) as view:
+                    with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+                self.assertFalse(value.snapshot()['terminal_eof'])
+                self.assertEqual(endpoint.receives,1)
+
+    def test_terminal_positive_record_preserves_count_without_eof(self):
+        value,endpoint,poll=self.terminal(count=34)
+        with poll,memoryview(bytearray(544)) as view:
+            with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+        self.assertEqual(value.snapshot()['last_transfer'][3],34)
+        self.assertFalse(value.snapshot()['terminal_eof'])
+
+    def test_terminal_received_rights_close_even_for_zero_record(self):
+        rights=[(socket.SOL_SOCKET,socket.SCM_RIGHTS,peer.RIGHT.pack(501))]
+        value,endpoint,poll=self.terminal(ancillary=rights)
+        with poll,patch.object(peer.os,'close') as close,memoryview(bytearray(544)) as view:
+            with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+            close.assert_called_once_with(501)
+        self.assertFalse(value.snapshot()['terminal_eof'])
+
+    def test_terminal_auxiliary_release_failure_cannot_be_known_eof(self):
+        def release(n):raise CleanupInterrupted()
+        value,endpoint,poll=self.terminal(release=release)
+        with poll,memoryview(bytearray(544)) as view:
+            with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+        self.assertFalse(value.snapshot()['terminal_eof'])
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+
+    def test_terminal_final_cleanup_interrupt_poisoned_after_actual_zero(self):
+        value,endpoint,poll=self.terminal()
+        hit=[]
+        def trace(frame,event,arg):
+            if (event=='line' and frame.f_code is broker.RecordSocket.receive_terminal_into.__code__
+                    and endpoint.receives and not value._busy and not hit):
+                hit.append(True);raise CleanupInterrupted()
+            return trace
+        old=sys.gettrace()
+        try:
+            with poll,memoryview(bytearray(544)) as view:
+                sys.settrace(trace)
+                with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+        finally:sys.settrace(old)
+        self.assertEqual(hit,[True])
+        self.assertFalse(value.snapshot()['terminal_eof'])
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+
+    def test_terminal_wouldblock_keeps_eof_unobserved_without_poison(self):
+        value,endpoint,poll=self.terminal()
+        def again(*args):raise BlockingIOError()
+        endpoint.recvmsg_into=again
+        with poll,memoryview(bytearray(544)) as view:
+            self.assertEqual(value.receive_terminal_into(view),-1)
+        self.assertFalse(value.snapshot()['terminal_eof'])
+        self.assertFalse(value.snapshot()['outcome_unknown'])
+        self.assertEqual(value.snapshot()['cleanup'],())
+
+    def test_terminal_post_receive_parent_death_never_becomes_eof(self):
+        value,endpoint,poll=self.terminal()
+        def live():
+            if endpoint.receives:value._fail('broker_peer_ended')
+        value._live=live
+        with poll,memoryview(bytearray(544)) as view:
+            with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+        self.assertFalse(value.snapshot()['terminal_eof'])
+        self.assertEqual(value.snapshot()['last_transfer'][3],0)
+
+    def test_terminal_reserve_return_interrupt_retains_unresolved_auxiliary(self):
+        value,endpoint,poll=self.terminal()
+        hit=[]
+        def trace(frame,event,arg):
+            if (event=='line' and frame.f_code is broker.RecordSocket.receive_terminal_into.__code__
+                    and frame.f_locals.get('grant') is True and not frame.f_locals.get('held') and not hit):
+                hit.append(True);raise CleanupInterrupted()
+            return trace
+        old=sys.gettrace()
+        try:
+            with poll,memoryview(bytearray(544)) as view:
+                sys.settrace(trace)
+                with self.assertRaises(broker.BrokerSocketError):value.receive_terminal_into(view)
+        finally:sys.settrace(old)
+        self.assertEqual(hit,[True])
+        self.assertEqual(endpoint.receives,0)
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+        self.assertIn('auxiliary_reserve_unknown',value.snapshot()['cleanup'])
 
 
 if __name__ == '__main__':

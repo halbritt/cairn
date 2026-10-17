@@ -46,6 +46,30 @@ connection construction and promotes nested endpoint close uncertainty. Closing
 a listener before start consumes it. Neither terminal object may acquire a new
 connection later.
 
+`receive_terminal_into` is a separate terminal observation for a caller whose
+actual protocol has already sent BYE. It leaves ordinary `receive_into` behavior
+unchanged. It returns0 only after an actual nonblocking receive of zero bytes,
+no ancillary data, no semantic message flags, observed HUP/RDHUP, a still-live
+original peer and known auxiliary cleanup. It returns-1 for known would-block.
+Positive bytes, a credentialed zero-length packet, rights, missing shutdown
+readiness or uncertain cleanup refuse; actual consumed counts remain in
+`last_transfer`. A successful EOF observation cannot be replayed. The method
+accepts no permit flag and does not certify that a caller really sent BYE.
+
+The only allowed returned option flag is MSG_CMSG_CLOEXEC: Linux documents this
+as reflecting the requested receive option. The option stays enabled so any
+unexpected received rights remain close-on-exec. [recvmsg(2)](https://man7.org/linux/man-pages/man2/recvmsg.2.html)
+also distinguishes zero-size messages from stream EOF. The selected check uses
+SO_PASSCRED's per-message credentials and shutdown readiness in addition to the
+actual zero receive; neither an empty queue nor a HUP bit alone is EOF.
+[unix(7)](https://man7.org/linux/man-pages/man7/unix.7.html),
+[poll(2)](https://man7.org/linux/man-pages/man2/poll.2.html).
+These are Linux source-contract assumptions for this selected SEQPACKET path;
+the pure boundary tests do not prove installed-kernel behavior. The service
+runtime separately enforces known-sent BYE and distinguishes expected channel
+termination from premature parent death. It does not infer the parent's actual
+descriptor-table cleanup merely from read shutdown.
+
 The directory and filesystem socket entry are held through cleanup. Unlink
 requires the current leaf to match the held entry, but stat followed by unlink
 is not an atomic conditional operation. Ancestor checks and private mode bits
