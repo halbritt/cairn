@@ -53,6 +53,22 @@ class RecordSocket:
         self._failure=None
         self._cleanup=set()
         self._creator=os.getpid()
+        self._transfer_sequence=0
+        self._last_transfer=None
+
+    def _begin_transfer(self,direction,maximum):
+        if self._transfer_sequence >= 2**53-1:
+            self._fail('broker_transfer_sequence')
+        self._transfer_sequence+=1
+        self._last_transfer=(self._transfer_sequence,direction,maximum,None)
+
+    def _retain_transfer(self,count):
+        # Called from the post-syscall path AND its enclosing failure guard.
+        # An observed prefix is traffic, never authenticated/usable protocol.
+        if self._last_transfer is not None:
+            sequence,direction,maximum,_=self._last_transfer
+            if type(count) is int and 0<=count<=maximum:
+                self._last_transfer=(sequence,direction,maximum,count)
 
     def _fail(self,code,unknown=False):
         if self._failure is None: self._failure=code
@@ -106,6 +122,7 @@ class RecordSocket:
 
     def send(self,record):
         view=None;acquired=attempted=False
+        count=None
         try:
             try:
                 if (type(record) is not memoryview or not record.readonly or record.ndim!=1
@@ -113,12 +130,15 @@ class RecordSocket:
                     raise BrokerSocketError('broker_record_view')
                 view=memoryview(record)
                 self._enter();acquired=True
+                self._begin_transfer('send',len(view))
                 attempted=True
                 try:
                     count=self._socket.send(view,socket.MSG_DONTWAIT|socket.MSG_NOSIGNAL)
                 except (BlockingIOError,InterruptedError):
                     attempted=False
+                    self._retain_transfer(0)
                     return -1
+                self._retain_transfer(count)
                 if count!=len(view): self._fail('broker_send_unknown',True)
                 try: self._live()
                 except BaseException: self._fail('broker_post_send_unknown',True)
@@ -128,12 +148,14 @@ class RecordSocket:
                 record=None
                 if acquired: self._busy=False
         except BaseException:
+            if attempted:self._retain_transfer(count)
             if attempted: self._fail('broker_send_unknown',True)
             raise
 
     def receive_into(self,destination):
         view=ancillary=address=None
         acquired=held=attempted=False
+        count=None
         try:
             try:
                 try:
@@ -152,14 +174,17 @@ class RecordSocket:
                         raise BrokerCreditDenied('broker_auxiliary_credit')
                     held=True
                     self._cleanup.discard('auxiliary_reserve_unknown')
+                    self._begin_transfer('receive',len(view))
                     attempted=True
                     try:
                         count,ancillary,flags,address=self._socket.recvmsg_into(
                             [view],CONTROL,socket.MSG_DONTWAIT|socket.MSG_CMSG_CLOEXEC)
                     except (BlockingIOError,InterruptedError):
                         attempted=False
+                        self._retain_transfer(0)
                         return -1
                     except BaseException: self._fail('broker_receive_unknown',True)
+                    self._retain_transfer(count)
                     bad,unknown=check_ancillary(ancillary,self._credentials)
                     if unknown: self._cleanup.add('received_right_close_unknown')
                     if bad or unknown or not 32<=count<=len(view) or flags & ~(socket.MSG_EOR|socket.MSG_CMSG_CLOEXEC):
@@ -187,6 +212,7 @@ class RecordSocket:
                 if view is not None: view.release()
                 destination=None
         except BaseException:
+            if attempted:self._retain_transfer(count)
             if any(name in self._cleanup for name in ('auxiliary_reserve_unknown','auxiliary_release_unknown')):
                 self._fail('broker_auxiliary_unknown',True)
             if attempted and self._failure is None:
@@ -203,6 +229,7 @@ class RecordSocket:
 
     def snapshot(self):
         return dict(primary=self._failure,outcome_unknown=self._unknown,closed=self._closed,
+                    last_transfer=self._last_transfer,
                     cleanup=tuple(sorted(self._cleanup)),peer=self._credentials,
                     has_handles=self._socket is not None or self._parent_pidfd is not None,
                     closed_known=self._closed and not self._cleanup and self._socket is None

@@ -1,0 +1,345 @@
+"""Original-ledger and real codec checks; socket boundaries are inert here."""
+import unittest
+import hashlib
+import socket
+import sys
+
+from trial_sdk_attempt_resources import AttemptResources
+from trial_sdk_command_service_broker import WireCredit, ServiceLinkError, ServiceLink
+from trial_sdk_memory_broker_socket import RecordSocket
+from trial_sdk_peer import CREDENTIAL
+from trial_sdk_ipc import Codec
+import trial_sdk_command_service_wire as w
+
+
+class CreditTests(unittest.TestCase):
+    def test_freeze_is_idempotent_and_never_changes_known_spend_or_live_tickets(self):
+        resources = AttemptResources()
+        memory = resources.allocate(resources.local, 'standing', 128, 256)
+        credit = WireCredit(resources, resources.local, 64)
+        credit.known(credit.promise(32), 32)
+        before = resources.snapshot()
+        resources.freeze()
+        resources.freeze()
+        after = resources.snapshot()
+        for key in ('raw_reserved', 'working_reserved', 'traffic_spent',
+                    'traffic_reserved', 'domains'):
+            self.assertEqual(after[key], before[key])
+        self.assertTrue(after['unknown'])
+        with self.assertRaisesRegex(ValueError, '^resource_unknown$'):
+            resources.release(memory)
+
+    def test_finish_return_interruption_freezes_original_ledger_even_after_settlement(self):
+        from trial_sdk_native_process_owner import NativeProcessOwner
+        resources = AttemptResources()
+        first = WireCredit(resources, resources.local, 32)
+        other = WireCredit(resources, resources.bind(NativeProcessOwner()), 32)
+        first.known(first.promise(32), 32)
+        hit = []
+        def trace(frame, event, arg):
+            if (event == 'line' and frame.f_code.co_name == 'guarded' and
+                    frame.f_locals.get('self') is first and
+                    frame.f_locals.get('acquired') and not first._busy and not hit):
+                hit.append(True)
+                raise KeyboardInterrupt()
+            return trace
+        old = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt): first.finish()
+        finally: sys.settrace(old)
+        self.assertEqual(hit, [True])
+        self.assertEqual(resources.snapshot()['traffic_spent'], 32)
+        self.assertTrue(resources.snapshot()['unknown'])
+        with self.assertRaises(ValueError): other.promise(32)
+
+    def test_two_promised_edges_share_original_commitment_and_spend_once(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 120)
+        sent = credit.promise(53)
+        received = credit.promise(56)
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_promise_slots$'):
+            credit.promise(32)
+        credit.known(sent, 53)
+        credit.known(received, 40)
+        credit.finish()
+        state = resources.snapshot()
+        self.assertEqual(state['traffic_spent'], 93)
+        self.assertEqual(state['traffic_reserved'], 0)
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_credit_closed$'):
+            credit.known(sent, 53)
+
+    def test_unknown_edge_keeps_positive_prefix_and_all_unsettled_commitment(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 120)
+        first = credit.promise(53)
+        credit.known(first, 53)
+        credit.promise(56)
+        credit.quarantine()
+        state = resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (53, 67))
+        self.assertTrue(state['unknown'])
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_credit_unknown$'):
+            credit.finish()
+
+    def test_unfinished_edge_cannot_refund_and_counterfeit_receipt_does_not_consume(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 100)
+        first = credit.promise(40)
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_receipt_pending$'):
+            credit.finish()
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_promise$'):
+            credit.known(object(), 40)
+        self.assertEqual(credit.snapshot()['pending'], 1)
+        credit.known(first, 40)
+        credit.finish()
+        self.assertEqual(resources.snapshot()['traffic_spent'], 40)
+
+    def test_shared_unknown_blocks_another_held_credit_without_refunding_it(self):
+        from trial_sdk_native_process_owner import NativeProcessOwner
+        resources = AttemptResources()
+        domain = resources.bind(NativeProcessOwner())
+        first = WireCredit(resources, resources.local, 32)
+        other = WireCredit(resources, domain, 32)
+        first.quarantine()
+        with self.assertRaisesRegex(ValueError, '^resource_unknown$'):
+            other.promise(32)
+        self.assertEqual(resources.snapshot()['traffic_reserved'], 64)
+
+
+class LinkTests(unittest.TestCase):
+    def link(self):
+        return ServiceLink(AttemptResources(), deadline_ns=100, standing_working=4096,
+                           standing_raw=2080, clock=lambda: 1)
+
+    def test_standing_backings_debit_original_aggregate_before_prestart(self):
+        resources = AttemptResources()
+        link = ServiceLink(resources, deadline_ns=100, standing_working=4096,
+                           standing_raw=2080, clock=lambda: 1)
+        state = resources.snapshot()
+        self.assertEqual(state['raw_reserved'], 2080)
+        self.assertEqual(state['known_allocation_reserved'], 6176)
+        self.assertFalse(link.owner.snapshot()['launch_attempted'])
+        self.assertEqual(link.snapshot()['backing_bytes'], 1600)
+        self.assertIsNone(link.snapshot()['service_wait'])
+
+    def bound(self, link, endpoint):
+        # Pure boundary fixture: actual record/codec/custody paths, but no kernel
+        # credentials or live process are established by this test setup.
+        transport = RecordSocket()
+        transport._socket = endpoint
+        transport._credentials = (123, 1000, 1000)
+        transport._reserve = link._reserve_auxiliary
+        transport._release = link._release_auxiliary
+        transport._live = lambda: None
+        transport._options = lambda: None
+        link._connection = transport
+
+    def test_eagain_keeps_same_frame_and_charges_only_known_send(self):
+        link = self.link()
+        class Endpoint:
+            def __init__(self): self.records = []
+            def send(self, record, flags):
+                self.records.append(bytes(record))
+                if len(self.records) == 1: raise BlockingIOError()
+                return len(record)
+        endpoint = Endpoint()
+        self.bound(link, endpoint)
+        # Establish the already-observed READY phase with a real encoded record.
+        self.ready(link)
+        credit = link.credit(32)
+        link.queue(w.SHUTDOWN, 0, credit)
+        self.assertFalse(link.send_step())
+        self.assertEqual(link.transcript.snapshot()['phase'], 'idle')
+        self.assertEqual(credit.snapshot()['known'], 0)
+        self.assertTrue(link.send_step())
+        self.assertEqual(endpoint.records[0], endpoint.records[1])
+        self.assertEqual(link.transcript.snapshot()['phase'], 'closing')
+        credit.finish()
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 32)
+        self.assertEqual(link.snapshot()['backing_bytes'], 1600)
+
+    def ready(self, link):
+        with memoryview(bytearray(32)) as record, memoryview(b'') as body:
+            frame = Codec('S2P', lambda n: True, lambda n: None, profile=4).encode_into(
+                record, w.READY, 0, body)
+            try: link.transcript.observe(frame)
+            finally: frame.release()
+
+    def test_authenticated_record_is_charged_even_when_frame_is_invalid(self):
+        link = self.link()
+        class Endpoint:
+            def recvmsg_into(self, views, control, flags):
+                views[0][:32] = b'x' * 32
+                return (32, [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS,
+                              CREDENTIAL.pack(123, 1000, 1000))], 0, None)
+        self.bound(link, Endpoint())
+        credit = link.credit(64)
+        link.arm_receive(credit, 64)
+        with self.assertRaisesRegex(ValueError, '^frame_magic$'):
+            link.receive_step(lambda frame: self.fail('invalid frame reached consumer'))
+        state = link.resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (32, 32))
+        self.assertTrue(state['unknown'])
+        self.assertTrue(link.snapshot()['unknown'])
+        with self.assertRaisesRegex(ServiceLinkError, '^service_link_unknown$'):
+            link.receive_step(lambda frame: None)
+
+    def test_received_ready_borrow_ends_before_buffer_reuse_and_unused_credit_returns(self):
+        link = self.link()
+        with memoryview(bytearray(32)) as record, memoryview(b'') as body:
+            frame = Codec('S2P', lambda n: True, lambda n: None, profile=4).encode_into(
+                record, w.READY, 0, body)
+            with frame.record as loan: encoded = bytes(loan)
+            frame.release()
+        class Endpoint:
+            def recvmsg_into(self, views, control, flags):
+                views[0][:32] = encoded
+                return (32, [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS,
+                              CREDENTIAL.pack(123, 1000, 1000))], 0, None)
+        self.bound(link, Endpoint())
+        credit = link.credit(544)
+        link.arm_receive(credit, 544)
+        seen = []
+        self.assertTrue(link.receive_step(lambda frame: seen.append((frame.kind, frame.sequence))))
+        credit.finish()
+        self.assertEqual(seen, [(w.READY, 1)])
+        self.assertEqual(link.transcript.snapshot()['phase'], 'idle')
+        self.assertFalse(link.snapshot()['receive_pending'])
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 32)
+        self.assertEqual(link.resources.snapshot()['traffic_reserved'], 0)
+
+    def test_channel_close_alone_does_not_return_standing_allocation(self):
+        link = self.link()
+        link.close_channels()
+        self.assertEqual(link.resources.snapshot()['raw_reserved'], 2080)
+        with self.assertRaisesRegex(ServiceLinkError, '^service_retirement_pending$'):
+            link.retire()
+        link.owner.cleanup_unlaunched()
+        link.retire()
+        self.assertEqual(link.resources.snapshot()['known_allocation_reserved'], 0)
+        self.assertTrue(link.snapshot()['retired'])
+        with self.assertRaisesRegex(ServiceLinkError, '^service_retired$'):
+            link.retire()
+
+    def test_post_send_uncertainty_retains_original_loan_and_full_commitment(self):
+        link = self.link()
+        class Endpoint:
+            def send(self, record, flags): raise OSError('ambiguous boundary')
+        self.bound(link, Endpoint())
+        self.ready(link)
+        credit = link.credit(32)
+        link.queue(w.SHUTDOWN, 0, credit)
+        with self.assertRaises(ValueError): link.send_step()
+        self.assertTrue(link.snapshot()['send_pending'])
+        self.assertTrue(link.snapshot()['unknown'])
+        state = link.resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (0, 32))
+        self.assertTrue(state['unknown'])
+        with self.assertRaisesRegex(ServiceLinkError, '^service_link_unknown$'):
+            link.send_step()
+
+    def test_post_syscall_failure_preserves_actual_positive_prefix_in_both_directions(self):
+        for direction in ('send', 'receive'):
+            with self.subTest(direction=direction):
+                link = self.link()
+                class Endpoint:
+                    def send(self, record, flags): return len(record)
+                    def recvmsg_into(self, views, control, flags):
+                        views[0][:32] = b'x' * 32
+                        return (32, [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS,
+                                      CREDENTIAL.pack(123, 1000, 1000))], 0, None)
+                self.bound(link, Endpoint())
+                live = []
+                def lifetime():
+                    live.append(True)
+                    if len(live) == 2: raise ValueError('post_syscall_peer_loss')
+                link._connection._live = lifetime
+                credit = link.credit(64)
+                if direction == 'send':
+                    self.ready(link)
+                    link.queue(w.SHUTDOWN, 0, credit)
+                    step = link.send_step
+                else:
+                    link.arm_receive(credit, 32)
+                    step = lambda: link.receive_step(lambda frame: self.fail('unusable frame'))
+                with self.assertRaises(ValueError): step()
+                state = link.resources.snapshot()
+                self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (32, 32))
+                self.assertTrue(state['unknown'])
+                self.assertEqual(credit.snapshot()['known'], 32)
+
+    def test_old_socket_receipt_cannot_charge_a_new_pre_effect_refusal(self):
+        link = self.link()
+        class Endpoint:
+            def send(self, record, flags): return len(record)
+        self.bound(link, Endpoint())
+        self.ready(link)
+        credit = link.credit(255)
+        link.queue(w.PREPARE, 1, credit, 1, 99, 10, 100, 100, 2,
+                   hashlib.sha256(b'{}').digest())
+        self.assertTrue(link.send_step())
+        old = link.snapshot()['last_socket_transfer']
+        def refuse_before_io(): raise ValueError('peer_pre_effect_failure')
+        link._connection._live = refuse_before_io
+        link.queue(w.REQUEST, 1, credit, data=b'{}')
+        with self.assertRaises(ValueError): link.send_step()
+        self.assertEqual(link.snapshot()['last_socket_transfer'], old)
+        self.assertEqual(credit.snapshot()['known'], 97)
+        state = link.resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (97, 158))
+
+    def test_final_socket_cleanup_interrupt_retains_observed_positive_prefix(self):
+        link = self.link()
+        class Endpoint:
+            sends = 0
+            def send(self, record, flags):
+                self.sends += 1
+                return len(record)
+        endpoint = Endpoint()
+        self.bound(link, endpoint)
+        self.ready(link)
+        credit = link.credit(64)
+        link.queue(w.SHUTDOWN, 0, credit)
+        hit = []
+        def trace(frame, event, arg):
+            if (event == 'line' and frame.f_code is RecordSocket.send.__code__ and
+                    endpoint.sends and frame.f_locals.get('record') is None and not hit):
+                hit.append(True)
+                raise KeyboardInterrupt()
+            return trace
+        old = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(ValueError): link.send_step()
+        finally: sys.settrace(old)
+        self.assertEqual(hit, [True])
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 32)
+        self.assertEqual(link.resources.snapshot()['traffic_reserved'], 32)
+        self.assertTrue(link.resources.snapshot()['unknown'])
+
+    def test_interruption_at_final_return_freezes_credit_and_retains_positive_receipt(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 53)
+        promise = credit.promise(53)
+        hit = []
+        def trace(frame, event, arg):
+            if (event == 'line' and frame.f_code.co_name == 'guarded' and
+                    frame.f_locals.get('self') is credit and
+                    frame.f_locals.get('acquired') and not credit._busy and not hit):
+                hit.append(True)
+                raise KeyboardInterrupt()
+            return trace
+        old = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt): credit.known(promise, 53)
+        finally: sys.settrace(old)
+        self.assertEqual(hit, [True])
+        self.assertTrue(credit.snapshot()['unknown'])
+        self.assertEqual(resources.snapshot()['traffic_spent'], 53)
+        self.assertTrue(resources.snapshot()['unknown'])
+
+
+if __name__ == '__main__':
+    unittest.main()

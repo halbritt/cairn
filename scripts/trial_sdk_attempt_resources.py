@@ -55,6 +55,7 @@ class AttemptResources:
     def __init__(self):
         self._creator=os.getpid();self._next=1
         self._busy=self._mutating=self._unknown=self._closed=False
+        self._frozen=False
         self._raw=self._working=self._spent=self._reserved=0
         self._raw_peak=self._working_peak=self._allocation_peak=self._committed_peak=0
         self.local=_Ticket(0)
@@ -64,7 +65,7 @@ class AttemptResources:
     def _check(self):
         if os.getpid()!=self._creator:raise ResourceError('resource_wrong_process')
         if self._closed:raise ResourceError('resource_closed')
-        if self._unknown:raise ResourceError('resource_unknown')
+        if self._unknown or self._frozen:raise ResourceError('resource_unknown')
 
     def _domain(self,domain):
         if type(domain) is not _Ticket or domain not in self._domains:
@@ -87,8 +88,17 @@ class AttemptResources:
         self._mutating=True;self._unknown=True
 
     def _known(self,value=None):
-        self._unknown=False
+        self._unknown=self._frozen
         return value
+
+    def freeze(self):
+        """Retain all counters/tickets after higher-layer handoff uncertainty.
+
+        Parent-only, sticky and idempotent, including after settlement/close.
+        It does not fabricate a live ticket, receipt or uncertain byte count.
+        """
+        if os.getpid()!=self._creator:raise ResourceError('resource_wrong_process')
+        self._frozen=self._unknown=True
 
     @_guard
     def bind(self,owner):
@@ -204,7 +214,7 @@ class AttemptResources:
                 'known_allocation_peak':self._allocation_peak,
                 'traffic_spent':self._spent,'traffic_reserved':self._reserved,
                 'traffic_available':TRAFFIC-self._spent-self._reserved,
-                'committed_peak':self._committed_peak,'unknown':self._unknown,
+                'committed_peak':self._committed_peak,'unknown':self._unknown or self._frozen,
                 'closed':self._closed,
                 'domains':{ticket.ordinal:{'memory':tuple(sorted(row['memory'])),
                                            'traffic':tuple(sorted(row['traffic']))}

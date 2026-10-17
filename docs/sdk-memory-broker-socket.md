@@ -29,6 +29,16 @@ returns `-1` (or `None` for accept); ambiguous send, receive or acceptance is
 terminal. Accepted bytes are not an API result. Successful acceptance consumes
 the listener's one connection even when setup subsequently refuses the peer.
 
+`snapshot.last_transfer` is a bounded immutable scalar tuple containing a fresh
+per-call sequence, direction, offered size and actual observed syscall count (or
+`None`). Known EAGAIN records zero; no positive count is inferred from an error.
+The receipt survives a later lifetime, ancillary or cleanup refusal. A parent
+must match its fresh generation/direction to the exact held transfer promise
+before preserving that prefix; an older receipt after pre-effect refusal cannot
+count again. Consumed malformed/uncredentialed bytes are traffic, never usable
+protocol. This receipt does not complete an uncertain record, authenticate its
+payload or refund any unobserved remainder.
+
 Cleanup premarks each owned handle before relinquishing it. A missing handle
 alone does not prove closure: cleanup uncertainty stays separate from the
 original operation failure. The listener retains the accepted endpoint through

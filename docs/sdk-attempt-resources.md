@@ -47,6 +47,12 @@ uncertainty is sticky, so catching an exception cannot issue/replay more grants.
 The mutation guard includes final cleanup and return, without promising universal
 recovery from arbitrary asynchronous interruption.
 
+`freeze` records higher-layer handoff uncertainty even after a traffic ticket
+was already settled. It is parent-process-bound, sticky and idempotent, including
+when the ledger is already unknown or closed. It changes no counters or tickets;
+later known completion cannot clear it. It is not a receipt, a new allowance or
+permission to refund an unresolved transfer.
+
 Missing grants are not zero traffic room. The service must park before invoking
 `CommandJob.step` until its authenticated turn grant arrives. A zero grant can be
 issued only when current uncommitted capacity is zero. `available_at_issue` is a
