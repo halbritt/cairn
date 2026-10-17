@@ -111,6 +111,7 @@ class ServiceTranscript:
         self._busy = False
         self.failed = False
         self._attempt_failed = False
+        self._cancelled = self._cancel_acknowledged = False
         self._operation = self._last_operation = self._last_grant = 0
         self._lease = self._deadline = self._request_size = self._request_count = 0
         self._quote = (0, 0)
@@ -325,18 +326,23 @@ class ServiceTranscript:
             self._phase_is('preparing', 'prepared_wait', 'prepared', 'running',
                            'output', 'cancelling', 'failed_operation')
             _require(fields[0] in range(1, 8), 'service_refusal')
-            _require(self._phase != 'cancelling' or fields[0] == 6,
+            _require(not self._cancelled or fields[0] == 6,
                      'service_cancel_ack')
+            if self._cancelled:
+                self._cancel_acknowledged = True
             self._refusal = fields[0]
             self._attempt_failed = True
             self._phase = 'refused'
         elif kind == CANCEL:
             self._phase_is('preparing', 'prepared_wait', 'prepared', 'running', 'output')
             _require(fields[0] in (1, 2, 3), 'service_cancel')
+            self._cancelled = True
             self._attempt_failed = True
             self._phase = 'cancelling'
         elif kind == RELEASE:
             self._phase_is('result', 'refused', 'failed_operation')
+            _require(not self._cancelled or self._cancel_acknowledged,
+                     'service_cancel_ack')
             _require(fields[0] == self._lease, 'service_lease')
             self._phase = 'releasing'
         elif kind == RELEASED:
@@ -349,6 +355,7 @@ class ServiceTranscript:
 
     def snapshot(self):
         return {'phase': self._phase, 'failed': self.failed,
+                'cancelled': self._cancelled, 'cancel_acknowledged': self._cancel_acknowledged,
                 'attempt_failed': self._attempt_failed, 'operation': self._operation,
                 'lease': self._lease, 'deadline_ns': self._deadline,
                 'quote': self._quote, 'request_count': self._request_count,

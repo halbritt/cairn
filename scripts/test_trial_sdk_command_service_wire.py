@@ -305,4 +305,38 @@ class WireTests(unittest.TestCase):
         self.assertEqual(self.state.snapshot()['phase'],'idle')
 
 
+    def cancelled_unknown(self):
+        self.running();self.emit(w.TURN,1,20,1,1536,0)
+        self.emit(w.CANCEL,1,1)
+        self.emit(w.PROGRESS,1,20,1,23,0,0,0,1)
+        state=self.state.snapshot()
+        self.assertEqual(state['phase'],'failed_operation')
+        self.assertEqual(state['raw_counts'],(23,0,0))
+        self.assertEqual(state['turn'],(20,1,1536,0))
+
+    def test_cancel_unknown_progress_rejects_wrong_refusal_ack(self):
+        self.cancelled_unknown()
+        with self.assertRaises(w.ServiceWireError):self.emit(w.REFUSE,1,1)
+
+    def test_cancel_unknown_progress_rejects_release_before_ack(self):
+        self.cancelled_unknown()
+        with self.assertRaises(w.ServiceWireError):self.emit(w.RELEASE,1,10)
+
+    def test_cancel_unknown_progress_cannot_repeat_unsettled_receipt(self):
+        self.cancelled_unknown()
+        with self.assertRaises(w.ServiceWireError):
+            self.emit(w.PROGRESS,1,20,1,23,0,0,0,1)
+        self.assertEqual(self.state.snapshot()['raw_counts'],(23,0,0))
+
+    def test_cancel_unknown_progress_ack_preserves_prefix_and_commitment(self):
+        self.cancelled_unknown()
+        self.emit(w.REFUSE,1,6);self.emit(w.RELEASE,1,10)
+        self.emit(w.RELEASED,1,10,0)
+        state=self.state.snapshot()
+        self.assertEqual(state['phase'],'idle')
+        self.assertTrue(state['attempt_failed'])
+        self.assertEqual(state['turn'],(20,1,1536,0))
+        self.assertEqual(state['raw_counts'],(23,0,0))
+
+
 if __name__=='__main__':unittest.main()

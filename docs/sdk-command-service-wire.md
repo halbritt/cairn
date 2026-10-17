@@ -151,11 +151,16 @@ Raw digests are reported service facts; encoded digests also validate delivered
 bytes. No hash establishes service origin or API success. The parent-observed
 service wait is a separate owner fact, absent from STATUS.
 
-CANCEL makes attempt failure sticky, admits no new grants, and leaves the phase
-cancelling. A crossed already-granted progress/text receipt or already-produced
+CANCEL makes attempt failure and the cancellation acknowledgement obligation
+sticky, admits no new grants, and initially leaves the phase cancelling.
+An unknown progress receipt changes the phase to failed_operation to prevent
+repeating its retained unsettled turn, but cannot clear the cancellation
+obligation. Its known prefix and pending commitment remain diagnostic facts.
+A crossed already-granted progress/text receipt or already-produced
 OUTPUT/STATUS may be retained for accounting, but cannot become a usable result.
 The service must acknowledge CANCEL with REFUSE code 6 even if it just sent
-STATUS. Normal RELEASE waits for that acknowledgement. Mandatory acknowledgement
+STATUS. Normal RELEASE waits for that acknowledgement, including from
+failed_operation. Mandatory acknowledgement
 and release traffic needs original-budget headroom before effects; peer death,
 deadline or uncertainty cannot fabricate it.
 
