@@ -44,7 +44,7 @@ def _guard(method):
                     self._busy = False
             return answer
         except BaseException as exc:
-            if acquired and self._mutating:
+            if acquired and (self._mutating or getattr(self, '_receipt', None) is not None):
                 if self._primary is None:
                     self._primary = type(exc).__name__
                 self._poison()
@@ -88,6 +88,12 @@ only unused commitment, after every promised edge has a known receipt.
     def _poison(self):
         self._unknown = True
         try:
+            if self._receipt is not None:
+                # The count assignment may or may not have completed. Repeated
+                # terminal observations must not apply that prefix twice.
+                before, _, count = self._receipt
+                if self._known == before:
+                    self._known = before + count
             if not self._closed:
                 self.resources.quarantine(self.ticket, self._known)
         except BaseException as exc:
@@ -144,8 +150,8 @@ only unused commitment, after every promised edge has a known receipt.
         if (row['index'] >= len(row['maxima']) or type(count) is not int or
                 not 0 <= count <= row['maxima'][row['index']]):
             raise ServiceLinkError('wire_burst_count')
+        self._receipt = (self._known, row['maxima'][row['index']], count)
         self._mutating = True
-        self._receipt = (row['maxima'][row['index']], count)
         self._known += count
         self._pledged -= count
         row['known'] += count
@@ -180,8 +186,8 @@ only unused commitment, after every promised edge has a known receipt.
             raise ServiceLinkError('wire_promise')
         if type(count) is not int or not 0 <= count <= promise.maximum:
             raise ServiceLinkError('wire_count')
+        self._receipt = (self._known, promise.maximum, count)
         self._mutating = True
-        self._receipt = (promise.maximum, count)
         self._known += count
         self._promises.remove(promise)
         self._pledged -= promise.maximum
@@ -197,8 +203,8 @@ only unused commitment, after every promised edge has a known receipt.
             raise ServiceLinkError('wire_promise')
         if type(count) is not int or not 0 <= count <= promise.maximum:
             raise ServiceLinkError('wire_count')
+        self._receipt = (self._known, promise.maximum, count)
         self._mutating = True
-        self._receipt = (promise.maximum, count)
         self._known += count
         # Leave the promise and loan unresolved; no unused portion can return.
         self._poison()
@@ -217,7 +223,7 @@ only unused commitment, after every promised edge has a known receipt.
                 'promised': self._pledged, 'pending': len(self._promises),
                 'closed': self._closed, 'unknown': self._unknown,
                 'primary': self._primary,
-                'receipt_in_progress': self._receipt,
+                'receipt_in_progress': None if self._receipt is None else self._receipt[1:],
                 'quarantine_error': self._quarantine_error,
                 'burst': None if self._burst is None else
                     {key: self._burst[key] for key in ('maxima', 'index', 'remaining', 'known')}}

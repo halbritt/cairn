@@ -110,6 +110,16 @@ demonstrated post-return/pre-receipt line interruption for ordinary receive,
 burst receive and send. Any reconciliation failure is retained as a fixed label
 and the original ledger freezes; it does not replay the syscall or invent zero.
 
+Credit accounting stages the actual count and its prior cumulative total before
+setting the mutation marker. The failure guard recognizes that staged receipt
+even before the marker changes. Terminal handling retains the prefix whether
+its local count update completed or not, without applying it twice. This covers
+ordinary and burst receipts. Before staging, the unchanged healthy credit still
+permits the link's fresh socket receipt to reconcile the transfer. The public
+`receipt_in_progress` diagnostic remains the `(maximum, count)` pair. An unknown
+credit remains unusable, and none of this changes its fixed ceiling or refunds
+unobserved traffic.
+
 `close_channels` attempts actual endpoint cleanup independently of healthy
 protocol state. It proves neither service nor CLI exit and returns no resources.
 `retire` requires no outstanding promises/loans, known channel closure and the
