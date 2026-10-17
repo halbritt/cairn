@@ -182,6 +182,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 
 type memoryTools struct {
 	retrieval     RetrievalBackend
+	attempt       AttemptRetrievalBackend
 	previewChoice *localapi.PreviewCapabilityChoice
 	facadeBuild   buildinfo.Info
 	client        *localapi.Client
@@ -269,10 +270,19 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err != nil {
 		return nil, nil, err
 	}
-	index, err := t.retrieval.Search(ctx, core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, SemanticQuery: args.SemanticQuery, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared})
+	compiled := core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, SemanticQuery: args.SemanticQuery, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}
+	if t.attempt != nil {
+		return t.attemptSearch(ctx, compiled, args, memoryRoom, receiptRoom)
+	}
+	index, err := t.retrieval.Search(ctx, compiled)
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
 	}
+	view, memoryRoom, err := searchView(index, args, prepare, memoryRoom, receiptRoom)
+	return toolResult(view, err, memoryRoom)
+}
+
+func searchView(index core.IndexResult, args searchArgs, prepare bool, memoryRoom, receiptRoom int) (searchResult, int, error) {
 	view, err := presentSearch(index, args.RequestID)
 	if prepare {
 		view.Preparation = &notePreparation{NoteSaved: false, Guidance: preparationGuidance}
@@ -283,7 +293,7 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err == nil && args.InspectionPolicy != "" {
 		memoryRoom, err = indexview.InspectionViewRoom(index, args.InspectionPolicy, memoryRoom, receiptRoom)
 	}
-	return toolResult(view, err, memoryRoom)
+	return view, memoryRoom, err
 }
 
 func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error) {
@@ -318,6 +328,10 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 }
 
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
+	if t.attempt != nil {
+		result, err := t.attempt.Pull(ctx, args)
+		return toolResult(result, err, t.config.maxTokens())
+	}
 	result, err := t.retrieval.Pull(ctx, args)
 	return toolResult(result, err, t.config.maxTokens())
 }
@@ -463,11 +477,20 @@ func toolResult(value any, err error, room int) (*mcp.CallToolResult, any, error
 		}
 		return nil, nil, errors.New("Cairn operation failed; inspect the local API connection and service")
 	}
+	result, _, err := encodeToolResult(value, room)
+	return result, nil, err
+}
+
+func encodeToolResult(value any, room int) (*mcp.CallToolResult, []byte, error) {
+	return encodeToolResultInto(new(mcp.CallToolResult), value, room)
+}
+
+func encodeToolResultInto(result *mcp.CallToolResult, value any, room int) (*mcp.CallToolResult, []byte, error) {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return nil, nil, err
 	}
-	result := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}
+	result.Content = []mcp.Content{&mcp.TextContent{Text: string(body)}}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return nil, nil, err
@@ -475,7 +498,7 @@ func toolResult(value any, err error, room int) (*mcp.CallToolResult, any, error
 	if len(encoded) > room {
 		return nil, nil, errors.New("BUDGET_REFUSED: MCP tool result exceeds configured memory input room")
 	}
-	return result, nil, nil
+	return result, encoded, nil
 }
 
 func validatedConfig(config Config) (Config, error) {
