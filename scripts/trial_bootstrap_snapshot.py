@@ -135,6 +135,28 @@ def write_all(fd, block):
         pending = pending[written:]
 
 
+def _utf8_parts(block, carry):
+    """Decode a borrowed block; combine only a <=3-byte carry and <=3 new bytes."""
+    parts = []
+    with memoryview(block) as view:
+        rest = view
+        if carry:
+            head = carry + bytes(view[:3])
+            text, used = codecs.utf_8_decode(head, 'strict', False)
+            if used < len(carry):
+                pending, rest = head, view[len(view):]
+            else:
+                pending, rest = b'', view[used - len(carry):]
+                parts.append(text)
+        else:
+            pending = b''
+        if rest:
+            text, used = codecs.utf_8_decode(rest, 'strict', False)
+            parts.append(text)
+            pending = bytes(rest[used:])
+        return parts, pending
+
+
 class Snapshot:
     """One consumed directory; failures leave private partial files, never retry."""
     def __init__(self, output):
@@ -231,7 +253,7 @@ class Snapshot:
         need(file_identity(os.fstat(lease.fd)) == initial, 'snapshot_changed')
         os.lseek(lease.fd, 0, os.SEEK_SET)
         actual, count, blocks = hashlib.sha256(), 0, []
-        decoder = codecs.getincrementaldecoder('utf-8')() if text else None
+        carry = b''
         invalid_utf8 = False
         while True:
             block = os.read(lease.fd, min(TEXT_BLOCK if text else BLOCK, length + 1 - count))
@@ -242,12 +264,14 @@ class Snapshot:
             actual.update(block)
             if text and not invalid_utf8:
                 try:
-                    blocks.append(decoder.decode(block))
+                    parts, carry = _utf8_parts(block, carry)
+                    blocks.extend(parts)
+                    parts = None
                 except UnicodeError:
                     # Finish original-byte and identity validation even on bad
                     # UTF-8; do not retain the exception's raw input backing.
                     invalid_utf8 = True
-                    decoder = None
+                    carry = b''
                     blocks.clear()
             elif collect:
                 blocks.append(block)
@@ -257,7 +281,7 @@ class Snapshot:
         if text:
             if invalid_utf8:
                 raise UnicodeError('snapshot_utf8')
-            blocks.append(decoder.decode(b'', final=True))
+            blocks.append(codecs.utf_8_decode(carry, 'strict', True)[0])
             return ''.join(blocks)
         return b''.join(blocks) if collect else None
 
@@ -269,7 +293,7 @@ class Snapshot:
     def read_text(self, name):
         """Validated UTF-8 text without collecting or joining complete raw bytes.
 
-        The decoder may concatenate its <=3-byte carry with one TEXT_BLOCK read.
+        Decoding borrows the read block and combines at most six carry bytes.
         Decoded fragments, joined text and caller graphs still need working
         allocation custody; this method grants no attempt resource allowance.
         """
