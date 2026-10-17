@@ -12,7 +12,8 @@ The serialized parent lifecycle is split across three modules:
 This source imports no SDK and launches no process. It is not wired into the trial
 runtime. The [Python Peer](sdk-python-peer.md), [Node transport](sdk-native-ipc.md),
 [codec](sdk-ipc-codec.md) and [input receiver](sdk-input-receiver.md) supply separate
-boundaries. Actual launch, native process, stream and actor adapters and their
+boundaries. The [direct-process owner](sdk-native-process-owner.md) supplies a
+separate mechanism; actual launch/process/stream/actor port adapters and their
 custody remain external. `Engine`'s model-only automatic release is not a fallback
 for `OwnedEngine` or a production release contract.
 
