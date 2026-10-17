@@ -31,6 +31,11 @@ bytes and IDs before any progress. A consumed, failed, closed or changed
 controller cannot produce another pristine review. This does not transfer
 execution ownership or make complete bootstrap available.
 
+The [direct writer](sdk-direct-writer.md) supplies a bounded local write action
+beside a Python-owned direct child. It records positive local writes immediately
+and leaves stdin open when idle. It supplies no complete session driver or
+execution admission; the Node proxy is an independent alternative mechanism.
+
 ## Control and write contract
 
 Initialization must be fully written before accepting its response or any hook
