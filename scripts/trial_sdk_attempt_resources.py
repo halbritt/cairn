@@ -26,6 +26,11 @@ class _Ticket:
     ordinal:int
 
 
+@dataclass(frozen=True,eq=False)
+class _StreamTicket:
+    ordinal:int
+
+
 def _guard(method):
     def guarded(self,*args,**kwargs):
         acquired=False
@@ -64,7 +69,7 @@ class AttemptResources:
         self._raw_peak=self._working_peak=self._allocation_peak=self._committed_peak=0
         self.local=_Ticket(0)
         self._domains={self.local:{'owner':None,'memory':{},'traffic':{}}}
-        self._memory={};self._traffic={}
+        self._memory={};self._traffic={};self._streams={}
 
     def _check(self):
         self._check_owner()
@@ -86,6 +91,17 @@ class AttemptResources:
 
     def _can_issue(self):
         if self._next>MAX_ORDINAL:raise ResourceError('resource_sequence_exhausted')
+
+    def _stream_row(self,ticket):
+        if type(ticket) is not _StreamTicket or ticket not in self._streams:
+            raise ResourceError('resource_stream_ticket')
+        return self._streams[ticket]
+
+    def _stream_committed(self):
+        return sum(row['initial_maximum']+row['extra'] for row in self._streams.values())
+
+    def _available(self):
+        return TRAFFIC-self._spent-self._reserved-self._stream_committed()
 
     def _ticket(self):
         token=_Ticket(self._next);self._next+=1
@@ -157,12 +173,12 @@ class AttemptResources:
         if lane in row['traffic']:raise ResourceError('resource_slot_busy')
         if type(maximum) is not int or not 0<=maximum<=TRAFFIC:
             raise ResourceError('resource_grant')
-        available=TRAFFIC-self._spent-self._reserved
+        available=self._available()
         if maximum==0 and available!=0:raise ResourceError('resource_zero_grant')
         if maximum>available:return None
         self._can_issue();self._begin()
         self._reserved+=maximum
-        self._committed_peak=max(self._committed_peak,self._spent+self._reserved)
+        self._committed_peak=max(self._committed_peak,TRAFFIC-self._available())
         token=self._ticket()
         self._traffic[token]={'domain':domain,'lane':lane,'maximum':maximum,
                               'available_at_issue':available,'known':0,'unknown':False,
@@ -174,6 +190,92 @@ class AttemptResources:
         self._check()
         row=self._lookup(self._traffic,ticket)
         return {key:row[key] for key in ('maximum','available_at_issue')}
+
+    @_guard
+    def stream_grant(self,domain,maximum):
+        """One producer-lifetime DATA commitment in the original bank/slot."""
+        row=self._domain(domain)
+        if 'data' in row['traffic']:raise ResourceError('resource_slot_busy')
+        if type(maximum) is not int or not 1<=maximum<=TRAFFIC:
+            raise ResourceError('resource_stream_grant')
+        available=self._available()
+        if maximum>available:return None
+        self._can_issue();self._begin()
+        token=_StreamTicket(self._next);self._next+=1
+        self._streams[token]={'domain':domain,'initial_maximum':maximum,'extra':0,
+                              'available_at_issue':available,'known':0,'unknown':False,
+                              'settling':False}
+        row['traffic']['data']=token
+        self._committed_peak=max(self._committed_peak,TRAFFIC-self._available())
+        return self._known(token)
+
+    def stream_info(self,ticket):
+        self._check()
+        info=self.stream_snapshot(ticket)
+        return {key:info[key] for key in ('initial_maximum','maximum','available_at_issue')}
+
+    def stream_snapshot(self,ticket):
+        """Copied held facts remain observable after terminal uncertainty."""
+        self._check_owner()
+        row=self._stream_row(ticket)
+        return {'initial_maximum':row['initial_maximum'],
+                'maximum':row['initial_maximum']+row['extra'],
+                'available_at_issue':row['available_at_issue'],
+                'known':row['known'],'settling':row['settling'],
+                'unknown':self._unknown or self._frozen}
+
+    @_guard
+    def grow_stream(self,ticket,maximum):
+        row=self._stream_row(ticket)
+        current=row['initial_maximum']+row['extra']
+        if row['settling']:raise ResourceError('resource_settlement_unknown')
+        if type(maximum) is not int or not current<=maximum<=TRAFFIC:
+            raise ResourceError('resource_stream_growth')
+        if maximum==current:return True
+        if maximum-current>self._available():return False
+        self._begin()
+        # One scalar publishes the additional commitment. Availability derives
+        # from it; there is no separately incremented aggregate to half-apply.
+        row['extra']=maximum-row['initial_maximum']
+        self._committed_peak=max(self._committed_peak,TRAFFIC-self._available())
+        return self._known(True)
+
+    @_guard
+    def settle_stream(self,ticket,known):
+        row=self._stream_row(ticket)
+        if type(known) is not int or not row['known']<=known<=row['initial_maximum']+row['extra']:
+            raise ResourceError('resource_count')
+        self._begin();row['settling']=True
+        # Spend BEFORE removing commitment. An interrupted intermediate state
+        # can conservatively overcount, never expose new spendable capacity.
+        self._spent+=known
+        del self._streams[ticket]
+        del self._domains[row['domain']]['traffic']['data']
+        return self._known()
+
+    def quarantine_stream(self,ticket,known=0):
+        """Terminal cumulative observation; never returns a stream remainder."""
+        acquired=False
+        try:
+            try:
+                self._check_owner()
+                if self._busy:raise ResourceError('resource_busy')
+                row=self._stream_row(ticket)
+                if row['settling']:raise ResourceError('resource_settlement_unknown')
+                if type(known) is not int or not row['known']<=known<=row['initial_maximum']+row['extra']:
+                    raise ResourceError('resource_count')
+                self._busy,acquired=True,True
+                self.freeze()
+                row['known']=known
+                row['unknown']=True
+            finally:
+                if acquired:self._busy=False
+            return None
+        except BaseException:
+            if acquired:
+                self.freeze()
+                self._busy=False
+            raise
 
     def _count(self,ticket,known):
         row=self._lookup(self._traffic,ticket)
@@ -235,21 +337,24 @@ class AttemptResources:
 
     @_guard
     def close(self):
-        if len(self._domains)!=1 or self._memory or self._traffic:
+        if len(self._domains)!=1 or self._memory or self._traffic or self._streams:
             raise ResourceError('resource_attempt_live')
         self._begin();self._closed=True
         return self._known()
 
     def snapshot(self):
         prefixes=sum(row['known'] for row in self._traffic.values())
+        stream_prefixes=sum(row['known'] for row in self._streams.values())
+        stream_committed=self._stream_committed()
         return {'raw_reserved':self._raw,'working_reserved':self._working,
                 'raw_peak':self._raw_peak,'working_peak':self._working_peak,
                 'known_allocation_reserved':self._raw+self._working,
                 'known_allocation_peak':self._allocation_peak,
-                'traffic_spent':self._spent+prefixes,
-                'traffic_reserved':self._reserved-prefixes,
-                'traffic_available':TRAFFIC-self._spent-self._reserved,
-                'committed_peak':self._committed_peak,'unknown':self._unknown or self._frozen,
+                'traffic_spent':self._spent+prefixes+stream_prefixes,
+                'traffic_reserved':self._reserved+stream_committed-prefixes-stream_prefixes,
+                'traffic_available':self._available(),
+                'committed_peak':max(self._committed_peak,TRAFFIC-self._available()),
+                'unknown':self._unknown or self._frozen,
                 'closed':self._closed,
                 'domains':{ticket.ordinal:{'memory':tuple(sorted(row['memory'])),
                                            'traffic':tuple(sorted(row['traffic']))}

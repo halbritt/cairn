@@ -76,6 +76,44 @@ or certify every interrupted legacy settlement; its uncertainty stays terminal.
 Repeated asynchronous interruption inside recovery or arbitrary hostile field
 mutation is outside the trusted serialized contract.
 
+## Additive producer stream commitments
+
+`stream_grant(domain, initial_maximum)` occupies that same domain's sole DATA
+slot and the same original 4-MiB bank. It returns a distinct opaque stream ticket
+or a known denial `None`. The positive initial maximum and historical
+`available_at_issue` do not change. `grow_stream(ticket, cumulative_maximum)`
+commits only an additional pre-effect amount from genuine global availability;
+equal growth is idempotent, shortage returns `False`, and shrinkage refuses.
+Growth cannot run after shared uncertainty. It creates no second ticket, raw
+pool, grant ordinal, time allowance or authority.
+
+Stream commitment is the immutable initial amount plus one extra scalar in the
+held row. All global availability, fixed/new grants, stream growth, prefix,
+settlement, snapshots and combined peaks include it. Publishing the extra scalar
+is the growth linearization point; there is no separate aggregate increment to
+half-apply. `stream_info` is a copied healthy observation;
+`stream_snapshot` preserves copied held facts after uncertainty. Neither lends a
+descriptor, data body or permission. Fixed `grant_info`, `settle` and fixed CLI
+final-ceiling semantics reject the distinct stream ticket and stay unchanged.
+
+`quarantine_stream` records monotone cumulative observed prefixes for its exact
+held stream ticket, including after another original credit froze the ledger.
+Equal prefixes are idempotent; foreign/stale/decreasing/invalid observations
+refuse. Known bytes plus still-reserved remainder conserve its full ceiling. It
+does not settle, return unused bytes, or open another DATA slot.
+`settle_stream` is allowed only with a known lifetime end and healthy accounting.
+It premarks settlement and commits known traffic BEFORE removing the stream row.
+An interruption can conservatively overcount while both forms remain, never
+expose additional capacity. Such unknown snapshots do not assert healthy
+equalities, and the retained settling row refuses another prefix update. The
+guard covers the final returned result as well as the mutation body. No API
+claims universal recovery under repeated interruption or hostile field mutation.
+
+See [producer stream credit](sdk-stream-credit.md) for protected future RPC
+receive accounting. A stream is held across ALL producer stdin/stdout/stderr and
+RPC operations until their actual source-owned lifetime ends; one RPC completion
+does not justify refunding a live producer's allowance.
+
 `freeze` records higher-layer handoff uncertainty even after a traffic ticket
 was already settled. It is parent-process-bound, sticky and idempotent, including
 when the ledger is already unknown or closed. It changes no counters or tickets;
