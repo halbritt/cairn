@@ -258,6 +258,36 @@ class SocketBoundaryTests(unittest.TestCase):
         self.assertFalse(value.snapshot()['outcome_unknown'])
         self.assertEqual(value.snapshot()['cleanup'], ())
 
+    def test_factory_return_interruption_cannot_claim_known_close(self):
+        value = broker.RecordSocket()
+        interrupted = False
+        def factory(parent):
+            return 733  # Simulated newly acquired raw handle; no real descriptor.
+        def trace(frame, event, arg):
+            nonlocal interrupted
+            if event == 'return' and frame.f_code is factory.__code__:
+                interrupted = True
+                raise CleanupInterrupted
+            return trace
+        try:
+            with patch.object(broker.os,'getppid',return_value=123), \
+                    patch.object(broker,'_prctl',return_value=0), \
+                    patch.object(broker.os,'pidfd_open',side_effect=factory), \
+                    patch.object(broker.socket,'socket',side_effect=AssertionError('unexpected_socket')):
+                sys.settrace(trace)
+                try:
+                    with self.assertRaises(CleanupInterrupted):
+                        value.connect_parent('/unused',1,lambda n:True,lambda n:None)
+                finally:sys.settrace(None)
+        finally:sys.settrace(None)
+        self.assertTrue(interrupted)
+        value.close()
+        self.assertFalse(value.snapshot()['closed_known'])
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+        self.assertIn('parent_pidfd_acquire_unknown',value.snapshot()['cleanup'])
+        with self.assertRaisesRegex(broker.BrokerSocketError,'^broker_connect_consumed$'):
+            value.connect_parent('/unused',1,lambda n:True,lambda n:None)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -37,6 +37,13 @@ def _close_handle(owner, attribute, code, socket_handle=False):
         owner._cleanup.discard(code)
 
 
+def _acquire_handle(owner,attribute,code,factory,*args,**kwargs):
+    """Retain a factory result before clearing its acquisition uncertainty."""
+    owner._cleanup.add(code)
+    setattr(owner,attribute,factory(*args,**kwargs))
+    owner._cleanup.discard(code)
+
+
 class RecordSocket:
     """A factory-owned endpoint; no public adoption of a supplied PID or FD."""
     def __init__(self):
@@ -212,19 +219,20 @@ class RecordSocket:
                 raise BrokerSocketError('broker_parent_binding')
             parent=os.getppid()
             if parent<=1 or _prctl(3)!=0: raise BrokerSocketError('broker_parent_binding')
-            pidfd=os.pidfd_open(parent)
-            self._parent_pidfd=pidfd
-            endpoint=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET|socket.SOCK_CLOEXEC)
-            self._socket=endpoint
+            _acquire_handle(self,'_parent_pidfd','parent_pidfd_acquire_unknown',os.pidfd_open,parent)
+            _acquire_handle(self,'_socket','socket_acquire_unknown',socket.socket,
+                            socket.AF_UNIX,socket.SOCK_SEQPACKET|socket.SOCK_CLOEXEC)
+            endpoint=self._socket
             endpoint.setsockopt(socket.SOL_SOCKET,socket.SO_PASSCRED,1)
             endpoint.settimeout(max(0,(deadline_ns-time.monotonic_ns())/1_000_000_000))
             endpoint.connect(path)
             endpoint.setblocking(False)
             self._setup(endpoint,(parent,os.getuid(),os.getgid()),deadline_ns,reserve,release,
-                              parent_pidfd=pidfd)
+                              parent_pidfd=self._parent_pidfd)
             return self
         except BaseException:
-            self._failure='broker_connect_unknown'
+            if self._failure is None:self._failure='broker_connect_unknown'
+            self._unknown=True
             raise
 
 
@@ -251,7 +259,8 @@ class BrokerListener:
                 raise BrokerSocketError('broker_listener_binding')
             for part in (path,*path.parents):
                 if not stat.S_ISDIR(part.lstat().st_mode): raise BrokerSocketError('broker_listener_path')
-            self._directory=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+            _acquire_handle(self,'_directory','directory_acquire_unknown',os.open,path,
+                            os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
             value=os.fstat(self._directory)
             if value.st_uid!=os.getuid() or value.st_mode & 0o077:
                 raise BrokerSocketError('broker_listener_private_directory')
@@ -259,11 +268,13 @@ class BrokerListener:
             if len(os.fsencode(self._path))>=108: raise BrokerSocketError('broker_listener_path')
             self._deadline,self._reserve,self._release=deadline_ns,reserve,release
             if time.monotonic_ns()>=deadline_ns: raise BrokerSocketError('broker_socket_deadline')
-            self._socket=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET|socket.SOCK_CLOEXEC|socket.SOCK_NONBLOCK)
+            _acquire_handle(self,'_socket','listener_acquire_unknown',socket.socket,
+                            socket.AF_UNIX,socket.SOCK_SEQPACKET|socket.SOCK_CLOEXEC|socket.SOCK_NONBLOCK)
             self._socket.setsockopt(socket.SOL_SOCKET,socket.SO_PASSCRED,1)
             self._bind_attempted=True
             self._socket.bind(self._path)  # Existing leaf, including symlink, refuses.
-            self._entry=os.open('memory.sock',os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=self._directory)
+            _acquire_handle(self,'_entry','entry_acquire_unknown',os.open,'memory.sock',
+                            os.O_PATH|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=self._directory)
             value=os.fstat(self._entry)
             if not stat.S_ISSOCK(value.st_mode): raise BrokerSocketError('broker_listener_entry')
             self._socket.listen(1)
