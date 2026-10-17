@@ -358,6 +358,16 @@ class SDKControl:
         self._live()
         return self._queue[0].wire[self._queue[0].offset:] if self._queue else None
 
+    @property
+    def write_pending(self):
+        """Current queue readiness without allocating an offered suffix.
+
+        Cumulative queued_input_bytes also includes an unstarted user frame
+        temporarily deferred by a callback, so it is not readiness evidence.
+        """
+        self._live()
+        return bool(self._queue)
+
     def written(self, count):
         self._live()
         self._need(bool(self._queue), 'sdk_write_without_frame')

@@ -54,7 +54,7 @@ def main():
     return 0 if result['ok'] else 1
 
 
-def finalize_check(out, pins, outer, logs):
+def finalize_check(out, pins, outer, logs, *, source_root=HERE, source_names=SOURCES):
     """Retain collected facts independently from later persistence/check faults."""
     # Retain actual outer observations before any later diagnostic/pin I/O.
     try:
@@ -69,7 +69,7 @@ def finalize_check(out, pins, outer, logs):
             outer['errors'].append('log_write_' + name + ':' + type(error).__name__)
     outer['logs'] = {name: digest(body) for name, body in logs.items()}
     try:
-        stable = pins == {name: digest(read(HERE / name)) for name in SOURCES}
+        stable = pins == {name: digest(read(source_root / name)) for name in source_names}
     except BaseException as error:
         stable = False
         outer['errors'].append('pins:' + type(error).__name__)
