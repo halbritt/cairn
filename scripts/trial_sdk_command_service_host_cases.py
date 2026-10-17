@@ -119,7 +119,7 @@ def main():
         while True:
             poll_once()
             operation.step()
-            if operation.snapshot()['done']:
+            if operation.snapshot()['closed']:
                 break
         outcome = operation.result()
         if (outcome.returncode != 17 or outcome.stdout != 'ordinary service: é💡\n'
