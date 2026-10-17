@@ -94,6 +94,9 @@ The checker saves outer wait/cleanup observations before post-run source and log
 I/O. Source revalidation errors mark the final result refused while preserving
 collected facts. File-write errors are named failures; a partial receipt is never
 reused. The final stdout summary also retains outer waits and pipe-close facts.
+A default Python unit case injects post-run source refusal into controlled result
+data, with process/kernel effects forbidden. It checks refused receipt preservation;
+it supplies no actual wait, containment or host-case evidence.
 
 Source snapshots, after-run hashes and retained observations assume trusted
 serialized source custody, not hostile same-UID isolation. Toolchain/kernel/ABI
