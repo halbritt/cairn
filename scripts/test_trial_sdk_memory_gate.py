@@ -1,5 +1,7 @@
 """Attempt budget behavior; no process, service or provider calls."""
 import time
+import sys
+import trial_sdk_memory_gate as gate_module
 import unittest
 from unittest.mock import patch
 
@@ -116,6 +118,45 @@ class MemoryGateTests(unittest.TestCase):
                 gate.native('mcp__cairn__cairn_pull',{})
         self.assertEqual(calls,[])
         self.assertEqual(gate.snapshot()['expansions_debited'],0)
+
+    def test_postforward_clock_error_keeps_return_fact_and_poisoned_budget(self):
+        calls=[]
+        def forward(*args): calls.append(args); return {'ok':True,'data':{}}
+        gate=MemoryDispatchGate(forward,forward,10)
+        with patch('trial_sdk_memory_gate.time.monotonic_ns',side_effect=[0,1,OSError('clock')]):
+            with self.assertRaises(OSError): gate.native('mcp__cairn__cairn_pull',{})
+        state=gate.snapshot()
+        self.assertEqual(state['returned'],1)
+        self.assertEqual(state['last']['outcome'],'returned')
+        self.assertEqual(state['failure'],'memory_clock_unknown')
+        with self.assertRaisesRegex(MemoryGateError,'^memory_clock_unknown$'):
+            gate.native('mcp__cairn__cairn_pull',{})
+        self.assertEqual(len(calls),1)
+        self.assertEqual(gate.snapshot()['expansions_debited'],1)
+
+    def test_interruption_between_debit_and_forward_cannot_resume_attempt(self):
+        calls=[]
+        gate=MemoryDispatchGate(lambda *a:calls.append(a),lambda *a:calls.append(a),
+                                time.monotonic_ns()+30_000_000_000)
+        injected=[]
+        def trace(frame,event,arg):
+            if frame.f_code.co_filename==gate_module.__file__ and event=='line':
+                state=gate.snapshot()
+                if state['expansions_debited']==1 and state['dispatches']==0:
+                    sys.settrace(None);injected.append(True)
+                    raise KeyboardInterrupt('debit boundary')
+            return trace
+        previous=sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt): gate.native('mcp__cairn__cairn_pull',{})
+        finally: sys.settrace(previous)
+        self.assertEqual(injected,[True])
+        self.assertEqual(calls,[])
+        self.assertTrue(gate.snapshot()['accounting_unknown'])
+        with self.assertRaisesRegex(MemoryGateError,'^memory_gate_unknown$'):
+            gate.native('mcp__cairn__cairn_pull',{})
+        self.assertEqual(gate.snapshot()['expansions_debited'],1)
 
 
 if __name__ == '__main__':

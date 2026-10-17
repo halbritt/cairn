@@ -49,7 +49,7 @@ class MemoryDispatchGate:
         self._failure = None
         self._requests = self._dispatches = self._returned = self._refusals = 0
         self._searches = self._expansions = self._hook_searches = 0
-        self._unknown = False
+        self._unknown = self._accounting_unknown = False
         self._last = None
 
     def _refuse(self, code):
@@ -59,7 +59,12 @@ class MemoryDispatchGate:
         raise MemoryGateError(self._failure)
 
     def _now(self, deadline):
-        now = time.monotonic_ns()
+        try:
+            now = time.monotonic_ns()
+        except BaseException:
+            self._accounting_unknown = True
+            if self._failure is None: self._failure = 'memory_clock_unknown'
+            raise
         if (type(now) is not int or now < 0
                 or self._clock is not None and now < self._clock):
             self._refuse('memory_clock_unknown')
@@ -76,31 +81,24 @@ class MemoryDispatchGate:
     def native(self, tool, arguments):
         return self._dispatch('native', NativeRequest(tool, arguments), self._native_deadline)
 
-    def _dispatch(self, origin, request, deadline):
-        self._requests += 1
-        if self._failure is not None:
-            self._refuse(self._failure)
-        if self._busy:
-            self._refuse('memory_dispatch_reentrant')
-        self._now(deadline)
+    def _classify(self, origin, request):
         if origin == 'native':
             operations = {'mcp__cairn__cairn_search': 'search', 'mcp__cairn__cairn_pull': 'pull'}
             if type(request.tool) is not str or request.tool not in operations:
                 self._refuse('memory_native_operation')
             if type(request.arguments) is not dict:
                 self._refuse('memory_request_shape')
-            operation = operations[request.tool]
-            document = request.arguments
-            forward = self._native_forward
-        else:
-            operation = request.operation
-            if type(operation) is not str or operation not in ('search', 'pull', 'pull-evidence', 'history'):
-                self._refuse('memory_hook_operation')
-            if (type(request.args) is not tuple or any(type(arg) is not str for arg in request.args)
-                    or request.body is not None and type(request.body) is not str):
-                self._refuse('memory_request_shape')
-            document = {'operation': operation, 'args': list(request.args), 'body': request.body}
-            forward = self._hook_forward
+            return operations[request.tool], request.arguments, self._native_forward
+        operation = request.operation
+        if type(operation) is not str or operation not in ('search', 'pull', 'pull-evidence', 'history'):
+            self._refuse('memory_hook_operation')
+        if (type(request.args) is not tuple or any(type(arg) is not str for arg in request.args)
+                or request.body is not None and type(request.body) is not str):
+            self._refuse('memory_request_shape')
+        document = {'operation': operation, 'args': list(request.args), 'body': request.body}
+        return operation, document, self._hook_forward
+
+    def _bound(self, document):
         try:
             length, _ = canonical_size_sha256(document)
             if length > MAX_DOCUMENT_BYTES:
@@ -109,7 +107,8 @@ class MemoryDispatchGate:
             raise
         except (ValueError, UnicodeError, RecursionError):
             self._refuse('memory_request_shape')
-        self._now(deadline)  # Validation/hashing must not carry dispatch past expiry.
+
+    def _debit(self, origin, operation):
         if origin == 'native' and operation == 'search':
             if self._searches == 2:
                 self._refuse('memory_native_search_limit')
@@ -120,31 +119,59 @@ class MemoryDispatchGate:
             self._expansions += 1
         else:
             self._hook_searches += 1
+
+    def _dispatch(self, origin, request, deadline):
+        owns_transaction = False
+        try:
+            self._requests += 1
+            if self._failure is not None:
+                self._refuse(self._failure)
+            if self._busy:
+                self._refuse('memory_dispatch_reentrant')
+            owns_transaction = True
+            self._busy = True
+            self._now(deadline)
+            operation, document, forward = self._classify(origin, request)
+            self._bound(document)
+            self._now(deadline)  # Validation cannot carry dispatch past expiry.
+            self._debit(origin, operation)
+            return self._forward(origin, operation, request, deadline, forward)
+        except BaseException:
+            if self._failure is None:
+                self._accounting_unknown = True
+                self._failure = 'memory_gate_unknown'
+            raise
+        finally:
+            if owns_transaction:
+                self._busy = False
+
+    def _forward(self, origin, operation, request, deadline, forward):
         self._dispatches += 1
         self._last = {'sequence': self._dispatches, 'origin': origin,
                       'operation': operation, 'outcome': 'unknown'}
-        self._busy = True
         try:
             result = forward(request, deadline)
+            self._returned += 1
+            self._last['outcome'] = 'returned'
+            if self._failure is not None:
+                raise MemoryGateError(self._failure)
+            self._now(deadline)
+            return result
         except BaseException:
-            self._unknown = True
+            if self._last['outcome'] == 'unknown':
+                self._unknown = True
             if self._failure is None:
-                self._failure = 'memory_dispatch_unknown'
+                self._accounting_unknown = True
+                self._failure = ('memory_dispatch_unknown' if self._unknown
+                                 else 'memory_gate_unknown')
             raise
-        finally:
-            self._busy = False
-        self._returned += 1
-        self._last['outcome'] = 'returned'
-        if self._failure is not None:
-            raise MemoryGateError(self._failure)
-        self._now(deadline)
-        return result
 
     def snapshot(self):
         return dict(schema='cairn.sdk-memory-dispatch/1', requests=self._requests,
             dispatches=self._dispatches, returned=self._returned, refusals=self._refusals,
             native_searches_debited=self._searches, expansions_debited=self._expansions,
             hook_searches=self._hook_searches, dispatch_unknown=self._unknown,
+            accounting_unknown=self._accounting_unknown,
             failure=self._failure, in_flight=self._busy,
             last=None if self._last is None else dict(self._last))
 

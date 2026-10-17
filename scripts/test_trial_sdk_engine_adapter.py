@@ -151,5 +151,48 @@ class EngineAdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(MemoryGateError,'^engine_context_shape$'):
                 engine_context(graph,event)
 
+    def test_interrupted_restore_preserves_body_primary_and_marks_unknown(self):
+        engine=engine_module()
+        gate=MemoryDispatchGate(lambda *a:None,lambda *a:None,
+                                time.monotonic_ns()+30_000_000_000)
+        config=dict(cairn='/unavailable/cairn',socket='/unavailable/api.sock',
+                    token_file='/unavailable/token',repo='/work',harness='claude',
+                    recall_mode='agent_tools',recall_observations=False)
+        adapter=EngineMemoryAdapter(engine,config,gate.hook(time.monotonic_ns()+5_000_000_000))
+        original=(engine.run_json,engine.bounded_command)
+        injected=[]
+        def trace(frame,event,arg):
+            if (frame.f_code is EngineMemoryAdapter.close.__code__ and event=='line'
+                    and engine.run_json is original[0] and engine.bounded_command is not original[1]):
+                sys.settrace(None);injected.append(True)
+                raise KeyboardInterrupt('restore boundary interruption')
+            return trace
+        previous=sys.gettrace()
+        try:
+            with self.assertRaisesRegex(ValueError,'^body primary$'):
+                with adapter:
+                    sys.settrace(trace)
+                    raise ValueError('body primary')
+        finally:
+            sys.settrace(previous)
+        self.assertEqual(injected,[True])
+        self.assertEqual(adapter.snapshot()['failure'],'engine_restore_unknown')
+        self.assertNotEqual(adapter.snapshot()['restoration']['bounded_command'],'restored')
+        with self.assertRaisesRegex(MemoryGateError,'^engine_restore_unknown$'): adapter.check()
+
+    def test_direct_transport_utf8_failure_is_sticky_even_if_caught(self):
+        engine=engine_module()
+        gate=MemoryDispatchGate(lambda *a:None,lambda *a:CommandOutcome(0,bytes([255]),b''),
+                                time.monotonic_ns()+30_000_000_000)
+        config=dict(cairn='/unavailable/cairn',socket='/unavailable/api.sock',
+                    token_file='/unavailable/token',repo='/work',harness='claude',
+                    recall_mode='agent_tools',recall_observations=False)
+        with self.assertRaisesRegex(MemoryGateError,'^engine_result_failed$'):
+            with EngineMemoryAdapter(engine,config,gate.hook(time.monotonic_ns()+5_000_000_000)):
+                memory=engine.Memory(config,'session')
+                with self.assertRaises(UnicodeError):
+                    engine.bounded_command(memory.command+['search'],body=None,timeout=1,
+                                           env={},cwd=None)
+
 
 if __name__ == '__main__': unittest.main()

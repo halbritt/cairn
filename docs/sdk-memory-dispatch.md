@@ -24,7 +24,7 @@ reach the forward even after another receipt or hook channel is created.
 `requests` counts entries into the gate's dispatch method, including refusals;
 frontend channel binding/timeout refusals increment `refusals` without entering
 that method. Neither counter replaces the real engine's attempted-call meter.
-The fixed-size snapshot retains counts and the last operation/outcome, not query,
+The snapshot retains fixed fields with counts and the last operation/outcome, not query,
 arguments, source text, or response bodies.
 
 The builder supplies the original capture-origin-plus-30-second native deadline.
@@ -47,7 +47,12 @@ refuse. The original engine's `report_recall` catches errors, so a sticky adapte
 failure is checked again when the adapter scope closes. Caught decoder failures
 and unconfirmed envelopes likewise prevent a qualified callback result.
 
-The adapter restores the original module functions on exit. It does not load or
+The adapter restores the original module functions on normal exit. Interrupted
+restoration consumes its attempts, retains unknown states, and cannot replace a
+body exception or permit qualification. An uncertain restore is never retried.
+A raised clock read likewise poisons the attempt, retaining a known return when
+it was already observed. Interrupted accounting is explicitly unknown.
+It does not load or
 pin the engine/config, close the channel, authenticate a producer, or contain
 hostile code. Those belong to the fixed builder. In a separate producer, its
 channel must connect to one parent-owned broker with actual owned-peer/lifetime

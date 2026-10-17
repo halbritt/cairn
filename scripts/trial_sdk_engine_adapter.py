@@ -54,6 +54,7 @@ class EngineMemoryAdapter:
         self._failure=None
         self._blocked=0
         self._entered=self._closed=False
+        self._restoration={name:'not_installed' for name in ('run_json','bounded_command')}
 
     def _reject(self,code):
         self._blocked+=1
@@ -104,14 +105,18 @@ class EngineMemoryAdapter:
             # mapping, but never let a swallowed refusal qualify a callback.
             if self._failure is None: self._failure='engine_dispatch_failed'
             raise
-        if (type(outcome) is not CommandOutcome or type(outcome.returncode) is not int
-                or not -2**31<=outcome.returncode<2**31
-                or type(outcome.stdout) is not bytes or type(outcome.stderr) is not bytes
-                or len(outcome.stdout)>self._engine.COMMAND_OUTPUT_BYTES
-                or len(outcome.stderr)>self._engine.COMMAND_OUTPUT_BYTES):
-            self._reject('engine_command_outcome')
-        return subprocess.CompletedProcess(command,outcome.returncode,
-            outcome.stdout.decode('utf-8'),outcome.stderr.decode('utf-8',errors='replace'))
+        try:
+            if (type(outcome) is not CommandOutcome or type(outcome.returncode) is not int
+                    or not -2**31<=outcome.returncode<2**31
+                    or type(outcome.stdout) is not bytes or type(outcome.stderr) is not bytes
+                    or len(outcome.stdout)>self._engine.COMMAND_OUTPUT_BYTES
+                    or len(outcome.stderr)>self._engine.COMMAND_OUTPUT_BYTES):
+                self._reject('engine_command_outcome')
+            return subprocess.CompletedProcess(command,outcome.returncode,
+                outcome.stdout.decode('utf-8'),outcome.stderr.decode('utf-8',errors='replace'))
+        except BaseException:
+            if self._failure is None: self._failure='engine_result_failed'
+            raise
 
     def __enter__(self):
         if self._entered or self._closed:
@@ -119,34 +124,64 @@ class EngineMemoryAdapter:
         if (self._engine.run_json is not self._original_json
                 or self._engine.bounded_command is not self._original_command):
             raise MemoryGateError('engine_dispatch_drift')
-        self._entered=True
         try:
+            self._entered=True
+            self._restoration['run_json']='pending'
             self._engine.run_json=self._json_wrapper
+            self._restoration['bounded_command']='pending'
             self._engine.bounded_command=self._command_wrapper
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except BaseException:
+                pass  # Fixed restoration state retains uncertainty; keep primary.
             raise
         return self
 
+    def _cleanup_status(self):
+        if (self._closed and any(status not in ('not_installed','restored')
+                                 for status in self._restoration.values())
+                and self._failure is None):
+            self._failure='engine_restore_unknown'
+
     def check(self):
+        self._cleanup_status()
         if self._failure is not None: raise MemoryGateError(self._failure)
 
     def snapshot(self):
+        self._cleanup_status()
         return dict(schema='cairn.sdk-engine-adapter/1',failure=self._failure,
-                    blocked_commands=self._blocked,entered=self._entered,closed=self._closed)
+                    blocked_commands=self._blocked,entered=self._entered,closed=self._closed,
+                    restoration=dict(self._restoration))
+
+    def _restore(self,name,original,wrapper):
+        if self._restoration[name]=='not_installed': return
+        # Consume this restoration before its sole attempt; uncertainty never retries.
+        self._restoration[name]='unknown'
+        if getattr(self._engine,name) is not wrapper and self._failure is None:
+            self._failure='engine_dispatch_drift'
+        setattr(self._engine,name,original)
+        self._restoration[name]='restored'
 
     def close(self):
         if self._closed: return
-        if self._entered:
-            if (self._engine.run_json is not self._json_wrapper
-                    or self._engine.bounded_command is not self._command_wrapper):
-                if self._failure is None: self._failure='engine_dispatch_drift'
-            self._engine.run_json=self._original_json
-            self._engine.bounded_command=self._original_command
         self._closed=True
+        try:
+            try:
+                self._restore('run_json',self._original_json,self._json_wrapper)
+            finally:
+                self._restore('bounded_command',self._original_command,self._command_wrapper)
+        except BaseException:
+            self._cleanup_status()
+            raise
 
     def __exit__(self,kind,error,traceback):
-        self.close()
+        try:
+            self.close()
+        except BaseException:
+            self._cleanup_status()
+            if kind is None: raise
+            # Preserve the body primary; sticky cleanup uncertainty remains visible.
         if kind is None: self.check()
         return False
 
