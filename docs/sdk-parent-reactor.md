@@ -16,6 +16,8 @@ boundaries. The [direct-process owner](sdk-native-process-owner.md) supplies a
 separate mechanism; actual launch/process/stream/actor port adapters and their
 custody remain external. `Engine`'s model-only automatic release is not a fallback
 for `OwnedEngine` or a production release contract.
+The [Node custody owner](sdk-node-owner.md) supplies the corresponding actor-side
+protocol mechanism; its ordinary fixture adapters do not wire the trial runtime.
 
 The caller supplies the codec and receiver classes, a monotonic clock, selected
 work/stop deadlines and all required ports. Construction checks method presence;

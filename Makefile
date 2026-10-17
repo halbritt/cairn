@@ -1,4 +1,4 @@
-.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-peer test-integration test-lifecycle check contract
+.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-node-owner test-sdk-peer test-integration test-lifecycle check contract
 build:
 	go build -o bin/cairn ./cmd/cairn
 test:
@@ -22,6 +22,9 @@ test-sdk-native-ipc:
 test-sdk-native-process-owner:
 	@test -n "$(SDK_OWNER_TEST_OUTPUT)" || { echo 'Set SDK_OWNER_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
 	python3 -B scripts/check_trial_sdk_native_process_owner.py --output "$(SDK_OWNER_TEST_OUTPUT)"
+test-sdk-node-owner:
+	@test -n "$(SDK_NODE_OWNER_TEST_OUTPUT)" || { echo 'Set SDK_NODE_OWNER_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
+	python3 -B scripts/check_trial_sdk_node_owner.py --output "$(SDK_NODE_OWNER_TEST_OUTPUT)"
 test-sdk-peer:
 	@test -n "$(SDK_PEER_TEST_OUTPUT)" || { echo 'Set SDK_PEER_TEST_OUTPUT to a fresh absolute output directory'; exit 2; }
 	python3 -B scripts/check_trial_sdk_peer.py --output "$(SDK_PEER_TEST_OUTPUT)"
