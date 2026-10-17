@@ -34,7 +34,22 @@ TABLE_PROFILE_3 = MappingProxyType({
     65: ('B2C', 1, 512, True), 66: ('B2C', 1, 512, True),
     67: ('B2C', 4, 4, True), 68: ('B2C', 1, 1, True),
 })
-PROFILES = MappingProxyType({1: TABLE, 2: TABLE_PROFILE_2, 3: TABLE_PROFILE_3})
+# Python command-service transcript. Existing profile encodings are unchanged;
+# profile 3 kind 67 remains the original signed four-byte return code.
+TABLE_PROFILE_4 = MappingProxyType({
+    1: ('S2P', 0, 0, False), 2: ('P2S', 65, 65, True),
+    3: ('P2S', 1, 512, True), 4: ('P2S', 0, 0, True),
+    5: ('S2P', 40, 40, True), 6: ('P2S', 8, 8, True),
+    7: ('P2S', 21, 21, True), 8: ('S2P', 24, 24, True),
+    9: ('S2P', 192, 192, True), 10: ('P2S', 11, 11, True),
+    11: ('S2P', 1, 512, True), 12: ('S2P', 1, 512, True),
+    13: ('S2P', 8, 8, True), 14: ('S2P', 1, 1, True),
+    15: ('P2S', 1, 1, True), 16: ('P2S', 8, 8, True),
+    17: ('S2P', 9, 9, True), 18: ('P2S', 0, 0, False),
+    19: ('S2P', 0, 0, False),
+})
+PROFILES = MappingProxyType({1: TABLE, 2: TABLE_PROFILE_2, 3: TABLE_PROFILE_3,
+                             4: TABLE_PROFILE_4})
 
 class CodecError(ValueError):
     pass
