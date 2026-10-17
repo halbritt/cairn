@@ -169,7 +169,8 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	}
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
-	tools := memoryTools{previewChoice: new(localapi.PreviewCapabilityChoice), client: client, config: config, facadeBuild: facadeBuild}
+	choice := new(localapi.PreviewCapabilityChoice)
+	tools := memoryTools{previewChoice: choice, client: client, retrieval: localRetrievalBackend{client: client, previewChoice: choice}, config: config, facadeBuild: facadeBuild}
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_prepare_note", Description: "Before saving reusable knowledge, inspect possible predecessors with a short subject query and known entities. Creates a bounded lexical search receipt, not a note. Returns eligible previews and complete pull_arguments; pull current bodies and check applicability before choosing cairn_edit for the same A note or cairn_remember for distinct knowledge. Similarity is not supersession. Hosted profiles cannot obtain the required protected impact preview; formal supersession needs the authorized local/operator workflow. No automatic save, edit, retirement or model call."}, tools.prepareNote)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Reports whether this facade preserves paired source openings, and whether the API declares its reader guard and the authenticated principal's receipt binding; both stay unknown without a recognized declaration and neither shows that any other reader is ready. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
@@ -185,6 +186,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 }
 
 type memoryTools struct {
+	retrieval     RetrievalBackend
 	previewChoice *localapi.PreviewCapabilityChoice
 	facadeBuild   buildinfo.Info
 	client        *localapi.Client
@@ -272,24 +274,9 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err != nil {
 		return nil, nil, err
 	}
-	choice, err := t.previewChoice.ResolveInputs(ctx, t.client)
+	index, err := t.retrieval.Search(ctx, core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, SemanticQuery: args.SemanticQuery, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared})
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
-	}
-	if args.SemanticQuery != "" {
-		if err = choice.RequireDistinctInput(false); err != nil {
-			return toolResult(nil, err, memoryRoom)
-		}
-	}
-	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: choice.CompactPreview, MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, SemanticQuery: args.SemanticQuery, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
-	if err != nil {
-		return toolResult(nil, err, memoryRoom)
-	}
-	if args.SemanticQuery != "" {
-		if err = localapi.ConfirmDistinctQuerySchema(index.Package.Semantic.Schema); err != nil {
-			return toolResult(nil, err, memoryRoom)
-		}
 	}
 	view, err := presentSearch(index, args.RequestID)
 	if prepare {
@@ -336,8 +323,7 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 }
 
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
-	var result core.Expansion
-	err := t.client.Call(ctx, "expand", args, &result)
+	result, err := t.retrieval.Pull(ctx, args)
 	return toolResult(result, err, t.config.maxTokens())
 }
 
