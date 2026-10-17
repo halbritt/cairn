@@ -14,6 +14,7 @@ from trial_sdk_peer import AUXILIARY
 from trial_sdk_parent_storage import Root, Channel
 from trial_sdk_ipc import Codec
 import trial_sdk_command_service_wire as wire
+import trial_sdk_record_custody as record_custody
 
 
 class ServiceLinkError(ValueError):
@@ -293,17 +294,7 @@ class ServiceLink:
         # the caller consumes it. Retain the pre-effect context across that
         # handoff. Credit guards already preserve a partially consumed receipt;
         # only a still-healthy, unchanged credit needs this fresh reconciliation.
-        if self._io is not None:
-            pending, direction, before, known = self._io
-            credit = pending['credit']
-            if not credit.snapshot()['unknown'] and credit.snapshot()['known'] == known:
-                try:
-                    self._socket_prefix(pending, direction, before)
-                except BaseException as exc:
-                    # Keep the original failure. The shared freeze below retains
-                    # all unresolved commitments even if recovery is interrupted.
-                    self._io_recovery_error = type(exc).__name__
-                    self.resources.freeze()
+        record_custody.reconcile_interrupted_transfer(self)
         if self._root is not None:
             self._root.unknown = True
         for credit in self._credits:
@@ -379,28 +370,7 @@ class ServiceLink:
         if self._tx is None or self._connection is None:
             raise ServiceLinkError('service_send_unavailable')
         self._mutating = True
-        pending = self._tx
-        token = pending['token']
-        def send(frame):
-            with frame.record as record:
-                return self._connection.send(record)
-        before = self._connection.snapshot()['last_transfer']
-        self._io = (pending, 'send', before, pending['credit'].snapshot()['known'])
-        try:
-            count = token.visit(send)
-        except BaseException:
-            self._socket_prefix(pending, 'send', before)
-            raise
-        if count == -1:
-            self._io = None
-            return False  # The identical token/sequence/promise remains held.
-        pending['credit'].known(pending['promise'], count)
-        self._io = None
-        token.visit(self.transcript.observe)
-        token.complete(token.generation, 'known')
-        pending['body'].close()
-        self._tx = None
-        return True
+        return record_custody.send_step(self)
 
     @_guard
     def arm_receive(self, credit, maximum):
@@ -443,48 +413,10 @@ class ServiceLink:
         if self._rx is None or self._connection is None:
             raise ServiceLinkError('service_receive_unavailable')
         self._mutating = True
-        pending = self._rx
-        if pending['hold'] is None:
-            state = pending['credit'].burst_info(pending['burst'])
-            if state['index'] >= len(state['maxima']):
-                raise ServiceLinkError('service_burst_complete')
-            pending['hold'] = self._rx_region.hold(state['maxima'][state['index']])
-        before = self._connection.snapshot()['last_transfer']
-        self._io = (pending, 'receive', before, pending['credit'].snapshot()['known'])
-        try:
-            count = self._connection.receive_into(pending['hold'].view)
-        except BaseException:
-            self._socket_prefix(pending, 'receive', before)
-            raise
-        if count == -1:
-            self._io = None
-            return False
-        # Charge the actual edge even if framing/protocol/consumer later refuses.
-        if 'burst' in pending:
-            pending['credit'].burst_known(pending['burst'], count)
-        else:
-            pending['credit'].known(pending['promise'], count)
-        self._io = None
-        pending['hold'].close()
-        pending['hold'] = self._rx_region.hold(count)
-        token = self._receiver.decode(pending['hold'])
-        token.visit(self.transcript.observe)
-        token.visit(consumer)
-        token.complete(token.generation, 'known')
-        if 'burst' in pending:
-            pending['hold'] = None
-        else:
-            self._rx = None
-        return True
+        return record_custody.receive_step(self, consumer, ServiceLinkError)
 
     def _socket_prefix(self, pending, direction, before):
-        receipt = self._connection.snapshot()['last_transfer']
-        if (receipt is not None and (before is None or receipt[0] > before[0])
-                and receipt[1] == direction and type(receipt[3]) is int):
-            if 'burst' in pending:
-                pending['credit'].burst_unknown_prefix(pending['burst'], receipt[3])
-            else:
-                pending['credit'].unknown_prefix(pending['promise'], receipt[3])
+        return record_custody.socket_prefix(self, pending, direction, before)
 
     def close_channels(self):
         # Actual owner/wait/descendant cleanup continues independently, including
