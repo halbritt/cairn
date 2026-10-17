@@ -231,6 +231,7 @@ class SDKControl:
         self._future_required = set(REQUIRED_EVENTS)
         self._empty_replies = {}
         self._failure, self._closed = None, False
+        self._input_ended = False
         if self._held_reply_bytes() > min(self.remaining_wire_bytes, self.remaining_selected_bytes):
             raise SDKControlError('sdk_input_budget')
 
@@ -248,7 +249,7 @@ class SDKControl:
         Decoded metadata and digest working state remain under the outer budget;
         no extra complete raw user or initialize buffer is created here.
         """
-        pristine = (self._failure is None and not self._closed
+        pristine = (self._failure is None and not self._closed and not self._input_ended
             and not self._initialize_written and not self._initialized
             and not self._user_queued and not self._user_enqueued and not self._user_written
             and self._user_written_bytes == self._written_bytes == 0
@@ -330,7 +331,7 @@ class SDKControl:
         return 0 if self._closed or self._failure else self._context_json_bytes() // 6
 
     def context_capacity(self, request_id):
-        self._live()
+        self._input_open()
         self._need(type(request_id) is str and request_id in self._empty_replies,
                    'sdk_reply_unknown')
         available = self._context_json_bytes()
@@ -339,6 +340,11 @@ class SDKControl:
     def _live(self):
         if self._failure is not None or self._closed:
             raise SDKControlError('sdk_unusable')
+
+    def _input_open(self):
+        self._live()
+        if self._input_ended:
+            raise SDKControlError('sdk_input_ended')
 
     def _discard(self):
         self._queue.clear()
@@ -368,8 +374,22 @@ class SDKControl:
         self._live()
         return bool(self._queue)
 
+    def seal_input(self):
+        """End controller input once, after all required local writes complete.
+
+        The external owner validates its terminal document before calling this
+        method and owns actual stdin closure. Reported counts, this state and
+        required-event observations establish no native settlement or success.
+        """
+        self._input_open()
+        self._need(self._initialized and self._user_written and not self._queue
+                   and all(row['reply_written'] for row in self._rows)
+                   and not self._empty_replies, 'sdk_input_not_drained')
+        self._need(not self._future_required, 'sdk_required_callbacks_unobserved')
+        self._input_ended = True
+
     def written(self, count):
-        self._live()
+        self._input_open()
         self._need(bool(self._queue), 'sdk_write_without_frame')
         head = self._queue[0]
         self._need(type(count) is int and 0 < count <= len(head.wire) - head.offset,
@@ -440,7 +460,7 @@ class SDKControl:
         return frozen, (length, digest, encoding)
 
     def receive(self, frame):
-        self._live()
+        self._input_open()
         self._need(self._initialize_written, 'sdk_before_initialize_write')
         frame, metadata = self._frame(frame)
         return self._receive(frame, metadata)
@@ -461,7 +481,7 @@ class SDKControl:
             value = document.take()
         except (IncomingError, SDKControlError):
             error = 'sdk_frame_shape'
-        self._live()
+        self._input_open()
         if error is not None:
             self._refuse(error)
         self._need(self._initialize_written, 'sdk_before_initialize_write')
@@ -572,7 +592,7 @@ class SDKControl:
         return Callback(ident, event, payload, input_bytes, input_digest, *metadata)
 
     def reply(self, request_id, additional_context):
-        self._live()
+        self._input_open()
         self._need(type(request_id) is str and request_id in self._callbacks, 'sdk_reply_unknown')
         row = self._callbacks[request_id]
         self._need(row['reply_sha256'] is None, 'sdk_reply_duplicate')
@@ -602,7 +622,7 @@ class SDKControl:
 
     def callback_timeout(self, request_id):
         """Record the external owner's deadline observation; never infer a wait."""
-        self._live()
+        self._input_open()
         self._need(type(request_id) is str and request_id in self._callbacks,
                    'sdk_timeout_unknown')
         self._callbacks[request_id]['timed_out'] = True
@@ -610,7 +630,7 @@ class SDKControl:
 
     def ledger(self):
         return dict(schema='cairn.sdk-hook-delivery/2', profile='sdk-hooks/1',
-                    failure=self._failure, closed=self._closed,
+                    failure=self._failure, closed=self._closed, input_ended=self._input_ended,
                     initialize_written=self._initialize_written, initialized=self._initialized,
                     user_queued=self._user_queued, user_written=self._user_written,
                     user_written_bytes=self._user_written_bytes,
