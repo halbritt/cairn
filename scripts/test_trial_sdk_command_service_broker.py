@@ -13,6 +13,78 @@ import trial_sdk_command_service_wire as w
 
 
 class CreditTests(unittest.TestCase):
+    def test_burst_bounds_and_identity_refuse_before_commitment_changes(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 544)
+        for maxima in ((), (31,), (545,), (True,), (544,32), (32,)*5, [32]):
+            with self.assertRaisesRegex(ServiceLinkError, '^wire_burst_spec$'):
+                credit.burst(maxima)
+        self.assertEqual(credit.snapshot()['promised'], 0)
+        burst = credit.burst((56,224,40,33))
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_burst_unobserved$'):
+            credit.end_burst(burst)
+        other = WireCredit(resources, resources.bind(__import__(
+            'trial_sdk_native_process_owner').NativeProcessOwner()), 32)
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_burst_identity$'):
+            other.burst_known(burst, 32)
+        self.assertEqual(credit.snapshot()['promised'], 353)
+        self.assertFalse(resources.snapshot()['unknown'])
+
+    def test_burst_early_close_return_interruption_cannot_refund_unused_commitment(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 353)
+        burst = credit.burst((56,224,40,33))
+        credit.burst_known(burst, 56)
+        hit = []
+        def trace(frame, event, arg):
+            if (event == 'line' and frame.f_code.co_name == 'guarded' and
+                    frame.f_locals.get('self') is credit and
+                    frame.f_locals.get('acquired') and not credit._busy and not hit):
+                hit.append(True)
+                raise KeyboardInterrupt()
+            return trace
+        old = sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt): credit.end_burst(burst)
+        finally: sys.settrace(old)
+        self.assertEqual(hit, [True])
+        self.assertTrue(resources.snapshot()['unknown'])
+        self.assertEqual((resources.snapshot()['traffic_spent'],
+                          resources.snapshot()['traffic_reserved']), (56,297))
+
+    def test_uncertain_second_burst_frame_keeps_all_prior_known_bytes_and_remainder(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 406)
+        burst = credit.burst((56, 224, 40, 33))
+        credit.known(credit.promise(53), 53)
+        credit.burst_known(burst, 56)
+        credit.burst_unknown_prefix(burst, 17)
+        state = resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (126, 280))
+        self.assertEqual(credit.snapshot()['burst']['index'], 1)
+        self.assertEqual(credit.snapshot()['burst']['known'], 73)
+        self.assertTrue(state['unknown'])
+        with self.assertRaises(ServiceLinkError): credit.end_burst(burst)
+
+    def test_reply_burst_is_precommitted_once_and_partial_receipts_cannot_refund(self):
+        resources = AttemptResources()
+        credit = WireCredit(resources, resources.local, 406)
+        burst = credit.burst((56, 224, 40, 33))
+        sent = credit.promise(53)
+        credit.known(sent, 53)
+        credit.burst_known(burst, 56)
+        credit.burst_known(burst, 224)
+        with self.assertRaisesRegex(ServiceLinkError, '^wire_receipt_pending$'):
+            credit.finish()
+        self.assertEqual(credit.snapshot()['known'], 333)
+        credit.burst_known(burst, 40)
+        credit.end_burst(burst)  # Validated no CANCEL: fourth reply not produced.
+        credit.finish()
+        state = resources.snapshot()
+        self.assertEqual((state['traffic_spent'], state['traffic_reserved']), (373, 0))
+        with self.assertRaises(ServiceLinkError): credit.burst_known(burst, 33)
+
     def test_freeze_is_idempotent_and_never_changes_known_spend_or_live_tickets(self):
         resources = AttemptResources()
         memory = resources.allocate(resources.local, 'standing', 128, 256)
@@ -108,6 +180,88 @@ class CreditTests(unittest.TestCase):
 
 
 class LinkTests(unittest.TestCase):
+    def test_burst_eagain_preserves_cursor_and_view_until_actual_receive(self):
+        link = self.link()
+        records = self.records((w.READY,))
+        inner = self.endpoint(records)
+        class WaitingEndpoint:
+            calls = 0
+            def recvmsg_into(self, views, control, flags):
+                self.calls += 1
+                if self.calls == 1: raise BlockingIOError()
+                return inner.recvmsg_into(views, control, flags)
+        self.bound(link, WaitingEndpoint())
+        credit = link.credit(32)
+        cursor = credit.burst((32,))
+        link.adopt_receive_burst(credit, cursor)
+        self.assertFalse(link.receive_step(lambda frame: self.fail('not received')))
+        loan = link._rx['hold']
+        self.assertEqual(credit.burst_info(cursor)['index'], 0)
+        self.assertEqual(credit.snapshot()['known'], 0)
+        self.assertTrue(link.receive_step(lambda frame: None))
+        self.assertIsNone(link._rx['hold'])
+        self.assertTrue(loan.closed)
+        link.finish_receive_burst();credit.finish()
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 32)
+
+    def records(self, kinds):
+        codec = Codec('S2P', lambda n: True, lambda n: None, profile=4)
+        records = []
+        for kind in kinds:
+            with memoryview(bytearray(32)) as backing, memoryview(b'') as body:
+                frame = codec.encode_into(backing, kind, 0, body)
+                with frame.record as view: records.append(bytes(view))
+                frame.release()
+        return records
+
+    def endpoint(self, records):
+        class Endpoint:
+            def send(self, record, flags): return len(record)
+            def recvmsg_into(self, views, control, flags):
+                record = records.pop(0)
+                views[0][:len(record)] = record
+                return (len(record), [(socket.SOL_SOCKET, socket.SCM_CREDENTIALS,
+                                       CREDENTIAL.pack(123, 1000, 1000))], 0, None)
+        return Endpoint()
+
+    def test_precommitted_burst_reuses_one_rx_backing_and_ends_only_after_known_branch(self):
+        link = self.link()
+        self.bound(link, self.endpoint(self.records((w.READY, w.BYE))))
+        credit = link.credit(129)
+        cursor = credit.burst((32, 32, 33))
+        link.adopt_receive_burst(credit, cursor)
+        self.assertTrue(link.receive_step(lambda frame: None))
+        self.assertTrue(link.snapshot()['receive_pending'])
+        link.queue(w.SHUTDOWN, 0, credit)
+        self.assertTrue(link.send_step())
+        self.assertTrue(link.receive_step(lambda frame: None))
+        self.assertEqual(link.transcript.snapshot()['phase'], 'closed')
+        link.finish_receive_burst()
+        credit.finish()
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 96)
+        self.assertEqual(link.resources.snapshot()['traffic_reserved'], 0)
+        self.assertEqual(link.snapshot()['backing_bytes'], 1600)
+
+    def test_future_other_credit_burst_is_committed_before_trigger_then_adopted(self):
+        link = self.link()
+        self.bound(link, self.endpoint(self.records((w.READY, w.BYE))))
+        first = link.credit(32)
+        emergency = link.credit(64, emergency=True)
+        future = emergency.burst((32, 32))
+        link.arm_receive(first, 32)
+        self.assertTrue(link.receive_step(lambda frame: None))
+        first.finish()
+        shutdown = link.credit(32)
+        link.queue(w.SHUTDOWN, 0, shutdown)
+        self.assertTrue(link.send_step())
+        shutdown.finish()
+        link.adopt_receive_burst(emergency, future)
+        self.assertTrue(link.receive_step(lambda frame: None))
+        link.finish_receive_burst()
+        emergency.finish()
+        self.assertEqual(link.resources.snapshot()['traffic_spent'], 96)
+        self.assertEqual(link.resources.snapshot()['traffic_reserved'], 0)
+
     def link(self):
         return ServiceLink(AttemptResources(), deadline_ns=100, standing_working=4096,
                            standing_raw=2080, clock=lambda: 1)

@@ -25,6 +25,10 @@ class _Promise:
     maximum: int
 
 
+class _Burst:
+    __slots__ = ()
+
+
 def _guard(method):
     def guarded(self, *args, **kwargs):
         acquired = False
@@ -72,6 +76,7 @@ only unused commitment, after every promised edge has a known receipt.
         self._quarantine_error = None
         self._receipt = None
         self._primary = None
+        self._burst = None
 
     def _check(self):
         if self._unknown:
@@ -95,6 +100,9 @@ only unused commitment, after every promised edge has a known receipt.
 
     @_guard
     def promise(self, maximum):
+        return self._promise(maximum)
+
+    def _promise(self, maximum):
         if type(maximum) is not int or not 32 <= maximum <= 544:
             raise ServiceLinkError('wire_promise')
         if len(self._promises) >= 2:
@@ -106,6 +114,65 @@ only unused commitment, after every promised edge has a known receipt.
         self._promises.add(promise)
         self._pledged += maximum
         return promise
+
+    @_guard
+    def burst(self, maxima):
+        if (self._burst is not None or type(maxima) is not tuple or
+                not 1 <= len(maxima) <= 4 or
+                any(type(n) is not int or not 32 <= n <= 544 for n in maxima) or
+                sum(maxima) > 544):
+            raise ServiceLinkError('wire_burst_spec')
+        promise = self._promise(sum(maxima))
+        token = _Burst()
+        self._burst = {'token': token, 'promise': promise, 'maxima': maxima,
+                       'index': 0, 'remaining': sum(maxima), 'known': 0}
+        return token
+
+    def _burst_row(self, token):
+        row = self._burst
+        if type(token) is not _Burst or row is None or row['token'] is not token:
+            raise ServiceLinkError('wire_burst_identity')
+        return row
+
+    def burst_info(self, token):
+        self._check()
+        row = self._burst_row(token)
+        return {key: row[key] for key in ('maxima', 'index', 'remaining', 'known')}
+
+    def _burst_prefix(self, token, count, advance):
+        row = self._burst_row(token)
+        if (row['index'] >= len(row['maxima']) or type(count) is not int or
+                not 0 <= count <= row['maxima'][row['index']]):
+            raise ServiceLinkError('wire_burst_count')
+        self._mutating = True
+        self._receipt = (row['maxima'][row['index']], count)
+        self._known += count
+        self._pledged -= count
+        row['known'] += count
+        row['remaining'] -= count
+        if advance:
+            row['index'] += 1
+            self._receipt = None
+
+    @_guard
+    def burst_known(self, token, count):
+        self._burst_prefix(token, count, True)
+
+    @_guard
+    def burst_unknown_prefix(self, token, count):
+        self._burst_prefix(token, count, False)
+        self._poison()
+
+    @_guard
+    def end_burst(self, token):
+        """Owner first validates no additional automatic reply on this branch."""
+        row = self._burst_row(token)
+        if row['index'] == 0:
+            raise ServiceLinkError('wire_burst_unobserved')
+        self._mutating = True
+        self._promises.remove(row['promise'])
+        self._pledged -= row['remaining']
+        self._burst = None
 
     @_guard
     def known(self, promise, count):
@@ -151,7 +218,9 @@ only unused commitment, after every promised edge has a known receipt.
                 'closed': self._closed, 'unknown': self._unknown,
                 'primary': self._primary,
                 'receipt_in_progress': self._receipt,
-                'quarantine_error': self._quarantine_error}
+                'quarantine_error': self._quarantine_error,
+                'burst': None if self._burst is None else
+                    {key: self._burst[key] for key in ('maxima', 'index', 'remaining', 'known')}}
 
 
 class ServiceLink:
@@ -318,12 +387,42 @@ class ServiceLink:
                     'hold': self._rx_region.hold(maximum)}
 
     @_guard
+    def adopt_receive_burst(self, credit, burst):
+        """Adopt a future-reply cursor committed BEFORE its P2S trigger.
+
+        The cursor may have been reserved while a different credit's text frame
+        occupied RX. Adoption reuses the existing backing, not new traffic.
+        """
+        if self._rx is not None:
+            raise ServiceLinkError('service_receive_pending')
+        self._credit(credit)
+        state = credit.burst_info(burst)
+        if state['index'] >= len(state['maxima']):
+            raise ServiceLinkError('service_burst_complete')
+        self._mutating = True
+        self._rx = {'credit': credit, 'burst': burst, 'hold': None}
+
+    @_guard
+    def finish_receive_burst(self):
+        """Call only after validated source state excludes further auto-replies."""
+        if self._rx is None or 'burst' not in self._rx or self._rx['hold'] is not None:
+            raise ServiceLinkError('service_burst_pending')
+        self._mutating = True
+        self._rx['credit'].end_burst(self._rx['burst'])
+        self._rx = None
+
+    @_guard
     def receive_step(self, consumer):
         """consumer borrows one authenticated frame; it MUST retain no views."""
         if self._rx is None or self._connection is None:
             raise ServiceLinkError('service_receive_unavailable')
         self._mutating = True
         pending = self._rx
+        if pending['hold'] is None:
+            state = pending['credit'].burst_info(pending['burst'])
+            if state['index'] >= len(state['maxima']):
+                raise ServiceLinkError('service_burst_complete')
+            pending['hold'] = self._rx_region.hold(state['maxima'][state['index']])
         before = self._connection.snapshot()['last_transfer']
         try:
             count = self._connection.receive_into(pending['hold'].view)
@@ -333,21 +432,30 @@ class ServiceLink:
         if count == -1:
             return False
         # Charge the actual edge even if framing/protocol/consumer later refuses.
-        pending['credit'].known(pending['promise'], count)
+        if 'burst' in pending:
+            pending['credit'].burst_known(pending['burst'], count)
+        else:
+            pending['credit'].known(pending['promise'], count)
         pending['hold'].close()
         pending['hold'] = self._rx_region.hold(count)
         token = self._receiver.decode(pending['hold'])
         token.visit(self.transcript.observe)
         token.visit(consumer)
         token.complete(token.generation, 'known')
-        self._rx = None
+        if 'burst' in pending:
+            pending['hold'] = None
+        else:
+            self._rx = None
         return True
 
     def _socket_prefix(self, pending, direction, before):
         receipt = self._connection.snapshot()['last_transfer']
         if (receipt is not None and (before is None or receipt[0] > before[0])
                 and receipt[1] == direction and type(receipt[3]) is int):
-            pending['credit'].unknown_prefix(pending['promise'], receipt[3])
+            if 'burst' in pending:
+                pending['credit'].burst_unknown_prefix(pending['burst'], receipt[3])
+            else:
+                pending['credit'].unknown_prefix(pending['promise'], receipt[3])
 
     def close_channels(self):
         # Actual owner/wait/descendant cleanup continues independently, including

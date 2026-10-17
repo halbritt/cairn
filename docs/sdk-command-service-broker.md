@@ -50,6 +50,34 @@ frame borrow. Consumers must retain no views. The record hold ends before reuse.
 Transcript observations occur only after actual known sends or authenticated
 receives, never on an EAGAIN retry.
 
+Some commands produce several automatic replies. `credit.burst(maxima)`
+precommits one bounded receive cursor before its triggering send: one to four
+record maxima, each32..544 bytes, with their sum at most544. It consumes one
+of that credit's two promise slots, not another ledger ticket or backing.
+For example, a TURN can produce PROGRESS56, OUTPUT224, empty-output STATUS40,
+and a crossed cancellation acknowledgement33. Its353-byte cursor and53-byte
+TURN therefore require406 original control bytes before triggering the turn.
+The separate CLI data ticket is still required before that TURN.
+
+`adopt_receive_burst(credit, cursor)` attaches an already committed cursor to
+the existing RX backing. One authenticated record advances it; EAGAIN retains
+the same cursor and loan. Each actual record is charged before validation.
+`finish_receive_burst()` may end it early only after the coordinator validates
+source state that excludes every remaining automatic reply. Silence, elapsed
+time or a guessed reply count cannot justify that call. It ends the local
+promise; unused original commitment returns only at known `credit.finish()`.
+Cursor identity is exact and cannot be used with another credit or after ending.
+
+A future cursor may be committed while another credit occupies RX, then adopted
+after the first receive loan ends. This handles a maximum544-byte text reply
+followed by STATUS40 and a possible crossed acknowledgement33: the text reply
+and terminal cursor need two original credits committed before DELIVER. There
+is still only one RX backing and at most two live credits. A partial or unknown
+burst retains its known prefix and unresolved remainder under the original
+shared freeze; it cannot be ended to obtain another allowance. These ports do
+not themselves decide whether an automatic-reply branch has ended. That remains
+the actual operation scheduler's responsibility.
+
 Unknown transport, post-effect accounting, codec/consumer or final cleanup
 interruptions freeze this link and retain commitments/loans. Known positive
 traffic remains spent, and unobserved remainder remains reserved. Other held
