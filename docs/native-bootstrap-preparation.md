@@ -52,8 +52,8 @@ may have execute bits. System-owned binaries therefore need a separately frozen,
 owner-supplied regular source copy; this API does not provision that copy.
 The existing request's `PIN_LIMIT` is per file. This preparer additionally
 enforces a conservative aggregate 512 MiB source-copy ceiling across all seven
-roles; it does not give each binary a separate aggregate allowance. The compiler's
-single input message is generated separately. Disk/IO wall time is not externally supervised by this
+roles; it does not give each binary a separate aggregate allowance. Generated
+input or control metadata is separate from that source-copy count. Disk/IO wall time is not externally supervised by this
 offline helper. It does not claim the runtime cgroup's 512 MiB limit or a native
 wall deadline was enforced. Copy and readback use at most 64 KiB IO blocks;
 only text/config files of at most 64 KiB are collected for parsing.
@@ -73,6 +73,50 @@ the message, UTF-8 instruction, 512-byte reserve and at least 1000 hook bytes.
 The original search/pull/final/tool/hook/time constraints remain unchanged.
 No 600-second source ceiling or USD 4 estimate is substituted for the missing
 frozen campaign-wide native wall and billing proof.
+
+## Separate SDK source review
+
+`trial_native_bootstrap.prepare_sdk_review(document, output)` accepts only
+`cairn.sdk-native-bootstrap-review/1`. It uses the same closed declaration fields,
+seven source roles, held-file checks, empty command hooks, settings/MCP agreement
+and original limits. The legacy preparer accepts only its original schema and
+still rejects an SDK launch before creating a user file.
+
+The SDK preparer calls `compile_sdk_launch` once and holds its `SDKLaunch` and
+original `SDKControl`. Compilation chooses the initialization and callback IDs;
+review does not recompile them. The controller owns the single user message and
+all future write frames. This route generates `sdk-control.json` containing only
+the pristine control metadata, and never generates `input.jsonl`. A future SDK
+driver must keep native stdin open for bound control replies rather than apply
+the command route's close-after-user rule.
+
+`SDKControl.pristine_binding()` returns a fresh, non-consuming projection of the
+actual held initialization and user byte counts/hashes, initial IDs, instruction
+byte count, guaranteed context and current ledger. It refuses after write
+progress, closure, failure or checked initial-state drift without poisoning the
+controller. Digest/decoded metadata working allocations remain under the outer
+budget; this projection does not create another complete raw user or initialize
+buffer. The separate 8500-byte wire and 9500-byte selected-input limits still
+apply, as described in [SDK control](native-sdk-control.md).
+
+`SDKReviewPreparation.review_bindings()` rechecks held sources and metadata,
+the original controller identity and pristine projection, argv, permissions,
+instruction and compiled user/context bindings. Progressing or replacing the
+controller invalidates a new review. Cleanup always belongs to the original
+controller, even if the launch field was replaced, and independently attempts
+the Snapshot closes. Fixed controller cleanup uncertainty is
+`sdk_control_cleanup_unknown`; a context-manager exit without a primary failure
+reports any combined cleanup uncertainty as `sdk_review_cleanup_unknown`.
+Inherited constructor cleanup annotations are inspected only after owned closes.
+Unreadable, malformed or non-fixed annotations become
+`cleanup_annotation_unknown`; attaching diagnostics to a custom primary remains
+best effort and cannot replace it.
+
+The SDK review reports `input_mode=controller_owned`, control metadata and user
+count/hash instead of a separate writable input message. It retains the same
+missing gates and false complete/runtime flags. `require_complete()` still
+rechecks custody and refuses `hook_interface_unavailable`. This owner provides
+no executable handoff, transport, native setting observation or runtime permit.
 
 ## File custody and consumption
 
@@ -94,8 +138,10 @@ this helper owns one output-directory intent, not a campaign registry.
 Every snapshot file is exclusive, fsynced and read back through the held output
 directory. A checked readonly FD replaces the owned writable FD on sealing;
 snapshots are mode 0400 (binaries 0500), single-linked and owner-owned. Directory
-entries are fsynced. `input.jsonl` is generated exclusively from the compiler's
-one frozen message. There is no atomic batch-publication claim.
+entries are fsynced. The command route generates `input.jsonl` exclusively from
+the compiler's one frozen message; the SDK route generates only its control
+metadata alongside the seven source snapshots. There is no atomic
+batch-publication claim.
 
 `owner.review_bindings()` rechecks all held directory edges, source identities,
 snapshot identities, lengths and hashes before returning fresh selected metadata.

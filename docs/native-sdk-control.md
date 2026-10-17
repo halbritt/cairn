@@ -23,6 +23,14 @@ file. An SDK owner must bind empty command hooks (`hooks: {}`), empty setting
 sources and the reviewed settings/MCP mounts; an argv declaration alone does
 not establish that native loaded those settings.
 
+The separate [offline SDK review](native-bootstrap-preparation.md#separate-sdk-source-review)
+holds one compiled controller and the seven selected source snapshots, with
+metadata-only `sdk-control.json` and no `input.jsonl`. Its non-consuming
+`pristine_binding()` projection binds the actual held initialization/user
+bytes and IDs before any progress. A consumed, failed, closed or changed
+controller cannot produce another pristine review. This does not transfer
+execution ownership or make complete bootstrap available.
+
 ## Control and write contract
 
 Initialization must be fully written before accepting its response or any hook

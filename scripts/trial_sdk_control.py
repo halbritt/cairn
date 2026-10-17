@@ -208,6 +208,12 @@ class SDKControl:
                               event: [dict(hookCallbackIds=[ident], timeout=HOOK_SECONDS)]
                               for event, ident in self._callback_ids.items()}))
         wire = _canonical(initialize) + b'\n'
+        # Immutable initial facts for source review, without another raw copy.
+        self._initial_identity = (session_id, self._initialize_id,
+                                  tuple(self._callback_ids.items()))
+        self._initial_wire = len(wire), _sha(wire)
+        self._initial_user = len(user_message), _sha(user_message)
+        self._initial_instruction_bytes = instruction_bytes
         fixed_bytes = len(wire) + len(user_message)
         if (CAPTURE_LIMIT - fixed_bytes < 1000 or
                 SELECTED_LIMIT - fixed_bytes - instruction_bytes - RESERVE < 1000):
@@ -232,6 +238,42 @@ class SDKControl:
     def bindings(self):
         return dict(session_id=self._session, initialize_request_id=self._initialize_id,
                     callback_ids=dict(self._callback_ids))
+
+    def pristine_binding(self):
+        """Non-consuming source-review projection of the actual initial writer.
+
+        Bind held user/initialize bytes as well as IDs and untouched state. This
+        refuses after any progress, closure, failure or drift without changing
+        the writer. It is not a runtime handoff, native observation or admission.
+        Decoded metadata and digest working state remain under the outer budget;
+        no extra complete raw user or initialize buffer is created here.
+        """
+        pristine = (self._failure is None and not self._closed
+            and not self._initialize_written and not self._initialized
+            and not self._user_queued and not self._user_enqueued and not self._user_written
+            and self._user_written_bytes == self._written_bytes == 0
+            and self._instruction_bytes == self._initial_instruction_bytes
+            and not self._callbacks and not self._rows and not self._expected_replays
+            and not self._empty_replies and self._future_required == set(REQUIRED_EVENTS)
+            and (self._session, self._initialize_id, tuple(self._callback_ids.items())) == self._initial_identity
+            and type(self._user) is bytes and (len(self._user), _sha(self._user)) == self._initial_user
+            and len(self._queue) == 1)
+        if pristine:
+            head = self._queue[0]
+            pristine = (type(head) is _Write and head.kind == 'initialize'
+                and head.request_id == self._initialize_id and head.offset == 0
+                and type(head.wire) is bytes and (len(head.wire), _sha(head.wire)) == self._initial_wire
+                and self._queued_bytes == len(head.wire)
+                and self._reserved_wire == len(head.wire) + len(self._user))
+        if not pristine:
+            raise SDKControlError('sdk_control_not_pristine')
+        return dict(schema='cairn.sdk-pristine-control/1', profile='sdk-hooks/1',
+                    bindings=self.bindings, user_message_bytes=len(self._user),
+                    user_message_sha256=self._initial_user[1],
+                    initialize_bytes=len(head.wire), initialize_sha256=self._initial_wire[1],
+                    instruction_bytes=self._instruction_bytes,
+                    guaranteed_context_bytes=self.guaranteed_context_bytes,
+                    ledger=self.ledger())
 
     @property
     def remaining_selected_bytes(self):

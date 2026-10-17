@@ -9,13 +9,15 @@ from pathlib import Path
 import re
 
 from trial_bootstrap_snapshot import Snapshot, record_cleanup
-from trial_coding_launch import CodingLaunch, compile_launch
+from trial_coding_launch import CodingLaunch, SDKLaunch, compile_launch, compile_sdk_launch
+from trial_sdk_control import SDKControl, SDKControlError
 from trial_paired_request import (IMPLEMENTATION_SETTINGS_SHA,
                                  IMPLEMENTATION_SOURCE_SHA, ORIGINAL_LIMITS,
                                  PIN_LIMIT, Refusal, canonical_sha, identifier,
                                  mcp_arguments, need, shape)
 
 SCHEMA = 'cairn.native-bootstrap-review/1'
+SDK_SCHEMA = 'cairn.sdk-native-bootstrap-review/1'
 SOURCE_ROLES = {
     'cli': ('claude', PIN_LIMIT, True),
     'mcp_binary': ('cairn', PIN_LIMIT, True),
@@ -91,10 +93,10 @@ def _freeze(document):
     return clone(document, 0)
 
 
-def _declaration(document):
+def _declaration(document, *, schema=SCHEMA):
     shape(document, 'schema binding launch sources mcp_binding limits permission_sha256 hook_interface',
           'bootstrap_shape')
-    need(document['schema'] == SCHEMA, 'bootstrap_schema')
+    need(document['schema'] == schema, 'bootstrap_schema')
     shape(document['binding'], 'request_id occurrence_id case_id arm session_id workspace_sha256 request_sha256 source_set_sha256',
           'bootstrap_binding')
     binding = document['binding']
@@ -142,6 +144,13 @@ def _compile(snapshot, document, mcp_args):
         # compile_launch and the text reader expose fixed codes only.
         raise Refusal(str(error)) from None
     need(type(launch) is CodingLaunch, 'bootstrap_launch_profile')
+    _configuration(snapshot, document, launch, mcp_args)
+    snapshot.generated('input.jsonl', launch.input_message)
+    return launch
+
+
+def _configuration(snapshot, document, launch, mcp_args):
+    """Common source agreement only; neither profile obtains admission here."""
     settings = _json(snapshot.read('settings.json'))
     shape(settings, 'permissions hooks autoMemoryEnabled claudeMdExcludes', 'bootstrap_settings')
     need(settings['permissions'] == _json(launch.permission_json)
@@ -153,8 +162,6 @@ def _compile(snapshot, document, mcp_args):
     expected = dict(mcpServers=dict(cairn=dict(type='stdio', command='/native/cairn',
                                                args=mcp_args)))
     need(mcp == expected, 'bootstrap_mcp')
-    snapshot.generated('input.jsonl', launch.input_message)
-    return launch
 
 
 class ReviewPreparation:
@@ -220,6 +227,95 @@ class ReviewPreparation:
             raise PreparationRefusal('descriptor_cleanup_unknown', cleanup)
 
 
+def _sdk_state(launch, control, session_id, instruction_bytes):
+    need(type(launch) is SDKLaunch and type(control) is SDKControl
+         and launch.control is control, 'compiled_binding_changed')
+    state = control.pristine_binding()
+    need(state['bindings']['session_id'] == session_id
+         and state['user_message_bytes'] == launch.user_message_bytes
+         and state['user_message_sha256'] == launch.user_message_sha256
+         and state['instruction_bytes'] == instruction_bytes
+         and state['guaranteed_context_bytes'] == launch.guaranteed_context_bytes,
+         'compiled_binding_changed')
+    return state
+
+
+def _close_control(control):
+    try:
+        control.close()
+    except BaseException:
+        return ('sdk_control_cleanup_unknown',)
+    return ()
+
+
+class SDKReviewPreparation(ReviewPreparation):
+    """Own one pristine SDK controller and held sources, without handoff authority."""
+    def __init__(self, snapshot, launch, declaration):
+        need(type(launch) is SDKLaunch and type(launch.control) is SDKControl,
+             'bootstrap_launch_profile')
+        self._snapshot, self._launch = snapshot, launch
+        # Cleanup ownership never follows a subsequently replaced launch field.
+        self._control = launch.control
+        self._control_close_attempted = False
+        self._control_cleanup = ()
+        self._binding = dict(declaration['binding'])
+        self._declaration_sha = canonical_sha(declaration)
+        self._launch_sha = canonical_sha(list(launch.argv))
+        self._user_binding = launch.user_message_bytes, launch.user_message_sha256
+        self._hook_context_bytes = launch.guaranteed_context_bytes
+        instruction = snapshot.read('instruction.txt')
+        state = _sdk_state(launch, self._control, self._binding['session_id'], len(instruction))
+        self._control_sha = canonical_sha(state)
+        snapshot.generated('sdk-control.json',
+            (json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
+
+    def review_bindings(self):
+        try:
+            sources = self._snapshot.bindings()
+            instruction = self._snapshot.read('instruction.txt')
+            state = _sdk_state(self._launch, self._control, self._binding['session_id'], len(instruction))
+            need(canonical_sha(state) == self._control_sha
+                 and _json(self._snapshot.read('sdk-control.json')) == state
+                 and (self.launch.user_message_bytes, self.launch.user_message_sha256) == self._user_binding
+                 and self.launch.guaranteed_context_bytes == self._hook_context_bytes
+                 and hashlib.sha256(self.launch.permission_json).hexdigest() == IMPLEMENTATION_SETTINGS_SHA
+                 and canonical_sha(list(self.launch.argv)) == self._launch_sha
+                 and self.launch.argv[-1].encode('utf-8') == instruction,
+                 'compiled_binding_changed')
+        except (OSError, Refusal, SDKControlError):
+            cleanup = self.close()
+            raise PreparationRefusal('review_custody_unknown', cleanup) from None
+        except BaseException as primary:
+            record_cleanup(primary, self.close())
+            raise
+        return dict(schema=SDK_SCHEMA, status='source_prepared_for_review',
+                    complete_bootstrap=False, runtime_attested=False,
+                    missing_gates=list(GATES), input_mode='controller_owned',
+                    binding=dict(self._binding), declaration_sha256=self._declaration_sha,
+                    snapshots=sources, launch_sha256=self._launch_sha,
+                    user_message_bytes=self.launch.user_message_bytes,
+                    user_message_sha256=self.launch.user_message_sha256,
+                    instruction_sha256=sources['instruction.txt']['sha256'],
+                    permissions_sha256=self.launch.permission_sha256,
+                    guaranteed_context_bytes=self.launch.guaranteed_context_bytes,
+                    control=state, limits=dict(ORIGINAL_LIMITS))
+
+    def close(self):
+        if not self._control_close_attempted:
+            self._control_close_attempted = True
+            self._control_cleanup = _close_control(self._control)
+        # A control cleanup fault cannot skip the independently owned FDs.
+        return tuple(sorted(set(self._control_cleanup + self._snapshot.close())))
+
+    def __exit__(self, exc_type, primary, traceback):
+        cleanup = self.close()
+        if cleanup:
+            if primary is not None:
+                record_cleanup(primary, cleanup)
+                return False
+            raise PreparationRefusal('sdk_review_cleanup_unknown', cleanup)
+
+
 def prepare_review(document, output):
     """Consume an exclusive private output before inspecting declared source files.
 
@@ -250,4 +346,63 @@ def prepare_review(document, output):
     except BaseException as primary:
         cleanup = snapshot.close() if snapshot else getattr(primary, 'cleanup_faults', ())
         record_cleanup(primary, cleanup)
+        raise
+
+
+def prepare_sdk_review(document, output):
+    """Separate closed SDK source review; no user-file writer or runtime permit.
+
+    Compilation creates one controller. Keep it pristine and owned while review
+    bindings are used; a future executable handoff needs its own contract. This
+    helper never consumes its write queue and require_complete remains refused.
+    """
+    snapshot = owner = control = None
+    def cleanup(primary=None):
+        if owner is not None:
+            faults = owner.close()
+        else:
+            faults = _close_control(control) if control is not None else ()
+            faults += snapshot.close() if snapshot is not None else ()
+        # Diagnostics from a failed constructor are optional exception metadata.
+        # Inspect them only after owned cleanup, without running arbitrary tuple
+        # conversions or allowing a custom getter to replace the primary.
+        try:
+            inherited = getattr(primary, 'cleanup_faults', ())
+            valid = (type(inherited) is tuple and len(inherited) <= 3
+                     and all(type(code) is str and code in {
+                         'descriptor_cleanup_unknown', 'sdk_control_cleanup_unknown',
+                         'cleanup_annotation_unknown'} for code in inherited))
+        except BaseException:
+            valid = False
+        if not valid:
+            inherited = ('cleanup_annotation_unknown',)
+        return tuple(sorted(set(inherited + faults)))
+    try:
+        snapshot = Snapshot(output)
+        document = _freeze(document)
+        mcp_args = _declaration(document, schema=SDK_SCHEMA)
+        for role, (name, limit, executable) in SOURCE_ROLES.items():
+            snapshot.copy(name, document['sources'][role], limit, executable)
+        instruction = _text(snapshot.read('instruction.txt'))
+        try:
+            launch = compile_sdk_launch(session_id=document['binding']['session_id'],
+                model=document['launch']['model'], effort=document['launch']['effort'],
+                prompt=_text(snapshot.read('prompt.txt')), memory_instruction=instruction)
+        except ValueError as error:
+            raise Refusal(str(error)) from None
+        need(type(launch) is SDKLaunch and type(launch.control) is SDKControl,
+             'bootstrap_launch_profile')
+        control = launch.control
+        _configuration(snapshot, document, launch, mcp_args)
+        owner = SDKReviewPreparation(snapshot, launch, document)
+        owner.review_bindings()
+        return owner
+    except FileExistsError:
+        raise PreparationRefusal('preparation_consumed', cleanup()) from None
+    except (OSError, Refusal, UnicodeError, TypeError, ValueError, RecursionError) as error:
+        faults = cleanup(error)
+        code = str(error) if isinstance(error, Refusal) else 'preparation_io_or_shape_unknown'
+        raise PreparationRefusal(code, faults) from None
+    except BaseException as primary:
+        record_cleanup(primary, cleanup(primary))
         raise
