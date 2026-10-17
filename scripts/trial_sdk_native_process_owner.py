@@ -10,7 +10,7 @@ import signal
 import socket
 import subprocess
 
-from trial_sdk_native_input import NativeInput, NativeInputError
+from trial_sdk_native_input import NativeInput, NativeInputError, NativeInputRejected
 
 
 class OwnerError(ValueError):
@@ -18,7 +18,11 @@ class OwnerError(ValueError):
 
 
 class NativeProcessOwner:
-    def __init__(self):
+    def __init__(self, *, allow_stdin_epipe=False):
+        # Fixed command builders may select known stdin rejection, never SDK callers.
+        if type(allow_stdin_epipe) is not bool:
+            raise OwnerError('owner_input_policy')
+        self._allow_stdin_epipe = allow_stdin_epipe
         self._process = self._input = self._wait = self._release = None
         self._fds = {}
         self._consumed = self._launched = self._stdin_closed = False
@@ -76,7 +80,7 @@ class NativeProcessOwner:
             self._fds['pidfd'] = os.pidfd_open(self._process.pid, 0)
             for name in ('stdin', 'stdout', 'stderr'):
                 self._close_fd('child_'+name)
-            self._input = NativeInput(self._fds['stdin'])
+            self._input = NativeInput(self._fds['stdin'], allow_epipe=self._allow_stdin_epipe)
             del self._fds['stdin']  # Successful construction transfers sole custody.
             self._launched = True
         except BaseException:
@@ -100,7 +104,7 @@ class NativeProcessOwner:
             if not self._launched or self._primary is not None or self._input is None:
                 raise OwnerError('owner_input_unavailable')
             return self._input.write(body)
-        except BlockingIOError:
+        except (BlockingIOError, NativeInputRejected):
             raise
         except BaseException:
             if self._primary is None:
@@ -251,6 +255,7 @@ class NativeProcessOwner:
                 'wait': None if self._wait is None else dict(self._wait),
                 'primary': self._primary, 'cleanup': tuple(sorted(self._cleanup)),
                 'native_input': None if self._input is None else self._input.snapshot(),
+                'input_rejected': self._input is not None and self._input.snapshot()['input_rejected'],
                 'signal_unknown': self._signal_unknown, 'wait_unknown': self._wait_unknown,
                 'has_handles': bool(self._fds) or input_open,
                 'release': None if self._release is None else dict(self._release),
