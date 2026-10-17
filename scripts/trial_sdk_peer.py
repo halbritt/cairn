@@ -49,6 +49,30 @@ class CreditDenied(PeerError):
     pass
 
 
+def check_ancillary(ancillary, expected):
+    """Validate every visible control item; close received rights even on refusal."""
+    bad = unknown = False
+    credentials = 0
+    for level, kind, data in ancillary:
+        if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+            bad = True
+            unknown |= len(data) % RIGHT.size != 0
+            for pos in range(0, len(data)-RIGHT.size+1, RIGHT.size):
+                fd = RIGHT.unpack_from(data, pos)[0]
+                try:
+                    os.close(fd)
+                except BaseException:
+                    unknown = True
+        elif level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS and len(data) == CREDENTIAL.size:
+            credentials += 1
+            bad |= CREDENTIAL.unpack(data) != expected
+        else:
+            bad = True
+    return bad or credentials != 1, unknown
+
+
+
+
 class Peer:
     @staticmethod
     def protect():
@@ -196,24 +220,7 @@ class Peer:
         self._busy = True
 
     def _ancillary(self, ancillary):
-        bad = unknown = False
-        credentials = 0
-        for level, kind, data in ancillary:
-            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
-                bad = True
-                unknown |= len(data) % RIGHT.size != 0
-                for pos in range(0, len(data)-RIGHT.size+1, RIGHT.size):
-                    fd = RIGHT.unpack_from(data, pos)[0]
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        unknown = True
-            elif level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS and len(data) == CREDENTIAL.size:
-                credentials += 1
-                bad |= CREDENTIAL.unpack(data) != (self._pid, self._uid, self._gid)
-            else:
-                bad = True
-        return bad or credentials != 1, unknown
+        return check_ancillary(ancillary, (self._pid, self._uid, self._gid))
 
     def fileno(self):
         """Borrow for serialized readiness only; no dup/close/transfer/rebind."""

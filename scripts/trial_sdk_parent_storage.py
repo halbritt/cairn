@@ -154,12 +154,12 @@ class Bridge:
 
 
 class Channel:
-    def __init__(self, codec_class, root, region, direction):
+    def __init__(self, codec_class, root, region, direction, *, profile=2):
         if region.root is not root:
             raise Refused('foreign_region')
         self.root, self.region = root, region
         self.bridge = Bridge(root)
-        self.codec = codec_class(direction, self.bridge.reserve, self.bridge.release, profile=2)
+        self.codec = codec_class(direction, self.bridge.reserve, self.bridge.release, profile=profile)
         self.pending = None
 
     def _start(self, size):

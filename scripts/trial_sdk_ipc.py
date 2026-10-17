@@ -27,6 +27,15 @@ TABLE_PROFILE_2 = MappingProxyType({
     133: ('P2N_DATA', 5, 5, True),
 })
 
+# Python memory-broker protocol only. These are not SDK input/output operations;
+# the Node codec/native addon intentionally implement profiles 1 and 2 only.
+TABLE_PROFILE_3 = MappingProxyType({
+    33: ('C2B', 1, 512, True), 34: ('C2B', 0, 0, True),
+    65: ('B2C', 1, 512, True), 66: ('B2C', 1, 512, True),
+    67: ('B2C', 4, 4, True), 68: ('B2C', 1, 1, True),
+})
+PROFILES = MappingProxyType({1: TABLE, 2: TABLE_PROFILE_2, 3: TABLE_PROFILE_3})
+
 class CodecError(ValueError):
     pass
 
@@ -69,15 +78,16 @@ class Codec:
     A fresh production endpoint starts at one. reserve/release are trusted hooks.
     """
     def __init__(self, direction, reserve, release, first_sequence=1, profile=1):
-        if (type(direction) is not str or direction not in DIRECTIONS
+        if (type(direction) is not str
                 or not callable(reserve) or not callable(release)
                 or type(first_sequence) is not int or not 1 <= first_sequence <= MAX_SEQUENCE
-                or type(profile) is not int or profile not in (1, 2)):
+                or type(profile) is not int or profile not in PROFILES
+                or direction not in {row[0] for row in PROFILES[profile].values()}):
             raise CodecError('frame_configuration')
         self._direction, self._reserve, self._release = direction, reserve, release
         self._next = first_sequence
         self._profile = profile
-        self._table = TABLE if profile == 1 else TABLE_PROFILE_2
+        self._table = PROFILES[profile]
         self._busy = False
         self.failed = False
         self.cleanup_unknown = False
