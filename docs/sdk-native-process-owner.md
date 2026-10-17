@@ -90,6 +90,11 @@ leader can retain returncode zero after the containment signal attempt. This
 supervision fixes the old poll-before-containment gap without inventing successful
 NativeProcessOwner release on a failed setup path.
 
+The checker saves outer wait/cleanup observations before post-run source and log
+I/O. Source revalidation errors mark the final result refused while preserving
+collected facts. File-write errors are named failures; a partial receipt is never
+reused. The final stdout summary also retains outer waits and pipe-close facts.
+
 Source snapshots, after-run hashes and retained observations assume trusted
 serialized source custody, not hostile same-UID isolation. Toolchain/kernel/ABI
 and protected runtime bindings remain external. Capture HOLD, original budgets,

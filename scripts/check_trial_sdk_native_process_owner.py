@@ -201,11 +201,23 @@ def main():
           'cleanup_reserve_seconds': 2, 'retained_output_max': 65536,
           'scope': 'fixed ordinary owned Python children/socket/pidfd cases only; no SDK/native CLI/provider/namespace/evaluation'})
     result, logs = supervise(snapshot)
+    # Preserve collected waits before later source or output-file I/O can refuse.
+    try:
+        write(out / 'OUTER-OBSERVATION.json', result)
+    except BaseException as error:
+        result['errors'].append('observation_write:' + type(error).__name__)
     for name, body in logs.items():
-        with (out / (name + '.log')).open('xb') as stream:
-            stream.write(body)
+        try:
+            with (out / (name + '.log')).open('xb') as stream:
+                stream.write(body)
+        except BaseException as error:
+            result['errors'].append('log_write_' + name + ':' + type(error).__name__)
     result['logs'] = {name: digest(body) for name, body in logs.items()}
-    result['pins_stable'] = before == {name: digest(read(HERE / name)) for name in NAMES}
+    try:
+        result['pins_stable'] = before == {name: digest(read(HERE / name)) for name in NAMES}
+    except BaseException as error:
+        result['pins_stable'] = False
+        result['errors'].append('pins:' + type(error).__name__)
     result['ok'] = False
     try:
         facts = json.loads(logs['stdout'])
@@ -226,8 +238,13 @@ def main():
             and all(row == {'close_attempts': 1, 'closed_known': True} for row in result['pipes'].values()))
     except (ValueError, KeyError, TypeError, IndexError) as error:
         result['errors'].append('result:' + type(error).__name__)
-    write(out / 'RESULT.json', result)
+    try:
+        write(out / 'RESULT.json', result)
+    except BaseException as error:
+        result['errors'].append('result_write:' + type(error).__name__)
+        result['ok'] = False
     print(json.dumps({'output': str(out), 'ok': result['ok'], 'test_wait': result['test_wait'],
+                      'waits': result['waits'], 'pipes': result['pipes'],
                       'group_children_empty': result['group_children_empty'], 'errors': result['errors']}))
     return 0 if result['ok'] else 1
 
