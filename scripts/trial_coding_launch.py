@@ -23,6 +23,22 @@ MIN_HOOK_BYTES = 1000
 MAX_TURNS = 8
 
 
+def _utf8_size(text):
+    """Validate all strict UTF-8, retaining at most one 8192-byte raw block.
+
+    Do not stop at the input budget: a later invalid character (including in the
+    instruction after an oversized prompt) must still produce coding_input.
+    Unicode inputs/slices and exception frames remain working-storage obligations.
+    """
+    size = 0
+    for offset in range(0, len(text), 2048):
+        block = text[offset:offset + 2048].encode('utf-8')
+        size += len(block)
+        # End this backing BEFORE the next encode, including one that raises.
+        block = None
+    return size
+
+
 @dataclasses.dataclass(frozen=True)
 class CodingLaunch:
     argv: tuple
@@ -72,20 +88,22 @@ def compile_launch(*, session_id, model, effort, prompt, memory_instruction):
         raise ValueError('coding_effort')
     if not isinstance(prompt, str) or not prompt or not isinstance(memory_instruction, str) or not memory_instruction:
         raise ValueError('coding_input')
-    # Bound before JSON encoding, which may expand control characters. Neither
-    # the prompt nor a failed encoding is retained in an error or exception chain.
+    # Validate both inputs before budget refusal, without whole raw input copies.
     try:
-        prompt_bytes = prompt.encode('utf-8')
-        instruction_bytes = memory_instruction.encode('utf-8')
+        prompt_size = _utf8_size(prompt)
+        instruction_size = _utf8_size(memory_instruction)
     except UnicodeError:
         raise ValueError('coding_input') from None
-    if len(prompt_bytes) > INPUT_BYTES or len(instruction_bytes) > INPUT_BYTES:
+    if prompt_size > INPUT_BYTES or instruction_size > INPUT_BYTES:
         raise ValueError('coding_input_budget')
-    message = (json.dumps(dict(type='user', message=dict(role='user', content=prompt)),
-                          ensure_ascii=False) + '\n').encode('utf-8')
-    context_bytes = INPUT_BYTES - len(message) - INPUT_RESERVE - len(instruction_bytes)
+    # Keep legacy default spaces, insertion order and LF. Canonical JSON has a
+    # different byte cost. The Unicode serialization is still working storage.
+    message_text = json.dumps(dict(type='user', message=dict(role='user', content=prompt)),
+                              ensure_ascii=False) + '\n'
+    context_bytes = INPUT_BYTES - _utf8_size(message_text) - INPUT_RESERVE - instruction_size
     if context_bytes < MIN_HOOK_BYTES:
         raise ValueError('coding_input_budget')
+    message = message_text.encode('utf-8')
     permission_json = json.dumps(settings_permissions(profile='implementation/1'),
                                  sort_keys=True, separators=(',', ':')).encode('utf-8')
     argv = ('/native/claude', '-p', '--model', model, '--effort', effort,
