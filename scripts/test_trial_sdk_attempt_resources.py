@@ -23,6 +23,20 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(resources.snapshot()['working_reserved'],0)
         self.assertEqual((RAW,WORKING,TRAFFIC),(128*1024,512*1024*1024,4*1024*1024))
 
+    def test_raw_and_decoded_allocations_share_the_original_aggregate_limit(self):
+        resources=AttemptResources();a=self.domain(resources);b=self.domain(resources)
+        self.assertIsNone(resources.allocate(a,'operation',RAW,WORKING))
+        one=resources.allocate(a,'operation',RAW,WORKING-RAW)
+        self.assertIsNotNone(one)
+        self.assertIsNone(resources.allocate(b,'operation',0,1))
+        state=resources.snapshot()
+        self.assertEqual(state['known_allocation_reserved'],WORKING)
+        resources.release(one)
+        two=resources.allocate(b,'operation',0,WORKING)
+        self.assertIsNotNone(two)
+        self.assertEqual(resources.snapshot()['known_allocation_peak'],WORKING)
+        resources.release(two)
+
     def test_same_numbers_or_foreign_domains_do_not_replace_held_tickets(self):
         resources=AttemptResources();a=self.domain(resources)
         token=resources.allocate(a,'standing',100,200)

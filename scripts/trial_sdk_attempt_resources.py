@@ -56,7 +56,7 @@ class AttemptResources:
         self._creator=os.getpid();self._next=1
         self._busy=self._mutating=self._unknown=self._closed=False
         self._raw=self._working=self._spent=self._reserved=0
-        self._raw_peak=self._working_peak=self._committed_peak=0
+        self._raw_peak=self._working_peak=self._allocation_peak=self._committed_peak=0
         self.local=_Ticket(0)
         self._domains={self.local:{'owner':None,'memory':{},'traffic':{}}}
         self._memory={};self._traffic={}
@@ -110,11 +110,12 @@ class AttemptResources:
         if (type(raw) is not int or type(working) is not int or
                 not 0<=raw<=RAW or not 0<=working<=WORKING or raw+working==0):
             raise ResourceError('resource_quote')
-        if self._raw+raw>RAW or self._working+working>WORKING:return None
+        if self._raw+raw>RAW or self._raw+self._working+raw+working>WORKING:return None
         self._can_issue();self._begin()
         self._raw+=raw;self._working+=working
         self._raw_peak=max(self._raw_peak,self._raw)
         self._working_peak=max(self._working_peak,self._working)
+        self._allocation_peak=max(self._allocation_peak,self._raw+self._working)
         token=self._ticket()
         self._memory[token]=(domain,lifetime,raw,working)
         row['memory'][lifetime]=token
@@ -199,6 +200,8 @@ class AttemptResources:
     def snapshot(self):
         return {'raw_reserved':self._raw,'working_reserved':self._working,
                 'raw_peak':self._raw_peak,'working_peak':self._working_peak,
+                'known_allocation_reserved':self._raw+self._working,
+                'known_allocation_peak':self._allocation_peak,
                 'traffic_spent':self._spent,'traffic_reserved':self._reserved,
                 'traffic_available':TRAFFIC-self._spent-self._reserved,
                 'committed_peak':self._committed_peak,'unknown':self._unknown,

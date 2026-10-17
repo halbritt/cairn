@@ -7,6 +7,12 @@ tests are inert accounting only. A runtime must construct it once for the whole
 attempt and bind every relevant allocation/transfer; one instance per child would
 be independent budgets and would violate the contract.
 
+Raw backing and decoded/working quotes are disjoint allocations. Their combined
+known reserved total must also fit the SAME 512-MiB aggregate. Both component
+counts and the simultaneous combined peak remain visible; the raw allowance is
+not another 128 KiB added above that aggregate. This arithmetic covers only the
+known quoted subset and does not stand in for interpreter/process peak coverage.
+
 The local domain is minted by the ledger. `bind` associates another opaque domain
 with an exact retained `NativeProcessOwner`, including before its launch. Neither
 that object reference nor the returned domain authenticates a connected process.
