@@ -21,6 +21,31 @@ class CommandOutcome:
     stderr: bytes
 
 
+@dataclasses.dataclass(frozen=True)
+class CommandTextOutcome:
+    """Waited command text and original CLI byte counts, supplied by its owner.
+
+    A value alone does not attest an actual wait or storage reservation. Text is
+    strict UTF-8 stdout and replacement-decoded stderr, matching the engine.
+    Original raw counts differ from later stderr UTF-8 transport volume.
+    """
+    returncode: int
+    stdout: str
+    stderr: str
+    stdout_bytes: int
+    stderr_bytes: int
+
+
+def _text_utf8_size(text):
+    # No whole encoded copy. Text graphs/copies remain aggregate working memory.
+    total=0
+    for char in text:
+        value=ord(char)
+        if 0xd800<=value<=0xdfff:raise ValueError('command_text_surrogate')
+        total+=1 if value<0x80 else 2 if value<0x800 else 3 if value<0x10000 else 4
+    return total
+
+
 class EngineMemoryAdapter:
     """Use the real engine's run_json decoder with a gated command transport.
 
@@ -102,14 +127,32 @@ class EngineMemoryAdapter:
                 self._reject('engine_dispatch_options')
             outcome=self._channel.call(operation,args,body,timeout)
             phase='engine_result_failed'
-            if (type(outcome) is not CommandOutcome or type(outcome.returncode) is not int
-                    or not -2**31<=outcome.returncode<2**31
-                    or type(outcome.stdout) is not bytes or type(outcome.stderr) is not bytes
-                    or len(outcome.stdout)>self._engine.COMMAND_OUTPUT_BYTES
-                    or len(outcome.stderr)>self._engine.COMMAND_OUTPUT_BYTES):
+            if (type(outcome) not in (CommandOutcome,CommandTextOutcome)
+                    or type(outcome.returncode) is not int
+                    or not -2**31<=outcome.returncode<2**31):
                 self._reject('engine_command_outcome')
-            return subprocess.CompletedProcess(command,outcome.returncode,
-                outcome.stdout.decode('utf-8'),outcome.stderr.decode('utf-8',errors='replace'))
+            ceiling=self._engine.COMMAND_OUTPUT_BYTES
+            if type(outcome) is CommandTextOutcome:
+                if (type(outcome.stdout) is not str or type(outcome.stderr) is not str
+                        or type(outcome.stdout_bytes) is not int or type(outcome.stderr_bytes) is not int
+                        or not 0<=outcome.stdout_bytes<=ceiling or not 0<=outcome.stderr_bytes<=ceiling
+                        or len(outcome.stdout)>outcome.stdout_bytes
+                        or len(outcome.stderr)>outcome.stderr_bytes):
+                    self._reject('engine_command_outcome')
+                try:
+                    valid=(_text_utf8_size(outcome.stdout)==outcome.stdout_bytes
+                           and _text_utf8_size(outcome.stderr)<=3*outcome.stderr_bytes)
+                except ValueError:
+                    valid=False
+                if not valid:self._reject('engine_command_outcome')
+                stdout,stderr=outcome.stdout,outcome.stderr
+            else:
+                if (type(outcome.stdout) is not bytes or type(outcome.stderr) is not bytes
+                        or len(outcome.stdout)>ceiling or len(outcome.stderr)>ceiling):
+                    self._reject('engine_command_outcome')
+                stdout=outcome.stdout.decode('utf-8')
+                stderr=outcome.stderr.decode('utf-8',errors='replace')
+            return subprocess.CompletedProcess(command,outcome.returncode,stdout,stderr)
         except BaseException:
             # One lifetime covers transport and decode, including their boundary.
             if self._failure is None: self._failure=phase
