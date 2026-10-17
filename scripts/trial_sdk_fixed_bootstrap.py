@@ -23,6 +23,14 @@ EXCLUDED = {(64512,n) for n in (22838820,22946591,22946592,22981266,22981268)}
 class FixedServiceLaunch:
     @classmethod
     def prepare(cls, session, link, document, output):
+        owner = cls.__new__(cls)
+        owner.prepare_owned(session, link, document, output)
+        return owner
+
+    def prepare_owned(owner, session, link, document, output):
+        """Run owner retains this object BEFORE any source acquisition."""
+        require(not hasattr(owner, '_preparation_started'), 'fixed_source_consumed')
+        owner._preparation_started = True
         require(type(session) is SDKSessionDriver and session._resources is not None
                 and type(link) is ServiceLink and session._resources.resources is link.resources,
                 'fixed_original_resources')
@@ -32,7 +40,6 @@ class FixedServiceLaunch:
         allocation.check()  # BEFORE config cloning, snapshot copy or decoding.
         link.resources._lookup(link.resources._memory, link._allocation)
         require(not link.owner.snapshot()['launch_attempted'], 'fixed_service_consumed')
-        owner = cls.__new__(cls)
         owner._session, owner.link, owner._allocation = session, link, allocation
         owner._snapshot = None
         owner._started = owner._failed = owner._closed = False
@@ -48,7 +55,8 @@ class FixedServiceLaunch:
                     'fixed_service_allocation')
             owner._runtime, owner._config = runtime, config
             owner._directory = str(Path(output))
-            owner._snapshot = Snapshot(output)
+            owner._snapshot = Snapshot.__new__(Snapshot)
+            Snapshot.__init__(owner._snapshot, output)
             root = Path(__file__).absolute().parent
             for name, digest in SOURCE_PINS.items():
                 path = root.parent/'integrations/lifecycle/memory.py' if name == 'memory.py' else root/name

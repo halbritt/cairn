@@ -308,6 +308,8 @@ class SDKReviewPreparation(ReviewPreparation):
         self._control_close_attempted = False
         self._control_cleanup = ()
         self._transferred = False
+        self._move_attempted = self._move_failed = False
+        self._move_recovery = None
         self._binding = dict(declaration['binding'])
         self._declaration_sha = canonical_sha(declaration)
         self._launch_sha = canonical_sha(list(launch.argv))
@@ -319,8 +321,14 @@ class SDKReviewPreparation(ReviewPreparation):
         snapshot.generated('sdk-control.json',
             (json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
 
+    @property
+    def launch(self):
+        if self._transferred or self._move_failed:
+            raise PreparationRefusal('sdk_review_transferred')
+        return self._launch
+
     def review_bindings(self):
-        if self._transferred:
+        if self._transferred or self._move_failed:
             raise PreparationRefusal('sdk_review_transferred')
         try:
             if self._allocation is not None:
@@ -362,6 +370,8 @@ class SDKReviewPreparation(ReviewPreparation):
         return SDKSessionCustody(self)
 
     def close(self):
+        if self._move_failed:
+            return self._move_recovery.close()
         return () if self._transferred else _close_sdk_sources(self)
 
     def __exit__(self, exc_type, primary, traceback):
@@ -373,30 +383,68 @@ class SDKReviewPreparation(ReviewPreparation):
             raise PreparationRefusal('sdk_review_cleanup_unknown', cleanup)
 
 
+class _SDKMoveRecovery:
+    """Original cleanup/poison custody, reachable even after a partial move."""
+    def __init__(self, preparation):
+        self._snapshot = preparation._snapshot
+        self._control = preparation._control
+        self._allocation = preparation._allocation
+        self._control_close_attempted = False
+        self._control_cleanup = ()
+
+    def close(self):
+        return _close_sdk_sources(self)
+
+
 class SDKSessionCustody:
     """Original source/controller ownership only; no process or runtime permit.
 
     Serialized calls and same-process custody are required. Initial control
     metadata remains historical once the borrowed controller makes progress.
     """
+    @classmethod
+    def empty(cls):
+        """Inert shell, published by the receiving session before the move."""
+        owner = cls.__new__(cls)
+        owner._snapshot = owner._control = owner._allocation = None
+        owner._move_recovery = None
+        owner._control_close_attempted = False
+        owner._control_cleanup = ()
+        return owner
+
     def __init__(self, preparation):
         if type(preparation) is not SDKReviewPreparation:
             raise PreparationRefusal('sdk_review_required')
-        if preparation._transferred:
+        if preparation._transferred or preparation._move_attempted:
             raise PreparationRefusal('sdk_review_transferred')
+        # Capture original authority BEFORE any publication or old-field clear.
+        recovery = _SDKMoveRecovery(preparation)
+        self._move_recovery = None
         try:
+            preparation._move_recovery = recovery  # Publish initial recovery.
+            preparation._move_attempted = True
             self._initial = preparation.review_bindings()
-            self._snapshot = preparation._snapshot
-            self._allocation = preparation._allocation
-            self._launch, self._control = preparation._launch, preparation._control
+            self._snapshot = recovery._snapshot
+            self._allocation = recovery._allocation
+            self._launch = preparation._launch
+            self._control = recovery._control
             self._control_close_attempted, self._control_cleanup = False, ()
             self._source_failed = False
             preparation._transferred = True
+            preparation._snapshot = None
+            preparation._launch = None
+            preparation._control = None
+            preparation._allocation = None
+            preparation._move_recovery = None
         except BaseException as primary:
-            resource_faults = poison_resource(preparation._allocation, primary)
-            # Before the move the preparation still owns everything; after it,
-            # an interrupted constructor must clean up through this new owner.
-            faults = self.close() if preparation._transferred else preparation.close()
+            self._move_recovery = recovery
+            preparation._move_attempted = preparation._move_failed = True
+            preparation._move_recovery = recovery
+            resource_faults = poison_resource(recovery._allocation, primary)
+            if preparation._control_close_attempted:
+                recovery._control_close_attempted = True
+                recovery._control_cleanup = preparation._control_cleanup
+            faults = recovery.close()
             record_cleanup(primary, faults)
             annotate_resource_failure(primary, resource_faults)
             raise
@@ -465,6 +513,12 @@ class SDKSessionCustody:
         raise PreparationRefusal('hook_interface_unavailable')
 
     def close(self):
+        if self._move_recovery is not None:
+            return self._move_recovery.close()
+        if self._snapshot is None:
+            return ()
+        if self._control is None:
+            return self._snapshot.close()
         return _close_sdk_sources(self)
 
     def __enter__(self):

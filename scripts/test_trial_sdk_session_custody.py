@@ -78,7 +78,7 @@ class SessionCustodyTests(unittest.TestCase):
             model='fixture-model', effort='high', prompt=self.prompt,
             memory_instruction=self.instruction).control
         self.addCleanup(foreign.close)
-        review._launch = dataclasses.replace(review.launch, control=foreign)
+        review._launch = dataclasses.replace(session.launch, control=foreign)
         review._control = foreign
         review.close()
         session.source_bindings()
