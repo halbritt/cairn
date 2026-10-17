@@ -77,6 +77,11 @@ primary, wait, signal and release facts independently. Expired callbacks cannot
 receive late results; outer containment still owns unresolved processes and the
 original final wall deadline.
 
+Diagnostic snapshots copy the held terminal facts. Cleanup uses a fixed set of
+failure labels and consumes each release attempt before invoking it; uncertain
+release is not retried. A propagated `BlockingIOError` is retryable only when
+the input owner also confirms a known unchanged prefix and no write uncertainty.
+
 ## Validation ceiling
 
 The candidate's model tests exercise the actual job and decoder with controlled

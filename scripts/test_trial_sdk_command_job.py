@@ -110,6 +110,96 @@ class JobTests(unittest.TestCase):
         self.assertEqual(outcome.returncode,17)
         self.assertEqual(owner.writes,2)
 
+    def test_eagain_preserves_pending_input_while_both_outputs_progress(self):
+        owner=OwnerModel(b'output',b'errors',width=2)
+        write=owner.write
+        attempts=[]
+        def blocked_once(view):
+            attempts.append(bytes(view))
+            if len(attempts)==1:raise BlockingIOError()
+            return write(view)
+        owner.write=blocked_once
+        job,budget=self.job(owner,'abcdef')
+        self.assertTrue(job.step())
+        state=job.snapshot()
+        self.assertEqual((state['input_generated'],state['input_written']),(6,0))
+        self.assertEqual([state['streams'][n]['raw_bytes'] for n in ('stdout','stderr')],[2,2])
+        outcome=self.finish(job)
+        self.assertEqual(attempts[:3],[b'abcdef',b'abcdef',b'cdef'])
+        self.assertEqual((bytes(owner.input),outcome.stdout,outcome.stderr),(b'abcdef','output','errors'))
+        self.assertEqual(budget.stream,18)
+
+    def test_snapshot_cannot_mutate_actual_wait_or_release(self):
+        owner=OwnerModel(b'ok',b'',17)
+        job,budget=self.job(owner)
+        while job.snapshot()['release'] is None:job.step()
+        state=job.snapshot()
+        state['wait']['returncode']=0
+        state['release']['released']=False
+        self.assertEqual(job.take_outcome().returncode,17)
+        job.retire()
+        self.assertEqual((budget.queue,budget.working),(0,0))
+
+        owner=OwnerModel()
+        job,budget=self.job(owner)
+        owner.release=lambda:{'released':False,'cleanup':('unknown',)}
+        with self.assertRaisesRegex(module.CommandJobError,'^command_release_unknown$'):
+            self.finish(job)
+        job.snapshot()['release']['released']=True
+        with self.assertRaisesRegex(module.CommandJobError,'^command_retire_pending$'):job.retire()
+        self.assertGreater(budget.working,0)
+
+    def test_cleanup_failure_labels_are_fixed_and_release_is_not_retried(self):
+        owner=OwnerModel()
+        job,budget=self.job(owner)
+        job.abort()
+        def unknown():raise RuntimeError('controlled observer failure')
+        owner.observe_wait=unknown
+        owner.snapshot=unknown
+        for _ in range(1000):self.assertFalse(job.cleanup_step())
+        # Restore only the diagnostic port so the selected projection is readable.
+        owner.snapshot=lambda:{'launch_attempted':True}
+        self.assertEqual(job.snapshot()['cleanup'],('owner_state_unknown','wait_unknown'))
+        owner.observe_wait=lambda:{'pid':123,'raw_status':0,'returncode':0}
+        calls=[]
+        def release_unknown():
+            calls.append('release')
+            raise RuntimeError('controlled release uncertainty')
+        owner.cleanup_after_wait=release_unknown
+        for _ in range(1000):self.assertFalse(job.cleanup_step())
+        self.assertEqual(calls,['release'])
+        self.assertEqual(job.snapshot()['cleanup'],('owner_state_unknown','release_unknown','wait_unknown'))
+        self.assertGreater(budget.working,0)
+
+    def test_credit_release_exception_is_consumed_without_refund_retry(self):
+        owner=OwnerModel(b'ok')
+        job,budget=self.job(owner)
+        outcome=self.finish(job)
+        del outcome
+        calls=[]
+        def release_unknown(*args):
+            calls.append(args)
+            raise RuntimeError('credit release unknown')
+        budget.release=release_unknown
+        with self.assertRaisesRegex(RuntimeError,'^credit release unknown$'):job.retire()
+        self.assertTrue(job.snapshot()['reservation_unknown'])
+        with self.assertRaisesRegex(module.CommandJobError,'^command_retire_consumed$'):job.retire()
+        self.assertEqual(len(calls),1)
+
+    def test_blocking_error_with_owner_uncertainty_cannot_become_an_outcome(self):
+        owner=OwnerModel(b'ok')
+        job,budget=self.job(owner,'body')
+        def uncertain_write(view):raise BlockingIOError('cleanup after attempted write')
+        owner.write=uncertain_write
+        owner.snapshot=lambda:{'launch_attempted':True,'native_input':{
+            'write_unknown':True,'input_rejected':False,'known_written':0}}
+        with self.assertRaisesRegex(module.CommandJobError,'^command_input_unknown$'):job.step()
+        state=job.snapshot()
+        self.assertTrue(state['outcome_unknown'])
+        self.assertIsNone(state['input_sha256'])
+        self.assertTrue(all(s['raw_sha256'] is None for s in state['streams'].values()))
+        with self.assertRaisesRegex(module.CommandJobError,'^command_input_unknown$'):job.take_outcome()
+
     def test_full_engine_stream_limits_with_bounded_raw_reservation(self):
         owner=OwnerModel(b'a'*module.OUTPUT_LIMIT,b'\xff'*module.OUTPUT_LIMIT)
         job,budget=self.job(owner)

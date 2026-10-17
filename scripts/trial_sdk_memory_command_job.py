@@ -124,7 +124,7 @@ class CommandJob:
         self._last=None;self._primary=None;self._unknown=False
         self._pending=None;self._busy=False;self._close_attempted=False
         self._stdin_terminal=None;self._wait=self._release=None
-        self._signal_attempted=False;self._cleanup=[]
+        self._signal_attempted=self._release_attempted=False;self._cleanup=set()
         self._working=0
 
     def _fail(self,code,unknown=False):
@@ -215,6 +215,9 @@ class CommandJob:
                 self._pending='stdin_write'
                 try:count=self.owner.write(view)
                 except BlockingIOError:
+                    state=self.owner.snapshot()['native_input']
+                    if state['write_unknown'] or state['known_written']!=self._written:
+                        self._fail('command_input_unknown',True)
                     self._pending=None
                     return False
                 except NativeInputRejected:
@@ -277,6 +280,7 @@ class CommandJob:
                 if self._wait is None:progress=self._write() or progress
                 for name in self._counts:progress=self._read(name) or progress
                 if self._wait is not None and all(self._eof.values()) and self._release is None:
+                    self._release_attempted=True
                     self._pending='owner_release'
                     self._release=self.owner.release()
                     self._pending=None
@@ -321,27 +325,30 @@ class CommandJob:
         for name in names:
             try:result[name]=self.owner.fileno(name)
             except BaseException:
-                self._cleanup.append('readiness_unknown')
+                self._cleanup.add('readiness_unknown')
                 self._fail('command_readiness_unknown',True)
         return result
 
     def cleanup_step(self):
         """Bounded ordinary cleanup; outer owner retains final wall containment."""
         try:self._wait=self.owner.observe_wait()
-        except BaseException:self._cleanup.append('wait_unknown')
+        except BaseException:self._cleanup.add('wait_unknown')
         state=None
         try:state=self.owner.snapshot()
-        except BaseException:self._cleanup.append('owner_state_unknown')
+        except BaseException:self._cleanup.add('owner_state_unknown')
         if self._wait is None and state is not None and state['launch_attempted'] and not self._signal_attempted:
             self._signal_attempted=True
             try:self.owner.signal(1,int(signal.SIGKILL))
-            except BaseException:self._cleanup.append('signal_unknown')
-        if self._wait is not None and self._release is None:
+            except BaseException:self._cleanup.add('signal_unknown')
+        if self._wait is not None and self._release is None and not self._release_attempted:
+            self._release_attempted=True
             try:self._release=self.owner.cleanup_after_wait()
-            except BaseException:self._cleanup.append('release_unknown')
-        elif state is not None and not state['launch_attempted'] and self._release is None:
+            except BaseException:self._cleanup.add('release_unknown')
+        elif (state is not None and not state['launch_attempted']
+                and self._release is None and not self._release_attempted):
+            self._release_attempted=True
             try:self._release=self.owner.cleanup_unlaunched()
-            except BaseException:self._cleanup.append('unlaunched_release_unknown')
+            except BaseException:self._cleanup.add('unlaunched_release_unknown')
         return self._release is not None
 
     def retire(self):
@@ -373,5 +380,7 @@ class CommandJob:
                                        eof=self._eof[name]) for name in self._counts},
                     queue_reservation=RAW_RESERVATION,working_reservation=self._working,
                     reserved=self._reserved,reservation_unknown=self._reservation_unknown,
-                    wait=self._wait,release=self._release,cleanup=tuple(self._cleanup),
+                    wait=None if self._wait is None else dict(self._wait),
+                    release=None if self._release is None else dict(self._release),
+                    release_attempted=self._release_attempted,cleanup=tuple(sorted(self._cleanup)),
                     owner=self.owner.snapshot(),api_confirmation=None,qualification='unqualified')
