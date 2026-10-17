@@ -125,6 +125,7 @@ def run(mode):
         result.update(wait=state['wait'],release=state['release'],primary=state['primary'],
                       outcome_unknown=state['outcome_unknown'],stdin_terminal=state['stdin_terminal'],
                       input_written=state['input_written'],streams=state['streams'],
+                      owner_wait=state['owner']['wait'],owner_pid=state['owner']['pid'],
                       input_rejected=state['owner']['input_rejected'],
                       has_handles=state['owner']['has_handles'])
     except BaseException as error:
