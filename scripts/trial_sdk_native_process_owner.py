@@ -5,10 +5,14 @@ This module observes its own direct child only. It never adopts a reported PID,
 outer launcher wait, payload identity, or borrowed stdio descriptor as that child.
 All calls are serialized; no foreign waiter, FD mutation or retaining callbacks.
 """
+import fcntl
 import os
+import select
 import signal
 import socket
 import subprocess
+import struct
+import termios
 
 from trial_sdk_native_input import NativeInput, NativeInputError, NativeInputRejected
 
@@ -29,6 +33,7 @@ class NativeProcessOwner:
         self._launch_attempted = self._stdin_close_unknown = False
         self._eof = {'stdout': False, 'stderr': False}
         self._read_unknown = set()
+        self._probe_positive = {'stdout': 0, 'stderr': 0}
         self._wait_unknown = self._signal_unknown = False
         self._last_signal = 0
         self._primary = None
@@ -159,6 +164,62 @@ class NativeProcessOwner:
                 loan.release()
             destination = None
 
+    def probe_output_eof(self, name, scratch):
+        """At exhausted payload credit, observe EOF only on a drained hung-up stream.
+
+        Uses the caller's existing scratch, including four bytes for FIONREAD.
+        'data' observes queued bytes without consuming them; 'pending' is not EOF.
+        Requires the owner's original AF_UNIX stream and exclusive reader custody.
+        """
+        if name not in self._eof or name in self._read_unknown:
+            raise OwnerError('owner_output_unavailable')
+        if (type(scratch) is not memoryview or scratch.readonly or scratch.ndim != 1
+                or scratch.format != 'B' or not scratch.c_contiguous
+                or not 4 <= len(scratch) <= 512 or struct.calcsize('i') != 4):
+            raise OwnerError('owner_output_buffer')
+        if self._eof[name]:
+            return 'eof'
+        fd = self.fileno(name)
+        loan = None
+        try:
+            try:
+                loan = memoryview(scratch)
+                poll = select.poll()
+                poll.register(fd, select.POLLIN | select.POLLRDHUP | select.POLLHUP)
+                events = poll.poll(0)
+                flags = 0
+                for observed_fd, observed_flags in events:
+                    if (observed_fd != fd or flags or type(observed_flags) is not int
+                            or observed_flags & ~(select.POLLIN | select.POLLRDHUP | select.POLLHUP)):
+                        raise OwnerError('owner_output_probe_readiness')
+                    flags = observed_flags
+                with loan[:4] as pending:
+                    result = fcntl.ioctl(fd, termios.FIONREAD, pending, True)
+                    queued = struct.unpack_from('i', pending)[0]
+                if type(result) is not int or result != 0 or queued < 0:
+                    raise OwnerError('owner_output_probe_queue')
+                if queued:
+                    return 'data'
+                if not flags & (select.POLLRDHUP | select.POLLHUP):
+                    return 'pending'
+                # A permanent read-side hangup and empty queue admit no new data
+                # under the selected exclusive-reader/unchanged-descriptor contract.
+                with loan[:1] as probe:
+                    count = self.read_into(name, probe)
+                if count > 0:
+                    self._probe_positive[name] += count
+                    raise OwnerError('owner_output_probe_positive')
+                return 'eof' if count == 0 else 'pending'
+            finally:
+                if loan is not None:
+                    loan.release()
+                scratch = None
+        except BaseException:
+            self._read_unknown.add(name)
+            if self._primary is None:
+                self._primary = 'owner_output_probe_unknown'
+            raise
+
     def signal(self, operation, number):
         if (type(operation) is not int or not self._last_signal < operation < 2**53
                 or type(number) is not int or number not in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL)
@@ -256,6 +317,7 @@ class NativeProcessOwner:
                 'primary': self._primary, 'cleanup': tuple(sorted(self._cleanup)),
                 'native_input': None if self._input is None else self._input.snapshot(),
                 'input_rejected': self._input is not None and self._input.snapshot()['input_rejected'],
+                'output_probe_positive_bytes': dict(self._probe_positive),
                 'signal_unknown': self._signal_unknown, 'wait_unknown': self._wait_unknown,
                 'has_handles': bool(self._fds) or input_open,
                 'release': None if self._release is None else dict(self._release),
