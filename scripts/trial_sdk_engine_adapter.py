@@ -80,10 +80,10 @@ class EngineMemoryAdapter:
             self._reject(self._failure)
 
     def _run_json(self,command,*,body=None,timeout=5,env=None,cwd=None,observation=None):
-        self._active()
-        self._command(command)
-        # Retain the real function's exact JSON and HookError/BudgetRefused rules.
         try:
+            self._active()
+            self._command(command)
+            # Retain the real function's JSON and HookError/BudgetRefused rules.
             result=self._original_json(command,body=body,timeout=timeout,env=env,cwd=cwd,
                                        observation=observation)
             if result.get('ok') is not True or type(result.get('data')) is not dict:
@@ -94,18 +94,14 @@ class EngineMemoryAdapter:
             raise
 
     def _bounded_command(self,command,*,body,timeout,env,cwd,observation=None):
-        self._active()
-        operation,args=self._command(command)
-        if cwd is not None or observation is not None:
-            self._reject('engine_dispatch_options')
+        phase='engine_dispatch_failed'
         try:
+            self._active()
+            operation,args=self._command(command)
+            if cwd is not None or observation is not None:
+                self._reject('engine_dispatch_options')
             outcome=self._channel.call(operation,args,body,timeout)
-        except BaseException:
-            # The real decoder may catch a transport exception. Preserve that
-            # mapping, but never let a swallowed refusal qualify a callback.
-            if self._failure is None: self._failure='engine_dispatch_failed'
-            raise
-        try:
+            phase='engine_result_failed'
             if (type(outcome) is not CommandOutcome or type(outcome.returncode) is not int
                     or not -2**31<=outcome.returncode<2**31
                     or type(outcome.stdout) is not bytes or type(outcome.stderr) is not bytes
@@ -115,7 +111,8 @@ class EngineMemoryAdapter:
             return subprocess.CompletedProcess(command,outcome.returncode,
                 outcome.stdout.decode('utf-8'),outcome.stderr.decode('utf-8',errors='replace'))
         except BaseException:
-            if self._failure is None: self._failure='engine_result_failed'
+            # One lifetime covers transport and decode, including their boundary.
+            if self._failure is None: self._failure=phase
             raise
 
     def __enter__(self):
@@ -130,13 +127,13 @@ class EngineMemoryAdapter:
             self._engine.run_json=self._json_wrapper
             self._restoration['bounded_command']='pending'
             self._engine.bounded_command=self._command_wrapper
+            return self
         except BaseException:
             try:
                 self.close()
             except BaseException:
                 pass  # Fixed restoration state retains uncertainty; keep primary.
             raise
-        return self
 
     def _cleanup_status(self):
         if (self._closed and any(status not in ('not_installed','restored')

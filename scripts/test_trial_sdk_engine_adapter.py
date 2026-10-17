@@ -194,5 +194,61 @@ class EngineAdapterTests(unittest.TestCase):
                     engine.bounded_command(memory.command+['search'],body=None,timeout=1,
                                            env={},cwd=None)
 
+    def test_interrupted_enter_return_restores_before_with_can_take_ownership(self):
+        engine=engine_module()
+        gate=MemoryDispatchGate(lambda *a:None,lambda *a:None,
+                                time.monotonic_ns()+30_000_000_000)
+        config=dict(cairn='/unavailable/cairn',socket='/unavailable/api.sock',
+                    token_file='/unavailable/token',repo='/work',harness='claude',
+                    recall_mode='agent_tools',recall_observations=False)
+        adapter=EngineMemoryAdapter(engine,config,gate.hook(time.monotonic_ns()+5_000_000_000))
+        original=(engine.run_json,engine.bounded_command)
+        injected=[]
+        def trace(frame,event,arg):
+            if (frame.f_code is EngineMemoryAdapter.__enter__.__code__ and event=='line'
+                    and engine.run_json is not original[0] and engine.bounded_command is not original[1]):
+                sys.settrace(None);injected.append(True)
+                raise KeyboardInterrupt('enter return boundary')
+            return trace
+        previous=sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt):
+                with adapter: self.fail('entered after interruption')
+        finally: sys.settrace(previous)
+        self.assertEqual(injected,[True])
+        self.assertEqual((engine.run_json,engine.bounded_command),original)
+        self.assertTrue(adapter.snapshot()['closed'])
+
+    def test_caught_interruption_after_transport_return_is_sticky(self):
+        engine=engine_module();returned=[]
+        def forward(*args):
+            returned.append(True)
+            return CommandOutcome(0,b'{"ok":true,"data":{}}',b'')
+        gate=MemoryDispatchGate(lambda *a:None,forward,time.monotonic_ns()+30_000_000_000)
+        config=dict(cairn='/unavailable/cairn',socket='/unavailable/api.sock',
+                    token_file='/unavailable/token',repo='/work',harness='claude',
+                    recall_mode='agent_tools',recall_observations=False)
+        adapter=EngineMemoryAdapter(engine,config,gate.hook(time.monotonic_ns()+5_000_000_000))
+        injected=[]
+        def trace(frame,event,arg):
+            if (frame.f_code is EngineMemoryAdapter._bounded_command.__code__
+                    and event=='line' and returned):
+                sys.settrace(None);injected.append(True)
+                raise KeyboardInterrupt('transport return boundary')
+            return trace
+        previous=sys.gettrace()
+        try:
+            with self.assertRaisesRegex(MemoryGateError,'^engine_(dispatch|result)_failed$'):
+                with adapter:
+                    memory=engine.Memory(config,'session')
+                    sys.settrace(trace)
+                    with self.assertRaises(KeyboardInterrupt):
+                        engine.bounded_command(memory.command+['search'],body=None,timeout=1,
+                                               env={},cwd=None)
+        finally: sys.settrace(previous)
+        self.assertEqual(injected,[True])
+        self.assertEqual(gate.snapshot()['returned'],1)
+
 
 if __name__ == '__main__': unittest.main()
