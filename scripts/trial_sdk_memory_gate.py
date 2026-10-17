@@ -28,6 +28,10 @@ class NativeRequest:
     arguments: dict
 
 
+class _PendingDispatch:
+    __slots__ = ()  # Identity only; equal-looking data is never a held dispatch.
+
+
 class MemoryDispatchGate:
     """One shared budget for native calls and every callback in one attempt.
 
@@ -51,8 +55,13 @@ class MemoryDispatchGate:
         self._searches = self._expansions = self._hook_searches = 0
         self._unknown = self._accounting_unknown = False
         self._last = None
+        self._pending = self._last_pending = None
+        self._completion_unknown = False
 
     def _refuse(self, code):
+        if self._pending is not None:
+            self._completion_unknown = True
+            self._pending['phase'] = self._last_pending['phase'] = 'unknown'
         self._refusals += 1
         if self._failure is None:
             self._failure = code
@@ -80,6 +89,66 @@ class MemoryDispatchGate:
 
     def native(self, tool, arguments):
         return self._dispatch('native', NativeRequest(tool, arguments), self._native_deadline)
+
+    def native_start(self, tool, arguments):
+        return self._dispatch('native', NativeRequest(tool, arguments),
+                              self._native_deadline, deferred=True)
+
+    def _pending_handle(self, handle):
+        if self._pending is None or handle is not self._pending['token']:
+            self._refuse('memory_pending_handle')
+        return self._pending
+
+    def fail_pending(self, handle):
+        return self._settle_pending(handle, failed=True)
+
+    def complete_pending(self, handle):
+        return self._settle_pending(handle, failed=False)
+
+    def _consume_pending(self, phase):
+        self._pending['value'] = None
+        self._pending = None
+        self._last_pending['phase'] = phase
+
+    def _settle_pending(self, handle, *, failed):
+        owns_transaction = False
+        try:
+            try:
+                row = self._pending_handle(handle)
+                if self._busy:
+                    self._refuse('memory_dispatch_reentrant')
+                if not failed and self._failure is not None:
+                    self._refuse(self._failure)
+                owns_transaction = self._busy = True
+                if failed:
+                    self._completion_unknown = True
+                    if self._failure is None:
+                        self._failure = 'memory_pending_failed'
+                    answer = None
+                else:
+                    self._now(row['deadline_ns'])
+                    if self._failure is not None:
+                        raise MemoryGateError(self._failure)
+                    answer = row['value']
+                self._consume_pending('unknown' if failed else 'retired')
+                if not failed:
+                    self._now(row['deadline_ns'])
+                    if self._failure is not None:
+                        raise MemoryGateError(self._failure)
+            finally:
+                if owns_transaction:
+                    self._busy = False
+            return answer
+        except BaseException:
+            if owns_transaction:
+                self._completion_unknown = True
+                if self._pending is not None:
+                    self._consume_pending('unknown')
+                self._last_pending['phase'] = 'unknown'
+                if self._failure is None:
+                    self._accounting_unknown = True
+                    self._failure = 'memory_gate_unknown'
+            raise
 
     def _classify(self, origin, request):
         if origin == 'native':
@@ -120,30 +189,45 @@ class MemoryDispatchGate:
         else:
             self._hook_searches += 1
 
-    def _dispatch(self, origin, request, deadline):
+    def _dispatch(self, origin, request, deadline, *, deferred=False):
         owns_transaction = False
         try:
-            self._requests += 1
-            if self._failure is not None:
-                self._refuse(self._failure)
-            if self._busy:
-                self._refuse('memory_dispatch_reentrant')
-            owns_transaction = True
-            self._busy = True
-            self._now(deadline)
-            operation, document, forward = self._classify(origin, request)
-            self._bound(document)
-            self._now(deadline)  # Validation cannot carry dispatch past expiry.
-            self._debit(origin, operation)
-            return self._forward(origin, operation, request, deadline, forward)
+            try:
+                self._requests += 1
+                if self._failure is not None:
+                    self._refuse(self._failure)
+                if self._busy:
+                    self._refuse('memory_dispatch_reentrant')
+                if self._pending is not None:
+                    self._refuse('memory_dispatch_pending')
+                owns_transaction = self._busy = True
+                self._now(deadline)
+                operation, document, forward = self._classify(origin, request)
+                self._bound(document)
+                self._now(deadline)
+                self._debit(origin, operation)
+                if deferred:
+                    metadata = {'sequence': self._dispatches + 1,
+                                'deadline_ns': deadline, 'phase': 'forwarding'}
+                    self._last_pending = dict(metadata)
+                    self._pending = dict(metadata, token=_PendingDispatch(), value=None)
+                answer = self._forward(origin, operation, request, deadline, forward)
+                if deferred:
+                    self._pending['value'] = answer
+                    self._pending['phase'] = self._last_pending['phase'] = 'pending'
+                    answer = self._pending['token']
+            finally:
+                if owns_transaction:
+                    self._busy = False
+            return answer
         except BaseException:
+            if owns_transaction and self._pending is not None:
+                self._completion_unknown = True
+                self._consume_pending('unknown')
             if self._failure is None:
                 self._accounting_unknown = True
                 self._failure = 'memory_gate_unknown'
             raise
-        finally:
-            if owns_transaction:
-                self._busy = False
 
     def _forward(self, origin, operation, request, deadline, forward):
         self._dispatches += 1
@@ -173,6 +257,10 @@ class MemoryDispatchGate:
             hook_searches=self._hook_searches, dispatch_unknown=self._unknown,
             accounting_unknown=self._accounting_unknown,
             failure=self._failure, in_flight=self._busy,
+            completion_unknown=self._completion_unknown,
+            pending=None if self._pending is None else
+                {key:self._pending[key] for key in ('sequence','deadline_ns','phase')},
+            last_pending=None if self._last_pending is None else dict(self._last_pending),
             last=None if self._last is None else dict(self._last))
 
 
@@ -182,6 +270,12 @@ class _HookChannel:
         self._closed = False
 
     def call(self, operation, args=(), body=None, timeout=5):
+        return self._invoke(HookRequest(operation, args, body), timeout, False)
+
+    def start(self, operation, args=(), body=None, timeout=5):
+        return self._invoke(HookRequest(operation, args, body), timeout, True)
+
+    def _invoke(self, request, timeout, deferred):
         if self._closed:
             self._gate._refuse('memory_hook_closed')
         if (type(timeout) not in (int, float) or not 0 < timeout <= 5
@@ -189,7 +283,7 @@ class _HookChannel:
             self._gate._refuse('memory_hook_timeout')
         # A requested shorter RPC timeout can tighten, never reset, the callback.
         deadline = min(self._deadline, self._gate._now(self._deadline) + int(timeout * 1_000_000_000))
-        return self._gate._dispatch('hook', HookRequest(operation, args, body), deadline)
+        return self._gate._dispatch('hook', request, deadline, deferred=deferred)
 
     def close(self):
         self._closed = True

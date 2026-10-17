@@ -36,6 +36,62 @@ component cannot preempt a blocking forward. An arbitrary supplied timestamp is
 not evidence of the capture origin or final native result delivery; callback
 reply writing still belongs inside the original five-second interval.
 
+## Explicit pending dispatch
+
+The existing native()/hook.call() paths retain their synchronous behavior.
+The parent service broker can instead use native_start()/hook.start() with the
+same operation classification, debit and deadlines. This reserves one identity
+slot before calling the SAME fixed forward and returns an opaque local handle.
+No process is started by this gate. While that slot is unresolved, neither a
+synchronous nor another pending dispatch can spend another debit or reach a
+forward. An overlapping request is a sticky attempt failure, not a queue. The
+coordinator must park legitimate concurrent requests outside this serialized
+profile, within their original clocks and reservations; workload fit remains
+unproved.
+
+The gate retains only the once-tightened absolute deadline, scalar lifecycle
+metadata and the fixed forward's returned value. The trusted broker should use a
+bounded prepared operation as that value and must retain the actual service/job
+INDEPENDENTLY before dispatch. Never return or retain the request through that
+value. All retained references and pending metadata belong to ORIGINAL attempt
+reservations; this API allocates no separate pool. The identity handle is neither
+remote authentication nor current receipt/config/source/read authority.
+
+complete_pending(handle) consumes that EXACT held handle and returns that exact
+forward value once, after checks against the original deadline before and after
+local retirement. This is local lifecycle closure, not API/CLI success or actual
+service wait. A known nonzero outcome or refusal envelope can be returned without
+certifying it. Actual response validation/delivery and callback cleanup still
+must finish within the original clock. No caller-supplied result or success flag
+can replace the held forward value.
+
+fail_pending(handle) consumes its eligibility/value and returns None, records
+completion uncertainty, poisons the same gate and preserves its FIRST failure.
+It is valid after expiry or an earlier caught failure, so known local reference
+cleanup needs no fresh time grant. It performs no job cancellation, actual wait,
+remote free or budget refund. The independent job owner must still clean up.
+Closing a hook channel only prevents its next call, preserving its existing
+contract. The broker must explicitly fail the pending handle when its originating
+callback/peer is lost; channel.close() alone is not cancellation or permission
+to deliver a result to a closed callback.
+Fake, foreign and stale handles refuse WITHOUT clearing the currently held slot;
+its exact owner may then fail it. Retired/failed handles cannot settle again.
+
+The new pending/last_pending diagnostics contain copied scalar sequence, deadline
+and phase only, never the identity token, returned value or request. Phases are
+forwarding, pending, retired and unknown. dispatches/returned/last.outcome keep
+historical FORWARD meanings even when a later lifecycle fails. completion_unknown
+is separate from dispatch_unknown and accounting_unknown. A late result or clock
+failure cannot be delivered by complete_pending. Its failed retirement consumes
+delivery eligibility; it does not restore a handle for replay. Critical guards
+include final cleanup and return. Controlled interruption tests cover that exact
+boundary; this is serialized parent source accounting, not universal recovery
+from arbitrary asynchronous faults or hostile shared-memory access.
+
+No authenticated service protocol, coordinator, actual peer/credential boundary
+or real pending service job is composed by these tests. The source feature is a
+required lifecycle prerequisite; it does not enable native execution/admission.
+
 `EngineMemoryAdapter` accepts the selected Claude `agent_tools` config with
 `recall_observations` explicitly false and no `inbox_recall_binding`. It wraps
 `run_json` and replaces `bounded_command`, retaining the actual engine's decoder
