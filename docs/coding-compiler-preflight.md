@@ -33,22 +33,19 @@ For ordinary string inputs, named compiler raw lifetime is now:
 | Permission encoding and return | Admitted message plus unchanged permission bytes (705 at this base) |
 | Interruption during counting | Up to one block retained through the exception traceback |
 
-In the separately reviewed resource-bound composition, preparation still closes
-original owned sources, preserves the primary exception and retains its original
-standing allocation on failure. That preparation API is not part of this adoption.
+The resource-bound preparation path still closes original owned sources, preserves
+the primary exception and retains its original standing allocation on failure.
 No refund is inferred from compiler locals being cleared; caller strings, Unicode
 JSON text, exception frames and other preparation/controller aliases may survive.
 Strict validation scans the full direct input to preserve refusal precedence; it
 does not establish a time bound for arbitrarily large direct caller strings.
 
 `test_trial_coding_preflight.py` exercises real encoding calls and live frame aliases
-at the direct compiler boundary, not mocked counting results. Its six tests cover
+at direct and preparation boundaries, not mocked counting results. It covers
 exact byte parity, byte-boundary acceptance/refusal, oversized inputs, invalid
 Unicode after large prefixes, JSON escape expansion, whole-message allocation
-after scratch ends. The two preparation/accounting and interruption tests remain
-in the frozen resource-bound composition at fb592c55; they are not claimed as
-main validation. Main lacks `prepare_sdk_review_with_resources`. The trace
-instrumentation and synthetic inputs are
+after scratch ends, original cleanup/accounting, and interruption with a real
+counting block retained. The trace instrumentation and synthetic inputs are
 test-owned and are not a whole-process memory measurement.
 
 This is a necessary source reduction, not a complete standing quote. All quote

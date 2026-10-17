@@ -585,4 +585,5 @@ def canonical_size_sha256(value):
     for chunk in canonical_chunks(value):
         digest.update(chunk)
         total += len(chunk)
+        chunk = None  # Drop the prior yield before resuming encoder allocation.
     return total, digest.hexdigest()

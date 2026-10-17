@@ -12,6 +12,8 @@ from trial_sdk_control import SDKControlError
 from trial_sdk_incoming import OwnedJSON
 from trial_sdk_native_process_owner import NativeProcessOwner
 from trial_sdk_stream_driver import SDKStreamDriver, StreamEvent
+from trial_sdk_session_resources import SDKSessionResources, resource_boundary
+from trial_sdk_resource_failure import poison_resource
 
 
 class SessionDriverError(ValueError):
@@ -68,9 +70,23 @@ class SDKSessionDriver:
     native_owner and launch, but cannot introduce another writer. All producer,
     capture, wall/resource, endpoint and evidence authorities stay external.
     """
-    def __init__(self, preparation):
+    @classmethod
+    def from_resources(cls, preparation, binding):
+        if type(binding) is not SDKSessionResources:
+            raise SessionDriverError('sdk_session_resource_binding')
+        return cls(preparation, _resources=binding)
+
+    def __init__(self, preparation, *, _resources=None):
         if type(preparation) is not SDKReviewPreparation:
             raise SessionDriverError('sdk_session_review_required')
+        if preparation._allocation is not None and _resources is None:
+            raise SessionDriverError('sdk_session_resources_required')
+        if _resources is not None:
+            if (type(_resources) is not SDKSessionResources or preparation._allocation is None
+                    or preparation._allocation.resources is not _resources.resources):
+                raise SessionDriverError('sdk_session_resource_binding')
+            preparation._allocation.check()
+        self._resources = _resources
         self._custody = self._native = self._pump = None
         self._terminal_observed = None
         self._first_step_checked = self._input_close_attempted = False
@@ -78,11 +94,15 @@ class SDKSessionDriver:
         self._failure = None
         self._cleanup = ()
         try:
+            if _resources is not None:
+                _resources.claim()
+                self._native = _resources.owner
             self._custody = preparation.consume_for_session()
-            self._native = NativeProcessOwner()
-            self._pump = SDKStreamDriver(self._custody.control, self._native)
+            if _resources is None:
+                self._native = NativeProcessOwner()
+            self._pump = SDKStreamDriver(self._custody.control, self._native, _resources=_resources)
         except BaseException as primary:
-            faults = []
+            faults = list(poison_resource(_resources, primary))
             if self._native is not None:
                 try:
                     release = self._native.cleanup_unlaunched()
@@ -103,7 +123,8 @@ class SDKSessionDriver:
                         and all(type(code) is str and code in {
                             'descriptor_cleanup_unknown', 'sdk_control_cleanup_unknown',
                             'cleanup_annotation_unknown', 'source_cleanup_unknown',
-                            'native_unlaunched_cleanup_unknown'} for code in inherited))
+                            'native_unlaunched_cleanup_unknown', 'resource_freeze_unknown',
+                            'resource_poison_unknown'} for code in inherited))
                 except BaseException:
                     valid = False
                 if not valid:
@@ -113,6 +134,9 @@ class SDKSessionDriver:
             raise
 
     def _live(self):
+        if self._resources is not None:
+            self._custody._allocation.check()
+            self._resources.room()
         if self._busy or self._failure is not None or self._sources_close_attempted:
             raise SessionDriverError('sdk_session_unavailable')
 
@@ -126,6 +150,7 @@ class SDKSessionDriver:
         # Available for actual wait/signal/cleanup even after session failure.
         return self._native
 
+    @resource_boundary
     def source_bindings(self):
         self._live()
         self._busy = True
@@ -156,6 +181,7 @@ class SDKSessionDriver:
             faults.add('control_failure_unknown')
         self._cleanup = tuple(sorted(faults))
 
+    @resource_boundary
     def reply(self, request_id, context):
         self._live()
         self._busy = True
@@ -169,6 +195,7 @@ class SDKSessionDriver:
         finally:
             self._busy = False
 
+    @resource_boundary
     def step(self, timeout=.05):
         self._live()
         self._busy = True
@@ -250,4 +277,5 @@ class SDKSessionDriver:
             input_close_attempted=self._input_close_attempted,
             sources_close_attempted=self._sources_close_attempted, cleanup=self._cleanup,
             stream=self._pump.snapshot(), native=self._native.snapshot(),
+            resource_binding=None if self._resources is None else self._resources.snapshot(),
             qualification='source_custody_and_input_termination_only_not_runtime_admission')

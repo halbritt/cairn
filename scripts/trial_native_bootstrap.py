@@ -12,9 +12,12 @@ import re
 from trial_bootstrap_snapshot import Snapshot, record_cleanup
 from trial_coding_launch import CodingLaunch, SDKLaunch, compile_launch, compile_sdk_launch
 from trial_sdk_control import SDKControl, SDKControlError
+from trial_sdk_incoming import canonical_size_sha256
+from trial_sdk_attempt_resources import AttemptResources
+from trial_sdk_resource_failure import freeze_resource, poison_resource, annotate_resource_failure
 from trial_paired_request import (IMPLEMENTATION_SETTINGS_SHA,
                                  IMPLEMENTATION_SOURCE_SHA, ORIGINAL_LIMITS,
-                                 PIN_LIMIT, Refusal, canonical_sha, identifier,
+                                 PIN_LIMIT, Refusal, identifier,
                                  mcp_arguments, need, shape)
 
 SCHEMA = 'cairn.native-bootstrap-review/1'
@@ -30,6 +33,11 @@ SOURCE_ROLES = {
 }
 GATES = ('hook_interface_unavailable', 'native_runtime_unobserved',
          'account_authority_unproved', 'campaign_wall_billing_unfrozen')
+
+
+def canonical_sha(document):
+    """Hash closed preparation graphs without a whole canonical byte copy."""
+    return canonical_size_sha256(document)[1]
 
 
 class PreparationRefusal(Refusal):
@@ -53,17 +61,18 @@ def _unique(pairs):
 
 def _json(content):
     try:
-        return json.loads(content.decode('utf-8'), object_pairs_hook=_unique,
+        return json.loads(content.decode('utf-8') if isinstance(content, bytes) else content,
+                          object_pairs_hook=_unique,
                           parse_constant=lambda _: (_ for _ in ()).throw(Refusal('bootstrap_json')))
     except (UnicodeError, ValueError, RecursionError):
         raise Refusal('bootstrap_json') from None
 
 
-def _text(content):
+def _text(snapshot, name, code='bootstrap_text'):
     try:
-        return content.decode('utf-8')
+        return snapshot.read_text(name)
     except UnicodeError:
-        raise Refusal('bootstrap_text') from None
+        raise Refusal(code) from None
 
 
 def _freeze(document):
@@ -133,13 +142,13 @@ def _declaration(document, *, schema=SCHEMA):
 
 
 def _compile(snapshot, document, mcp_args):
-    instruction = _text(snapshot.read('instruction.txt'))
+    instruction = _text(snapshot, 'instruction.txt')
     need('\0' not in instruction, 'bootstrap_instruction')
     try:
         launch = compile_launch(session_id=document['binding']['session_id'],
                                 model=document['launch']['model'],
                                 effort=document['launch']['effort'],
-                                prompt=_text(snapshot.read('prompt.txt')),
+                                prompt=_text(snapshot, 'prompt.txt'),
                                 memory_instruction=instruction)
     except ValueError as error:
         # compile_launch and the text reader expose fixed codes only.
@@ -152,14 +161,14 @@ def _compile(snapshot, document, mcp_args):
 
 def _configuration(snapshot, document, launch, mcp_args):
     """Common source agreement only; neither profile obtains admission here."""
-    settings = _json(snapshot.read('settings.json'))
+    settings = _json(_text(snapshot, 'settings.json', 'bootstrap_json'))
     shape(settings, 'permissions hooks autoMemoryEnabled claudeMdExcludes', 'bootstrap_settings')
     need(settings['permissions'] == _json(launch.permission_json)
          and canonical_sha(settings['permissions']) == document['permission_sha256'],
          'permission_settings_mismatch')
     need(settings['hooks'] == {} and settings['autoMemoryEnabled'] is False
          and settings['claudeMdExcludes'] == ['**'], 'bootstrap_settings')
-    mcp = _json(snapshot.read('mcp.json'))
+    mcp = _json(_text(snapshot, 'mcp.json', 'bootstrap_json'))
     expected = dict(mcpServers=dict(cairn=dict(type='stdio', command='/native/cairn',
                                                args=mcp_args)))
     need(mcp == expected, 'bootstrap_mcp')
@@ -183,14 +192,14 @@ class ReviewPreparation:
     def review_bindings(self):
         try:
             sources = self._snapshot.bindings()
-            need(self._snapshot.read('input.jsonl') == self._launch.input_message
+            need(_text(self._snapshot, 'input.jsonl') == self._launch.input_message.decode('utf-8')
                  and hashlib.sha256(self._launch.permission_json).hexdigest()
                  == IMPLEMENTATION_SETTINGS_SHA
                  and self._launch.hook_context_bytes == self._hook_context_bytes
                  and canonical_sha(list(self._launch.argv)) == self._launch_sha
-                 and self._launch.argv[-1].encode('utf-8')
-                 == self._snapshot.read('instruction.txt'), 'compiled_binding_changed')
-        except (OSError, Refusal):
+                 and self._launch.argv[-1]
+                 == _text(self._snapshot, 'instruction.txt'), 'compiled_binding_changed')
+        except (OSError, Refusal, UnicodeError):
             cleanup = self.close()
             raise PreparationRefusal('review_custody_unknown', cleanup) from None
         except BaseException as primary:
@@ -257,9 +266,40 @@ def _close_sdk_sources(owner):
     return tuple(sorted(set(owner._control_cleanup + owner._snapshot.close())))
 
 
+class SDKPreparationAllocation:
+    """Held accounting identity, not proof that the caller's quote is sufficient.
+
+    Only the original attempt owner may release this allocation after ALL aliases
+    end. File close and in-process custody transfer deliberately do not refund it.
+    """
+    def __init__(self, resources, ticket):
+        self.resources, self.ticket = resources, ticket
+        self._row = resources._lookup(resources._memory, ticket)
+        self._begun = self._unknown = False
+        self._resource_cleanup_faults = ()
+
+    def begin(self):
+        self.check()
+        need(not self._begun, 'sdk_preparation_allocation_consumed')
+        self._begun = True
+
+    def check(self):
+        need(not self._unknown, 'sdk_preparation_allocation_unknown')
+        self.resources._check()
+        need(self.resources._lookup(self.resources._memory, self.ticket) == self._row,
+             'sdk_preparation_allocation_changed')
+
+    def poison(self, primary=None):
+        self._unknown = True
+        self._resource_cleanup_faults = tuple(sorted(set(
+            self._resource_cleanup_faults + freeze_resource(self.resources))))
+        return self._resource_cleanup_faults
+
+
 class SDKReviewPreparation(ReviewPreparation):
     """Own pristine source review; an in-process move grants no runtime authority."""
-    def __init__(self, snapshot, launch, declaration):
+    def __init__(self, snapshot, launch, declaration, *, _allocation=None):
+        self._allocation = _allocation
         need(type(launch) is SDKLaunch and type(launch.control) is SDKControl,
              'bootstrap_launch_profile')
         self._snapshot, self._launch = snapshot, launch
@@ -273,8 +313,8 @@ class SDKReviewPreparation(ReviewPreparation):
         self._launch_sha = canonical_sha(list(launch.argv))
         self._user_binding = launch.user_message_bytes, launch.user_message_sha256
         self._hook_context_bytes = launch.guaranteed_context_bytes
-        instruction = snapshot.read('instruction.txt')
-        state = _sdk_state(launch, self._control, self._binding['session_id'], len(instruction))
+        instruction = _text(snapshot, 'instruction.txt')
+        state = _sdk_state(launch, self._control, self._binding['session_id'], len(instruction.encode('utf-8')))
         self._control_sha = canonical_sha(state)
         snapshot.generated('sdk-control.json',
             (json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
@@ -283,22 +323,27 @@ class SDKReviewPreparation(ReviewPreparation):
         if self._transferred:
             raise PreparationRefusal('sdk_review_transferred')
         try:
+            if self._allocation is not None:
+                self._allocation.check()
             sources = self._snapshot.bindings()
-            instruction = self._snapshot.read('instruction.txt')
-            state = _sdk_state(self._launch, self._control, self._binding['session_id'], len(instruction))
+            instruction = _text(self._snapshot, 'instruction.txt')
+            state = _sdk_state(self._launch, self._control, self._binding['session_id'], len(instruction.encode('utf-8')))
             need(canonical_sha(state) == self._control_sha
-                 and _json(self._snapshot.read('sdk-control.json')) == state
+                 and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == state
                  and (self.launch.user_message_bytes, self.launch.user_message_sha256) == self._user_binding
                  and self.launch.guaranteed_context_bytes == self._hook_context_bytes
                  and hashlib.sha256(self.launch.permission_json).hexdigest() == IMPLEMENTATION_SETTINGS_SHA
                  and canonical_sha(list(self.launch.argv)) == self._launch_sha
-                 and self.launch.argv[-1].encode('utf-8') == instruction,
+                 and self.launch.argv[-1] == instruction,
                  'compiled_binding_changed')
-        except (OSError, Refusal, SDKControlError):
+        except (OSError, Refusal, SDKControlError) as primary:
+            faults = poison_resource(self._allocation, primary)
             cleanup = self.close()
-            raise PreparationRefusal('review_custody_unknown', cleanup) from None
+            raise PreparationRefusal('review_custody_unknown', tuple(sorted(set(cleanup + faults)))) from None
         except BaseException as primary:
+            faults = poison_resource(self._allocation, primary)
             record_cleanup(primary, self.close())
+            annotate_resource_failure(primary, faults)
             raise
         return dict(schema=SDK_SCHEMA, status='source_prepared_for_review',
                     complete_bootstrap=False, runtime_attested=False,
@@ -342,15 +387,18 @@ class SDKSessionCustody:
         try:
             self._initial = preparation.review_bindings()
             self._snapshot = preparation._snapshot
+            self._allocation = preparation._allocation
             self._launch, self._control = preparation._launch, preparation._control
             self._control_close_attempted, self._control_cleanup = False, ()
             self._source_failed = False
             preparation._transferred = True
         except BaseException as primary:
+            resource_faults = poison_resource(preparation._allocation, primary)
             # Before the move the preparation still owns everything; after it,
             # an interrupted constructor must clean up through this new owner.
             faults = self.close() if preparation._transferred else preparation.close()
             record_cleanup(primary, faults)
+            annotate_resource_failure(primary, resource_faults)
             raise
 
     @property
@@ -370,39 +418,46 @@ class SDKSessionCustody:
         """
         try:
             need(not self._source_failed, 'session_custody_unknown')
+            if self._allocation is not None:
+                self._allocation.check()
             sources = self._snapshot.bindings()
             initial, launch = self._initial, self._launch
-            instruction = self._snapshot.read('instruction.txt')
+            instruction = _text(self._snapshot, 'instruction.txt')
             need(type(launch) is SDKLaunch and launch.control is self._control
                  and self._control.bindings == initial['control']['bindings']
-                 and _json(self._snapshot.read('sdk-control.json')) == initial['control']
+                 and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == initial['control']
                  and sources == initial['snapshots']
                  and launch.user_message_bytes == initial['user_message_bytes']
                  and launch.user_message_sha256 == initial['user_message_sha256']
                  and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
                  and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
                  and canonical_sha(list(launch.argv)) == initial['launch_sha256']
-                 and launch.argv[-1].encode('utf-8') == instruction,
+                 and launch.argv[-1] == instruction,
                  'compiled_binding_changed')
             result = copy.deepcopy(initial)
             result['status'] = 'source_custodied_for_session'
             result['initial_control'] = result.pop('control')
             return result
-        except (OSError, Refusal, SDKControlError):
+        except (OSError, Refusal, SDKControlError) as primary:
             self._source_failed = True
-            raise PreparationRefusal('session_custody_unknown') from None
-        except BaseException:
+            faults = poison_resource(self._allocation, primary)
+            raise PreparationRefusal('session_custody_unknown', faults) from None
+        except BaseException as primary:
             self._source_failed = True
+            faults = poison_resource(self._allocation, primary)
+            annotate_resource_failure(primary, faults)
             raise
 
     def source_bindings(self):
         """Legacy offline recheck: failure closes its original owned sources."""
         try:
             return self.held_source_bindings()
-        except (OSError, Refusal, SDKControlError):
-            raise PreparationRefusal('session_custody_unknown', self.close()) from None
+        except (OSError, Refusal, SDKControlError) as primary:
+            annotate_resource_failure(primary, self.close())
+            raise PreparationRefusal('session_custody_unknown',
+                                     getattr(primary, 'cleanup_faults', ())) from None
         except BaseException as primary:
-            record_cleanup(primary, self.close())
+            annotate_resource_failure(primary, self.close())
             raise
 
     def require_complete(self):
@@ -457,13 +512,16 @@ def prepare_review(document, output):
         raise
 
 
-def prepare_sdk_review(document, output):
+def prepare_sdk_review(document, output, *, _allocation=None):
     """Separate closed SDK source review; no user-file writer or runtime permit.
 
     Compilation creates one controller. Keep it pristine and owned while review
     bindings are used; a future executable handoff needs its own contract. This
     helper never consumes its write queue and require_complete remains refused.
     """
+    if _allocation is not None:
+        need(type(_allocation) is SDKPreparationAllocation, 'sdk_preparation_allocation')
+        _allocation.begin()
     snapshot = owner = control = None
     def cleanup(primary=None):
         if owner is not None:
@@ -491,18 +549,18 @@ def prepare_sdk_review(document, output):
         mcp_args = _declaration(document, schema=SDK_SCHEMA)
         for role, (name, limit, executable) in SOURCE_ROLES.items():
             snapshot.copy(name, document['sources'][role], limit, executable)
-        instruction = _text(snapshot.read('instruction.txt'))
+        instruction = _text(snapshot, 'instruction.txt')
         try:
             launch = compile_sdk_launch(session_id=document['binding']['session_id'],
                 model=document['launch']['model'], effort=document['launch']['effort'],
-                prompt=_text(snapshot.read('prompt.txt')), memory_instruction=instruction)
+                prompt=_text(snapshot, 'prompt.txt'), memory_instruction=instruction)
         except ValueError as error:
             raise Refusal(str(error)) from None
         need(type(launch) is SDKLaunch and type(launch.control) is SDKControl,
              'bootstrap_launch_profile')
         control = launch.control
         _configuration(snapshot, document, launch, mcp_args)
-        owner = SDKReviewPreparation(snapshot, launch, document)
+        owner = SDKReviewPreparation(snapshot, launch, document, _allocation=_allocation)
         owner.review_bindings()
         return owner
     except FileExistsError:
@@ -513,4 +571,29 @@ def prepare_sdk_review(document, output):
         raise PreparationRefusal(code, faults) from None
     except BaseException as primary:
         record_cleanup(primary, cleanup(primary))
+        raise
+
+
+def prepare_sdk_review_with_resources(document, output, resources, *, raw, working):
+    """Reserve original local standing storage BEFORE preparation effects.
+
+    This fixed profile uses the local standing slot once; occupied slots refuse.
+    The caller must fund upstream document creation separately and supply a full
+    reviewed simultaneous quote. This function binds accounting, not quote
+    sufficiency, native origin, funded provider usage or runtime admission.
+    """
+    need(type(resources) is AttemptResources, 'sdk_preparation_resources')
+    ticket = resources.allocate(resources.local, 'standing', raw, working)
+    if ticket is None:
+        raise PreparationRefusal('sdk_preparation_resources_exhausted')
+    allocation = None
+    try:
+        allocation = SDKPreparationAllocation(resources, ticket)
+        return prepare_sdk_review(document, output, _allocation=allocation)
+    except BaseException as primary:
+        # Failure frames may retain prepared payloads. Never refund by guessing
+        # that descriptor/control cleanup destroyed every alias.
+        faults = (freeze_resource(resources) if allocation is None
+                  else poison_resource(allocation, primary))
+        annotate_resource_failure(primary, faults)
         raise

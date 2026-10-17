@@ -1,10 +1,15 @@
-"""Real compiler encodes only; resource-bound preparation remains a separate slice."""
+"""Real compiler encodes and disposable source custody; no native execution."""
 import contextlib
+import hashlib
 import json
+import os
 import sys
 import unittest
 
+import test_trial_sdk_bootstrap_review as fixtures
 import trial_coding_launch as coding
+import trial_native_bootstrap as bootstrap
+from trial_sdk_attempt_resources import AttemptResources
 
 
 def launch(prompt, instruction='i'):
@@ -142,6 +147,71 @@ class CompilerPreflightTests(unittest.TestCase):
         # More than the input alone was traversed: the real legacy JSON text
         # (57061 characters) was counted using bounded actual encoding calls.
         self.assertGreater(sum(size for size, _ in observed.encodes), 57061)
+
+
+class PreparationPreflightTests(unittest.TestCase):
+    setUp = fixtures.SDKReviewTests.setUp
+
+    def test_real_preparation_refusal_ends_compiler_raw_and_preserves_custody(self):
+        for role, text in [('prompt', '\0' * 9500), ('instruction', 'i' * 9500)]:
+            path = self.source / (role + '.txt')
+            body = text.encode('utf-8')
+            path.chmod(0o600)
+            path.write_bytes(body)
+            path.chmod(0o400)
+            self.document['sources'][role]['sha256'] = hashlib.sha256(body).hexdigest()
+        self.document['binding']['source_set_sha256'] = bootstrap.canonical_sha(
+            {role: ref['sha256'] for role, ref in self.document['sources'].items()})
+        bank, observation = AttemptResources(), Backings()
+        before = set(os.listdir('/proc/self/fd'))
+        with observation.recording():
+            try:
+                bootstrap.prepare_sdk_review_with_resources(self.document, self.output,
+                    bank, raw=65536, working=2**20)
+            except bootstrap.PreparationRefusal as error:
+                self.assertEqual(str(error), 'coding_input_budget')
+                self.assertEqual(failure_raw(error), 0)
+                self.assertEqual(error.cleanup_faults, ())
+            else:
+                self.fail('expected preparation refusal')
+        self.assertTrue(observation.encodes)
+        self.assertLessEqual(observation.peak, 8192)
+        self.assertTrue(all(size <= 2048 and old == 0 for size, old in observation.encodes))
+        self.assertEqual(set(os.listdir('/proc/self/fd')), before)
+        self.assertTrue(bank.snapshot()['unknown'])
+        self.assertEqual(bank.snapshot()['raw_reserved'], 65536)
+        self.assertEqual(bank.snapshot()['working_reserved'], 2**20)
+
+    def test_interrupt_with_actual_counting_block_retains_original_reservation(self):
+        # Interrupt immediately after the real UTF-8 encode, before counting or
+        # dropping its backing. Cleanup does not claim every traceback alias ended.
+        bank, primary = AttemptResources(), KeyboardInterrupt('synthetic count interruption')
+        before, held = set(os.listdir('/proc/self/fd')), []
+        def interrupt(frame, event, arg):
+            if (event == 'line' and frame.f_code.co_filename == coding.__file__
+                    and type(frame.f_locals.get('block')) is bytes):
+                held.append(len(frame.f_locals['block']))
+                raise primary
+            return interrupt
+        previous = sys.gettrace()
+        try:
+            sys.settrace(interrupt)
+            try:
+                bootstrap.prepare_sdk_review_with_resources(self.document, self.output,
+                    bank, raw=65536, working=2**20)
+            except KeyboardInterrupt as error:
+                self.assertIs(error, primary)
+                self.assertEqual(failure_raw(error), held[0])
+            else:
+                self.fail('expected actual counting interruption')
+        finally:
+            sys.settrace(previous)
+        self.assertEqual(len(held), 1)
+        self.assertGreater(held[0], 0)
+        self.assertLessEqual(held[0], 8192)
+        self.assertEqual(set(os.listdir('/proc/self/fd')), before)
+        self.assertTrue(bank.snapshot()['unknown'])
+        self.assertEqual(bank.snapshot()['raw_reserved'], 65536)
 
 
 if __name__ == '__main__':

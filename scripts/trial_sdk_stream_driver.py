@@ -14,6 +14,7 @@ import time
 
 from trial_sdk_control import SDKControlError
 from trial_sdk_direct_writer import SDKDirectWriter
+from trial_sdk_session_resources import resource_boundary
 from trial_sdk_incoming import LineAssembler, MAX_DOCUMENT_BYTES, validate_line
 
 
@@ -30,9 +31,11 @@ class StreamEvent:
 
 
 class SDKStreamDriver:
-    def __init__(self, control, native):
+    def __init__(self, control, native, *, _resources=None):
+        self._resources = _resources
+        self._io = native if _resources is None else _resources
         # Also checks exact types, pristine control and an unlaunched owner.
-        self._writer = SDKDirectWriter(control, native)
+        self._writer = SDKDirectWriter(control, native, _resources=_resources)
         self._control, self._native = control, native
         # The suspended stdout iterator owns its slab. Stderr cannot reuse it.
         self._stdout = bytearray(512)
@@ -58,6 +61,8 @@ class SDKStreamDriver:
         return now
 
     def _usable(self):
+        if self._resources is not None:
+            self._resources.room()
         if self._busy or self._failure is not None or self._cancelled:
             raise StreamDriverError('sdk_stream_unusable')
 
@@ -117,6 +122,7 @@ class SDKStreamDriver:
                 observation={k: v for k, v in self._active.items() if k not in ('request_id', 'row')})
         return StreamEvent('document', document=document)
 
+    @resource_boundary
     def reply(self, request_id, context):
         """Enqueue the actual producer's context; this does not assert its wait.
 
@@ -158,7 +164,7 @@ class SDKStreamDriver:
         slab = self._stdout if name == 'stdout' else self._stderr
         started = self._now()
         with memoryview(slab) as view:
-            count = self._native.read_into(name, view)
+            count = self._io.read_into(name, view)
         # Retain every positive syscall return before clocks/parsing can fail.
         if count > 0:
             self._bytes[name] += count
@@ -190,6 +196,7 @@ class SDKStreamDriver:
                 return StreamEvent('wait', observation=wait)
         return None
 
+    @resource_boundary
     def step(self, timeout=.05):
         """At most one stdout event, one stderr read and one local write.
 
@@ -214,15 +221,19 @@ class SDKStreamDriver:
                 self._now()
                 return event
             wait = self._native.snapshot()['wait']
+            io_ready = self._resources is None or self._resources.room() > 0
+            eof_ready = (self._resources is not None and not io_ready
+                         and self._resources.can_probe_eof())
             reads = {}
-            if not state['stderr_eof']:
+            if not state['stderr_eof'] and (io_ready or eof_ready):
                 reads[self._native.fileno('stderr')] = 'stderr'
-            if not state['stdout_eof'] and self._active is None and self._lines is None:
+            if (not state['stdout_eof'] and self._active is None and self._lines is None
+                    and (io_ready or eof_ready)):
                 reads[self._native.fileno('stdout')] = 'stdout'
             if wait is None:
                 reads[self._native.fileno('pidfd')] = 'wait'
             writes = []
-            if wait is None and self._control.write_pending:
+            if wait is None and self._control.write_pending and io_ready:
                 writes = [self._native.fileno('stdin')]
             if self._active is not None:
                 timeout = min(timeout, max(0, (self._active['deadline_ns'] - now) / 1e9))
@@ -261,6 +272,7 @@ class SDKStreamDriver:
         finally:
             self._busy = False
 
+    @resource_boundary
     def close_input_after_wait(self):
         """Only an actual wait permits this cleanup close; not a result policy.
 

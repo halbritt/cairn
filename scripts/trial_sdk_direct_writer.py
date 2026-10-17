@@ -6,6 +6,7 @@ Python objects do not authenticate a process or establish an admitted runtime.
 """
 from trial_sdk_control import SDKControl, SDKControlError
 from trial_sdk_native_process_owner import NativeProcessOwner
+from trial_sdk_session_resources import SDKSessionResources, resource_boundary
 
 
 class SDKDirectWriterError(ValueError):
@@ -13,7 +14,12 @@ class SDKDirectWriterError(ValueError):
 
 
 class SDKDirectWriter:
-    def __init__(self, control, native):
+    def __init__(self, control, native, *, _resources=None):
+        if _resources is not None and (type(_resources) is not SDKSessionResources
+                or _resources.owner is not native or not _resources._claimed):
+            raise SDKDirectWriterError('sdk_direct_writer_resources')
+        self._resources = _resources
+        self._io = native if _resources is None else _resources
         if type(control) is not SDKControl or type(native) is not NativeProcessOwner:
             raise SDKDirectWriterError('sdk_direct_writer_owners')
         control.pristine_binding()
@@ -27,6 +33,8 @@ class SDKDirectWriter:
         self._controller_failure_unknown = False
 
     def _check(self):
+        if self._resources is not None:
+            self._resources.room()
         native, ledger = self._native.snapshot(), self._control.ledger()
         input_state = native['native_input']
         if (not native['launched'] or native['primary'] is not None
@@ -49,11 +57,13 @@ class SDKDirectWriter:
         except BaseException:
             self._controller_failure_unknown = True
 
-    def advance(self):
-        """Return one actual positive write count, or zero for idle/would-block.
+    @resource_boundary
+    def advance(self, maximum=512):
+        """Write at most maximum (1..512) bytes, or return zero for idle/block.
 
         Reacquire the controller's current suffix on every call; report progress
-        immediately after this owner's unbuffered syscall. Queue exhaustion never
+        immediately after this owner's unbuffered syscall. The copied suffix is
+        itself bounded by maximum, before any memoryview is made. Queue exhaustion never
         closes native stdin. Any ambiguous effect poisons this adapter and the
         controller while leaving process stop/wait/cleanup to the session owner.
         """
@@ -61,16 +71,22 @@ class SDKDirectWriter:
             raise SDKDirectWriterError('sdk_direct_writer_busy')
         if self._failure is not None:
             raise SDKDirectWriterError('sdk_direct_writer_unusable')
+        if type(maximum) is not int or not 1 <= maximum <= 512:
+            raise SDKDirectWriterError('sdk_direct_writer_limit')
         self._busy = True
         pending = None
         try:
             self._check()
-            pending = self._control.pending_write()
+            if self._resources is not None:
+                maximum = min(maximum, self._resources.room())
+                if maximum == 0:
+                    return 0
+            pending = self._control.pending_write(maximum)
             if pending is None:
                 return 0
-            with memoryview(pending) as whole, whole[:512] as offered:
+            with memoryview(pending) as offered:
                 try:
-                    count = self._native.write(offered)
+                    count = self._io.write(offered)
                 except BlockingIOError:
                     self._check()  # Known no progress cannot hide other drift.
                     self._blocked += 1

@@ -360,9 +360,16 @@ class SDKControl:
         if not condition:
             self._refuse(code)
 
-    def pending_write(self):
+    def pending_write(self, maximum=None):
+        """Copy a pending suffix, optionally bounded to a 1..512-byte I/O offer."""
         self._live()
-        return self._queue[0].wire[self._queue[0].offset:] if self._queue else None
+        if maximum is not None and (type(maximum) is not int or not 1 <= maximum <= 512):
+            raise SDKControlError('sdk_write_limit')
+        if not self._queue:
+            return None
+        pending = self._queue[0]
+        end = None if maximum is None else pending.offset + maximum
+        return pending.wire[pending.offset:end]
 
     @property
     def write_pending(self):

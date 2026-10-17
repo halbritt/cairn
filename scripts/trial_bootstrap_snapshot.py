@@ -1,4 +1,5 @@
 """Held, bounded offline copies. No mount or process interface is provided."""
+import codecs
 import hashlib
 import os
 from pathlib import Path
@@ -6,7 +7,8 @@ import stat
 
 from trial_paired_request import PIN_LIMIT, Refusal, need
 
-BLOCK = 65536
+BLOCK = 8192  # Bound copy/recheck scratch independently of accepted file length.
+TEXT_BLOCK = 8192
 READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
 
@@ -212,6 +214,7 @@ class Snapshot:
             self.copied_bytes += len(block)
             write_all(destination.fd, block)
             digest.update(block)
+            block = None  # End this buffer before the next read allocates another.
         need(file_identity(os.fstat(source.fd)) == initial, 'source_changed')
         need(length == initial[6] and digest.hexdigest() == reference['sha256'],
              'source_pin_mismatch')
@@ -222,29 +225,57 @@ class Snapshot:
         write_all(destination.fd, content)
         self._seal(name, destination, hashlib.sha256(content).hexdigest(), len(content), False)
 
-    def _readback(self, name, collect=False):
+    def _readback(self, name, collect=False, *, text=False):
         lease, initial, digest, length = self.files[name]
         lease.check()
         need(file_identity(os.fstat(lease.fd)) == initial, 'snapshot_changed')
         os.lseek(lease.fd, 0, os.SEEK_SET)
         actual, count, blocks = hashlib.sha256(), 0, []
+        decoder = codecs.getincrementaldecoder('utf-8')() if text else None
+        invalid_utf8 = False
         while True:
-            block = os.read(lease.fd, min(BLOCK, length + 1 - count))
+            block = os.read(lease.fd, min(TEXT_BLOCK if text else BLOCK, length + 1 - count))
             if not block:
                 break
             count += len(block)
             need(count <= length, 'snapshot_changed')
             actual.update(block)
-            if collect:
+            if text and not invalid_utf8:
+                try:
+                    blocks.append(decoder.decode(block))
+                except UnicodeError:
+                    # Finish original-byte and identity validation even on bad
+                    # UTF-8; do not retain the exception's raw input backing.
+                    invalid_utf8 = True
+                    decoder = None
+                    blocks.clear()
+            elif collect:
                 blocks.append(block)
+            block = None  # Non-collecting validation holds only one read buffer.
         need(count == length and actual.hexdigest() == digest
              and file_identity(os.fstat(lease.fd)) == initial, 'snapshot_changed')
+        if text:
+            if invalid_utf8:
+                raise UnicodeError('snapshot_utf8')
+            blocks.append(decoder.decode(b'', final=True))
+            return ''.join(blocks)
         return b''.join(blocks) if collect else None
 
     def read(self, name):
         need(not self.closed, 'snapshot_consumed')
         need(self.files[name][3] <= 65536, 'snapshot_parse_byte_limit')
         return self._readback(name, collect=True)
+
+    def read_text(self, name):
+        """Validated UTF-8 text without collecting or joining complete raw bytes.
+
+        The decoder may concatenate its <=3-byte carry with one TEXT_BLOCK read.
+        Decoded fragments, joined text and caller graphs still need working
+        allocation custody; this method grants no attempt resource allowance.
+        """
+        need(not self.closed, 'snapshot_consumed')
+        need(self.files[name][3] <= 65536, 'snapshot_parse_byte_limit')
+        return self._readback(name, text=True)
 
     def bindings(self):
         need(not self.closed, 'snapshot_consumed')
