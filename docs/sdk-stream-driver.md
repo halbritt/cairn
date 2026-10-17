@@ -12,9 +12,10 @@ write directly to native stdin.
 The source accepts exact owner types through `SDKDirectWriter`. Those types and
 Python references provide a trusted, serialized ownership convention, not
 authentication against hostile in-process mutation. The pump does not create,
-consume or recheck an `SDKSessionCustody` itself. The eventual session wrapper
-must bind that custody to this exact controller and native owner. No declaration
-or caller boolean makes the native interface complete.
+consume or recheck an `SDKSessionCustody` itself.
+[`SDKSessionDriver`](sdk-session-driver.md) binds that custody to this exact
+controller and native owner and adds the separate terminal input policy. No
+declaration or caller boolean makes the native interface complete.
 
 ## Reads, writes and handoff
 
@@ -93,8 +94,10 @@ queue is empty or a result document appears.
 
 `close_input_after_wait()` is a cleanup operation after the actual child wait.
 It is deliberately not a native result/end policy. A CLI that waits for stdin
-EOF after its result needs an additional reviewed terminal transition; this
-component alone cannot finish that session. The outer deadline must retain an
+EOF after its result needs the separate terminal transition supplied by
+[`SDKSessionDriver`](sdk-session-driver.md); this pump alone cannot finish that
+session. Ordinary surrogate checks cover the local transition, while actual
+native compatibility remains unproved. The outer deadline must retain an
 unsupported or unresolved outcome. Producer failure, native signal/wait and
 source cleanup also remain the external owner's responsibility.
 
@@ -139,7 +142,7 @@ incomplete release. The checker being green means those expected diagnostic
 conditions held, not that every diagnostic child succeeded or released cleanly.
 
 CAIRN-107 remains active/HOLD. The distinct SDK evidence/retention profile,
-actual capture clock/T/D observations, explicit result terminal policy,
+actual capture clock/T/D observations, native terminal-policy compatibility,
 independent producers, native interface/origin/witness proof, authentic capacity
 and funding, frozen task/oracle, blind grading and both full weekly campaigns
 remain required. CAIRN-149/150 dispositions are unaffected.

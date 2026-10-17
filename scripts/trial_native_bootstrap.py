@@ -344,6 +344,7 @@ class SDKSessionCustody:
             self._snapshot = preparation._snapshot
             self._launch, self._control = preparation._launch, preparation._control
             self._control_close_attempted, self._control_cleanup = False, ()
+            self._source_failed = False
             preparation._transferred = True
         except BaseException as primary:
             # Before the move the preparation still owns everything; after it,
@@ -360,9 +361,15 @@ class SDKSessionCustody:
     def control(self):
         return self._control
 
-    def source_bindings(self):
-        """Recheck source custody, never replay the pristine-control predicate."""
+    def held_source_bindings(self):
+        """Recheck without closing sources on error; the live driver owns exit.
+
+        Failure is sticky. The external owner must stop/wait/detach its native
+        child before explicitly closing these held sources. This grants no
+        runtime authority and cannot restore a failed source observation.
+        """
         try:
+            need(not self._source_failed, 'session_custody_unknown')
             sources = self._snapshot.bindings()
             initial, launch = self._initial, self._launch
             instruction = self._snapshot.read('instruction.txt')
@@ -381,6 +388,17 @@ class SDKSessionCustody:
             result['status'] = 'source_custodied_for_session'
             result['initial_control'] = result.pop('control')
             return result
+        except (OSError, Refusal, SDKControlError):
+            self._source_failed = True
+            raise PreparationRefusal('session_custody_unknown') from None
+        except BaseException:
+            self._source_failed = True
+            raise
+
+    def source_bindings(self):
+        """Legacy offline recheck: failure closes its original owned sources."""
+        try:
+            return self.held_source_bindings()
         except (OSError, Refusal, SDKControlError):
             raise PreparationRefusal('session_custody_unknown', self.close()) from None
         except BaseException as primary:

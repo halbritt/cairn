@@ -44,6 +44,7 @@ class SDKStreamDriver:
         self._cleanup_unknown = self._busy = self._cancelled = False
         self._wait_reported = False
         self._completed = 0
+        self._last_write_ns = None
 
     def _now(self):
         now = time.monotonic_ns()
@@ -234,8 +235,10 @@ class SDKStreamDriver:
             # Finish this bounded batch before another stdout read. A ready
             # input write gets service even under continuous ordinary output.
             if writable:
-                self._writer.advance()
-                self._now()
+                count = self._writer.advance()
+                completed = self._now()
+                if count:
+                    self._last_write_ns = completed
                 event = self._completed_reply()
                 if event is not None:
                     return event
@@ -280,6 +283,7 @@ class SDKStreamDriver:
             active=None if self._active is None else {
                 k: v for k, v in self._active.items() if k not in ('request_id', 'row')},
             completed_replies=self._completed, stdout_batch_held=self._lines is not None,
+            last_positive_write_ns=self._last_write_ns,
             pending_line_bytes=self._assembler.pending_bytes,
             stdout_bytes=self._bytes['stdout'], stderr_bytes=self._bytes['stderr'],
             stdout_sha256=self._hash['stdout'].hexdigest(), stderr_sha256=self._hash['stderr'].hexdigest(),
