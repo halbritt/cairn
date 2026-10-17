@@ -580,10 +580,18 @@ def canonical_chunks(value):
 
 
 def canonical_size_sha256(value):
-    """Return (byte_count, lowercase_sha256) of the canonical encoding."""
+    """Hash the complete canonical traversal without transport buffering.
+
+    Each encoded piece is at most 8190 bytes. End it before the next encode,
+    including on hash/count failure; Unicode, traversal and exception graphs
+    remain working storage. Transport canonical_chunks is deliberately separate.
+    """
     digest, total = hashlib.sha256(), 0
-    for chunk in canonical_chunks(value):
-        digest.update(chunk)
-        total += len(chunk)
-        chunk = None  # Drop the prior yield before resuming encoder allocation.
+    for piece in _pieces(value):
+        encoded = piece.encode('utf-8')
+        try:
+            digest.update(encoded)
+            total += len(encoded)
+        finally:
+            encoded = None
     return total, digest.hexdigest()
