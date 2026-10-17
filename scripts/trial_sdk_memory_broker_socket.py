@@ -129,52 +129,62 @@ class RecordSocket:
         acquired=held=attempted=False
         try:
             try:
-                if (type(destination) is not memoryview or destination.readonly or destination.ndim!=1
-                        or destination.format!='B' or not destination.c_contiguous
-                        or not 32<=len(destination)<=544):
-                    raise BrokerSocketError('broker_record_view')
-                view=memoryview(destination)
-                self._enter();acquired=True
-                try: grant=self._reserve(AUXILIARY)
-                except BaseException: self._fail('broker_auxiliary_unknown',True)
-                if type(grant) is not bool: self._fail('broker_auxiliary_unknown',True)
-                if not grant: raise BrokerCreditDenied('broker_auxiliary_credit')
-                held=True
-                attempted=True
                 try:
-                    count,ancillary,flags,address=self._socket.recvmsg_into(
-                        [view],CONTROL,socket.MSG_DONTWAIT|socket.MSG_CMSG_CLOEXEC)
-                except (BlockingIOError,InterruptedError):
-                    attempted=False
-                    return -1
-                except BaseException: self._fail('broker_receive_unknown',True)
-                bad,unknown=check_ancillary(ancillary,self._credentials)
-                if unknown: self._cleanup.add('received_right_close_unknown')
-                if bad or unknown or not 32<=count<=len(view) or flags & ~(socket.MSG_EOR|socket.MSG_CMSG_CLOEXEC):
-                    self._fail('broker_record_refused',unknown)
-                try: self._live()
-                except BaseException: self._fail('broker_post_receive_unknown',True)
-                return count
-            finally:
-                try:
-                    if held:
-                        try: self._release(AUXILIARY)
-                        except BaseException:
-                            self._cleanup.add('auxiliary_release_unknown')
-                            self._unknown=True
-                            if self._failure is None: self._fail('broker_auxiliary_unknown',True)
+                    if (type(destination) is not memoryview or destination.readonly or destination.ndim!=1
+                            or destination.format!='B' or not destination.c_contiguous
+                            or not 32<=len(destination)<=544):
+                        raise BrokerSocketError('broker_record_view')
+                    view=memoryview(destination)
+                    self._enter();acquired=True
+                    self._cleanup.add('auxiliary_reserve_unknown')
+                    try: grant=self._reserve(AUXILIARY)
+                    except BaseException: self._fail('broker_auxiliary_unknown',True)
+                    if type(grant) is not bool: self._fail('broker_auxiliary_unknown',True)
+                    if not grant:
+                        self._cleanup.discard('auxiliary_reserve_unknown')
+                        raise BrokerCreditDenied('broker_auxiliary_credit')
+                    held=True
+                    self._cleanup.discard('auxiliary_reserve_unknown')
+                    attempted=True
+                    try:
+                        count,ancillary,flags,address=self._socket.recvmsg_into(
+                            [view],CONTROL,socket.MSG_DONTWAIT|socket.MSG_CMSG_CLOEXEC)
+                    except (BlockingIOError,InterruptedError):
+                        attempted=False
+                        return -1
+                    except BaseException: self._fail('broker_receive_unknown',True)
+                    bad,unknown=check_ancillary(ancillary,self._credentials)
+                    if unknown: self._cleanup.add('received_right_close_unknown')
+                    if bad or unknown or not 32<=count<=len(view) or flags & ~(socket.MSG_EOR|socket.MSG_CMSG_CLOEXEC):
+                        self._fail('broker_record_refused',unknown)
+                    try: self._live()
+                    except BaseException: self._fail('broker_post_receive_unknown',True)
+                    return count
                 finally:
-                    if acquired: self._busy=False
+                    try:
+                        if held:
+                            self._cleanup.add('auxiliary_release_unknown')
+                            try: self._release(AUXILIARY)
+                            except BaseException:
+                                self._unknown=True
+                                if self._failure is None: self._fail('broker_auxiliary_unknown',True)
+                            else:self._cleanup.discard('auxiliary_release_unknown')
+                    finally:
+                        if acquired: self._busy=False
+            except BaseException:
+                if acquired:
+                    for i in range(len(view)): view[i]=0
+                raise
+            finally:
+                ancillary=address=None
+                if view is not None: view.release()
+                destination=None
         except BaseException:
-            if acquired:
-                for i in range(len(view)): view[i]=0
+            if any(name in self._cleanup for name in ('auxiliary_reserve_unknown','auxiliary_release_unknown')):
+                self._fail('broker_auxiliary_unknown',True)
             if attempted and self._failure is None:
                 self._fail('broker_receive_unknown',True)
             raise
-        finally:
-            ancillary=address=None
-            if view is not None: view.release()
-            destination=None
 
     def close(self):
         if self._busy: raise BrokerSocketError('broker_socket_busy')
@@ -342,7 +352,7 @@ class BrokerListener:
 
     def snapshot(self):
         return dict(primary=self._failure,closed=self._closed,cleanup=tuple(sorted(self._cleanup)),
-                    accepted=self._accept_attempted,
+                    accept_consumed=self._accept_attempted,
                     has_handles=any(x is not None for x in (self._socket,self._directory,self._entry,self._accepted)),
                     connection=None if self._connection is None else self._connection.snapshot(),
                     qualification='unqualified')

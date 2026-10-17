@@ -64,6 +64,8 @@ def main():
                 row['reply_matches']=bytes(view[:count])==REPLY
                 row['reply_sha256']=hashlib.sha256(view[:count]).hexdigest()
             finally: view.release()
+            # Keep the actual peer live through the parent's post-send check.
+            sys.stdin.buffer.read(1)
     except BrokerSocketError:
         row['transport_refused']=True
     finally:

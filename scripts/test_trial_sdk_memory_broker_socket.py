@@ -114,7 +114,7 @@ class SocketBoundaryTests(unittest.TestCase):
                 patch.object(owner, 'observe_wait', return_value=None):
             with self.assertRaises(CleanupInterrupted):
                 listener.accept(owner)
-            self.assertTrue(listener.snapshot()['accepted'])
+            self.assertTrue(listener.snapshot()['accept_consumed'])
             self.assertIsNotNone(listener.snapshot()['primary'])
             with self.assertRaisesRegex(broker.BrokerSocketError, '^broker_accept_consumed$'):
                 listener.accept(owner)
@@ -126,7 +126,8 @@ class SocketBoundaryTests(unittest.TestCase):
         interrupted = False
         def trace(frame, event, arg):
             nonlocal interrupted
-            if (event == 'line' and frame.f_code is broker.RecordSocket.close.__code__
+            if (event == 'line' and frame.f_code is broker._close_handle.__code__
+                    and frame.f_locals.get('attribute') == '_socket'
                     and value._socket is None and not attempted and not interrupted):
                 interrupted = True
                 raise CleanupInterrupted
@@ -141,12 +142,14 @@ class SocketBoundaryTests(unittest.TestCase):
                 finally:
                     sys.settrace(None)
                 state = value.snapshot()
-                # Either cleanup completed, or retained uncertainty prevents a false claim.
-                self.assertFalse(state['closed_known'] and len(attempted) != 2)
+                self.assertTrue(interrupted)
+                self.assertFalse(state['closed_known'])
+                self.assertIn('socket_close_unknown', state['cleanup'])
                 value.close()
         finally:
             sys.settrace(None)
         self.assertEqual(attempted.count(732), 1)
+        self.assertNotIn(731, attempted)
 
     def test_listener_closed_before_start_is_consumed_without_effects(self):
         listener = broker.BrokerListener()
@@ -194,6 +197,66 @@ class SocketBoundaryTests(unittest.TestCase):
                 value.receive_into(view)
         self.assertEqual(data, bytes(544))
         self.assertTrue(value.snapshot()['outcome_unknown'])
+
+    def test_receive_final_cleanup_interruption_is_terminal(self):
+        credentials = peer.CREDENTIAL.pack(123, 1000, 1000)
+        endpoint = Endpoint([(socket.SOL_SOCKET, socket.SCM_CREDENTIALS, credentials)])
+        value = self.bound(endpoint)
+        interrupted = False
+        def trace(frame, event, arg):
+            nonlocal interrupted
+            if (event == 'line' and frame.f_code is broker.RecordSocket.receive_into.__code__
+                    and endpoint.receives and not value._busy and not interrupted):
+                interrupted = True
+                raise CleanupInterrupted
+            return trace
+        try:
+            with memoryview(bytearray(544)) as view:
+                sys.settrace(trace)
+                try:
+                    with self.assertRaisesRegex(broker.BrokerSocketError, '^broker_receive_unknown$'):
+                        value.receive_into(view)
+                finally:sys.settrace(None)
+        finally:sys.settrace(None)
+        self.assertTrue(interrupted)
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+
+    def test_reserve_return_interruption_retains_credit_unknown(self):
+        endpoint = Endpoint()
+        value = self.bound(endpoint)
+        interrupted = False
+        def trace(frame, event, arg):
+            nonlocal interrupted
+            if (event == 'line' and frame.f_code is broker.RecordSocket.receive_into.__code__
+                    and frame.f_locals.get('grant') is True
+                    and not frame.f_locals.get('held') and not interrupted):
+                interrupted = True
+                raise CleanupInterrupted
+            return trace
+        try:
+            with memoryview(bytearray(544)) as view:
+                sys.settrace(trace)
+                try:
+                    with self.assertRaisesRegex(broker.BrokerSocketError, '^broker_auxiliary_unknown$'):
+                        value.receive_into(view)
+                finally:sys.settrace(None)
+        finally:sys.settrace(None)
+        self.assertTrue(interrupted)
+        self.assertEqual(endpoint.receives, 0)
+        self.assertTrue(value.snapshot()['outcome_unknown'])
+        self.assertIn('auxiliary_reserve_unknown', value.snapshot()['cleanup'])
+
+    def test_known_credit_refusal_does_not_consume_record_or_poison(self):
+        endpoint = Endpoint()
+        value = self.bound(endpoint)
+        value._reserve = lambda n: False
+        with memoryview(bytearray(544)) as view:
+            with self.assertRaisesRegex(broker.BrokerCreditDenied, '^broker_auxiliary_credit$'):
+                value.receive_into(view)
+        self.assertEqual(endpoint.receives, 0)
+        self.assertIsNone(value.snapshot()['primary'])
+        self.assertFalse(value.snapshot()['outcome_unknown'])
+        self.assertEqual(value.snapshot()['cleanup'], ())
 
 
 if __name__ == '__main__':

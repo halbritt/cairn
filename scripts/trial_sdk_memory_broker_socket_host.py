@@ -131,6 +131,8 @@ def kernel_case(mode,work_end):
                     assert child['auxiliary_used']==0
             assert listener.connection.snapshot()['closed_known']
             if mode=='normal':assert result['owners'][0]['child']['reply_matches']
+            if mode=='fork_sender':
+                assert result['owners'][0]['child']['fork_wait']['raw_status']==0
             assert not listener.snapshot()['cleanup'] and not listener.snapshot()['has_handles']
             assert used==0
         result['ok']=True
@@ -143,12 +145,23 @@ def kernel_case(mode,work_end):
             result['errors'].append('listener_cleanup:'+type(error).__name__)
         finally:
             for owner in owners:
+                cleanup={}
                 try:
                     if owner.observe_wait() is None:owner.signal(1,int(signal.SIGKILL))
+                except BaseException as error:
+                    result['errors'].append('signal_cleanup:'+type(error).__name__)
+                try:
                     while owner.observe_wait() is None and time.monotonic()<end+.5:time.sleep(.001)
-                    result.setdefault('cleanup',[]).append({'wait':owner.observe_wait(),
-                                                           'release':owner.cleanup_after_wait()})
-                except BaseException as error:result['errors'].append('cleanup:'+type(error).__name__)
+                    cleanup['wait']=owner.observe_wait()
+                except BaseException as error:
+                    result['errors'].append('wait_cleanup:'+type(error).__name__)
+                try:cleanup['release']=owner.cleanup_after_wait()
+                except BaseException as error:
+                    result['errors'].append('release_cleanup:'+type(error).__name__)
+                try:cleanup['owner']=owner.snapshot()
+                except BaseException as error:
+                    result['errors'].append('snapshot_cleanup:'+type(error).__name__)
+                result.setdefault('cleanup',[]).append(cleanup)
         result['final_listener']=listener.snapshot()
         if listener.snapshot()['cleanup'] or listener.snapshot()['has_handles']:
             result['errors'].append('listener_cleanup_unknown')
