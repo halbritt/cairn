@@ -55,8 +55,25 @@ enforces a conservative aggregate 512 MiB source-copy ceiling across all seven
 roles; it does not give each binary a separate aggregate allowance. Generated
 input or control metadata is separate from that source-copy count. Disk/IO wall time is not externally supervised by this
 offline helper. It does not claim the runtime cgroup's 512 MiB limit or a native
-wall deadline was enforced. Copy and readback use at most 64 KiB IO blocks;
-only text/config files of at most 64 KiB are collected for parsing.
+wall deadline was enforced. Copy and hash-only readback use at most 64 KiB IO
+blocks; only files of at most 64 KiB can be read as text or collected bytes.
+
+Preparation now reads prompt, instruction, settings, MCP and generated control
+metadata through `Snapshot.read_text`. Native generated-input rechecks use that
+path too. It hashes original bytes and incrementally decodes strict UTF-8, then
+checks the original length, digest and held file identity before returning text.
+Invalid UTF-8 still refuses; JSON parsing retains duplicate-key and nonfinite
+value rejection. The accepted contents and file-size limits are unchanged.
+
+Text reads request at most 8192 bytes at a time and discard each raw read before
+the next. The UTF-8 decoder can also hold at most three carry bytes and a
+carry-plus-read concatenation: these local raw payload backings are bounded by
+`2 * 8192 + 6` bytes. There is no collected raw block list or complete raw join
+on this path. This is a local backing bound, not an attempt allocation quote.
+Decoded fragments coexist with joined text; parsed graphs, caller inputs,
+compiler encodings, Python overhead and other owners still require complete
+working/raw custody under the original combined limit. Legacy `Snapshot.read`
+continues to return immutable bytes and retains its collecting implementation.
 
 Settings contain exactly `permissions`, `hooks`, `autoMemoryEnabled`, and
 `claudeMdExcludes`. Permissions match the compiler's accepted implementation/1

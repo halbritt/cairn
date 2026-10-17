@@ -535,6 +535,7 @@ class CommandOperation:
         try:
             self._request = self._document = self._chunks = self._chunk = None
             self._decoders = self._result = None
+            self._digest = None
             self.resources.release(self._parent)
             self._parent = None
             self._retired = True

@@ -223,7 +223,8 @@ class RecordSocket:
     def receive_terminal_into(self,destination):
         """Observe terminal peer read EOF, never a protocol record or permit.
 
-        The real caller must already have sent its terminal BYE. This method
+        The real caller must already have sent its terminal BYE, or sent
+        profile-5 SESSION_END and validated SESSION_CLOSED. This method
         accepts only actual zero receive, no ancillary/semantic flags, observed
         shutdown readiness and a still-live original peer. Ordinary record
         reception remains unchanged. A zero-length credentialed packet refuses.

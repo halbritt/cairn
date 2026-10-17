@@ -48,8 +48,18 @@ TABLE_PROFILE_4 = MappingProxyType({
     17: ('S2P', 9, 9, True), 18: ('P2S', 0, 0, False),
     19: ('S2P', 0, 0, False), 20: ('S2P', 8, 8, True),
 })
+# Producer-to-parent memory calls. Profile 3 remains its original framing-only
+# contract; this additive profile carries original CLI counts and flow control.
+TABLE_PROFILE_5 = MappingProxyType({
+    33: ('C2B', 1, 512, True), 34: ('C2B', 0, 0, True),
+    35: ('C2B', 44, 44, True), 36: ('C2B', 0, 0, False),
+    65: ('B2C', 1, 512, True), 66: ('B2C', 1, 512, True),
+    67: ('B2C', 4, 4, True), 68: ('B2C', 1, 1, True),
+    69: ('B2C', 2, 2, True), 70: ('B2C', 32, 32, True),
+    71: ('B2C', 0, 0, False),
+})
 PROFILES = MappingProxyType({1: TABLE, 2: TABLE_PROFILE_2, 3: TABLE_PROFILE_3,
-                             4: TABLE_PROFILE_4})
+                             4: TABLE_PROFILE_4, 5: TABLE_PROFILE_5})
 
 class CodecError(ValueError):
     pass

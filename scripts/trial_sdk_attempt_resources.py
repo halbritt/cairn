@@ -31,6 +31,14 @@ class _StreamTicket:
     ordinal:int
 
 
+@dataclass(frozen=True,eq=False)
+class CallbackMemory:
+    ticket:object
+    row:tuple
+    generation:int
+    phase:str
+
+
 def _guard(method):
     def guarded(self,*args,**kwargs):
         acquired=False
@@ -70,6 +78,8 @@ class AttemptResources:
         self.local=_Ticket(0)
         self._domains={self.local:{'owner':None,'memory':{},'traffic':{}}}
         self._memory={};self._traffic={};self._streams={}
+        self._callback_memory={}
+        self._memory_transition=None
 
     def _check(self):
         self._check_owner()
@@ -162,8 +172,64 @@ class AttemptResources:
         self._begin()
         del self._domains[domain]['memory'][lifetime]
         del self._memory[ticket]
+        self._callback_memory.pop(ticket,None)
         self._raw-=raw;self._working-=working
         return self._known()
+
+    @_guard
+    def bind_callback_memory(self,ticket):
+        row=self._lookup(self._memory,ticket)
+        if row[1]!='operation' or row[0] is self.local or ticket in self._callback_memory:
+            raise ResourceError('resource_callback_binding')
+        state=CallbackMemory(ticket,row,0,'input_request')
+        self._begin()
+        self._callback_memory[ticket]=state
+        return self._known(state)
+
+    @_guard
+    def transition_callback_memory(self,expected,raw,working,phase):
+        """Exact-ticket publication; original owners prove the backing endings.
+
+        Retain one old/proposed publication record, including pre-publication
+        totals/peaks. A partial update never makes capacity reusable: _guard and
+        _begin keep it unknown, and snapshot exposes conservative totals/peaks.
+        """
+        if (type(expected) is not CallbackMemory or
+                self._callback_memory.get(expected.ticket) is not expected or
+                self._lookup(self._memory,expected.ticket) != expected.row):
+            raise ResourceError('resource_callback_stale')
+        allowed={'input_request':'command','request':'command',
+                 'command':'return','return':'request'}
+        if phase!=allowed.get(expected.phase) or expected.generation>=MAX_ORDINAL:
+            raise ResourceError('resource_callback_phase')
+        if (type(raw) is not int or type(working) is not int or
+                not 0<=raw<=RAW or not 0<=working<=WORKING or raw+working==0):
+            raise ResourceError('resource_quote')
+        domain,lifetime,old_raw,old_working=expected.row
+        if (self._domain(domain)['memory'].get(lifetime) is not expected.ticket or
+                working<old_working or
+                phase=='command' and raw>old_raw or
+                phase=='return' and raw!=old_raw or
+                phase=='request' and raw<old_raw):
+            raise ResourceError('resource_callback_transition')
+        next_raw=self._raw-old_raw+raw
+        next_working=self._working-old_working+working
+        if next_raw>RAW or next_raw+next_working>WORKING:return None
+        proposed=CallbackMemory(expected.ticket,(domain,lifetime,raw,working),
+                                expected.generation+1,phase)
+        evidence=(expected,proposed,(self._raw,self._working),
+                  (next_raw,next_working),
+                  (self._raw_peak,self._working_peak,self._allocation_peak))
+        self._begin()
+        self._memory_transition=evidence
+        self._raw=next_raw
+        self._working=next_working
+        self._memory[expected.ticket]=proposed.row
+        self._callback_memory[expected.ticket]=proposed
+        self._raw_peak=max(self._raw_peak,next_raw)
+        self._working_peak=max(self._working_peak,next_working)
+        self._allocation_peak=max(self._allocation_peak,next_raw+next_working)
+        return self._known(proposed)
 
     @_guard
     def grant(self,domain,lane,maximum):
@@ -346,10 +412,25 @@ class AttemptResources:
         prefixes=sum(row['known'] for row in self._traffic.values())
         stream_prefixes=sum(row['known'] for row in self._streams.values())
         stream_committed=self._stream_committed()
-        return {'raw_reserved':self._raw,'working_reserved':self._working,
-                'raw_peak':self._raw_peak,'working_peak':self._working_peak,
-                'known_allocation_reserved':self._raw+self._working,
-                'known_allocation_peak':self._allocation_peak,
+        raw,working=self._raw,self._working
+        raw_peak,working_peak,total_peak=self._raw_peak,self._working_peak,self._allocation_peak
+        transition=None
+        if self._memory_transition is not None:
+            old,new,before,after,peaks=self._memory_transition
+            transition={'ticket':old.ticket.ordinal,'old_phase':old.phase,'phase':new.phase,
+                        'old_generation':old.generation,'generation':new.generation,
+                        'old_quote':old.row[2:],'quote':new.row[2:],
+                        'before':before,'after':after,'prior_peaks':peaks}
+            raw_peak=max(raw_peak,peaks[0],before[0],after[0])
+            working_peak=max(working_peak,peaks[1],before[1],after[1])
+            total_peak=max(total_peak,peaks[2],sum(before),sum(after))
+            if self._unknown or self._frozen:
+                raw=max(raw,before[0],after[0])
+                working=max(working,before[1],after[1])
+        return {'raw_reserved':raw,'working_reserved':working,
+                'raw_peak':raw_peak,'working_peak':working_peak,
+                'known_allocation_reserved':raw+working,
+                'known_allocation_peak':total_peak,'memory_transition':transition,
                 'traffic_spent':self._spent+prefixes+stream_prefixes,
                 'traffic_reserved':self._reserved+stream_committed-prefixes-stream_prefixes,
                 'traffic_available':self._available(),

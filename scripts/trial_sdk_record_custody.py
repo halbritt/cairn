@@ -4,6 +4,17 @@ The caller retains its public guard, admission checks, mutation marker and all
 state. These functions neither create owners/backings/credits nor settle them.
 Keep the original boundary context until its exact receipt has been consumed.
 """
+from trial_sdk_resource_failure import annotate_resource_failure
+
+
+def _recover_prefix(self, pending, direction, before, primary):
+    try:
+        self._socket_prefix(pending, direction, before)
+    except BaseException as recovery:
+        # Preserve the actual edge failure for the caller's outer guard. Keep
+        # the original _io and promise held; failure is not a zero-byte receipt.
+        self._io_recovery_error = type(recovery).__name__
+        annotate_resource_failure(primary, ('record_prefix_recovery_unknown',))
 
 
 def send_step(self):
@@ -16,8 +27,8 @@ def send_step(self):
     self._io = (pending, 'send', before, pending['credit'].snapshot()['known'])
     try:
         count = token.visit(send)
-    except BaseException:
-        self._socket_prefix(pending, 'send', before)
+    except BaseException as primary:
+        _recover_prefix(self, pending, 'send', before, primary)
         raise
     if count == -1:
         self._io = None
@@ -42,8 +53,8 @@ def receive_step(self, consumer, error_type):
     self._io = (pending, 'receive', before, pending['credit'].snapshot()['known'])
     try:
         count = self._connection.receive_into(pending['hold'].view)
-    except BaseException:
-        self._socket_prefix(pending, 'receive', before)
+    except BaseException as primary:
+        _recover_prefix(self, pending, 'receive', before, primary)
         raise
     if count == -1:
         self._io = None
