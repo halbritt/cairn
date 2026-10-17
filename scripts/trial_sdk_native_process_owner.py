@@ -38,6 +38,19 @@ class NativeProcessOwner:
         self._last_signal = 0
         self._primary = None
         self._cleanup = set()
+        self._io_creator = os.getpid()
+        self._io_busy = False
+        self._io = None
+        self._write_generation = None
+
+    def io_receipt(self):
+        """Latest local I/O observation; memory only, not delivery or authority."""
+        if self._write_generation is not None:
+            inner = self._input.write_receipt()
+            if inner is not None and inner[0] == self._write_generation:
+                return (self._io[0], 'stdin', inner[2], inner[3], inner[4],
+                        self._io[5] or inner[5])
+        return self._io
 
     def _fail(self, code):
         if self._primary is None:
@@ -105,18 +118,46 @@ class NativeProcessOwner:
         return self._fds[name]  # Readiness borrow only; no dup/close/rebind.
 
     def write(self, body):
+        if os.getpid() != self._io_creator or self._io_busy:
+            raise OwnerError('owner_io_custody')
+        if self._io is not None and self._io[0] == 2**53-1:
+            raise OwnerError('owner_io_sequence')
+        acquired = entered = False
+        known_error = None
         try:
-            if not self._launched or self._primary is not None or self._input is None:
-                raise OwnerError('owner_input_unavailable')
-            return self._input.write(body)
-        except (BlockingIOError, NativeInputRejected):
-            raise
-        except BaseException:
-            if self._primary is None:
+            try:
+                self._io_busy = acquired = True
+                self._write_generation = None
+                self._io = (1 if self._io is None else self._io[0]+1,
+                            'stdin', None, False, None, False)
+                if not self._launched or self._primary is not None or self._input is None:
+                    raise OwnerError('owner_input_unavailable')
+                before = self._input.write_receipt()
+                self._write_generation = 1 if before is None else before[0]+1
+                entered = True
+                try:
+                    count = self._input.write(body)
+                except (BlockingIOError, NativeInputRejected) as error:
+                    observed = self.io_receipt()
+                    if not observed[5] and (not observed[3] or observed[4] == 0):
+                        known_error = error
+                    raise
+            finally:
+                body = None
+                if acquired:
+                    self._io_busy = False
+            return count
+        except BaseException as error:
+            if acquired and entered and error is not known_error:
+                observed = self.io_receipt()
+                if observed[3] or self._input.write_receipt() is None:
+                    self._io = (*self._io[:5], True)
+            if not isinstance(error, (BlockingIOError, NativeInputRejected)) and self._primary is None:
                 self._primary = 'owner_input_failed'
-            raise
-        finally:
             body = None
+            if acquired:
+                self._io_busy = False
+            raise
 
     def close_stdin(self):
         if not self._launch_attempted:
@@ -135,34 +176,65 @@ class NativeProcessOwner:
             raise
 
     def read_into(self, name, destination):
-        loan = None
+        if os.getpid() != self._io_creator or self._io_busy:
+            raise OwnerError('owner_io_custody')
+        if self._io is not None and self._io[0] == 2**53-1:
+            raise OwnerError('owner_io_sequence')
+        loan = count = None
+        acquired = False
         try:
-            if name not in self._eof or name in self._read_unknown:
-                raise OwnerError('owner_output_unavailable')
-            if (type(destination) is not memoryview or destination.readonly
-                    or destination.ndim != 1 or destination.format != 'B'
-                    or not destination.c_contiguous or not 0 < len(destination) <= 512):
-                raise OwnerError('owner_output_buffer')
-            if self._eof[name]:
-                return 0
-            if name not in self._fds:
-                raise OwnerError('owner_output_unavailable')
-            loan = memoryview(destination)
             try:
-                count = os.readv(self._fds[name], [loan])
-            except (BlockingIOError, InterruptedError):
-                return -1
-            except BaseException:
-                self._read_unknown.add(name)
-                self._fail('owner_output_unknown')
-            if count == 0:
-                self._eof[name] = True
-                self._close_fd(name)
+                self._io_busy = acquired = True
+                self._write_generation = None
+                self._io = (1 if self._io is None else self._io[0]+1,
+                            name if type(name) is str and name in self._eof else 'invalid',
+                            None, False, None, False)
+                if type(name) is not str or name not in self._eof or name in self._read_unknown:
+                    raise OwnerError('owner_output_unavailable')
+                if (type(destination) is not memoryview or destination.readonly
+                        or destination.ndim != 1 or destination.format != 'B'
+                        or not destination.c_contiguous or not 0 < len(destination) <= 512):
+                    raise OwnerError('owner_output_buffer')
+                self._io = (*self._io[:2], len(destination), False, None, False)
+                if self._eof[name]:
+                    return 0  # Prior EOF, not a new syscall/count observation.
+                if name not in self._fds:
+                    raise OwnerError('owner_output_unavailable')
+                loan = memoryview(destination)
+                self._io = (*self._io[:3], True, None, False)
+                try:
+                    count = os.readv(self._fds[name], [loan])
+                except (BlockingIOError, InterruptedError):
+                    count = 0
+                    self._io = (*self._io[:3], True, count, False)
+                    return -1
+                except BaseException:
+                    self._fail('owner_output_unknown')
+                if type(count) is not int or not 0 <= count <= len(loan):
+                    count = None
+                    raise OwnerError('owner_output_count')
+                self._io = (*self._io[:3], True, count, False)
+                if count == 0:
+                    self._eof[name] = True
+                    self._close_fd(name)
+            finally:
+                if loan is not None:
+                    loan.release()
+                destination = None
+                if acquired:
+                    self._io_busy = False
             return count
-        finally:
-            if loan is not None:
-                loan.release()
+        except BaseException:
+            if acquired and self._io is not None and self._io[3]:
+                known = count if type(count) is int and 0 <= count <= self._io[2] else self._io[4]
+                self._io = (*self._io[:4], known, True)
+                self._read_unknown.add(name)
+                if self._primary is None:
+                    self._primary = 'owner_output_unknown'
             destination = None
+            if acquired:
+                self._io_busy = False
+            raise
 
     def probe_output_eof(self, name, scratch):
         """At exhausted payload credit, observe EOF only on a drained hung-up stream.
@@ -316,6 +388,7 @@ class NativeProcessOwner:
                 'wait': None if self._wait is None else dict(self._wait),
                 'primary': self._primary, 'cleanup': tuple(sorted(self._cleanup)),
                 'native_input': None if self._input is None else self._input.snapshot(),
+                'last_io': self.io_receipt(),
                 'input_rejected': self._input is not None and self._input.snapshot()['input_rejected'],
                 'output_probe_positive_bytes': dict(self._probe_positive),
                 'signal_unknown': self._signal_unknown, 'wait_unknown': self._wait_unknown,

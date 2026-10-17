@@ -33,6 +33,12 @@ class NativeInput:
         self._allow_epipe = allow_epipe
         self._input_rejected = False
         self._written = 0
+        self._creator = os.getpid()
+        self._receipt = None
+
+    def write_receipt(self):
+        """Latest immutable syscall observation; no FD probes or accounting."""
+        return self._receipt
 
     def fileno(self):
         if self._fd is None:
@@ -47,18 +53,23 @@ class NativeInput:
                     qualification='unqualified')
 
     def write(self, body):
+        if os.getpid() != self._creator or self._busy:
+            raise NativeInputError('native_input_busy')
+        if self._receipt is not None and self._receipt[0] == 2**53-1:
+            raise NativeInputError('native_input_sequence')
         loan = None
         acquired = attempted = False
         known_error = None
+        count = None
         try:
             try:
-                if self._busy:
-                    raise NativeInputError('native_input_busy')
+                self._busy = acquired = True
+                self._receipt = (1 if self._receipt is None else self._receipt[0]+1,
+                                 'stdin', None, False, None, False)
                 if self._input_rejected and not self._write_unknown:
                     raise NativeInputRejected('native_input_rejected')
                 if self._fd is None or self._write_unknown:
                     raise NativeInputError('native_input_unusable')
-                self._busy = acquired = True
                 if type(body) is bytes:
                     loan = memoryview(body)
                 elif (type(body) is memoryview and body.readonly and body.ndim == 1
@@ -68,12 +79,15 @@ class NativeInput:
                     raise NativeInputError('native_input_body')
                 if not 0 < len(loan) <= 512:
                     raise NativeInputError('native_input_chunk')
+                self._receipt = (*self._receipt[:2], len(loan), True, None, False)
+                attempted = True
                 if self._allow_epipe:
                     self._write_unknown = True
-                    attempted = True
                 try:
                     count = os.write(self._fd, loan)
                 except BlockingIOError as error:
+                    count = 0
+                    self._receipt = (*self._receipt[:4], count, False)
                     known_error = error
                     if self._allow_epipe:
                         self._write_unknown = False
@@ -83,6 +97,8 @@ class NativeInput:
                     if self._allow_epipe and error.errno == errno.EPIPE:
                         # This syscall accepted no new bytes. Earlier writes stay counted.
                         self._input_rejected = True
+                        count = 0
+                        self._receipt = (*self._receipt[:4], count, False)
                         known_error = NativeInputRejected('native_input_rejected')
                         self._write_unknown = False
                         raise known_error from None
@@ -90,6 +106,10 @@ class NativeInput:
                 except BaseException:
                     self._write_unknown = True
                     raise
+                if type(count) is not int or not 0 <= count <= len(loan):
+                    count = None
+                    raise NativeInputError('native_input_count')
+                self._receipt = (*self._receipt[:4], count, False)
                 self._written += count
                 if self._allow_epipe:
                     self._write_unknown = False
@@ -105,10 +125,11 @@ class NativeInput:
             # the exact observed zero-progress exception is a known error return.
             if attempted and error is not known_error:
                 self._write_unknown = True
-            if self._allow_epipe:
-                body = None
-                if acquired:
-                    self._busy = False
+                known = count if type(count) is int and 0 <= count <= self._receipt[2] else self._receipt[4]
+                self._receipt = (*self._receipt[:4], known, True)
+            body = None
+            if acquired:
+                self._busy = False
             raise
 
     def close(self):
