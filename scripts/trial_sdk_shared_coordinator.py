@@ -252,20 +252,24 @@ class SharedCoordinator:
         """Explicit authorized borrow; caller must end its own pending aliases."""
         return self._call(lambda: self._prepare_command(pending, quote))
 
-    def bind_read_custody(self, policy):
-        """Bind fixed parent policy before this callback has issued commands."""
+    def bind_fixed_producer(self, service):
+        """Use the actual held service launch for config, policy and stdin."""
         def bind():
-            from trial_sdk_read_custody import ReadCustody
-            require(self.rpc is not None and self.rpc._read_custody is None,
-                    'coordinator_read_custody')
-            self.rpc._read_custody = ReadCustody(self.rpc, policy)
+            from trial_sdk_fixed_bootstrap import FixedServiceLaunch
+            require(type(service) is FixedServiceLaunch and self.rpc is not None
+                    and self.producer is not None and self.rpc._listener is not None,
+                    'coordinator_fixed_producer')
+            service.bind_producer(self.producer, self.rpc, self._event,
+                                  self.rpc._listener._path)
         return self._call(bind)
 
     def prepare_next_command(self, quote):
         """Authorize and hand off internally; return only progress, not a borrow."""
         def handoff():
             require(not self._cancelled and self.rpc is not None
-                    and self.rpc._read_custody is not None, 'coordinator_read_custody')
+                    and self.rpc._read_custody is not None
+                    and self.rpc._read_custody._service_custody is not None,
+                    'coordinator_read_custody')
             pending = self.rpc.pending_request()
             if pending is None:
                 return False

@@ -11,7 +11,7 @@ import select
 import time
 
 from trial_sdk_control import Callback, EVENTS
-from trial_sdk_incoming import BodyDecoder, MAX_CHUNK_BYTES, MAX_DOCUMENT_BYTES, parse_document
+from trial_sdk_incoming import BodyDecoder, MAX_CHUNK_BYTES, MAX_DOCUMENT_BYTES, parse_document, canonical_chunks, canonical_size_sha256
 from trial_sdk_native_process_owner import NativeProcessOwner
 from trial_sdk_stream_driver import StreamEvent
 from trial_sdk_producer_resources import ProducerResources
@@ -76,6 +76,10 @@ class SDKProducerDriver:
         self.request_id, self.event = callback.request_id, callback.event
         self._binding = dict(observed, input_bytes=callback.input_bytes,
                              input_sha256=callback.input_sha256, event=callback.event)
+        self._callback = callback
+        self._transport = dict(input_bytes=callback.input_bytes, input_sha256=callback.input_sha256)
+        self._bootstrap = None
+        self._bootstrap_attempted = False
         self._input = callback.iter_input_json()
         self._pending, self._offset = None, 0
         self._generated = self._written = 0
@@ -94,6 +98,43 @@ class SDKProducerDriver:
         self._ready = self._taken = self._cancelled = self._busy = False
         self._failure = self._clock = None
         self._cleanup = set()
+
+    def _bind_bootstrap(self, event, document):
+        try:
+            return self._install_bootstrap(event, document)
+        except BaseException as primary:
+            try:
+                self._poison(primary)
+            except BaseException:
+                self._failure = 'sdk_producer_bootstrap_failed'
+                self._cleanup.add('producer_bootstrap_poison_unknown')
+            raise
+
+    def _install_bootstrap(self, event, document):
+        """Fixed parent only; preserve original input binding separately."""
+        self._usable()
+        if (self._resources is None or not self._resources._claimed
+                or self._native.snapshot()['launch_attempted'] or self._bootstrap_attempted
+                or self._generated or event.callback is not self._callback
+                or document['deadline_ns'] != self._binding['deadline_ns']
+                or document['input'] is not self._callback._input
+                or document['input_bytes'] != self._binding['input_bytes']
+                or document['input_sha256'] != self._binding['input_sha256']
+                or document['event'] != self.event):
+            raise ProducerDriverError('sdk_producer_bootstrap_binding')
+        self._resources.resources._lookup(self._resources.resources._memory,
+                                          self._resources.allocation)
+        self._bootstrap_attempted = True
+        if canonical_size_sha256(document['input']) != (self._binding['input_bytes'],
+                                                       self._binding['input_sha256']):
+            raise ProducerDriverError('sdk_producer_original_input_drift')
+        size, digest = canonical_size_sha256(document)
+        if size > MAX_DOCUMENT_BYTES:
+            raise ProducerDriverError('sdk_producer_bootstrap_bound')
+        self._drop_input()
+        self._bootstrap = document
+        self._transport = dict(input_bytes=size, input_sha256=digest)
+        self._input = canonical_chunks(document)
 
     @property
     def native_owner(self):
@@ -154,8 +195,8 @@ class SDKProducerDriver:
         except StopIteration:
             self._input_exhausted = True
             self._drop_input()
-            if (self._generated != self._binding['input_bytes']
-                    or self._generated_hash.hexdigest() != self._binding['input_sha256']):
+            if (self._generated != self._transport['input_bytes']
+                    or self._generated_hash.hexdigest() != self._transport['input_sha256']):
                 raise ProducerDriverError('sdk_producer_input_drift')
             return
         if type(body) is not bytes or not 0 < len(body) <= MAX_CHUNK_BYTES:
@@ -164,7 +205,7 @@ class SDKProducerDriver:
         self._generated += len(body)
         self._generated_hash.update(body)
         self._generated_hash_unknown = False
-        if self._generated > self._binding['input_bytes']:
+        if self._generated > self._transport['input_bytes']:
             raise ProducerDriverError('sdk_producer_input_drift')
         self._pending, self._offset = body, 0
 
@@ -192,8 +233,8 @@ class SDKProducerDriver:
             state = self._native.snapshot()['native_input']
             if (state is None or state['write_unknown'] or self._write_hash_unknown
                     or state['known_written'] != self._written
-                    or self._written != self._binding['input_bytes']
-                    or self._written_hash.hexdigest() != self._binding['input_sha256']):
+                    or self._written != self._transport['input_bytes']
+                    or self._written_hash.hexdigest() != self._transport['input_sha256']):
                 raise ProducerDriverError('sdk_producer_input_progress_unknown')
             self._input_close_attempted = True
             self._native.close_stdin()
@@ -317,6 +358,7 @@ class SDKProducerDriver:
     def snapshot(self):
         state = self._native.snapshot()
         return dict(schema='cairn.sdk-producer-io/1', **self._binding,
+            bootstrap_input=None if self._bootstrap is None else dict(self._transport),
             input_generated_bytes=self._generated, input_generated_sha256=self._generated_hash.hexdigest(),
             input_generated_hash_unknown=self._generated_hash_unknown,
             input_written_bytes=self._written, input_written_sha256=self._written_hash.hexdigest(),

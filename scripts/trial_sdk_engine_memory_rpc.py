@@ -563,6 +563,9 @@ class ProducerRPC:
             self._stream = None
             for region in (self._body, self._tx_region, self._rx_region):
                 region.retire()
+            if self._read_custody is not None and self._read_custody._service_custody is not None:
+                self._read_custody._service_custody.release_producer_sources(self)
+                self._phases = None
             self._read_custody = None
             self.resources.release(self._allocation)
             self._allocation = None

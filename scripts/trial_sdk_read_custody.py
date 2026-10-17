@@ -48,10 +48,14 @@ class ReadCustody:
         self._offers = {}
         self._last_operation = None
         self._failed = False
+        self._service_custody = None
 
     def _live(self):
         require(not self._failed and self._rpc._allocation is self._allocation
                 and self._rpc._read_custody is self, 'read_custody_unavailable')
+        if self._service_custody is not None:
+            require(self._service_custody.policy_for(self._rpc) is self._policy,
+                    'read_custody_service_changed')
         self._rpc.resources._check()
         self._rpc.resources._lookup(self._rpc.resources._memory, self._allocation)
 

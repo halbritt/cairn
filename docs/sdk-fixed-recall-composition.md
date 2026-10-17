@@ -1,67 +1,29 @@
-# Parent read custody: isolated composition draft
+# Fixed callback bootstrap and service custody (source candidate)
 
-Implemented: callback-local parent custody observes offers only from the held
-CommandOperation's successful service response before RPC RESULT_META. It checks
-the original operation allocation before parsing. Pull authorization uses that
-retained receipt/handle/record/version inventory, not a producer-supplied list.
-Actual server authorization remains authoritative. History/pull-evidence are not
-yet supported by this narrower candidate. It is not a general API replacement.
+This follow-on preserves frozen custody draft `600a35d9`. It adds a fixed parent-owned stdin bootstrap and paired entrypoint, while retaining the original coordinator, RPC/client, adapter, bank, native owners, allocation, deadline and command gate. It is not runtime admission or complete CAIRN-107 acceptance. Main remains unchanged pending review.
 
-SharedCoordinator.prepare_next_command requires installed custody, checks the
-actual pending request before operation construction, and confines request
-references to returning handoff frames. It returns only progress. Legacy explicit
-prepare_command remains compatible; when custody is installed it also checks it.
-Exceptions use the existing poison/freeze boundary; traceback aliases stay
-charged. RPC clears custody before its original callback allocation release.
+`FixedServiceLaunch.prepare` checks the original session preparation allocation and service standing ticket before cloning configuration or creating another held `Snapshot`. The snapshot contains a closed inventory of 20 pinned authored entry dependencies, including the engine, plus generated `service.json`. Sources must satisfy the existing strict mode/ownership policy; group-writable worktree files are refused. The isolated candidate's source inputs were made non-group-writable, without weakening that policy. The original source preparation ticket remains held. Its numerical quote alone does not prove the expanded physical backing fits.
 
-Observation runs under the held command-parent working allocation. All original
-command working still transfers cumulatively to the callback before retirement.
-The additional parsed response, old/new offer dictionaries and normalization
-scratch are working allocations requiring the final complete physical inventory;
-positive ledger reservations are not proof they fit. Normalized offer metadata
-must fit the existing document ceiling before publication, including added prefix
-spans. No raw/working quote, aggregate ceiling or traffic charge is reduced.
+The parent and paired service entry use the same `bindings()` projection of that held configuration. The actual service launch uses its fixed private entry path and configuration digest. Python runs with `-I -S -B`, and the entry adds only its held snapshot directory as the authored import root. Existing READY remains unchanged. `policy_for` requires that exact launched ServiceLink/owner, original bank and source/config custody; a matching-looking policy object cannot bind the coordinator. Source custody is a trusted builder relationship, not hostile same-UID containment or an attestation of interpreter/native isolation.
 
-Complete authenticated engine units establish these pull forms: whole pull;
-exact match_span; lexical summary offset extended by min(1536,65536-offset);
-and a prefix (0,min(768,returned-span-offset)) after an actual matching record
-response. opening_bytes requires an admitted span and cannot exceed the768-byte
-nonoverlapping prefix. The actual engine currently obtains its missing opening
-with a second span request rather than sending opening_bytes. Synthetic tests run
-its current_span_pull and attach_source_opening through real adapter/client/RPC
-and service code with inert OS edges. Unsupported forms refuse before forwarding.
+`bind_fixed_producer` confines configuration and callback handoff inside the coordinator frame. It requires the actual pending RPC listener and original callback allocation before constructing the envelope. Real CLI/socket/token paths stay in service configuration; the engine receives inert adapter route names and the same fixed scope/context. The original input size/hash remain in `_binding`; `_transport` separately identifies the complete bootstrap. The full original input is included unchanged. The envelope shares the existing 131072-byte document ceiling: overhead can refuse a formerly fitting event, and no allowance increases.
 
-Still missing: a fixed builder binding the selected parent policy to actual
-service and producer configuration custody. A successful service response is
-observed on the owned channel and the service enforces its own scope, but that
-is not proof of identity between a separately supplied policy object and the
-future launched service/producer configuration. Do not treat bind_read_custody's
-policy argument as such proof. This draft is NOT selected for main adoption or
-runtime use until that construction contract is implemented and reviewed.
+The producer driver charges actual writes through its original ProducerResources. CallbackPhases verifies the generated and written transport size/hash, actual stdin closure, and original callback metadata before permitting the first command. Partial bootstrap installation is consumed: interruptions poison the producer, RPC and original bank, retaining charges. A cancelled, busy, failed or expired producer cannot launch.
 
-No producer entrypoint is implemented here. The proposed direct recall/observe
-shortcut was not built: handle_event has session/project/event validation,
-no-memory/disabled gates, event_state binding/reset, lock/persistence and failure
-state obligations. Any split must preserve them or place them on a concrete
-owner with parity evidence. ProducerClient only validates numeric ClientQuote;
-it has no held-original-allocation bootstrap. ProducerResources lives with the
-parent and owns its original allocation, owner and DATA stream. Copying that
-bank into another process or accepting a serialized boolean/quote would not
-establish the original parent's live reservation.
+The paired entry parses stdin in bounded chunks, verifies both identities, loads the pinned authored engine, constructs the existing ProducerClient, and invokes the original `engine.handle` through EngineMemoryAdapter. It does not directly call recall/observe or replace state ownership. Original disabled/marker returns, UUID/cwd/project/workstream validation, nonblocking per-session lock, event_state, recall rollback, final persistence, 16-file/8-error state limits and reporting-finally remain in the engine. Failure to persist publishes no context. Reporting remains disabled by the selected configuration. Normal RPC closure precedes stdout publication.
 
-The next composition change must provide a fixed parent-owned bootstrap that
-binds original producer owner/ticket/deadline and immutable engine/config/input
-before materialization, then transports that prepared input over the existing
-owned producer stdin. SDKProducerDriver currently streams only the original
-Callback.iter_input_json and authenticates exactly those bytes. Introducing a
-configuration/state envelope requires an explicit source change to that driver
-and paired fixed entrypoint, with distinct original-event and envelope hashes,
-charged copies and actual handle_event parity. A connected client alone cannot
-substitute for that boundary. No new FD/process, generic adapter or authority
-boolean is proposed. Native launch and unsupported_native remain unavailable.
+The only engine change replaces the explicit whole-file bytearray used for implementation-ID observation with incremental hashing. Hash/unknown-source/validated-byte behavior is preserved. The new loader retains decoded source fragments, joined Unicode source and compiled module objects. UTF-8/compiler caches and interpreter storage remain unclassified in the complete physical quote; bounded authored reads are not proof of bounded total raw storage.
 
-Tests distinguish16 new cases (five boundary observations, eleven custody/caller
-cases) from30 existing coordinator/phase regressions. The combined46 pass does
-not establish complete physical fit, a running producer, native admission or
-full107 completion. Initial tests also collected imported CoordinatorTests;
-that import was corrected to a module namespace. Historical logs remain retained.
+The service source owner has one producer slot. At the existing RPC retirement boundary, actual producer wait/release, protocol closure and consumed output are required before its callback/bootstrap/slab references and the RPC phase reference end. No new refund or result-lifetime inference is introduced. Other caller-owned output/event graphs and exception frames still require their original lifetime proof; these tests do not establish that all external aliases ended.
+
+## Validation scope
+
+The new synthetic tests cover distinct event/transport identities, tampering before and after stdin close, first command, interruption during driver and parent publication, cancellation/busy/failure before launch, held source/config mismatch, the original handle over the actual client/RPC/service codecs, state/output parity for all four selected events, rollback, persistence failure, reports after unlock, state caps, source hashing, and normal/interrupted owned-reference retirement. Real process/network/signal effects are prohibited by the offline runner. Synthetic filesystem state/lock operations are allowed.
+
+The publication fixture explicitly substitutes source/session admission and the listener/launch syscall edges. It retains real callback/service bank tickets and production binding/publication methods. Separate tests exercise actual held Snapshot/config checks. This is not a successful fully funded session. Unchanged full-bank tests still refuse: 65536 preparation + 2566 session + 5184 service + 63067 callback = 136353 raw bytes, exceeding 131072 by 5281. The command-phase inventory remains 153325, exceeding by 22253. No quote was reduced to make integration pass.
+
+## Remaining obligations
+
+The complete simultaneous inventory must include the original SDK preparation/session, the additional held source/config snapshot, bootstrap decoding fragments/text/graph overlap, retained document/config during engine load and calls, engine Unicode/compiler/module storage, original state deep copy and persistence serialization, parent offer metadata, returned/retained results, output encoding, borrowed caller views, and error tracebacks. Current working charges remain cumulative, including every transferred 64 MiB command-parent quote; no refund is inferred.
+
+The supported native hosted-MCP port, actual namespace/process custody and capacity, complete physical fit, downstream delivery/evaluation and full campaign remain unproved. No vendor acquisition, provider/model/native launch or consumed-operation replay occurred. Historical SDK disclosure stays 30275 with 2493 remaining of 32768; all four prior operations remain consumed. Subscription-only codex-harm routing is unchanged.
