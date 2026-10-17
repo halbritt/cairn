@@ -32,6 +32,12 @@ There is no additional Node writer or fictional Node actor/quota release in this
 direct route. The finite outer capture bootstrap gate remains a different
 descriptor from continuing native SDK input.
 
+The separate [producer transport](sdk-producer-driver.md) provides bounded
+full-input I/O and actual direct-child wait/release for independently owned
+producers. `step(timeout=.05)` forwards a poll cap from zero to 50 ms to the
+stream pump, allowing nonblocking interleaving. Selecting the real engine,
+validating its output and composing its counters/evidence remain external.
+
 ## Terminal input policy
 
 Ordinary documents still transfer to the separate evidence consumer. When the

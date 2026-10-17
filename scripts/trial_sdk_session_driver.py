@@ -169,7 +169,7 @@ class SDKSessionDriver:
         finally:
             self._busy = False
 
-    def step(self):
+    def step(self, timeout=.05):
         self._live()
         self._busy = True
         terminal = None
@@ -177,7 +177,7 @@ class SDKSessionDriver:
             if not self._first_step_checked:
                 self._custody.held_source_bindings()
                 self._first_step_checked = True
-            event = self._pump.step()
+            event = self._pump.step(timeout)
             if event.kind != 'document' or event.document.kind != 'result':
                 return event
             terminal = TerminalDocument.consume(event.document,

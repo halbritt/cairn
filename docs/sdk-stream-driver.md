@@ -28,6 +28,11 @@ control documents once to `SDKControl.receive_owned`; ordinary documents
 transfer once to the external evidence consumer. Unknown `control_` types take
 the refusing control path, rather than the ordinary event-label path.
 
+`step(timeout=.05)` accepts a finite poll cap from zero to 50 ms. The existing
+callback deadline can shorten it further. Zero supports nonblocking service
+beside the independent [producer transport](sdk-producer-driver.md); it does
+not change callback timing or supply a runtime owner.
+
 The external consumer must not accumulate returned documents or callback graphs
 without its own bounded storage. Decoded line text and parsed graphs are working
 representations, not raw-buffer credits. A suspended generator retains its

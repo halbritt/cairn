@@ -8,6 +8,7 @@ must not be accumulated without separately bounded storage.
 """
 from dataclasses import dataclass, field
 import hashlib
+import math
 import select
 import time
 
@@ -189,10 +190,11 @@ class SDKStreamDriver:
                 return StreamEvent('wait', observation=wait)
         return None
 
-    def step(self):
+    def step(self, timeout=.05):
         """At most one stdout event, one stderr read and one local write.
 
-        Poll <=50ms, shortened to the current callback deadline. No sleep/reset
+        Poll <=timeout<=50ms, shortened to the callback deadline; zero is valid.
+        No sleep/reset
         at callback handoff or reply enqueue. A suspended stdout batch is pinned
         until exhausted; stdout pauses while one callback is active. This is a
         restricted mechanism whose native compatibility is still unproved.
@@ -201,6 +203,9 @@ class SDKStreamDriver:
         self._busy = True
         try:
             now = self._now()
+            if (type(timeout) not in (int, float) or not math.isfinite(timeout)
+                    or not 0 <= timeout <= .05):
+                raise StreamDriverError('sdk_stream_poll_bounds')
             state = self._native.snapshot()
             if not state['launched']:
                 raise StreamDriverError('sdk_stream_native_unavailable')
@@ -219,7 +224,6 @@ class SDKStreamDriver:
             writes = []
             if wait is None and self._control.write_pending:
                 writes = [self._native.fileno('stdin')]
-            timeout = .05
             if self._active is not None:
                 timeout = min(timeout, max(0, (self._active['deadline_ns'] - now) / 1e9))
             ready, writable, _ = select.select(list(reads), writes, [], timeout)
