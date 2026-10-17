@@ -17,8 +17,10 @@ legacy evaluator.
 The owner copies the actual published request, schedule, source and preparation
 files into an independently held snapshot. It retains scalar scheduled rows,
 full request/campaign/occurrence identifiers, whole and inner schedule digests,
-case/seed/wording/arm, and a deterministic run UUID derived from occurrence,
-whole schedule digest and row index. Run UUIDs are also the SDK session IDs.
+case/seed/wording/arm and the legacy `case.arm.sSEED` run ID. A separate
+deterministic SDK session UUID derives from occurrence, whole schedule digest
+and row index; the sealed join explicitly maps both identities. MCP task scope
+is `task-eval/` plus the legacy run ID.
 An EXCL-published selection file binds those fields and selected prompt hashes.
 Before binding, both the held files and the current in-memory selection are
 checked against their original hashes.
@@ -27,13 +29,16 @@ The original frozen corpus digest and the resolved corpus digest are retained
 separately. A private `selected-overlay.json` serializes the prepared original
 notes plus generated distractor notes, using the existing canonical transport
 (no final LF). Its digest identifies those exact bytes. This is NOT evidence
-that the service loaded that overlay, nor the historical evaluator's possibly
-different serialization. `observed_corpus_sha256` therefore stays null. The
+that the service loaded that overlay. A separate `selected-resolved-corpus.json`
+uses the historical resolved-corpus serialization exactly: indent=2, UTF-8,
+final LF, no distractors. Its digest is distinct from the canonical resolved
+corpus digest and the combined overlay digest. `observed_corpus_sha256` therefore stays null. The
 missing interface is an actual service corpus-load/observation owner bound to
 this selected artifact, not a caller assertion that its hash matches.
 
 `bind_run` compares the actual SDK preparation's request, occurrence, case, arm,
-session ID and copied prompt with the held selection. It also compares the
+session ID and copied prompt with the held selection. After authenticating the
+compiled launch, it checks its actual model/effort arguments against selection. It also compares the
 original copied MCP arguments with the actual fixed service configuration's
 socket/token-file/repo/task/run scope. It retains preparation cleanup custody
 before the row claim, retains the run before the move, and checks the identical
@@ -41,7 +46,10 @@ allocation after the existing session handoff. Successful transfer clears the
 obsolete preparation reference. Any exception freezes original charges and
 consumes the selection state; cleanup remains reachable through the selected
 owner and run. Literal prepared-wording equality does not prove the old weekly
-runner's complete prompt/setup parity; that compatibility remains untested.
+runner's complete prompt/setup parity. Synthetic tests now traverse real weekly
+validation and the owned binding/publication sequence; workspace setup, native
+binary, memory instruction, arm engine/hook identity and corpus load remain
+unbound. See sdk-weekly-compatibility.md for the exact surviving interfaces.
 
 `FixedRunOwner.publish_evidence` prepublishes a one-shot controller. It requires
 the actual linked preparation and retention owners, original held tickets,
@@ -100,3 +108,13 @@ process/network/signal effects are denied. The legacy evaluator and actual
 weekly cases/oracles are not imported/read. The original weekly validation and
 prompt/setup/corpus service compatibility still need independent source proof;
 the synthetic boundary is not such proof.
+
+The legacy resolved-corpus serializer is deliberately faithful to the standard
+JSON encoder. It can hold an entire escaped string token and its encoded bytes
+simultaneously before the file-size refusal; it is not a fixed scratch buffer.
+The parsed bundle, two note lists sharing note graphs, metadata, whole-token
+encoding, snapshot readback, failure frames and file pages remain under the
+original held preparation allocation with unknown physical sufficiency. No
+per-note cap was added. SDK source-review case syntax now matches the weekly
+ID syntax; selected membership is still an owner check before move, never an
+SDK declaration's authority. The non-SDK seven-case supplemental rule is unchanged.

@@ -43,13 +43,13 @@ class PairedEvidenceTests(unittest.TestCase):
             supervisor_source=common,permission_profile=dict(source=common,settings=common),
             grading={k:common for k in ('rubric','changed_pair_definition','blinding_policy','review_budget')},
             dispositions={})
-        bundle=dict(root=self.source,execution={},source=source,plan={'sha256':'d'*64},schedule=schedule,
+        bundle=dict(root=self.source,execution={'native':dict(model='fixture-model',effort='high')},source=source,plan={'sha256':'d'*64},schedule=schedule,
             frozen={'corpus_sha256':'f'*64},notes=[dict(id='N',body='original')],
             distractor_notes=[dict(id='D',body='synthetic distractor')],
             cases=[dict(id='T1',wordings={'task':self.prompt})])
         self.document['binding']['request_sha256']=canonical_sha(request)
         self.document['binding']['session_id']=str(uuid.uuid5(uuid.UUID(request['occurrence_id']),canonical_sha(schedule)+':0'))
-        self.document['mcp_binding'].update(task='T1',run=self.document['binding']['session_id'])
+        self.document['mcp_binding'].update(task='task-eval/T1.CAND.s17',run='T1.CAND.s17')
         mcp_path=self.source/'mcp.json';mcp_path.chmod(0o600)
         from trial_paired_request import mcp_arguments
         raw=json.dumps(dict(mcpServers=dict(cairn=dict(type='stdio',command='/native/cairn',

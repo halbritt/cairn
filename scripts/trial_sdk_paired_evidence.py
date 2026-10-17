@@ -5,6 +5,7 @@ source-owned path, not protection against arbitrary Python object mutation.
 Original tickets remain held, including failed publication and exception graphs.
 """
 import hashlib
+import json
 import os
 import stat
 from pathlib import Path
@@ -36,6 +37,35 @@ def seal_document(snapshot, name, document):
     block = None
     snapshot._seal(name, target, digest, length, False)
     return dict(bytes=length, sha256=digest)
+
+
+def seal_resolved_corpus(snapshot, notes):
+    """Legacy wire form, selected bytes only, not a load witness.
+
+    iterencode can retain a whole escaped token plus its UTF-8 encoding before
+    FILE_LIMIT refusal. This is charged preparation materialization, NOT bounded
+    scratch; physical sufficiency remains unknown, including failure frames.
+    """
+    document = dict(notes=notes)
+    canonical_size_sha256(document)  # Complete strict shape/Unicode validation.
+    def pieces():
+        yield from json.JSONEncoder(ensure_ascii=False, indent=2).iterencode(document)
+        yield '\n'
+    length = 0
+    digest = hashlib.sha256()
+    for piece in pieces():
+        raw = piece.encode('utf8')
+        length += len(raw)
+        digest.update(raw)
+        raw = None
+    need(length <= FILE_LIMIT, 'paired_evidence_file_bound')
+    target = snapshot._destination('selected-resolved-corpus.json')
+    for piece in pieces():
+        raw = piece.encode('utf8')
+        write_all(target.fd, raw)
+        raw = None
+    snapshot._seal('selected-resolved-corpus.json', target, digest.hexdigest(), length, False)
+    return dict(bytes=length, sha256=digest.hexdigest())
 
 
 class WeeklyPreparationOwner:
@@ -93,7 +123,11 @@ class WeeklyPreparationOwner:
             schedule_sha256=canonical_sha(bundle['schedule']),
             schedule_inner_sha256=bundle['schedule']['sha256'],wording=bundle['schedule']['wording'],
             frozen_corpus_sha256=bundle['frozen']['corpus_sha256'],
-            resolved_corpus_sha256=bundle['source']['resolved_corpus_sha256'])
+            resolved_corpus_sha256=bundle['source']['resolved_corpus_sha256'],
+            native_model=bundle['execution']['native']['model'],
+            native_effort=bundle['execution']['native']['effort'])
+        self.resolved_corpus = seal_resolved_corpus(self.snapshot_owner,bundle['notes'])
+        self.identity['selected_resolved_corpus_file_sha256'] = self.resolved_corpus['sha256']
         overlay = dict(notes=bundle['notes'] + bundle['distractor_notes'])
         self.overlay = seal_document(self.snapshot_owner,'selected-overlay.json',overlay)
         # This file is the selected overlay; no claim the service observed/loaded it.
@@ -104,7 +138,8 @@ class WeeklyPreparationOwner:
             need(len(cases)==1,'paired_case_ambiguous')
             self.rows.append(dict(row, index=index,
                 prompt_sha256=text_sha(cases[0]['wordings'][self.identity['wording']]),
-                run_id=str(uuid.uuid5(uuid.UUID(request['occurrence_id']),
+                run_id=f"{row['case']}.{row['arm']}.s{row['seed']}",
+                session_id=str(uuid.uuid5(uuid.UUID(request['occurrence_id']),
                     self.identity['schedule_sha256']+':'+str(index)))))
         self._join = seal_document(self.snapshot_owner,'join.json',dict(identity=self.identity,rows=self.rows))
         self._initial = self.snapshot_owner.bindings()
@@ -131,20 +166,22 @@ class WeeklyPreparationOwner:
             selected = self.rows[index]
             metadata = preparation.review_bindings()
             original = metadata['binding']
+            need(preparation.launch.argv[2:6] == ('--model',self.identity['native_model'],
+                 '--effort',self.identity['native_effort']), 'paired_launch_binding')
             need(all(original[k]==self.identity[k] for k in ('request_id','occurrence_id','request_sha256'))
                  and original['case_id']==selected['case'] and original['arm']==selected['arm']
-                 and original['session_id']==selected['run_id'], 'paired_preparation_binding')
+                 and original['session_id']==selected['session_id'], 'paired_preparation_binding')
             need(text_sha(preparation._snapshot.read_text('prompt.txt'))==selected['prompt_sha256'],
                  'paired_prompt_binding')
             need(service_document['policy']['run']==selected['run_id'] and
-                 service_document['policy']['task']==selected['case'], 'paired_service_binding')
+                 service_document['policy']['task']=='task-eval/'+selected['run_id'], 'paired_service_binding')
             mcp_text = preparation._snapshot.read_text('mcp.json')
             mcp = parse_document(mcp_text,preparation._snapshot.files['mcp.json'][3])
             policy = service_document['policy']
             need(mcp['mcpServers']['cairn']['args']==mcp_arguments(
                 {k:policy[k] for k in ('socket','token_file','repo','task','run')}), 'paired_mcp_binding')
             # Capture immutable scalar selection BEFORE moving the SDK preparation.
-            join = dict(self.identity, **{k:selected[k] for k in ('case','arm','seed','run_id','index')})
+            join = dict(self.identity, **{k:selected[k] for k in ('case','arm','seed','run_id','session_id','index')})
             self.claimed.add(index)  # An uncertain bind may never reselect this row.
             self.runs.append(run)  # Independent cleanup remains reachable on interruption.
             run._paired = self
@@ -171,8 +208,8 @@ class WeeklyPreparationOwner:
         index=run._paired_join['index']
         need(type(index) is int and index in self.claimed and 0<=index<len(self.rows), 'paired_row_binding')
         selected=self.rows[index]
-        expected=dict(self.identity, **{k:selected[k] for k in ('case','arm','seed','run_id','index')})
-        need(run._paired_join==expected and run._session._custody._initial['binding']['session_id']==selected['run_id'],
+        expected=dict(self.identity, **{k:selected[k] for k in ('case','arm','seed','run_id','session_id','index')})
+        need(run._paired_join==expected and run._session._custody._initial['binding']['session_id']==selected['session_id'],
              'paired_join_changed')
 
     def close(self):
@@ -273,7 +310,8 @@ class EvidencePublication:
             streams = retention.snapshot()
             streams['close_faults'] = list(streams['close_faults'])
             self.receipt = dict(schema='cairn.sdk-private-evidence/1',join=run._paired_join,
-                selected_overlay=paired.overlay, observed_corpus_sha256=None,
+                selected_overlay=paired.overlay, selected_resolved_corpus=paired.resolved_corpus,
+                observed_corpus_sha256=None,
                 streams=streams,native_owners=waits,
                 terminal_observed=run._terminal_metadata is not None,
                 failure=run._failed,cleanup_faults=sorted(run._faults),

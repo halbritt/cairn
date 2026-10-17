@@ -113,8 +113,14 @@ def _declaration(document, *, schema=SCHEMA):
     binding = document['binding']
     for name in ('request_id', 'occurrence_id', 'session_id'):
         identifier(binding[name])
-    need(isinstance(binding['case_id'], str) and binding['case_id'] in
-         {'T1', 'T2', 'T3', 'T4', 'T5', 'T7', 'T8'}, 'bootstrap_case')
+    # SDK source preparation accepts weekly IDs as syntax, never membership or
+    # launch authority. WeeklyPreparationOwner checks the actual selected row.
+    if schema == SDK_SCHEMA:
+        need(type(binding['case_id']) is str and
+             re.fullmatch('[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}',binding['case_id']), 'bootstrap_case')
+    else:
+        need(isinstance(binding['case_id'], str) and binding['case_id'] in
+             {'T1', 'T2', 'T3', 'T4', 'T5', 'T7', 'T8'}, 'bootstrap_case')
     need(isinstance(binding['arm'], str) and binding['arm'] in {'CURRENT', 'CAND'},
          'bootstrap_arm')
     for name in ('workspace_sha256', 'request_sha256', 'source_set_sha256'):
