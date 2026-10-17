@@ -45,14 +45,15 @@ def run(mode):
     budget=Budget()
     deadline=time.monotonic_ns()+5_000_000_000
     job=CommandJob(budget,deadline)
-    body='body' if mode=='reject' else 'B'*(2*1024*1024)
-    job.prepare(body)
-    del body  # Transfer the sole fixture body alias to the prepared job.
-    child=Path(__file__).with_name('trial_sdk_memory_command_job_host_child.py')
-    job.start((sys.executable,'-B',str(child),mode),str(child.parent),{})
     completed=False
-    state=None
+    primary=None
+    cleanup_errors=[]
     try:
+        body='body' if mode=='reject' else 'B'*(2*1024*1024)
+        job.prepare(body)
+        del body  # Transfer the sole fixture body alias to the prepared job.
+        child=Path(__file__).with_name('trial_sdk_memory_command_job_host_child.py')
+        job.start((sys.executable,'-B',str(child),mode),str(child.parent),{})
         if mode=='reject':
             with selectors.DefaultSelector() as selector:
                 selector.register(job.interests()['stdout'],selectors.EVENT_READ)
@@ -86,38 +87,61 @@ def run(mode):
                 require(job.snapshot()['input_written']==2*1024*1024,'fixture_exact_input')
             del outcome
         # Actual wait and release remain mandatory even after overflow refusal.
-        while job.snapshot()['wait'] is None:
+        while job.owner.observe_wait() is None:
             require(time.monotonic_ns()<deadline,'fixture_cleanup_wait_deadline')
-            job.cleanup_step()
-            if job.snapshot()['wait'] is None:ready(job,deadline)
+            # Readiness-only wait; cleanup_step would signal a still-live child.
+            # The actual owner retains the wait before job cleanup collects it.
+            ready(job,deadline)
         job.cleanup_step()
         state=job.snapshot()
         require(state['wait']['returncode']==17,'fixture_wait_code')
         require(not state['owner']['has_handles'],'fixture_owner_handles')
-        if mode!='overflow':
+        if mode=='overflow':
+            require(state['release']['released'] is False,'fixture_overflow_release')
+            require(state['streams']['stderr']['eof'] is False,'fixture_overflow_eof')
+            require('stderr_eof_unobserved' in state['release']['cleanup'],
+                    'fixture_overflow_eof_diagnostic')
+            require(all(row['raw_bytes']==1024*1024 for row in state['streams'].values()),
+                    'fixture_overflow_stream_counts')
+        else:
             job.retire()
             require((budget.queue,budget.working)==(0,0),'fixture_credit_return')
         completed=True
-        return {'case':mode,'status':'PASS','wait':state['wait'],
-                'release':state['release'],'primary':state['primary'],
-                'outcome_unknown':state['outcome_unknown'],
-                'stdin_terminal':state['stdin_terminal'],'input_written':state['input_written'],
-                'streams':state['streams'],'traffic':budget.stream,
-                'input_rejected':state['owner']['input_rejected'],
-                'has_handles':state['owner']['has_handles'],
-                'qualification':'ordinary_fixture_only'}
+    except BaseException as error:
+        primary={'type':type(error).__name__,'code':str(error)[:128]}
     finally:
         if not completed:
-            job.abort()
-            # One explicit best effort; the outer owner retains final containment.
-            job.cleanup_step()
+            try:job.abort()
+            except BaseException as error:cleanup_errors.append('abort:'+type(error).__name__)
+            # Independently guarded best effort; the outer owner retains final
+            # containment and actual waits even when a partial launch failed.
+            try:job.cleanup_step()
+            except BaseException as error:cleanup_errors.append('cleanup:'+type(error).__name__)
+    result={'case':mode,'status':'PASS' if completed else 'FAIL','failure':primary,
+            'cleanup_errors':cleanup_errors,'traffic':budget.stream,
+            'qualification':'ordinary_fixture_only'}
+    try:
+        state=job.snapshot()
+        result.update(wait=state['wait'],release=state['release'],primary=state['primary'],
+                      outcome_unknown=state['outcome_unknown'],stdin_terminal=state['stdin_terminal'],
+                      input_written=state['input_written'],streams=state['streams'],
+                      input_rejected=state['owner']['input_rejected'],
+                      has_handles=state['owner']['has_handles'])
+    except BaseException as error:
+        result['status']='FAIL'
+        cleanup_errors.append('snapshot:'+type(error).__name__)
+    return result
 
 
 def main():
     observations=[]
     for mode in ('exact','reject','overflow'):
-        observations.append(run(mode))
-    print(json.dumps({'schema':'cairn.command-job-host/1','cases':observations},sort_keys=True))
+        row=run(mode)
+        observations.append(row)
+        # Emit each completed case, preserving earlier actual facts on later
+        # failure or deadline. The observer retains every line, even partial runs.
+        print(json.dumps({'schema':'cairn.command-job-host/1','cases':observations},sort_keys=True),flush=True)
+        if row['status']!='PASS':return 1
     return 0
 
 
