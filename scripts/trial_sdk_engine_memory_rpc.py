@@ -97,6 +97,7 @@ class ProducerRPC:
         self._tx = self._rx = self._io = None
         self._tx_kind = self._future = self._transaction = self._generation = None
         self._decoder = self._request = self._result = self._wire_sizes = None
+        self._read_custody = None
         self._text_chunk = None
         self._phases = self._status_code = None
         self._text_stream = self._text_position = self._text_offset = 0
@@ -493,6 +494,8 @@ class ProducerRPC:
                         return True
                     # These are the actual service's validated OUTPUT wire counts,
                     # not a replacement-encoding estimate or another traffic debit.
+                    if self._read_custody is not None:
+                        self._read_custody.observe_completed()
                     self._wire_sizes = self.link.transcript.snapshot()['wire_sizes']
                     self._text_stream = self._text_position = self._text_offset = 0
                     self._result_frame(wire.RESULT_META, self._result.stdout_bytes,
@@ -560,6 +563,7 @@ class ProducerRPC:
             self._stream = None
             for region in (self._body, self._tx_region, self._rx_region):
                 region.retire()
+            self._read_custody = None
             self.resources.release(self._allocation)
             self._allocation = None
             self._retired = True
