@@ -180,6 +180,44 @@ class CreditTests(unittest.TestCase):
 
 
 class LinkTests(unittest.TestCase):
+    def test_actual_count_survives_interruption_before_and_after_credit_handoff(self):
+        for direction in ('send','receive','burst'):
+            for after_credit in (False, True):
+                with self.subTest(direction=direction, after_credit=after_credit):
+                    link = self.link()
+                    endpoint = self.endpoint(self.records((w.READY,)))
+                    self.bound(link, endpoint)
+                    credit = link.credit(64)
+                    if direction == 'send':
+                        self.ready(link)
+                        link.queue(w.SHUTDOWN, 0, credit)
+                        step = link.send_step
+                    else:
+                        if direction == 'burst':
+                            cursor = credit.burst((32,32))
+                            link.adopt_receive_burst(credit, cursor)
+                        else: link.arm_receive(credit, 32)
+                        step = lambda: link.receive_step(lambda frame: None)
+                    hit = []
+                    def trace(frame, event, arg):
+                        if (event == 'line' and frame.f_code.co_name in ('send_step','receive_step')
+                                and frame.f_locals.get('self') is link
+                                and frame.f_locals.get('count') == 32 and link._io is not None
+                                and (credit.snapshot()['known'] == 32) == after_credit and not hit):
+                            hit.append(True)
+                            raise KeyboardInterrupt()
+                        return trace
+                    old = sys.gettrace()
+                    try:
+                        sys.settrace(trace)
+                        with self.assertRaises(KeyboardInterrupt): step()
+                    finally: sys.settrace(old)
+                    self.assertEqual(hit, [True])
+                    state = link.resources.snapshot()
+                    self.assertEqual((state['traffic_spent'],state['traffic_reserved']), (32,32))
+                    self.assertTrue(state['unknown'])
+                    self.assertTrue(link.snapshot()['unknown'])
+
     def test_burst_eagain_preserves_cursor_and_view_until_actual_receive(self):
         link = self.link()
         records = self.records((w.READY,))

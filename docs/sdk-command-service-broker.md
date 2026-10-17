@@ -102,6 +102,14 @@ An older receipt after a pre-effect refusal cannot count again. Consumed invalid
 or unauthenticated bytes are traffic, never usable protocol. No count is inferred
 from an exception, endpoint disappearance or a reported PID.
 
+The link also retains one pre-effect I/O context through the count-to-credit
+handoff. If that return interval is interrupted, poisoning reconciles only a
+fresh matching RecordSocket count against a still healthy, unchanged credit.
+An already consumed or quarantined count is not charged again. This covers the
+demonstrated post-return/pre-receipt line interruption for ordinary receive,
+burst receive and send. Any reconciliation failure is retained as a fixed label
+and the original ledger freezes; it does not replay the syscall or invent zero.
+
 `close_channels` attempts actual endpoint cleanup independently of healthy
 protocol state. It proves neither service nor CLI exit and returns no resources.
 `retire` requires no outstanding promises/loans, known channel closure and the

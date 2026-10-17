@@ -250,6 +250,8 @@ class ServiceLink:
         self._closed = self._started = self._auxiliary = False
         self._retired = False
         self._tx = self._rx = None
+        self._io = None
+        self._io_recovery_error = None
         self._credits = []
         self._primary = None
         if self._allocation is None:
@@ -281,6 +283,21 @@ class ServiceLink:
 
     def _poison(self):
         self._unknown = True
+        # A boundary may return its actual count and then be interrupted before
+        # the caller consumes it. Retain the pre-effect context across that
+        # handoff. Credit guards already preserve a partially consumed receipt;
+        # only a still-healthy, unchanged credit needs this fresh reconciliation.
+        if self._io is not None:
+            pending, direction, before, known = self._io
+            credit = pending['credit']
+            if not credit.snapshot()['unknown'] and credit.snapshot()['known'] == known:
+                try:
+                    self._socket_prefix(pending, direction, before)
+                except BaseException as exc:
+                    # Keep the original failure. The shared freeze below retains
+                    # all unresolved commitments even if recovery is interrupted.
+                    self._io_recovery_error = type(exc).__name__
+                    self.resources.freeze()
         if self._root is not None:
             self._root.unknown = True
         for credit in self._credits:
@@ -362,14 +379,17 @@ class ServiceLink:
             with frame.record as record:
                 return self._connection.send(record)
         before = self._connection.snapshot()['last_transfer']
+        self._io = (pending, 'send', before, pending['credit'].snapshot()['known'])
         try:
             count = token.visit(send)
         except BaseException:
             self._socket_prefix(pending, 'send', before)
             raise
         if count == -1:
+            self._io = None
             return False  # The identical token/sequence/promise remains held.
         pending['credit'].known(pending['promise'], count)
+        self._io = None
         token.visit(self.transcript.observe)
         token.complete(token.generation, 'known')
         pending['body'].close()
@@ -424,18 +444,21 @@ class ServiceLink:
                 raise ServiceLinkError('service_burst_complete')
             pending['hold'] = self._rx_region.hold(state['maxima'][state['index']])
         before = self._connection.snapshot()['last_transfer']
+        self._io = (pending, 'receive', before, pending['credit'].snapshot()['known'])
         try:
             count = self._connection.receive_into(pending['hold'].view)
         except BaseException:
             self._socket_prefix(pending, 'receive', before)
             raise
         if count == -1:
+            self._io = None
             return False
         # Charge the actual edge even if framing/protocol/consumer later refuses.
         if 'burst' in pending:
             pending['credit'].burst_known(pending['burst'], count)
         else:
             pending['credit'].known(pending['promise'], count)
+        self._io = None
         pending['hold'].close()
         pending['hold'] = self._rx_region.hold(count)
         token = self._receiver.decode(pending['hold'])
@@ -508,6 +531,7 @@ class ServiceLink:
                 'closed': self._closed, 'unknown': self._unknown,
                 'retired': self._retired,
                 'primary': self._primary,
+                'io_recovery_error': self._io_recovery_error,
                 'send_pending': self._tx is not None, 'receive_pending': self._rx is not None,
                 'backing_bytes': 0 if self._root is None else self._root.used,
                 'service_wait': self.owner.snapshot()['wait'],
