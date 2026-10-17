@@ -2,9 +2,13 @@ package mcpapi
 
 import (
 	"context"
+	"errors"
+	"reflect"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // RetrievalBackend performs the two retrieval operations after facade validation.
@@ -16,6 +20,31 @@ import (
 type RetrievalBackend interface {
 	Search(context.Context, core.CompileRequest) (core.IndexResult, error)
 	Pull(context.Context, core.ExpandRequest) (core.Expansion, error)
+}
+
+// NewReadOnlyServer registers only the ordinary search and pull contracts.
+// It requires a backend and never opens a client or falls back to a local API.
+// The caller must bind authentication, budgets and provenance in that backend;
+// constructing this facade does not establish any of them.
+func NewReadOnlyServer(backend RetrievalBackend, config Config) (*mcp.Server, error) {
+	if backend == nil {
+		return nil, errors.New("MCP retrieval backend is required")
+	}
+	value := reflect.ValueOf(backend)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if value.IsNil() {
+			return nil, errors.New("MCP retrieval backend is required")
+		}
+	}
+	config, err := validatedConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	facadeBuild := buildinfo.Read()
+	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
+	addRetrievalTools(server, memoryTools{retrieval: backend, config: config})
+	return server, nil
 }
 
 type localRetrievalBackend struct {
