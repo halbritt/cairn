@@ -34,7 +34,7 @@ class FixedServiceLaunch:
         require(type(session) is SDKSessionDriver and session._resources is not None
                 and type(link) is ServiceLink and session._resources.resources is link.resources,
                 'fixed_original_resources')
-        session.source_bindings()
+        session.verify_sources()
         allocation = session._custody._allocation
         require(allocation is not None, 'fixed_source_allocation')
         allocation.check()  # BEFORE config cloning, snapshot copy or decoding.
@@ -109,10 +109,14 @@ class FixedServiceLaunch:
     def _verify(self):
         require(not self._failed and not self._closed, 'fixed_launch_unavailable')
         self._allocation.check()
-        self._session.source_bindings()
+        self._session.verify_sources()
         self.link._check()
         self.link.resources._lookup(self.link.resources._memory, self.link._allocation)
-        require(self._snapshot.bindings() == self._initial, 'fixed_sources_changed')
+        with self._allocation.verification():
+            self._verify_config()
+
+    def _verify_config(self):
+        self._snapshot.verify_bindings(self._initial)
         text = self._snapshot.read_text('service.json')
         runtime, config = bindings(parse_document(text, self._initial['service.json']['bytes']))
         require(runtime == self._runtime and config == self._config, 'fixed_config_changed')

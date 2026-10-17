@@ -277,18 +277,32 @@ class Snapshot:
         need(self.files[name][3] <= 65536, 'snapshot_parse_byte_limit')
         return self._readback(name, text=True)
 
-    def bindings(self):
+    def _verify_files(self):
         need(not self.closed, 'snapshot_consumed')
         self.tree.check()
         for source, initial in self.sources.values():
             need(file_identity(os.fstat(source.fd)) == initial, 'source_changed')
         for name in self.files:
             self._readback(name)
-        return {name: dict(sha256=digest, bytes=length,
-                           dev=initial[0], ino=initial[1], mode=initial[2],
-                           uid=initial[3], gid=initial[4], nlink=initial[5],
-                           source_identity=self._source_identity(name))
-                for name, (_, initial, digest, length) in self.files.items()}
+
+    def _binding(self, name):
+        _, initial, digest, length = self.files[name]
+        return dict(sha256=digest, bytes=length,
+                    dev=initial[0], ino=initial[1], mode=initial[2],
+                    uid=initial[3], gid=initial[4], nlink=initial[5],
+                    source_identity=self._source_identity(name))
+
+    def bindings(self):
+        self._verify_files()
+        return {name: self._binding(name) for name in self.files}
+
+    def verify_bindings(self, expected):
+        """Same live checks, without exporting a second complete metadata graph."""
+        self._verify_files()
+        need(type(expected) is dict and self.files.keys() == expected.keys(),
+             'snapshot_bindings_changed')
+        for name in self.files:
+            need(self._binding(name) == expected[name], 'snapshot_bindings_changed')
 
     def _source_identity(self, name):
         if name not in self.sources:

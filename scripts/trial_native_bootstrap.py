@@ -4,6 +4,7 @@ No command, account source, hook gateway, mount operation or admission route is
 implemented. The returned owner must stay open while its review bindings are used.
 """
 import copy
+from contextlib import contextmanager, nullcontext
 import hashlib
 import json
 from pathlib import Path
@@ -276,6 +277,7 @@ class SDKPreparationAllocation:
         self.resources, self.ticket = resources, ticket
         self._row = resources._lookup(resources._memory, ticket)
         self._begun = self._unknown = False
+        self._verification_active = False
         self._resource_cleanup_faults = ()
 
     def begin(self):
@@ -288,6 +290,24 @@ class SDKPreparationAllocation:
         self.resources._check()
         need(self.resources._lookup(self.resources._memory, self.ticket) == self._row,
              'sdk_preparation_allocation_changed')
+
+    @contextmanager
+    def verification(self):
+        """Exclusive scratch use under the unchanged original standing ticket.
+
+        This does not size the quote, release it, or grant a metadata borrow a
+        shorter lifetime. Unknown outcomes freeze all original charges.
+        """
+        try:
+            self.check()
+            need(not self._verification_active, 'sdk_verification_busy')
+            self._verification_active = True
+            yield
+            self.check()
+            self._verification_active = False
+        except BaseException as primary:
+            self.poison(primary)
+            raise
 
     def poison(self, primary=None):
         self._unknown = True
@@ -457,35 +477,35 @@ class SDKSessionCustody:
     def control(self):
         return self._control
 
-    def held_source_bindings(self):
-        """Recheck without closing sources on error; the live driver owns exit.
+    def _verify_held_sources(self):
+        initial, launch = self._initial, self._launch
+        self._snapshot.verify_bindings(initial['snapshots'])
+        instruction = _text(self._snapshot, 'instruction.txt')
+        need(type(launch) is SDKLaunch and launch.control is self._control
+             and self._control.bindings == initial['control']['bindings']
+             and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == initial['control']
+             and launch.user_message_bytes == initial['user_message_bytes']
+             and launch.user_message_sha256 == initial['user_message_sha256']
+             and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
+             and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
+             and canonical_sha(list(launch.argv)) == initial['launch_sha256']
+             and launch.argv[-1] == instruction,
+             'compiled_binding_changed')
 
-        Failure is sticky. The external owner must stop/wait/detach its native
-        child before explicitly closing these held sources. This grants no
-        runtime authority and cannot restore a failed source observation.
-        """
+    def _held_source_check(self, export):
         try:
             need(not self._source_failed, 'session_custody_unknown')
-            if self._allocation is not None:
-                self._allocation.check()
-            sources = self._snapshot.bindings()
-            initial, launch = self._initial, self._launch
-            instruction = _text(self._snapshot, 'instruction.txt')
-            need(type(launch) is SDKLaunch and launch.control is self._control
-                 and self._control.bindings == initial['control']['bindings']
-                 and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == initial['control']
-                 and sources == initial['snapshots']
-                 and launch.user_message_bytes == initial['user_message_bytes']
-                 and launch.user_message_sha256 == initial['user_message_sha256']
-                 and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
-                 and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
-                 and canonical_sha(list(launch.argv)) == initial['launch_sha256']
-                 and launch.argv[-1] == instruction,
-                 'compiled_binding_changed')
-            result = copy.deepcopy(initial)
-            result['status'] = 'source_custodied_for_session'
-            result['initial_control'] = result.pop('control')
-            return result
+            scope = (self._allocation.verification() if self._allocation is not None
+                     else nullcontext())
+            with scope:
+                self._verify_held_sources()
+                if export:
+                    # Explicit export retains its original charge. The receiver
+                    # must own all borrowed graph lifetimes; no refund here.
+                    result = copy.deepcopy(self._initial)
+                    result['status'] = 'source_custodied_for_session'
+                    result['initial_control'] = result.pop('control')
+                    return result
         except (OSError, Refusal, SDKControlError) as primary:
             self._source_failed = True
             faults = poison_resource(self._allocation, primary)
@@ -495,6 +515,15 @@ class SDKSessionCustody:
             faults = poison_resource(self._allocation, primary)
             annotate_resource_failure(primary, faults)
             raise
+
+
+    def verify_held_sources(self):
+        """Void internal check; same mutations refuse, no metadata graph escapes."""
+        self._held_source_check(False)
+
+    def held_source_bindings(self):
+        """Explicit charged metadata export after the same live verification."""
+        return self._held_source_check(True)
 
     def source_bindings(self):
         """Legacy offline recheck: failure closes its original owned sources."""

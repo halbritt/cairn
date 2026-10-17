@@ -245,7 +245,7 @@ class ScopedSequenceTests(unittest.TestCase):
             while control.write_pending:session._pump._writer.advance()
             c=None
             session._pump._last_write_ns=1
-            session._custody.held_source_bindings=lambda:None  # Same explicit omitted source admission.
+            session._custody.verify_held_sources=lambda:None  # Same explicit omitted source admission.
             raw=json.dumps(dict(type='result',session_id=control.bindings['session_id'],
                 subtype='success',is_error=False,result='ungraded terminal work product')).encode()+b'\n'
             assembler=LineAssembler(131072)

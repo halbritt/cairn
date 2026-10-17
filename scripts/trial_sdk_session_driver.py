@@ -169,6 +169,18 @@ class SDKSessionDriver:
         finally:
             self._busy = False
 
+    @resource_boundary
+    def verify_sources(self):
+        self._live()
+        self._busy = True
+        try:
+            self._custody.verify_held_sources()
+        except BaseException:
+            self._poison()
+            raise
+        finally:
+            self._busy = False
+
     def require_complete(self):
         self.source_bindings()
         raise PreparationRefusal('hook_interface_unavailable')
@@ -209,7 +221,7 @@ class SDKSessionDriver:
         terminal = None
         try:
             if not self._first_step_checked:
-                self._custody.held_source_bindings()
+                self._custody.verify_held_sources()
                 self._first_step_checked = True
             event = self._pump.step(timeout)
             if event.kind != 'document' or event.document.kind != 'result':
@@ -231,7 +243,7 @@ class SDKSessionDriver:
             if last is None or terminal.metadata()['first_byte_ns'] < last:
                 raise SessionDriverError('sdk_terminal_before_input_drained')
             # Recheck the held original sources before making this input close.
-            self._custody.held_source_bindings()
+            self._custody.verify_held_sources()
             self._custody.control.seal_input()
             self._input_close_attempted = True
             self._native.close_stdin()
