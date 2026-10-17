@@ -48,54 +48,68 @@ class NativeInput:
 
     def write(self, body):
         loan = None
-        acquired = False
+        acquired = attempted = False
+        known_error = None
         try:
-            if self._busy:
-                raise NativeInputError('native_input_busy')
-            if self._input_rejected and not self._write_unknown:
-                raise NativeInputRejected('native_input_rejected')
-            if self._fd is None or self._write_unknown:
-                raise NativeInputError('native_input_unusable')
-            self._busy = acquired = True
-            if type(body) is bytes:
-                loan = memoryview(body)
-            elif (type(body) is memoryview and body.readonly and body.ndim == 1
-                  and body.format == 'B' and body.c_contiguous):
-                loan = memoryview(body)
-            else:
-                raise NativeInputError('native_input_body')
-            if not 0 < len(loan) <= 512:
-                raise NativeInputError('native_input_chunk')
-            if self._allow_epipe:
-                # The command profile fences syscall-to-accounting interruption.
-                self._write_unknown = True
             try:
-                count = os.write(self._fd, loan)
-            except BlockingIOError:
+                if self._busy:
+                    raise NativeInputError('native_input_busy')
+                if self._input_rejected and not self._write_unknown:
+                    raise NativeInputRejected('native_input_rejected')
+                if self._fd is None or self._write_unknown:
+                    raise NativeInputError('native_input_unusable')
+                self._busy = acquired = True
+                if type(body) is bytes:
+                    loan = memoryview(body)
+                elif (type(body) is memoryview and body.readonly and body.ndim == 1
+                      and body.format == 'B' and body.c_contiguous):
+                    loan = memoryview(body)
+                else:
+                    raise NativeInputError('native_input_body')
+                if not 0 < len(loan) <= 512:
+                    raise NativeInputError('native_input_chunk')
+                if self._allow_epipe:
+                    self._write_unknown = True
+                    attempted = True
+                try:
+                    count = os.write(self._fd, loan)
+                except BlockingIOError as error:
+                    known_error = error
+                    if self._allow_epipe:
+                        self._write_unknown = False
+                    raise  # This exact unbuffered syscall accepted zero bytes.
+                except BrokenPipeError as error:
+                    self._write_unknown = True
+                    if self._allow_epipe and error.errno == errno.EPIPE:
+                        # This syscall accepted no new bytes. Earlier writes stay counted.
+                        self._input_rejected = True
+                        known_error = NativeInputRejected('native_input_rejected')
+                        self._write_unknown = False
+                        raise known_error from None
+                    raise
+                except BaseException:
+                    self._write_unknown = True
+                    raise
+                self._written += count
                 if self._allow_epipe:
                     self._write_unknown = False
-                raise  # Unbuffered syscall: would-block accepted zero bytes.
-            except BrokenPipeError as error:
-                self._write_unknown = True
-                if self._allow_epipe and error.errno == errno.EPIPE:
-                    # This syscall accepted no new bytes. Earlier writes stay counted.
-                    self._input_rejected = True
-                    self._write_unknown = False
-                    raise NativeInputRejected('native_input_rejected') from None
-                raise
-            except BaseException:
-                self._write_unknown = True
-                raise
-            self._written += count
-            if self._allow_epipe:
-                self._write_unknown = False
+            finally:
+                if loan is not None:
+                    loan.release()
+                body = None
+                if acquired:
+                    self._busy = False
             return count
-        finally:
-            if loan is not None:
-                loan.release()
-            body = None
-            if acquired:
-                self._busy = False
+        except BaseException as error:
+            # Include final cleanup, not just the syscall/accounting block. Only
+            # the exact observed zero-progress exception is a known error return.
+            if attempted and error is not known_error:
+                self._write_unknown = True
+            if self._allow_epipe:
+                body = None
+                if acquired:
+                    self._busy = False
+            raise
 
     def close(self):
         if self._busy:

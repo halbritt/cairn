@@ -32,8 +32,11 @@ meanings. An uncertain close remains uncertain and is not retried by raw number.
 Default owners retain the existing strict behavior: EPIPE raises the original
 `BrokenPipeError`, marks write uncertainty and poisons the process owner's input.
 In either policy, other ambiguous write errors remain failures. In command mode,
-the write-to-accounting interval is premarked unknown; only a known syscall
-outcome with completed accounting clears it. Known would-block accepts zero and
+the write-to-accounting interval is premarked unknown; unexpected interruption
+through final view cleanup or return preserves uncertainty and prevents replay.
+Only the exact observed zero-progress exception remains a known error return;
+a later cleanup error of the same exception type is still unknown. Known
+would-block accepts zero and
 can resume. Neither an arbitrary `BrokenPipeError` without EPIPE nor another
 `OSError` number qualifies as rejection.
 

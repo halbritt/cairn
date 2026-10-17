@@ -170,6 +170,45 @@ class CommandInputTests(unittest.TestCase):
             self.assertEqual(owner.snapshot()['known_written'], 2)
             owner.close()
 
+    def test_post_write_final_cleanup_interruption_never_permits_replay(self):
+        faults = (KeyboardInterrupt(), BlockingIOError(errno.EAGAIN, 'cleanup'),
+                  input_module.NativeInputRejected('cleanup'))
+        for fault in faults:
+            with self.subTest(fault=type(fault).__name__), descriptor_boundaries(), \
+                    patch.object(input_module.os, 'write', return_value=2) as write:
+                owner = input_module.NativeInput(731, allow_epipe=True)
+                interrupted = False
+                interrupted_line = None
+                def trace(frame, event, arg):
+                    nonlocal interrupted, interrupted_line
+                    if (event == 'line' and frame.f_code is input_module.NativeInput.write.__code__
+                            and frame.f_locals.get('count') == 2
+                            and not owner.snapshot()['write_unknown'] and not interrupted):
+                        # Fire inside final cleanup AFTER the successful accounting
+                        # flag cleared and the borrowed view was actually released.
+                        try:
+                            frame.f_locals['loan'].nbytes
+                        except ValueError:
+                            interrupted = True
+                            interrupted_line = frame.f_lineno
+                            raise fault
+                    return trace
+                try:
+                    sys.settrace(trace)
+                    with self.assertRaises(type(fault)):
+                        owner.write(b'abcd')
+                finally:
+                    sys.settrace(None)
+                self.assertTrue(interrupted)
+                self.assertEqual(owner.snapshot()['known_written'], 2)
+                self.assertTrue(owner.snapshot()['write_unknown'],
+                                (interrupted_line, owner.snapshot()))
+                self.assertFalse(owner.snapshot()['input_rejected'])
+                with self.assertRaisesRegex(input_module.NativeInputError, '^native_input_unusable$'):
+                    owner.write(b'cd')
+                self.assertEqual(write.call_count, 1)
+                owner.close()
+
     def test_rejection_does_not_hide_uncertain_stdin_close_or_retry_it(self):
         with process_boundaries(), patch.object(input_module.os, 'write',
                 side_effect=BrokenPipeError(errno.EPIPE, 'controlled')):
@@ -195,6 +234,39 @@ class CommandInputTests(unittest.TestCase):
             self.assertEqual(state['native_input']['known_written'], 0)
             self.assertTrue(state['native_input']['close_unknown'])
             self.assertFalse(state['native_input']['closed_known'])
+
+    def test_cleanup_error_cannot_impersonate_known_zero_progress(self):
+        cases = ((BlockingIOError(errno.EAGAIN, 'write'), BlockingIOError(errno.EAGAIN, 'cleanup')),
+                 (BrokenPipeError(errno.EPIPE, 'write'), input_module.NativeInputRejected('cleanup')))
+        for syscall_error, cleanup_error in cases:
+            with self.subTest(error=type(syscall_error).__name__), descriptor_boundaries(), \
+                    patch.object(input_module.os, 'write', side_effect=syscall_error) as write:
+                owner = input_module.NativeInput(731, allow_epipe=True)
+                interrupted = False
+                def trace(frame, event, arg):
+                    nonlocal interrupted
+                    if (event == 'line' and frame.f_code is input_module.NativeInput.write.__code__
+                            and frame.f_locals.get('known_error') is not None
+                            and not owner.snapshot()['write_unknown'] and not interrupted):
+                        try:
+                            frame.f_locals['loan'].nbytes
+                        except ValueError:
+                            interrupted = True
+                            raise cleanup_error
+                    return trace
+                try:
+                    sys.settrace(trace)
+                    with self.assertRaises(type(cleanup_error)):
+                        owner.write(b'abcd')
+                finally:
+                    sys.settrace(None)
+                self.assertTrue(interrupted)
+                self.assertTrue(owner.snapshot()['write_unknown'])
+                self.assertEqual(owner.snapshot()['known_written'], 0)
+                with self.assertRaisesRegex(input_module.NativeInputError, '^native_input_unusable$'):
+                    owner.write(b'abcd')
+                self.assertEqual(write.call_count, 1)
+                owner.close()
 
 
 if __name__ == '__main__':
