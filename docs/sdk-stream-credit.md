@@ -90,6 +90,15 @@ as free capacity or a healthy equality. Arbitrary repeated interruption, hostile
 field mutation, foreign ownership and concurrent callbacks are outside the
 trusted serialized source contract.
 
+Actual count receipt staging precedes the mutation flag. Before staging, the
+credit is healthy and unchanged, so the enclosing source-owned actual-edge
+observer can reconcile its fresh receipt. Once staged, the guard recognizes the
+receipt even before the mutation flag and freezes with that exact count. The
+existing record-custody recovery tests exercise both boundaries for known and
+unknown-prefix reports, not merely failures after the count has been applied.
+The observer must retain that pre-effect/fresh-receipt context; this accounting
+method cannot invent an actual count that was never handed to it.
+
 `finish()` refuses while ANY promise or future claim remains. Its caller must
 also independently know the actual whole-producer lifetime and all relevant
 loans ended. An RPC ending or an empty promise set does not establish EOF/wait or

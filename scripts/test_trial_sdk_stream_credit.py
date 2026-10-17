@@ -1,6 +1,7 @@
 """Pure original-ledger stream accounting. No subject or kernel fixtures."""
 import sys
 import unittest
+import dis
 
 from trial_sdk_attempt_resources import AttemptResources, ResourceError, TRAFFIC
 from trial_sdk_stream_credit import StreamCredit, StreamCreditError, StreamCreditDenied
@@ -388,6 +389,75 @@ class InterruptionTests(unittest.TestCase):
                 self.inject(lambda: credit.known(promise, 17), selected, BlockingIOError())
                 self.assertEqual((bank.snapshot()['traffic_spent'],
                                   bank.snapshot()['traffic_reserved']), (17, 83))
+                credit.quarantine()
+                self.assertEqual(bank.snapshot()['traffic_spent'], 17)
+
+    def test_actual_count_handoff_before_and_after_staging_keeps_fresh_helper_recovery(self):
+        from trial_sdk_command_service_broker import ServiceLink
+        for name in ('known', 'unknown_prefix'):
+          for staged in (False, True):
+           for fault in (KeyboardInterrupt(), BlockingIOError(), StreamCreditDenied('injected')):
+            with self.subTest(method=name, staged=staged, fault=type(fault).__name__):
+                bank = AttemptResources()
+                credit = StreamCredit(bank, bank.local, 100)
+                promise = credit.promise(100)
+                method = getattr(StreamCredit, name)
+                receipt_line = next(i.positions.lineno for i in dis.get_instructions(method.__wrapped__)
+                    if i.opname == 'STORE_ATTR' and i.argval == '_receipt')
+                # Real helper, inert fresh boundary receipt: no kernel/auth claim.
+                class Edge:
+                    def snapshot(self):
+                        return {'last_transfer': (1, 'receive', 100, 17)}
+                link = object.__new__(ServiceLink)
+                link.resources = bank
+                link._connection = Edge()
+                link._io = ({'credit': credit, 'promise': promise}, 'receive', None, 0)
+                link._io_recovery_error = None
+                link._root = None
+                link._credits = [credit]
+                hits = []
+                def selected(frame):
+                    if (frame.f_code is not method.__wrapped__.__code__
+                            or frame.f_locals.get('self') is not credit):
+                        return False
+                    chosen = (credit._receipt is not None if staged
+                              else frame.f_lineno == receipt_line)
+                    if chosen:
+                        hits.append(frame.f_lineno)
+                    return chosen
+                self.inject(lambda: getattr(credit, name)(promise, 17), selected, fault)
+                self.assertEqual(len(hits), 1)
+                if staged:
+                    self.assertTrue(credit.snapshot()['unknown'])
+                    self.assertEqual(credit.snapshot()['known'], 17)
+                else:
+                    # No internal mutation yet: do not block caller's recovery.
+                    self.assertFalse(credit.snapshot()['unknown'])
+                    self.assertEqual(credit.snapshot()['known'], 0)
+                link._poison()  # Actual unchanged helper reconciles fresh17 once.
+                self.assertIsNone(link._io_recovery_error)
+                self.assertEqual(credit.snapshot()['known'], 17)
+                self.assertEqual((bank.snapshot()['traffic_spent'],
+                                  bank.snapshot()['traffic_reserved']), (17, 83))
+                link._poison()
+                credit.quarantine()
+                self.assertEqual(bank.snapshot()['traffic_spent'], 17)
+
+    def test_both_count_methods_final_guard_preserve_prefix_and_primary(self):
+        for name in ('known', 'unknown_prefix'):
+            with self.subTest(method=name):
+                bank = AttemptResources()
+                credit = StreamCredit(bank, bank.local, 100)
+                promise = credit.promise(100)
+                method = getattr(StreamCredit, name)
+                self.inject(lambda: getattr(credit, name)(promise, 17), lambda frame:
+                    frame.f_code is method.__code__
+                    and frame.f_locals.get('method') is method.__wrapped__
+                    and frame.f_locals.get('self') is credit
+                    and 'answer' in frame.f_locals and not credit._busy,
+                    StreamCreditDenied('injected'))
+                self.assertEqual(credit.snapshot()['known'], 17)
+                self.assertTrue(credit.snapshot()['unknown'])
                 credit.quarantine()
                 self.assertEqual(bank.snapshot()['traffic_spent'], 17)
 

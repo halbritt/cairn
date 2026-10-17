@@ -63,7 +63,7 @@ def _guard(method):
                     self._busy = False
             return answer
         except BaseException as error:
-            if acquired and (self._mutating or self._bank_call):
+            if acquired and (self._mutating or self._bank_call or self._receipt is not None):
                 if self._primary is None:
                     self._primary = type(error).__name__
                 self._poison()
@@ -232,9 +232,9 @@ class StreamCredit:
     @_guard
     def known(self, promise, count):
         self._validate_count(promise, count)
+        self._receipt = (self._state, promise, count)
         self._mutating = True
-        state = self._state
-        self._receipt = (state, promise, count)
+        state = self._receipt[0]
         future = state.future
         if future is not None and future.trigger is promise:
             future = replace(future, trigger_known=count == promise.maximum)
@@ -246,9 +246,9 @@ class StreamCredit:
     @_guard
     def unknown_prefix(self, promise, count):
         self._validate_count(promise, count)
+        self._receipt = (self._state, promise, count)
         self._mutating = True
-        state = self._state
-        self._receipt = (state, promise, count)
+        state = self._receipt[0]
         # The loan stays unresolved; observed bytes do not refund its remainder.
         self._state = replace(state, known=state.known + count)
         self._poison()
