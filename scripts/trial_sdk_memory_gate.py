@@ -72,6 +72,9 @@ class MemoryDispatchGate:
             now = time.monotonic_ns()
         except BaseException:
             self._accounting_unknown = True
+            if self._pending is not None:
+                self._completion_unknown = True
+                self._pending['phase'] = self._last_pending['phase'] = 'unknown'
             if self._failure is None: self._failure = 'memory_clock_unknown'
             raise
         if (type(now) is not int or now < 0

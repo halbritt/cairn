@@ -266,6 +266,24 @@ class MemoryGateTests(unittest.TestCase):
                     with self.assertRaises(MemoryGateError):gate.complete_pending(handle)
                     self.assertEqual(calls,[True])
 
+    def test_frontend_clock_error_marks_an_existing_pending_lifecycle_unknown(self):
+        calls=[]
+        gate=MemoryDispatchGate(lambda *a:calls.append(True),lambda *a:calls.append(True),
+                                time.monotonic_ns()+30_000_000_000)
+        handle=gate.native_start('mcp__cairn__cairn_pull',{})
+        channel=gate.hook(time.monotonic_ns()+5_000_000_000)
+        with patch('trial_sdk_memory_gate.time.monotonic_ns',side_effect=OSError('clock')):
+            with self.assertRaises(OSError):channel.call('search')
+        state=gate.snapshot()
+        self.assertEqual(state['failure'],'memory_clock_unknown')
+        self.assertTrue(state['completion_unknown'])
+        self.assertEqual(state['pending']['phase'],'unknown')
+        self.assertEqual(state['last']['outcome'],'returned')
+        self.assertEqual((state['dispatches'],state['returned'],state['expansions_debited']),(1,1,1))
+        gate.fail_pending(handle)
+        self.assertEqual(gate.snapshot()['failure'],'memory_clock_unknown')
+        self.assertEqual(calls,[True])
+
     def test_shared_expansions_across_native_and_independent_hooks(self):
         calls = []
         def forward(request, deadline_ns):
