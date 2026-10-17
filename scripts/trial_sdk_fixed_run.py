@@ -21,6 +21,7 @@ from trial_sdk_memory_gate import MemoryDispatchGate
 from trial_sdk_shared_coordinator import SharedCoordinator, AggregateQuote, require
 from trial_sdk_native_process_owner import NativeProcessOwner
 from trial_sdk_resource_failure import freeze_resource, annotate_resource_failure
+from trial_sdk_stream_retention import SessionStreamRetention
 
 
 class FixedRunOwner:
@@ -34,6 +35,7 @@ class FixedRunOwner:
         self._session = self._link = self._service = self._coordinator = None
         self._callback = self._callback_owner = self._callback_domain = None
         self._terminal_graph = self._terminal_metadata = None
+        self._evidence = None
         self._cleanup_started = self._sources_closed = False
         self._owners = []  # Actual original owners, never caller-reported PID receipts.
         self._source_attempts = set()
@@ -59,7 +61,7 @@ class FixedRunOwner:
         annotate_resource_failure(primary, tuple(sorted(self._faults)))
 
     def prepare(self, preparation, binding, service_document, source_output,
-                callback_root, callback_quote, command_quote):
+                callback_root, callback_quote, command_quote, *, stream_output):
         require(self._state == 'new' and not self._busy, 'run_consumed')
         try:
             self._state = 'preparing'
@@ -78,6 +80,9 @@ class FixedRunOwner:
             self._callback_quote, self._command_quote = callback_quote, command_quote
             self._construct_session()
             self._preparation = None
+            self._evidence = SessionStreamRetention.__new__(SessionStreamRetention)
+            SessionStreamRetention.__init__(self._evidence, binding, stream_output)
+            self._session._pump._retention = self._evidence
             # Retain partially constructed owners before constructor effects.
             self._link = ServiceLink.__new__(ServiceLink)
             ServiceLink.__init__(self._link, self.resources, deadline_ns=self._deadline,
@@ -159,6 +164,12 @@ class FixedRunOwner:
         event = turn.result
         if event.kind == 'callback':
             self._state = 'binding'  # Return event-bearing frame BEFORE binding.
+        elif event.kind == 'document':
+            require(self._evidence is not None and self._session._pump._retention is self._evidence
+                    and self._evidence.state == 'open', 'run_document_retention_missing')
+            # The complete original bytes are already private/persisted. Ending
+            # this parsed alias is not a grade or a reservation release.
+            event.document.take()
         elif event.kind == 'terminal':
             require(self._terminal_graph is None and type(event.document) is TerminalDocument,
                     'run_terminal_duplicate')
@@ -181,6 +192,11 @@ class FixedRunOwner:
             receipt=self._session.native_owner.release()
             require(receipt['released'] and receipt['handles_detached'] and not receipt['cleanup'],
                     'run_terminal_cleanup_unknown')
+            require(self._evidence is not None, 'run_evidence_missing')
+            self._evidence.finish(self._session._pump)
+            require(self._now() < self._deadline, 'run_deadline')
+            self._evidence._terminal_graph = self._terminal_graph
+            self._terminal_graph = None
             self._state='terminal_waited'
         return self._state
 
@@ -292,6 +308,8 @@ class FixedRunOwner:
         if not self._sources_closed:
             # Independent source owners: failure closing one must not skip another.
             actions=[]
+            if self._evidence is not None:
+                actions.append(('evidence', self._evidence.close))
             if self._service is not None and hasattr(self._service,'_snapshot') and self._service._snapshot is not None:
                 actions.append(('fixed',self._service.close))
             if self._session is not None and getattr(self._session,'_custody',None) is not None:
@@ -343,4 +361,5 @@ class FixedRunOwner:
                     terminal_observed=self._terminal_metadata is not None,
                     terminal_graph_held=self._terminal_graph is not None,
                     cleanup_faults=tuple(sorted(self._faults)),
+                    evidence=None if self._evidence is None else self._evidence.snapshot(),
                     qualification='source_run_custody_only_no_native_or_task_acceptance')

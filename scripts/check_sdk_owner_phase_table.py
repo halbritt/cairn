@@ -34,7 +34,7 @@ def validate(table, root):
             assert all(units.get(name)==span for name,span in pin['units'].items())
         finally:os.close(fd)
     owners=table['ticket_rows'];backings={b['id']:b for b in table['backings']}
-    assert len(backings)==len(table['backings'])==18
+    assert len(backings)==len(table['backings'])==19
     for backing in backings.values():
         assert backing['physical_status']=='unproved' and backing['missing_evidence']
         assert set(backing['tickets'])<=owners.keys()
@@ -43,6 +43,7 @@ def validate(table, root):
     for phase in phases.values():
         assert phase['physical_upper'] is None and phase['transition_allowed'] is False
         assert phase['backings'] and set(phase['backings'])<=backings.keys()
+        if phase['id'] != 'preparation': assert 'private_stream' in phase['backings']
         tickets=[r['ticket'] for r in phase['reservations']]
         assert len(tickets)==len(set(tickets))
         assert phase['raw_total']==sum(r['raw'] for r in phase['reservations'])

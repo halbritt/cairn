@@ -33,6 +33,7 @@ class StreamEvent:
 class SDKStreamDriver:
     def __init__(self, control, native, *, _resources=None):
         self._resources = _resources
+        self._retention = None
         self._io = native if _resources is None else _resources
         # Also checks exact types, pristine control and an unlaunched owner.
         self._writer = SDKDirectWriter(control, native, _resources=_resources)
@@ -161,10 +162,28 @@ class SDKStreamDriver:
         return StreamEvent('reply_written', observation=observation)
 
     def _read(self, name):
+        before = self._native.io_receipt()
+        try:
+            return self._read_body(name)
+        except BaseException:
+            receipt = self._native.io_receipt()
+            if (self._retention is not None and receipt is not None
+                    and receipt[0] == (1 if before is None else before[0]+1)
+                    and receipt[1] == name and type(receipt[4]) is int and receipt[4] > 0
+                    and receipt[0] > self._retention.last_generation):
+                try:
+                    self._retention.record(name, self._stdout if name == 'stdout' else self._stderr,
+                                           receipt[4], receipt[0])
+                except BaseException:self._cleanup_unknown = True
+            raise
+
+    def _read_body(self, name):
         slab = self._stdout if name == 'stdout' else self._stderr
         started = self._now()
         with memoryview(slab) as view:
             count = self._io.read_into(name, view)
+        if count > 0 and self._retention is not None:
+            self._retention.record(name, slab, count, self._native.io_receipt()[0])
         # Retain every positive syscall return before clocks/parsing can fail.
         if count > 0:
             self._bytes[name] += count

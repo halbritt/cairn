@@ -33,6 +33,12 @@ class PhaseTableTests(unittest.TestCase):
         phase['uncertain_publication']['old']='before_status_old_0'
         with self.assertRaises(AssertionError):validate(table,self.root)
 
+    def test_private_stream_missing_from_later_phase_refuses(self):
+        table=copy.deepcopy(self.table)
+        phase=next(p for p in table['phases'] if p['id']=='terminal_recheck_4')
+        phase['backings'].remove('private_stream')
+        with self.assertRaises(AssertionError):validate(table,self.root)
+
     def test_source_drift_and_false_admission_refuse(self):
         for mutation in ('pin','admission'):
             table=copy.deepcopy(self.table)

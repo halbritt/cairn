@@ -79,7 +79,7 @@ class RunTests(unittest.TestCase):
         review,binding=self.setup_binding();owner=FixedRunOwner(binding.resources,clock=lambda:1)
         self.addCleanup(owner.cleanup_step)
         with patch('time.monotonic_ns',return_value=1):
-            owner.prepare(review,binding,self.config(),str(self.root/('fixed'+suffix)),str(self.root/'callbacks'),AGGREGATE,OP_QUOTE)
+            owner.prepare(review,binding,self.config(),str(self.root/('fixed'+suffix)),str(self.root/'callbacks'),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+suffix)))
         return owner,review,binding
 
     def test_real_prepare_and_unlaunched_cleanup_preserve_all_charges(self):
@@ -91,7 +91,7 @@ class RunTests(unittest.TestCase):
         self.assertTrue(owner._session._custody._snapshot.closed)
         self.assertEqual(binding.resources._memory,held)
         with self.assertRaisesRegex(ValueError,'run_consumed'):
-            owner.prepare(review,binding,self.config(),'ignored','/ignored',AGGREGATE,OP_QUOTE)
+            owner.prepare(review,binding,self.config(),'ignored','/ignored',AGGREGATE,OP_QUOTE,stream_output=str(self.root/'unused-streams'))
 
     def test_service_ready_credit_precedes_start_and_actual_ready_consumption(self):
         from test_trial_sdk_engine_memory_rpc_parent import Harness
@@ -172,7 +172,7 @@ class RunTests(unittest.TestCase):
                     with self.assertRaises(KeyboardInterrupt):
                         interrupt_line(FixedRunOwner.prepare,needle,lambda:owner.prepare(
                             review,binding,self.config(),str(self.root/('source'+str(n))),
-                            str(self.root/'callbacks'),AGGREGATE,OP_QUOTE))
+                            str(self.root/'callbacks'),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+str(n)))))
                 self.assertTrue(owner._failed)
                 self.assertIn(binding.allocation,binding.resources._memory)
                 self.assertEqual(owner.cleanup_step(),'closed_unknown')
@@ -258,8 +258,10 @@ class ScopedSequenceTests(unittest.TestCase):
             self.assertNotIn('result',owner.snapshot())
             with patch('os.waitpid',return_value=(123,0)),                     patch('select.select',side_effect=lambda reads,writes,errors,timeout:(reads,[],[])):
                 for _ in range(8):
-                    if owner.step()=='terminal_waited':break
-            self.assertEqual(owner._state,'terminal_waited')
+                    try: owner.step()
+                    except ValueError as error:
+                        self.assertEqual(str(error),'run_evidence_missing');break
+            self.assertTrue(owner._failed)  # No fabricated evidence sink in this scoped fixture.
             self.assertTrue(session.native_owner.snapshot()['release']['released'])
             self.assertEqual(owner._terminal_graph['result'],'ungraded terminal work product')
             self.assertEqual(owner.snapshot()['qualification'],'source_run_custody_only_no_native_or_task_acceptance')
