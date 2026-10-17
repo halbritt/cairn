@@ -348,6 +348,8 @@ class CommandService:
                 self._job.start(self._plan.argv, self._cwd, self._env)
             except CommandJobError:
                 self._refuse(1 if self._job.snapshot()['primary'] == 'command_deadline' else 2)
+            else:
+                self._queue(wire.STARTED, (self._lease,))
         elif kind == wire.TURN:
             self._turn(fields)
         elif kind == wire.DELIVER:
@@ -421,7 +423,8 @@ class CommandService:
         self._budgets.finish_turn(grant, sum(deltas), bool(unknown))
         if error is not None or unknown:
             self._refusal_pending = 1 if after['primary'] == 'command_deadline' else 2
-        self._queue(wire.PROGRESS, (grant, ordinal, *deltas, self._lifecycle(after), int(bool(unknown))))
+        outcome = 1 if unknown else 2 if error is not None else 0
+        self._queue(wire.PROGRESS, (grant, ordinal, *deltas, self._lifecycle(after), outcome))
 
     def _output(self):
         try:

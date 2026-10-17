@@ -29,7 +29,7 @@ already charged by the caller. They do not authorize sending.
 | 5 | PREPARED | S2P | 40: allocation lease u64, request digest |
 | 6 | START | P2S | 8: allocation lease u64 |
 | 7 | TURN | P2S | 21: grant ordinal u64, turn ordinal u64, maximum CLI bytes u32, final bit u8 |
-| 8 | PROGRESS | S2P | 24: grant ordinal u64, turn ordinal u64, stdin/stdout/stderr deltas u16 each, lifecycle bits u8, unknown bit u8 |
+| 8 | PROGRESS | S2P | 24: grant ordinal u64, turn ordinal u64, stdin/stdout/stderr deltas u16 each, lifecycle bits u8, outcome enum u8 |
 | 9 | OUTPUT | S2P | 192: raw stdout/stderr sizes u64 each, encoded stdout/stderr sizes u64 each, raw stdin/stdout/stderr digests, encoded stdout/stderr digests |
 | 10 | DELIVER | P2S | 11: grant ordinal u64, stream u8 (1 stdout, 2 stderr), maximum text bytes u16 |
 | 11 | STDOUT | S2P | 1–512 strict UTF-8 bytes |
@@ -41,6 +41,7 @@ already charged by the caller. They do not authorize sending.
 | 17 | RELEASED | S2P | 9: allocation lease u64, unknown bit u8 |
 | 18 | SHUTDOWN | P2S | 0 |
 | 19 | BYE | S2P | 0 |
+| 20 | STARTED | S2P | 8: allocation lease u64 |
 
 Operation enums are 1 search, 2 pull, 3 pull-evidence and 4 history. Refusal codes
 are 1 deadline, 2 unknown, 3 policy, 4 output, 5 UTF-8, 6 cancellation and
@@ -62,7 +63,7 @@ directions; sequences remain fixed within each direction. This duplicate local
 validation is not a second resource ledger or a peer-authentication mechanism.
 
 A successful sequence is READY, PREPARE, REQUEST chunks, REQUEST_END, PREPARED,
-START. REQUEST_END requires the exact declared count and SHA-256. Request length
+START, STARTED. REQUEST_END requires the exact declared count and SHA-256. Request length
 is at most the existing 128 KiB document bound. The transcript hashes borrowed
 chunks and does not assemble a request graph or raw document.
 
@@ -85,6 +86,13 @@ plan remains inert.
 The parent must retain the prepared operation before its sole gate debit and
 known START send. START is once-only. The gate's forward return is a pending
 lifecycle fact; API completion and service CLI completion remain later facts.
+
+START enters start_wait. Only the matching operation/lease STARTED response
+permits TURN. A known launch refusal uses REFUSE instead. STARTED records that
+the owned job's launch method actually returned successfully; it is not a CLI
+exit, API success, executable authentication or adoption of a reported PID.
+The parent must await STARTED or REFUSE, never infer launch success from silence
+or socket readiness. Duplicate, unbound or late STARTED responses refuse.
 
 ## Original resources, turns and deadline
 
@@ -136,6 +144,20 @@ marks the attempt failed and cannot yield OUTPUT. A limit-detecting output
 prefix may report the existing one excess byte before REFUSE; it can never
 qualify as an outcome. These are service reports, not independent observations.
 
+The final PROGRESS byte is the closed outcome enum: 0 healthy, 1 unknown, or
+2 known refusal pending. Its body remains 24 bytes. Outcome 2 preserves known
+counts, consumes that known turn and subtracts actual final allowance; it enters
+refusal_pending and forbids another TURN or OUTPUT before the existing REFUSE.
+It does not invent uncertainty, an exit status or an API result. That phase
+survives a prior refusal crossing CANCEL, which still requires REFUSE6 before
+normal RELEASE. Outcome 1 keeps the original unsettled turn unchanged; outcome
+0 retains the normal progress behavior. Other enum values refuse before counts
+change. The latest outcome is selected scalar diagnostic metadata, not authority.
+These are explicit matching-source profile-4 changes; old source peers cannot
+silently reinterpret outcome 2 or missing STARTED. Profiles 1/2/3, Node framing
+and all original traffic/allocation/deadline limits remain unchanged. STARTED's
+40-byte record and every other RPC edge require original traffic commitment.
+
 ## Output, cancellation and release
 
 OUTPUT requires known reported CLI wait, both EOFs, stdin close and release,
@@ -158,13 +180,15 @@ service wait is a separate owner fact, absent from STATUS.
 
 CANCEL is observed once, before RELEASE. It makes attempt failure and the
 cancellation acknowledgement obligation sticky and admits no new grants.
-PREPARED, a prior non6 REFUSE, or STATUS may already have been sent when CANCEL
+PREPARED, STARTED, a prior non6 REFUSE, or STATUS may already have been sent when CANCEL
 crosses in the opposite direction. Either observation order retains those same
 facts without restoring START or result eligibility:
 
 - PREPARED may arrive after CANCEL exactly once only when CANCEL interrupted
   prepared_wait. Its original lease and request digest must match. It cannot
   follow another refusal or cancellation acknowledgement.
+- STARTED may similarly cross exactly once only when CANCEL interrupted
+  start_wait, with the same operation/lease; it never restores TURN eligibility.
 - One prior non6 REFUSE may cross CANCEL; it is a diagnostic, not the required
   cancellation acknowledgement. Another non6 refusal refuses. A prior refusal
   cannot appear after an already observed STATUS. This narrowly supersedes the

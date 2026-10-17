@@ -50,6 +50,7 @@ class WireTests(unittest.TestCase):
     def running(self):
         self.prepared()
         self.emit(w.START,1,10)
+        self.emit(w.STARTED,1,10)
 
     def terminal(self,cancel_before_status=False):
         self.running()
@@ -95,6 +96,88 @@ class WireTests(unittest.TestCase):
             self.emit(w.PROGRESS,1,20,1,0,0,0,0,0)
         self.setUp();self.running()
         with self.assertRaises(w.ServiceWireError):self.emit(w.START,1,10)
+
+    def test_first_turn_requires_known_started_response(self):
+        self.prepared();self.emit(w.START,1,10)
+        with self.assertRaises(w.ServiceWireError):
+            self.emit(w.TURN,1,20,1,1536,0)
+
+    def test_known_refusal_progress_blocks_next_turn_before_refusal(self):
+        self.running();self.emit(w.TURN,1,20,1,32,1)
+        self.emit(w.PROGRESS,1,20,1,23,0,0,0,2)
+        state=self.state.snapshot()
+        self.assertEqual(state['raw_counts'],(23,0,0))
+        self.assertEqual(state['final_remaining'],9)
+        self.assertIsNone(state['turn'])
+        with self.assertRaises(w.ServiceWireError):self.emit(w.TURN,1,21,2,9,1)
+
+    def test_started_is_once_bound_and_crosses_cancel_without_turn_eligibility(self):
+        states=[]
+        for cancel_first in (False,True):
+            self.setUp();self.prepared();self.emit(w.START,1,10)
+            if cancel_first:self.emit(w.CANCEL,1,1)
+            self.emit(w.STARTED,1,10)
+            if not cancel_first:self.emit(w.CANCEL,1,1)
+            states.append(self.state.snapshot())
+            self.emit(w.REFUSE,1,6)
+            self.emit(w.RELEASE,1,10);self.emit(w.RELEASED,1,10,0)
+        self.assertEqual(states[0],states[1])
+        self.assertEqual(states[0]['phase'],'cancelling')
+        for bad in ((w.STARTED,10),(w.TURN,20,1,1536,0)):
+            self.setUp();self.prepared();self.emit(w.START,1,10)
+            self.emit(w.CANCEL,1,1);self.emit(w.STARTED,1,10)
+            with self.assertRaises(w.ServiceWireError):self.emit(bad[0],1,*bad[1:])
+        for before_start in (False,True):
+            self.setUp();self.prepared()
+            if not before_start:self.emit(w.START,1,10)
+            with self.assertRaises(w.ServiceWireError):
+                self.emit(w.STARTED,1,10 if before_start else 11)
+
+    def test_started_independent_literal_body_and_direction_bounds(self):
+        expected=bytes.fromhex('4349504304140000000000000000000100000000000000010000000800000000000000000000000a')
+        with memoryview(bytearray(40)) as destination, memoryview(bytes.fromhex('000000000000000a')) as body:
+            frame=Codec('S2P',lambda n:True,lambda n:None,profile=4).encode_into(
+                destination,w.STARTED,1,body)
+            try:
+                with frame.record as record:self.assertEqual(bytes(record),expected)
+            finally:frame.release()
+        for direction,size in (('P2S',8),('S2P',7),('S2P',9)):
+            with memoryview(bytearray(32+size)) as destination, memoryview(bytes(size)) as body:
+                codec=Codec(direction,lambda n:True,lambda n:None,profile=4)
+                with self.assertRaises(CodecError):codec.encode_into(destination,w.STARTED,1,body)
+
+    def test_known_refusal_progress_crossings_preserve_credit_and_require_refusal(self):
+        states=[]
+        for cancel_at in ('before','between','after'):
+            self.setUp();self.running();self.emit(w.TURN,1,20,1,32,1)
+            if cancel_at=='before':self.emit(w.CANCEL,1,1)
+            self.emit(w.PROGRESS,1,20,1,23,0,0,0,2)
+            if cancel_at=='between':self.emit(w.CANCEL,1,1)
+            self.emit(w.REFUSE,1,3)
+            if cancel_at=='after':self.emit(w.CANCEL,1,1)
+            states.append(self.state.snapshot())
+            self.emit(w.REFUSE,1,6)
+            self.emit(w.RELEASE,1,10);self.emit(w.RELEASED,1,10,0)
+        self.assertEqual(states[0],states[1]);self.assertEqual(states[0],states[2])
+        self.assertEqual(states[0]['progress_outcome'],2)
+        self.assertEqual(states[0]['phase'],'refusal_pending')
+        self.assertEqual(states[0]['raw_counts'],(23,0,0))
+        self.assertEqual(states[0]['final_remaining'],9)
+        self.assertIsNone(states[0]['turn'])
+        self.assertFalse(states[0]['cancel_acknowledged'])
+        for bad in ('output','progress','release'):
+            self.setUp();self.running();self.emit(w.TURN,1,20,1,0,1)
+            self.emit(w.PROGRESS,1,20,1,0,0,0,31,2)
+            with self.assertRaises(w.ServiceWireError):
+                if bad=='output':self.output(0,0,0,0)
+                elif bad=='progress':self.emit(w.PROGRESS,1,20,1,0,0,0,31,2)
+                else:self.emit(w.RELEASE,1,10)
+
+    def test_unknown_progress_outcome_enum_refuses_before_counting(self):
+        self.running();self.emit(w.TURN,1,20,1,32,1)
+        with self.assertRaises(w.ServiceWireError):self.emit(w.PROGRESS,1,20,1,23,0,0,0,3)
+        self.assertEqual(self.state.snapshot()['raw_counts'],(0,0,0))
+        self.assertEqual(self.state.snapshot()['final_remaining'],32)
 
     def test_final_zero_turn_can_report_actual_zero_eof_once(self):
         self.running()

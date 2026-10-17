@@ -46,7 +46,7 @@ TABLE_PROFILE_4 = MappingProxyType({
     13: ('S2P', 8, 8, True), 14: ('S2P', 1, 1, True),
     15: ('P2S', 1, 1, True), 16: ('P2S', 8, 8, True),
     17: ('S2P', 9, 9, True), 18: ('P2S', 0, 0, False),
-    19: ('S2P', 0, 0, False),
+    19: ('S2P', 0, 0, False), 20: ('S2P', 8, 8, True),
 })
 PROFILES = MappingProxyType({1: TABLE, 2: TABLE_PROFILE_2, 3: TABLE_PROFILE_3,
                              4: TABLE_PROFILE_4})

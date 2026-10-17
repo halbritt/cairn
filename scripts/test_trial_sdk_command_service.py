@@ -97,6 +97,9 @@ class ServiceTests(unittest.TestCase):
             self.send(w.REQUEST_END)
         self.flush()
 
+    def start(self,lease=10):
+        self.send(w.START,lease);self.flush()
+
     def finish_job(self):
         for turn in range(1,20):
             self.send(w.TURN,20+turn,turn,1536,0);self.flush()
@@ -118,7 +121,7 @@ class ServiceTests(unittest.TestCase):
         self.prepare(owner)
         self.assertFalse(owner.launched)
         self.assertEqual(self.reports[-1][0],w.PREPARED)
-        self.send(w.START,10)
+        self.start()
         self.assertEqual(owner.starts[0][0][:6],
                          ('/fixed/cairn','agent','--socket','/fixed/socket','--token-file','/fixed/token'))
         reads=owner.reads
@@ -143,9 +146,76 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.reports[-1][0],w.REFUSE)
         self.assertEqual(self.budgets.snapshot()['raw_reserved'],0)
 
-    def test_missing_grant_and_duplicate_start_do_not_repeat_job_effect(self):
+    def test_successful_real_job_start_queues_correlated_started_without_io(self):
+        owner=Owner();self.prepare(owner)
+        self.send(w.START,10)
+        self.assertEqual(self.service.pending(),(20,1,8))
+        self.assertTrue(owner.launched)
+        self.assertEqual(owner.reads,0)
+        self.flush()
+        self.assertEqual(w.STRUCTS[20].unpack(self.reports[-1][1]),(10,))
+
+    def test_real_job_known_stream_refusal_is_visible_before_its_refuse(self):
+        owner=Owner(b'x',b'');self.prepare(owner)
+        self.start()
+        self.send(w.TURN,20,1,0,1)
+        self.assertEqual(self.service.pending()[0],w.PROGRESS)
+        self.flush()
+        progress=w.STRUCTS[w.PROGRESS].unpack(next(b for k,b in self.reports if k==w.PROGRESS))
+        self.assertEqual(progress[2:5],(0,0,0))
+        self.assertEqual(progress[-1],2)
+        state=self.service.snapshot()
+        self.assertFalse(state['job']['outcome_unknown'])
+        self.assertEqual(state['job']['primary'],'command_stream_exhausted')
+        self.assertIsNone(state['budgets']['turn'])
+        self.assertEqual(state['transcript']['final_remaining'],0)
+        self.assertEqual(self.reports[-1][0],w.REFUSE)
+        self.assertFalse(any(k==w.OUTPUT for k,_ in self.reports))
+
+    def test_started_crossing_cancel_keeps_one_launch_and_no_cli_turn(self):
         owner=Owner();self.prepare(owner);self.send(w.START,10)
+        self.assertEqual(self.service.pending()[0],w.STARTED)
+        self.send(w.CANCEL,1);self.flush()
+        self.assertEqual([k for k,_ in self.reports[-2:]],[w.STARTED,w.REFUSE])
+        self.assertEqual(w.STRUCTS[w.REFUSE].unpack(self.reports[-1][1]),(6,))
+        self.assertEqual(len(owner.starts),1);self.assertEqual(owner.reads,0)
+        with self.assertRaises(w.ServiceWireError):self.send(w.TURN,20,1,1536,0)
+
+    def test_post_launch_deadline_refuses_without_started_or_relaunch(self):
+        clock=self.clock
+        class LateOwner(Owner):
+            def start(self,argv,cwd,env):
+                super().start(argv,cwd,env);clock[0]=10000
+        owner=LateOwner();self.prepare(owner);self.send(w.START,10)
+        self.assertTrue(owner.launched);self.assertEqual(len(owner.starts),1)
+        self.assertEqual(self.service.pending()[0],w.REFUSE)
+        self.flush()
+        self.assertEqual(w.STRUCTS[w.REFUSE].unpack(self.reports[-1][1]),(1,))
+        self.assertFalse(any(k==w.STARTED for k,_ in self.reports))
         with self.assertRaises(w.ServiceWireError):self.send(w.START,10)
+        self.assertEqual(len(owner.starts),1)
+
+    def test_real_job_post_write_deadline_has_known_prefix_and_refusal_outcome(self):
+        clock=self.clock
+        class DeadlineOwner(Owner):
+            def read_into(self,name,view):
+                count=super().read_into(name,view)
+                if count>0:clock[0]=10000
+                return count
+        owner=DeadlineOwner(b'abc',b'');self.prepare(owner);self.start()
+        self.send(w.TURN,20,1,10,1);self.flush()
+        progress=w.STRUCTS[w.PROGRESS].unpack(next(b for k,b in self.reports if k==w.PROGRESS))
+        self.assertEqual(progress[2:5],(0,3,0));self.assertEqual(progress[-1],2)
+        state=self.service.snapshot()
+        self.assertEqual(state['job']['primary'],'command_deadline')
+        self.assertFalse(state['job']['outcome_unknown'])
+        self.assertEqual(state['transcript']['final_remaining'],7)
+        self.assertIsNone(state['budgets']['turn'])
+        self.assertEqual(w.STRUCTS[w.REFUSE].unpack(self.reports[-1][1]),(1,))
+
+    def test_missing_grant_and_duplicate_start_do_not_repeat_job_effect(self):
+        owner=Owner();self.prepare(owner);self.start()
+        with self.assertRaises(w.ServiceWireError):self.start()
         self.assertEqual(len(owner.starts),1)
         self.assertEqual(owner.reads,0)
 
@@ -159,7 +229,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(budget.snapshot()['raw_reserved'],50)
 
     def test_text_frame_remains_exact_until_known_send(self):
-        owner=Owner(b'ok',b'');self.prepare(owner);self.send(w.START,10)
+        owner=Owner(b'ok',b'');self.prepare(owner);self.start()
         self.finish_job()
         self.send(w.DELIVER,100,1,2)
         pending=self.service.pending()
@@ -213,7 +283,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(w.STRUCTS[w.RELEASED].unpack(self.reports[-1][1]),(10,0))
 
     def test_cancel_preserves_pending_text_without_status_then_ack(self):
-        owner=Owner(b'ok',b'');self.prepare(owner);self.send(w.START,10)
+        owner=Owner(b'ok',b'');self.prepare(owner);self.start()
         self.finish_job();self.send(w.DELIVER,100,1,2)
         self.send(w.CANCEL,1);self.flush()
         self.assertEqual([k for k,_ in self.reports[-2:]],[w.STDOUT,w.REFUSE])
@@ -222,7 +292,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(w.STRUCTS[w.RELEASED].unpack(self.reports[-1][1]),(10,0))
 
     def test_zero_final_grant_observes_eof_without_reading_payload(self):
-        owner=Owner();self.prepare(owner);self.send(w.START,10)
+        owner=Owner();self.prepare(owner);self.start()
         self.send(w.TURN,20,1,0,1);self.flush()
         progress=w.STRUCTS[w.PROGRESS].unpack(next(b for k,b in self.reports if k==w.PROGRESS))
         self.assertEqual(progress[2:5],(0,0,0))
@@ -236,7 +306,7 @@ class ServiceTests(unittest.TestCase):
             def read_into(self,name,view):
                 if name=='stderr':raise OSError('boundary fault')
                 return super().read_into(name,view)
-        owner=BrokenOwner(b'prefix',b'');self.prepare(owner);self.send(w.START,10)
+        owner=BrokenOwner(b'prefix',b'');self.prepare(owner);self.start()
         with self.assertRaises(OSError):self.send(w.TURN,20,1,1536,0)
         state=self.service.snapshot()
         self.assertTrue(state['fatal'])
@@ -246,7 +316,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(owner.reads,1)
 
     def test_split_utf8_delivery_has_exact_digest_and_original_raw_counts(self):
-        owner=Owner(('💡'*130).encode(),b'\xff\xfe');self.prepare(owner);self.send(w.START,10)
+        owner=Owner(('💡'*130).encode(),b'\xff\xfe');self.prepare(owner);self.start()
         self.finish_job()
         fields=w.STRUCTS[w.OUTPUT].unpack(next(b for k,b in self.reports if k==w.OUTPUT))
         self.assertEqual(fields[:4],(520,2,520,6))
@@ -280,7 +350,7 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(module.ServiceError):budget.release(50,100)
 
     def test_retirement_interrupt_is_not_swallowed_or_reported_known(self):
-        owner=Owner();self.prepare(owner);self.send(w.START,10)
+        owner=Owner();self.prepare(owner);self.start()
         self.finish_job()
         fired=[]
         def trace(frame,event,arg):
@@ -327,7 +397,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(self.service.snapshot()['job'])
 
     def test_clock_failure_progress_is_unknown_and_cancel_ack_retains_turn(self):
-        owner=Owner();self.prepare(owner);self.send(w.START,10)
+        owner=Owner();self.prepare(owner);self.start()
         # The real job's clock validator turns this boundary failure into its
         # fixed unknown outcome; the service reports and retains that grant.
         self.clock[0]=False
@@ -349,7 +419,7 @@ class ServiceTests(unittest.TestCase):
             def read_into(self,name,view):
                 if self.waiting:return -1
                 return super().read_into(name,view)
-        owner=WaitingOwner(b'abc',b'');self.prepare(owner);self.send(w.START,10)
+        owner=WaitingOwner(b'abc',b'');self.prepare(owner);self.start()
         self.send(w.TURN,20,1,3,1);self.flush()
         self.assertEqual(self.service.snapshot()['transcript']['final_remaining'],3)
         owner.waiting=False
@@ -360,14 +430,14 @@ class ServiceTests(unittest.TestCase):
 
     def test_expired_start_does_not_launch_or_reset_deadline(self):
         owner=Owner();self.prepare(owner)
-        self.clock[0]=10000;self.send(w.START,10);self.flush()
+        self.clock[0]=10000;self.start()
         self.assertFalse(owner.launched)
         self.assertEqual(w.STRUCTS[w.REFUSE].unpack(self.reports[-1][1]),(1,))
 
     def test_stdin_close_unknown_never_sets_lifecycle_closed(self):
         class CloseFailure(Owner):
             def close_stdin(self):raise OSError('close boundary')
-        owner=CloseFailure();self.prepare(owner);self.send(w.START,10)
+        owner=CloseFailure();self.prepare(owner);self.start()
         with self.assertRaises(OSError):self.send(w.TURN,20,1,1536,0)
         state=self.service.snapshot()
         self.assertEqual(state['job']['stdin_terminal'],'all_written')
@@ -375,10 +445,10 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(module.CommandService._lifecycle(state['job'])&1,0)
 
     def test_successful_release_allows_fresh_serialized_operation_then_shutdown(self):
-        first=Owner();self.prepare(first);self.send(w.START,10);self.finish_job()
+        first=Owner();self.prepare(first);self.start();self.finish_job()
         self.send(w.RELEASE,10);self.flush()
         self.operation=2
-        second=Owner();self.prepare(second,lease=11);self.send(w.START,11)
+        second=Owner();self.prepare(second,lease=11);self.start(11)
         self.send(w.TURN,100,1,1536,0);self.flush()
         if self.reports[-1][0]!=w.STATUS:
             self.send(w.TURN,101,2,1536,0);self.flush()

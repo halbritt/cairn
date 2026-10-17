@@ -17,7 +17,7 @@ from trial_sdk_command_policy import FixedCommandPolicy
 
 (READY, PREPARE, REQUEST, REQUEST_END, PREPARED, START, TURN, PROGRESS,
  OUTPUT, DELIVER, STDOUT, STDERR, STATUS, REFUSE, CANCEL, RELEASE, RELEASED,
- SHUTDOWN, BYE) = range(1, 20)
+ SHUTDOWN, BYE, STARTED) = range(1, 21)
 TABLE = TABLE_PROFILE_4
 STRUCTS = MappingProxyType({
     READY: struct.Struct('>'), PREPARE: struct.Struct('>BQQIQI32s'),
@@ -27,7 +27,7 @@ STRUCTS = MappingProxyType({
     DELIVER: struct.Struct('>QBH'), STATUS: struct.Struct('>Ii'),
     REFUSE: struct.Struct('>B'), CANCEL: struct.Struct('>B'),
     RELEASE: struct.Struct('>Q'), RELEASED: struct.Struct('>QB'),
-    SHUTDOWN: struct.Struct('>'), BYE: struct.Struct('>'),
+    SHUTDOWN: struct.Struct('>'), BYE: struct.Struct('>'), STARTED: struct.Struct('>Q'),
 })
 RAW_LIMIT = 128 * 1024
 WORKING_LIMIT = 512 * 1024 * 1024
@@ -113,6 +113,7 @@ class ServiceTranscript:
         self._attempt_failed = False
         self._cancelled = self._cancel_acknowledged = False
         self._crossed_prepared = False
+        self._crossed_started = False
         self._operation = self._last_operation = self._last_grant = 0
         self._lease = self._deadline = self._request_size = self._request_count = 0
         self._quote = (0, 0)
@@ -121,6 +122,7 @@ class ServiceTranscript:
         self._request_hash = None
         self._turn = self._delivery = None
         self._last_turn = self._lifecycle = 0
+        self._progress_outcome = None
         self._raw = (0, 0, 0)
         self._wire = (0, 0)
         self._wire_sizes = None
@@ -195,6 +197,7 @@ class ServiceTranscript:
             self._request_digest, self._request_hash = digest, hashlib.sha256()
             self._turn = self._delivery = None
             self._last_turn = self._lifecycle = 0
+            self._progress_outcome = None
             self._raw, self._wire = (0, 0, 0), (0, 0)
             self._wire_sizes = self._hashes = self._decoders = None
             self._text_hashes = self._text_expected = None
@@ -226,7 +229,15 @@ class ServiceTranscript:
         elif kind == START:
             self._phase_is('prepared')
             _require(fields[0] == self._lease, 'service_lease')
-            self._phase = 'running'
+            self._phase = 'start_wait'
+        elif kind == STARTED:
+            _require(self._phase == 'start_wait' or
+                     (self._phase == 'cancelling' and self._crossed_started),
+                     'service_order')
+            _require(fields[0] == self._lease, 'service_lease')
+            self._crossed_started = False
+            if self._phase != 'cancelling':
+                self._phase = 'running'
         elif kind == TURN:
             self._phase_is('running')
             grant, turn, maximum, final = fields
@@ -244,7 +255,7 @@ class ServiceTranscript:
             self._turn = fields
         elif kind == PROGRESS:
             self._phase_is('running', 'cancelling')
-            grant, turn, stdin, stdout, stderr, lifecycle, unknown = fields
+            grant, turn, stdin, stdout, stderr, lifecycle, outcome = fields
             _require(self._turn is not None and (grant, turn) == self._turn[:2],
                      'service_turn')
             counts = (stdin, stdout, stderr)
@@ -252,7 +263,7 @@ class ServiceTranscript:
                      'service_allowance')
             _require(lifecycle <= 31 and (lifecycle | self._lifecycle) == lifecycle
                      and (not lifecycle & 16 or lifecycle == 31)
-                     and unknown in (0, 1), 'service_lifecycle')
+                     and outcome in (0, 1, 2), 'service_lifecycle')
             _require(not any(counts[i] and self._lifecycle & (1 << i)
                              for i in range(3)), 'service_after_eof')
             totals = tuple(a + b for a, b in zip(self._raw, counts))
@@ -262,13 +273,17 @@ class ServiceTranscript:
                      and sum(totals) <= TRAFFIC_LIMIT, 'service_raw_limit')
             self._raw, self._lifecycle = totals, lifecycle
             self._last_turn = turn
-            if unknown:
+            self._progress_outcome = outcome
+            if outcome == 1:
                 self._attempt_failed = True
                 self._phase = 'failed_operation'
             else:
                 if self._final_remaining is not None:
                     self._final_remaining -= sum(counts)
                 self._turn = None
+                if outcome == 2:
+                    self._attempt_failed = True
+                    self._phase = 'refusal_pending'
         elif kind == OUTPUT:
             self._phase_is('running', 'cancelling')
             _require(self._turn is None and self._lifecycle == 31
@@ -328,8 +343,8 @@ class ServiceTranscript:
             if self._phase != 'cancelling':
                 self._phase = 'result'
         elif kind == REFUSE:
-            self._phase_is('preparing', 'prepared_wait', 'prepared', 'running',
-                           'output', 'cancelling', 'failed_operation')
+            self._phase_is('preparing', 'prepared_wait', 'prepared', 'start_wait', 'running',
+                           'output', 'cancelling', 'failed_operation', 'refusal_pending')
             _require(fields[0] in range(1, 8), 'service_refusal')
             prior = self._cancelled and fields[0] != 6
             if prior:
@@ -338,22 +353,23 @@ class ServiceTranscript:
             elif self._cancelled:
                 self._cancel_acknowledged = True
             self._crossed_prepared = False
+            self._crossed_started = False
             self._refusal = fields[0]
             self._attempt_failed = True
             if not prior:
                 self._phase = 'refused'
         elif kind == CANCEL:
-            self._phase_is('preparing', 'prepared_wait', 'prepared', 'running', 'output',
-                           'refused', 'result', 'failed_operation')
+            self._phase_is('preparing', 'prepared_wait', 'prepared', 'start_wait', 'running', 'output',
+                           'refused', 'result', 'failed_operation', 'refusal_pending')
             _require(not self._cancelled and self._refusal != 6
                      and fields[0] in (1, 2, 3), 'service_cancel')
             self._crossed_prepared = self._phase == 'prepared_wait'
+            self._crossed_started = self._phase == 'start_wait'
             self._cancelled = True
             self._attempt_failed = True
-            # Only PROGRESS advances last_turn; known progress clears the turn.
-            # A retained matching turn therefore has an already-consumed prefix.
-            unknown_turn = self._turn is not None and self._last_turn == self._turn[1]
-            self._phase = 'failed_operation' if unknown_turn else 'cancelling'
+            # Preserve the consumed progress fact across a crossed prior refusal.
+            self._phase = {1: 'failed_operation', 2: 'refusal_pending'}.get(
+                self._progress_outcome, 'cancelling')
         elif kind == RELEASE:
             self._phase_is('result', 'refused', 'failed_operation')
             _require(not self._cancelled or self._cancel_acknowledged,
@@ -382,6 +398,7 @@ class ServiceTranscript:
                 'wire_sizes': self._wire_sizes, 'raw_sha256': self._hashes,
                 'text_sha256': self._text_expected,
                 'lifecycle': self._lifecycle, 'returncode': self._returncode,
+                'progress_outcome': self._progress_outcome,
                 'cli_wait_status': self._wait_status, 'refusal': self._refusal,
                 'release_unknown': self._release_unknown}
 

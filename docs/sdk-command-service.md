@@ -105,7 +105,14 @@ START is accepted once after PREPARED and the parent's real gate debit. It uses
 only reconstructed argv and trusted cwd/env. The original absolute monotonic
 deadline is passed to the job unchanged. The service checks it before launch,
 preparation, output hashing and delivery; the real job checks its own actual
-effects. No-arrived TURN means no `job.step` call. Interest queries only borrow
+effects. Successful return from the actual job's start queues STARTED, carrying
+the exact lease. A known refusal queues REFUSE instead; a partial/unknown launch
+retains its independent owner facts and must not fabricate STARTED. The parent
+must receive STARTED before sending TURN; silence is not a success response.
+STARTED may cross CANCEL, preserving its report before separate REFUSE6 without
+restoring job eligibility. It does not attest CLI exit, API success or source
+authority. Its 40-byte record spends the same original traffic budget.
+No-arrived TURN means no `job.step` call. Interest queries only borrow
 the existing job's readiness handles; this core does not duplicate or close
 them.
 
@@ -121,7 +128,13 @@ zero-final readiness/EOF turns cannot revive positive room. The scheduler must
 park on actual readiness rather than spin on zero progress.
 
 Known CommandJobError paths produce a bounded PROGRESS/REFUSE sequence when a
-turn was consumed. Unknown progress retains the unsettled turn and allocation.
+turn was consumed. The existing final progress byte is outcome 0 for healthy,
+1 for unknown, and 2 when a known CommandJobError requires the next REFUSE.
+For example, a known stream limit or deadline may retain an accepted prefix
+without setting job outcome_unknown. Outcome 2 therefore consumes the known
+turn/actual allowance and prevents the parent granting another turn before that
+refusal; it is not mislabeled healthy or uncertain. Unknown progress retains
+the unsettled turn and allocation. Both forms preserve cancellation obligations.
 Unexpected exceptions poison the core and propagate, preserving the independently
 held job and known snapshot prefix; they do not invent a successful receipt.
 The parent must quarantine the full outstanding ticket on such a missing or
