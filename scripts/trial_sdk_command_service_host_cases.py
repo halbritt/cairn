@@ -20,6 +20,26 @@ from trial_sdk_peer import Peer
 import trial_sdk_command_service_wire as wire
 
 
+def reported_cli_facts(state):
+    """Select hex digests for JSON; retain the transcript's original byte values."""
+    report = dict(state)
+
+    def hex_digest(value):
+        if type(value) is not bytes or len(value) != 32:
+            raise ValueError('fixture_digest_shape')
+        return value.hex()
+
+    if report['request_sha256'] is not None:
+        report['request_sha256'] = hex_digest(report['request_sha256'])
+    for key, count in (('raw_sha256', 3), ('text_sha256', 2)):
+        values = report[key]
+        if values is not None:
+            if type(values) is not tuple or len(values) != count:
+                raise ValueError('fixture_digest_shape')
+            report[key] = tuple(hex_digest(value) for value in values)
+    return report
+
+
 def main():
     before = len(os.listdir('/proc/self/fd'))
     source = Path(__file__).resolve().parent
@@ -128,7 +148,7 @@ def main():
         if (outcome.returncode != 17 or outcome.stdout != 'ordinary service: é💡\n'
                 or outcome.stderr != 'fixture diagnostic: �\n'):
             raise ValueError('fixture_command_outcome')
-        reported_cli = link.transcript.snapshot()
+        reported_cli = reported_cli_facts(link.transcript.snapshot())
         if reported_cli['cli_wait_status'] != 17 << 8:
             raise ValueError('fixture_cli_wait')
         outcome = None  # End this caller's text alias before local retirement.

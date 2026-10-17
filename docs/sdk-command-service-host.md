@@ -16,6 +16,10 @@ both actual service stdio EOFs and observes its independently owned service wait
 before retiring standing storage. The CLI report and parent service wait are
 different observations.
 
+The final report copies the transcript and renders its request, raw-stream and
+text SHA-256 digests as hexadecimal strings. The original transcript keeps its
+byte digests. Unknown bytes elsewhere still refuse JSON serialization.
+
 The selected source quotes are combined parent/child standing raw5184 bytes,
 including a512-byte parent diagnostic slab, and128MiB working; parent operation
 raw40000/working64MiB; child operation raw65536/working64MiB, including child
