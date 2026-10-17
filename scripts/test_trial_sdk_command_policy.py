@@ -51,6 +51,31 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(plans[-1].argv,('/fixed/cairn','agent','--socket',
                          '/fixed/api.sock','--token-file','/fixed/token','pull'))
 
+    def test_actual_engine_omits_empty_context_strings_and_policy_matches(self):
+        engine=engine_module()
+        context=dict(revision='',workspace_sha256='',task_class='coding',
+                     task_phase='',binding='',capability='')
+        config=dict(cairn='/fixed/cairn',socket='/fixed/api.sock',token_file='/fixed/token',
+                    repo='/repo',task_id='task',run_id='run',harness='claude',context=context)
+        policy=self.policy(tuple(context.items()))
+        self.assertEqual(policy.context,(('task_class','coding'),))
+        captured=[]
+        def capture(command,*,body=None,**unused):
+            plan=policy.plan(command[6],tuple(command[7:]),body)
+            self.assertEqual(plan.argv,tuple(command))
+            captured.append(plan)
+            return {'ok':True,'data':{'status':'READY','destination':{'name':'hosted'},
+                                     'receipt_id':A,'index':[]}}
+        engine.run_json=capture
+        engine.Memory(config,'session').search('query',16000)
+        self.assertEqual(len(captured),1)
+        self.assertNotIn('--revision',captured[0].argv)
+        for context in ((('revision',''),('revision','a'*40)),(('unknown',''),),
+                        (('revision',False),),(('revision',0),),(('revision',None),),
+                        (('revision',[]),),(('revision','invalid'),)):
+            with self.subTest(context=context),self.assertRaises(CommandPolicyError):
+                self.policy(context)
+
     def test_search_rebuilds_and_preserves_empty_entity_query(self):
         plan=self.policy().plan('search',self.args('--entity-file','a.py','--offset','10000',
                                                    '--kind','instruction',query=''),None)

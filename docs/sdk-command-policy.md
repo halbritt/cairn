@@ -3,7 +3,10 @@
 `FixedCommandPolicy(executable, socket, token_file, repo, task, run, context=())`
 is an immutable parent-supplied binding. `context` is a tuple of pairs for the
 engine's configured revision, workspace_sha256, task_class, task_phase, binding
-and capability values. It retains no mutable configuration dictionary.
+and capability values. Explicit empty strings normalize to absent, matching the
+actual engine. Unknown/duplicate keys and non-string values (including falsy
+values such as False, 0 and None) still refuse. It retains no mutable
+configuration dictionary.
 `plan(operation, args=(), body=None)` returns a frozen `CommandPlan` containing
 only operation, rebuilt argv and normalized JSON text (or no stdin for search).
 
@@ -14,6 +17,14 @@ separately bind the exact plan to the current attempt, trusted configuration and
 sources, held receipt/handle/evidence membership, deadlines, reservations and the
 sole MemoryDispatchGate debit. It must not treat a manually constructed dataclass
 as proof of any of those facts.
+
+Before calling .plan(), the parent must reserve ORIGINAL working/raw capacity
+for the input tuple/list views, canonical encoder chunks, decoded JSON graph,
+normalized Unicode body/argv and all overlapping aliases. The parser and canonical
+encoder have existing bounds, but planning itself is not allocation-free. Waiting
+until CommandJob.prepare to reserve memory is too late. The planner has no hidden
+pool or budget callback; the fixed integration owner must bind these lifetimes to
+the same attempt resource owner before invocation and through transfer/cleanup.
 
 ## Search dialect
 

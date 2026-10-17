@@ -101,15 +101,16 @@ class FixedCommandPolicy:
                 _refuse('command_policy_binding')
         if type(self.context) is not tuple:
             _refuse('command_policy_binding')
-        seen=set()
+        seen=set(); normalized=[]
         for pair in self.context:
             if (type(pair) is not tuple or len(pair)!=2 or type(pair[0]) is not str
                     or pair[0] not in dict(_CONTEXT) or pair[0] in seen):
                 _refuse('command_policy_binding')
             key,value=pair
             size=_string(value)
+            seen.add(key)
             if not size:
-                _refuse('command_policy_binding')
+                continue  # The actual engine omits explicitly empty strings.
             if key=='revision':
                 valid=re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})',value)
             elif key=='workspace_sha256':
@@ -118,7 +119,8 @@ class FixedCommandPolicy:
                 valid=size<=256 and value!='*'
             if not valid:
                 _refuse('command_policy_binding')
-            seen.add(key)
+            normalized.append(pair)
+        object.__setattr__(self,'context',tuple(normalized))
 
     def plan(self,operation,args=(),body=None):
         if (type(operation) is not str or operation not in ('search','pull','pull-evidence','history')
