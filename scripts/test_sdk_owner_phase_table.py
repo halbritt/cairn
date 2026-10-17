@@ -39,6 +39,12 @@ class PhaseTableTests(unittest.TestCase):
         phase['backings'].remove('private_stream')
         with self.assertRaises(AssertionError):validate(table,self.root)
 
+    def test_paired_and_publication_backing_omissions_refuse(self):
+        for phase_id,backing in [('first_hook_before_user','paired_selection'),('private_evidence_4','evidence_publication')]:
+            table=copy.deepcopy(self.table)
+            next(p for p in table['phases'] if p['id']==phase_id)['backings'].remove(backing)
+            with self.assertRaises(AssertionError):validate(table,self.root)
+
     def test_source_drift_and_false_admission_refuse(self):
         for mutation in ('pin','admission'):
             table=copy.deepcopy(self.table)

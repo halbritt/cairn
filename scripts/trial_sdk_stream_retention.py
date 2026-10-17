@@ -43,6 +43,7 @@ class SessionStreamRetention:
             require(not binding.owner.snapshot()['launch_attempted'], 'retention_before_launch')
             path = Path(path)
             require(path.is_absolute() and '..' not in path.parts, 'retention_path')
+            self.path = str(path)
             for parent in path.parents:
                 require(not parent.is_symlink(), 'retention_path')
             parent = path.parent.stat()

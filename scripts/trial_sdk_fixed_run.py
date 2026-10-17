@@ -36,6 +36,7 @@ class FixedRunOwner:
         self._callback = self._callback_owner = self._callback_domain = None
         self._terminal_graph = self._terminal_metadata = None
         self._evidence = None
+        self._paired = self._paired_join = self._publication = None
         self._cleanup_started = self._sources_closed = False
         self._owners = []  # Actual original owners, never caller-reported PID receipts.
         self._source_attempts = set()
@@ -101,6 +102,18 @@ class FixedRunOwner:
     def _construct_session(self):
         self._session = SDKSessionDriver.__new__(SDKSessionDriver)
         SDKSessionDriver.__init__(self._session,self._preparation,_resources=self._session_binding)
+
+    def publish_evidence(self, output):
+        """Private metadata after actual cleanup, never a result-only grade."""
+        from trial_sdk_paired_evidence import EvidencePublication
+        require(self._publication is None and not self._busy, 'run_publication_consumed')
+        try:
+            self._publication = EvidencePublication.__new__(EvidencePublication)
+            EvidencePublication.__init__(self._publication, self)
+            self._publication.publish(output)
+        except BaseException as primary:
+            self._fail(primary)
+            raise
 
     def require_complete(self):
         # No invented native contract, namespace or successful launch fallback.

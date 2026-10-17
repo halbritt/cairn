@@ -7,7 +7,11 @@ import json
 import trial_paired_request as paired
 from trial_paired_companion import validate_companion
 from trial_provider_mapping import original_plan
-from trial_weekly_input import load_weekly_input
+
+def load_weekly_input(reference):
+    # Keep the legacy evaluator behind actual preparation, not module import.
+    from trial_weekly_input import load_weekly_input as load
+    return load(reference)
 
 SCHEMA = 'cairn.weekly-eval.request/1'
 FIELDS = ('schema request_id campaign_id occurrence_id scheduled_at expires_at '
@@ -158,6 +162,11 @@ def _protect(request,bundle,retained,companion,review,registry=None):
 
 def prepare(request, *, registry, now, companion=None, review=None):
     request,bundle,evidence,retained = _checked(request,now=now,companion=companion,review=review)
+    return _publish(request,bundle,evidence,retained,registry,companion,review)
+
+
+def _publish(request,bundle,evidence,retained,registry,companion,review):
+    # Called only after _checked; also used by the source-owned preparation path.
     retained = _selected(request,bundle,retained)
     output,registry = paired.plain_path(request['output']),paired.plain_path(str(registry))
     paired.need(not output.exists(), 'target_exists')

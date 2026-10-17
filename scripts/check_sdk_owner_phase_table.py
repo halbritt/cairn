@@ -34,16 +34,18 @@ def validate(table, root):
             assert all(units.get(name)==span for name,span in pin['units'].items())
         finally:os.close(fd)
     owners=table['ticket_rows'];backings={b['id']:b for b in table['backings']}
-    assert len(backings)==len(table['backings'])==19
+    assert len(backings)==len(table['backings'])==21
     for backing in backings.values():
         assert backing['physical_status']=='unproved' and backing['missing_evidence']
         assert set(backing['tickets'])<=owners.keys()
         ref=backing['source'];assert table['sources'][ref['path']]['units'][ref['unit']]==ref['lines']
-    phases={p['id']:p for p in table['phases']};assert len(phases)==len(table['phases'])==50
+    phases={p['id']:p for p in table['phases']};assert len(phases)==len(table['phases'])==56
     for phase in phases.values():
         assert phase['physical_upper'] is None and phase['transition_allowed'] is False
         assert phase['backings'] and set(phase['backings'])<=backings.keys()
-        if phase['id'] != 'preparation': assert 'private_stream' in phase['backings']
+        if phase['id'] != 'preparation':
+            assert {'private_stream','paired_selection'} <= set(phase['backings'])
+        if phase['id'].startswith('private_evidence_'):assert 'evidence_publication' in phase['backings']
         tickets=[r['ticket'] for r in phase['reservations']]
         assert len(tickets)==len(set(tickets))
         assert phase['raw_total']==sum(r['raw'] for r in phase['reservations'])
@@ -65,6 +67,8 @@ def validate(table, root):
     expected={'preparation','service_authentication','first_hook_before_user','suspended_producer','later_callback_after_user'}
     expected.update('command_'+str(k+1) for k in range(5))
     expected.update(name+'_'+str(k) for k in range(5) for name in ('reply_detach','interrupted_command','before_status_old','before_status_proposed','parent_retired','request_return','terminal_recheck','cleanup_retained'))
+    expected.add('paired_preparation')
+    expected.update('private_evidence_'+str(k) for k in range(5))
     assert set(phases)==expected
     for entry in table['profile_evidence']:
         ref=entry['source'];assert table['sources'][ref['path']]['units'][ref['unit']]==ref['lines']
