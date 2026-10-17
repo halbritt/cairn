@@ -63,9 +63,11 @@ poll loop, or sleep is performed here.
 
 ## Sequence and custody
 
-PREPARE and bounded REQUEST chunks precede REQUEST_END. PREPARED invokes the
-gate's hook `start` once. The gate debits before its fixed forward queues START;
-the returned pending handle remains retained while the operation runs. A
+PREPARE and bounded REQUEST chunks precede REQUEST_END. After PREPARED, a known
+shortage of START's 113-byte control stage cancels before any gate debit.
+Otherwise the gate's hook `start` is invoked once, and the gate debits before
+its fixed forward queues START. The returned pending handle remains retained
+while the operation runs. A
 returned forward means queued work, not CLI or API completion. STARTED is
 required before any TURN.
 
@@ -131,6 +133,7 @@ zero final offer, uncertainty, deadline and interrupted gate/settlement handoffs
 They also cover stdout above 128 KiB, replacement-decoded stderr whose encoded
 volume exceeds 128 KiB, two successful operations sharing the same gate and
 ledger, and known control exhaustion before TURN and during text delivery.
+Prepared-stage START control exhaustion also verifies cancellation before debit.
 
 The initial missing module failed before implementation. A subsequent unknown
 PROGRESS test exposed `root_unknown` when quarantine ran inside the borrowed

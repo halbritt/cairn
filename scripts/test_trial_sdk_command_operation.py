@@ -353,6 +353,22 @@ class OperationTests(unittest.TestCase):
         self.assertFalse(h.operation.snapshot()['child_allocation'])
         self.assertEqual(h.resources.snapshot()['traffic_reserved'], 0)
 
+    def test_prepared_start_capacity_denial_cancels_before_gate_debit(self):
+        h = Harness(self)
+        h.until(lambda: h.operation.snapshot()['phase'] == 'prepared')
+        available = h.resources.snapshot()['traffic_available']
+        prior = h.resources.grant(h.resources.local, 'data', available - 112)
+        h.resources.settle(prior, available - 112)
+        result = h.finish()
+        self.assertEqual(result['budget_refusal'], 'operation_control_exhausted')
+        self.assertEqual(result['refusal'], 6)
+        self.assertEqual(h.gate.snapshot()['dispatches'], 0)
+        self.assertEqual(h.gate.snapshot()['hook_searches'], 0)
+        self.assertNotIn(w.START, [kind for kind, _ in h.endpoint.sent])
+        self.assertFalse(h.owner.launched)
+        self.assertFalse(h.resources.snapshot()['unknown'])
+        self.assertEqual(h.resources.snapshot()['traffic_reserved'], 0)
+
     def test_small_delivery_credit_then_exhaustion_preserves_text_prefix_and_cancels(self):
         h = Harness(self, out=b'x'*512, err=b'')
         h.until(lambda: h.operation.snapshot()['phase'] == 'output')

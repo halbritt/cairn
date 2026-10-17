@@ -416,6 +416,11 @@ class CommandOperation:
                     self._queue(wire.REQUEST, self._a, data=piece)
                 self._offset += count
         elif self._phase == 'prepared':
+            # Known START-control denial is still a preparation refusal, before
+            # spending the sole logical dispatch. The forward rechecks custody.
+            if self.resources.snapshot()['traffic_available'] < 113:
+                self._capacity_stop()
+                return
             _require(not self._dispatch_attempted, 'operation_dispatch_consumed')
             self._dispatch_attempted = True
             channel = self._gate.hook(self.deadline)
