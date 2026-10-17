@@ -98,7 +98,7 @@ def pack_into(kind, destination, *fields):
 
 
 class ServiceTranscript:
-    """One serialized parent-owned transcript; bounded scalar diagnostics.
+    """One serialized endpoint transcript; bounded scalar diagnostics.
 
     Ordinals correlate existing owner tickets; they cannot create those tickets.
     No elapsed time, actual wait, source custody or accounting is authenticated
@@ -112,6 +112,7 @@ class ServiceTranscript:
         self.failed = False
         self._attempt_failed = False
         self._cancelled = self._cancel_acknowledged = False
+        self._crossed_prepared = False
         self._operation = self._last_operation = self._last_grant = 0
         self._lease = self._deadline = self._request_size = self._request_count = 0
         self._quote = (0, 0)
@@ -215,9 +216,13 @@ class ServiceTranscript:
                      'service_request_digest')
             self._phase = 'prepared_wait'
         elif kind == PREPARED:
-            self._phase_is('prepared_wait')
+            _require(self._phase == 'prepared_wait' or
+                     (self._phase == 'cancelling' and self._crossed_prepared),
+                     'service_order')
             _require(fields == (self._lease, self._request_digest), 'service_prepared')
-            self._phase = 'prepared'
+            self._crossed_prepared = False
+            if self._phase != 'cancelling':
+                self._phase = 'prepared'
         elif kind == START:
             self._phase_is('prepared')
             _require(fields[0] == self._lease, 'service_lease')
@@ -326,19 +331,29 @@ class ServiceTranscript:
             self._phase_is('preparing', 'prepared_wait', 'prepared', 'running',
                            'output', 'cancelling', 'failed_operation')
             _require(fields[0] in range(1, 8), 'service_refusal')
-            _require(not self._cancelled or fields[0] == 6,
-                     'service_cancel_ack')
-            if self._cancelled:
+            prior = self._cancelled and fields[0] != 6
+            if prior:
+                _require(self._refusal is None and self._wait_status is None,
+                         'service_prior_refusal')
+            elif self._cancelled:
                 self._cancel_acknowledged = True
+            self._crossed_prepared = False
             self._refusal = fields[0]
             self._attempt_failed = True
-            self._phase = 'refused'
+            if not prior:
+                self._phase = 'refused'
         elif kind == CANCEL:
-            self._phase_is('preparing', 'prepared_wait', 'prepared', 'running', 'output')
-            _require(fields[0] in (1, 2, 3), 'service_cancel')
+            self._phase_is('preparing', 'prepared_wait', 'prepared', 'running', 'output',
+                           'refused', 'result', 'failed_operation')
+            _require(not self._cancelled and self._refusal != 6
+                     and fields[0] in (1, 2, 3), 'service_cancel')
+            self._crossed_prepared = self._phase == 'prepared_wait'
             self._cancelled = True
             self._attempt_failed = True
-            self._phase = 'cancelling'
+            # Only PROGRESS advances last_turn; known progress clears the turn.
+            # A retained matching turn therefore has an already-consumed prefix.
+            unknown_turn = self._turn is not None and self._last_turn == self._turn[1]
+            self._phase = 'failed_operation' if unknown_turn else 'cancelling'
         elif kind == RELEASE:
             self._phase_is('result', 'refused', 'failed_operation')
             _require(not self._cancelled or self._cancel_acknowledged,

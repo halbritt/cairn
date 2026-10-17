@@ -51,7 +51,7 @@ class WireTests(unittest.TestCase):
         self.prepared()
         self.emit(w.START,1,10)
 
-    def terminal(self):
+    def terminal(self,cancel_before_status=False):
         self.running()
         self.emit(w.TURN,1,20,1,1536,0)
         self.emit(w.PROGRESS,1,20,1,0,2,1,31,0)
@@ -60,6 +60,7 @@ class WireTests(unittest.TestCase):
         self.emit(w.STDOUT,1,data=b'ok')
         self.emit(w.DELIVER,1,22,2,3)
         self.emit(w.STDERR,1,data='�'.encode())
+        if cancel_before_status:self.emit(w.CANCEL,1,1)
         self.emit(w.STATUS,1,17<<8,17)
 
     def test_complete_transcript_preserves_nonzero_cli_report_and_release(self):
@@ -305,6 +306,60 @@ class WireTests(unittest.TestCase):
         self.assertEqual(self.state.snapshot()['phase'],'idle')
 
 
+    def test_prepared_crossing_cancel_converges_without_start_eligibility(self):
+        states=[]
+        for cancel_first in (False,True):
+            self.setUp();self.emit(w.READY,0);self.begin(1)
+            if cancel_first:self.emit(w.CANCEL,1,1)
+            self.emit(w.PREPARED,1,10,hashlib.sha256(b'{}').digest())
+            if not cancel_first:self.emit(w.CANCEL,1,1)
+            states.append(self.state.snapshot())
+            self.emit(w.REFUSE,1,6)
+            self.emit(w.RELEASE,1,10);self.emit(w.RELEASED,1,10,0)
+            self.assertTrue(self.state.snapshot()['attempt_failed'])
+        self.assertEqual(states[0],states[1])
+        self.assertEqual(states[0]['phase'],'cancelling')
+
+    def test_crossed_prepared_is_once_bound_and_never_restores_start(self):
+        digest=hashlib.sha256(b'{}').digest()
+        for invalid in ((w.PREPARED,10,digest),(w.START,10),(w.TURN,20,1,1536,0)):
+            self.setUp();self.emit(w.READY,0);self.begin(1);self.emit(w.CANCEL,1,1)
+            self.emit(w.PREPARED,1,10,digest)
+            with self.assertRaises(w.ServiceWireError):self.emit(invalid[0],1,*invalid[1:])
+        for lease,sha in ((11,digest),(10,hashlib.sha256(b'wrong').digest())):
+            self.setUp();self.emit(w.READY,0);self.begin(1);self.emit(w.CANCEL,1,1)
+            with self.assertRaises(w.ServiceWireError):self.emit(w.PREPARED,1,lease,sha)
+        # Complete request bytes alone do not imply REQUEST_END was observed.
+        self.setUp();self.emit(w.READY,0)
+        self.emit(w.PREPARE,1,1,999999999,10,1548,20_000_000,2,digest)
+        self.emit(w.REQUEST,1,data=b'{}');self.emit(w.CANCEL,1,1)
+        with self.assertRaises(w.ServiceWireError):self.emit(w.PREPARED,1,10,digest)
+        self.setUp();self.emit(w.READY,0);self.begin(1);self.emit(w.CANCEL,1,1)
+        self.emit(w.REFUSE,1,3)
+        with self.assertRaises(w.ServiceWireError):self.emit(w.PREPARED,1,10,digest)
+
+    def test_status_crossing_cancel_converges_without_usable_result(self):
+        states=[]
+        for cancel_first in (False,True):
+            self.setUp();self.terminal(cancel_first)
+            if not cancel_first:self.emit(w.CANCEL,1,1)
+            states.append(self.state.snapshot())
+            self.emit(w.REFUSE,1,6)
+            self.emit(w.RELEASE,1,10);self.emit(w.RELEASED,1,10,0)
+        self.assertEqual(states[0],states[1])
+        self.assertEqual(states[0]['phase'],'cancelling')
+        self.assertTrue(states[0]['attempt_failed'])
+        self.assertEqual(states[0]['returncode'],17)
+        self.assertEqual(states[0]['raw_counts'],(0,2,1))
+
+    def test_cancel_does_not_admit_unrelated_late_refusals_or_prepared(self):
+        for kind,fields in ((w.REFUSE,(3,)),
+                            (w.PREPARED,(10,hashlib.sha256(b'{}').digest()))):
+            self.setUp();self.terminal();self.emit(w.CANCEL,1,1)
+            with self.assertRaises(w.ServiceWireError):self.emit(kind,1,*fields)
+        self.setUp();self.running();self.emit(w.REFUSE,1,6)
+        with self.assertRaises(w.ServiceWireError):self.emit(w.CANCEL,1,1)
+
     def cancelled_unknown(self):
         self.running();self.emit(w.TURN,1,20,1,1536,0)
         self.emit(w.CANCEL,1,1)
@@ -314,9 +369,44 @@ class WireTests(unittest.TestCase):
         self.assertEqual(state['raw_counts'],(23,0,0))
         self.assertEqual(state['turn'],(20,1,1536,0))
 
-    def test_cancel_unknown_progress_rejects_wrong_refusal_ack(self):
+    def test_cancel_unknown_prior_refusal_is_not_acknowledgement(self):
         self.cancelled_unknown()
-        with self.assertRaises(w.ServiceWireError):self.emit(w.REFUSE,1,1)
+        self.emit(w.REFUSE,1,1)
+        self.assertFalse(self.state.snapshot()['cancel_acknowledged'])
+        with self.assertRaises(w.ServiceWireError):self.emit(w.RELEASE,1,10)
+
+    def test_prior_refusal_crossing_cancel_converges_with_retained_grants(self):
+        for unknown in (0,1):
+            states=[]
+            for cancel_at in ('before','between','after'):
+                self.setUp();self.running();self.emit(w.TURN,1,20,1,32,1)
+                if cancel_at=='before':self.emit(w.CANCEL,1,1)
+                self.emit(w.PROGRESS,1,20,1,23,0,0,0,unknown)
+                if cancel_at=='between':self.emit(w.CANCEL,1,1)
+                self.emit(w.REFUSE,1,3)
+                if cancel_at=='after':self.emit(w.CANCEL,1,1)
+                states.append(self.state.snapshot())
+                self.assertFalse(states[-1]['cancel_acknowledged'])
+                self.emit(w.REFUSE,1,6)
+                self.emit(w.RELEASE,1,10);self.emit(w.RELEASED,1,10,0)
+                self.assertTrue(self.state.snapshot()['attempt_failed'])
+            self.assertEqual(states[0],states[1])
+            self.assertEqual(states[0],states[2])
+            self.assertEqual(states[0]['raw_counts'],(23,0,0))
+            self.assertEqual(states[0]['final_remaining'],32 if unknown else 9)
+            self.assertEqual(states[0]['turn'],(20,1,32,1) if unknown else None)
+
+    def test_cancel_crossings_never_admit_duplicate_reports_or_release_replay(self):
+        for kind,fields in ((w.REFUSE,(3,)),(w.PROGRESS,(20,1,23,0,0,0,1)),
+                            (w.CANCEL,(1,)),(w.RELEASE,(10,))):
+            self.setUp();self.cancelled_unknown();self.emit(w.REFUSE,1,3)
+            with self.assertRaises(w.ServiceWireError):self.emit(kind,1,*fields)
+            self.assertEqual(self.state.snapshot()['raw_counts'],(23,0,0))
+            self.assertFalse(self.state.snapshot()['cancel_acknowledged'])
+        for kind,fields in ((w.REFUSE,(6,)),(w.CANCEL,(1,)),(w.RELEASE,(10,))):
+            self.setUp();self.cancelled_unknown();self.emit(w.REFUSE,1,3)
+            self.emit(w.REFUSE,1,6);self.emit(w.RELEASE,1,10)
+            with self.assertRaises(w.ServiceWireError):self.emit(kind,1,*fields)
 
     def test_cancel_unknown_progress_rejects_release_before_ack(self):
         self.cancelled_unknown()

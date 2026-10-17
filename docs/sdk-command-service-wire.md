@@ -1,6 +1,6 @@
 # Python command-service wire prerequisite
 
-This slice adds Python Codec profile 4 and a pure parent-owned transcript. It
+This slice adds Python Codec profile 4 and a pure endpoint transcript. It
 does not open an endpoint, launch a service or CLI, mint a resource grant, debit
 the memory gate, authenticate a peer, or certify a wait. Profiles 1, 2 and 3
 retain their encodings. In particular, profile 3 kind 67 remains its signed
@@ -55,6 +55,11 @@ twice. The transcript checks the exact profile, direction-derived sequence,
 operation, length, order, counters and digests. It returns the immutable scalar
 tuple `(kind, sequence, operation)`. Snapshot dictionaries are fresh and contain
 no mutable internal graph, hash object, decoder or raw view.
+
+The service may maintain its own serialized transcript over its known sends and
+authenticated receives. The two endpoints can observe opposite orders across
+directions; sequences remain fixed within each direction. This duplicate local
+validation is not a second resource ledger or a peer-authentication mechanism.
 
 A successful sequence is READY, PREPARE, REQUEST chunks, REQUEST_END, PREPARED,
 START. REQUEST_END requires the exact declared count and SHA-256. Request length
@@ -151,8 +156,24 @@ Raw digests are reported service facts; encoded digests also validate delivered
 bytes. No hash establishes service origin or API success. The parent-observed
 service wait is a separate owner fact, absent from STATUS.
 
-CANCEL makes attempt failure and the cancellation acknowledgement obligation
-sticky, admits no new grants, and initially leaves the phase cancelling.
+CANCEL is observed once, before RELEASE. It makes attempt failure and the
+cancellation acknowledgement obligation sticky and admits no new grants.
+PREPARED, a prior non6 REFUSE, or STATUS may already have been sent when CANCEL
+crosses in the opposite direction. Either observation order retains those same
+facts without restoring START or result eligibility:
+
+- PREPARED may arrive after CANCEL exactly once only when CANCEL interrupted
+  prepared_wait. Its original lease and request digest must match. It cannot
+  follow another refusal or cancellation acknowledgement.
+- One prior non6 REFUSE may cross CANCEL; it is a diagnostic, not the required
+  cancellation acknowledgement. Another non6 refusal refuses. A prior refusal
+  cannot appear after an already observed STATUS. This narrowly supersedes the
+  earlier rule that every non6 refusal after CANCEL was itself invalid.
+- CANCEL may follow the already observed STATUS or prior non6 REFUSE while
+  RELEASE remains unconsumed. It cannot follow REFUSE6 or another CANCEL.
+
+The ordinary cancelled phase remains cancelling. A consumed unknown turn stays
+failed_operation even if a prior refusal was observed before CANCEL.
 An unknown progress receipt changes the phase to failed_operation to prevent
 repeating its retained unsettled turn, but cannot clear the cancellation
 obligation. Its known prefix and pending commitment remain diagnostic facts.
@@ -160,9 +181,12 @@ A crossed already-granted progress/text receipt or already-produced
 OUTPUT/STATUS may be retained for accounting, but cannot become a usable result.
 The service must acknowledge CANCEL with REFUSE code 6 even if it just sent
 STATUS. Normal RELEASE waits for that acknowledgement, including from
-failed_operation. Mandatory acknowledgement
-and release traffic needs original-budget headroom before effects; peer death,
-deadline or uncertainty cannot fabricate it.
+failed_operation or after a retained prior refusal. Neither that diagnostic nor
+a crossed PREPARED/STATUS sets cancel_acknowledged. The sender must retain an
+already encoded/EAGAIN-held report unchanged through its known send before
+queuing REFUSE6; an unsent loan cannot be overwritten or declared delivered.
+Mandatory acknowledgement and release traffic needs original-budget headroom
+before effects; peer death, deadline or uncertainty cannot fabricate it.
 
 REFUSE prevents another operation. RELEASED unknown retains an unusable
 release_unknown state. Known RELEASED only reports remote alias cleanup; it is
