@@ -47,6 +47,35 @@ uncertainty is sticky, so catching an exception cannot issue/replay more grants.
 The mutation guard includes final cleanup and return, without promising universal
 recovery from arbitrary asynchronous interruption.
 
+`quarantine(ticket, known)` is a terminal parent-only observation port. It also
+works after the shared ledger is frozen, so a CLI data failure does not prevent
+recording separately observed RPC prefixes from both original live credits.
+`known` is the cumulative actual count for that exact still-held grant, bounded
+by its original maximum. Equal repeated observations are idempotent; a smaller,
+invalid, foreign, forged or stale observation refuses without changing counters.
+No amount is inferred from an exception or supplied role/identity field. Only
+the trusted source-owned observer may map its actual receipt to the held ticket.
+
+The port freezes the ledger before updating the held row's cumulative prefix.
+Public spent traffic is settled traffic plus the sum of those live prefixes;
+public reserved traffic is gross live commitment minus the same sum. Thus each
+increase reclassifies only the difference, keeps spent+reserved unchanged, and
+leaves all unobserved remainder unavailable. Prefix assignment has one scalar
+linearization point; there is no separate aggregate increment to half-apply and
+then double-apply on the next observation. A one-shot interruption retains the
+previous or increased prefix, and repeating the actual cumulative observation
+can recover idempotently. This permits no traffic effect or general retry.
+
+Normal grant, settlement, memory release/allocation, retirement and close remain
+unavailable after freeze. Even a fully observed prefix never consumes its ticket
+or restores a slot. Wrong-process, closed-ledger and reentrant prefix updates
+refuse. Settlement is premarked before its counter changes: if an interrupted
+settlement still retains its ticket, prefix recording refuses that ambiguous row
+instead of counting its already-mutated settlement again. This does not repair
+or certify every interrupted legacy settlement; its uncertainty stays terminal.
+Repeated asynchronous interruption inside recovery or arbitrary hostile field
+mutation is outside the trusted serialized contract.
+
 `freeze` records higher-layer handoff uncertainty even after a traffic ticket
 was already settled. It is parent-process-bound, sticky and idempotent, including
 when the ledger is already unknown or closed. It changes no counters or tickets;
@@ -83,3 +112,8 @@ interruption. They check shared limits, spent-versus-reserved traffic, headroom,
 counterfeit/stale tickets, pending-versus-zero grants, unknown commitments,
 diagnostic isolation and required final-cleanup injection. No actual subject
 process, socket, memory API, provider, native SDK or evaluation is exercised.
+Additional pure checks use the actual original `WireCredit`/`ServiceLink` with
+inert process owners, including data-first freeze and both credit orders. A
+required one-shot trace at every actually executed line of a terminal prefix
+update checks conserved commitment, retained prefixes and idempotent recovery;
+these are source-accounting checks, not kernel/transport receipt authentication.

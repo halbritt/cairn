@@ -56,6 +56,10 @@ class AttemptResources:
         self._creator=os.getpid();self._next=1
         self._busy=self._mutating=self._unknown=self._closed=False
         self._frozen=False
+        # _spent is settled traffic; _reserved is the gross live commitment.
+        # Terminal cumulative prefixes stay in their held rows. Public totals
+        # derive from those rows, so interrupted prefix updates cannot half-apply
+        # a spent increment and later apply it twice.
         self._raw=self._working=self._spent=self._reserved=0
         self._raw_peak=self._working_peak=self._allocation_peak=self._committed_peak=0
         self.local=_Ticket(0)
@@ -63,9 +67,12 @@ class AttemptResources:
         self._memory={};self._traffic={}
 
     def _check(self):
+        self._check_owner()
+        if self._unknown or self._frozen:raise ResourceError('resource_unknown')
+
+    def _check_owner(self):
         if os.getpid()!=self._creator:raise ResourceError('resource_wrong_process')
         if self._closed:raise ResourceError('resource_closed')
-        if self._unknown or self._frozen:raise ResourceError('resource_unknown')
 
     def _domain(self,domain):
         if type(domain) is not _Ticket or domain not in self._domains:
@@ -158,7 +165,8 @@ class AttemptResources:
         self._committed_peak=max(self._committed_peak,self._spent+self._reserved)
         token=self._ticket()
         self._traffic[token]={'domain':domain,'lane':lane,'maximum':maximum,
-                              'available_at_issue':available,'known':0,'unknown':False}
+                              'available_at_issue':available,'known':0,'unknown':False,
+                              'settling':False}
         row['traffic'][lane]=token
         return self._known(token)
 
@@ -179,18 +187,43 @@ class AttemptResources:
         # use quarantine, never settle(0) or refund alleged unused capacity.
         row=self._count(ticket,known)
         self._begin()
+        # A failed settlement may leave this row present after its counters
+        # changed. Its receipt must never be reclassified as another prefix.
+        row['settling']=True
         self._spent+=known;self._reserved-=row['maximum']
         del self._domains[row['domain']]['traffic'][row['lane']]
         del self._traffic[ticket]
         return self._known()
 
-    @_guard
     def quarantine(self,ticket,known=0):
-        row=self._count(ticket,known)
-        self._begin()
-        self._spent+=known;self._reserved-=known
-        row['known']=known;row['unknown']=True
-        # Preserve the rest of the original commitment; no issue/settle/reset.
+        """Record an exact held grant's cumulative prefix, even after freeze.
+
+        This terminal parent-only port never settles or returns unused credit.
+        Equal observations are idempotent; decreasing observations refuse.
+        """
+        acquired=False
+        try:
+            try:
+                self._check_owner()
+                if self._busy:raise ResourceError('resource_busy')
+                row=self._count(ticket,known)
+                if row['settling']:raise ResourceError('resource_settlement_unknown')
+                if known<row['known']:raise ResourceError('resource_count_regression')
+                self._busy,acquired=True,True
+                # No normal operation can run once a prefix update may occur.
+                self.freeze()
+                # One assignment is the prefix's linearization point. Never
+                # increment aggregate counters separately from this value.
+                row['known']=known
+                row['unknown']=True
+            finally:
+                if acquired:self._busy=False
+            return None
+        except BaseException:
+            if acquired:
+                self.freeze()
+                self._busy=False
+            raise
 
     @_guard
     def retire(self,domain):
@@ -208,11 +241,13 @@ class AttemptResources:
         return self._known()
 
     def snapshot(self):
+        prefixes=sum(row['known'] for row in self._traffic.values())
         return {'raw_reserved':self._raw,'working_reserved':self._working,
                 'raw_peak':self._raw_peak,'working_peak':self._working_peak,
                 'known_allocation_reserved':self._raw+self._working,
                 'known_allocation_peak':self._allocation_peak,
-                'traffic_spent':self._spent,'traffic_reserved':self._reserved,
+                'traffic_spent':self._spent+prefixes,
+                'traffic_reserved':self._reserved-prefixes,
                 'traffic_available':TRAFFIC-self._spent-self._reserved,
                 'committed_peak':self._committed_peak,'unknown':self._unknown or self._frozen,
                 'closed':self._closed,

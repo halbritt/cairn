@@ -9,6 +9,154 @@ from trial_sdk_attempt_resources import AttemptResources,ResourceError,RAW,WORKI
 class ResourceTests(unittest.TestCase):
     def domain(self,resources):return resources.bind(NativeProcessOwner())
 
+    def test_cli_freeze_keeps_both_live_original_wire_prefixes(self):
+        from trial_sdk_command_service_broker import ServiceLink
+        resources=AttemptResources()
+        link=ServiceLink(resources,deadline_ns=100,standing_raw=2080,
+                         standing_working=4096,clock=lambda:1)
+        first=link.credit(64)
+        second=link.credit(64,emergency=True)
+        first.known(first.promise(32),32)
+        second.known(second.promise(32),32)
+        data=resources.grant(link.domain,'data',100)
+        resources.quarantine(data,7)
+        link._poison()
+        state=resources.snapshot()
+        self.assertEqual((state['traffic_spent'],state['traffic_reserved']),(71,157))
+        self.assertEqual((first.snapshot()['known'],second.snapshot()['known']),(32,32))
+        self.assertTrue(state['unknown'])
+
+    def test_two_original_wire_credits_record_prefixes_in_either_poison_order(self):
+        from trial_sdk_command_service_broker import WireCredit
+        for reverse in (False,True):
+            with self.subTest(reverse=reverse):
+                resources=AttemptResources()
+                first=WireCredit(resources,resources.local,64)
+                second=WireCredit(resources,self.domain(resources),64)
+                first.known(first.promise(32),32)
+                second.known(second.promise(40),40)
+                credits=(second,first) if reverse else (first,second)
+                for credit in credits:credit._poison()
+                state=resources.snapshot()
+                self.assertEqual((state['traffic_spent'],state['traffic_reserved']),(72,56))
+                self.assertTrue(state['unknown'])
+                self.assertIsNone(first.snapshot()['quarantine_error'])
+                self.assertIsNone(second.snapshot()['quarantine_error'])
+
+    def test_terminal_prefixes_are_monotonic_idempotent_and_never_reopen_resources(self):
+        resources=AttemptResources();domain=self.domain(resources)
+        memory=resources.allocate(domain,'standing',10,20)
+        settled=resources.grant(resources.local,'control',10)
+        resources.settle(settled,7)
+        grant=resources.grant(domain,'data',100)
+        resources.freeze()
+        for prefix in (0,0,23,23,70,70,100,100):
+            resources.quarantine(grant,prefix)
+            state=resources.snapshot()
+            self.assertEqual((state['traffic_spent'],state['traffic_reserved']),
+                             (7+prefix,100-prefix))
+            self.assertEqual(state['traffic_available'],TRAFFIC-107)
+            self.assertTrue(state['unknown'])
+        before=resources.snapshot()
+        for action in (lambda:resources.settle(grant,70),
+                       lambda:resources.grant(resources.local,'control',1),
+                       lambda:resources.release(memory),
+                       lambda:resources.allocate(domain,'operation',1,1),
+                       lambda:resources.retire(domain),lambda:resources.close()):
+            with self.assertRaisesRegex(ResourceError,'^resource_unknown$'):action()
+        self.assertEqual(resources.snapshot(),before)
+
+    def test_terminal_invalid_and_stale_receipts_cannot_mutate_prefixes(self):
+        resources=AttemptResources();domain=self.domain(resources)
+        stale=resources.grant(resources.local,'control',10)
+        resources.settle(stale,7)
+        grant=resources.grant(domain,'data',100)
+        other=AttemptResources();foreign=other.grant(other.local,'data',100)
+        resources.quarantine(grant,23)
+        before=resources.snapshot()
+        for token,prefix,reason in ((grant,22,'resource_count_regression'),
+                                    (grant,-1,'resource_count'),(grant,101,'resource_count'),
+                                    (grant,True,'resource_count'),(grant,23.0,'resource_count'),
+                                    (type(grant)(grant.ordinal),23,'resource_ticket'),
+                                    (foreign,23,'resource_ticket'),(stale,7,'resource_ticket')):
+            with self.subTest(reason=reason,prefix=prefix):
+                with self.assertRaisesRegex(ResourceError,'^'+reason+'$'):
+                    resources.quarantine(token,prefix)
+                self.assertEqual(resources.snapshot(),before)
+
+    def test_prefix_recording_refuses_reentrancy_and_wrong_owner_or_closed_ledger(self):
+        from unittest.mock import patch
+        import trial_sdk_attempt_resources as module
+        resources=AttemptResources();grant=resources.grant(resources.local,'data',100)
+        resources.freeze();resources._busy=True
+        with self.assertRaisesRegex(ResourceError,'^resource_busy$'):
+            resources.quarantine(grant,23)
+        resources._busy=False
+        with patch.object(module.os,'getpid',return_value=resources._creator+1):
+            with self.assertRaisesRegex(ResourceError,'^resource_wrong_process$'):
+                resources.quarantine(grant,23)
+        self.assertEqual(resources.snapshot()['traffic_spent'],0)
+        closed=AttemptResources();closed.close()
+        with self.assertRaisesRegex(ResourceError,'^resource_closed$'):
+            closed.quarantine(grant,23)
+
+    def test_interrupted_settlement_cannot_be_counted_again_as_a_terminal_prefix(self):
+        resources=AttemptResources();grant=resources.grant(resources.local,'data',100)
+        hit=[]
+        def trace(frame,event,arg):
+            if (event=='line' and frame.f_code.co_name=='settle'
+                    and frame.f_locals.get('self') is resources
+                    and resources._spent==17 and grant in resources._traffic and not hit):
+                hit.append(True);raise KeyboardInterrupt()
+            return trace
+        old=sys.gettrace()
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(KeyboardInterrupt):resources.settle(grant,17)
+        finally:sys.settrace(old)
+        self.assertEqual(hit,[True]);before=resources.snapshot()
+        self.assertEqual((before['traffic_spent'],before['traffic_reserved']),(17,0))
+        with self.assertRaisesRegex(ResourceError,'^resource_settlement_unknown$'):
+            resources.quarantine(grant,17)
+        self.assertEqual(resources.snapshot(),before)
+
+    def test_each_terminal_update_line_preserves_prefix_and_idempotent_recovery(self):
+        # Discover the actually executed source lines of one inert update, then
+        # require a one-shot interruption at each, including finally and return.
+        sample=AttemptResources();token=sample.grant(sample.local,'data',100)
+        sample.quarantine(token,13);lines=set()
+        def observe(frame,event,arg):
+            if event=='line' and frame.f_code is AttemptResources.quarantine.__code__:
+                lines.add(frame.f_lineno)
+            return observe
+        old=sys.gettrace()
+        try:
+            sys.settrace(observe);sample.quarantine(token,29)
+        finally:sys.settrace(old)
+        self.assertGreater(len(lines),10)
+        for line in sorted(lines):
+            with self.subTest(line=line):
+                resources=AttemptResources();grant=resources.grant(resources.local,'data',100)
+                resources.quarantine(grant,13);hit=[]
+                def trace(frame,event,arg):
+                    if (event=='line' and frame.f_code is AttemptResources.quarantine.__code__
+                            and frame.f_locals.get('self') is resources
+                            and frame.f_lineno==line and not hit):
+                        hit.append(True);raise KeyboardInterrupt()
+                    return trace
+                old=sys.gettrace()
+                try:
+                    sys.settrace(trace)
+                    with self.assertRaises(KeyboardInterrupt):resources.quarantine(grant,29)
+                finally:sys.settrace(old)
+                self.assertEqual(hit,[True]);state=resources.snapshot()
+                self.assertIn(state['traffic_spent'],(13,29))
+                self.assertEqual(state['traffic_spent']+state['traffic_reserved'],100)
+                self.assertTrue(state['unknown'])
+                resources.quarantine(grant,29);resources.quarantine(grant,29)
+                self.assertEqual((resources.snapshot()['traffic_spent'],
+                                  resources.snapshot()['traffic_reserved']),(29,71))
+
     def test_original_limits_are_shared_across_held_children(self):
         resources=AttemptResources();a=self.domain(resources);b=self.domain(resources)
         one=resources.allocate(a,'operation',100_000,500*1024*1024)
