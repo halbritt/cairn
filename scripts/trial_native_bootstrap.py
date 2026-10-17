@@ -3,6 +3,7 @@
 No command, account source, hook gateway, mount operation or admission route is
 implemented. The returned owner must stay open while its review bindings are used.
 """
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -248,8 +249,16 @@ def _close_control(control):
     return ()
 
 
+def _close_sdk_sources(owner):
+    if not owner._control_close_attempted:
+        owner._control_close_attempted = True
+        owner._control_cleanup = _close_control(owner._control)
+    # A control cleanup fault cannot skip the independently owned FDs.
+    return tuple(sorted(set(owner._control_cleanup + owner._snapshot.close())))
+
+
 class SDKReviewPreparation(ReviewPreparation):
-    """Own one pristine SDK controller and held sources, without handoff authority."""
+    """Own pristine source review; an in-process move grants no runtime authority."""
     def __init__(self, snapshot, launch, declaration):
         need(type(launch) is SDKLaunch and type(launch.control) is SDKControl,
              'bootstrap_launch_profile')
@@ -258,6 +267,7 @@ class SDKReviewPreparation(ReviewPreparation):
         self._control = launch.control
         self._control_close_attempted = False
         self._control_cleanup = ()
+        self._transferred = False
         self._binding = dict(declaration['binding'])
         self._declaration_sha = canonical_sha(declaration)
         self._launch_sha = canonical_sha(list(launch.argv))
@@ -270,6 +280,8 @@ class SDKReviewPreparation(ReviewPreparation):
             (json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
 
     def review_bindings(self):
+        if self._transferred:
+            raise PreparationRefusal('sdk_review_transferred')
         try:
             sources = self._snapshot.bindings()
             instruction = self._snapshot.read('instruction.txt')
@@ -300,12 +312,12 @@ class SDKReviewPreparation(ReviewPreparation):
                     guaranteed_context_bytes=self.launch.guaranteed_context_bytes,
                     control=state, limits=dict(ORIGINAL_LIMITS))
 
+    def consume_for_session(self):
+        """Move the original objects once, without launch or runtime admission."""
+        return SDKSessionCustody(self)
+
     def close(self):
-        if not self._control_close_attempted:
-            self._control_close_attempted = True
-            self._control_cleanup = _close_control(self._control)
-        # A control cleanup fault cannot skip the independently owned FDs.
-        return tuple(sorted(set(self._control_cleanup + self._snapshot.close())))
+        return () if self._transferred else _close_sdk_sources(self)
 
     def __exit__(self, exc_type, primary, traceback):
         cleanup = self.close()
@@ -314,6 +326,84 @@ class SDKReviewPreparation(ReviewPreparation):
                 record_cleanup(primary, cleanup)
                 return False
             raise PreparationRefusal('sdk_review_cleanup_unknown', cleanup)
+
+
+class SDKSessionCustody:
+    """Original source/controller ownership only; no process or runtime permit.
+
+    Serialized calls and same-process custody are required. Initial control
+    metadata remains historical once the borrowed controller makes progress.
+    """
+    def __init__(self, preparation):
+        if type(preparation) is not SDKReviewPreparation:
+            raise PreparationRefusal('sdk_review_required')
+        if preparation._transferred:
+            raise PreparationRefusal('sdk_review_transferred')
+        try:
+            self._initial = preparation.review_bindings()
+            self._snapshot = preparation._snapshot
+            self._launch, self._control = preparation._launch, preparation._control
+            self._control_close_attempted, self._control_cleanup = False, ()
+            preparation._transferred = True
+        except BaseException as primary:
+            # Before the move the preparation still owns everything; after it,
+            # an interrupted constructor must clean up through this new owner.
+            faults = self.close() if preparation._transferred else preparation.close()
+            record_cleanup(primary, faults)
+            raise
+
+    @property
+    def launch(self):
+        return self._launch
+
+    @property
+    def control(self):
+        return self._control
+
+    def source_bindings(self):
+        """Recheck source custody, never replay the pristine-control predicate."""
+        try:
+            sources = self._snapshot.bindings()
+            initial, launch = self._initial, self._launch
+            instruction = self._snapshot.read('instruction.txt')
+            need(type(launch) is SDKLaunch and launch.control is self._control
+                 and self._control.bindings == initial['control']['bindings']
+                 and _json(self._snapshot.read('sdk-control.json')) == initial['control']
+                 and sources == initial['snapshots']
+                 and launch.user_message_bytes == initial['user_message_bytes']
+                 and launch.user_message_sha256 == initial['user_message_sha256']
+                 and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
+                 and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
+                 and canonical_sha(list(launch.argv)) == initial['launch_sha256']
+                 and launch.argv[-1].encode('utf-8') == instruction,
+                 'compiled_binding_changed')
+            result = copy.deepcopy(initial)
+            result['status'] = 'source_custodied_for_session'
+            result['initial_control'] = result.pop('control')
+            return result
+        except (OSError, Refusal, SDKControlError):
+            raise PreparationRefusal('session_custody_unknown', self.close()) from None
+        except BaseException as primary:
+            record_cleanup(primary, self.close())
+            raise
+
+    def require_complete(self):
+        self.source_bindings()
+        raise PreparationRefusal('hook_interface_unavailable')
+
+    def close(self):
+        return _close_sdk_sources(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, primary, traceback):
+        cleanup = self.close()
+        if cleanup:
+            if primary is not None:
+                record_cleanup(primary, cleanup)
+                return False
+            raise PreparationRefusal('sdk_session_cleanup_unknown', cleanup)
 
 
 def prepare_review(document, output):

@@ -118,6 +118,42 @@ missing gates and false complete/runtime flags. `require_complete()` still
 rechecks custody and refuses `hook_interface_unavailable`. This owner provides
 no executable handoff, transport, native setting observation or runtime permit.
 
+### Single-use in-process source custody
+
+`review.consume_for_session()` returns `SDKSessionCustody` after one final
+pristine review. It moves the original `Snapshot`, `SDKLaunch` and `SDKControl`
+in the same process; it does not recompile IDs, serialize the controller, start
+a process or grant runtime admission. Constructing `SDKSessionCustody(review)`
+uses the same consuming path, rather than accepting caller-supplied raw handles
+or metadata. Calls must be serialized.
+
+After transfer, the old review refuses both another review and another transfer
+with `sdk_review_transferred`; its `close()` becomes a no-op. The session now
+owns cleanup. Its `launch` and `control` properties expose the original objects
+as borrowed references. Replacing fields on the old review cannot redirect the
+session's cleanup. Existing Python aliases are not revoked, and this is not an
+isolation boundary against mutation by the caller.
+
+`session.source_bindings()` rechecks held source/snapshot identities and hashes,
+the original control IDs, compiled launch/user/context bindings, permissions and
+instruction. It permits controller progress: the returned `initial_control`
+contains the original pristine metadata from `sdk-control.json`, not a current
+writer ledger or native delivery observation. The status is
+`source_custodied_for_session`; the existing schema, limits, missing gates and
+false complete/runtime flags remain unchanged. Returned metadata is a fresh
+copy. A failed source check closes the session and refuses
+`session_custody_unknown`. `session.require_complete()` rechecks this source
+custody and still refuses `hook_interface_unavailable`.
+
+Close the session explicitly or use its context manager. Failed construction
+closes whichever owner holds the resources; interruptions retain their original
+exception with best-effort cleanup annotations. Session cleanup independently
+attempts the original control and held descriptors and retains unknown outcomes
+without retry. A context exit with cleanup uncertainty and no primary exception
+raises `sdk_session_cleanup_unknown`; an existing primary is preserved. These
+are source-lifetime observations only. The move supplies no transport, native
+end policy, hook evidence, process wait, funded account or execution permit.
+
 ## File custody and consumption
 
 Each source path is opened from a held `/` directory through held nofollow
