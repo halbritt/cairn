@@ -62,7 +62,7 @@ def main():
                     hashes[name].update(body)
                 raise ValueError('fixture_unexpected_service_diagnostic')
 
-    def poll_once(record=True):
+    def poll_once(record=True, block=True):
         poll = select.poll()
         if record:
             for fd, flags in link.interests():
@@ -76,7 +76,7 @@ def main():
                 poll.register(fd, select.POLLIN)
         if state['launched'] and state['wait'] is None:
             poll.register(link.owner.fileno('pidfd'), select.POLLIN)
-        ready = dict(poll.poll(min(50, remaining()*1000)))
+        ready = dict(poll.poll(min(50 if block else 0, remaining()*1000)))
         for fd, flags in ready.items():
             if flags & select.POLLNVAL:
                 raise ValueError('fixture_readiness_unknown')
@@ -117,10 +117,13 @@ def main():
             ('--repo','fixture-repo','--task','fixture-task','--run','fixture-run',
              '--tokens','1024','--','ordinary synthetic query'))
         while True:
-            poll_once()
-            operation.step()
+            changed = operation.step()
             if operation.snapshot()['closed']:
                 break
+            # Local stage progress needs no invented readiness delay. Service
+            # diagnostics/wait remain polled fairly; known EAGAIN parks on the
+            # actual borrowed descriptors under the original clock.
+            poll_once(block=not changed)
         outcome = operation.result()
         if (outcome.returncode != 17 or outcome.stdout != 'ordinary service: é💡\n'
                 or outcome.stderr != 'fixture diagnostic: �\n'):
