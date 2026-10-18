@@ -71,10 +71,21 @@ available:
 
 Use the first indexed entry's complete `pull_arguments` after checking that it
 is the intended source. The automatic hook's `remaining_memory_bytes` governs
-automatic recall; a task-requested handoff read can use a larger explicit budget.
+automatic recall. If the model determines that the task needs a larger note or
+handoff, it may exceed those automatic byte and call limits without asking the
+user. State why the extra context is needed and choose a new explicit budget
+that includes the whole response within available context and the tool ceiling.
+An explicit user-imposed task limit still applies. A larger receipt does not
+erase earlier context consumption or authorize unrelated retrieval.
 OpenCode can truncate a large tool response and report `metadata.outputPath`.
 Its saved artifact contains the complete response; read it within the explicit
 handoff allowance. This harness behavior is separate from the Cairn receipt limit.
+
+Inbox-bound lifecycle recall loads the engine pinned in its
+`cairn.inbox-recall-binding/1` manifest. Updating a harness hook command alone
+does not update that engine's recall instructions. When installing revised
+guidance, check both paths and validate the manifest's engine hash and profile
+bindings. Changing the cue does not settle a held inbox delivery.
 
 Existing receipts cannot be enlarged. Older APIs reject the new policy value.
 Do not retry by changing it to `/1` and claim the larger allocation: `/1` keeps

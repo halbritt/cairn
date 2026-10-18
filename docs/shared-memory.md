@@ -32,6 +32,20 @@ new session after installation. A project's explicit configuration can override
 user settings; Cairn's existing project configuration points to the same shared
 collection.
 
+## Deliberate larger reads
+
+Automatic recall budgets limit unsolicited context. A task model may choose a
+larger explicit read when a complete note or handoff is needed, without asking
+the user. It states the need and starts a new search using
+`inspection_policy: "first-fitting-whole/2"` with declared room for the complete
+response. Available context, tool ceilings and explicit user limits still apply.
+See [whole source allocation](inspection-allocation.md).
+
+On 2026-10-18, Agy's installed route used the shared MCP launcher and global
+instructions in `~/.gemini/config/AGENTS.md`; its hooks handled coordination,
+not lifecycle memory recall. Those global instructions now describe the override.
+Existing Agy sessions may retain earlier instructions or tool definitions.
+
 ## Proactive use and lifecycle hooks, 2026-09-13
 
 The shared `cairn` skill now guides proactive recall and selected storage of

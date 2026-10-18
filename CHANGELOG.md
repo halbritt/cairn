@@ -14,6 +14,14 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-18
+
+- Memory hooks now explicitly let the task model exceed automatic recall byte
+  and call limits when more context is needed, without asking for approval.
+  The model states the need and starts a new receipt with a larger declared
+  budget. Available context, tool ceilings and explicit user limits still apply.
+  See [whole source allocation](docs/inspection-allocation.md).
+
 ## 2026-10-09
 
 - Full handoff reads can use an explicit budget beyond automatic lifecycle recall.

@@ -59,7 +59,9 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertEqual(state['last_recall']['candidate_previews'], 1)
 
         self.assertIn('9500 UTF-8 bytes', text)
-        self.assertIn('Task-requested reads, including full handoffs, may exceed automatic recall limits', text)
+        self.assertIn('You may exceed automatic recall byte/call limits when the task needs more context', text)
+        self.assertIn('no user approval needed', text)
+        self.assertIn('Explicit user limits still apply', text)
         self.assertIn('Older receipts cannot be enlarged', text)
         self.assertNotIn('{budget}', text)
         # The OpenCode adapter parses from this marker to the end of the text.

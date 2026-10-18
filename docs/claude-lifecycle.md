@@ -184,7 +184,7 @@ pull. Handles retain currentness, receipt and access checks; a stale or exhauste
 handle requires a fresh search within the remaining limits, not a budget refund.
 Taskless startup and wake deferral are unchanged.
 
-The cue allows at most two further searches per task when the supplied candidates
+For automatic recall, the cue allows at most two further searches when the supplied candidates
 do not fit, coverage is incomplete or a handle expires, and four pull/span calls
 total, including the hook's attempted candidate pulls. Use ordinary
 `cairn_search` with `semantic: true` directly for a vocabulary miss when room
@@ -221,11 +221,15 @@ does not combine multiple receipts or count lifecycle context already supplied;
 the task agent must subtract all such deliveries before its next search.
 Required instructions stay whole: insufficient room means stop optional
 inspection and report the limitation, rather than truncate them. The aggregate
-task and call limits are instructions to the agent, **not enforcement by the host**. Native receipts each
-have their own budgets; a new receipt does not reset this requested task allowance.
+automatic recall and call limits are instructions to the agent, **not enforcement by the host**.
+Native receipts each have their own budgets; a new receipt does not refund prior
+context consumption.
 
-Task-requested memory reads, including complete handoffs, may exceed the automatic
-recall byte and call limits. Start a new search with an explicit budget sized for
+The model may exceed automatic recall byte and call limits when it determines
+that the task needs more context, including a complete handoff or note. It does
+not need a separate user request or approval. State why the extra context is
+needed; explicit user-imposed task limits still apply.
+Start a new search with an explicit budget sized for
 the complete source, metadata and escaping, within actual free context and the
 configured tool ceiling. See [whole source allocation](inspection-allocation.md).
 The hook output remains limited by `context_bytes`; increasing an explicit native
