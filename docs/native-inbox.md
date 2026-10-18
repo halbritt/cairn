@@ -299,6 +299,25 @@ operational records, using `coordination.py recover-native-refused-wake --config
 - **What it still checks:** every settlement check applies (no grant, no tools, no journal progress, the
   owning prompt not active). It decides before writing.
 
+For a Codex post-claim hook refusal, the host diagnostic alone does not establish that the native
+turn ended. Use `coordination.py recover-codex-refused-wake --config BINDING --native-session-id S
+--attempt-id A --start-record OFF:LEN:SHA --context-record OFF:LEN:SHA --end-record OFF:LEN:SHA`.
+Add `--check-only` to validate without changing state or contacting the store. This recovery requires:
+
+- the exact host-recorded hook refusal, matching held attempt, delivery, session and native turn;
+- a live owner process holding exactly one matching rollout under its configured `sessions` directory;
+- three contiguous, hash-pinned native records: a queued root `task_started`, its `turn_context`, and
+  `task_complete` with no last message, bracketing the claim and refusal within the hook timeout;
+- an initialized bridge ledger with no grant, no joined prompt, no observed tools and no command
+  journal progress beyond the claim.
+
+Only those bounded native records are read; their bodies are not retained in coordination state.
+Unknown record shapes, changed files or identities, and missing evidence refuse recovery before any
+write. A successful recovery reconciles `turn_ended`; the delivery is failed, never acknowledged as
+handled or automatically replayed. Store failure retains the ended-turn proof for the watcher's existing
+reconciliation retry. This command is explicit recovery, not an automatic Codex refusal detector.
+Post-claim diagnostics retain allowlisted cause codes and reasons when available, never raw error text.
+
 
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a

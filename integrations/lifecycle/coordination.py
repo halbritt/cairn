@@ -2237,10 +2237,14 @@ def attempt_commands_absent(config, attempt):
 
 def refused_claude_wake_settleable(config, state, turn):
     """The claimed attempt belongs to exactly this refused, unjoined Claude prompt and nothing ran under it."""
+    return bool(config.get('harness') == 'claude' and isinstance(turn, str) and turn.startswith('claude-channel:')
+                and refused_wake_unprocessed(config, state, turn))
+
+
+def refused_wake_unprocessed(config, state, turn):
     intent, attempt = state.get('inbox_intent'), state.get('inbox_attempt')
     active = state.get('active_prompt') or {}
-    return bool(config.get('harness') == 'claude' and isinstance(turn, str) and turn.startswith('claude-channel:')
-                and isinstance(intent, dict) and isinstance(attempt, dict)
+    return bool(isinstance(intent, dict) and isinstance(attempt, dict)
                 and intent.get('native_turn_id') == turn and attempt.get('native_turn_id') == turn
                 and intent.get('request_id') == attempt.get('attempt_id') and intent.get('session') == attempt.get('session')
                 and attempt.get('session') == session_ref(state['agent'])
@@ -2471,6 +2475,123 @@ def recover_native_refused_wake(config, config_path, native_session_id, attempt_
             raise CoordinationError('INVALID_REQUEST', 'held attempt cannot be proven unprocessed (grant ' + grant + ')')
         return settle_refused_claude_wake(config, state, path, turn, CoordinationError('NATIVE_PROMPT_REFUSED', 'native record'),
                                           origin='native_record', require_active=False, evidence=proof)
+
+
+def codex_rollout_path(config, state):
+    """Use the live owner's open rollout, never a caller-selected transcript."""
+    home = config.get('config_home')
+    native = state['agent']['native_session_id']
+    if (not isinstance(home, str) or not Path(home).is_absolute()
+            or not re.fullmatch(r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', native)
+            or not process_alive(state['process'])):
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout owner is unavailable')
+    root = (Path(home) / 'sessions').resolve()
+    paths = set()
+    for descriptor in Path(f"/proc/{state['process']['pid']}/fd").iterdir():
+        try:
+            target = Path(os.readlink(descriptor))
+        except FileNotFoundError:
+            continue  # An unrelated descriptor can close during enumeration.
+        if target.name.startswith('rollout-') and target.name.endswith('-' + native + '.jsonl'):
+            if not target.is_absolute() or target.resolve() != target or not target.is_relative_to(root):
+                raise CoordinationError('INVALID_REQUEST', 'Codex rollout is outside its configured session directory')
+            info = target.stat()
+            opened = descriptor.stat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise CoordinationError('INVALID_REQUEST', 'Codex rollout is not an owner-controlled regular file')
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise CoordinationError('INVALID_REQUEST', 'Codex rollout path no longer names its open file')
+            paths.add(target)
+    if len(paths) != 1 or not process_alive(state['process']):
+        raise CoordinationError('INVALID_REQUEST', 'Codex owner does not hold exactly one matching rollout')
+    return paths.pop()
+
+
+def codex_refusal_proof(config, state, attempt, recorded, locators):
+    """Accept only a contiguous queued start, context, and empty completion for the refused turn."""
+    start, context, end = locators
+    if (start['offset'] + start['length'] != context['offset']
+            or context['offset'] + context['length'] != end['offset']):
+        raise CoordinationError('INVALID_REQUEST', 'Codex refusal records are not contiguous')
+    path = codex_rollout_path(config, state)
+    inode = (path.stat().st_dev, path.stat().st_ino)
+    records = [read_native_record(path, item) for item in locators]
+    turn = attempt['native_turn_id']
+    ordinal = records[0].get('ordinal')
+    if type(ordinal) is not int or ordinal < 0:
+        raise CoordinationError('INVALID_REQUEST', 'Codex record ordinal is unavailable')
+    for index, (record, kind) in enumerate(zip(records, ('event_msg', 'turn_context', 'event_msg'))):
+        payload = record.get('payload')
+        if (set(record) != {'timestamp', 'ordinal', 'type', 'payload'} or record['type'] != kind
+                or type(record['ordinal']) is not int or record['ordinal'] != ordinal + index
+                or not isinstance(payload, dict) or payload.get('turn_id') != turn
+                or payload.get('root_turn_id') != turn):
+            raise CoordinationError('INVALID_REQUEST', 'Codex native records do not identify the refused root turn')
+    first, middle, last = [r['payload'] for r in records]
+    attribution = first.get('turn_attribution')
+    if (set(first) != {'type', 'turn_attribution', 'turn_id', 'root_turn_id', 'started_at',
+                      'model_context_window', 'collaboration_mode_kind'}
+            or first['type'] != 'task_started' or not isinstance(attribution, dict)
+            or attribution != dict(turn_id=turn, turn_trigger='queue', parent_turn_id=None,
+                                   initiating_agent_path=None, root_turn_id=turn)
+            or set(last) != {'type', 'turn_id', 'root_turn_id', 'last_agent_message',
+                             'started_at', 'completed_at', 'duration_ms'}
+            or last['type'] != 'task_complete' or last['last_agent_message'] is not None
+            or middle.get('cwd') != state['workspace']):
+        raise CoordinationError('INVALID_REQUEST', 'Codex records do not prove an empty completed queue turn')
+    times = [native_time(r['timestamp']).timestamp() for r in records]
+    claimed = datetime.fromisoformat(attempt['created_at'].replace('Z', '+00:00')).timestamp()
+    refused = recorded.get('at')
+    if (type(refused) not in (int, float) or not times[0] <= times[1] <= claimed <= refused <= times[2]
+            or times[2] - times[0] > NATIVE_HOOK_TIMEOUT_SECONDS
+            or type(first['started_at']) is not int or first['started_at'] != int(times[0])
+            or last['started_at'] != first['started_at'] or type(last['completed_at']) is not int
+            or last['completed_at'] != int(times[2]) or type(last['duration_ms']) is not int
+            or not 0 <= last['duration_ms'] <= NATIVE_HOOK_TIMEOUT_SECONDS * 1000):
+        raise CoordinationError('INVALID_REQUEST', 'Codex refusal chronology does not bracket this claim')
+    if codex_rollout_path(config, state) != path or (path.stat().st_dev, path.stat().st_ino) != inode:
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout owner changed during verification')
+    return dict(schema='cairn.codex-refused-turn/1', records=locators,
+                native_session_id=state['agent']['native_session_id'], native_turn_id=turn)
+
+
+def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, *, check_only=False):
+    """Explicitly settle a proven ended Codex refusal; never claim, requeue, or replay it."""
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        attempt = state.get('inbox_attempt') or {}
+        recorded = state.get('wake_refusal_diagnostic') or {}
+        turn = attempt.get('native_turn_id')
+        if (config.get('harness') != 'codex' or state.get('agent', {}).get('native_session_id') != native_session_id
+                or state.get('ending') or state.get('retired') or not process_alive(state['process'])
+                or attempt.get('attempt_id') != attempt_id or not isinstance(turn, str)
+                or not re.fullmatch(r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', turn)
+                or recorded.get('phase') != 'bridge_after_claim' or recorded.get('origin') != 'hook'
+                or recorded.get('settlement') != 'held' or recorded.get('attempt_id') != attempt_id
+                or recorded.get('native_turn_id') != turn
+                or recorded.get('delivery_id') != attempt.get('delivery', {}).get('delivery_id')
+                or not refused_wake_unprocessed(config, state, turn)):
+            raise CoordinationError('INVALID_REQUEST', 'held state is not this unprocessed Codex hook refusal')
+        if recall_grant_state(config, state, attempt) != 'absent':
+            raise CoordinationError('INVALID_REQUEST', 'Codex attempt has a present or unknown memory grant')
+        proof = codex_refusal_proof(config, state, attempt, recorded, locators)
+        if check_only:
+            return dict(status='eligible', attempt_id=attempt_id, grant='absent', native_record=proof)
+        state['wake_refusal_diagnostic'] = dict(recorded, settlement='turn_ended', grant='absent',
+            recovery_origin='codex_native_records', native_record=proof)
+        state['inbox_turn_ended'] = True
+        state['delivered_since_idle'] = False
+        write_state(path, state)
+        try:
+            settled = flush_inbox_intents(config, state) and end_turn_inbox(config, state, path)
+            if not settled:
+                state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
+                write_state(path, state)
+        except (CoordinationError, OSError, ValueError, KeyError, TypeError):
+            state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
+            write_state(path, state)
+        return state['wake_refusal_diagnostic']
 
 
 def reconcile_rejected_wake(config, state, path):
@@ -3046,7 +3167,8 @@ def main():
                                   message=f'INVALID_HOST: {type(exc).__name__} reading the native inbox context')))
             return 7
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake"))
+    parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
+                                         "recover-codex-refused-wake"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
@@ -3056,8 +3178,20 @@ def main():
     parser.add_argument("--native-turn-id", help="recover-refused-wake: the refused claude-channel prompt")
     for name in ("enqueue", "dequeue", "refusal"):
         parser.add_argument(f"--{name}-record", help=f"recover-native-refused-wake: {name} record OFFSET:LENGTH:SHA256")
+    for name in ("start", "context", "end"):
+        parser.add_argument(f"--{name}-record", help=f"recover-codex-refused-wake: {name} record OFFSET:LENGTH:SHA256")
+    parser.add_argument("--check-only", action="store_true", help="validate Codex recovery evidence without settlement")
     args = parser.parse_args()
     try:
+        if args.mode == "recover-codex-refused-wake":
+            if None in (args.config, args.native_session_id, args.attempt_id,
+                        args.start_record, args.context_record, args.end_record):
+                parser.error("recover-codex-refused-wake requires --config, --native-session-id, --attempt-id and three record locators")
+            locators = [native_locator(getattr(args, f"{name}_record")) for name in ("start", "context", "end")]
+            result = recover_codex_refused_wake(load_config(args.config), args.native_session_id, args.attempt_id,
+                                                locators, check_only=args.check_only)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode == "recover-native-refused-wake":
             if None in (args.config, args.native_session_id, args.attempt_id, args.enqueue_record, args.dequeue_record, args.refusal_record):
                 parser.error("recover-native-refused-wake requires --config, --native-session-id, --attempt-id and three record locators")
