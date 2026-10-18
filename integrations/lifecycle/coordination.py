@@ -2160,7 +2160,25 @@ def refusal_error_class(exc):
     # Fixed diagnostic vocabulary: never print exception messages or host paths.
     name = type(exc).__name__
     return name if name in ('BlockingIOError', 'PermissionError', 'FileNotFoundError',
-        'OSError', 'ValueError', 'KeyError', 'TypeError', 'JSONDecodeError', 'CoordinationError') else 'OtherError'
+        'OSError', 'ValueError', 'KeyError', 'TypeError', 'JSONDecodeError', 'CoordinationError',
+        'HookError', 'BudgetRefused', 'RequiredContextRefused', 'ContextRefused') else 'OtherError'
+
+
+def refusal_cause_details(cause):
+    """Retain closed error categories across the independently loaded memory engine."""
+    if refusal_error_class(cause) not in ('HookError', 'BudgetRefused', 'RequiredContextRefused',
+                                         'ContextRefused', 'CoordinationError'):
+        return {}
+    result = {}
+    for attribute, allowed in (
+            ('code', {'TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'AUTHORITY_DENIED', 'NOT_FOUND',
+                      'PAYLOAD_UNAVAILABLE', 'OPEN_CONFLICT', 'POLICY_UNENFORCEABLE'}),
+            ('reason', {'NONZERO_EXIT', 'INVALID_JSON', 'OUTPUT_LIMIT', 'START_FAILED', 'NOT_CONFIRMED',
+                        'SEARCH_STATUS', 'NOT_HOSTED'})):
+        value = getattr(cause, attribute, None)
+        if type(value) is str and value in allowed:
+            result['cause_' + attribute] = value
+    return result
 
 
 def recall_grant_state(config, state, attempt):
@@ -2254,6 +2272,7 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
                       cause_class=refusal_error_class(cause) if cause is not None else None,
                       attempt_id=attempt.get('attempt_id'), delivery_id=(attempt.get('delivery') or {}).get('delivery_id'),
                       native_turn_id=turn, at=time.time())
+    diagnostic.update(refusal_cause_details(cause))
     if evidence is not None:
         diagnostic['native_record'] = evidence
     eligible = refused_claude_wake_settleable(config, state, turn)

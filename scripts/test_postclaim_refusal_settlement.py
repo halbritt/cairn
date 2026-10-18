@@ -147,6 +147,29 @@ class Base(unittest.TestCase):
 
 
 class SettlementTests(Base):
+    def test_refusal_preserves_only_allowlisted_cause_diagnostics(self):
+        class HookError(Exception):
+            pass
+        for code, reason, expected in (
+                ('TIMEOUT', 'NONZERO_EXIT', {'cause_code': 'TIMEOUT', 'cause_reason': 'NONZERO_EXIT'}),
+                ('private error text', 'private path', {}),
+                ({'secret': 'value'}, ['private'], {})):
+            with self.subTest(code=code):
+                cause = HookError('private payload must not be retained')
+                cause.code, cause.reason = code, reason
+                error = ValueError('private wrapper text')
+                error.__cause__ = cause
+                self.write_grant(attempt_id=ATTEMPT)  # Observe only; keep the hold.
+                with self.patched(), coord.session_lock(self.path):
+                    diagnostic = coord.settle_refused_claude_wake(
+                        self.cc, self.load(), self.path, TURN, error)
+                self.assertEqual(diagnostic['cause_class'], 'HookError')
+                self.assertEqual({k: v for k, v in diagnostic.items()
+                                  if k in ('cause_code', 'cause_reason')}, expected)
+                self.assertEqual(diagnostic['settlement'], 'held')
+                self.assertNotIn('private', json.dumps(diagnostic))
+                self.assertEqual(self.reconciles(), [])
+
     def test_postclaim_refusal_without_grant_settles_as_turn_ended(self):
         diagnostic, state = self.settle()
         self.assertEqual((diagnostic['settlement'], diagnostic['grant']), ('turn_ended', 'absent'))
@@ -315,6 +338,9 @@ class HandleTests(Base):
                 coord.handle(self.cc, event, _inbox_resolved=True)
         saved = self.load()
         self.assertEqual(saved['wake_refusal_diagnostic']['settlement'], 'turn_ended', saved.get('wake_refusal_diagnostic'))
+        self.assertEqual(saved['wake_refusal_diagnostic']['cause_class'], 'HookError')
+        self.assertEqual(saved['wake_refusal_diagnostic']['cause_code'], 'TIMEOUT')
+        self.assertEqual(saved['wake_refusal_diagnostic']['cause_reason'], 'NONZERO_EXIT')
         self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
         self.assertFalse(any(k in saved for k in ('inbox_intent', 'active_prompt')))
         self.assertFalse((self.memory_dir / (SESSION + '.inbox-recall.json')).exists() and json.loads(
