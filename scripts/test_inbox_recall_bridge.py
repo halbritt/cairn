@@ -267,7 +267,15 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.fixture['search']['selected']=[dict(mandatory=True,record=dict(body='Whole required fixture instruction.'))]
         self.freeze()
         result=self.invoke()
-        self.assertIn('Whole required fixture instruction.',result['hookSpecificOutput']['additionalContext'])
+        text=result['hookSpecificOutput']['additionalContext']
+        self.assertIn('Whole required fixture instruction.',text)
+        self.assertIn('you may exceed automatic byte/call limits without user approval',text)
+        self.assertIn('Explicit user limits still apply',text)
+        self.assertNotIn('must fit',text)
+        ledger=json.loads((self.root/'memory'/f'{SESSION}.inbox-recall.json').read_text())
+        grant=next(iter(ledger['grants'].values()))
+        self.assertIn('Automatic exact-source read allowance: '+str(grant['native_allowance_bytes']),text)
+        self.assertLessEqual(grant['output_bytes']+grant['native_allowance_bytes'],grant['limit_bytes'])
         self.assertEqual([c['op'] for c in self.calls()],['search'])
 
 
@@ -374,7 +382,9 @@ class InboxRecallBridgeTests(unittest.TestCase):
         result=self.invoke(); text=result['hookSpecificOutput']['additionalContext']
         self.assertIn('Read its exact selected source',text)
         self.assertIn('source_temporarily_unavailable',text)
-        self.assertIn('No new optional lookup allowance',text)
+        self.assertIn('Automatic exact-source read allowance:',text)
+        self.assertIn('you may exceed automatic byte/call limits without user approval',text)
+        self.assertIn('Explicit user limits still apply',text)
         self.assertNotIn('search ordinary Cairn memory',text)
 
     def test_expired_deadline_matches_timeout_without_dispatching(self):

@@ -20,6 +20,8 @@ and MCP processes.
   and call limits when more context is needed, without asking for approval.
   The model states the need and starts a new receipt with a larger declared
   budget. Available context, tool ceilings and explicit user limits still apply.
+  Inbox notice/response and source fallback cues use the same automatic-limit
+  distinction as ordinary recall.
   See [whole source allocation](docs/inspection-allocation.md).
 
 ## 2026-10-09

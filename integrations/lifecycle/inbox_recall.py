@@ -636,10 +636,15 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                     label = 'optional_recall_unavailable'
         engine.trace_phase(memory, 'final_persistence') if hasattr(engine, 'trace_phase') else None
         if status.get('outcome') != 'delegated':
-            prefix_text = text + '\nNo new optional lookup allowance. Exact-source reads, if needed, must fit '
-            provisional = prefix_text + str(budget) + ' remaining UTF-8 bytes including result envelopes.'
+            prefix_text = text + '\nAutomatic exact-source read allowance: '
+            suffix = (' UTF-8 bytes including result envelopes. This limits automatic recall only. '
+                      'If the task needs more context, you may exceed automatic byte/call limits without user approval. '
+                      'State why; start a new search declaring available_tokens and memory_budget_bytes within '
+                      'free context and the tool ceiling; use inspection_policy:first-fitting-whole/2 when exposed. '
+                      'Explicit user limits still apply. Count prior reads; never truncate required context.')
+            provisional = prefix_text + str(budget) + suffix
             allowance = max(0, budget - cost(provisional))
-            text = prefix_text + str(allowance) + ' remaining UTF-8 bytes including result envelopes.'
+            text = prefix_text + str(allowance) + suffix
             status['native_allowance_bytes'] = allowance
         if cost(text) > budget:
             raise ValueError('inbox output exceeds combined budget')

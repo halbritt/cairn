@@ -99,7 +99,7 @@ unavailability categories permit fallback to that checked required context.
 
 A source that is temporarily unavailable or too large for whole inline delivery
 keeps the existing exact-source read workflow, with a visible reason and no new
-optional lookup allowance. It is never truncated or treated as an empty task.
+automatic optional lookup allowance. It is never truncated or treated as an empty task.
 Source identity/access failures, a lost lease, unavailable required context,
 changed bindings, and duplicate grants use the native prompt refusal path.
 
@@ -114,8 +114,14 @@ The initial combined allowance covers the complete emitted UTF-8 hook JSON, its
 newline, source, control instructions, required context, candidate bodies and
 framing. The renderer computes remaining native allowance using that same
 serialization. Coordination control bytes are also reported separately and are
-included in the total. Native tool-result envelopes, errors and retries must fit
-the remaining optional allowance. Agent compliance is required for native calls;
+included in the total. Automatic native tool-result envelopes, errors and retries
+must fit the remaining allowance. The model may deliberately exceed automatic byte
+and call limits when the task needs more context, without asking for approval:
+state why and start a new search with a declared budget within free context and
+the tool ceiling, using `first-fitting-whole/2` when exposed. Explicit user limits
+still apply, and prior reads still consume context. Notice/response and source
+fallback cues carry this same distinction. See [whole source allocation](inspection-allocation.md).
+Agent compliance is required for native calls;
 this bridge does not intercept every tool result or provide a global API budget.
 
 After compaction, current required-only context is restored whole under a separate
