@@ -276,6 +276,11 @@ delivery or prompt. Any doubt (a grant, a missing, busy or unreadable ledger, a 
 observed tool, or any other journal content) keeps the existing hold and records only
 `wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state, settlement).
 
+Unrelated attempts' journal entries do not establish progress on this refused attempt.
+Recovery checks this attempt's own command journal; it does not discard unrelated unused entries,
+pending commands, or late-response obligations. The existing journal flush still processes those
+obligations independently.
+
 A refusal held that way can be settled later only from that host-written record:
 `coordination.py recover-refused-wake --config BINDING --native-session-id S --attempt-id A
 --native-turn-id T`. It repeats every check, decides before writing, and sends nothing to the native

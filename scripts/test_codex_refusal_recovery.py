@@ -83,6 +83,20 @@ class CodexRecoveryTests(Base):
         self.assertNotIn('inbox_attempt', self.load())
         self.assertNotIn('idle_wake', self.load())
 
+    def test_recovery_preserves_unused_prior_journal_obligations(self):
+        prior = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        self.state['inbox_journals'].insert(0, prior)
+        self.save()
+        with patch.object(coord, 'call', side_effect=self.api), \
+                patch.object(coord, 'process_alive', return_value=True):
+            self.assertEqual(coord.recover_codex_refused_wake(
+                self.cc, SESSION, ATTEMPT, self.locators, check_only=True)['status'], 'eligible')
+            self.assertEqual(coord.recover_codex_refused_wake(
+                self.cc, SESSION, ATTEMPT, self.locators)['settlement'], 'turn_ended')
+        self.assertEqual(self.load()['inbox_journals'], [prior, ATTEMPT])
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()],
+                         [(ATTEMPT, 'turn_ended')])
+
     def test_store_failure_retains_end_proof_for_watcher_without_lease_renewal(self):
         self.fail_reconcile = True
         self.assertEqual(self.recover()['settlement'], 'turn_ended_pending')

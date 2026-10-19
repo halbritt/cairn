@@ -193,6 +193,29 @@ class SettlementTests(Base):
         diagnostic, _ = self.settle()
         self.assertEqual(diagnostic['settlement'], 'turn_ended')
 
+    def test_unrelated_journals_are_preserved_without_blocking_exact_refusal(self):
+        prior = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        # CAIRN-170: retained prior obligations stranded a later refused wake.
+        for pending in (False, True):
+            with self.subTest(pending=pending):
+                self.setUp()
+                self.state['inbox_journals'].insert(0, prior)
+                self.save()
+                target = coord.intent_path(self.cc['state_dir'], prior)
+                if pending:
+                    coord.write_state(target, dict(schema='cairn.inbox-intent/1', attempt_id=prior,
+                        completion=dict(kind='complete', status='pending', code='TIMEOUT',
+                                        argv=[str(self.root / 'cairn')], input='')))
+                before = target.read_bytes() if target.exists() else None
+                with patch.object(coord, 'call', side_effect=self.api), coord.session_lock(self.path):
+                    diagnostic = coord.settle_refused_claude_wake(
+                        self.cc, self.load(), self.path, TURN, self.refusal())
+                self.assertEqual(diagnostic['settlement'], 'turn_ended')
+                self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()],
+                                 [(ATTEMPT, 'turn_ended')])
+                self.assertEqual(self.load()['inbox_journals'], [prior, ATTEMPT])
+                self.assertEqual(target.read_bytes() if target.exists() else None, before)
+
     def test_missing_or_substituted_ledger_is_unknown_not_absent(self):
         for name, change in (('missing ledger', lambda: self.ledger.unlink()),
                              ('missing marker', lambda: self.ledger.with_suffix('.initialized').unlink()),
@@ -255,7 +278,6 @@ class SettlementTests(Base):
             'journal for another attempt': dict(journal=dict(attempt_id='99999999-9999-4999-8999-999999999999')),
             'observed tool call': dict(change=lambda s: s.update(tool_calls=[dict(id='t')])),
             'attempt tools': dict(change=lambda s: s['inbox_attempt'].update(tools=[dict(id='t')])),
-            'extra journal': dict(change=lambda s: s.update(inbox_journals=[ATTEMPT, 'later'])),
             'cancel pending': dict(change=lambda s: s['inbox_attempt'].update(cancel=dict(by='op'))),
             'prompt no longer active': dict(change=lambda s: s.update(active_prompt=dict(id='claude-channel:' + OTHER_PROMPT))),
             'codex harness': dict(config=dict(harness='codex')),

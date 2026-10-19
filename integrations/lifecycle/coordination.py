@@ -2252,7 +2252,6 @@ def refused_wake_unprocessed(config, state, turn):
                 and not active.get('joined')
                 and not state.get('tool_calls') and not attempt.get('tools')
                 and not any(state.get(k) for k in ('inbox_close', 'inbox_turn_ended'))
-                and set(state.get('inbox_journals') or []) <= {attempt.get('attempt_id')}
                 and attempt_commands_absent(config, attempt))
 
 
