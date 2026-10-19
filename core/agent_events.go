@@ -192,6 +192,15 @@ func eventScanFields(e *AgentEvent) []any {
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
+	if errors.Is(err, pgx.ErrNoRows) && s.session != nil {
+		preds, grantErr := s.successorAuthorizedPredecessorsTx(ctx, tx, id)
+		if grantErr != nil {
+			return e, grantErr
+		}
+		if len(preds) > 0 {
+			e, err = scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND (e.sensitivity='shareable' OR $3) AND (e.publisher=ANY($2) OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=ANY($2)))`, id, preds, dest.AllowLocal))
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return e, failure("NOT_FOUND", "event not found")
 	}
@@ -366,6 +375,11 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 		}
 		if !visible {
 			return failure("NOT_FOUND", "source version unavailable")
+		}
+		if req.CausationID != "" {
+			if _, err = s.readEvent(ctx, tx, req.CausationID, dest); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -763,7 +777,21 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 			return out, err
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT `+strings.Replace(deliveryColumns, "d.result_id::text,d.result_version", "CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_id::text END,CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_version END", 1)+` FROM cairn.agent_delivery d LEFT JOIN cairn.memory_record rm ON rm.record_id=d.result_id WHERE event_id=$1 AND ($2 OR consumer=$3) AND ($4='' OR delivery_id>NULLIF($4,'')::uuid) ORDER BY delivery_id LIMIT $5`, req.EventID, out.Event.From == s.channel.Principal, s.channel.Principal, req.After, limit+1, dest.AllowLocal)
+	consumers := []string{s.channel.Principal}
+	publisherVisible := out.Event.From == s.channel.Principal
+	if s.session != nil {
+		preds, err := s.successorAuthorizedPredecessorsTx(ctx, tx, req.EventID)
+		if err != nil {
+			return out, err
+		}
+		for _, p := range preds {
+			consumers = append(consumers, p)
+			if out.Event.From == p {
+				publisherVisible = true
+			}
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT `+strings.Replace(deliveryColumns, "d.result_id::text,d.result_version", "CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_id::text END,CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_version END", 1)+` FROM cairn.agent_delivery d LEFT JOIN cairn.memory_record rm ON rm.record_id=d.result_id WHERE event_id=$1 AND ($2 OR consumer=ANY($3)) AND ($4='' OR delivery_id>NULLIF($4,'')::uuid) ORDER BY delivery_id LIMIT $5`, req.EventID, publisherVisible, consumers, req.After, limit+1, dest.AllowLocal)
 	if err != nil {
 		return out, err
 	}
