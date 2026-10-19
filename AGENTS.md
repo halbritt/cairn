@@ -38,14 +38,14 @@ completing the full integration lifecycle before ending its turn or session:
   discard scratch artifacts before finishing. `git status --porcelain` must be
   empty in every checkout.
 - **Never leave unmerged local branches.** If you use a feature branch or
-  isolated worktree for task isolation, rebase onto `origin/main`, run
-  required checks (`make check` and `make test-integration` when store code is
-  touched), fast-forward or merge into `main`, and delete the temporary branch
-  (`git branch -d <branch>`).
+  isolated worktree for task isolation, use `git-land --check "<test-cmd>"` (or
+  rebase onto `origin/main`, run required checks, fast-forward `main`, push to
+  `origin/main`, and delete the temporary worktree and branch).
 - **Never leave orphaned worktrees.** Remove any secondary worktree you created
-  (`git worktree remove <path>` and `git worktree prune`) before finishing. Do
-  not place long-lived worktrees in `/tmp`, where `systemd-tmpfiles-clean`
-  deletes aged source files and corrupts working trees.
+  (`git worktree remove <path>` and `git worktree prune`) before finishing. Use
+  `git-wt create <slug>` (`~/.cache/agent-worktrees/<repo>/<slug>`) and never
+  place worktrees in `/tmp`, where `systemd-tmpfiles-clean` deletes aged source
+  files and corrupts working trees.
 - **Always push `main` to `origin/main`.** Local commits that are not on
   `origin/main` are invisible to downstream hosts and the owner. Fetch, rebase
   or merge cleanly, and `git push origin main` before reporting completion.
