@@ -43,7 +43,7 @@ class PairedEvidenceTests(unittest.TestCase):
             supervisor_source=common,permission_profile=dict(source=common,settings=common),
             grading={k:common for k in ('rubric','changed_pair_definition','blinding_policy','review_budget')},
             dispositions={})
-        bundle=dict(root=self.source,execution={'native':dict(model='fixture-model',effort='high')},source=source,plan={'sha256':'d'*64},schedule=schedule,
+        bundle=dict(root=self.source,workspace_paths={},execution={'native':dict(model='fixture-model',effort='high')},source=source,plan={'sha256':'d'*64},schedule=schedule,
             frozen={'corpus_sha256':'f'*64},notes=[dict(id='N',body='original')],
             distractor_notes=[dict(id='D',body='synthetic distractor')],
             cases=[dict(id='T1',wordings={'task':self.prompt})])

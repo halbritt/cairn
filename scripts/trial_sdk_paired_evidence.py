@@ -88,6 +88,8 @@ class WeeklyPreparationOwner:
         self.claimed = set()
         self.runs = []
         self._initial = None
+        self._environment = None
+        self._runtime_selection = None
 
     def prepare(self, request, *, registry, now, companion, review):
         need(self.state == 'new', 'paired_preparation_consumed')
@@ -141,8 +143,49 @@ class WeeklyPreparationOwner:
                 run_id=f"{row['case']}.{row['arm']}.s{row['seed']}",
                 session_id=str(uuid.uuid5(uuid.UUID(request['occurrence_id']),
                     self.identity['schedule_sha256']+':'+str(index)))))
+        # Retain only execution inputs, not case grading/oracle fields. These
+        # graphs remain under the original preparation allocation.
+        self._runtime_selection = dict(notes=bundle['notes'],distractor_notes=bundle['distractor_notes'],
+            cases=[{k:c[k] for k in ('id','workspace','copy_to','cwd','workspace_commit') if k in c}
+                   for c in bundle['cases']],workspace_paths=bundle['workspace_paths'],
+            execution=bundle['execution'],source=bundle['source'])
+        self._runtime_pin=seal_document(self.snapshot_owner,'runtime-selection.json',self._runtime_selection)
         self._join = seal_document(self.snapshot_owner,'join.json',dict(identity=self.identity,rows=self.rows))
         self._initial = self.snapshot_owner.bindings()
+
+    def verify_runtime_selection(self):
+        need(self.state=='prepared','paired_preparation_unavailable')
+        self.allocation.check()
+        self.snapshot_owner.verify_bindings(self._initial)
+        need(canonical_size_sha256(self._runtime_selection)[1]==self._runtime_pin['sha256'],
+             'weekly_runtime_selection_changed')
+
+    def prepare_environment(self, root, pg_bin, *, readiness_timeout=1800):
+        from trial_sdk_weekly_owners import WeeklyEnvironmentOwner
+        need(self._environment is None,'weekly_environment_consumed')
+        try:
+            self.verify_runtime_selection()
+            self._environment=WeeklyEnvironmentOwner.__new__(WeeklyEnvironmentOwner)
+            WeeklyEnvironmentOwner.__init__(self._environment,self,root,pg_bin,readiness_timeout)
+            self._environment.prepare()
+        except BaseException as primary:
+            self.state='unknown';self.allocation.poison(primary)
+            raise
+
+    def prepare_workspace(self,index,root):
+        need(self._environment is not None,'weekly_environment_unavailable')
+        self._environment.prepare_workspace(index,root)
+
+    def workspace_binding(self,index):
+        # Explicit charged scalar export; the workspace owner remains held.
+        self.verify_runtime_selection()
+        owner=self._environment.workspaces[index]
+        need(owner.state=='prepared','weekly_workspace_unknown')
+        return owner.prepared['workspace_sha256']
+
+    def bind_loaded_run(self,*args,**kwargs):
+        need(self._environment is not None,'weekly_environment_unavailable')
+        return self._environment.bind_run(*args,**kwargs)
 
     def bind_run(self, run, preparation, binding, index, service_document, source_output,
                  callback_root, callback_quote, command_quote, *, stream_output):
@@ -179,7 +222,7 @@ class WeeklyPreparationOwner:
             mcp = parse_document(mcp_text,preparation._snapshot.files['mcp.json'][3])
             policy = service_document['policy']
             need(mcp['mcpServers']['cairn']['args']==mcp_arguments(
-                {k:policy[k] for k in ('socket','token_file','repo','task','run')}), 'paired_mcp_binding')
+                {k:policy[k] for k in ('socket','token_file','repo','task','run')},profile='weekly-sdk'), 'paired_mcp_binding')
             # Capture immutable scalar selection BEFORE moving the SDK preparation.
             join = dict(self.identity, **{k:selected[k] for k in ('case','arm','seed','run_id','session_id','index')})
             self.claimed.add(index)  # An uncertain bind may never reselect this row.
@@ -214,6 +257,8 @@ class WeeklyPreparationOwner:
 
     def close(self):
         # Source backing may close only after all linked run cleanup completed.
+        environment_runs=getattr(self._environment,'runs',())
+        need(all(run._sources_closed for run in (*self.runs,*environment_runs)), 'paired_runs_live')
         faults = set()
         primary = None
         for preparation in self._pending_preparations:
@@ -222,6 +267,10 @@ class WeeklyPreparationOwner:
                 faults.add('paired_preparation_close_unknown')
                 if primary is None:primary=error
         need(all(run._sources_closed for run in self.runs), 'paired_runs_live')
+        if self._environment is not None:
+            if not self._environment.close():
+                faults.add('weekly_environment_cleanup_unknown')
+                return tuple(sorted(faults))
         if self.snapshot_owner is not None:
             faults.update(self.snapshot_owner.close())
         if primary is not None:raise primary
