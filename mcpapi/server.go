@@ -96,11 +96,13 @@ type rememberArgs struct {
 }
 
 type historyArgs struct {
-	RecordID      string                `json:"record_id"`
-	Version       int                   `json:"version,omitempty" jsonschema:"Positive version for one exact body. Omit or zero for metadata pages."`
-	BeforeVersion int                   `json:"before_version,omitempty" jsonschema:"Exclusive metadata cursor from next_before_version."`
-	Limit         int                   `json:"limit,omitempty" jsonschema:"Metadata page size, maximum 100. Omitted or zero defaults to 20."`
-	Span          *core.ByteSpanRequest `json:"span,omitempty" jsonschema:"Optional byte excerpt of an exact version. Offset 0-65535, length 1-65536; clipped only at EOF. Result omits full body and includes span bytes and checksum."`
+	RecordID          string                `json:"record_id"`
+	Version           int                   `json:"version,omitempty" jsonschema:"Positive version for one exact body. Omit or zero for metadata pages."`
+	BeforeVersion     int                   `json:"before_version,omitempty" jsonschema:"Exclusive metadata cursor from next_before_version."`
+	Limit             int                   `json:"limit,omitempty" jsonschema:"Metadata page size, maximum 100. Omitted or zero defaults to 20."`
+	Span              *core.ByteSpanRequest `json:"span,omitempty" jsonschema:"Optional byte excerpt of an exact version. Offset 0-65535, length 1-65536; clipped only at EOF. Result omits full body and includes span bytes and checksum."`
+	AvailableTokens   *int                  `json:"available_tokens,omitempty" jsonschema:"Actual free input-context room in conservative UTF-8 bytes. May exceed the default for a deliberate larger history read; 256 through the configured host ceiling. Omit for the host default. Count prior reads separately."`
+	MemoryBudgetBytes *int                  `json:"memory_budget_bytes,omitempty" jsonschema:"Optional output allowance for this history result including its serialized envelope; 256 through available_tokens (or the host default). Does not enlarge a receipt or change later reads."`
 }
 
 type assessmentsArgs struct {
@@ -194,19 +196,9 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 }
 
 func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.CallToolRequest, args searchArgs, prepare bool) (*mcp.CallToolResult, any, error) {
-	room := t.config.AvailableTokens
-	if args.AvailableTokens != nil {
-		if *args.AvailableTokens < 256 || *args.AvailableTokens > t.config.maxTokens() {
-			return nil, nil, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", t.config.maxTokens())
-		}
-		room = *args.AvailableTokens
-	}
-	memoryRoom := room
-	if args.MemoryBudgetBytes != nil {
-		if *args.MemoryBudgetBytes < 256 || *args.MemoryBudgetBytes > room {
-			return nil, nil, fmt.Errorf("INVALID_REQUEST: memory_budget_bytes must be between 256 and available_tokens %d", room)
-		}
-		memoryRoom = *args.MemoryBudgetBytes
+	room, memoryRoom, err := t.config.readAllowance(args.AvailableTokens, args.MemoryBudgetBytes)
+	if err != nil {
+		return nil, nil, err
 	}
 	// The API measures a reserve against the receipt cap it is given. For
 	// preparation that is the caller's allowance less the guidance bytes, which
@@ -337,9 +329,32 @@ func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core
 }
 
 func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args historyArgs) (*mcp.CallToolResult, any, error) {
+	_, allowance, err := t.config.readAllowance(args.AvailableTokens, args.MemoryBudgetBytes)
+	if err != nil {
+		return nil, nil, err
+	}
 	var result core.RecordHistory
-	err := t.client.Call(ctx, "history", core.RecordHistoryRequest{RecordID: args.RecordID, Repo: t.config.Scope.Repo, Version: args.Version, BeforeVersion: args.BeforeVersion, Limit: args.Limit, Span: args.Span}, &result)
-	return toolResult(result, err, t.config.AvailableTokens)
+	err = t.client.Call(ctx, "history", core.RecordHistoryRequest{RecordID: args.RecordID, Repo: t.config.Scope.Repo, Version: args.Version, BeforeVersion: args.BeforeVersion, Limit: args.Limit, Span: args.Span}, &result)
+	return toolResult(result, err, allowance)
+}
+
+// readAllowance keeps free context distinct from the caller's smaller memory allocation.
+func (c Config) readAllowance(available, memory *int) (room, allowance int, err error) {
+	room = c.AvailableTokens
+	if available != nil {
+		if *available < 256 || *available > c.maxTokens() {
+			return 0, 0, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", c.maxTokens())
+		}
+		room = *available
+	}
+	allowance = room
+	if memory != nil {
+		if *memory < 256 || *memory > room {
+			return 0, 0, fmt.Errorf("INVALID_REQUEST: memory_budget_bytes must be between 256 and available_tokens %d", room)
+		}
+		allowance = *memory
+	}
+	return room, allowance, nil
 }
 
 func (t memoryTools) assessments(ctx context.Context, _ *mcp.CallToolRequest, args assessmentsArgs) (*mcp.CallToolResult, any, error) {

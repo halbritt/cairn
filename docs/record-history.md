@@ -81,7 +81,9 @@ the record to belong to that repository; it cannot widen profile authorization.
 ## Native tools
 
 MCP and native OpenCode expose `cairn_history` with the same `record_id`,
-`version`, `before_version`, `limit` and optional `span` arguments. For example, after obtaining a
+`version`, `before_version`, `limit` and optional `span` arguments. Native tools also
+accept `available_tokens` and `memory_budget_bytes` for a deliberate larger read.
+For example, after obtaining a
 record ID through search or capture:
 
 ```json
@@ -93,16 +95,30 @@ without paging fields to inspect its exact body. The tools fix `repo` from host
 configuration and refuse caller overrides. OpenCode checks its `cairn_history`
 permission. The read requires neither a request UUID nor an index handle.
 
+When a whole historical body exceeds the automatic default, declare actual free
+context and an output allowance explicitly, without changing the source version:
+
+```json
+{"record_id":"RECORD_UUID","version":1,"available_tokens":160000,"memory_budget_bytes":150000}
+```
+
+These two fields govern native-tool output only; they are not forwarded to the
+history API or CLI request. Room must be at least 256 UTF-8 bytes and no greater
+than the configured host ceiling; the memory allowance cannot exceed declared
+room. Omitted fields preserve the host default. A larger read changes neither
+future defaults nor receipt credits, repository scope, destination or access
+checks. Count prior reads and host-added metadata against remaining context.
+
 Update the CLI/API, facade binary/native adapter and any explicit tool allowlist first.
 The Codex configuration generator includes the new tool; existing configuration
 is not rewritten automatically. Old facades report an unknown tool; old APIs
 reject the native request's additional repository constraint. Existing CLI/API
 history requests without that optional field keep their behavior.
 
-Each result must fit the host's configured memory room, including the serialized
+Each result must fit its declared or default memory allowance, including the serialized
 MCP envelope where applicable. An oversized result returns `BUDGET_REFUSED`
 without a saved read receipt. Reduce the metadata page size or obtain sufficient
-host-approved room for an exact body, or request an explicit passage. Excerpts
+room within the configured ceiling for an exact body, or request an explicit passage. Excerpts
 also have to fit the configured room; the tools do not silently truncate results.
 Historical inspection does not replace current search/pull before an edit.
 

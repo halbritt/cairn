@@ -42,12 +42,24 @@ def check(invoke, large_record_id=None):
     invoke('edit', dict(request_id=str(uuid.uuid4()), record_id=record_id,
                         expected_version=1, body='Historical version cannot overwrite current wording'), 'VERSION_CONFLICT')
     private = invoke('remember', dict(request_id=str(uuid.uuid4()), body=marker + ': private'))
-    for fields in ({}, {'version': 1}, {'version': 1, 'span': {'offset': 0, 'length': 1}}):
+    for fields in ({}, {'version': 1}, {'version': 1, 'span': {'offset': 0, 'length': 1}},
+                   {'version': 1, 'available_tokens': 160000, 'memory_budget_bytes': 150000}):
         invoke('history', dict(record_id=private['record_id'], **fields), 'NOT_FOUND')
     if large_record_id is None:
         large_record_id = invoke('remember', dict(request_id=str(uuid.uuid4()), body='z' * 65536, shareable=True))['record_id']
     assert invoke('history', dict(record_id=large_record_id))['versions'][0]['body_bytes'] == 65536
     invoke('history', dict(record_id=large_record_id, version=1), 'BUDGET_REFUSED')
+    expanded = invoke('history', dict(record_id=large_record_id, version=1,
+                                     available_tokens=160000, memory_budget_bytes=150000))
+    assert expanded['versions'][0]['body'] == 'z' * 65536
+    assert expanded['versions'][0]['version'] == 1
+    invoke('history', dict(record_id=large_record_id, version=1), 'BUDGET_REFUSED')
+    invoke('history', dict(record_id=large_record_id, version=1,
+                          available_tokens=160000, memory_budget_bytes=1000), 'BUDGET_REFUSED')
+    for extra in ({'available_tokens': 255}, {'available_tokens': 1000001},
+                  {'memory_budget_bytes': 255}, {'memory_budget_bytes': 1000000},
+                  {'available_tokens': 8000, 'memory_budget_bytes': 8001}):
+        invoke('history', dict(record_id=record_id, version=1, **extra), 'INVALID_REQUEST')
     excerpt = invoke('history', dict(record_id=large_record_id, version=1,
                                     span=dict(offset=65500, length=128)))
     version = excerpt['versions'][0]

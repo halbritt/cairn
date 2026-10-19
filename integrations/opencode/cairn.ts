@@ -97,6 +97,14 @@ function render(value: unknown, config: Settings, room = config.tokens) {
   return text
 }
 
+function readAllowance(config: Settings, available?: number, memory?: number) {
+  const room = available ?? config.tokens
+  if (room > config.max_tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.max_tokens)
+  const allowance = memory ?? room
+  if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
+  return { room, allowance }
+}
+
 const pullArgs = {
   request_id: z.string().uuid(),
   receipt_id: z.string().uuid(),
@@ -127,10 +135,7 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
     throw new Error("INVALID_REQUEST: search requires a query, entities, error_signature_sha256, or browse=true without search hints")
   }
   const config = await settings(prepare ? "prepare_note" : "search", context)
-  const room = args.available_tokens ?? config.tokens
-  if (room > config.max_tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.max_tokens)
-  const allowance = args.memory_budget_bytes ?? room
-  if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
+  const { room, allowance } = readAllowance(config, args.available_tokens, args.memory_budget_bytes)
   const receiptAllowance = allowance - (prepare ? preparationOverhead : 0)
   if (prepare && receiptAllowance < 256) throw new Error("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
   let reserve = args.min_pull_bytes ?? 0
@@ -240,12 +245,16 @@ export const prepare_note = validatedTool({
 export const history = validatedTool({
   description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
   args: { record_id: z.string().uuid(), version: z.number().int().min(0).max(2147483647).optional(),
+    available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room in conservative UTF-8 bytes. May exceed the default for a deliberate larger history read, up to the configured host ceiling. Omit for the default; count prior reads separately."),
+    memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional output allowance for this history result: 256 through available_tokens or the configured default. Does not enlarge a receipt or change later reads."),
     before_version: z.number().int().min(0).max(2147483647).optional(),
     limit: z.number().int().min(0).max(100).optional().describe("Metadata page size; omitted or zero means 20"),
     span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional().describe("Byte excerpt; requires a positive exact version") },
   async execute(args, context) {
     const config = await settings("history", context)
-    return render(await call(config, context, ["history"], { ...args, repo: config.repo }), config)
+    const { available_tokens, memory_budget_bytes, ...request } = args
+    const { allowance } = readAllowance(config, available_tokens, memory_budget_bytes)
+    return render(await call(config, context, ["history"], { ...request, repo: config.repo }), config, allowance)
   },
 })
 
