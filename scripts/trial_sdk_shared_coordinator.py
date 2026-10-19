@@ -228,26 +228,53 @@ class SharedCoordinator:
     def pending_request(self):
         return self._call(lambda: None if self.rpc is None else self.rpc.pending_request())
 
+    def _prepare_command(self, pending, quote):
+        require(not self._cancelled and self.rpc is not None and pending is not None
+                and pending is self.rpc.pending_request(), 'coordinator_request_binding')
+        if self.rpc._read_custody is not None:
+            self.rpc._read_custody.authorize_pending()
+        if not self.rpc.prepare_command_phase():
+            return False
+        state = self.link.transcript.snapshot()
+        self.operation = CommandOperation(self.link, quote,
+            operation=state['operation'] + 1, lease=state['lease'] + 1,
+            deadline_ns=pending.deadline_ns, clock=self._clock)
+        self.operation.bind_gate(self.gate)
+        request = pending.request
+        self.operation.prepare_hook(request.operation, request.args, request.body)
+        self.rpc.start_operation(self.operation)
+        # RPC now exclusively owns this borrow. It may retire the command
+        # in a later step; the coordinator must not retain that operation.
+        self.operation = None
+        return True
+
     def prepare_command(self, pending, quote):
-        """Explicit authorized handoff of the exact request; never auto-dispatch."""
-        def prepare():
-            require(not self._cancelled and self.rpc is not None and pending is not None
-                    and pending is self.rpc.pending_request(), 'coordinator_request_binding')
-            if not self.rpc.prepare_command_phase():
+        """Explicit authorized borrow; caller must end its own pending aliases."""
+        return self._call(lambda: self._prepare_command(pending, quote))
+
+    def bind_fixed_producer(self, service):
+        """Use the actual held service launch for config, policy and stdin."""
+        def bind():
+            from trial_sdk_fixed_bootstrap import FixedServiceLaunch
+            require(type(service) is FixedServiceLaunch and self.rpc is not None
+                    and self.producer is not None and self.rpc._listener is not None,
+                    'coordinator_fixed_producer')
+            service.bind_producer(self.producer, self.rpc, self._event,
+                                  self.rpc._listener._path)
+        return self._call(bind)
+
+    def prepare_next_command(self, quote):
+        """Authorize and hand off internally; return only progress, not a borrow."""
+        def handoff():
+            require(not self._cancelled and self.rpc is not None
+                    and self.rpc._read_custody is not None
+                    and self.rpc._read_custody._service_custody is not None,
+                    'coordinator_read_custody')
+            pending = self.rpc.pending_request()
+            if pending is None:
                 return False
-            state = self.link.transcript.snapshot()
-            self.operation = CommandOperation(self.link, quote,
-                operation=state['operation'] + 1, lease=state['lease'] + 1,
-                deadline_ns=pending.deadline_ns, clock=self._clock)
-            self.operation.bind_gate(self.gate)
-            request = pending.request
-            self.operation.prepare_hook(request.operation, request.args, request.body)
-            self.rpc.start_operation(self.operation)
-            # RPC now exclusively owns this borrow. It may retire the command
-            # in a later step; the coordinator must not retain that operation.
-            self.operation = None
-            return True
-        return self._call(prepare)
+            return self._prepare_command(pending, quote)
+        return self._call(handoff)
 
     def take_output(self):
         def take():

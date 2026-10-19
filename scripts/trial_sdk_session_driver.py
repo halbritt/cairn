@@ -7,7 +7,7 @@ authentication boundary against callers inside this process.
 import re
 
 from trial_bootstrap_snapshot import record_cleanup
-from trial_native_bootstrap import SDKReviewPreparation, PreparationRefusal
+from trial_native_bootstrap import SDKReviewPreparation, SDKSessionCustody, PreparationRefusal
 from trial_sdk_control import SDKControlError
 from trial_sdk_incoming import OwnedJSON
 from trial_sdk_native_process_owner import NativeProcessOwner
@@ -79,6 +79,8 @@ class SDKSessionDriver:
     def __init__(self, preparation, *, _resources=None):
         if type(preparation) is not SDKReviewPreparation:
             raise SessionDriverError('sdk_session_review_required')
+        if preparation._transferred or preparation._move_attempted:
+            raise PreparationRefusal('sdk_review_transferred')
         if preparation._allocation is not None and _resources is None:
             raise SessionDriverError('sdk_session_resources_required')
         if _resources is not None:
@@ -97,7 +99,8 @@ class SDKSessionDriver:
             if _resources is not None:
                 _resources.claim()
                 self._native = _resources.owner
-            self._custody = preparation.consume_for_session()
+            self._custody = SDKSessionCustody.empty()
+            SDKSessionCustody.__init__(self._custody, preparation)
             if _resources is None:
                 self._native = NativeProcessOwner()
             self._pump = SDKStreamDriver(self._custody.control, self._native, _resources=_resources)
@@ -109,6 +112,10 @@ class SDKSessionDriver:
                     faults.extend(release['cleanup'])
                 except BaseException:
                     faults.append('native_unlaunched_cleanup_unknown')
+            try:
+                faults.extend(preparation.close())
+            except BaseException:
+                faults.append('source_cleanup_unknown')
             if self._custody is not None:
                 try:
                     faults.extend(self._custody.close())
@@ -162,6 +169,18 @@ class SDKSessionDriver:
         finally:
             self._busy = False
 
+    @resource_boundary
+    def verify_sources(self):
+        self._live()
+        self._busy = True
+        try:
+            self._custody.verify_held_sources()
+        except BaseException:
+            self._poison()
+            raise
+        finally:
+            self._busy = False
+
     def require_complete(self):
         self.source_bindings()
         raise PreparationRefusal('hook_interface_unavailable')
@@ -202,7 +221,7 @@ class SDKSessionDriver:
         terminal = None
         try:
             if not self._first_step_checked:
-                self._custody.held_source_bindings()
+                self._custody.verify_held_sources()
                 self._first_step_checked = True
             event = self._pump.step(timeout)
             if event.kind != 'document' or event.document.kind != 'result':
@@ -224,7 +243,7 @@ class SDKSessionDriver:
             if last is None or terminal.metadata()['first_byte_ns'] < last:
                 raise SessionDriverError('sdk_terminal_before_input_drained')
             # Recheck the held original sources before making this input close.
-            self._custody.held_source_bindings()
+            self._custody.verify_held_sources()
             self._custody.control.seal_input()
             self._input_close_attempted = True
             self._native.close_stdin()

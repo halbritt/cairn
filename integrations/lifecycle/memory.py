@@ -255,19 +255,21 @@ def observe_source_sha256(path, validated=None):
             opened = os.fstat(descriptor)
             if not stat.S_ISREG(opened.st_mode) or file_state(opened) != file_state(before):
                 return None
-            data = bytearray()
-            while len(data) <= SOURCE_SNAPSHOT_BYTES:  # one extra byte detects an oversize source
-                chunk = os.read(descriptor, min(65536, SOURCE_SNAPSHOT_BYTES + 1 - len(data)))
+            digest, length = hashlib.sha256(), 0
+            while length <= SOURCE_SNAPSHOT_BYTES:  # one extra byte detects an oversize source
+                chunk = os.read(descriptor, min(8192, SOURCE_SNAPSHOT_BYTES + 1 - length))
                 if not chunk:
                     break
-                data.extend(chunk)
+                length += len(chunk)
+                digest.update(chunk)
+                chunk = None
             finished = os.fstat(descriptor)
         finally:
             os.close(descriptor)
-        if (len(data) > SOURCE_SNAPSHOT_BYTES or len(data) != opened.st_size
+        if (length > SOURCE_SNAPSHOT_BYTES or length != opened.st_size
                 or file_state(finished) != file_state(opened) or file_state(os.stat(path)) != file_state(opened)):
             return None
-        return hashlib.sha256(data).hexdigest()
+        return digest.hexdigest()
     except Exception:  # noqa: BLE001 - an unobservable source is unknown, never an import failure
         return None
 

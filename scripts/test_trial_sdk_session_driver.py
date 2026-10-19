@@ -92,7 +92,7 @@ class SessionDriverTests(unittest.TestCase):
         driver = SDKSessionDriver(review)
         self.addCleanup(driver.close_sources)
         held = set(os.listdir('/proc/self/fd'))
-        target = review._snapshot.files['prompt.txt'][0].fd
+        target = driver._custody._snapshot.files['prompt.txt'][0].fd
         primary = KeyboardInterrupt('constructed source interruption')
         actual_read = os.read
         def refuse(fd, count):
@@ -104,7 +104,7 @@ class SessionDriverTests(unittest.TestCase):
                 driver.source_bindings()
         self.assertIs(caught.exception, primary)
         self.assertEqual(set(os.listdir('/proc/self/fd')), held)
-        self.assertFalse(review.launch.control.ledger()['closed'])
+        self.assertFalse(driver._custody.control.ledger()['closed'])
         with self.assertRaisesRegex(SessionDriverError, '^sdk_session_unavailable$'):
             driver.source_bindings()
         self.assertEqual(driver.close_sources(), ())

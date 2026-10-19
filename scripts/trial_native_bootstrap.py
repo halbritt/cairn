@@ -4,6 +4,7 @@ No command, account source, hook gateway, mount operation or admission route is
 implemented. The returned owner must stay open while its review bindings are used.
 """
 import copy
+from contextlib import contextmanager, nullcontext
 import hashlib
 import json
 from pathlib import Path
@@ -112,8 +113,14 @@ def _declaration(document, *, schema=SCHEMA):
     binding = document['binding']
     for name in ('request_id', 'occurrence_id', 'session_id'):
         identifier(binding[name])
-    need(isinstance(binding['case_id'], str) and binding['case_id'] in
-         {'T1', 'T2', 'T3', 'T4', 'T5', 'T7', 'T8'}, 'bootstrap_case')
+    # SDK source preparation accepts weekly IDs as syntax, never membership or
+    # launch authority. WeeklyPreparationOwner checks the actual selected row.
+    if schema == SDK_SCHEMA:
+        need(type(binding['case_id']) is str and
+             re.fullmatch('[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}',binding['case_id']), 'bootstrap_case')
+    else:
+        need(isinstance(binding['case_id'], str) and binding['case_id'] in
+             {'T1', 'T2', 'T3', 'T4', 'T5', 'T7', 'T8'}, 'bootstrap_case')
     need(isinstance(binding['arm'], str) and binding['arm'] in {'CURRENT', 'CAND'},
          'bootstrap_arm')
     for name in ('workspace_sha256', 'request_sha256', 'source_set_sha256'):
@@ -276,6 +283,7 @@ class SDKPreparationAllocation:
         self.resources, self.ticket = resources, ticket
         self._row = resources._lookup(resources._memory, ticket)
         self._begun = self._unknown = False
+        self._verification_active = False
         self._resource_cleanup_faults = ()
 
     def begin(self):
@@ -288,6 +296,24 @@ class SDKPreparationAllocation:
         self.resources._check()
         need(self.resources._lookup(self.resources._memory, self.ticket) == self._row,
              'sdk_preparation_allocation_changed')
+
+    @contextmanager
+    def verification(self):
+        """Exclusive scratch use under the unchanged original standing ticket.
+
+        This does not size the quote, release it, or grant a metadata borrow a
+        shorter lifetime. Unknown outcomes freeze all original charges.
+        """
+        try:
+            self.check()
+            need(not self._verification_active, 'sdk_verification_busy')
+            self._verification_active = True
+            yield
+            self.check()
+            self._verification_active = False
+        except BaseException as primary:
+            self.poison(primary)
+            raise
 
     def poison(self, primary=None):
         self._unknown = True
@@ -308,6 +334,8 @@ class SDKReviewPreparation(ReviewPreparation):
         self._control_close_attempted = False
         self._control_cleanup = ()
         self._transferred = False
+        self._move_attempted = self._move_failed = False
+        self._move_recovery = None
         self._binding = dict(declaration['binding'])
         self._declaration_sha = canonical_sha(declaration)
         self._launch_sha = canonical_sha(list(launch.argv))
@@ -319,8 +347,14 @@ class SDKReviewPreparation(ReviewPreparation):
         snapshot.generated('sdk-control.json',
             (json.dumps(state, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
 
+    @property
+    def launch(self):
+        if self._transferred or self._move_failed:
+            raise PreparationRefusal('sdk_review_transferred')
+        return self._launch
+
     def review_bindings(self):
-        if self._transferred:
+        if self._transferred or self._move_failed:
             raise PreparationRefusal('sdk_review_transferred')
         try:
             if self._allocation is not None:
@@ -362,6 +396,8 @@ class SDKReviewPreparation(ReviewPreparation):
         return SDKSessionCustody(self)
 
     def close(self):
+        if self._move_failed:
+            return self._move_recovery.close()
         return () if self._transferred else _close_sdk_sources(self)
 
     def __exit__(self, exc_type, primary, traceback):
@@ -373,30 +409,68 @@ class SDKReviewPreparation(ReviewPreparation):
             raise PreparationRefusal('sdk_review_cleanup_unknown', cleanup)
 
 
+class _SDKMoveRecovery:
+    """Original cleanup/poison custody, reachable even after a partial move."""
+    def __init__(self, preparation):
+        self._snapshot = preparation._snapshot
+        self._control = preparation._control
+        self._allocation = preparation._allocation
+        self._control_close_attempted = False
+        self._control_cleanup = ()
+
+    def close(self):
+        return _close_sdk_sources(self)
+
+
 class SDKSessionCustody:
     """Original source/controller ownership only; no process or runtime permit.
 
     Serialized calls and same-process custody are required. Initial control
     metadata remains historical once the borrowed controller makes progress.
     """
+    @classmethod
+    def empty(cls):
+        """Inert shell, published by the receiving session before the move."""
+        owner = cls.__new__(cls)
+        owner._snapshot = owner._control = owner._allocation = None
+        owner._move_recovery = None
+        owner._control_close_attempted = False
+        owner._control_cleanup = ()
+        return owner
+
     def __init__(self, preparation):
         if type(preparation) is not SDKReviewPreparation:
             raise PreparationRefusal('sdk_review_required')
-        if preparation._transferred:
+        if preparation._transferred or preparation._move_attempted:
             raise PreparationRefusal('sdk_review_transferred')
+        # Capture original authority BEFORE any publication or old-field clear.
+        recovery = _SDKMoveRecovery(preparation)
+        self._move_recovery = None
         try:
+            preparation._move_recovery = recovery  # Publish initial recovery.
+            preparation._move_attempted = True
             self._initial = preparation.review_bindings()
-            self._snapshot = preparation._snapshot
-            self._allocation = preparation._allocation
-            self._launch, self._control = preparation._launch, preparation._control
+            self._snapshot = recovery._snapshot
+            self._allocation = recovery._allocation
+            self._launch = preparation._launch
+            self._control = recovery._control
             self._control_close_attempted, self._control_cleanup = False, ()
             self._source_failed = False
             preparation._transferred = True
+            preparation._snapshot = None
+            preparation._launch = None
+            preparation._control = None
+            preparation._allocation = None
+            preparation._move_recovery = None
         except BaseException as primary:
-            resource_faults = poison_resource(preparation._allocation, primary)
-            # Before the move the preparation still owns everything; after it,
-            # an interrupted constructor must clean up through this new owner.
-            faults = self.close() if preparation._transferred else preparation.close()
+            self._move_recovery = recovery
+            preparation._move_attempted = preparation._move_failed = True
+            preparation._move_recovery = recovery
+            resource_faults = poison_resource(recovery._allocation, primary)
+            if preparation._control_close_attempted:
+                recovery._control_close_attempted = True
+                recovery._control_cleanup = preparation._control_cleanup
+            faults = recovery.close()
             record_cleanup(primary, faults)
             annotate_resource_failure(primary, resource_faults)
             raise
@@ -409,35 +483,35 @@ class SDKSessionCustody:
     def control(self):
         return self._control
 
-    def held_source_bindings(self):
-        """Recheck without closing sources on error; the live driver owns exit.
+    def _verify_held_sources(self):
+        initial, launch = self._initial, self._launch
+        self._snapshot.verify_bindings(initial['snapshots'])
+        instruction = _text(self._snapshot, 'instruction.txt')
+        need(type(launch) is SDKLaunch and launch.control is self._control
+             and self._control.bindings == initial['control']['bindings']
+             and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == initial['control']
+             and launch.user_message_bytes == initial['user_message_bytes']
+             and launch.user_message_sha256 == initial['user_message_sha256']
+             and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
+             and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
+             and canonical_sha(list(launch.argv)) == initial['launch_sha256']
+             and launch.argv[-1] == instruction,
+             'compiled_binding_changed')
 
-        Failure is sticky. The external owner must stop/wait/detach its native
-        child before explicitly closing these held sources. This grants no
-        runtime authority and cannot restore a failed source observation.
-        """
+    def _held_source_check(self, export):
         try:
             need(not self._source_failed, 'session_custody_unknown')
-            if self._allocation is not None:
-                self._allocation.check()
-            sources = self._snapshot.bindings()
-            initial, launch = self._initial, self._launch
-            instruction = _text(self._snapshot, 'instruction.txt')
-            need(type(launch) is SDKLaunch and launch.control is self._control
-                 and self._control.bindings == initial['control']['bindings']
-                 and _json(_text(self._snapshot, 'sdk-control.json', 'bootstrap_json')) == initial['control']
-                 and sources == initial['snapshots']
-                 and launch.user_message_bytes == initial['user_message_bytes']
-                 and launch.user_message_sha256 == initial['user_message_sha256']
-                 and launch.guaranteed_context_bytes == initial['guaranteed_context_bytes']
-                 and hashlib.sha256(launch.permission_json).hexdigest() == initial['permissions_sha256']
-                 and canonical_sha(list(launch.argv)) == initial['launch_sha256']
-                 and launch.argv[-1] == instruction,
-                 'compiled_binding_changed')
-            result = copy.deepcopy(initial)
-            result['status'] = 'source_custodied_for_session'
-            result['initial_control'] = result.pop('control')
-            return result
+            scope = (self._allocation.verification() if self._allocation is not None
+                     else nullcontext())
+            with scope:
+                self._verify_held_sources()
+                if export:
+                    # Explicit export retains its original charge. The receiver
+                    # must own all borrowed graph lifetimes; no refund here.
+                    result = copy.deepcopy(self._initial)
+                    result['status'] = 'source_custodied_for_session'
+                    result['initial_control'] = result.pop('control')
+                    return result
         except (OSError, Refusal, SDKControlError) as primary:
             self._source_failed = True
             faults = poison_resource(self._allocation, primary)
@@ -447,6 +521,15 @@ class SDKSessionCustody:
             faults = poison_resource(self._allocation, primary)
             annotate_resource_failure(primary, faults)
             raise
+
+
+    def verify_held_sources(self):
+        """Void internal check; same mutations refuse, no metadata graph escapes."""
+        self._held_source_check(False)
+
+    def held_source_bindings(self):
+        """Explicit charged metadata export after the same live verification."""
+        return self._held_source_check(True)
 
     def source_bindings(self):
         """Legacy offline recheck: failure closes its original owned sources."""
@@ -465,6 +548,12 @@ class SDKSessionCustody:
         raise PreparationRefusal('hook_interface_unavailable')
 
     def close(self):
+        if self._move_recovery is not None:
+            return self._move_recovery.close()
+        if self._snapshot is None:
+            return ()
+        if self._control is None:
+            return self._snapshot.close()
         return _close_sdk_sources(self)
 
     def __enter__(self):

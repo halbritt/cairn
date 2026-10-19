@@ -66,10 +66,12 @@ class CallbackPhases:
         require(producer._input is None and producer._pending is None
                 and producer._failure is None and not producer._cancelled
                 and not producer._generated_hash_unknown and not producer._write_hash_unknown
-                and producer._written == producer._binding['input_bytes']
+                and producer._binding['input_bytes'] == producer._callback.input_bytes
+                and producer._binding['input_sha256'] == producer._callback.input_sha256
+                and producer._written == producer._transport['input_bytes']
                 and producer._generated == producer._written
-                and producer._written_hash.hexdigest() == producer._binding['input_sha256']
-                and producer._generated_hash.hexdigest() == producer._binding['input_sha256']
+                and producer._written_hash.hexdigest() == producer._transport['input_sha256']
+                and producer._generated_hash.hexdigest() == producer._transport['input_sha256']
                 and native['stdin_closed'] and native['native_input'] is not None
                 and native['native_input']['closed_known']
                 and not native['native_input']['write_unknown']
