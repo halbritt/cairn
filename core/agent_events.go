@@ -811,7 +811,7 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 		out.Deliveries = append(out.Deliveries, d)
 		out.NextAfter = d.DeliveryID
 	}
-	if err = rows.Err(); err != nil || out.Event.Kind != "request" {
+	if err = rows.Err(); err != nil {
 		return out, err
 	}
 	rows.Close()
@@ -824,9 +824,13 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 		return out, err
 	}
 	for i := range out.Deliveries {
-		out.Deliveries[i].Diagnosis = diagnoses[out.Deliveries[i].DeliveryID]
+		diag := diagnoses[out.Deliveries[i].DeliveryID]
+		if out.Event.Kind != "request" && (diag == nil || diag.Recipient.Presence != "stopped") {
+			continue
+		}
+		out.Deliveries[i].Diagnosis = diag
 		if host := out.Deliveries[i].Diagnosis.Host; host != nil && host.DeliveryID != out.Deliveries[i].DeliveryID {
-			// A session-level explanation may help this request, but another
+			// A session-level explanation may help this event, but another
 			// publisher's delivery identifier is not part of its read scope.
 			host.DeliveryID = ""
 		}

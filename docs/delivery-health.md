@@ -143,4 +143,6 @@ this change.
 
 The [verification report](verification/delivery-health-2026-09-27.md) records
 the inspected commits, executed checks, cross-review corrections and rollout
-limits.
+limits. See [stopped-session backlog](stopped-session-backlog.md) for stranded
+inbox reporting and opt-in publisher notifications when a session stops.
+

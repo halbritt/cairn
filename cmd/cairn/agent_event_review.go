@@ -63,8 +63,18 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 			Repo, Consumer, State, Delivery, Database, Home string
 			Age                                             int64
 		}{req.Repo, req.Consumer, req.State, req.DeliveryID, os.Getenv("CAIRN_DATABASE_URL"), os.Getenv("CAIRN_HOME"), req.Attention.OlderThanSeconds})
+		now := time.Now()
 		result, err := withAttentionCache(*req.Attention, scope, func(previous attentionCache) (attentionResult, attentionCache, error) {
-			return summarizeAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, time.Now())
+			res, next, err := summarizeAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, now)
+			if err != nil || !req.Attention.NotifyPublishers {
+				return res, next, err
+			}
+			batch, updated, err := notifyStoppedPublishers(ctx, store, req.Repo, rows, previous, next, now)
+			if err != nil {
+				return res, previous, err
+			}
+			res.PublisherNotifications = &batch
+			return res, updated, nil
 		})
 		if err != nil {
 			return nil, err

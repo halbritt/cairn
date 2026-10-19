@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,9 @@ import (
 	"sort"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/halbritt/cairn/core"
 )
 
 // Attention is an opt-in presentation of one bounded operator review page.
@@ -18,15 +22,26 @@ import (
 type attentionOptions struct {
 	StateFile        string `json:"state_file,omitempty"`
 	OlderThanSeconds int64  `json:"older_than_seconds,omitempty"`
+	NotifyPublishers bool   `json:"notify_publishers,omitempty"`
 }
 
 type attentionDelivery struct {
 	DeliveryID  string    `json:"delivery_id"`
 	Consumer    string    `json:"consumer"`
 	State       string    `json:"state"`
+	Attempts    int       `json:"attempts"`
+	Held        bool      `json:"held"`
+	Execution   string    `json:"execution"`
 	AvailableAt time.Time `json:"available_at"`
 	Event       struct {
-		Kind string `json:"kind"`
+		EventID   string    `json:"event_id"`
+		From      string    `json:"from"`
+		Kind      string    `json:"kind"`
+		CreatedAt time.Time `json:"created_at"`
+		Ref       struct {
+			RecordID string `json:"record_id"`
+			Version  int    `json:"version"`
+		} `json:"ref"`
 	} `json:"event"`
 	Diagnosis *attentionDiagnosis `json:"diagnosis"`
 }
@@ -35,16 +50,24 @@ type attentionDiagnosis struct {
 	Stage          string  `json:"stage"`
 	WaitingSeconds float64 `json:"waiting_seconds"`
 	Recipient      struct {
-		Kind     string `json:"kind"`
-		State    string `json:"state"`
-		Presence string `json:"presence"`
+		Kind        string `json:"kind"`
+		AgentID     string `json:"agent_id"`
+		ExecutionID string `json:"execution_id"`
+		State       string `json:"state"`
+		Presence    string `json:"presence"`
 	} `json:"recipient"`
 	Host *struct {
 		Condition  string     `json:"condition"`
+		Reported   string     `json:"reported"`
 		Applies    string     `json:"applies"`
 		Freshness  string     `json:"freshness"`
 		ObservedAt *time.Time `json:"observed_at"`
 		ReceivedAt *time.Time `json:"received_at"`
+		Wake       *struct {
+			Transport   string     `json:"transport"`
+			Status      string     `json:"status"`
+			AttemptedAt *time.Time `json:"attempted_at,omitempty"`
+		} `json:"wake,omitempty"`
 	} `json:"host"`
 }
 
@@ -62,19 +85,87 @@ type attentionGroup struct {
 	NextCheck            string     `json:"next_check"`
 }
 
+type stoppedSessionRef struct {
+	RecordID string `json:"record_id"`
+	Version  int    `json:"version"`
+}
+
+type stoppedSessionWake struct {
+	DeliveryID  string     `json:"delivery_id,omitempty"`
+	Transport   string     `json:"transport"`
+	Status      string     `json:"status"`
+	AttemptedAt *time.Time `json:"attempted_at,omitempty"`
+	Freshness   string     `json:"freshness"`
+	Applies     string     `json:"applies"`
+}
+
+type stoppedSessionDelivery struct {
+	DeliveryID        string              `json:"delivery_id"`
+	EventID           string              `json:"event_id,omitempty"`
+	From              string              `json:"from,omitempty"`
+	Kind              string              `json:"kind"`
+	State             string              `json:"state"`
+	Stage             string              `json:"stage"`
+	Attempts          int                 `json:"attempts"`
+	Held              bool                `json:"held"`
+	Execution         string              `json:"execution,omitempty"`
+	Admission         string              `json:"admission"`
+	WaitingSeconds    float64             `json:"waiting_seconds"`
+	Ref               *stoppedSessionRef  `json:"ref,omitempty"`
+	ReportedCondition string              `json:"reported_condition,omitempty"`
+	Freshness         string              `json:"freshness,omitempty"`
+	Applies           string              `json:"applies,omitempty"`
+	RetainedWake      *stoppedSessionWake `json:"retained_wake,omitempty"`
+}
+
+type stoppedSessionBacklog struct {
+	Recipient            string                   `json:"recipient"`
+	AgentID              string                   `json:"agent_id,omitempty"`
+	ExecutionID          string                   `json:"execution_id,omitempty"`
+	Presence             string                   `json:"presence"`
+	Requests             int                      `json:"requests"`
+	Responses            int                      `json:"responses"`
+	Notices              int                      `json:"notices"`
+	Held                 int                      `json:"held"`
+	Unattempted          int                      `json:"unattempted"`
+	OldestWaitingSeconds float64                  `json:"oldest_waiting_seconds"`
+	OldestDeliveryID     string                   `json:"oldest_delivery_id"`
+	RetainedWake         *stoppedSessionWake      `json:"retained_wake,omitempty"`
+	AdmissionUncertainty string                   `json:"admission_uncertainty"`
+	DecisionOwner        string                   `json:"decision_owner"`
+	SuccessorHint        string                   `json:"successor_hint,omitempty"`
+	Complete             bool                     `json:"complete"`
+	Coverage             string                   `json:"coverage"`
+	Deliveries           []stoppedSessionDelivery `json:"deliveries"`
+}
+
+type publisherNotificationBatch struct {
+	Attempted   int                                      `json:"attempted"`
+	Sent        int                                      `json:"sent"`
+	Suppressed  int                                      `json:"suppressed"`
+	Unavailable int                                      `json:"unavailable"`
+	Skipped     int                                      `json:"skipped"`
+	Deferred    int                                      `json:"deferred"`
+	Results     []core.StoppedDeliveryNotificationResult `json:"results"`
+}
+
 type attentionResult struct {
-	Complete         bool             `json:"complete"`
-	Scanned          int              `json:"scanned"`
-	OlderThanSeconds int64            `json:"older_than_seconds"`
-	Groups           []attentionGroup `json:"groups"`
-	Changed          []attentionGroup `json:"changed"`
-	Cleared          []string         `json:"cleared"`
-	Coverage         string           `json:"coverage"`
+	Complete               bool                        `json:"complete"`
+	Scanned                int                         `json:"scanned"`
+	OlderThanSeconds       int64                       `json:"older_than_seconds"`
+	Groups                 []attentionGroup            `json:"groups"`
+	Changed                []attentionGroup            `json:"changed"`
+	Cleared                []string                    `json:"cleared"`
+	StoppedSessions        []stoppedSessionBacklog     `json:"stopped_sessions,omitempty"`
+	PublisherNotifications *publisherNotificationBatch `json:"publisher_notifications,omitempty"`
+	Coverage               string                      `json:"coverage"`
 }
 
 type attentionEntry struct {
-	Group       string `json:"group"`
-	Fingerprint string `json:"fingerprint"`
+	Group               string `json:"group"`
+	Fingerprint         string `json:"fingerprint"`
+	NotifiedFingerprint string `json:"notified_fingerprint,omitempty"`
+	NotificationEventID string `json:"notification_event_id,omitempty"`
 }
 type attentionCache struct {
 	Schema     string                    `json:"schema"`
@@ -88,7 +179,42 @@ func attentionKey(g attentionGroup) string {
 
 func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (attentionGroup, bool) {
 	diag := d.Diagnosis
-	if (d.State != "pending" && d.State != "leased") || d.AvailableAt.After(now) || diag == nil || diag.Stage != "waiting" || diag.Recipient.Kind != "session" || diag.Recipient.State == "busy" || diag.WaitingSeconds < float64(cutoff) {
+	if diag == nil || diag.Recipient.Kind != "session" || d.AvailableAt.After(now) {
+		return attentionGroup{}, false
+	}
+	if diag.Recipient.Presence == "stopped" {
+		if (d.State != "pending" && d.State != "leased" && !d.Held && diag.Stage != "held") || diag.Stage == "handled" || diag.Stage == "failed" || diag.Stage == "ignored" {
+			return attentionGroup{}, false
+		}
+		waiting := diag.WaitingSeconds
+		if waiting == 0 && !d.AvailableAt.IsZero() && now.After(d.AvailableAt) {
+			waiting = float64(int64(now.Sub(d.AvailableAt) / time.Second))
+		}
+		g := attentionGroup{
+			Recipient:            d.Consumer,
+			Condition:            "recipient_stopped",
+			Freshness:            "offline",
+			Applies:              "session",
+			OldestWaitingSeconds: waiting,
+			SampleDeliveryID:     d.DeliveryID,
+			NextCheck:            "Recipient session is stopped; inspect stranded inbox work and decide whether to reissue, release holds, or notify publishers.",
+		}
+		if h := diag.Host; h != nil && h.ObservedAt != nil {
+			g.ObservedAt = h.ObservedAt
+		}
+		switch d.Event.Kind {
+		case "request":
+			g.Requests = 1
+		case "response":
+			g.Responses = 1
+		case "notice":
+			g.Notices = 1
+		default:
+			return attentionGroup{}, false
+		}
+		return g, true
+	}
+	if (d.State != "pending" && d.State != "leased") || diag.Stage != "waiting" || diag.Recipient.State == "busy" || diag.WaitingSeconds < float64(cutoff) {
 		return attentionGroup{}, false
 	}
 	g := attentionGroup{Recipient: d.Consumer, Condition: "unknown", Freshness: "absent", Applies: "none", OldestWaitingSeconds: diag.WaitingSeconds, SampleDeliveryID: d.DeliveryID}
@@ -139,7 +265,7 @@ func summarizeAttention(deliveries []attentionDelivery, complete bool, options a
 	if cutoff < 1 || cutoff > 604800 {
 		return attentionResult{}, previous, invalid("attention older_than_seconds must be 1..604800")
 	}
-	result := attentionResult{Complete: complete, Scanned: len(deliveries), OlderThanSeconds: cutoff, Groups: []attentionGroup{}, Changed: []attentionGroup{}, Cleared: []string{}, Coverage: "This delivery page only; queued pool work and other pages are excluded."}
+	result := attentionResult{Complete: complete, Scanned: len(deliveries), OlderThanSeconds: cutoff, Groups: []attentionGroup{}, Changed: []attentionGroup{}, Cleared: []string{}, StoppedSessions: []stoppedSessionBacklog{}, Coverage: "This delivery page only; queued pool work and other pages are excluded."}
 	if !complete {
 		result.Coverage += " Partial snapshot: absence does not clear a previous condition."
 	}
@@ -151,6 +277,7 @@ func summarizeAttention(deliveries []attentionDelivery, complete bool, options a
 	}
 	groups := map[string]*attentionGroup{}
 	changed := map[string]bool{}
+	stoppedByRecipient := map[string]*stoppedSessionBacklog{}
 	for _, d := range deliveries {
 		old, known := previous.Deliveries[d.DeliveryID]
 		delete(current.Deliveries, d.DeliveryID) // An explicitly observed row can supersede a prior cause even on a partial page.
@@ -171,10 +298,18 @@ func summarizeAttention(deliveries []attentionDelivery, complete bool, options a
 			copy := group
 			groups[key] = &copy
 		}
-		if group.Requests == 0 {
+		if group.Condition == "recipient_stopped" {
+			recordStoppedSessionDelivery(stoppedByRecipient, d, group, complete)
+		}
+		if group.Requests == 0 && group.Condition != "recipient_stopped" {
 			continue
-		} // Ordinary notices/responses never create an attention change.
-		entry := attentionEntry{Group: key, Fingerprint: key}
+		} // Ordinary notices/responses to active or offline sessions never create an attention change.
+		entry := attentionEntry{
+			Group:               key,
+			Fingerprint:         attentionDeliveryFingerprint(d, group, key),
+			NotifiedFingerprint: old.NotifiedFingerprint,
+			NotificationEventID: old.NotificationEventID,
+		}
 		current.Deliveries[d.DeliveryID] = entry
 		if !known || old.Fingerprint != entry.Fingerprint {
 			changed[key] = true
@@ -194,6 +329,14 @@ func summarizeAttention(deliveries []attentionDelivery, complete bool, options a
 		if changed[key] {
 			result.Changed = append(result.Changed, g)
 		}
+	}
+	stoppedKeys := make([]string, 0, len(stoppedByRecipient))
+	for recipient := range stoppedByRecipient {
+		stoppedKeys = append(stoppedKeys, recipient)
+	}
+	sort.Strings(stoppedKeys)
+	for _, recipient := range stoppedKeys {
+		result.StoppedSessions = append(result.StoppedSessions, *stoppedByRecipient[recipient])
 	}
 	oldGroups := map[string]bool{}
 	newGroups := map[string]bool{}
@@ -284,4 +427,160 @@ func attentionScope(source any) string {
 	raw, _ := json.Marshal(source)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+func stoppedDeliveryDetails(d attentionDelivery, waiting float64) (stoppedSessionDelivery, string) {
+	diag := d.Diagnosis
+	held := d.Held || diag.Stage == "held"
+	admission := "not_admitted"
+	if held || diag.Stage == "leased" || d.Attempts > 0 || d.Execution == "may_have_executed" {
+		admission = "unknown"
+	}
+	var reported, freshness, applies, wakeSig string
+	var retained *stoppedSessionWake
+	if h := diag.Host; h != nil {
+		freshness = h.Freshness
+		applies = h.Applies
+		if h.Applies == "exact" || h.Applies == "session" {
+			if h.Reported != "" && h.Reported != "none" {
+				reported = h.Reported
+			} else if h.Condition != "" && h.Condition != "unknown" && h.Condition != "none" {
+				reported = h.Condition
+			}
+			if reported == "wake_retained" || reported == "native_admission_retained" || h.Wake != nil {
+				admission = "unknown"
+			}
+			if h.Wake != nil {
+				retained = &stoppedSessionWake{
+					DeliveryID:  d.DeliveryID,
+					Transport:   h.Wake.Transport,
+					Status:      h.Wake.Status,
+					AttemptedAt: h.Wake.AttemptedAt,
+					Freshness:   h.Freshness,
+					Applies:     h.Applies,
+				}
+				wakeSig = h.Wake.Transport + ":" + h.Wake.Status
+			}
+		}
+	}
+	var ref *stoppedSessionRef
+	if d.Event.Ref.RecordID != "" {
+		ref = &stoppedSessionRef{RecordID: d.Event.Ref.RecordID, Version: d.Event.Ref.Version}
+	}
+	item := stoppedSessionDelivery{
+		DeliveryID: d.DeliveryID, EventID: d.Event.EventID, From: d.Event.From,
+		Kind: d.Event.Kind, State: d.State, Stage: diag.Stage, Attempts: d.Attempts,
+		Held: held, Execution: d.Execution, Admission: admission, WaitingSeconds: waiting,
+		Ref: ref, ReportedCondition: reported, Freshness: freshness, Applies: applies,
+		RetainedWake: retained,
+	}
+	sig := diag.Stage + "|" + d.Execution + "|" + admission + "|" + reported + "|" + wakeSig
+	return item, sig
+}
+
+func attentionDeliveryFingerprint(d attentionDelivery, group attentionGroup, key string) string {
+	if group.Condition != "recipient_stopped" {
+		return key
+	}
+	_, sig := stoppedDeliveryDetails(d, group.OldestWaitingSeconds)
+	return key + "|" + sig
+}
+
+func recordStoppedSessionDelivery(byRecipient map[string]*stoppedSessionBacklog, d attentionDelivery, group attentionGroup, complete bool) {
+	item, _ := stoppedDeliveryDetails(d, group.OldestWaitingSeconds)
+	entry := byRecipient[d.Consumer]
+	if entry == nil {
+		coverage := "Complete for this review filter; all matching deliveries fit in this page."
+		if !complete {
+			coverage = "Partial page: additional deliveries for this or other stopped sessions may exist beyond this cursor."
+		}
+		entry = &stoppedSessionBacklog{
+			Recipient:            d.Consumer,
+			AgentID:              d.Diagnosis.Recipient.AgentID,
+			ExecutionID:          d.Diagnosis.Recipient.ExecutionID,
+			Presence:             "stopped",
+			OldestWaitingSeconds: group.OldestWaitingSeconds,
+			OldestDeliveryID:     d.DeliveryID,
+			AdmissionUncertainty: "not_admitted",
+			DecisionOwner:        "operator_or_publisher",
+			Complete:             complete,
+			Coverage:             coverage,
+			Deliveries:           []stoppedSessionDelivery{},
+		}
+		byRecipient[d.Consumer] = entry
+	}
+	entry.Requests += group.Requests
+	entry.Responses += group.Responses
+	entry.Notices += group.Notices
+	if item.Held {
+		entry.Held++
+	}
+	if d.Attempts == 0 {
+		entry.Unattempted++
+	}
+	if group.OldestWaitingSeconds > entry.OldestWaitingSeconds {
+		entry.OldestWaitingSeconds = group.OldestWaitingSeconds
+		entry.OldestDeliveryID = d.DeliveryID
+	}
+	if item.Admission == "unknown" {
+		entry.AdmissionUncertainty = "unknown"
+	}
+	if entry.RetainedWake == nil && item.RetainedWake != nil {
+		cp := *item.RetainedWake
+		entry.RetainedWake = &cp
+	}
+	entry.Deliveries = append(entry.Deliveries, item)
+}
+
+const maxNotificationsPerReview = 64
+
+func notifyStoppedPublishers(ctx context.Context, store *core.Store, repo string, deliveries []attentionDelivery, previous, current attentionCache, now time.Time) (publisherNotificationBatch, attentionCache, error) {
+	batch := publisherNotificationBatch{Results: []core.StoppedDeliveryNotificationResult{}}
+	for _, d := range deliveries {
+		group, ok := attentionCandidate(d, 1, now)
+		if !ok || group.Condition != "recipient_stopped" {
+			continue
+		}
+		_, sig := stoppedDeliveryDetails(d, group.OldestWaitingSeconds)
+		reqID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("cairn.stopped-delivery-notice/1|"+repo+"|"+d.DeliveryID+"|"+d.Diagnosis.Recipient.AgentID+"|"+d.Diagnosis.Recipient.ExecutionID+"|"+sig)).String()
+		old := previous.Deliveries[d.DeliveryID]
+		cur := current.Deliveries[d.DeliveryID]
+		if old.NotifiedFingerprint == sig && sig != "" {
+			batch.Suppressed++
+			batch.Results = append(batch.Results, core.StoppedDeliveryNotificationResult{
+				DeliveryID: d.DeliveryID, EventID: d.Event.EventID, Publisher: d.Event.From,
+				NotificationID: reqID, NotificationEventID: old.NotificationEventID, Status: "duplicate_suppressed",
+			})
+			continue
+		}
+		if batch.Attempted >= maxNotificationsPerReview {
+			batch.Deferred++
+			continue
+		}
+		batch.Attempted++
+		out, err := store.NotifyStoppedDeliveryPublisher(ctx, core.StoppedDeliveryNotificationRequest{
+			RequestID: reqID, Repo: repo, DeliveryID: d.DeliveryID,
+			RecipientAgentID: d.Diagnosis.Recipient.AgentID, RecipientExecution: d.Diagnosis.Recipient.ExecutionID,
+			Stage: d.Diagnosis.Stage, Fingerprint: sig,
+		})
+		if err != nil {
+			return batch, previous, err
+		}
+		switch out.Status {
+		case "sent":
+			batch.Sent++
+			cur.NotifiedFingerprint, cur.NotificationEventID = sig, out.NotificationEventID
+			current.Deliveries[d.DeliveryID] = cur
+		case "duplicate_suppressed":
+			batch.Suppressed++
+			cur.NotifiedFingerprint, cur.NotificationEventID = sig, out.NotificationEventID
+			current.Deliveries[d.DeliveryID] = cur
+		case "recipient_unavailable":
+			batch.Unavailable++
+		default:
+			batch.Skipped++
+		}
+		batch.Results = append(batch.Results, out)
+	}
+	return batch, current, nil
 }
