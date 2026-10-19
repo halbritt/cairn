@@ -314,6 +314,115 @@ def utc_timestamp(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
+CODEX_HEALTH_POLL_INTERVAL = 60
+
+
+def probe_codex_native_health(config, state, now=None, force=False):
+    """Bounded read-only health probe for a Codex conversation's native app-server.
+
+    Keeps process liveness, native thread readiness, and Cairn task metadata
+    freshness separate in ``state['native_health']`` without mutating native
+    execution, clearing holds, or replaying pending work.
+    """
+    if (config.get('harness') != 'codex' or not isinstance(state.get('agent'), dict) or
+            not isinstance(state.get('process'), dict)):
+        return None
+    now = time.time() if now is None else float(now)
+    agent = state['agent']
+    process = state['process']
+    proc_id = {k: process[k] for k in ('pid', 'start', 'boot') if k in process}
+    existing = state.get('native_health')
+    if (not force and isinstance(existing, dict) and existing.get('session') == session_ref(agent) and
+            existing.get('process') == proc_id and isinstance(existing.get('observed_at_epoch'), (int, float)) and
+            0 <= now - existing['observed_at_epoch'] < CODEX_HEALTH_POLL_INTERVAL):
+        return existing
+    alive = process_alive(process)
+    endpoint = codex_queue_endpoint(config, process) if alive else None
+    if alive and not endpoint and not force:
+        return None
+    status_type = 'unavailable'
+    updated_at = None
+    queue_count = 0
+    queued_ids = []
+    queued_present = None
+    peer = None
+    reason = None
+    if not alive:
+        reason = 'native process is not alive'
+    elif not endpoint:
+        reason = 'no native Codex queue endpoint (explicit Unix listener) for this process'
+    else:
+        try:
+            queue = queue_helper()
+            queued_id = (state.get('idle_wake') or {}).get('queued_submission_id')
+            inspection = queue.inspect_thread(endpoint['endpoint'], process, agent['native_session_id'],
+                                              owner=endpoint.get('owner', 'process'), queued_id=queued_id)
+            candidate = inspection.get('status_type')
+            status_type = candidate if candidate in ('active', 'idle', 'systemError') else 'unknown'
+            updated_at = inspection.get('updated_at')
+            queue_count = inspection.get('queue_count', 0)
+            queued_ids = list(inspection.get('queued_ids') or [])
+            qp = inspection.get('queued_present')
+            queued_present = qp if isinstance(qp, bool) else None
+            peer = inspection.get('peer')
+        except CoordinationError as exc:
+            status_type = 'unavailable'
+            reason = str(exc)
+        except Exception as exc:
+            if type(exc).__name__ == 'QueueUnavailable':
+                status_type = 'unavailable'
+                reason = str(exc)
+            else:
+                status_type = 'unknown'
+                reason = type(exc).__name__
+    reported_state = (agent.get('metadata') or {}).get('state', 'unknown')
+    if reported_state == 'busy' and status_type in ('systemError', 'idle'):
+        freshness = 'stale_busy'
+    elif reported_state == 'idle' and status_type in ('systemError', 'active'):
+        freshness = 'stale_idle'
+    elif status_type in ('active', 'idle'):
+        freshness = 'current'
+    else:
+        freshness = 'unverified'
+    actions = {
+        'systemError': ('review the pending request current source and conversation state before '
+                        'owner-authorized recovery; do not automatically claim, restart, or replay'),
+        'unavailable': ('verify the native process and app-server socket before retrying wake delivery; '
+                        'do not automatically claim or replay'),
+        'unknown': 're-probe native health before acting; do not automatically claim, restart, or replay',
+        'active': 'none; native turn is active',
+        'idle': ('none; native thread is idle' if reported_state == 'idle'
+                 else 'inspect session turn state; native thread is idle while metadata reports busy'),
+    }
+    health = dict(
+        schema='cairn.codex-native-health/1',
+        session=session_ref(agent),
+        native_session_id=agent['native_session_id'],
+        process=proc_id,
+        process_liveness='alive' if alive else 'dead',
+        process_alive=alive,
+        status=status_type,
+        status_type=status_type,
+        native_readiness=('ready' if status_type in ('active', 'idle')
+                          else ('error' if status_type == 'systemError' else status_type)),
+        task_metadata=dict(reported_state=reported_state, context_revision=agent.get('context_revision'),
+                           freshness=freshness),
+        updated_at=updated_at,
+        queue_count=queue_count,
+        queued_ids=queued_ids,
+        queued_present=queued_present,
+        observed_at=utc_timestamp(now),
+        observed_at_epoch=now,
+        next_action=actions[status_type],
+    )
+    if peer is not None:
+        health['peer'] = peer
+    if reason is not None:
+        health['reason'] = reason
+    state['native_health'] = health
+    return health
+
+
 def delivery_observation(config, state, prepared, cycle=None):
     """Describe only this host's current session and ready-head observation.
 
@@ -329,15 +438,19 @@ def delivery_observation(config, state, prepared, cycle=None):
     condition = 'unknown'
     delivery_id = None
     wake = None
+    health = state.get('native_health') if config.get('harness') == 'codex' else None
+    health_errored = (isinstance(health, dict) and health.get('session') == session_ref(agent) and
+                      health.get('status_type') == 'systemError')
     if not config.get('native_delivery') or state.get('inbox_intent') or state.get('ending') or state.get('retired'):
         condition = 'unknown'
-    elif agent['metadata'].get('state') == 'busy':
+    elif agent['metadata'].get('state') == 'busy' and not health_errored:
         condition = 'busy'
-    elif agent['metadata'].get('state') != 'idle':
+    elif agent['metadata'].get('state') != 'idle' and not health_errored:
         condition = 'unknown'
     elif not config.get('idle_wakeup'):
         condition = 'owner_turn_required'
-    elif prepared and prepared.get('wake') and cycle.get('ready_delivery') == prepared['wake'].get('delivery_id'):
+    elif (prepared and prepared.get('wake') and not health_errored and
+            cycle.get('ready_delivery') == prepared['wake'].get('delivery_id')):
         selected = prepared['wake']
         delivery_id = selected.get('delivery_id')
         condition = 'wake_retained' if selected.get('status') == 'queued' else 'automatic_available'
@@ -420,8 +533,30 @@ def prepare_idle_wake(config, state, path, cycle=None):
     agent = state['agent']
     if coordination_excluded(state['workspace']) or coordination_excluded(agent['metadata']['workspace']):
         return None
-    if agent['metadata']['state'] != 'idle' or agent['metadata']['delivery_mode'] != 'existing-session':
+    if agent['metadata']['delivery_mode'] != 'existing-session':
         return None
+    if agent['metadata']['state'] != 'idle':
+        if config.get('harness') == 'codex' and agent['metadata'].get('state') == 'busy':
+            health = probe_codex_native_health(config, state)
+            if health is not None:
+                write_state(path, state)
+            if health and health.get('status_type') == 'systemError':
+                ready = call(config, 'session-inbox-ready', session_ref(agent))
+                delivery = ready.get('delivery_id')
+                if cycle is not None:
+                    cycle['ready_delivery'] = delivery
+                if not delivery:
+                    state.pop('wake_refusal', None)
+                    return None
+                return note_wake_refusal(config, state, delivery,
+                    'native Codex thread reports systemError behind busy metadata; '
+                    'review the pending request source before owner-authorized recovery',
+                    'native_transport_unavailable', cycle)
+        return None
+    if (config.get('harness') == 'codex' and
+            isinstance(state.get('native_health'), dict) and
+            state['native_health'].get('status_type') == 'systemError'):
+        probe_codex_native_health(config, state)
     if state.get('wake_rejection') and state.get('idle_wake'):
         reconcile_rejected_wake(config, state, path)
     ready = call(config, 'session-inbox-ready', session_ref(agent))
@@ -432,6 +567,13 @@ def prepare_idle_wake(config, state, path, cycle=None):
         state.pop('wake_refusal', None)
         state.pop('opencode_replay', None)
         return None
+    if (config.get('harness') == 'codex' and
+            isinstance(state.get('native_health'), dict) and
+            state['native_health'].get('session') == session_ref(agent) and
+            state['native_health'].get('status_type') == 'systemError'):
+        return note_wake_refusal(config, state, delivery,
+            'native Codex thread reports systemError; review the pending request source before owner-authorized recovery',
+            'native_transport_unavailable', cycle)
     replay = state.get('opencode_replay', {})
     if replay.get('delivery_id') == delivery and replay.get('session') == session_ref(agent):
         return note_wake_refusal(config, state, delivery,
@@ -458,10 +600,13 @@ def prepare_idle_wake(config, state, path, cycle=None):
     request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
         state.pop('wake_refusal', None)
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
-            transport='codex-queue', endpoint=endpoint['endpoint'], owner=endpoint['owner'],
-            native_id=agent['native_session_id'],
+        state['idle_wake'] = dict(delivery_id=delivery, client_id=delivery, request_id=request_id,
+            session=session_ref(agent), transport='codex-queue', endpoint=endpoint['endpoint'],
+            owner=endpoint['owner'], native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
+        event_id = ready.get('event_id')
+        if isinstance(event_id, str) and re.fullmatch('[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', event_id):
+            state['idle_wake']['event_id'] = event_id
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
     channel = claude_channel_endpoint(config, state['process'])
@@ -2593,6 +2738,251 @@ def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, 
         return state['wake_refusal_diagnostic']
 
 
+def check_codex_native_health(config, native_session_id):
+    """Read-only operator probe of a Codex conversation's native health and metadata freshness."""
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        if not path.exists():
+            raise CoordinationError('INVALID_REQUEST', 'no session state for this native session ID')
+        state = json.loads(path.read_text())
+        if (config.get('harness') != 'codex' or
+                state.get('agent', {}).get('native_session_id') != native_session_id or
+                state.get('retired')):
+            raise CoordinationError('INVALID_REQUEST', 'state is not an active Codex session for this native ID')
+        health = probe_codex_native_health(config, state, force=True)
+        write_state(path, state)
+        return health
+
+
+def codex_queue_rollout_proof(config, state, wake, locators):
+    """Classify contiguous pinned open-rollout records for a retained Codex queue submission."""
+    locators = [native_locator(item) if isinstance(item, str) else dict(item) for item in (locators or [])]
+    if not locators:
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout proof requires at least one record locator')
+    for prev, curr in zip(locators, locators[1:]):
+        if prev['offset'] + prev['length'] != curr['offset']:
+            raise CoordinationError('INVALID_REQUEST', 'Codex rollout records are not contiguous')
+    path = codex_rollout_path(config, state)
+    stat_before = path.stat()
+    inode, size = (stat_before.st_dev, stat_before.st_ino), stat_before.st_size
+    records = [read_native_record(path, item) for item in locators]
+    ordinal = records[0].get('ordinal')
+    if type(ordinal) is not int or ordinal < 0:
+        raise CoordinationError('INVALID_REQUEST', 'Codex record ordinal is unavailable')
+    for index, record in enumerate(records):
+        if (set(record) != {'timestamp', 'ordinal', 'type', 'payload'} or type(record['ordinal']) is not int
+                or record['ordinal'] != ordinal + index or not isinstance(record['payload'], dict)):
+            raise CoordinationError('INVALID_REQUEST', 'Codex rollout record shape is invalid')
+    times = [native_time(r['timestamp']).timestamp() for r in records]
+    if any(a > b for a, b in zip(times, times[1:])):
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout record timestamps are not monotonic')
+    attempted_at = wake.get('attempted_at')
+    if not isinstance(attempted_at, (int, float)):
+        raise CoordinationError('INVALID_REQUEST', 'retained wake has no attempt timestamp')
+    if codex_rollout_path(config, state) != path or (path.stat().st_dev, path.stat().st_ino) != inode:
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout owner changed during verification')
+    native_id = state['agent']['native_session_id']
+    if len(records) == 3 and [r['type'] for r in records] == ['event_msg', 'turn_context', 'event_msg']:
+        first, middle, last = [r['payload'] for r in records]
+        turn = first.get('turn_id')
+        attr = first.get('turn_attribution')
+        if (isinstance(turn, str) and turn and first.get('type') == 'task_started'
+                and isinstance(attr, dict) and attr.get('turn_trigger') == 'queue'
+                and middle.get('turn_id') == turn and middle.get('cwd') == state['workspace']
+                and last.get('turn_id') == turn and times[0] >= attempted_at):
+            if last.get('type') == 'task_complete' and isinstance(last.get('last_agent_message'), str) and last['last_agent_message'].strip():
+                return dict(schema='cairn.codex-queue-rollout/1', outcome='completed',
+                            native_session_id=native_id, native_turn_id=turn, records=locators)
+            if (last.get('type') == 'task_complete' and last.get('last_agent_message') is None) or last.get('type') == 'turn_aborted':
+                return dict(schema='cairn.codex-queue-rollout/1', outcome='cancelled',
+                            native_session_id=native_id, native_turn_id=turn, records=locators)
+    first_payload, last_payload = records[0]['payload'], records[-1]['payload']
+    if (first_payload.get('type') == 'task_started' and
+            isinstance(first_payload.get('turn_attribution'), dict) and
+            first_payload['turn_attribution'].get('turn_trigger') == 'queue' and
+            times[0] >= attempted_at and
+            all(r['payload'].get('type') not in ('task_complete', 'turn_aborted') for r in records)):
+        return dict(schema='cairn.codex-queue-rollout/1', outcome='admitted_active',
+                    native_session_id=native_id, native_turn_id=first_payload.get('turn_id'), records=locators)
+    serialized = json.dumps(records)
+    markers = [m for m in (wake.get('delivery_id'), wake.get('queued_submission_id'), wake_message(wake)) if m]
+    queue_turns = [r for r in records if r['payload'].get('type') == 'task_started' and
+                   isinstance(r['payload'].get('turn_attribution'), dict) and
+                   r['payload']['turn_attribution'].get('turn_trigger') == 'queue' and
+                   native_time(r['timestamp']).timestamp() >= attempted_at]
+    if (locators[-1]['offset'] + locators[-1]['length'] == size and
+            times[0] <= attempted_at <= times[-1] and not queue_turns and
+            not any(marker in serialized for marker in markers) and
+            last_payload.get('type') == 'task_complete'):
+        return dict(schema='cairn.codex-queue-rollout/1', outcome='never_admitted',
+                    native_session_id=native_id, records=locators)
+    raise CoordinationError('INVALID_REQUEST', 'Codex rollout records do not prove a supported queue outcome')
+
+
+CODEX_QUEUE_OUTCOMES = ('admitted_active', 'completed', 'cancelled', 'never_admitted', 'unknown')
+
+
+def _codex_store_delivery(config, state, delivery_id, event_id=None):
+    """Read-only lookup of a delivery's store state and current ready head."""
+    agent = state['agent']
+    ready_id = None
+    try:
+        ready = call(config, 'session-inbox-ready', session_ref(agent), timeout=1)
+        if isinstance(ready, dict):
+            ready_id = ready.get('delivery_id')
+            if not event_id and ready_id == delivery_id and isinstance(ready.get('event_id'), str):
+                event_id = ready['event_id']
+    except CoordinationError:
+        ready_id = None
+    request = dict(delivery_id=delivery_id, limit=100)
+    if isinstance(event_id, str) and event_id:
+        request['event_id'] = event_id
+    try:
+        inspected = call(config, 'event-inspect', request, timeout=1, session=session_ref(agent))
+    except CoordinationError:
+        return None, ready_id
+    if not isinstance(inspected, dict):
+        return None, ready_id
+    event = inspected.get('event') or {}
+    if event.get('repo') not in (None, config.get('repo')):
+        return None, ready_id
+    matches = [d for d in (inspected.get('deliveries') or [])
+               if isinstance(d, dict) and d.get('delivery_id') == delivery_id]
+    if len(matches) != 1 or matches[0].get('consumer') not in (None, agent.get('inbox')):
+        return None, ready_id
+    return matches[0], ready_id
+
+
+def reconcile_codex_queue_wake(config, native_session_id, delivery_id, queued_submission_id, *,
+                               outcome=None, records=None, check_only=False):
+    """Reconcile a retained Codex queue submission to a proven state or explicit unknown."""
+    if outcome is not None and outcome not in CODEX_QUEUE_OUTCOMES:
+        raise CoordinationError('INVALID_REQUEST', 'unsupported Codex queue reconciliation outcome')
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        if not path.exists():
+            raise CoordinationError('INVALID_REQUEST', 'no session state for this native session ID')
+        state = json.loads(path.read_text())
+        agent = state.get('agent') or {}
+        if (config.get('harness') != 'codex' or agent.get('native_session_id') != native_session_id
+                or state.get('retired') or state.get('ending')):
+            raise CoordinationError('INVALID_REQUEST', 'state is not an active Codex session for this native ID')
+        wake = state.get('idle_wake') or {}
+        attempt = state.get('inbox_attempt') or {}
+        intent = state.get('inbox_intent') or {}
+        attempt_delivery = (attempt.get('delivery') or {}).get('delivery_id') or intent.get('delivery_id')
+        wake_matches = (wake.get('transport') == 'codex-queue' and wake.get('session') == session_ref(agent)
+                        and wake.get('native_id') == native_session_id and wake.get('delivery_id') == delivery_id
+                        and wake.get('queued_submission_id') == queued_submission_id)
+        attempt_matches = (attempt_delivery == delivery_id and
+                           (attempt.get('session') or intent.get('session')) == session_ref(agent))
+        if not wake_matches and not attempt_matches:
+            raise CoordinationError('INVALID_REQUEST', 'retained Codex wake does not match delivery and queued submission')
+        probe_state = json.loads(json.dumps(state))
+        health = probe_codex_native_health(config, probe_state, force=True)
+        rollout_proof = None
+        if records:
+            target_wake = wake if wake_matches else dict(
+                delivery_id=delivery_id, queued_submission_id=queued_submission_id,
+                attempted_at=0, session=session_ref(agent))
+            rollout_proof = codex_queue_rollout_proof(config, state, target_wake, records)
+        store_delivery, ready_id = _codex_store_delivery(config, state, delivery_id, wake.get('event_id'))
+        grant = 'not_checked'
+        if config.get('inbox_recall_binding'):
+            synthetic_attempt = dict(attempt_id=attempt.get('attempt_id') or wake.get('request_id') or '',
+                                     delivery=dict(delivery_id=delivery_id),
+                                     native_turn_id=attempt.get('native_turn_id') or '')
+            grant = recall_grant_state(config, state, synthetic_attempt)
+        else:
+            grant = 'absent'
+        resolved = 'unknown'
+        reason = 'retained queue item is absent from thread/queue/list without non-admission proof'
+        next_action = 'supply pinned rollout boundary records or verify store completion before clearing the retained wake'
+        if attempt_matches or (health and health.get('queued_present')) or (
+                rollout_proof and rollout_proof['outcome'] == 'admitted_active'):
+            resolved = 'admitted_active'
+            reason = ('delivery is already admitted in an active inbox attempt' if attempt_matches
+                      else ('submission remains present in thread/queue/list' if health and health.get('queued_present')
+                            else 'pinned rollout records show an active queue-triggered turn'))
+            next_action = 'allow the active or queued turn to complete and settle normally; do not replay'
+        elif (store_delivery and store_delivery.get('state') in ('handled', 'completed')) or (
+                rollout_proof and rollout_proof['outcome'] == 'completed'):
+            resolved = 'completed'
+            reason = 'delivery was already completed; stale retained wake marker can be cleared'
+            next_action = 'subsequent inbox traffic is released without replaying completed work'
+        elif (store_delivery and (store_delivery.get('state') in ('failed', 'cancelled', 'ignored', 'expired')
+                                  or store_delivery.get('cancel'))) or (
+                rollout_proof and rollout_proof['outcome'] == 'cancelled'):
+            resolved = 'cancelled'
+            reason = 'delivery or queue turn was cancelled/failed; stale retained wake marker can be cleared'
+            next_action = 'subsequent inbox traffic is released without replaying cancelled work'
+        elif rollout_proof and rollout_proof['outcome'] == 'never_admitted':
+            safe = (health and health.get('process_alive') and health.get('status_type') == 'idle'
+                    and health.get('queued_present') is False and grant == 'absent'
+                    and not any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_result_policy',
+                                                       'inbox_close', 'active_prompt'))
+                    and store_delivery is not None and store_delivery.get('state') == 'pending'
+                    and type(store_delivery.get('attempts')) is int and store_delivery['attempts'] == 0
+                    and ready_id == delivery_id)
+            if safe:
+                resolved = 'never_admitted'
+                reason = 'proven never admitted across the queue attempt window with zero store attempts and absent grant'
+                next_action = 'subsequent inbox traffic is released for ordinary delivery'
+            elif outcome == 'never_admitted':
+                raise CoordinationError('INVALID_REQUEST', 'Codex wake cannot be proven never_admitted')
+        if resolved == 'unknown':
+            if health and health.get('status_type') == 'active':
+                reason = ('retained queue item is absent from thread/queue/list while native owner work is active; '
+                          'missing queue membership does not prove non-admission')
+                next_action = ('allow active owner work to reach a turn boundary and inspect rollout/store outcome '
+                               'before reconciling; do not interrupt or replay')
+            elif not health or not health.get('process_alive') or health.get('status_type') == 'unavailable':
+                reason = 'native process or queue endpoint is unavailable; historical queue admission remains unknown'
+                next_action = 'inspect store delivery state or hand off under a new identity without replaying uncertain work'
+        if outcome is not None and outcome != resolved:
+            raise CoordinationError('INVALID_REQUEST', f'Codex wake outcome is {resolved}, not {outcome}')
+        result = dict(
+            schema='cairn.codex-queue-reconciliation/1',
+            status='eligible' if check_only else ('unresolved' if resolved == 'unknown' else 'reconciled'),
+            outcome=resolved,
+            delivery_id=delivery_id,
+            queued_submission_id=queued_submission_id,
+            grant=grant,
+            native_health=health,
+            reason=reason,
+            next_action=next_action,
+            at=time.time(),
+        )
+        if rollout_proof is not None:
+            result['native_record'] = rollout_proof
+        if resolved == 'unknown':
+            result['reconciliation_required'] = 'queue_item_missing'
+        if check_only:
+            return result
+        state['native_health'] = health
+        if resolved in ('never_admitted', 'completed', 'cancelled'):
+            state.pop('idle_wake', None)
+            state.pop('wake_refusal', None)
+            state.pop('wake_reconciliation', None)
+            state['wake_reconciled'] = result
+        elif resolved == 'admitted_active':
+            if attempt_matches:
+                state.pop('idle_wake', None)
+                state.pop('wake_refusal', None)
+            elif health and health.get('queued_present') and wake_matches:
+                state['idle_wake']['status'] = 'queued'
+                state['idle_wake'].pop('reconciliation_required', None)
+                state.pop('wake_refusal', None)
+            state['wake_reconciliation'] = result
+        else:
+            if wake_matches:
+                state['idle_wake']['status'] = 'refused'
+                state['idle_wake']['reconciliation_required'] = 'queue_item_missing'
+            state['wake_reconciliation'] = result
+        write_state(path, state)
+        return result
+
+
 def reconcile_rejected_wake(config, state, path):
     """Caller owns the coordination lock. A receipt never acknowledges work."""
     key = state.get('wake_rejection')
@@ -3167,7 +3557,8 @@ def main():
             return 7
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
-                                         "recover-codex-refused-wake"))
+                                         "recover-codex-refused-wake", "check-codex-native-health",
+                                         "reconcile-codex-queue-wake"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
@@ -3175,6 +3566,12 @@ def main():
     parser.add_argument("--native-session-id", help="recover-refused-wake: the held native session")
     parser.add_argument("--attempt-id", help="recover-refused-wake: the held attempt")
     parser.add_argument("--native-turn-id", help="recover-refused-wake: the refused claude-channel prompt")
+    parser.add_argument("--delivery-id", help="reconcile-codex-queue-wake: the retained delivery UUID")
+    parser.add_argument("--queued-submission-id", help="reconcile-codex-queue-wake: the retained queue submission ID")
+    parser.add_argument("--outcome", choices=CODEX_QUEUE_OUTCOMES,
+                        help="reconcile-codex-queue-wake: expected reconciliation outcome")
+    parser.add_argument("--record", action="append", default=[],
+                        help="reconcile-codex-queue-wake: contiguous record locator OFFSET:LENGTH:SHA256")
     for name in ("enqueue", "dequeue", "refusal"):
         parser.add_argument(f"--{name}-record", help=f"recover-native-refused-wake: {name} record OFFSET:LENGTH:SHA256")
     for name in ("start", "context", "end"):
@@ -3182,6 +3579,22 @@ def main():
     parser.add_argument("--check-only", action="store_true", help="validate Codex recovery evidence without settlement")
     args = parser.parse_args()
     try:
+        if args.mode == "check-codex-native-health":
+            if None in (args.config, args.native_session_id):
+                parser.error("check-codex-native-health requires --config and --native-session-id")
+            result = check_codex_native_health(load_config(args.config), args.native_session_id)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.mode == "reconcile-codex-queue-wake":
+            if None in (args.config, args.native_session_id, args.delivery_id, args.queued_submission_id):
+                parser.error("reconcile-codex-queue-wake requires --config, --native-session-id, --delivery-id and --queued-submission-id")
+            locators = [native_locator(item) for item in args.record] if args.record else None
+            result = reconcile_codex_queue_wake(load_config(args.config), args.native_session_id,
+                                                args.delivery_id, args.queued_submission_id,
+                                                outcome=args.outcome, records=locators,
+                                                check_only=args.check_only)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.mode == "recover-codex-refused-wake":
             if None in (args.config, args.native_session_id, args.attempt_id,
                         args.start_record, args.context_record, args.end_record):

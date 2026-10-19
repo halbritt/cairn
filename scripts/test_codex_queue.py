@@ -36,7 +36,8 @@ class NativeQueue(unittest.TestCase):
         self.threads = []
 
     def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False,
-              request_collision=False, oversized_method=None, malformed_method=None, start_error=None):
+              request_collision=False, oversized_method=None, malformed_method=None, start_error=None,
+              thread_status='idle', updated_at=1700000000, queued_items=(), next_cursor=None):
         """Serve exactly one connection with the requested fixture behavior.
 
         add: 'confirm' or 'refuse' (no acknowledgment; the add may have committed).
@@ -113,6 +114,15 @@ class NativeQueue(unittest.TestCase):
                             result = {'userAgent': 'fixture'}
                         elif method == 'thread/loaded/list':
                             result = {} if malformed_loaded else {'data': list(loaded), 'nextCursor': None}
+                        elif method == 'thread/read':
+                            status = ({'type': thread_status}
+                                      if isinstance(thread_status, str) else thread_status)
+                            result = {'thread': {'id': request['params']['threadId'],
+                                                 'status': status, 'updatedAt': updated_at}}
+                        elif method == 'thread/queue/list':
+                            result = {'data': [dict(id=item) if isinstance(item, str) else item
+                                               for item in queued_items],
+                                      'nextCursor': next_cursor}
                         elif method == 'thread/queue/add':
                             if add == 'refuse':
                                 return  # Submission may have committed; no acknowledgment.
@@ -360,6 +370,45 @@ class NativeQueue(unittest.TestCase):
         self.serve(request_collision=True)
         self.assertEqual(self.enqueue(), ('queued-one', True))
 
+    def test_inspect_thread_reads_status_and_queue_without_mutating_native_state(self):
+        for status in ('active', 'idle', 'systemError'):
+            with self.subTest(status=status):
+                self.requests.clear()
+                self.serve(thread_status=status, updated_at=1700000123,
+                           queued_items=('queued-one', 'queued-two'))
+                observed = self.queue.inspect_thread(
+                    self.path, self.process, 'native-one', queued_id='queued-two')
+                self.assertEqual(observed['status_type'], status)
+                self.assertEqual(observed['updated_at'], 1700000123)
+                self.assertEqual(observed['queue_count'], 2)
+                self.assertEqual(observed['queued_ids'], ['queued-one', 'queued-two'])
+                self.assertIs(observed['queued_present'], True)
+                self.assertEqual(observed['peer'], dict(
+                    pid=os.getpid(), start=self.process['start'], boot=self.process['boot']))
+                self.join()
+                self.assertEqual(
+                    self.methods(),
+                    ['initialize', 'initialized', 'thread/loaded/list', 'thread/read', 'thread/queue/list'])
+                read_req = next(r for r in self.requests if r['method'] == 'thread/read')
+                self.assertEqual(read_req['params'], dict(threadId='native-one', includeTurns=False))
+                for forbidden in ('thread/resume', 'turn/start', 'turn/interrupt',
+                                  'thread/queue/add', 'thread/queue/start'):
+                    self.assertNotIn(forbidden, self.methods())
+
+    def test_inspect_thread_distinguishes_absent_item_and_unknown_queue_or_status(self):
+        self.serve(thread_status='systemError', queued_items=('other-item',))
+        observed = self.queue.inspect_thread(
+            self.path, self.process, 'native-one', queued_id='queued-one')
+        self.assertEqual(observed['status_type'], 'systemError')
+        self.assertIs(observed['queued_present'], False)
+        self.serve(thread_status='unexpectedStatus', queued_items=('queued-one',), next_cursor='more')
+        observed = self.queue.inspect_thread(
+            self.path, self.process, 'native-one', queued_id='other-item')
+        self.assertEqual(observed['status_type'], 'unknown')
+        self.assertIsNone(observed['queued_present'])
+        self.join()
+
 
 if __name__ == '__main__':
     unittest.main()
+

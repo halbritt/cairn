@@ -271,3 +271,67 @@ def start_outcome(endpoint, process, native_id, queued_id, owner='process'):
             return 'unknown'
     finally:
         connection.close(timeout=0)
+
+
+MAX_QUEUED_IDS = 64
+NATIVE_STATUS_TYPES = ('active', 'idle', 'systemError')
+
+
+def inspect_thread(endpoint, process, native_id, owner='process', queued_id=None):
+    """Read-only, peer/session-verified native thread status and queue probe.
+
+    Connects and verifies peer identity, requires the conversation to be loaded,
+    then reads lightweight thread status (includeTurns=False) and current queue
+    entries without mutating native state.
+    """
+    connection, websocket, peer = _open(endpoint, process, owner)
+    try:
+        rpc = _Rpc(connection, time.monotonic() + 4)
+        try:
+            _admit(connection, rpc, native_id)
+        except QueueUnavailable:
+            raise
+        except (QueueError, OSError, ValueError, KeyError, TypeError, websocket.WebSocketException) as exc:
+            raise QueueUnavailable(f'native queue is not ready: {exc}') from exc
+        status_type = 'unknown'
+        updated_at = None
+        queued_ids = []
+        try:
+            read_result = rpc('thread/read', dict(threadId=native_id, includeTurns=False))
+            thread = read_result.get('thread') if isinstance(read_result.get('thread'), dict) else read_result
+            if isinstance(thread, dict) and thread.get('id') in (None, native_id):
+                raw_status = thread.get('status')
+                candidate = raw_status.get('type') if isinstance(raw_status, dict) else raw_status
+                if isinstance(candidate, str) and candidate in NATIVE_STATUS_TYPES:
+                    status_type = candidate
+                if type(thread.get('updatedAt')) is int:
+                    updated_at = thread['updatedAt']
+            queue_page = rpc('thread/queue/list', dict(threadId=native_id))
+            raw_items = queue_page.get('data')
+            if not isinstance(raw_items, list):
+                return dict(status_type='unknown', updated_at=updated_at, queue_count=0,
+                            queued_ids=[], queued_present=None, peer=peer)
+            for item in raw_items:
+                item_id = item.get('id') if isinstance(item, dict) else (item if isinstance(item, str) else None)
+                if not isinstance(item_id, str) or not item_id or len(item_id.encode()) > 256:
+                    return dict(status_type='unknown', updated_at=updated_at, queue_count=0,
+                                queued_ids=[], queued_present=None, peer=peer)
+                if len(queued_ids) < MAX_QUEUED_IDS:
+                    queued_ids.append(item_id)
+            has_query = isinstance(queued_id, str) and bool(queued_id)
+            if queue_page.get('nextCursor') is not None or len(raw_items) > MAX_QUEUED_IDS:
+                # Paginated queue membership cannot establish absence within a single bounded page.
+                present = True if (has_query and queued_id in queued_ids) else None
+                return dict(status_type=status_type, updated_at=updated_at, queue_count=len(queued_ids),
+                            queued_ids=queued_ids, queued_present=present, peer=peer)
+        except (QueueError, OSError, ValueError, KeyError, TypeError, websocket.WebSocketException):
+            return dict(status_type='unknown', updated_at=updated_at, queue_count=0,
+                        queued_ids=[], queued_present=None, peer=peer)
+        return dict(status_type=status_type, updated_at=updated_at, queue_count=len(queued_ids),
+                    queued_ids=queued_ids,
+                    queued_present=(queued_id in queued_ids) if has_query else None,
+                    peer=peer)
+    finally:
+        connection.close(timeout=0)
+
+
