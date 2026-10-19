@@ -38,6 +38,7 @@ JSON operations (one request on stdin):
   revise       Replace only a note's body
   append       Add text verbatim, including your chosen paragraph separators
   replace      Replace one uniquely matching passage
+  set-sections Replace, delete or append ATX Markdown sections by heading title
   edit         Replace a complete draft; preserve metadata intentionally
   cite         Replace an ordinary note's evidence citations
   history      Inspect retained versions of one note
@@ -159,8 +160,11 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "replace":
 		detail = "Replace exactly one occurrence of old_text in an active ordinary note.\nNo match or multiple matches refuse. Supply enough surrounding text to identify\nthe passage. An explicit empty new_text removes it if the note stays nonblank.\nOther text, metadata and citations remain.\n"
 		example = `{"request_id":"NEW_UUID","record_id":"RECORD_UUID","expected_version":1,"repo":"REPOSITORY","old_text":"Earlier guidance","new_text":"Corrected guidance"}`
+	case "set-sections":
+		detail = "Replace or append Markdown ## sections by heading title in an active ordinary\nnote. Duplicate matching headings or unclosed fenced code blocks refuse; a new\ntitle appends a ## section. Other sections, metadata and citations remain.\n"
+		example = `{"request_id":"NEW_UUID","record_id":"RECORD_UUID","expected_version":1,"repo":"REPOSITORY","sections":{"Summary":"Updated summary text"}}`
 	case "edit":
-		detail = "Replace a complete draft of an active ordinary note. Unlike the native\ncairn_edit tool, this API operation requires draft; a top-level body is not\naccepted. Use revise, append or replace for text-only changes. Start from the\ncurrent draft and preserve its kind, scope, pins, entities and other metadata\nintentionally. Scope and sensitivity changes require separate authority.\n"
+		detail = "Replace a complete draft of an active ordinary note. Unlike the native\ncairn_edit tool, this API operation requires draft; a top-level body is not\naccepted. Use revise, append, replace or set-sections for text-only changes. Start from the\ncurrent draft and preserve its kind, scope, pins, entities and other metadata\nintentionally. Scope and sensitivity changes require separate authority.\n"
 		example = `{"request_id":"NEW_UUID","record_id":"RECORD_UUID","expected_version":1,"draft":{"kind":"note","body":"Corrected note text","scope":{"repo":"REPOSITORY","task_id":"*","run_id":"*"},"claim_type":"self","sensitivity":"shareable"}}`
 	case "cite":
 		detail = "Replace an active ordinary note's evidence citations; an explicit [] clears\ncurrent citations while retaining earlier versions. Pull and verify selected\nevidence before attaching it. Each citation has evidence_id, expected_sha256 and\noptional spans [{offset,length}]. Text-only edits preserve these citations.\n"

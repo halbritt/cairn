@@ -72,3 +72,65 @@ func TestAuthenticatedReplacePreservesOtherPassages(t *testing.T) {
 		t.Fatalf("exact retry: %+v %v", retry, err)
 	}
 }
+
+func TestSetSectionsEndToEndAndDestinationIsolation(t *testing.T) {
+	client, admin, repo, _ := authenticatedHost(t, "agent", "hosted", nil)
+	ctx := context.Background()
+
+	localNote, err := admin.Create(ctx, core.CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: core.Draft{
+			Kind:        "note",
+			Body:        "## Secret\nprivate body\n",
+			ClaimType:   "self",
+			Sensitivity: "local",
+			Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe core.Revision
+	if err := client.Call(ctx, "set-sections", map[string]any{
+		"request_id":       uuid.NewString(),
+		"record_id":        localNote.RecordID,
+		"expected_version": 1,
+		"repo":             repo,
+		"sections":         map[string]string{"Secret": "changed"},
+	}, &probe); core.Code(err) != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND on local note probe, got %v", err)
+	}
+
+	sharedNote, err := admin.Create(ctx, core.CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: core.Draft{
+			Kind:        "note",
+			Body:        "Intro\n\n## Summary\nOld summary\n",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := map[string]any{
+		"request_id":       uuid.NewString(),
+		"record_id":        sharedNote.RecordID,
+		"expected_version": 1,
+		"repo":             repo,
+		"sections":         map[string]string{"Summary": "Updated summary", "Followup": "Next step"},
+	}
+	var rev core.Revision
+	if err := client.Call(ctx, "set-sections", req, &rev); err != nil {
+		t.Fatalf("set-sections call failed: %v", err)
+	}
+	updated, err := admin.Get(ctx, sharedNote.RecordID)
+	if err != nil || updated.Version != 2 || updated.Body != "Intro\n\n## Summary\nUpdated summary\n\n## Followup\nNext step" {
+		t.Fatalf("unexpected updated note: %+v %v", updated, err)
+	}
+	var retry core.Revision
+	if err := client.Call(ctx, "set-sections", req, &retry); err != nil || retry != rev {
+		t.Fatalf("set-sections retry mismatch: %+v %v", retry, err)
+	}
+}

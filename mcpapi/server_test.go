@@ -478,6 +478,35 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("set_sections", func(t *testing.T) {
+		var saved recordWriteResult
+		if err := json.Unmarshal(invoke("cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "Preamble\n\n## Summary\nOld summary\n\n## Details\nKeep me\n", "shareable": true}, ""), &saved); err != nil {
+			t.Fatal(err)
+		}
+		args := map[string]any{
+			"request_id":       uuid.NewString(),
+			"record_id":        saved.RecordID,
+			"expected_version": 1,
+			"set_sections": map[string]any{
+				"Summary": "New summary",
+				"Added":   "Appended body",
+			},
+		}
+		result := invoke("cairn_edit", args, "")
+		if string(invoke("cairn_edit", args, "")) != string(result) {
+			t.Fatal("set_sections retry changed")
+		}
+		got, err := op.Get(ctx, saved.RecordID)
+		if err != nil || got.Version != 2 || got.Body != "Preamble\n\n## Summary\nNew summary\n\n## Details\nKeep me\n\n## Added\nAppended body" {
+			t.Fatalf("set_sections bytes: %+v %v", got, err)
+		}
+		args["body"] = "ambiguous mode"
+		invoke("cairn_edit", args, "supply exactly one")
+		delete(args, "body")
+		if _, err := op.Delete(ctx, core.DeleteRequest{RequestID: uuid.NewString(), RecordID: saved.RecordID, ExpectedVersion: 2}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	phaseNote := invoke("cairn_remember", map[string]any{
 		"request_id": uuid.NewString(), "body": "phaseguide: check the patch before delivery",
 		"kind": "procedure", "shareable": true, "pins": map[string]string{"task_phase": "validation"},

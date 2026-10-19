@@ -494,6 +494,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invokeBounded(ctx, input, store.Revise, localapi.RequestBodyLimit("revise"))
 	case "replace":
 		return invokeBounded(ctx, input, store.Replace, localapi.RequestBodyLimit("replace"))
+	case "set-sections":
+		return invokeBounded(ctx, input, store.SetSections, localapi.RequestBodyLimit("set-sections"))
 	case "append":
 		return invokeBounded(ctx, input, store.Append, localapi.RequestBodyLimit("append"))
 	case "cite":

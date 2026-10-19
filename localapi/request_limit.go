@@ -13,8 +13,8 @@ func RequestBodyLimit(operation string) int64 {
 	if operation == "explain-page" {
 		return 4096
 	}
-	if operation == "replace" {
-		// Both old and new text may contain 64 KiB with sixfold escaping.
+	if operation == "replace" || operation == "set-sections" {
+		// Both old and new text or section maps may contain 64 KiB with sixfold escaping.
 		return 1024 * 1024
 	}
 	if operation == "evidence" {

@@ -85,7 +85,7 @@ func (s *Server) SetLocalMachineID(machine string) error {
 // remotely. The route inventory test requires an explicit decision for additions.
 var remoteOperations = map[string]bool{
 	"version": true, "clients": true,
-	"create": true, "edit": true, "revise": true, "append": true, "replace": true,
+	"create": true, "edit": true, "revise": true, "append": true, "replace": true, "set-sections": true,
 	"cite": true, "delete": true, "supersede": true,
 	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true, "explain-page": true,
 	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true, "recall-observation": true,

@@ -199,6 +199,10 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		serveJSON(w, r, func(ctx context.Context, req core.ReplaceRequest) (core.Revision, error) {
 			return c.store.ReplaceForDestination(ctx, req, c.destination)
 		})
+	case "/v1/set-sections":
+		serveJSON(w, r, func(ctx context.Context, req core.SetSectionsRequest) (core.Revision, error) {
+			return c.store.SetSectionsForDestination(ctx, req, c.destination)
+		})
 	case "/v1/cite":
 		serveJSON(w, r, c.store.Cite)
 	case "/v1/delete":
