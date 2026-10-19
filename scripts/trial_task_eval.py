@@ -277,7 +277,7 @@ def import_provenance(corpus, ids):
 class TrialStore:
     """One disposable database, one API server and one hosted agent token."""
 
-    def __init__(self, root, binary, label, worker=None, embedding_worker=None):
+    def __init__(self, root, binary, label, worker=None, embedding_worker=None, *, cluster=None):
         if worker and embedding_worker:
             raise ValueError("select one semantic backend")
         self.root = Path(root)
@@ -287,11 +287,21 @@ class TrialStore:
         self.embedding_worker = embedding_worker
         self.backend = "embedding-command" if embedding_worker else "semantic-stream-command" if worker else "lexical"
         self.readiness = None
-        pg = disposable_pg()
+        self.cluster = cluster
+        self.ids = {}  # fixture id -> record id
+        self.names = {}  # record id -> fixture id
+        self.import_results = []
+        self.server = None
+        self._launch_attempted = False
+        if cluster is not None:
+            pg, pg_bin = cluster.routing()
+            self.pg_bin = Path(pg_bin)
+        else:
+            pg = disposable_pg()
+            self.pg_bin = Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"])
         database = "task_eval_" + re.sub(r"[^a-z0-9]", "_", label.lower())
-        run([Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"]) / "createdb", "-h", pg, database])
+        run([self.pg_bin / "createdb", "-h", pg, database])
         self.pg_socket, self.database = pg, database
-        self.pg_bin = Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"])
         self.dsn = f"host={pg} dbname={database} sslmode=disable"
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
@@ -311,14 +321,16 @@ class TrialStore:
         (self.home / "identities.json").write_text(json.dumps(identities))
         (self.home / "identities.json").chmod(0o600)
         self.principal = "agent:task-eval-" + label
-        self.ids = {}  # fixture id -> record id
-        self.names = {}  # record id -> fixture id
-        self.server = None
+
+    def _pg_socket(self):
+        if getattr(self, "cluster", None) is not None:
+            return self.cluster.routing()[0]
+        return disposable_pg()
 
     def receipt_explanations(self, observed):
         try:
-            socket = disposable_pg()
-        except SystemExit as error:
+            socket = self._pg_socket()
+        except (SystemExit, ValueError) as error:
             raise ValueError("owned database routing unavailable") from error
         if socket != self.pg_socket:
             raise ValueError("owned database routing changed")
@@ -327,7 +339,7 @@ class TrialStore:
 
     def fingerprint(self):
         # This instance created its database in the wrapper-owned cluster.
-        if disposable_pg() != self.pg_socket:
+        if self._pg_socket() != self.pg_socket:
             raise ValueError("owned database routing changed")
         return corpus_stamp(self.pg_bin / "psql", self.pg_socket, self.database, self.env, run)
 
@@ -342,10 +354,11 @@ class TrialStore:
         args += [f"--entity-{kind}={name}" for kind, name in entities]
         result = run([self.binary, *args], env=self.env, input=note["body"].encode(), timeout=60)
         record = json.loads(result.stdout)["data"]
-        if entities:
-            self.verify_entities(note["id"], record["record_id"], entities)
+        self.import_results.append(dict(input_id=note["id"], result=record))
         self.ids[note["id"]] = record["record_id"]
         self.names[record["record_id"]] = note["id"]
+        if entities:
+            self.verify_entities(note["id"], record["record_id"], entities)
         return record
 
     def verify_entities(self, input_id, record_id, entities):
@@ -387,6 +400,7 @@ class TrialStore:
             command += ["--embedding-command", str(Path(self.embedding_worker).resolve())]
         self.log = (self.root / "api.log").open("wb")
         self.started = time.monotonic()
+        self._launch_attempted = True
         self.server = subprocess.Popen([str(c) for c in command], env=self.env, stdout=self.log, stderr=self.log)
         deadline = time.time() + 30
         while not self.socket.exists():
@@ -611,9 +625,9 @@ def summarise_retrieval(rows):
 
 # ---------------------------------------------------------------- workspace and grading
 
-def prepare_workspace(case, root):
+def prepare_workspace(case, root, *, source_root=TRIAL):
     """Copy the fixture, run its setup and tag the evaluation base. Returns the working directory."""
-    source = workspace_dir(case)
+    source = workspace_dir(case, root=source_root)
     target = Path(root) / case["copy_to"]
     def ignored(directory, names):
         return {name for name in names if name == "__pycache__"

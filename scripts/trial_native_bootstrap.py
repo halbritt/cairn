@@ -145,7 +145,7 @@ def _declaration(document, *, schema=SCHEMA):
          'bootstrap_source_set')
     need(document['sources']['permission_source']['sha256'] == IMPLEMENTATION_SOURCE_SHA,
          'permission_source_mismatch')
-    return mcp_arguments(document['mcp_binding'])
+    return mcp_arguments(document['mcp_binding'], profile='weekly-sdk' if schema == SDK_SCHEMA else 'paired')
 
 
 def _compile(snapshot, document, mcp_args):

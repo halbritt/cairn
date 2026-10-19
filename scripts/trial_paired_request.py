@@ -54,15 +54,18 @@ def identifier(text):
         raise Refusal('canonical_uuid') from None
 
 
-def mcp_arguments(binding):
+def mcp_arguments(binding, *, profile='paired'):
     """Compile the fixed paired MCP ceiling; this function runs no process.
 
     The integrator owns authenticated trial bindings and the binary source pin.
     Caller-supplied argument extensions cannot override the original limits.
     """
+    need(profile in ('paired', 'weekly-sdk'), 'mcp_profile')
     shape(binding, 'socket token_file repo task run', 'mcp_binding')
-    for name in ('socket','token_file','repo'):
+    for name in ('socket','token_file'):
         plain_path(binding[name])
+    if not (profile == 'weekly-sdk' and binding['repo'] == 'trial:task-eval'):
+        plain_path(binding['repo'])
     for name in ('task','run'):
         need(isinstance(binding[name], str) and 0 < len(binding[name].encode()) <= 256
              and '\0' not in binding[name], 'mcp_scope')
