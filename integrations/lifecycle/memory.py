@@ -39,6 +39,7 @@ SEMANTIC_SEARCH_ROOM = 64000
 MAX_PULLED_CANDIDATES = 8
 INBOX_RECALL_VERSION = 1
 INBOX_ROUTE_TRACE_VERSION = 1
+INBOX_REQUIRED_SEARCH_RETRY_VERSION = 1
 PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
@@ -800,8 +801,10 @@ class Memory:
                 if type(remaining) is int and 0 <= remaining <= 4 else max(0, previous - 1))
         return result["data"]
 
-    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5, offset=None):
+    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5, offset=None, request_id=None):
         hints = ["--semantic"] if semantic else []
+        if request_id is not None:
+            hints += ["--request-id", request_id]
         if offset is not None:
             hints += ["--offset", str(offset)]
         hints += [flag for entity in entities for flag in ("--entity-file", entity)]

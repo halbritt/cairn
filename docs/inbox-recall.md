@@ -140,6 +140,14 @@ two seconds. Coordination admission and final lease renewal use the enclosing
 hook deadline. This is not a measured five-second end-to-end latency guarantee.
 The normal coordination hook must have enough timeout for admission and cleanup.
 
+With an engine advertising `INBOX_REQUIRED_SEARCH_RETRY_VERSION = 1`, the initial
+required lookup retries once after `TIMEOUT`, `API_UNAVAILABLE`, or
+`API_CONNECTION_FAILED`. Both calls use the same request UUID and query under the
+original deadline. The API's existing receipt idempotency and current-source
+checks still apply. This retries only a memory read, never an inbox claim or task.
+Permanent refusals, a second failure, or an exhausted deadline still refuse the
+native prompt without granting context. Older pinned engines keep one lookup.
+
 Under the existing session locks, a separate durable marker and grant ledger are
 written and fsynced before output. They contain identities, counters, hashes and
 fixed statuses, not source bodies or queries. A crash after persistence can lose

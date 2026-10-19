@@ -435,6 +435,8 @@ class InboxRecallBridgeTests(unittest.TestCase):
                         result = case.invoke(main=True)
                     outcomes.append(result['stdout'].replace(str(case.root), '<ROOT>').replace(case.root.name, '<PROJECT>'))
                     operations = ['search', 'history', 'search'][:completed + (not expired)]
+                    if stage == 'required' and not expired:
+                        operations = ['search', 'search']  # One retry of the same required read.
                     self.assertEqual([x['op'] for x in case.calls()], operations)
                     if stage == 'required':
                         self.assertEqual((result['code'], result['stdout']), (2, ''))

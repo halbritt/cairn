@@ -534,8 +534,22 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             memory.inbox_trace = InboxRouteTrace(directory, identity)
         # This required-only search also verifies actual destination before a
         # source body can become a query. Profile filenames are not authority.
-        required = memory.search(engine.project_root(event).name, room=engine.RECALL_SEARCH_ROOM,
-                                 kinds=('decision', 'preference'), timeout=engine.recall_timeout(deadline, 2))
+        retry_required = getattr(engine, 'INBOX_REQUIRED_SEARCH_RETRY_VERSION', None) == 1
+        search_options = (dict(request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,
+                          'cairn.inbox-required-search/1:' + key))) if retry_required else {})
+        required_query = engine.project_root(event).name
+        for search_attempt in range(2 if retry_required else 1):
+            try:
+                required = memory.search(required_query, room=engine.RECALL_SEARCH_ROOM,
+                                         kinds=('decision', 'preference'),
+                                         timeout=engine.recall_timeout(deadline, 2), **search_options)
+                break
+            except engine.HookError as exc:
+                # Retry the same read intent once, never the inbox claim or task.
+                # The original deadline and permanent refusals still apply.
+                if (not retry_required or search_attempt or
+                        exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED')):
+                    raise
         hosted(required)
         if metrics is not None:
             metrics['memory'] = memory

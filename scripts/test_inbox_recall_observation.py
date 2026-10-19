@@ -75,7 +75,7 @@ elif op=='search':""")
                 self.assertEqual(out['code'], 2, out)
                 self.assertEqual(out['stdout'], '')
                 self.assertEqual(self.reports(case), [])
-                self.assertEqual([call['op'] for call in case.calls()], ['search'])
+                self.assertEqual([call['op'] for call in case.calls()], ['search'] * (2 if value == 'TIMEOUT' else 1))
                 self.assertEqual(case.ledger()['grants'], {})
 
     def test_validated_profile_source_failure_reports_refusal_without_body(self):

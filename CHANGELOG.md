@@ -14,8 +14,13 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
-## 2026-10-18
+## 2026-10-19
 
+- Bound inbox recall retries one transient initial required-memory lookup with
+  the same request ID inside its existing deadline. Repeated or permanent
+  failure still refuses delivery; inbox claims and task effects are not retried.
+
+## 2026-10-18
 - Native MCP and OpenCode history reads accept an explicit output allowance for
   whole historical notes beyond the automatic default. Exact-version reads keep
   their existing scope and access checks; omitted budgets preserve the default.
