@@ -222,6 +222,24 @@ InboxRouteTrace.flush = refused_trace
         self.assertEqual(case.invoke(main=True)['code'], 0)
         self.assertEqual(self.traces(case), [])
 
+    def test_required_search_failure_emits_trace_with_failure_meta(self):
+        case = self.fixture(True)
+        case.fixture['fail_search'] = 'API_UNAVAILABLE'
+        case.freeze()
+        out = case.invoke(main=True)
+        self.assertEqual((out['code'], out['stdout']), (2, ''))
+        paths = self.traces(case)
+        self.assertEqual(len(paths), 1)
+        trace = json.loads(paths[0].read_text())
+        self.assertEqual((trace['status'], trace['returned_context_bytes']), ('error', 0))
+        self.assertNotIn('final', trace)
+        meta = trace.get('failure_meta') or {}
+        self.assertEqual(meta.get('recall_phase'), 'required_search')
+        self.assertEqual(meta.get('recall_operation'), 'search')
+        self.assertEqual((meta.get('recall_attempts'), meta.get('recall_max_attempts')), (2, 2))
+        self.assertIsInstance(meta.get('deadline_remaining_ms'), int)
+        self.assertNotIn('SECRET', json.dumps(trace))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -485,6 +485,14 @@ def delivery_observation(config, state, prepared, cycle=None):
 def report_delivery_observation(config, state, prepared, cycle=None):
     """Best-effort, bounded current-state diagnostic; never a wake dependency."""
     try:
+        refusal_obs = held_attempt_refusal_observation(config, state)
+        if refusal_obs is None:
+            state.pop('held_refusal_observation', None)
+        else:
+            state['held_refusal_observation'] = refusal_obs
+    except Exception:
+        state.pop('held_refusal_observation', None)
+    try:
         desired = delivery_observation(config, state, prepared, cycle)
         if desired is None:
             return
@@ -1549,7 +1557,8 @@ def release_inbox(config, state, path, reason, fenced=False):
 
 def clear_inbox(state, path):
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'inbox_turn_ended', 'inbox_result_policy', 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
+                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'held_refusal_observation',
+                'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
                 'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
         state.pop(key, None)
@@ -1837,6 +1846,54 @@ def journal_committed(config, state):
         return False
 
 
+def journal_completion_state(config, attempt):
+    """Classify the active attempt's completion journal state for turn-end diagnostics."""
+    if not attempt or not config.get('state_dir'):
+        return 'absent'
+    target = intent_path(config['state_dir'], attempt['attempt_id'])
+    if not target.exists():
+        return 'absent'
+    try:
+        journal = json.loads(target.read_text())
+    except (OSError, ValueError):
+        return 'unknown'
+    slot = (journal.get('completion') if isinstance(journal, dict) else None) or {}
+    status = slot.get('status')
+    return status if status in ('committed', 'pending', 'refused') else 'absent'
+
+
+def record_unacknowledged_turn_end(config, state):
+    attempt = state.get('inbox_attempt')
+    if not isinstance(attempt, dict) or not attempt.get('attempt_id'):
+        return
+    attempt_id = attempt['attempt_id']
+    if (state.get('wake_refusal_diagnostic') or {}).get('attempt_id') == attempt_id:
+        return  # Post-claim hook refusal has its own wake_refusal_diagnostic.
+    delivery = attempt.get('delivery') or {}
+    event = delivery.get('event') or {}
+    journal_state = journal_completion_state(config, attempt)
+    previous = state.get('unacknowledged_turn_end_diagnostic') or {}
+    diagnostic = dict(
+        schema='cairn.unacknowledged-turn-end/1',
+        attempt_id=attempt_id,
+        delivery_id=delivery.get('delivery_id'),
+        event_id=event.get('event_id'),
+        kind=event.get('kind'),
+        native_turn_id=attempt.get('native_turn_id'),
+        journal_state=journal_state,
+        lease_lapsed=bool(attempt.get('lease_lapsed')),
+        reminded=state.get('inbox_ack_reminded') == attempt_id,
+        outcome='processing_failed',
+        at=previous.get('at') if previous.get('attempt_id') == attempt_id else time.time(),
+    )
+    state['unacknowledged_turn_end_diagnostic'] = diagnostic
+    if previous.get('attempt_id') != attempt_id:
+        print(f"Cairn presence {config['binding']}: turn ended without journaled completion/acknowledgement "
+              f"for {event.get('kind') or 'inbox'} attempt {attempt_id} "
+              f"(delivery {delivery.get('delivery_id')}, journal={journal_state}); "
+              "reconciled as turn_ended (processing_failed)", file=sys.stderr)
+
+
 def end_turn_inbox(config, state, path, fenced=False):
     """Close an ended turn's attempt, naming completion when the journal proves it.
 
@@ -1845,6 +1902,9 @@ def end_turn_inbox(config, state, path, fenced=False):
     """
     if journal_committed(config, state) and release_inbox(config, state, path, 'delivery_completed', fenced):
         return True
+    if not fenced:
+        record_unacknowledged_turn_end(config, state)
+        write_state(path, state)
     return release_inbox(config, state, path, 'turn_ended', fenced)
 
 
@@ -1885,6 +1945,8 @@ def watch_inbox(config, state, path):
         handled, cancel_prepared = advance_opencode_cancel(config, state, path)
         if handled:
             return cancel_prepared
+    if config.get('harness') == 'codex' and auto_settle_codex_refused_wake(config, state, path):
+        return
     if not flush_inbox_intents(config, state):
         return  # Uncertain journaled command: keep the hold and retry next cycle.
     if settle_inbox(config, state, path):
@@ -1923,6 +1985,55 @@ def completion_scope(state, attempt):
     return ['--task', 'coordination-result/' + delivery, '--run', '*']
 
 
+def unacknowledged_turn_end_reminder(config, state, path, observation):
+    """Surface one bounded turn-end reminder when an active attempt has no journaled command."""
+    if not config.get('remind_unacknowledged_turn_end'):
+        return ''
+    if state.get('inbox_turn_ended') or state.get('inbox_close') or state.get('ending') or state.get('retired'):
+        return ''
+    intent, attempt = state.get('inbox_intent'), state.get('inbox_attempt')
+    if not isinstance(intent, dict) or not isinstance(attempt, dict):
+        return ''
+    attempt_id = attempt.get('attempt_id')
+    if (not attempt_id or intent.get('request_id') != attempt_id
+            or attempt.get('session') != session_ref(state.get('agent') or {})
+            or attempt.get('finished_at') or attempt.get('cancel') or attempt.get('lease_lapsed')
+            or (state.get('active_prompt') or {}).get('joined')
+            or state.get('inbox_ack_reminded') == attempt_id
+            or not attempt_commands_absent(config, attempt)):
+        return ''
+    target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
+    try:
+        context = json.loads(target.read_text())
+    except (OSError, ValueError):
+        return ''
+    if not isinstance(context, dict) or context.get('attempt_id') != attempt_id:
+        return ''
+    renew_inbox(config, state, path, attempt)
+    if attempt.get('lease_lapsed'):
+        return ''
+    state['inbox_ack_reminded'] = attempt_id
+    state['delivered_since_idle'] = True
+    if config.get('harness') == 'claude' and observation.get('native_turn_id'):
+        state['active_prompt'] = dict(id=observation['native_turn_id'])
+    write_state(path, state)
+    kind = ((attempt.get('delivery') or {}).get('event') or {}).get('kind') or context.get('kind') or 'inbox'
+    if kind in ('response', 'notice') and isinstance(context.get('acknowledgement'), list):
+        ack_cmd = shlex.join(context['acknowledgement'])
+        return (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has not been "
+                f"acknowledged yet. Run the exact acknowledgement command before ending your turn: {ack_cmd}. "
+                "Ending the turn again without acknowledging will record this delivery as processing_failed.")
+    if isinstance(context.get('completion'), list):
+        comp_cmd = shlex.join(context['completion'])
+        reply_hint = (f" Then send the reply with {shlex.join(context['response'])} --version RESULT_VERSION RESULT_RECORD_UUID."
+                      if isinstance(context.get('response'), list) else '')
+        return (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has no journaled "
+                f"completion yet. Run the exact completion command with a concise selected result on stdin before ending "
+                f"your turn: {comp_cmd}.{reply_hint} "
+                "Ending the turn again without completion will record this delivery as processing_failed.")
+    return ''
+
+
 def inbox_context(config, state, path, observation, wake_binding=None):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
@@ -1953,6 +2064,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
             elif attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
                 opencode_cancelled_turn_end(config, state, path, observation, attempt)
             else:
+                reminder = unacknowledged_turn_end_reminder(config, state, path, observation)
+                if reminder:
+                    return reminder
                 if state.get('inbox_intent') and not state.get('inbox_turn_ended'):
                     state['inbox_turn_ended'] = True  # Survives an uncertain flush for the watcher.
                     write_state(path, state)
@@ -2309,20 +2423,44 @@ def refusal_error_class(exc):
         'HookError', 'BudgetRefused', 'RequiredContextRefused', 'ContextRefused') else 'OtherError'
 
 
-def refusal_cause_details(cause):
-    """Retain closed error categories across the independently loaded memory engine."""
-    if refusal_error_class(cause) not in ('HookError', 'BudgetRefused', 'RequiredContextRefused',
-                                         'ContextRefused', 'CoordinationError'):
+RECALL_FAILURE_PHASES = frozenset(('required_search', 'task_source', 'optional_search'))
+RECALL_FAILURE_OPERATIONS = frozenset(('search', 'hosted', 'history'))
+CAUSE_CODES = frozenset(('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'AUTHORITY_DENIED', 'NOT_FOUND',
+                         'PAYLOAD_UNAVAILABLE', 'OPEN_CONFLICT', 'POLICY_UNENFORCEABLE'))
+CAUSE_REASONS = frozenset(('NONZERO_EXIT', 'INVALID_JSON', 'OUTPUT_LIMIT', 'START_FAILED', 'NOT_CONFIRMED',
+                           'SEARCH_STATUS', 'NOT_HOSTED'))
+
+
+def sanitize_recall_failure_meta(raw):
+    if not isinstance(raw, dict):
         return {}
     result = {}
-    for attribute, allowed in (
-            ('code', {'TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'AUTHORITY_DENIED', 'NOT_FOUND',
-                      'PAYLOAD_UNAVAILABLE', 'OPEN_CONFLICT', 'POLICY_UNENFORCEABLE'}),
-            ('reason', {'NONZERO_EXIT', 'INVALID_JSON', 'OUTPUT_LIMIT', 'START_FAILED', 'NOT_CONFIRMED',
-                        'SEARCH_STATUS', 'NOT_HOSTED'})):
-        value = getattr(cause, attribute, None)
-        if type(value) is str and value in allowed:
-            result['cause_' + attribute] = value
+    if raw.get('recall_phase') in RECALL_FAILURE_PHASES:
+        result['recall_phase'] = raw['recall_phase']
+    if raw.get('recall_operation') in RECALL_FAILURE_OPERATIONS:
+        result['recall_operation'] = raw['recall_operation']
+    for key in ('recall_attempts', 'recall_max_attempts'):
+        val = raw.get(key)
+        if type(val) is int and 1 <= val <= 16:
+            result[key] = val
+    rem = raw.get('deadline_remaining_ms')
+    if type(rem) is int and 0 <= rem <= 60000:
+        result['deadline_remaining_ms'] = rem
+    return result
+
+
+def refusal_cause_details(cause, wrapper=None):
+    """Retain closed error categories across the independently loaded memory engine."""
+    result = {}
+    if refusal_error_class(cause) in ('HookError', 'BudgetRefused', 'RequiredContextRefused',
+                                      'ContextRefused', 'CoordinationError'):
+        for attribute, allowed in (('code', CAUSE_CODES), ('reason', CAUSE_REASONS)):
+            value = getattr(cause, attribute, None)
+            if type(value) is str and value in allowed:
+                result['cause_' + attribute] = value
+    for source in (cause, wrapper):
+        if source is not None:
+            result.update(sanitize_recall_failure_meta(getattr(source, 'cairn_recall_failure', None)))
     return result
 
 
@@ -2420,7 +2558,7 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
                       cause_class=refusal_error_class(cause) if cause is not None else None,
                       attempt_id=attempt.get('attempt_id'), delivery_id=(attempt.get('delivery') or {}).get('delivery_id'),
                       native_turn_id=turn, at=time.time())
-    diagnostic.update(refusal_cause_details(cause))
+    diagnostic.update(refusal_cause_details(cause, exc))
     if evidence is not None:
         diagnostic['native_record'] = evidence
     eligible = refused_claude_wake_settleable(config, state, turn)
@@ -2983,6 +3121,178 @@ def reconcile_codex_queue_wake(config, native_session_id, delivery_id, queued_su
         return result
 
 
+def find_codex_refusal_locators(config, state, turn):
+    """Locate the three contiguous rollout records of an empty refused Codex queue turn."""
+    path = codex_rollout_path(config, state)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 16 * 1024 * 1024:
+            return None
+        content = os.pread(fd, info.st_size, 0) if info.st_size else b''
+    finally:
+        os.close(fd)
+    entries = []
+    turn_indices = []
+    offset = 0
+    for raw in content.splitlines(keepends=True):
+        length = len(raw)
+        item = None
+        if raw.endswith(b'\n') and length <= NATIVE_RECORD_LIMIT:
+            try:
+                parsed = json.loads(raw.decode('utf-8'))
+            except (UnicodeDecodeError, ValueError):
+                parsed = None
+            if isinstance(parsed, dict):
+                item = (dict(offset=offset, length=length, sha256=hashlib.sha256(raw).hexdigest()), parsed)
+                payload = parsed.get('payload')
+                if isinstance(payload, dict) and (payload.get('turn_id') == turn or payload.get('root_turn_id') == turn):
+                    turn_indices.append(len(entries))
+        entries.append(item)
+        offset += length
+    if len(turn_indices) != 3 or turn_indices != [turn_indices[0], turn_indices[0] + 1, turn_indices[0] + 2]:
+        return None
+    return [entries[i][0] for i in turn_indices]
+
+
+def auto_settle_codex_refused_wake(config, state, path):
+    """Automatically settle a held Codex post-claim refusal once its open rollout proves the turn ended empty."""
+    attempt = state.get('inbox_attempt') or {}
+    recorded = state.get('wake_refusal_diagnostic') or {}
+    turn = attempt.get('native_turn_id')
+    attempt_id = attempt.get('attempt_id')
+    if (config.get('harness') != 'codex' or state.get('ending') or state.get('retired')
+            or not process_alive(state.get('process') or {})
+            or not attempt_id or not isinstance(turn, str)
+            or not re.fullmatch(r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', turn)
+            or recorded.get('phase') != 'bridge_after_claim' or recorded.get('origin') != 'hook'
+            or recorded.get('settlement') != 'held' or recorded.get('attempt_id') != attempt_id
+            or recorded.get('native_turn_id') != turn
+            or recorded.get('delivery_id') != (attempt.get('delivery') or {}).get('delivery_id')
+            or not refused_wake_unprocessed(config, state, turn)):
+        return False
+    if recall_grant_state(config, state, attempt) != 'absent':
+        return False
+    try:
+        locators = find_codex_refusal_locators(config, state, turn)
+        if not locators:
+            return False
+        proof = codex_refusal_proof(config, state, attempt, recorded, locators)
+    except (CoordinationError, OSError, ValueError, KeyError, TypeError):
+        return False
+    state['wake_refusal_diagnostic'] = dict(recorded, settlement='turn_ended', grant='absent',
+        recovery_origin='codex_native_records', native_record=proof)
+    state['inbox_turn_ended'] = True
+    state['delivered_since_idle'] = False
+    write_state(path, state)
+    try:
+        settled = flush_inbox_intents(config, state) and end_turn_inbox(config, state, path)
+        if not settled:
+            state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
+            write_state(path, state)
+    except (CoordinationError, OSError, ValueError, KeyError, TypeError):
+        state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
+        write_state(path, state)
+    return True
+
+
+def held_attempt_refusal_observation(config, state, now=None):
+    """Build a bounded, allowlisted diagnostic for the current held attempt's post-claim refusal."""
+    if not isinstance(state, dict) or state.get('ending') or state.get('retired'):
+        return None
+    agent, process = state.get('agent') or {}, state.get('process') or {}
+    intent, attempt = state.get('inbox_intent') or {}, state.get('inbox_attempt') or {}
+    recorded = state.get('wake_refusal_diagnostic') or {}
+    attempt_id = attempt.get('attempt_id')
+    delivery_id = (attempt.get('delivery') or {}).get('delivery_id')
+    turn = attempt.get('native_turn_id')
+    session = session_ref(agent) if agent.get('agent_id') and agent.get('execution_id') else None
+    if (not session or not process_alive(process) or not attempt_id or not delivery_id or not turn
+            or intent.get('request_id') != attempt_id or intent.get('session') != session
+            or attempt.get('session') != session or intent.get('native_turn_id') != turn
+            or recorded.get('phase') != 'bridge_after_claim'
+            or recorded.get('settlement') not in ('held', 'turn_ended_pending')
+            or recorded.get('attempt_id') != attempt_id or recorded.get('delivery_id') != delivery_id
+            or recorded.get('native_turn_id') != turn):
+        return None
+    error_class = recorded.get('error_class')
+    if error_class not in ('BlockingIOError', 'PermissionError', 'FileNotFoundError', 'OSError', 'ValueError',
+                           'KeyError', 'TypeError', 'JSONDecodeError', 'CoordinationError', 'HookError',
+                           'BudgetRefused', 'RequiredContextRefused', 'ContextRefused', 'OtherError'):
+        error_class = 'OtherError'
+    cause_class = recorded.get('cause_class')
+    if cause_class is not None and cause_class not in (
+            'BlockingIOError', 'PermissionError', 'FileNotFoundError', 'OSError', 'ValueError', 'KeyError',
+            'TypeError', 'JSONDecodeError', 'CoordinationError', 'HookError', 'BudgetRefused',
+            'RequiredContextRefused', 'ContextRefused', 'OtherError'):
+        cause_class = 'OtherError'
+    grant = recorded.get('grant')
+    if grant not in ('absent', 'present', 'unknown', 'not_checked'):
+        grant = 'unknown'
+    if config.get('harness') == 'claude':
+        turn_state = 'active' if (state.get('active_prompt') or {}).get('id') == turn else 'ended'
+    elif config.get('harness') == 'codex':
+        try:
+            turn_state = 'ended_proven' if find_codex_refusal_locators(config, state, turn) else 'active_or_unproven'
+        except Exception:
+            turn_state = 'active_or_unproven'
+    else:
+        turn_state = 'unknown'
+    if recorded['settlement'] == 'turn_ended_pending':
+        evidence_state = 'reconcile_pending'
+    elif grant == 'present':
+        evidence_state = 'grant_present_manual_review'
+    elif config.get('harness') == 'codex':
+        evidence_state = 'codex_rollout_ready' if turn_state == 'ended_proven' else 'awaiting_codex_turn_end'
+    elif config.get('harness') == 'claude':
+        evidence_state = 'claude_active_prompt' if turn_state == 'active' else 'eligible_for_recorded_recovery'
+    else:
+        evidence_state = 'held_unsettled'
+    current_now = time.time() if now is None else now
+    at = recorded.get('at')
+    obs = dict(
+        schema='cairn.held-attempt-refusal/1',
+        authority='diagnostic_only',
+        store_hold='lapsed' if attempt.get('lease_lapsed') else 'leased',
+        session=session,
+        native_session_id=agent.get('native_session_id'),
+        attempt_id=attempt_id,
+        delivery_id=delivery_id,
+        native_turn_id=turn,
+        phase='bridge_after_claim',
+        origin=recorded.get('origin') if recorded.get('origin') in ('hook', 'operator_recorded', 'native_record') else 'unknown',
+        settlement=recorded['settlement'],
+        error_class=error_class,
+        cause_class=cause_class,
+        grant=grant,
+        session_activity=(agent.get('metadata') or {}).get('state') if (agent.get('metadata') or {}).get('state') in ('idle', 'busy') else 'unknown',
+        native_turn_state=turn_state,
+        freshness='current_attempt',
+        evidence_state=evidence_state,
+        observed_at=utc_timestamp(at) if isinstance(at, (int, float)) else None,
+        age_seconds=max(0, int(current_now - at)) if isinstance(at, (int, float)) else None,
+    )
+    if recorded.get('cause_code') in CAUSE_CODES:
+        obs['cause_code'] = recorded['cause_code']
+    if recorded.get('cause_reason') in CAUSE_REASONS:
+        obs['cause_reason'] = recorded['cause_reason']
+    obs.update(sanitize_recall_failure_meta(recorded))
+    return obs
+
+
+def inspect_held_refusal(config, native_session_id, attempt_id=None):
+    """Read-only operator inspection of the active held attempt's refusal diagnostic."""
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        if not path.exists():
+            raise CoordinationError('NOT_FOUND', 'no coordination state for this native session')
+        state = json.loads(path.read_text())
+        obs = held_attempt_refusal_observation(config, state)
+        if obs is None or (attempt_id is not None and obs.get('attempt_id') != attempt_id):
+            raise CoordinationError('NOT_FOUND', 'no active held-attempt refusal diagnostic matches this session')
+        return obs
+
+
 def reconcile_rejected_wake(config, state, path):
     """Caller owns the coordination lock. A receipt never acknowledges work."""
     key = state.get('wake_rejection')
@@ -3510,6 +3820,8 @@ def validate_config(config):
     if 'opencode_cancel_enabled' in config and (config['harness'] != 'opencode' or
             type(config['opencode_cancel_enabled']) is not bool):
         raise CoordinationError('INVALID_CONFIG', 'opencode_cancel_enabled requires an OpenCode boolean')
+    if 'remind_unacknowledged_turn_end' in config and type(config['remind_unacknowledged_turn_end']) is not bool:
+        raise CoordinationError('INVALID_CONFIG', 'remind_unacknowledged_turn_end requires a boolean')
     binding = config['binding']
     if config.get('idle_wakeup') is not None:
         # OpenCode wakes an idle session through its native bridge and never calls
@@ -3558,7 +3870,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
                                          "recover-codex-refused-wake", "check-codex-native-health",
-                                         "reconcile-codex-queue-wake"))
+                                         "reconcile-codex-queue-wake", "inspect-held-refusal"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--config-dir", type=Path)
@@ -3593,6 +3905,12 @@ def main():
                                                 args.delivery_id, args.queued_submission_id,
                                                 outcome=args.outcome, records=locators,
                                                 check_only=args.check_only)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.mode == "inspect-held-refusal":
+            if None in (args.config, args.native_session_id):
+                parser.error("inspect-held-refusal requires --config and --native-session-id")
+            result = inspect_held_refusal(load_config(args.config), args.native_session_id, args.attempt_id)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.mode == "recover-codex-refused-wake":

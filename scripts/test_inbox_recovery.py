@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shlex
 import sys
 import tempfile
 import unittest
@@ -568,6 +569,60 @@ class InboxRecovery(unittest.TestCase):
         coordination.watch_inbox(self.config, self.state, self.path)
         self.assertEqual([e['operation'] for e in self.log()].count('event-renew'), 1)
         self.assertIn('inbox_intent', json.loads(self.path.read_text()))
+
+    def test_unacknowledged_turn_end_reminder_surfaces_exact_ack_and_avoids_looping(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
+        context = self.context()
+        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        target.write_text(json.dumps(dict(context, kind='response')))
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        self.state['delivered_since_idle'] = True
+        self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
+                      'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
+        reminder = coordination.inbox_context(config, self.state, self.path, observation)
+        self.assertIn('Cairn inbox reminder', reminder)
+        self.assertIn(shlex.join(context['acknowledgement']), reminder)
+        self.assertEqual(self.state.get('inbox_ack_reminded'), ATTEMPT)
+        self.assertFalse(self.state.get('inbox_turn_ended'))
+        self.assertIn('inbox_attempt', self.state)
+        self.assertNotIn('session-inbox-reconcile', [e['operation'] for e in self.log()])
+        # Second Stop without acknowledging settles turn_ended without looping and records diagnostic.
+        second = coordination.inbox_context(config, self.state, self.path, observation)
+        self.assertEqual(second, '')
+        self.assertNotIn('inbox_attempt', self.state)
+        reconciles = [json.loads(e['input']) for e in self.log() if e['operation'] == 'session-inbox-reconcile']
+        self.assertEqual([r['reason'] for r in reconciles], ['turn_ended'])
+        diag = self.state.get('unacknowledged_turn_end_diagnostic') or {}
+        self.assertEqual(diag.get('schema'), 'cairn.unacknowledged-turn-end/1')
+        self.assertEqual(diag.get('attempt_id'), ATTEMPT)
+        self.assertEqual(diag.get('delivery_id'), DELIVERY)
+        self.assertEqual(diag.get('kind'), 'response')
+        self.assertEqual(diag.get('journal_state'), 'absent')
+        self.assertTrue(diag.get('reminded'))
+        self.assertEqual(diag.get('outcome'), 'processing_failed')
+
+    def test_acknowledging_after_turn_end_reminder_completes_cleanly(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        context = self.context()
+        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        target.write_text(json.dumps(dict(context, kind='notice')))
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        self.state['delivered_since_idle'] = True
+        self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
+                      'ack': [dict(ok=True, status='OK', data=dict(state='handled'))],
+                      'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
+        reminder = coordination.inbox_context(config, self.state, self.path, observation)
+        self.assertIn(shlex.join(context['acknowledgement']), reminder)
+        # Agent now runs acknowledgement and ends the turn.
+        res = self.run_context(context['acknowledgement'])
+        self.assertEqual(res.returncode, 0, res.stderr + res.stdout)
+        second = coordination.inbox_context(config, self.state, self.path, observation)
+        self.assertEqual(second, '')
+        reconciles = [json.loads(e['input']) for e in self.log() if e['operation'] == 'session-inbox-reconcile']
+        self.assertEqual([r['reason'] for r in reconciles], ['delivery_completed'])
+        self.assertNotIn('unacknowledged_turn_end_diagnostic', self.state)
 
 
 if __name__ == '__main__':

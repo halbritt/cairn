@@ -434,7 +434,10 @@ def output(config, event, observation, state, control, *, revalidate, outer_dead
     except Exception as exc:
         failure = exc
         if isinstance(exc, engine.HookError):
-            raise ValueError('required/source inbox memory operation unavailable') from exc
+            wrapped = ValueError('required/source inbox memory operation unavailable')
+            if hasattr(exc, 'cairn_recall_failure'):
+                wrapped.cairn_recall_failure = dict(exc.cairn_recall_failure)
+            raise wrapped from exc
         raise
     finally:
         # Optional telemetry must not change a successful output or mask refusal.
@@ -442,7 +445,7 @@ def output(config, event, observation, state, control, *, revalidate, outer_dead
         try:
             memory = metrics.get('memory')
             reporter = getattr(engine, 'report_recall', None)
-            trace = getattr(memory, 'inbox_trace', None)
+            trace = getattr(memory, 'inbox_trace', None) or metrics.get('trace')
             if reports is not None and trace is not None:
                 try:
                     trace.finish(result, failure is not None)
@@ -538,7 +541,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         search_options = (dict(request_id=str(uuid.uuid5(uuid.NAMESPACE_URL,
                           'cairn.inbox-required-search/1:' + key))) if retry_required else {})
         required_query = engine.project_root(event).name
-        for search_attempt in range(2 if retry_required else 1):
+        max_search_attempts = 2 if retry_required else 1
+        for search_attempt in range(max_search_attempts):
             try:
                 required = memory.search(required_query, room=engine.RECALL_SEARCH_ROOM,
                                          kinds=('decision', 'preference'),
@@ -549,8 +553,22 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 # The original deadline and permanent refusals still apply.
                 if (not retry_required or search_attempt or
                         exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED')):
+                    failure_meta = dict(recall_phase='required_search', recall_operation='search',
+                                        recall_attempts=search_attempt + 1, recall_max_attempts=max_search_attempts,
+                                        deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+                    exc.cairn_recall_failure = failure_meta
+                    if getattr(exc, 'reason', None) != 'NOT_HOSTED' and getattr(memory, 'inbox_trace', None) is not None:
+                        memory.inbox_trace.data['failure_meta'] = dict(failure_meta)
+                        if metrics is not None:
+                            metrics['trace'] = memory.inbox_trace
                     raise
-        hosted(required)
+        try:
+            hosted(required)
+        except ValueError as exc:
+            exc.cairn_recall_failure = dict(recall_phase='required_search', recall_operation='hosted',
+                                            recall_attempts=search_attempt + 1, recall_max_attempts=max_search_attempts,
+                                            deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+            raise
         if metrics is not None:
             metrics['memory'] = memory
         engine.trace_phase(memory, 'task_source') if hasattr(engine, 'trace_phase') else None
@@ -568,6 +586,12 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 elif exc.code in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED'):
                     label = 'source_temporarily_unavailable_read_exact_source'
                 else:
+                    failure_meta = dict(recall_phase='task_source', recall_operation='history',
+                                        recall_attempts=1, recall_max_attempts=1,
+                                        deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+                    exc.cairn_recall_failure = failure_meta
+                    if getattr(memory, 'inbox_trace', None) is not None:
+                        memory.inbox_trace.data['failure_meta'] = dict(failure_meta)
                     raise
             else:
                 body = source_body(history, ref)
@@ -638,6 +662,12 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 hosted(found)
             except engine.HookError as exc:
                 if exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED'):
+                    failure_meta = dict(recall_phase='optional_search', recall_operation='search',
+                                        recall_attempts=1, recall_max_attempts=1,
+                                        deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+                    exc.cairn_recall_failure = failure_meta
+                    if getattr(memory, 'inbox_trace', None) is not None:
+                        memory.inbox_trace.data['failure_meta'] = dict(failure_meta)
                     raise
                 label = 'optional_recall_unavailable'
             else:

@@ -574,5 +574,80 @@ class NativeRecordRecoveryTests(Base):
         self.assert_refused('journaled completion')
 
 
+class HeldRefusalObservationTests(Base):
+    def api(self, config, op, request, **kwargs):
+        if op == 'session-delivery-observe':
+            self.ops.append((op, request))
+            return {}
+        return super().api(config, op, request, **kwargs)
+
+    def test_actual_claude_hook_records_allowlisted_recall_phase_and_attempt_counts(self):
+        wake = coord.wake_message(dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=DELIVERY))
+        event = dict(hook_event_name='UserPromptSubmit', session_id=SESSION, prompt_id=PROMPT, cwd=str(self.root),
+                     prompt=f'<channel source="cairn-events" native_session_id="{SESSION}" agent_id="{AGENT}" '
+                            f'execution_id="{EXEC}" delivery_id="{DELIVERY}">\n{wake}\n</channel>')
+        self.state.pop('active_prompt')
+        self.save()
+        with self.patched(), patch.object(coord, 'owner_process', return_value=self.process), \
+             patch.object(coord, 'heartbeat', return_value=self.state['agent']), patch.object(coord, 'associate_wake'), \
+             patch.object(coord, 'inbox_context', return_value=''), \
+             patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
+            with self.assertRaises(coord.NativePromptRefused):
+                coord.handle(self.cc, event, _inbox_resolved=True)
+        diag = self.load()['wake_refusal_diagnostic']
+        self.assertEqual(diag['recall_phase'], 'required_search')
+        self.assertEqual(diag['recall_operation'], 'search')
+        self.assertEqual(diag['recall_attempts'], 2)
+        self.assertEqual(diag['recall_max_attempts'], 2)
+        self.assertIsInstance(diag['deadline_remaining_ms'], int)
+
+    def test_held_attempt_refusal_observation_and_inspect_cli_expose_exact_diagnosis(self):
+        self.write_grant(attempt_id=ATTEMPT)
+        cause = coord.CoordinationError('TIMEOUT', 'SECRET message')
+        cause.reason = 'NONZERO_EXIT'
+        cause.cairn_recall_failure = dict(
+            recall_phase='required_search', recall_operation='search',
+            recall_attempts=2, recall_max_attempts=2, deadline_remaining_ms=8500,
+            raw_stderr='SECRET STDERR')
+        err = ValueError('bridge failed')
+        err.__cause__ = cause
+        with self.patched():
+            coord.settle_refused_claude_wake(self.cc, self.state, self.path, TURN, err)
+        state = self.load()
+        with patch.object(coord, 'process_alive', return_value=True):
+            obs = coord.held_attempt_refusal_observation(self.cc, state, now=state['wake_refusal_diagnostic']['at'] + 5)
+        self.assertIsNotNone(obs)
+        self.assertEqual(obs['schema'], 'cairn.held-attempt-refusal/1')
+        self.assertEqual(obs['authority'], 'diagnostic_only')
+        self.assertEqual(obs['store_hold'], 'leased')
+        self.assertEqual(obs['attempt_id'], ATTEMPT)
+        self.assertEqual(obs['delivery_id'], DELIVERY)
+        self.assertEqual(obs['native_turn_id'], TURN)
+        self.assertEqual(obs['cause_code'], 'TIMEOUT')
+        self.assertEqual(obs['cause_reason'], 'NONZERO_EXIT')
+        self.assertEqual(obs['recall_phase'], 'required_search')
+        self.assertEqual(obs['recall_operation'], 'search')
+        self.assertEqual((obs['recall_attempts'], obs['recall_max_attempts']), (2, 2))
+        self.assertEqual(obs['deadline_remaining_ms'], 8500)
+        self.assertEqual(obs['grant'], 'present')
+        self.assertEqual(obs['evidence_state'], 'grant_present_manual_review')
+        self.assertEqual(obs['age_seconds'], 5)
+        self.assertNotIn('SECRET', json.dumps(obs))
+        # report_delivery_observation refreshes held_refusal_observation and clears it once settled.
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            coord.report_delivery_observation(self.cc, state, None, {})
+            self.assertEqual(state['held_refusal_observation']['attempt_id'], ATTEMPT)
+            coord.write_state(self.path, state)
+            inspected = coord.inspect_held_refusal(self.cc, SESSION, ATTEMPT)
+            self.assertEqual(inspected['attempt_id'], ATTEMPT)
+            with self.assertRaises(coord.CoordinationError):
+                coord.inspect_held_refusal(self.cc, SESSION, '99999999-9999-4999-8999-999999999999')
+            # Stale or mismatched diagnostic is rejected and never carried across attempts.
+            state['inbox_attempt']['attempt_id'] = '99999999-9999-4999-8999-999999999999'
+            self.assertIsNone(coord.held_attempt_refusal_observation(self.cc, state))
+            coord.report_delivery_observation(self.cc, state, None, {})
+            self.assertNotIn('held_refusal_observation', state)
+
+
 if __name__ == '__main__':
     unittest.main()

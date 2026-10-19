@@ -212,6 +212,40 @@ class CodexRecoveryTests(CodexBase):
                 self.save()
                 self.assert_refused_unchanged()
 
+    def test_watcher_automatically_settles_held_codex_refusal_once_rollout_proves_empty_turn(self):
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            obs = coord.held_attempt_refusal_observation(self.cc, self.load())
+            self.assertEqual(obs['evidence_state'], 'codex_rollout_ready')
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        saved = self.load()
+        self.assertEqual(saved['wake_refusal_diagnostic']['settlement'], 'turn_ended')
+        self.assertEqual(saved['wake_refusal_diagnostic']['recovery_origin'], 'codex_native_records')
+        self.assertEqual(saved['wake_refusal_diagnostic']['native_record']['records'], self.locators)
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertNotIn('event-renew', [op for op, _ in self.ops])
+        self.assertNotIn('inbox_attempt', saved)
+        self.assertNotIn('inbox_intent', saved)
+
+    def test_watcher_keeps_hold_when_codex_rollout_incomplete_or_grant_present(self):
+        # 1. Incomplete rollout (only 2 records, task_complete not yet written): keeps hold and renews lease.
+        self.records = self.records[:2]
+        self.write_records()
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            obs = coord.held_attempt_refusal_observation(self.cc, self.load())
+            self.assertEqual(obs['evidence_state'], 'awaiting_codex_turn_end')
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'held')
+        self.assertIn('event-renew', [op for op, _ in self.ops])
+        # 2. Grant present in ledger: keeps hold even with complete rollout.
+        self.setUp()
+        self.write_grant(attempt_id=ATTEMPT)
+        self.ops.clear()
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'held')
+        self.assertIn('event-renew', [op for op, _ in self.ops])
+        self.assertIn('inbox_attempt', self.load())
+
 
 class CodexNativeHealthTests(CodexBase):
     def setUp(self):
