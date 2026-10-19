@@ -203,7 +203,12 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 		}
 		docket.Items = append(docket.Items, item)
 	}
-	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "SUPERSEDED_DEPENDENCY": 2, "SUPERSEDED_EXPOSURE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "FAILURE_CLUSTER": 4, "ESCALATION_BLOCKED": 5}
+	missItems, err := recallMissDocketItems(ctx, tx, repo)
+	if err != nil {
+		return docket, err
+	}
+	docket.Items = append(docket.Items, missItems...)
+	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "SUPERSEDED_DEPENDENCY": 2, "SUPERSEDED_EXPOSURE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "FAILURE_CLUSTER": 4, "ESCALATION_BLOCKED": 5, "RECALL_MISS_CANDIDATE": 5}
 	slices.SortStableFunc(docket.Items, func(a, b DocketItem) int { return priority[a.Reason] - priority[b.Reason] })
 	if len(docket.Items) > 100 {
 		docket.Truncated = true

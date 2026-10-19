@@ -51,7 +51,9 @@ type RecallObservationRequest struct {
 	PullCalls     *int                 `json:"pull_calls,omitempty"`
 	SelectorCalls []RecallSelectorCall `json:"selector_calls"`
 
-	InjectedBytes *int64 `json:"injected_bytes,omitempty"`
+	InjectedBytes      *int64   `json:"injected_bytes,omitempty"`
+	PromptSHA256       string   `json:"prompt_sha256,omitempty"`
+	DeliveredRecordIDs []string `json:"delivered_record_ids,omitempty"`
 }
 
 const (
@@ -59,12 +61,16 @@ const (
 	maxRecallCalls        = 1000
 	maxRecallSelectors    = 8
 	maxRecallReceipts     = 8
+	maxRecallDelivered    = 64
 	maxRecallInjected     = 1048576
 	maxRecallTokens       = 1 << 40
 	maxRecallCostUSD      = 1000.0
 )
 
-var recallErrorClass = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+var (
+	recallErrorClass   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+	recallPromptDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 func recallMilliseconds(values ...*int64) bool {
 	for _, value := range values {
@@ -173,7 +179,28 @@ func (req RecallObservationRequest) validate() error {
 		}
 		seen[id] = true
 	}
+	if req.PromptSHA256 != "" && !recallPromptDigest.MatchString(req.PromptSHA256) {
+		return invalid("prompt_sha256 must be a lowercase 64-character hex digest")
+	}
+	if len(req.DeliveredRecordIDs) > maxRecallDelivered {
+		return invalid("too many delivered record IDs")
+	}
+	seenDelivered := map[string]bool{}
+	for _, id := range req.DeliveredRecordIDs {
+		if err := validID(id); err != nil {
+			return err
+		}
+		if seenDelivered[id] {
+			return invalid("duplicate delivered record ID")
+		}
+		seenDelivered[id] = true
+	}
 	return nil
+}
+
+// ObserveRecall aliases RecordRecallObservation for recall-miss and hook callers.
+func (s *Store) ObserveRecall(ctx context.Context, req RecallObservationRequest) (Observation, error) {
+	return s.RecordRecallObservation(ctx, req)
 }
 
 // RecordRecallObservation stores one hook invocation's metrics. It grants no
@@ -227,6 +254,11 @@ func (s *Store) RecordRecallObservation(ctx context.Context, req RecallObservati
  VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,$9,$10,$11,$12)`,
 				id, i+1, call.Stage, call.Outcome, call.ElapsedMS, call.Model, call.ModelSource,
 				call.InputTokens, call.OutputTokens, call.CacheCreationInputTokens, call.CacheReadInputTokens, call.CostUSD); err != nil {
+				return Observation{}, err
+			}
+		}
+		if req.HookEvent == "UserPromptSubmit" && len(req.ReceiptIDs) > 0 {
+			if err = s.recordRecallMissCandidates(ctx, tx, id, req); err != nil {
 				return Observation{}, err
 			}
 		}

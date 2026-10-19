@@ -6226,6 +6226,15 @@
       },
       "core.RecallObservationRequest": {
         "properties": {
+          "delivered_record_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "elapsed_ms": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -6252,6 +6261,9 @@
             ]
           },
           "method": {
+            "type": "string"
+          },
+          "prompt_sha256": {
             "type": "string"
           },
           "pull_calls": {
@@ -6337,6 +6349,18 @@
       "core.RecallObservationRequest.accepted": {
         "additionalProperties": false,
         "properties": {
+          "delivered_record_ids": {
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "elapsed_ms": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -6372,6 +6396,12 @@
             ]
           },
           "method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_sha256": {
             "type": [
               "string",
               "null"
@@ -19638,6 +19668,18 @@
                         "minimum": 1,
                         "type": "integer"
                       },
+                      "delivered_record_ids": {
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
                       "elapsed_ms": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
@@ -19673,6 +19715,12 @@
                         ]
                       },
                       "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "prompt_sha256": {
                         "type": [
                           "string",
                           "null"
