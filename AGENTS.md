@@ -20,6 +20,39 @@ producer-attribution correction where it supersedes earlier synthesis.
 - Report the implemented slice and tested claims separately from full design
   acceptance and measured usefulness.
 
+## Model routing
+
+Do not use OpenRouter for any model covered by the owner's subscriptions. Use
+the subscription route for those models. If subscription authentication fails
+or quota is exhausted, stop the affected operation and report the problem;
+do not fall back to OpenRouter. An available API key does not authorize that
+fallback. Apply this rule to agents and subprocesses you launch as well.
+
+## Trunk integration and worktree hygiene
+
+Development in this repository uses massively parallel autonomous agents with
+no human-in-the-loop pull-request review. Every agent is responsible for
+completing the full integration lifecycle before ending its turn or session:
+
+- **Never leave uncommitted or untracked changes.** Commit verified work or
+  discard scratch artifacts before finishing. `git status --porcelain` must be
+  empty in every checkout.
+- **Never leave unmerged local branches.** If you use a feature branch or
+  isolated worktree for task isolation, rebase onto `origin/main`, run
+  required checks (`make check` and `make test-integration` when store code is
+  touched), fast-forward or merge into `main`, and delete the temporary branch
+  (`git branch -d <branch>`).
+- **Never leave orphaned worktrees.** Remove any secondary worktree you created
+  (`git worktree remove <path>` and `git worktree prune`) before finishing. Do
+  not place long-lived worktrees in `/tmp`, where `systemd-tmpfiles-clean`
+  deletes aged source files and corrupts working trees.
+- **Always push `main` to `origin/main`.** Local commits that are not on
+  `origin/main` are invisible to downstream hosts and the owner. Fetch, rebase
+  or merge cleanly, and `git push origin main` before reporting completion.
+  If a push fails due to concurrent agent updates, `git pull --rebase origin main`,
+  re-verify, and push again.
+
+
 ## Use the provisioned memory interface
 
 The owner's host now uses this existing memory collection across projects in
