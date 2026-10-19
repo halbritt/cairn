@@ -18,14 +18,17 @@ const plugin: Plugin = async ({ worktree }) => {
   }
   return {
     "tool.execute.after": async (input, output) => {
-      if (input.tool !== "read") return
+      if (!["read", "edit", "write", "grep", "glob"].includes(input.tool)) return
       const now = Date.now()
       prune(now)
       const display = output?.metadata?.display
-      if (display?.type !== "file" || typeof display.path !== "string" || !isAbsolute(display.path)) return
+      if (display?.type && display.type !== "file") return
+      const rawPath = display?.type === "file" ? display.path
+        : input.tool !== "read" ? (input.args?.filePath ?? input.args?.path) : undefined
+      if (typeof rawPath !== "string" || !isAbsolute(rawPath)) return
       // Without a project worktree, OpenCode can supply the filesystem root.
       if (!isAbsolute(worktree) || relative(worktree, sep) === "") return
-      const name = relative(worktree, display.path).split(sep).join("/")
+      const name = relative(worktree, rawPath).split(sep).join("/")
       if (!name || name === ".." || name.startsWith("../") || isAbsolute(name) ||
           name.trim() !== name || Buffer.byteLength(name, "utf8") > 512 || /[\\:\p{Cc}\uD800-\uDFFF]/u.test(name)) return
       const id = input.sessionID

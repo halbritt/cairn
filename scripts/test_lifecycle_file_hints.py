@@ -118,3 +118,44 @@ class FileHintRecallTests(unittest.TestCase):
             hook.recall(memory, event, state)
         self.assertEqual(search.call_args.kwargs["entities"], ["src/current.py"] +
                          [f"old/file{i}.py" for i in range(1, 16)])
+
+    def test_pretool_and_posttool_extract_search_and_file_hints_from_grep_glob_bash(self):
+        (self.root / "core").mkdir()
+        (self.root / "core/currentness.go").write_text("package core\n")
+        state = {}
+        hook.observe(dict(self.event, hook_event_name="PreToolUse", tool_name="Grep",
+                          tool_input=dict(pattern="CheckEvidenceCurrentness", path="core/currentness.go")), state)
+        hook.observe(dict(self.event, hook_event_name="PreToolUse", tool_name="Glob",
+                          tool_input=dict(pattern="**/set_sections*.go")), state)
+        hook.observe(dict(self.event, hook_event_name="PostToolUse", tool_name="Bash",
+                          tool_input=dict(command="rg -n -e spliceSections core/currentness.go")), state)
+        # Chained/piped shell commands are ignored for safety.
+        hook.observe(dict(self.event, hook_event_name="PreToolUse", tool_name="Bash",
+                          tool_input=dict(command="rg secret_token | cat")), state)
+        self.assertIn("core/currentness.go", state["hints"]["files"])
+        self.assertIn("checkevidencecurrentness", state["hints"]["searches"])
+        self.assertIn("set_sections", state["hints"]["searches"])
+        self.assertIn("splicesections", state["hints"]["searches"])
+        self.assertNotIn("secret_token", state["hints"]["searches"])
+
+        intent = hook.retrieval_intent(dict(self.event, prompt="Continue implementation"), state)
+        self.assertIn("core/currentness.go", intent["files"])
+        self.assertIn("checkevidencecurrentness", intent["words"])
+        self.assertIn("splicesections", intent["query"])
+
+    def test_fast_noop_gate_skips_session_lock_on_irrelevant_tool_events(self):
+        state_dir = self.root / "state"
+        config = dict(cairn="unused", socket="unused", token_file="unused",
+                      repo="fixture", state_dir=str(state_dir))
+        session_id = "11111111-1111-1111-1111-111111111111"
+        for tool_name, tool_input in (
+            ("WebSearch", dict(query="something")),
+            ("Bash", dict(command="git status --short")),
+            ("Bash", dict(command="rg pattern && echo done")),
+        ):
+            event = dict(self.event, hook_event_name="PreToolUse", session_id=session_id,
+                         tool_name=tool_name, tool_input=tool_input)
+            self.assertEqual(hook.handle(config, event), {})
+        self.assertFalse((state_dir / f"{session_id}.json").exists())
+        self.assertFalse((state_dir / f"{session_id}.lock").exists())
+

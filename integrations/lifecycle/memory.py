@@ -12,6 +12,7 @@ import math
 import os
 import re
 import selectors
+import shlex
 from pathlib import Path
 import stat
 import subprocess
@@ -1034,9 +1035,11 @@ def retrieval_intent(event, state, *, semantic=False):
         paths.extend(recent[-remaining:])
     phrases = quoted_phrases(prompt)
     error_terms = hints.get("errors", []) if now - hints.get("error_at", 0) < 900 else []
+    search_terms = [term for term, seen_at in hints.get("searches", {}).items()
+                    if now - seen_at < 900]
     # Scan all supplied prompt text so a file/error after a long preamble survives.
     project_words = terms(project)
-    keywords = [word for word in dict.fromkeys(term_words(prompt))
+    keywords = [word for word in dict.fromkeys([*term_words(prompt), *search_terms])
                 if word not in project_words and len(word.encode()) <= 128]
     # In semantic recall, inferred file identity remains an entity/text hint.
     # Only explicit phrases/errors (and workstream anchors below) request the
@@ -2627,15 +2630,133 @@ def recall(memory, event, state=None):
     return {"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
 
 
+SEARCH_BASH_VALUE_FLAGS = frozenset({
+    "-f", "--file", "-g", "--glob", "-t", "--type", "--type-not", "-T",
+    "-A", "-B", "-C", "--after-context", "--before-context", "--context",
+    "-m", "--max-count", "--max-depth", "--maxdepth", "-maxdepth", "-mindepth",
+    "--iglob", "-E", "--encoding", "--path-separator", "-j", "--threads",
+})
+SEARCH_BASH_PATTERN_FLAGS = frozenset({"-e", "--regexp", "-name", "-iname", "-path", "-ipath"})
+
+
+def _pattern_search_terms(text):
+    if not isinstance(text, str) or not text or len(text) > 512:
+        return []
+    cleaned = re.sub(r"\*\.[A-Za-z0-9_]+", " ", text)
+    cleaned = re.sub(r"\\[bBdsSwWdD]|[^A-Za-z0-9_.-]+", " ", cleaned)
+    found = []
+    for word in term_words(cleaned):
+        if not word.isdigit() and len(word.encode()) <= 64 and word not in found:
+            found.append(word)
+            if len(found) >= 8:
+                break
+    return found
+
+
+def _bash_search_hints(command, cwd, root):
+    if not isinstance(command, str) or not command or len(command) > 1024:
+        return [], []
+    stripped = command.strip()
+    if any(ch in stripped for ch in (";", "|", "&", "`", "$", ">", "<", "\n", "\r")):
+        return [], []
+    if not re.match(r"^(?:git\s+grep|rg|grep|find)\b", stripped):
+        return [], []
+    try:
+        tokens = shlex.split(stripped)
+    except ValueError:
+        return [], []
+    if not tokens:
+        return [], []
+    idx = 2 if tokens[:2] == ["git", "grep"] else 1
+    files, terms_out = [], []
+    expect_value = None
+    end_of_flags = False
+    while idx < len(tokens):
+        tok = tokens[idx]
+        idx += 1
+        if expect_value is not None:
+            if expect_value == "pattern":
+                for term in _pattern_search_terms(tok):
+                    if term not in terms_out:
+                        terms_out.append(term)
+            expect_value = None
+            continue
+        if not end_of_flags and tok == "--":
+            end_of_flags = True
+            continue
+        if not end_of_flags and tok.startswith("-"):
+            if tok in SEARCH_BASH_PATTERN_FLAGS:
+                expect_value = "pattern"
+            elif tok in SEARCH_BASH_VALUE_FLAGS:
+                expect_value = "skip"
+            elif tok.startswith(("--regexp=", "-e")):
+                val = tok.split("=", 1)[1] if "=" in tok else tok[2:]
+                for term in _pattern_search_terms(val):
+                    if term not in terms_out:
+                        terms_out.append(term)
+            continue
+        name = file_hint(tok, cwd, root)
+        if name and (root / name).is_file():
+            if name not in files:
+                files.append(name)
+            continue
+        for term in _pattern_search_terms(tok):
+            if term not in terms_out:
+                terms_out.append(term)
+    return files[:8], terms_out[:8]
+
+
+def tool_search_hints(event):
+    if event.get("hook_event_name") not in ("PreToolUse", "PostToolUse"):
+        return [], []
+    tool = event.get("tool_name")
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return [], []
+    cwd = event.get("project_path") or event["cwd"]
+    root = project_root(event)
+    if tool in ("Read", "Edit", "Write"):
+        name = file_hint(tool_input.get("file_path", ""), event["cwd"], root)
+        return ([name] if name else []), []
+    if tool in ("Grep", "Glob"):
+        files, searches = [], []
+        raw_path = tool_input.get("path", "")
+        if isinstance(raw_path, str) and raw_path:
+            name = file_hint(raw_path, cwd, root)
+            if name and (root / name).is_file():
+                files.append(name)
+        pattern = tool_input.get("pattern", "")
+        if isinstance(pattern, str) and pattern:
+            if tool == "Glob" and not any(c in pattern for c in "*?["):
+                name = file_hint(pattern, cwd, root)
+                if name and (root / name).is_file() and name not in files:
+                    files.append(name)
+            for term in _pattern_search_terms(pattern):
+                if term not in searches:
+                    searches.append(term)
+        return files[:8], searches[:8]
+    if tool == "Bash":
+        return _bash_search_hints(tool_input.get("command", ""), cwd, root)
+    return [], []
+
+
 def observe(event, state):
     hints = state.setdefault("hints", {})
-    if event["hook_event_name"] == "PostToolUse" and event.get("tool_name") in ("Read", "Edit", "Write"):
-        name = file_hint(event.get("tool_input", {}).get("file_path", ""), event["cwd"], project_root(event))
-        if name:
+    if event["hook_event_name"] in ("PreToolUse", "PostToolUse"):
+        files_found, searches_found = tool_search_hints(event)
+        now = time.time()
+        if files_found:
             files = hints.setdefault("files", {})
-            files.pop(name, None)
-            files[name] = time.time()
+            for name in files_found:
+                files.pop(name, None)
+                files[name] = now
             hints["files"] = dict(list(files.items())[-16:])
+        if searches_found:
+            searches = hints.setdefault("searches", {})
+            for term in searches_found:
+                searches.pop(term, None)
+                searches[term] = now
+            hints["searches"] = dict(list(searches.items())[-16:])
     elif event["hook_event_name"] == "PostToolUseFailure":
         # Retain diagnostic identifiers, not command output or arbitrary values.
         hints["errors"] = list(dict.fromkeys(re.findall(r"\b(?:E[A-Z_]{3,40}|[A-Za-z]{3,40}(?:Error|Exception))\b", event.get("error", ""))))[:8]
@@ -3113,7 +3234,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     if event_name == "Stop" and (config.get("harness") != "codex" or event.get("stop_hook_active")):
         _trace_note(outcome="early_return:stop_not_boundary")
         return {}  # Only Codex captures at Stop; a Stop continuation is not a new boundary.
-    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse",
+    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PreToolUse", "PostToolUse",
                           "PostToolUseFailure", "Stop"):
         _trace_note(outcome="early_return:unsupported_event")
         return {}
@@ -3128,6 +3249,12 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]), project_root(event))):
         _trace_note(outcome="early_return:no_memory_marker")
         return {}
+    if (event_name in ("PreToolUse", "PostToolUse") and config.get("harness") != "hermes"
+            and not event.get("project_path") and not topic):
+        files_found, searches_found = tool_search_hints(event)
+        if not files_found and not searches_found:
+            _trace_note_default(outcome="engine_completed")
+            return {}
     if config.get("inbox_recall_binding") and event_name in ("UserPromptSubmit", "SessionStart"):
         _trace_note(stage="bridge")
         bridge = load_inbox_recall(config)
@@ -3195,7 +3322,7 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
             state["last_recall"]["duration_ms"] = round((time.monotonic() - recall_started) * 1000, 3)
             reports.append(dict(memory=memory, event=event, started=hook_started, elapsed=time.monotonic() - hook_started,
                                 status="completed", injected=injected_bytes(result)))
-        elif event_name in ("PostToolUse", "PostToolUseFailure"):
+        elif event_name in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
         try:
             save_state(path, state)

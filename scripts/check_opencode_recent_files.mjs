@@ -51,4 +51,6 @@ try {
 for (let i = 0; i < 129; i++) await read("/work/one.go", `session-${i}`)
 assert.deepEqual(await search({}, "session-0"), {})
 assert.deepEqual(await search({}, "session-128"), { entities: refs("one.go") })
+await hooks["tool.execute.after"]({ tool: "grep", sessionID: "grep-sess", args: { path: "/work/core/set_sections.go", pattern: "spliceSections" } }, {})
+assert.deepEqual(await search({}, "grep-sess"), { entities: refs("core/set_sections.go") })
 console.log("Recent-file hints preserve explicit intent, session isolation, capture, snapshots, path bounds and expiration")
