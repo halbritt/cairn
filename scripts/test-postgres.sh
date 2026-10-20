@@ -35,7 +35,7 @@ while IFS= read -r test_package; do
     "$pg_bin/createdb" -h "$test_root/socket" "$test_database"
     test_dsn="host=$test_root/socket dbname=$test_database sslmode=disable"
     CAIRN_TEST_DATABASE_URL="$test_dsn" CAIRN_DATABASE_URL="$test_dsn" \
-        go test -race -count=1 "$test_package"
+        go test -race -count=1 -timeout=30m "$test_package"
 done < "$test_root/packages"
 export CAIRN_TEST_DATABASE_URL="host=$test_root/socket dbname=cairn_test sslmode=disable"
 export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"

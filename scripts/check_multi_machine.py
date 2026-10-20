@@ -556,7 +556,7 @@ def check(binary, directory):
         native_config = dict(cairn=binary, socket=str(b.socket), token_file=str(b.token_file),
                              state_dir=str(state_dir), binding="two-host-journal", harness="codex",
                              repo=repo, native_delivery=True)
-        native_state = dict(agent=b_session, process=dict(pid=os.getpid()),
+        native_state = dict(agent=b_session, process=coordination.process_reference(os.getpid()),
                             inbox_intent=dict(request_id=journal_claim["request_id"],
                                               session=journal_claim["session"],
                                               native_turn_id=journal_claim["native_turn_id"]),

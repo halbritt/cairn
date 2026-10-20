@@ -60,11 +60,20 @@ const skewBody = "Project ai-newsroom.\nbackground background background backgro
 func TestSkewProbe(t *testing.T) {
 	ctx := context.Background()
 	dest := Destination{"local", true}
-	s := testStore(t, skewChannel(os.Getenv("SKEW_GATE") == "on"))
+	s, err := Open(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"), skewChannel(os.Getenv("SKEW_GATE") == "on"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
 	var seed struct{ Repo string }
 	span := &ByteSpanRequest{Offset: strings.Index(skewBody, "editorial"), Length: 100}
 	switch os.Getenv("SKEW_PHASE") {
 	case "seed":
+		// The current build owns schema installation. Older builds exercise their
+		// ordinary receipt operations against that shared, upgraded store.
+		if err = s.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
 		seed.Repo = uuid.NewString()
 		d := projectNote(seed.Repo)
 		d.Body = skewBody
