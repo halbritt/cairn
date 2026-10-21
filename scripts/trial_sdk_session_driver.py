@@ -264,7 +264,8 @@ class SDKSessionDriver:
             self._custody.control.seal_input()
             self._input_close_attempted = True
             self._native.close_stdin()
-            return StreamEvent('terminal', document=terminal, observation=terminal.metadata())
+            return StreamEvent('terminal', document=terminal, observation=terminal.metadata(),
+                               line_receipt=event.line_receipt)
         except BaseException:
             terminal = None
             self._poison()

@@ -24,11 +24,26 @@ class StreamDriverError(ValueError):
 
 
 @dataclass(frozen=True)
+class StreamLineReceipt:
+    """Observed stdout range including LF; hash covers the original bytes before LF.
+
+    Completion is sampled after the read and private byte retention, before
+    parsing. This is trusted local observation, not kernel-arrival attestation.
+    """
+    start_offset: int
+    end_offset: int
+    raw_sha256: str
+    first_byte_ns: int
+    completed_ns: int
+
+
+@dataclass(frozen=True)
 class StreamEvent:
     kind: str
     callback: object = field(default=None, repr=False)
     document: object = field(default=None, repr=False)
     observation: object = None
+    line_receipt: object = None
 
 
 class SDKStreamDriver:
@@ -52,6 +67,8 @@ class SDKStreamDriver:
         self._completed = 0
         self._last_write_ns = None
         self._memory_deadline = None
+        self._stdout_completed_ns = None
+        self._line_offset = 0
 
     def _now(self):
         now = time.monotonic_ns()
@@ -109,13 +126,22 @@ class SDKStreamDriver:
         except StopIteration:
             self._lines = None
             return None
+        completed = self._stdout_completed_ns
+        if type(completed) is not int or completed < line.first_byte_ns:
+            raise StreamDriverError('sdk_stream_line_clock_unknown')
+        end = self._line_offset + line.raw_bytes + 1
+        if end > self._bytes['stdout']:
+            raise StreamDriverError('sdk_stream_line_range_unknown')
+        receipt = StreamLineReceipt(self._line_offset, end, line.raw_sha256,
+                                    line.first_byte_ns, completed)
+        self._line_offset = end
         document = validate_line(line)
         first = document.first_byte_ns
         line = None
         if document.kind is not None and document.kind.startswith('control_'):
             callback = self._control.receive_owned(document)
             if callback is None:
-                return StreamEvent('control')
+                return StreamEvent('control', line_receipt=receipt)
             if type(callback) is MemoryRequest:
                 if self._memory_deadline is None:
                     raise StreamDriverError('sdk_memory_deadline_unbound')
@@ -126,7 +152,8 @@ class SDKStreamDriver:
                     raise StreamDriverError('sdk_stream_callback_after_wait')
                 self._now()
                 return StreamEvent('memory', callback=callback,
-                    observation={k: v for k, v in self._active.items() if k != 'request_id'})
+                    observation={k: v for k, v in self._active.items() if k != 'request_id'},
+                    line_receipt=receipt)
             self._active = dict(request_id=callback.request_id,
                 request_sha256=hashlib.sha256(callback.request_id.encode()).hexdigest(),
                 row=len(self._control.ledger()['rows']) - 1,
@@ -135,8 +162,9 @@ class SDKStreamDriver:
                 raise StreamDriverError('sdk_stream_callback_after_wait')
             self._now()  # Slow assembly/parsing cannot restart this deadline.
             return StreamEvent('callback', callback=callback,
-                observation={k: v for k, v in self._active.items() if k not in ('request_id', 'row')})
-        return StreamEvent('document', document=document)
+                observation={k: v for k, v in self._active.items() if k not in ('request_id', 'row')},
+                line_receipt=receipt)
+        return StreamEvent('document', document=document, line_receipt=receipt)
 
     @resource_boundary
     def reply(self, request_id, context):
@@ -230,7 +258,7 @@ class SDKStreamDriver:
             self._bytes[name] += count
             with memoryview(slab)[:count] as body:
                 self._hash[name].update(body)
-        self._now()
+        completed = self._now()
         if count < 0:
             return None
         if count == 0:
@@ -243,6 +271,7 @@ class SDKStreamDriver:
                 raise StreamDriverError('sdk_stream_bytes_bound')
             if name == 'stdout':
                 # Conservative observed read-interval start, not kernel arrival.
+                self._stdout_completed_ns = completed
                 self._lines = self._assembler.feed(body, started)
         return self._line() if name == 'stdout' else StreamEvent('progress')
 

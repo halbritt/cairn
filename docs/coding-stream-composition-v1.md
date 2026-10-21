@@ -91,3 +91,20 @@ review for the SDK allocation. The live integration must supply complete-line
 receipt time separately from the first-byte callback deadline, explicitly
 validate and classify SDK control frames, and bind final measurements to the
 retained stream. Calling `finish` alone does not establish that provenance.
+
+Complete-line observation is carried separately from callback deadlines by
+`StreamEvent.line_receipt`. Its stdout offsets include the terminating LF; its
+SHA-256 covers the original bytes excluding LF, matching `OwnedJSON`. The pump
+samples `completed_ns` after the read and private byte retention, before parsing;
+all lines completed by that read retain the same sample across suspended batch
+processing and stderr reads. The first-byte timestamp and callback deadline are
+unchanged. Session terminal conversion preserves the receipt. Non-line progress
+has no receipt. A failed completion clock produces no receipt while previously
+observed raw bytes remain accounted.
+
+These fixed-size per-event receipts add no raw copy or timing-row collection.
+Consumers must not accumulate them without bounded custody. They are local
+observations, not kernel-arrival attestations or final qualification. Connecting
+them to the incremental evaluator still requires control-frame classification,
+bounded correlation state, and final binding to the retained stream; those remain
+requirements before a native evaluation can be admitted.
