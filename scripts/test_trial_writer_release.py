@@ -348,7 +348,7 @@ class MigrationEvidenceTests(Base):
         self.assertNotEqual(evidence['namespaces']['pid'], result['leaf']['owner_namespaces']['pid'])
         self.assertNotEqual(evidence['namespaces']['mnt'], result['leaf']['owner_namespaces']['mnt'])
         expected = [] if evidence['max_user_namespaces'] == 0 else ['user_namespace_creation_available']
-        self.assertEqual(result['migration_control'], dict(state='controlled' if not expected else 'unknown',
+        self.assertEqual(result['migration_control'], dict(state=writer.CONDITIONS_OBSERVED if not expected else 'unknown',
                                                            reasons=expected, argument=writer.ARGUMENT))
 
     def test_controlled_requires_every_observation(self):
@@ -360,7 +360,11 @@ class MigrationEvidenceTests(Base):
         check = lambda evidence, **kw: writer.migration_control(evidence, bootstrap=kw.get('bootstrap', bootstrap),
                                                                 relative='/leaf', cgroup_dev=kw.get('dev', '0:30'),
                                                                 owner_namespaces=kw.get('owner', owner))
-        self.assertEqual(check(good), dict(state='controlled', reasons=[], argument=writer.ARGUMENT))
+        self.assertEqual(check(good), dict(state=writer.CONDITIONS_OBSERVED, reasons=[], argument=writer.ARGUMENT))
+        # Observed conditions never satisfy a consumer that requires proved migration control.
+        with self.assertRaisesRegex(writer.WriterUnavailable, '^migration_control_not_proved:migration_conditions_observed$'):
+            writer.require_proved_migration_control(dict(migration_control=check(good)))
+        self.assertNotEqual(writer.CONDITIONS_OBSERVED, writer.PROVED)
         for change, reason in ((dict(caps=dict(good['caps'], CapBnd='000001ffffffffff')), 'capabilities_present'),
                                (dict(no_new_privs='0'), 'no_new_privs_absent'),
                                (dict(mount_types=['cgroup2', 'proc']), 'cgroupfs_mount_visible'),

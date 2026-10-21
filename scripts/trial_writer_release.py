@@ -23,12 +23,12 @@ Migration control is decided from launch evidence. A probe
 (``trial_writer_probe``) runs inside the sandbox as the exact process that
 becomes the actor, reports its capabilities, mount types, descriptors, pid
 namespace, cgroup line and user-namespace limit, and execs the unchanged
-command. ``migration_control`` is ``controlled`` only when that evidence
-shows the actor has no cgroupfs view and no means to gain one. Otherwise it is
+command. ``migration_control`` is ``migration_conditions_observed`` (never
+``migration_control_proved``) only when that evidence shows the actor has no cgroupfs view and no means to gain one. Otherwise it is
 ``unknown`` with reasons. The common gap is user namespace creation being
 available, because the legacy route adds no user namespace.
 
-Even ``controlled`` plus ``released`` is not writer quiescence or
+Even ``migration_conditions_observed`` plus ``released`` is not writer quiescence or
 final-artifact custody. ``complete_descendant_custody`` stays ``False``.
 Unavailable containment refuses before launch; nothing is assumed.
 """
@@ -48,6 +48,8 @@ CGROUP_TYPES = frozenset(('cgroup', 'cgroup2', 'sysfs'))
 # These observations are a proposed sufficiency argument for root review, not a proof. They never set
 # writer quiescence or final-artifact custody.
 ARGUMENT = 'proposed_sufficiency_not_proof'
+CONDITIONS_OBSERVED = 'migration_conditions_observed'  # observed launch conditions held
+PROVED = 'migration_control_proved'  # reserved for an accepted proof; never emitted here
 CONTROL_FIELDS = frozenset(owned.CONTROLS)
 
 
@@ -200,7 +202,9 @@ class WriterLeaf:
 
 
 def migration_control(evidence, *, bootstrap, relative, cgroup_dev, owner_namespaces):
-    """'controlled' only from observed launch evidence that the actor has no cgroupfs view or means to gain one.
+    """CONDITIONS_OBSERVED only when the launch evidence shows no cgroupfs view or means to gain one.
+
+    That is distinct from PROVED migration control, which this function never returns.
 
     Required observations:
     - every capability set is empty and NoNewPrivs is 1;
@@ -236,7 +240,18 @@ def migration_control(evidence, *, bootstrap, relative, cgroup_dev, owner_namesp
         reasons.append('probe_membership_mismatch')
     if evidence.get('max_user_namespaces') != 0:
         reasons.append('user_namespace_creation_available')
-    return dict(state='unknown' if reasons else 'controlled', reasons=reasons, argument=ARGUMENT)
+    return dict(state='unknown' if reasons else CONDITIONS_OBSERVED, reasons=reasons, argument=ARGUMENT)
+
+
+def require_proved_migration_control(result):
+    """Gate for a consumer that needs PROVED migration control; observed conditions never satisfy it.
+
+    This module never emits PROVED: launch observations are a proposed sufficiency argument only.
+    """
+    state = (result.get('migration_control') or {}).get('state') if isinstance(result, dict) else None
+    if state != PROVED:
+        raise WriterUnavailable('migration_control_not_proved:' + str(state))
+    return True
 
 
 def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):

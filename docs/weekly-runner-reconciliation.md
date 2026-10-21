@@ -856,7 +856,7 @@ original attempt runs as follows (`trial_writer_release`):
    - the inodes of its pid and mount namespaces, and its cgroup line;
    - `user.max_user_namespaces`.
 
-   `migration_control` is `controlled` only when every capability set is
+   `migration_control` is `migration_conditions_observed` only when every capability set is
    empty, NoNewPrivs is set, no cgroup/cgroup2/sysfs mount and no cgroupfs
    descriptor is present, the probe's pid and mount namespace inodes differ
    from the owner's own (recorded by the owner at leaf creation; a different
@@ -864,8 +864,11 @@ original attempt runs as follows (`trial_writer_release`):
    leaf, and user namespace creation is disabled. Otherwise it is
    `unknown`, with reasons. Every result carries
    `argument: proposed_sufficiency_not_proof`. These instant observations are
-   a proposed sufficiency argument for root review, not a proof. Even
-   `controlled` never sets writer quiescence or final-artifact custody. The
+   a proposed sufficiency argument for root review, not a proof. The distinct
+   value `migration_control_proved` is reserved for an accepted proof and is
+   never emitted here. `require_proved_migration_control` refuses every other
+   state. Even `migration_conditions_observed` never sets writer quiescence or
+   final-artifact custody. The
    probe's report is trusted only as far as its provenance goes: its evidence
    pipe's write end was handed only to the launcher chain the owner started.
    The runtime policy is not changed; no sysctl is tuned. On this host the
@@ -873,7 +876,7 @@ original attempt runs as follows (`trial_writer_release`):
    capabilities, NoNewPrivs, no cgroupfs mount or descriptor, and a separate
    pid namespace, but `max_user_namespaces = 514295`.
 
-   **Missing for `controlled`:** a guarantee that the actor cannot create a
+   **Missing for `migration_conditions_observed`:** a guarantee that the actor cannot create a
    user namespace. The legacy route adds none, and `bwrap --disable-userns`
    requires `--unshare-user`, which this lane must not add. Root could
    instead accept the kernel rule that a new cgroup namespace is rooted at the
@@ -886,6 +889,37 @@ scripted population; real local processes run through the launcher,
 capture and `run_agent`. The real delegated-leaf test (double-fork, setsid
 and after-pipe-close writers) runs only inside an already delegated fixture
 service. It was skipped in the authoring session and is not claimed.
+
+### Remaining writer-quiescence gap
+
+`writer_quiescence` is `not_established`. Writer quiescence means no
+actor-origin process can still write the workspace at the pre-grade capture
+point.
+
+Proposed owner-observed evidence, under the unchanged policy:
+
+1. **A held handle on the sandbox's pid-namespace init.** The legacy
+   sandbox already uses `--unshare-pid`. The owner would take a pidfd on the
+   init's host pid at launch, and bind it to the namespace by checking that
+   `/proc/<init>/ns/pid` equals the probe's reported pid-namespace inode.
+2. **The init's exit, observed through that pidfd before pre-grade.** Every
+   actor descendant, including nested pid namespaces and any cgroup
+   migrant, is a member of that namespace and cannot leave it. When the init
+   exits, the kernel kills and reaps every member before the init's exit is
+   reported. The observed exit therefore shows that no actor-origin process
+   remains.
+3. **The owner's released leaf and the existing private run directory.**
+   These stay as corroboration.
+
+This needs no new capability, namespace, sysctl or account change. What is
+missing is an owner observation point while the actor runs. The current
+capture loop is synchronous with no callback, so the owner cannot take the
+init's pidfd between bootstrap and exit. A bounded capture hook (or owner
+thread) that records the namespace-init pidfd at launch is the concrete
+input to add.
+
+Same-uid host processes outside the sandbox (other sessions) are outside
+actor custody. The quiescence covers actor-origin writers only.
 
 ## Verifying the selected harness before launch (analysis)
 
