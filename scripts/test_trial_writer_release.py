@@ -233,7 +233,7 @@ class ReleaseMappingTests(Base):
         self.assertEqual((result['migration_control'], result['complete_descendant_custody']),
                          (dict(state='unknown', reasons=['launch_evidence_absent'], argument=writer.ARGUMENT), False))
         self.assertEqual((result['writer_quiescence'], result['final_artifact_custody']),
-                         ('not_established', 'not_established'))
+                         (dict(state='not_established', reason='init_unbound'), 'not_established'))
         # The owner's held identity, the selected parent and the membership the joined process observed.
         info = os.stat(self.root)
         self.assertEqual(result['leaf'], dict(parent=str(self.root), relative=CURRENT,
@@ -398,6 +398,103 @@ class MigrationEvidenceTests(Base):
         observed = leaf.finish(time.monotonic() + 0.3)
         return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', leaf=leaf, observed=observed,
                              custody=json.loads((run / 'custody.json').read_text())), out, code
+
+
+@unittest.skipUnless(__import__('shutil').which('bwrap'), 'needs the local filesystem sandbox')
+class NamespaceInitTests(Base):
+    """The bwrap pid-namespace init bound by pidfd during capture (ordinary sandbox, inert commands)."""
+
+    leaf_with_device = MigrationEvidenceTests.leaf_with_device
+
+    def run_bound(self, inner, *, observe=True, writable=None):
+        import trial_task_eval as task
+        leaf = self.leaf_with_device()
+        provider, (source, target, _) = leaf.probe(inner)
+        command = task.runtime_sandbox() + ['--ro-bind', str(source), target]
+        if writable is not None:
+            command += ['--bind', str(writable), str(writable)]
+        command += provider
+        run = Path(tempfile.mkdtemp(dir=self.root))
+        out, err, code, _ = capture(leaf.wrap(command), 20, run / 'timing.json', custody_path=run / 'custody.json',
+                                    pass_fds=leaf.pass_fds, observer=leaf.observe_init if observe else None)
+        observed = leaf.finish(time.monotonic() + 5)
+        return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', leaf=leaf, observed=observed,
+                             custody=json.loads((run / 'custody.json').read_text()))
+
+    def test_monitor_init_and_actor_are_distinct_and_the_init_exit_is_observed(self):
+        result = self.run_bound(['/usr/bin/python3', '-c', 'import time; time.sleep(0.6)'])
+        init = result['init']
+        self.assertEqual(init['state'], 'bound')
+        self.assertEqual(init['monitor_pid'], result['bootstrap']['pid'])  # the launcher execs into the monitor
+        self.assertNotEqual(init['host_pid'], init['monitor_pid'])
+        self.assertEqual(init['ns_pids'][-1], '1')  # the namespace init
+        self.assertEqual(result['launch_evidence']['pid'], 2)  # the actor, as seen in its namespace
+        self.assertEqual(result['launch_evidence']['namespaces']['pid'], init['pid_namespace']['inode'])
+        self.assertEqual(result['init_exit'], 'exited')
+        self.assertEqual(result['writer_quiescence'],
+                         dict(state='namespace_init_exited', basis='installed_kernel_source_zap_before_pidfd_notify'))
+        self.assertEqual(result['final_artifact_custody'], 'not_established')
+
+    ESCAPES = {
+        'double_fork': "if os.fork() == 0:\n    if os.fork() == 0:\n        write()\n    os._exit(0)\n",
+        'setsid': "if os.fork() == 0:\n    os.setsid()\n    write()\n",
+        'after_pipe_close': "if os.fork() == 0:\n    write()\n",
+    }
+    WRITE = ("import os, sys, time\n"
+             "def write():\n"
+             "    for fd in (0, 1, 2):\n"
+             "        os.close(fd)  # the streams reach EOF while this writer continues\n"
+             "    for _ in range(300):\n"
+             "        open(sys.argv[1], 'a').write('x'); time.sleep(.01)\n"
+             "    os._exit(0)\n")
+
+    def test_escaped_writers_have_stopped_once_the_init_exit_is_observed(self):
+        writable = self.root / 'writable'
+        writable.mkdir()
+        for name, spawn in self.ESCAPES.items():
+            with self.subTest(writer=name):
+                output = writable / name
+                program = self.WRITE + spawn + "time.sleep(0.4)\n"  # the actor exits while its writer runs
+                result = self.run_bound(['/usr/bin/python3', '-c', program, str(output)], writable=writable)
+                self.assertEqual(result['writer_quiescence']['state'], 'namespace_init_exited', result)
+                before = output.stat().st_size
+                self.assertGreater(before, 0)  # the escaped writer really was writing
+                self.assertLess(before, 300)  # and was stopped before it finished
+                time.sleep(0.4)
+                self.assertEqual(output.stat().st_size, before)  # no actor-origin writer remains
+
+    def test_late_or_missing_binding_never_establishes_quiescence(self):
+        result = self.run_bound(['/usr/bin/true'], observe=False)
+        self.assertEqual(result['writer_quiescence'], dict(state='not_established', reason='init_unbound'))
+
+    def test_ambiguous_or_wrong_process_is_never_bound(self):
+        two = subprocess.Popen(['/usr/bin/python3', '-c', 'import os, time\nfor _ in range(2):\n    if os.fork() == 0:\n        time.sleep(5); os._exit(0)\ntime.sleep(5)'])
+        one = subprocess.Popen(['/usr/bin/python3', '-c', 'import os, time\nif os.fork() == 0:\n    time.sleep(5); os._exit(0)\ntime.sleep(5)'])
+        try:
+            time.sleep(0.5)
+            for monitor, expected in ((two, dict(state='ambiguous', children=2)),
+                                      (one, dict(state='ambiguous', reason='not_the_namespace_init'))):
+                leaf = self.leaf_with_device()
+                leaf.observe_init(monitor)
+                self.assertEqual(leaf.init, expected)
+                self.assertIsNone(leaf.init_pidfd)
+                leaf.close()
+        finally:
+            for process in (two, one):
+                process.kill()
+                process.wait()
+
+    def test_quiescence_requires_the_bound_namespace_and_an_observed_exit(self):
+        bound = dict(state='bound', pid_namespace=dict(inode=11, dev=3))
+        evidence = dict(namespaces=dict(pid=11, mnt=12))
+        q = writer.writer_quiescence
+        self.assertEqual(q(dict(init=bound, init_exit='exited'), evidence)['state'], 'namespace_init_exited')
+        self.assertEqual(q(dict(init=bound, init_exit='exited'), dict(namespaces=dict(pid=99, mnt=12))),
+                         dict(state='not_established', reason='actor_namespace_unbound'))
+        self.assertEqual(q(dict(init=bound, init_exit='not_exited'), evidence),
+                         dict(state='not_established', reason='init_not_exited'))
+        self.assertEqual(q(dict(init=dict(state='ambiguous'), init_exit='exited'), evidence),
+                         dict(state='not_established', reason='init_ambiguous'))
 
 class EscapingWriterSyntheticTests(Base):
     """Without real delegation the owner cannot observe population: escaping writers are never 'released'."""

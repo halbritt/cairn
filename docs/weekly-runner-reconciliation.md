@@ -890,36 +890,88 @@ capture and `run_agent`. The real delegated-leaf test (double-fork, setsid
 and after-pipe-close writers) runs only inside an already delegated fixture
 service. It was skipped in the authoring session and is not claimed.
 
-### Remaining writer-quiescence gap
+### Writer quiescence from the observed pid-namespace init exit
 
-`writer_quiescence` is `not_established`. Writer quiescence means no
-actor-origin process can still write the workspace at the pre-grade capture
-point.
+`writer_quiescence` is `namespace_init_exited` only when all three hold:
+- the owner bound the sandbox's pid-namespace init;
+- the actor's reported pid namespace is that init's;
+- the owner observed the init's exit through its held pidfd.
 
-Proposed owner-observed evidence, under the unchanged policy:
+Otherwise it is `not_established`, with a reason: `init_unbound`,
+`init_ambiguous`, `actor_namespace_unbound`, `init_not_exited` or
+`init_exit_unknown`. `final_artifact_custody` stays `not_established`
+because no pre-grade artifact capture exists yet.
 
-1. **A held handle on the sandbox's pid-namespace init.** The legacy
-   sandbox already uses `--unshare-pid`. The owner would take a pidfd on the
-   init's host pid at launch, and bind it to the namespace by checking that
-   `/proc/<init>/ns/pid` equals the probe's reported pid-namespace inode.
-2. **The init's exit, observed through that pidfd before pre-grade.** Every
-   actor descendant, including nested pid namespaces and any cgroup
-   migrant, is a member of that namespace and cannot leave it. When the init
-   exits, the kernel kills and reaps every member before the init's exit is
-   reported. The observed exit therefore shows that no actor-origin process
-   remains.
-3. **The owner's released leaf and the existing private run directory.**
-   These stay as corroboration.
+**Three processes** (installed bubblewrap 0.9.0-1ubuntu0.3, `bubblewrap.c`):
+- **Monitor** (`main`, then `monitor_child`). The outer bwrap is the
+  process our launcher execs into, so the capture leader's pid is the
+  joined membership pid. `monitor_child` returns as soon as the eventfd
+  reports pid 2's exit, so the monitor's exit is not namespace emptiness.
+- **Init.** The monitor's child (`raw_clone` with `CLONE_NEWPID`) forks
+  again and stays as pid 1 in `do_init`. That function reaps until `ECHILD`;
+  `handle_die_with_parent` gives it `PR_SET_PDEATHSIG` SIGKILL from the
+  monitor under `--die-with-parent`.
+- **Actor.** The forked process execs the command as pid 2, which is the
+  probe and then the actor.
 
-This needs no new capability, namespace, sysctl or account change. What is
-missing is an owner observation point while the actor runs. The current
-capture loop is synchronous with no callback, so the owner cannot take the
-init's pidfd between bootstrap and exit. A bounded capture hook (or owner
-thread) that records the namespace-init pidfd at launch is the concrete
-input to add.
+The Ubuntu patches (`Add-bind-fd…`, `Change-EPERM…`) do not touch this path.
 
-Same-uid host processes outside the sandbox (other sessions) are outside
-actor custody. The quiescence covers actor-origin writers only.
+**Binding.** `capture` gained an optional `observer`, called once per loop
+iteration with the leader. Synchronous capture, the deadline and the caps are
+unchanged. `WriterLeaf.observe_init` reads the monitor's only child, opens a
+pidfd, and only then verifies:
+- the child's parent is the monitor;
+- `NSpid` ends in 1;
+- the pid namespace inode and dev;
+- the process is still alive.
+
+A reused numeric pid cannot pass. More than one child, or a single child that
+is not the namespace init, gives `ambiguous`, and no binding ever happens
+then. A binding that never happens (the init has already exited) stays
+`unbound`.
+
+**Installed kernel.** Ubuntu `linux` 6.8.0-146.146, which is the source
+behind `linux-signed` 6.8.0-146.146 and the running 6.8.0-146-generic.
+
+The exit and notification path:
+- `kernel/exit.c` `do_exit` calls `exit_notify`, which calls
+  `forget_original_parent`, which calls `find_child_reaper`. For the last
+  thread of the namespace init, that runs `zap_pid_ns_processes`.
+- `zap_pid_ns_processes` (`kernel/pid_namespace.c`):
+  - disables pid allocation;
+  - sends SIGKILL to every other pid;
+  - calls `kernel_wait4` until `ECHILD`;
+  - then waits until `pid_allocated == init_pids`.
+- Only after that does `exit_notify` set `exit_state` and call
+  `do_notify_parent`, which calls `do_notify_pidfd` (`kernel/signal.c`).
+- `pidfd_poll` (`kernel/fork.c`) reports readiness only when
+  `thread_group_exited`.
+
+A ready init pidfd therefore means no other process of that namespace,
+including those in nested namespaces, remains. The tests observe this on
+the host with real inert escaping writers (double fork, setsid,
+after-pipe-close): each was writing, and none writes after the observed
+exit.
+
+**Sources read (nothing installed or modified):**
+- **Kernel:** `linux_6.8.0.orig.tar.gz`, sha256
+  `26512115972bdf017a4ac826cc7d3e9b0ba397d4f85cd330e4e4ff54c78061c8`, plus
+  `linux_6.8.0-146.146.diff.gz`, sha256
+  `02288f6e0e185f74a2c3906d585f9047045ba4f63e26361294fa7352bd6459d4`. Both
+  match the `.dsc` and came from Launchpad `+sourcefiles/linux/6.8.0-146.146`.
+  Patched files read: `exit.c` (sha256 623a0b70…) and `pid_namespace.c`
+  (sha256 b8f00a9e…).
+- **Bubblewrap:** `bubblewrap_0.9.0.orig.tar.xz`, sha256
+  `c6347eaced49ac0141996f46bba3b089e5e6ea4408bc1c43bab9f2d05dd094e1`, plus
+  `bubblewrap_0.9.0-1ubuntu0.3.debian.tar.xz`, sha256
+  `4d6c71db380bb69d19a09501bd5caec92e46bf54c7f505805e75687daf783939`. Both
+  match the `.dsc` and came from Launchpad
+  `+sourcefiles/bubblewrap/0.9.0-1ubuntu0.3`.
+
+**Limits.** This covers actor-origin writers only. Same-uid host processes
+outside the sandbox are outside actor custody. The claim rests on the
+installed sources above plus the observed tests. Quiescence alone is not
+final-artifact custody.
 
 ## Verifying the selected harness before launch (analysis)
 

@@ -201,7 +201,7 @@ def retain_metadata(path, value):
         os.fsync(output.fileno())
 
 
-def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=None, pass_fds=()):
+def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=None, pass_fds=(), observer=None):
     """Legacy four-tuple; classification is distinct from observed child status."""
     started = time.monotonic()
     deadline = started + timeout
@@ -226,6 +226,8 @@ def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=Non
             elif child.stdin:
                 child.stdin.close()
             while selector.get_map() or not owner.leader_exited():
+                if observer is not None:
+                    observer(child)  # owner observation point; it must not raise or block
                 owner.sample()
                 left = deadline - time.monotonic()
                 if left <= 0:

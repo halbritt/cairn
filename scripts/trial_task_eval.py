@@ -1335,7 +1335,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
                 raw_stdout, raw_stderr, code, timings = capture(
                     writer_leaf.wrap(command) if writer_leaf is not None else command, args.timeout,
                     base / "stream-timing.json", custody_path=base / "native-process-custody.json",
-                    pass_fds=writer_leaf.pass_fds if writer_leaf is not None else ())
+                    pass_fds=writer_leaf.pass_fds if writer_leaf is not None else (),
+                    observer=writer_leaf.observe_init if writer_leaf is not None else None)
                 stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
             else:
                 result = subprocess.run(command, capture_output=True, timeout=args.timeout)

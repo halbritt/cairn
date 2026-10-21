@@ -34,6 +34,8 @@ Unavailable containment refuses before launch; nothing is assumed.
 """
 import json
 import os
+import select
+import signal
 from pathlib import Path
 import time
 
@@ -72,6 +74,8 @@ class WriterLeaf:
         self.status_read = self.status_write = self.evidence_read = self.evidence_write = None
         self.cgroup_dev = None
         self.owner_namespaces = None
+        self.init = dict(state='unbound')  # the sandbox pid-namespace init, bound during capture
+        self.init_pidfd = None
         self.closed = None
         try:
             self.group = (group_factory or owned.OwnedCgroup)(delegated, controls=self.controls)
@@ -101,6 +105,60 @@ class WriterLeaf:
         """The in-sandbox launch-evidence probe in front of the unchanged provider argv, and its bind."""
         return (['/usr/bin/python3', '-B', PROBE_TARGET, str(self.evidence_write), self.cgroup_dev or 'none', '--',
                  *provider], (PROBE, PROBE_TARGET, 'ro'))
+
+    def observe_init(self, monitor):
+        """Capture observer: bind the bwrap pid-namespace init (the monitor's only child) by pidfd.
+
+        bubblewrap 0.9.0 (bubblewrap.c main, do_init, monitor_child): with --unshare-pid the outer
+        process is the monitor; it clones a child into the new pid namespace, which forks again and
+        stays as pid 1 (do_init), while the forked process execs the command as pid 2 (the actor).
+        The binding is the init's held pidfd plus its pid-namespace inode/dev, verified AFTER the
+        pidfd is open (parent is the monitor, NSpid ends in 1), so a reused numeric pid cannot pass.
+        More than one child is ambiguous and is never bound. Never raises.
+        """
+        if self.init['state'] != 'unbound':
+            return
+        try:
+            children = Path(f'/proc/{monitor.pid}/task/{monitor.pid}/children').read_text().split()
+        except OSError:
+            return  # not yet observable; a binding that never happens stays unbound
+        if not children:
+            return
+        if len(children) != 1:
+            self.init = dict(state='ambiguous', children=len(children))
+            return
+        pid = int(children[0])
+        try:
+            pidfd = os.pidfd_open(pid)
+        except OSError:
+            return
+        try:
+            fields = Path(f'/proc/{pid}/stat').read_text().rsplit(') ', 1)[1].split()
+            nspid = [line.split()[1:] for line in Path(f'/proc/{pid}/status').read_text().splitlines()
+                     if line.startswith('NSpid:')]
+            namespace = os.stat(f'/proc/{pid}/ns/pid')
+            signal.pidfd_send_signal(pidfd, 0)  # still the same live process after the reads
+        except (OSError, IndexError, ValueError):
+            os.close(pidfd)
+            return
+        if int(fields[1]) != monitor.pid or not nspid or nspid[0][-1] != '1' or len(nspid[0]) < 2:
+            os.close(pidfd)
+            self.init = dict(state='ambiguous', reason='not_the_namespace_init')
+            return
+        self.init_pidfd = pidfd
+        self.init = dict(state='bound', host_pid=pid, monitor_pid=monitor.pid, ns_pids=nspid[0],
+                         pid_namespace=dict(inode=namespace.st_ino, dev=namespace.st_dev))
+
+    def init_exit(self, deadline):
+        """Wait on the held init pidfd; readiness only after the kernel zapped and reaped the namespace."""
+        if self.init_pidfd is None:
+            return 'unbound'
+        left = max(0.0, deadline - time.monotonic())
+        try:
+            ready = select.select([self.init_pidfd], [], [], left)[0]
+        except OSError:
+            return 'exit_unknown'
+        return 'exited' if ready else 'not_exited'
 
     def launch_evidence(self):
         """The probe's report, read once after capture; anything else is absent evidence."""
@@ -160,7 +218,7 @@ class WriterLeaf:
         if self.closed is not None:
             return self.closed
         errors = []
-        for name in ('status_read', 'status_write', 'evidence_read', 'evidence_write'):
+        for name in ('status_read', 'status_write', 'evidence_read', 'evidence_write', 'init_pidfd'):
             fd = getattr(self, name)
             if fd is not None:
                 try:
@@ -180,7 +238,7 @@ class WriterLeaf:
     def finish(self, deadline):
         """Bootstrap, release and close exactly once; never raises, always returns observations."""
         observed = dict(bootstrap=dict(state='unobserved'), release='release_unknown', close_errors=[],
-                        launch_evidence=None)
+                        launch_evidence=None, init=dict(self.init), init_exit='unbound')
         try:
             observed['bootstrap'] = self.bootstrap()
         except Exception:
@@ -193,6 +251,10 @@ class WriterLeaf:
             observed['release'] = self.release(deadline)
         except Exception:
             observed['release'] = 'release_unknown'
+        try:
+            observed['init_exit'] = self.init_exit(deadline)
+        except Exception:
+            observed['init_exit'] = 'exit_unknown'
         finally:
             try:
                 observed['close_errors'] = self.close()
@@ -254,6 +316,27 @@ def require_proved_migration_control(result):
     return True
 
 
+def writer_quiescence(observed, evidence):
+    """'namespace_init_exited' only when the bound init's exit was observed for the actor's namespace.
+
+    Installed source (Ubuntu linux 6.8.0-146.146): do_exit -> exit_notify -> forget_original_parent
+    -> find_child_reaper, which for the namespace's last init thread runs zap_pid_ns_processes
+    (SIGKILL every other pid, kernel_wait4 until ECHILD, then wait until pid_allocated == init_pids)
+    BEFORE exit_state is set and do_notify_parent -> do_notify_pidfd wakes pidfd pollers;
+    pidfd_poll reports readiness only when thread_group_exited. A ready init pidfd therefore means
+    no other process of that namespace (or of namespaces nested in it) remains.
+    """
+    init = observed.get('init') or {}
+    if init.get('state') != 'bound':
+        return dict(state='not_established', reason='init_' + str(init.get('state', 'unbound')))
+    namespaces = evidence.get('namespaces') if isinstance(evidence, dict) else None
+    if not isinstance(namespaces, dict) or namespaces.get('pid') != init['pid_namespace']['inode']:
+        return dict(state='not_established', reason='actor_namespace_unbound')
+    if observed.get('init_exit') != 'exited':
+        return dict(state='not_established', reason='init_' + str(observed.get('init_exit')))
+    return dict(state='namespace_init_exited', basis='installed_kernel_source_zap_before_pidfd_notify')
+
+
 def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
     """The owner-derived result for one attempt; each outcome stays distinct.
 
@@ -286,4 +369,6 @@ def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
                                                     relative=leaf.group.relative, cgroup_dev=leaf.cgroup_dev,
                                                     owner_namespaces=leaf.owner_namespaces),
                 complete_descendant_custody=False,
-                writer_quiescence='not_established', final_artifact_custody='not_established')
+                init=observed.get('init'), init_exit=observed.get('init_exit'),
+                writer_quiescence=writer_quiescence(observed, observed.get('launch_evidence')),
+                final_artifact_custody='not_established')
