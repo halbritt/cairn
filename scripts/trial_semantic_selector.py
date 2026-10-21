@@ -1,32 +1,85 @@
-"""Typed semantic-fallback selector identity (cairn.semantic-selector-identity/1).
+"""Semantic-fallback selector identity for the original legacy route (CAIRN-107).
 
 An ambient arm with ``semantic_fallback: true`` makes the pinned hook call a
 tool-free selector: ``memory.select_json`` runs ``config["claude"]`` with
 ``--model selector_model(config, stage)`` for the ``preview`` and ``recall``
-stages. The original ``cairn.weekly-execution/1`` contract declares neither
-that binary nor that model, so this module only defines the proposed closed
-declaration and its comparison. Root must select a declaration before any
-caller may lift ``original_execution_unsupported:semantic_fallback_selector``.
+stages. ``cairn.weekly-execution/1`` declares neither that binary nor that
+model. Root selected (2026-10-21) a new ``cairn.weekly-execution/2`` whose
+memory arms add one ``semantic_selector`` pin: required for an ambient arm with
+``semantic_fallback``, null otherwise. ``/1`` stays exactly as it is.
 
-Declared values:
-- ``binary``: a ``{path, sha256}`` pin of the selector executable;
-- ``model``: the single ``--model`` argument for both selector stages, written
-  to the hook configuration's ``model`` key (the key the legacy harness sets).
+The pin's content is the closed ``cairn.semantic-selector-identity/1``
+declaration (``typed``): a ``binary`` ``{path, sha256}`` pin and one ``model``.
 
-Observed values come only from evidence the harness already has:
-- the SHA-256 of the file it binds as the selector (``observed_binary``);
-- ``requested_model`` in each retained ``preview_process`` / ``model_process``
-  hook observation (``observed_calls``). That is the argument the hook passed,
-  not the model the provider served.
+This module only supplies the pieces later wiring needs. It changes no caller,
+and ``original_execution_unsupported:semantic_fallback_selector`` stays until
+full-boundary wiring and tests exist:
 
-Never observed here, and never compared: the served model and the provider
-account. Declared, observed and their comparison stay separate fields.
+- ``execution_arm_fields`` / ``check_arm_selector``: explicit /1 and /2 arm
+  shapes and the /2 selector rule;
+- ``load_declaration``: the typed declaration from its pin;
+- ``retain`` / ``mount``: a retained read-only copy of the declared binary,
+  re-hashed before each attempt and bound at ``TARGET``;
+- ``hook_config`` / ``selector_argv``: the hook configuration and the exact
+  selector argv that the pinned hook source builds from it, before effects;
+- ``registered_events``: the capture side effect of ``config["model"]``;
+- ``parse_observations`` / ``classify_attempt``: one attempt's schema-checked
+  hook rows, classified on their own.
+
+``requested_model`` is the ``--model`` argument the hook passed. It is never the
+served model. The served model and the provider account are never observed.
 """
+import collections
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+
 import trial_native_copy as native_copy
+import trial_paired_request as paired
 
 SCHEMA = 'cairn.semantic-selector-identity/1'
+EXECUTION_V1 = 'cairn.weekly-execution/1'
+EXECUTION_V2 = 'cairn.weekly-execution/2'
+V1_ARM_FIELDS = ('binary', 'hook', 'bridge', 'api_revision', 'recall_revision', 'recall_mode', 'semantic_fallback',
+                 'embedding_worker', 'embedding_config', 'embedding_model_identity')
+ARM_FIELDS = {EXECUTION_V1: V1_ARM_FIELDS, EXECUTION_V2: V1_ARM_FIELDS + ('semantic_selector',)}
+TARGET = '/tmp/trial/selector/claude'  # the legacy harness's selector mount target
 STAGES = (('preview_process', 'preview'), ('model_process', 'recall'))
 NOT_OBSERVED = ('served_model', 'provider_account')
+
+# trial_hook_observer's closed vocabulary for cairn.task-hook-observation/1.
+OBSERVATION_SCHEMA = 'cairn.task-hook-observation/1'
+OBSERVER_EVENTS = ('SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'PreCompact',
+                   'SessionEnd', 'Stop', 'unknown')
+RECALL_EVENTS = ('SessionStart', 'UserPromptSubmit')  # memory.handle_event calls recall only for these
+CAPTURE_EVENTS = ('PreCompact', 'SessionEnd', 'Stop')  # memory.handle_event calls capture for these
+RECALL_KEYS = frozenset((
+    'outcome', 'bytes', 'discovery', 'optional_deferred', 'coverage', 'inspected', 'rejected',
+    'semantic_pages', 'semantic_previews', 'preview_count', 'preview_input_bytes',
+    'preview_seconds', 'preview_reported_cost_usd', 'preview_receipt_budget_dropped',
+    'preview_admitted', 'receipt_attempts', 'receipt_pull_calls', 'pull_seconds',
+    'selector_input_bytes', 'shortlist_candidates', 'shortlist_source_extents',
+    'model_seconds', 'model_reported_cost_usd', 'source_extent', 'elapsed_seconds',
+    'preview_process', 'model_process', 'duration_ms', 'error_type', 'recall_task_scope',
+    'search_discovery'))
+# Keys memory.bounded_command and memory.select_json write into a process record.
+PROCESS_REQUIRED = frozenset(('requested_model', 'outcome', 'elapsed_ms'))
+PROCESS_NUMBERS = frozenset(('spawn_ms', 'first_stdout_ms', 'first_stderr_ms', 'elapsed_ms', 'stdout_bytes',
+                             'stderr_bytes', 'reported_duration_ms', 'reported_api_duration_ms',
+                             'reported_cost_usd'))
+PROCESS_KEYS = PROCESS_REQUIRED | PROCESS_NUMBERS | {'returncode', 'usage'}
+PROCESS_OUTCOMES = ('incomplete', 'completed', 'timeout', 'spawn_failed', 'communication_failed',
+                    'nonzero_exit', 'invalid_json', 'reported_error')
+OBSERVATION_BYTES = 16 * 1024 * 1024
+
+# Channels that authenticate the hook observation bytes. None exists in current
+# source: the observer writes observations.jsonl inside the read-write hookstate
+# mount that the actor's own tools can also write. Until root accepts a channel,
+# every attempt refuses semantic_selector_capture_unauthenticated.
+AUTHENTICATION_METHODS = frozenset()
 
 
 def _model_name(value):
@@ -39,6 +92,12 @@ def _sha256(value):
     return type(value) is str and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
 
+def _number(value):
+    return type(value) in (int, float) and value == value and value not in (float('inf'), float('-inf')) and value >= 0
+
+
+# ---------------------------------------------------------------- declaration
+
 def typed(document):
     """Return the typed declared values, or raise ValueError('semantic_selector_declaration')."""
     if not (isinstance(document, dict) and set(document) == {'schema', 'binary', 'model'}
@@ -50,59 +109,287 @@ def typed(document):
     return dict(binary=dict(document['binary']), model=document['model'])
 
 
-def observed_binary(path):
-    """SHA-256 of the regular file the harness binds as the selector, or None when it cannot be read."""
+def load_declaration(reference):
+    """Read the pinned declaration file; its own SHA-256 is a pin, never the binary's."""
     try:
-        return native_copy.file_sha256(str(path))
-    except (OSError, ValueError):
-        return None
+        document = paired.read_json_pin(reference)
+    except paired.Refusal:
+        raise ValueError('semantic_selector_unavailable') from None
+    return typed(document)
 
 
-def observed_calls(invocations):
-    """Selector calls retained in hook observation rows, in order; None when a row is malformed.
+def execution_arm_fields(schema):
+    """Explicit per-schema memory-arm fields; /1 is unchanged and never gains defaults."""
+    if schema not in ARM_FIELDS:
+        raise ValueError('weekly_execution_schema')
+    return ARM_FIELDS[schema]
 
-    ``requested_model_observed`` is False when the process record carries no
-    ``requested_model`` (for example a hook revision that never recorded it).
-    A null ``requested_model`` is observed: the hook passed no ``--model``.
+
+def selector_required(arm):
+    return arm['recall_mode'] == 'ambient' and arm['semantic_fallback'] is True
+
+
+def check_arm_selector(schema, arm):
+    """The /2 rule: a pin exactly when ambient fallback calls the selector, null otherwise.
+
+    The pin's shape is checked here; its bytes are checked by ``load_declaration``.
     """
-    if not isinstance(invocations, list):
+    fields = execution_arm_fields(schema)
+    if not (isinstance(arm, dict) and set(arm) == set(fields) and arm['recall_mode'] in ('ambient', 'agent_tools')
+            and type(arm['semantic_fallback']) is bool):
+        raise ValueError('weekly_arm_shape')
+    if schema == EXECUTION_V1:
         return None
-    calls = []
-    for row in invocations:
-        if not isinstance(row, dict) or not (row.get('recall') is None or isinstance(row['recall'], dict)):
-            return None
-        recall = row.get('recall') or {}
+    reference = arm['semantic_selector']
+    if not selector_required(arm):
+        if reference is not None:
+            raise ValueError('weekly_selector_forbidden')
+        return None
+    if reference is None:
+        raise ValueError('weekly_selector_required')
+    try:
+        paired.pin_shape(reference)
+    except paired.Refusal:
+        raise ValueError('weekly_selector_pin') from None
+    if not (type(reference['path']) is str and reference['path'].startswith('/') and '\0' not in reference['path']):
+        raise ValueError('weekly_selector_pin')
+    return dict(reference)
+
+
+# ---------------------------------------------------------------- binary custody
+
+def retain(declared, out):
+    """Copy the declared selector to ``out/selector/claude`` (0500) and re-hash the copy.
+
+    Nothing is executed. A source that changed before or during the copy refuses.
+    """
+    path, sha256 = declared['binary']['path'], declared['binary']['sha256']
+    try:
+        digest, size = native_copy._hash(path)
+    except (OSError, ValueError):
+        raise ValueError('semantic_selector_binary_unobserved') from None
+    if digest != sha256:
+        raise ValueError('semantic_selector_binary_mismatch')
+    directory = Path(out) / 'selector'
+    directory.mkdir(mode=0o700)
+    copied = directory / 'claude'
+    try:
+        native_copy._copy(path, copied, size)
+        os.chmod(copied, 0o500)
+        if native_copy.file_sha256(copied) != sha256:
+            raise ValueError('semantic_selector_binary_mismatch')
+    except BaseException:
+        copied.unlink(missing_ok=True)
+        raise
+    return dict(declared=dict(declared['binary']), source=str(copied), sha256=sha256, target=TARGET)
+
+
+def mount(retained):
+    """Re-hash the retained copy just before an attempt; return its read-only bind and observed identity."""
+    try:
+        observed = native_copy.file_sha256(retained['source'])
+    except (OSError, ValueError):
+        observed = None
+    if observed != retained['sha256']:
+        raise ValueError('semantic_selector_binary_changed')
+    return dict(bind=(retained['source'], retained['target'], 'ro'),
+                observed=dict(source=retained['source'], target=retained['target'], sha256=observed))
+
+
+# ---------------------------------------------------------------- configuration and argv
+
+def hook_config(config, declared, target=TARGET):
+    """The arm's hook configuration with the declared selector; never a silent override.
+
+    The hook reads ``preview_model``/``recall_model`` before ``model``, so either
+    one present would replace the declared model and refuses.
+    """
+    if {'preview_model', 'recall_model'} & set(config):
+        raise ValueError('semantic_selector_config_conflict')
+    for key, value in (('claude', target), ('model', declared['model'])):
+        if key in config and config[key] != value:
+            raise ValueError('semantic_selector_config_conflict')
+    return dict(config, claude=target, model=declared['model'])
+
+
+def selector_argv(hook_path, config, declared, target=TARGET):
+    """The exact argv the pinned hook source builds for each selector stage, built before effects.
+
+    The pinned ``memory.py`` is loaded and its own ``select_json`` builds the
+    command; its ``run_json`` is replaced so nothing is spawned.
+    """
+    spec = importlib.util.spec_from_file_location(
+        'semantic_selector_hook_' + hashlib.sha256(str(hook_path).encode()).hexdigest()[:8], hook_path)
+    engine = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(engine)
+    except Exception:
+        raise ValueError('semantic_selector_argv') from None
+    built = {}
+
+    def capture(command, **_):
+        built['command'] = list(command)
+        return {}
+    engine.run_json = capture
+    result = {}
+    for stage in ('preview', 'recall'):
+        built.clear()
+        try:
+            engine.select_json(copy.deepcopy(config), {}, '', {}, stage=stage, observation={})
+        except Exception:  # a pinned revision with another select_json contract is not bound here
+            raise ValueError('semantic_selector_argv') from None
+        argv = built.get('command')
+        models = [argv[i + 1] for i, part in enumerate(argv[:-1]) if part == '--model'] if argv else []
+        if not argv or argv[0] != target or models != [declared['model']] or argv.count('--model') != 1:
+            raise ValueError('semantic_selector_argv')
+        result[stage] = argv
+    return result
+
+
+def registered_events(events):
+    """Account for the capture consumer of ``config["model"]`` before effects.
+
+    ``memory.capture`` calls ``select_json(..., stage="capture")``, which uses
+    ``config["model"]`` and records no process observation. The legacy route
+    registers no capture event, so its capture demand is zero. A registration
+    that would add capture demand refuses instead of silently charging the
+    selector model with it.
+    """
+    events = tuple(events)
+    if set(events) & set(CAPTURE_EVENTS):
+        raise ValueError('semantic_selector_capture_demand')
+    return dict(registered=list(events), capture_events=[], capture_demand=0)
+
+
+# ---------------------------------------------------------------- observation
+
+def _process(record):
+    """A typed selector process record, None when no call started, or ValueError."""
+    if not isinstance(record, dict) or not set(record) <= PROCESS_KEYS:
+        raise ValueError('semantic_selector_observation_malformed')
+    if not record:
+        return None  # select_json never reached the child (an invalid model setting or no time left)
+    if not PROCESS_REQUIRED - {'requested_model'} <= set(record):
+        raise ValueError('semantic_selector_observation_malformed')
+    requested = record.get('requested_model')
+    if (not (requested is None or type(requested) is str) or record['outcome'] not in PROCESS_OUTCOMES
+            or not all(_number(record[k]) for k in PROCESS_NUMBERS & set(record))
+            or not (record.get('returncode') is None or type(record['returncode']) is int)
+            or ('usage' in record and not isinstance(record['usage'], dict))):
+        raise ValueError('semantic_selector_observation_malformed')
+    return dict(requested_model=requested, requested_model_observed='requested_model' in record,
+                outcome=record['outcome'])
+
+
+def parse_observations(data):
+    """Schema-check every hook observation row of one attempt, then extract selector calls.
+
+    ``data`` is the raw observations.jsonl bytes. Any malformed row refuses the
+    whole attempt with ValueError('semantic_selector_observation_malformed').
+    """
+    if type(data) is not bytes or len(data) > OBSERVATION_BYTES:
+        raise ValueError('semantic_selector_observation_malformed')
+    rows, calls = [], []
+    try:
+        lines = data.decode('utf-8').splitlines()
+        parsed = [json.loads(line, object_pairs_hook=paired.unique_object) for line in lines]
+    except (UnicodeError, ValueError):
+        raise ValueError('semantic_selector_observation_malformed') from None
+    for index, row in enumerate(parsed):
+        if not (isinstance(row, dict) and row.get('schema') == OBSERVATION_SCHEMA
+                and row.get('event') in OBSERVER_EVENTS and type(row.get('recall_attempted')) is bool
+                and 'recall' in row and _sha256(row.get('stdout_sha256'))
+                and (row.get('exit_code') is None or type(row.get('exit_code')) is int)):
+            raise ValueError('semantic_selector_observation_malformed')
+        recall = row['recall']
+        if recall is not None and not (row['recall_attempted'] and row['event'] in RECALL_EVENTS
+                                       and isinstance(recall, dict) and set(recall) <= RECALL_KEYS):
+            raise ValueError('semantic_selector_observation_malformed')
+        rows.append(dict(event=row['event'], stdout_sha256=row['stdout_sha256']))
         for key, stage in STAGES:
-            if key not in recall:
-                continue
-            record = recall[key]
-            if not isinstance(record, dict):
-                return None
-            requested = record.get('requested_model')
-            if not (requested is None or type(requested) is str):
-                return None
-            outcome = record.get('outcome')
-            calls.append(dict(stage=stage, requested_model=requested,
-                              requested_model_observed='requested_model' in record,
-                              outcome=outcome if type(outcome) is str else None))
-    return calls
+            if recall is not None and key in recall:
+                call = _process(recall[key])
+                if call is not None:
+                    calls.append(dict(row=index, stage=stage, **call))
+    return dict(rows=rows, calls=calls, sha256=hashlib.sha256(data).hexdigest())
 
 
-def compare(declared, *, binary_sha256, invocations):
-    """Compare declared with observed; refusals name each unobserved or contradicting part."""
-    calls = observed_calls(invocations)
+def _native_complete(rows, native_hooks):
+    """Every native hook started and finished, one-to-one with an observer row by (event, stdout_sha256)."""
+    if not isinstance(native_hooks, list):
+        return False
+    identities = []
+    for hook in native_hooks:
+        if not (isinstance(hook, dict) and set(hook) == {'hook_id', 'event', 'stdout_sha256'}
+                and type(hook['hook_id']) is str and hook['hook_id'] and type(hook['event']) is str
+                and _sha256(hook['stdout_sha256'])):
+            return False  # an unfinished hook has no stdout digest
+        identities.append((hook['event'], hook['stdout_sha256']))
+    if len({hook['hook_id'] for hook in native_hooks}) != len(native_hooks):
+        return False
+    observed = collections.Counter((row['event'], row['stdout_sha256']) for row in rows)
+    return (observed == collections.Counter(identities)
+            and set(RECALL_EVENTS) <= {row['event'] for row in rows})
+
+
+def _authenticated(authentication, digest):
+    return (isinstance(authentication, dict) and set(authentication) == {'method', 'observations_sha256'}
+            and authentication['method'] in AUTHENTICATION_METHODS
+            and authentication['observations_sha256'] == digest)
+
+
+def classify_attempt(declared, *, mounted, observations, native_hooks, authentication):
+    """Classify one attempt from its own evidence only.
+
+    - ``mounted``: this attempt's ``mount(...)['observed']``, or None.
+    - ``observations``: this attempt's raw observations.jsonl bytes, or None.
+    - ``native_hooks``: this attempt's native ``hook_response`` identities
+      ``{hook_id, event, stdout_sha256}``; an unfinished hook has no digest.
+    - ``authentication``: ``{method, observations_sha256}`` from an accepted
+      channel, or None.
+
+    ``result`` is ``matched``, ``not_invoked`` (a complete, authenticated
+    capture with zero selector calls; the model stays unobserved),
+    ``mismatched`` or ``incomplete``. Refusals name every failed part.
+    """
     refusals = []
-    if binary_sha256 is None:
+    binary = mounted.get('sha256') if isinstance(mounted, dict) else None
+    if binary is None:
         refusals.append('semantic_selector_binary_unobserved')
-    elif binary_sha256 != declared['binary']['sha256']:
+    elif binary != declared['binary']['sha256']:
         refusals.append('semantic_selector_binary_mismatch')
-    if calls is None:
-        refusals.append('semantic_selector_observation_malformed')
-    elif not calls or not all(call['requested_model_observed'] for call in calls):
-        refusals.append('semantic_selector_model_unobserved')
-    elif any(call['requested_model'] != declared['model'] for call in calls):
-        refusals.append('semantic_selector_model_mismatch')
-    result = ('matched' if not refusals
-              else 'mismatched' if any(r.endswith('_mismatch') for r in refusals) else 'unobserved')
-    return dict(declared=declared, observed=dict(binary_sha256=binary_sha256, calls=calls),
-                result=result, refusals=refusals, not_observed=list(NOT_OBSERVED))
+    parsed = None
+    if observations is None:
+        refusals.append('semantic_selector_capture_incomplete')
+    else:
+        try:
+            parsed = parse_observations(observations)
+        except ValueError:
+            refusals.append('semantic_selector_observation_malformed')
+    if parsed is not None:
+        if any(row['event'] in CAPTURE_EVENTS or row['event'] == 'unknown' for row in parsed['rows']):
+            refusals.append('semantic_selector_capture_demand')
+        if not _native_complete(parsed['rows'], native_hooks):
+            refusals.append('semantic_selector_capture_incomplete')
+        if not _authenticated(authentication, parsed['sha256']):
+            refusals.append('semantic_selector_capture_unauthenticated')
+    calls = parsed['calls'] if parsed is not None else None
+    model = 'unobserved'
+    if calls:
+        if not all(call['requested_model_observed'] for call in calls):
+            refusals.append('semantic_selector_model_unobserved')
+        elif any(call['requested_model'] != declared['model'] for call in calls):
+            refusals.append('semantic_selector_model_mismatch')
+            model = 'requested_mismatch'
+        else:
+            model = 'requested_matches'
+    if any(code.endswith('_mismatch') for code in refusals):
+        result = 'mismatched'
+    elif refusals:
+        result = 'incomplete'
+    else:
+        result = 'matched' if calls else 'not_invoked'
+    return dict(declared=declared,
+                observed=dict(binary_sha256=binary, calls=calls,
+                              observations_sha256=parsed['sha256'] if parsed is not None else None),
+                result=result, model=model, refusals=refusals, not_observed=list(NOT_OBSERVED))

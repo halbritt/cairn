@@ -421,7 +421,7 @@ modified.
 - A complete receipt's observed native SHA-256 and effort must equal the
   declared ones (`bridge_runner_execution_mismatch`).
 
-### Semantic-fallback selector identity (proposed; still refused)
+### Semantic-fallback selector identity (seam only; still refused)
 
 **What the selector is.** An `ambient` arm with `semantic_fallback: true`
 takes `memory.recall`'s `verified_candidate` path
@@ -433,22 +433,27 @@ selector_model(config, stage)`. `selector_model` reads `preview_model` or
 `recall_model` first, then `model`. An `agent_tools` arm never calls it, and
 neither does `inbox_recall` (it only uses `semantic` search).
 
-The legacy harness writes `claude=/tmp/trial/selector/claude` and
-`model=args.selector_model` (default `sonnet`) into the hook configuration. It
-binds `--selector-binary` (default `shutil.which("claude")`) read-only at that
-target. For codex it also binds `--selector-auth-file`. The plan records
-`selector_version` and `selector_binary_sha256`. These are ambient flag values,
-not declarations.
+Today the legacy harness writes `claude=/tmp/trial/selector/claude` and
+`model=args.selector_model` (default `sonnet`), and binds `--selector-binary`
+read-only at that target. These are ambient flag values, not declarations.
+`cairn.weekly-execution/1` has a closed `memory_arms` shape with no selector,
+and `native` is the actor's binary and model, not the selector's.
 
-**The original contract does not pin it.** `cairn.weekly-execution/1`
-(`trial_weekly_input._execution`, `docs/weekly-input-bundle-v1.md`) has a
-closed `memory_arms` shape. It has no selector binary or model. `native` is the
-actor's binary and model, so it is not the selector's. No value is inferred
-from current behaviour, and the refusal
-`original_execution_unsupported:semantic_fallback_selector` stays until root
-selects a declaration.
+**Root decisions (2026-10-21, agent-341 review of `e22945d`).**
+- A new `cairn.weekly-execution/2` adds one memory-arm field,
+  `semantic_selector`. `/1` stays exactly as it is: no defaults and no
+  reinterpretation. Dispatch on the schema is explicit.
+- `semantic_selector` is a `{path, sha256}` pin. It is required when
+  `recall_mode == ambient` and `semantic_fallback` is true, and null
+  otherwise. Its content is the closed `cairn.semantic-selector-identity/1`.
+- Each attempt is compared on its own evidence.
+- A complete, authenticated observation with zero selector calls is
+  `not_invoked` with the model `unobserved`. It is never `matched`, and no
+  call is forced. Missing or incomplete hook evidence refuses.
+- `original_execution_unsupported:semantic_fallback_selector` stays until
+  full-boundary wiring and tests cover all of this.
 
-**Proposed closed declaration** (`trial_semantic_selector.typed`):
+**Declaration** (`typed`, `load_declaration`):
 
 ```json
 {"schema": "cairn.semantic-selector-identity/1",
@@ -456,42 +461,110 @@ selects a declaration.
  "model": "<selector model name>"}
 ```
 
-- There are exactly these keys. `model` follows the hook's own
-  `selector_model` rule: nonempty, at most 256 characters, no whitespace or
-  control characters.
-- The one `model` is written to the hook configuration's `model` key, so it
-  applies to both selector stages. Stage-specific `preview_model` and
-  `recall_model` are not part of the declaration and refuse as malformed.
-  Note that `model` also selects the hook's Stop capture model.
-- Anything else raises `ValueError('semantic_selector_declaration')`.
-- It would be carried as a pinned file, like the embedding model identity. The
-  file's SHA-256 pins the declaration. It is not the binary's SHA-256.
+There are exactly these keys. `model` follows the hook's own `selector_model`
+rule. The single `model` is written to the hook configuration's `model` key,
+so it covers both stages. Anything else raises
+`ValueError('semantic_selector_declaration')`. An unreadable or mismatched pin
+raises `semantic_selector_unavailable`. The pin's SHA-256 is the declaration
+file's, never the binary's.
 
-**Observation and comparison** (`trial_semantic_selector.compare`). These use
-only evidence the harness already has:
-- `observed_binary(path)` hashes the regular file the harness binds as the
-  selector. An unreadable or non-regular file is `None`.
-- `observed_calls(hook_invocations)` reads `requested_model` and `outcome`
-  from each retained `recall.preview_process` or `recall.model_process`. These
-  are the `cairn.task-hook-observation/1` rows that `hook_observations`
-  already returns.
+**`/2` arm shape** (`execution_arm_fields`, `check_arm_selector`):
+- `/1` fields equal the current `trial_weekly_input` literal (a test reads it
+  from source).
+- `/2` is those fields plus `semantic_selector`.
+- An unknown schema refuses `weekly_execution_schema`.
+- Refusals: `weekly_selector_required`, `weekly_selector_forbidden`,
+  `weekly_selector_pin` and `weekly_arm_shape`. A `/1` arm returns no
+  selector, so nothing lifts the refusal.
 
-The result keeps `declared`, `observed`, `result`
-(`matched`/`mismatched`/`unobserved`) and `refusals` separate:
-- `semantic_selector_binary_unobserved` or `_binary_mismatch`.
-- `semantic_selector_model_unobserved`. This covers no selector call at all,
-  or a process record without `requested_model`, such as a hook revision that
-  never recorded it.
-- `semantic_selector_model_mismatch`. A null `requested_model` is a mismatch:
-  the CLI default ran.
-- `semantic_selector_observation_malformed`. This is a refusal, never an
-  exception.
+**Binary custody before effects** (`retain`, `mount`). These mirror
+`trial_native_copy`:
+- `retain` copies the declared binary to `out/selector/claude` (mode 0500) and
+  re-hashes the copy. It executes nothing.
+- `mount` re-hashes the copy before each attempt and returns the read-only
+  bind `(copy, /tmp/trial/selector/claude, ro)` and the observed
+  `{source, target, sha256}`. A changed or missing copy refuses
+  `semantic_selector_binary_changed`.
 
-`requested_model` is the argument the hook passed. It is not the model the
-provider served. `not_observed` always lists `served_model` and
-`provider_account`. The hook's `modelUsage` reading goes only to the recall
-meter, not the observer, so the served model is not claimed. No new probe or
-protocol is added.
+**Configuration and exact argv** (`hook_config`, `selector_argv`):
+- `hook_config` sets `claude` and `model`. It refuses
+  `semantic_selector_config_conflict` if `preview_model` or `recall_model` is
+  present (either would replace the declared model), or if a different
+  `claude` or `model` is already set.
+- `selector_argv` loads the pinned `memory.py` and lets its own `select_json`
+  build each stage's command, with `run_json` replaced so nothing is spawned.
+- The argv must start with the target and carry exactly one `--model`, the
+  declared one. Otherwise it refuses `semantic_selector_argv`, including when
+  a pinned revision has another `select_json` contract.
+
+**The capture consumer of `config.model`** (`registered_events`):
+- `memory.handle_event` calls `capture` for `PreCompact`, `SessionEnd` and
+  `Stop`. `capture` calls `select_json(..., stage="capture")`, which uses
+  `config["model"]` and records no process observation.
+- The legacy route registers only `SessionStart`, `UserPromptSubmit`,
+  `PostToolUse` and `PostToolUseFailure` for claude (`HOOK_EVENTS`), and only
+  the first two for codex. Its capture demand is therefore zero.
+- `registered_events` returns `capture_demand: 0` for that registration. It
+  refuses `semantic_selector_capture_demand` if a capture event is
+  registered.
+- `classify_attempt` refuses the same code if any capture or `unknown`
+  observation row appears. The capture model is never silently charged to, or
+  changed by, the selector declaration.
+
+**Observation parsing** (`parse_observations`):
+- It parses one attempt's raw `observations.jsonl` bytes, with unique JSON
+  keys and a 16 MiB bound.
+- Every row is checked before any record is read:
+  - `schema` must be `cairn.task-hook-observation/1`.
+  - `event` must be in the observer's closed set.
+  - `recall_attempted` must be a boolean.
+  - `stdout_sha256` must be 64 lowercase hex, and `exit_code` an integer or
+    null.
+  - `recall` may appear only on an attempted `SessionStart` or
+    `UserPromptSubmit` row, with keys from the observer's `RECALL_FIELDS`.
+- A process record must have only `bounded_command` and `select_json` keys,
+  typed, with a known `outcome`.
+- An empty process record means `select_json` never reached the child, so it
+  is not a call.
+- Any violation refuses the whole attempt with
+  `semantic_selector_observation_malformed`.
+
+**Per-attempt classification** (`classify_attempt`) takes only that attempt's
+evidence:
+- `mounted`;
+- the raw observation bytes;
+- its native `hook_response` identities `{hook_id, event, stdout_sha256}`;
+- an `authentication` record `{method, observations_sha256}`.
+
+The capture is complete only when all of the following hold:
+- Every native hook finished (it has a digest).
+- Hook ids are unique.
+- The `(event, stdout_sha256)` multisets of native hooks and observer rows
+  are equal. This is the correlation `trial_native_observation` already uses.
+- Both recall events are present.
+
+Authentication requires `method` in `AUTHENTICATION_METHODS` and the digest
+of exactly these bytes.
+
+`result` is one of:
+- `matched`: requested model equals the declared model.
+- `not_invoked`: complete and authenticated, with zero calls; the model is
+  `unobserved`.
+- `mismatched`: binary or requested model differ, including a null request,
+  which means the CLI default ran.
+- `incomplete`.
+
+`refusals` names every failed part. `not_observed` is always `served_model`
+and `provider_account`. `requested_model` is never called served.
+
+**Authentication gap.** `AUTHENTICATION_METHODS` is empty in current source.
+The observer appends `observations.jsonl` inside the read-write
+`/tmp/trial/hookstate` mount, which the actor's tools can also write. Native
+correlation binds each row's event and stdout, but not its `recall` content.
+So every real attempt refuses `semantic_selector_capture_unauthenticated`
+until root accepts a channel. A channel must bind the parsed bytes to a
+producer that the actor cannot write. Tests patch the set with a synthetic
+channel only.
 
 ## Verifying the selected harness before launch (analysis)
 
@@ -617,20 +690,22 @@ Limits and account selection:
 - The runner tests also cover account refusals and mismatch, a harness
   without the selector or the flag, and limit, late-memory and unobserved
   rows.
-- `test_trial_semantic_selector` (6 synthetic tests) covers the typed
-  declaration and malformed declarations, and a matching, mismatched,
-  unobserved and malformed selector observation. It uses a fake binary file
-  and fabricated hook rows only.
+- `test_trial_semantic_selector` (24 synthetic tests) covers the declaration
+  and malformed declarations, the `/1` and `/2` arm rules, binary custody,
+  configuration conflicts, the pinned hook's argv (built, never spawned),
+  capture demand, schema-checked parsing, and per-attempt `matched`,
+  `not_invoked`, `mismatched`, `incomplete` and unauthenticated results. It
+  uses fake binary files and fabricated hook rows only.
 
 ## Remaining work
 
 - Evidence for the dedicated-account declaration, and real single-account
   capacity evidence for the selected `account_id`.
 - The artifact and evaluator channels (actor-final capture before grading).
-- The hook selector model and binary for an ambient arm with
-  `semantic_fallback` (`semantic_fallback_selector`). The declaration and
-  comparison exist in `trial_semantic_selector`. Root must still select the
-  contract field, and the harness and runner wiring is still to do.
+- The hook selector for an ambient arm with `semantic_fallback`
+  (`semantic_fallback_selector`). The seam is in `trial_semantic_selector`.
+  Still to do: `/2` dispatch in the owned files, harness and runner wiring, and
+  an accepted authentication channel for hook observations.
 - Real capacity-adapter input for the bound account, and a root-issued live
   selection for one concrete slot.
 - Real conversion materials, a grader release authority, delivery, the
