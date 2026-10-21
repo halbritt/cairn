@@ -745,6 +745,38 @@ class V3CounterexampleTest(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("git") and shutil.which("go"), "git and go are required for calibration")
+class LegacyAttemptContentTest(unittest.TestCase):
+    def test_legacy_attempt_records_exact_stream_and_prompt_hashes(self):
+        """Blind grading release needs original-attempt content custody (CAIRN-107)."""
+        from types import SimpleNamespace
+        answer = 'Synthetic answer, caf\u00e9.'
+        line = json.dumps(dict(type='assistant', message=dict(content=[dict(type='text', text=answer)])))
+        prompt = 'Inspect the synthetic workspace.'
+        case = dict(id='synthetic', category='synthetic', provenance=dict(type='synthetic'), cwd='project',
+                    wordings=dict(task=prompt), expected=[], correct=[], mistake=[])
+        args = SimpleNamespace(harness='claude', model='fixture-model', max_turns=2, timeout=30, wording='task',
+                               semantic_recall=[], _prospective=None)
+
+        def workspace(case, root):
+            (root/'project').mkdir()
+            (root/'.eval-snapshot.json').write_text('{}')
+
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(te, 'load_corpus', return_value=[]), \
+                 patch.object(te, 'prepare_workspace', side_effect=workspace), \
+                 patch.object(te, 'sandbox_command',
+                              side_effect=lambda *a, **k: [sys.executable, '-c', 'import sys; print(sys.argv[1])', line]):
+                record = te.run_agent(case, 'none', 0, 0, args, {}, out)
+            stream = (out/'runs/synthetic.none.s0/stream.jsonl').read_bytes()
+            self.assertEqual(record['stream_sha256'], hashlib.sha256(stream).hexdigest())
+            self.assertEqual(record['prompt_sha256'], hashlib.sha256(prompt.encode()).hexdigest())
+            self.assertEqual(te.parse_stream(stream.decode())['answer'], answer)
+            retained = json.loads((out/'runs/synthetic.none.s0/result.json').read_text())
+            self.assertEqual((retained['stream_sha256'], retained['prompt_sha256']),
+                             (record['stream_sha256'], record['prompt_sha256']))
+
+
 class CalibrationTest(unittest.TestCase):
     def test_v2_accepts_negated_guidance(self):
         case = next(c for c in te.load_cases(2) if c["id"] == "nightly-scope")

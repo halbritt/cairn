@@ -1218,7 +1218,10 @@ def run_agent(case, arm, seed, order, args, stores, out):
             retain_observation_error(base, selected_failure, name='process-custody-unknown.json')
     elapsed = time.monotonic() - started
     if not prospective:
-        (base / "stream.jsonl").write_text(stdout)
+        # Record the exact stream bytes written, so blind grading can bind the
+        # original attempt's answer (CAIRN-107 legacy blind selection).
+        stream_bytes = stdout.encode("utf-8")
+        (base / "stream.jsonl").write_bytes(stream_bytes)
         (base / "stderr.txt").write_text(stderr[-20000:])
     else:
         (base / "native-output-metadata.json").write_text(json.dumps(dict(
@@ -1302,6 +1305,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
+    if not prospective:
+        record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
+        record["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     if prospective:
         record["selected_input"] = selected_input
         record["process_custody"] = process_custody
