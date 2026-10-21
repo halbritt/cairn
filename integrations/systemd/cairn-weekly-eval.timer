@@ -1,0 +1,14 @@
+# Shipped for review only: not installed or enabled. OnCalendar must equal the
+# profile's schedule (weekday, HH:MM UTC); the runner refuses outside the
+# slot window, so a late or catch-up start records nothing.
+[Unit]
+Description=Cairn weekly paired task evaluation timer
+
+[Timer]
+OnCalendar=Mon *-*-* 06:00:00 UTC
+Persistent=false
+AccuracySec=1min
+Unit=cairn-weekly-eval.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+# CAIRN-107 weekly paired task evaluation (one slot per invocation).
+# Shipped for review only: not installed or enabled. The runner refuses
+# before any effect unless the profile names an available executor,
+# verified capacity-adapter evidence and an explicit live selection for
+# this exact slot. See docs/weekly-runner-reconciliation.md.
+[Unit]
+Description=Cairn weekly paired task evaluation slot
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/git/cairn
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -B %h/git/cairn/scripts/trial_weekly_run.py --profile %h/.config/cairn/weekly-run.json
+UMask=0077
+NoNewPrivileges=yes

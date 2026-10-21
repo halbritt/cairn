@@ -1,6 +1,7 @@
 import hashlib
 import json
 import argparse
+import collections
 import os
 from pathlib import Path
 import shutil
@@ -164,6 +165,11 @@ class FixtureTest(unittest.TestCase):
         second.start.side_effect = RuntimeError("second API failed")
         with tempfile.TemporaryDirectory() as directory:
             args.output = str(Path(directory) / "results")
+            for name, store in (("first", first), ("second", second)):
+                store.root = store.home = Path(directory) / name
+                store.root.mkdir()
+                store.token_file = store.root / "agent.token"
+                store.ids = collections.defaultdict(lambda: "synthetic-record")
             with patch.object(te, "TrialStore", side_effect=[first, second]), patch.object(te, "run", return_value=Mock(stdout=b"test version")):
                 with self.assertRaisesRegex(RuntimeError, "second API failed"):
                     te.cmd_agent(args)
@@ -802,6 +808,94 @@ class CalibrationTest(unittest.TestCase):
         if bad is not None:
             with self.subTest(case=case["id"], version=version, script="mistake"):
                 self.assertEqual(scripted(case, bad)["outcome"], "mistake")
+
+
+class StoreLifecycleTest(unittest.TestCase):
+    """Synthetic store lifecycle: no database, API, case, oracle or provider."""
+
+    def bare_store(self, directory):
+        store = object.__new__(te.TrialStore)
+        store.sockdir = Path(directory) / "sock"
+        store.sockdir.mkdir()
+        store.server = Mock()
+        store.server.poll.return_value = None
+        return store
+
+    def test_stop_reaps_the_api_after_kill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.bare_store(directory)
+            server = store.server
+            server.wait.side_effect = [subprocess.TimeoutExpired("cairn", 15), 0]
+            store.stop()
+            server.kill.assert_called_once()
+            self.assertEqual(server.wait.call_count, 2)
+            self.assertFalse(store.sockdir.exists())
+
+    def test_stop_refuses_and_retains_socket_when_kill_is_not_observed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.bare_store(directory)
+            server = store.server
+            server.wait.side_effect = subprocess.TimeoutExpired("cairn", 15)
+            with self.assertRaisesRegex(RuntimeError, "did not exit"):
+                store.stop()
+            self.assertTrue(store.sockdir.exists())
+            self.assertIs(store.server, server)
+
+    def test_constructor_failure_releases_socket_directory_and_token(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sockdir = root / "cte-sock-fixture"
+            def fake_mkdtemp(**kwargs):
+                sockdir.mkdir()
+                return str(sockdir)
+            calls = []
+            def fake_run(command, **kwargs):
+                calls.append([str(c) for c in command])
+                if "migrate" in calls[-1]:
+                    raise subprocess.CalledProcessError(1, command)
+                return Mock(stdout=b"")
+            cluster = Mock()
+            cluster.routing.return_value = (str(root / "pg"), str(root / "pgbin"))
+            with patch.object(te, "run", side_effect=fake_run), \
+                 patch.object(te.tempfile, "mkdtemp", side_effect=fake_mkdtemp):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    te.TrialStore(root / "store", "/bin/true", "fixture", cluster=cluster)
+            self.assertFalse(sockdir.exists())
+            self.assertFalse((root / "store" / "agent.token").exists())
+
+    def test_legacy_run_retains_import_map_and_removes_token(self):
+        corpus = [dict(id="n1", kind="note", body="synthetic one"), dict(id="n2", kind="note", body="synthetic two")]
+        cases = [dict(id="synthetic-case")]
+        frozen = dict(cases_sha256="c", corpus_sha256="k", labels_sha256="l")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Mock()
+            store.root = root / "store"
+            store.root.mkdir()
+            store.home = root / "home"
+            store.home.mkdir()
+            store.token_file = store.root / "agent.token"
+            store.token_file.write_text("synthetic")
+            (store.home / "identities.json").write_text("[]")
+            store.ids = dict(n1="r1", n2="r2")
+            store.start.side_effect = RuntimeError("synthetic API stop")
+            args = argparse.Namespace(model="sonnet", harness="claude", wording="task", cases=None,
+                                      first_seed=0, seeds=1, paired_plan=[], arms=[], reasoning_effort=None,
+                                      semantic_worker=None, embedding_worker=None, distractors=0,
+                                      memory=["CURRENT:/bin/true:/tmp/memory.py"], output=str(root / "out"),
+                                      semantic_recall=[], selector_model="sonnet", cold_readiness_timeout=1800)
+            with patch.object(te, "TrialStore", return_value=store), \
+                 patch.object(te, "verify_frozen", return_value=frozen), \
+                 patch.object(te, "load_cases", return_value=cases), \
+                 patch.object(te, "load_corpus", return_value=corpus), \
+                 patch.object(te, "run", return_value=Mock(stdout=b"test version")):
+                with self.assertRaisesRegex(RuntimeError, "synthetic API stop"):
+                    te.cmd_agent(args)
+            provenance = json.loads((store.root / "import-provenance.json").read_text())
+            self.assertEqual([(r["input_id"], r["imported_record_id"]) for r in provenance], [("n1", "r1"), ("n2", "r2")])
+            self.assertFalse(store.token_file.exists())
+            self.assertFalse((store.home / "identities.json").exists())
+            store.stop.assert_called_once()
 
 
 if __name__ == "__main__":

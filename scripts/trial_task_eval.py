@@ -307,19 +307,28 @@ class TrialStore:
         self.home.mkdir(mode=0o700)
         # Unix socket paths are limited to 108 bytes; keep the socket directory short.
         self.sockdir = Path(tempfile.mkdtemp(prefix="cte-sock-", dir="/tmp"))
-        (self.root / "sock").symlink_to(self.sockdir)
-        self.socket = self.sockdir / "api.sock"
-        base = {k: v for k, v in os.environ.items() if not k.startswith("CAIRN_")}
-        self.env = dict(base, CAIRN_HOME=str(self.home), CAIRN_DATABASE_URL=self.dsn)
-        run([self.binary, "migrate"], env=self.env, timeout=300)
-        token = secrets.token_urlsafe(32)
         self.token_file = self.root / "agent.token"
-        self.token_file.write_text(token)
-        self.token_file.chmod(0o600)
-        identities = [dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(), principal="agent:task-eval-" + label,
-                           repo=TRIAL_REPO, role="agent", destination="hosted")]
-        (self.home / "identities.json").write_text(json.dumps(identities))
-        (self.home / "identities.json").chmod(0o600)
+        # The caller registers stop() only after construction returns, so a
+        # partial construction releases what it acquired here. The database
+        # stays inside the wrapper-owned disposable cluster.
+        try:
+            (self.root / "sock").symlink_to(self.sockdir)
+            self.socket = self.sockdir / "api.sock"
+            base = {k: v for k, v in os.environ.items() if not k.startswith("CAIRN_")}
+            self.env = dict(base, CAIRN_HOME=str(self.home), CAIRN_DATABASE_URL=self.dsn)
+            run([self.binary, "migrate"], env=self.env, timeout=300)
+            token = secrets.token_urlsafe(32)
+            self.token_file.write_text(token)
+            self.token_file.chmod(0o600)
+            identities = [dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(), principal="agent:task-eval-" + label,
+                               repo=TRIAL_REPO, role="agent", destination="hosted")]
+            (self.home / "identities.json").write_text(json.dumps(identities))
+            (self.home / "identities.json").chmod(0o600)
+        except BaseException:
+            self.token_file.unlink(missing_ok=True)
+            (self.home / "identities.json").unlink(missing_ok=True)
+            shutil.rmtree(self.sockdir, ignore_errors=True)
+            raise
         self.principal = "agent:task-eval-" + label
 
     def _pg_socket(self):
@@ -447,6 +456,11 @@ class TrialStore:
                 self.server.wait(15)
             except subprocess.TimeoutExpired:
                 self.server.kill()
+                try:
+                    self.server.wait(15)
+                except subprocess.TimeoutExpired:
+                    # Exit is unobserved: keep the server handle and socket for recovery.
+                    raise RuntimeError("cairn API did not exit after kill") from None
         self.server = None
         shutil.rmtree(self.sockdir, ignore_errors=True)
 
@@ -1520,15 +1534,12 @@ def cmd_agent(args):
             arm_config = pinned_arms[label] if prospective else {}
             store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
                                embedding_worker=arm_config.get("embedding_worker") if prospective else args.embedding_worker)
-            if prospective:
-                cleanup.callback(store.token_file.unlink, missing_ok=True)
-                cleanup.callback((store.home / "identities.json").unlink, missing_ok=True)
+            cleanup.callback(store.token_file.unlink, missing_ok=True)
+            cleanup.callback((store.home / "identities.json").unlink, missing_ok=True)
             cleanup.callback(store.stop)
-            if prospective:
-                store.seed_corpus(corpus, workers=1)
-                (store.root / "import-provenance.json").write_text(json.dumps(import_provenance(corpus, store.ids), indent=2))
-            else:
-                store.seed_corpus(corpus)
+            # Legacy keeps its original parallel import; both retain the fixture-to-record map.
+            store.seed_corpus(corpus, workers=1 if prospective else 8)
+            (store.root / "import-provenance.json").write_text(json.dumps(import_provenance(corpus, store.ids), indent=2))
             store.grow(args.distractors, 0)
             store.start()
             store.wait_for_full_coverage(timeout=args.cold_readiness_timeout)

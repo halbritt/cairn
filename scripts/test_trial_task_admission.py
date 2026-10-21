@@ -1,4 +1,5 @@
 """Offline contracts for provider failure classification and task admission."""
+import collections
 import json
 import contextlib
 import io
@@ -187,6 +188,10 @@ class SchedulingTest(unittest.TestCase):
             out = Path(directory) / "results"
             hook = Path(directory) / "memory.py"
             hook.write_text("# offline hook identity only\n")
+            store.root = store.home = Path(directory) / "store"
+            store.root.mkdir()
+            store.token_file = store.root / "agent.token"
+            store.ids = collections.defaultdict(lambda: "synthetic-record")
             with patch.object(te, "run_agent", side_effect=attempt), patch.object(te, "TrialStore", return_value=store), \
                     patch.object(te, "cairn_json", return_value={"revision": "fixture"}), \
                     patch.object(te, "run", return_value=Mock(stdout=b"offline provider")), \
