@@ -229,9 +229,9 @@ class SharedCoordinator:
     def pending_request(self):
         return self._call(lambda: None if self.rpc is None else self.rpc.pending_request())
 
-    def _prepare_command(self, pending, quote):
+    def _prepare_command(self, pending, quote, owner=None):
         require(not self._cancelled and self.rpc is not None and pending is not None
-                and pending is self.rpc.pending_request(), 'coordinator_request_binding')
+                and pending is self.rpc._pending_request(owner), 'coordinator_request_binding')
         if self.rpc._read_custody is not None:
             self.rpc._read_custody.authorize_pending()
         if not self.rpc.prepare_command_phase():
@@ -243,7 +243,7 @@ class SharedCoordinator:
         self.operation.bind_gate(self.gate)
         request = pending.request
         self.operation.prepare_hook(request.operation, request.args, request.body)
-        self.rpc.start_operation(self.operation)
+        self.rpc._start_operation(self.operation, owner)
         # RPC now exclusively owns this borrow. It may retire the command
         # in a later step; the coordinator must not retain that operation.
         self.operation = None
@@ -264,17 +264,17 @@ class SharedCoordinator:
                                   self.rpc._listener._path)
         return self._call(bind)
 
-    def prepare_next_command(self, quote):
+    def prepare_next_command(self, quote, *, owner=None):
         """Authorize and hand off internally; return only progress, not a borrow."""
         def handoff():
             require(not self._cancelled and self.rpc is not None
                     and self.rpc._read_custody is not None
                     and self.rpc._read_custody._service_custody is not None,
                     'coordinator_read_custody')
-            pending = self.rpc.pending_request()
+            pending = self.rpc._pending_request(owner)
             if pending is None:
                 return False
-            return self._prepare_command(pending, quote)
+            return self._prepare_command(pending, quote, owner)
         return self._call(handoff)
 
     def take_output(self):

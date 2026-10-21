@@ -98,6 +98,7 @@ class ProducerRPC:
         self._tx_kind = self._future = self._transaction = self._generation = None
         self._decoder = self._request = self._result = self._wire_sizes = None
         self._read_custody = None
+        self._command_owner = None
         self._text_chunk = None
         self._phases = self._status_code = None
         self._text_stream = self._text_position = self._text_offset = 0
@@ -287,6 +288,11 @@ class ProducerRPC:
         This is not a read grant. Fixed source checks current-read, credential,
         route and source custody before preparing the operation for handoff.
         """
+        return self._pending_request(None)
+
+    def _pending_request(self, owner):
+        """Internal fixed-source borrow; never returned by the fixed owner."""
+        wire.require(owner is self._command_owner, 'rpc_exclusive_command_owner')
         wire.require(not self._unknown and self._phase == 'handoff', 'rpc_request_pending')
         return self._request
 
@@ -314,9 +320,13 @@ class ProducerRPC:
 
     def start_operation(self, operation):
         """Accept only the exact prepared command; never authorize from its type."""
+        return self._start_operation(operation, None)
+
+    def _start_operation(self, operation, owner):
         try:
             try:
                 self._enter()
+                wire.require(owner is self._command_owner, 'rpc_exclusive_command_owner')
                 wire.require(self._phases is None or self._phases.state.phase == 'command',
                              'rpc_phase_boundary')
                 wire.require(self._phase == 'handoff' and self._operation is None and
@@ -567,6 +577,7 @@ class ProducerRPC:
                 self._read_custody._service_custody.release_producer_sources(self)
                 self._phases = None
             self._read_custody = None
+            self._command_owner = None
             self.resources.release(self._allocation)
             self._allocation = None
             self._retired = True

@@ -75,7 +75,7 @@ terminal/offer metadata and canonical traversal. Command result graphs and text
 remain under their original 64MiB parent quote until retirement. These are
 explicit source storage reservations, not measurements of interpreter/compiler
 internals, kernel queues or selected native executable RSS. Existing engine
-compilation/transitive runtime backing and cumulative callback working retention
+compilation/transitive runtime backing and producer-side graph retention
 still need whole-workload validation; a successful logical bank is not proof of
 physical fit.
 
@@ -118,25 +118,69 @@ produces unknown RELEASE: the bank remains quarantined and quotes remain held.
 Service interruption enters its owned cleanup through SIGINT; original deadline
 escalation remains unchanged. This is not clean completion or a traffic refund.
 
-The focused whole-bank regression completes three callback command exchanges
-through the original RPC/service state machines while holding this preparation,
-session and service standing storage. At command four it retains 451MiB working
-before trying to allocate the 64MiB child ticket. The proposed 515MiB (plus raw)
-refuses. This is a full-workload blocker, not a three-command replacement rule.
-The original search/expansion allowances are unchanged.
+The generic whole-bank regression still completes three callback commands and
+refuses the fourth: prior borrowed results retain 451MiB before the child would
+raise working storage to 515MiB. `CallbackPhases.retain_command_working` preserves
+that behavior. This is not a three-command workload substitution.
 
-The next custody correction belongs to `CallbackPhases.retain_command_working`
-and `before_status`, `ProducerRPC._text`, `_refuse`, `_retire_operation` and
-`ReadCustody.observe_completed`/`_publish`. Each successful command currently
-transfers its entire 64MiB parent quote cumulatively into the callback ticket.
-`_retire_operation` then clears RPC result/request/wire/chunk fields and calls
-`CommandOperation.retire`; `ReadCustody` retains normalized offer metadata and a
-reference to the retired operation. The source must establish which decoded
-strings/graphs, returned pending requests, sender chunks and exceptional frames
-still borrow the result at that returning-frame boundary. Producer-side decoded
-responses/engine state also need their own lifetime proof under the already held
-client/producer working allocation. The adversarial phase fixture intentionally
-keeps result and request aliases, so it cannot justify refunding them. A fixed
-source path with bounded retained metadata, ended aliases and separate
-failure-path quarantine is the correction to investigate; this candidate does
-not implement or assume that proof and does not lower a quote.
+The fixed callback path now binds an exclusive command owner before the first
+request. `FixedCallbackDriver` receives the original coordinator, RPC and held
+service binding; a late wrapper cannot adopt previous borrowed commands. Public
+pending-request and operation handoffs refuse once bound; internal handoffs
+require the exact original owner.
+`SharedCoordinator.prepare_next_command` exposes only progress; its request and
+operation locals return before RPC serialization. At `phase_return`, `_text`
+and read-custody parsing have returned, no record loan/credit remains pending,
+and the coordinator holds no command. `_release_command` rechecks the original
+service custody, publishes one additional 64MiB callback metadata charge, and
+then `_retire_operation` clears the request/result/chunk references before the
+original command retirement releases its parent ticket. Every command keeps
+its unchanged 64MiB parent/64MiB child quotes through execution.
+
+`ReadCustody` retains only UUID-keyed record/version/span metadata and the
+cleared retired operation. Its canonical inventory ceiling remains 131072.
+The persistent metadata reservation is 512 bytes per permitted canonical byte:
+UUID characters, tuple slots, bounded span integers, version digits, dictionary
+entries/table and allocator padding. Old/new inventory construction and parsing
+remain covered by the still-held command quote until their frames return. This
+reservation is distinct from decoded producer responses. It is retained until
+actual callback retirement, never reclaimed between commands.
+
+The full-bank focused test completes two search and four pull exchanges through
+the fixed owner and actual RPC/service state machines over inert syscall edges.
+Standing working storage remains 66MiB, callback working storage 129MiB, and
+retained metadata adds 64MiB: 259MiB between commands, at most 387MiB during the
+next unchanged 128MiB parent/child pair (plus the original raw reservations).
+The original raw command peak remains 129774. A companion test routes these
+calls through the original `Memory.search`/`Memory.call`, adapter and `run_json`,
+retains all six independently decoded graphs and observes that parent result
+objects have ended. These are synthetic source tests, not complete weekly runs.
+
+Refusal inside `_text`, cancellation, parse exceptions and interrupted returns
+retain the original generic working transfer or freeze the held parent ticket.
+An interruption after a known parent release cannot restore the ticket: result
+fields have already been cleared, persistent metadata remains charged, the bank
+freezes and no STATUS/retry follows. Tests cover both sides of that release and
+metadata allocation denial.
+
+### Separate producer lifetime obligation
+
+`ProducerClient.call` decodes both streams independently, then returns
+`CommandTextOutcome`; `EngineMemoryAdapter._bounded_command` returns those strings
+in `CompletedProcess`; original `run_json` parses a separate JSON graph. Its
+return ends the local CompletedProcess/text references on a healthy call, but
+`Memory.call` returns `data` to its caller. `recall` retains the search graph;
+`eager_agent_candidates` may retain `bodies`, current `pulled`, `passage`,
+`candidate`, `oversized`, and rendered text across later calls. Selected body and
+source-opening graphs can also overlap. These are producer allocations, not
+aliases of the parent's command result. The existing client64MiB and producer
+1MiB partitions are unchanged; this correction neither releases them nor uses
+the new metadata charge for them.
+
+A complete bound for those graphs, renderer temporaries, state/configuration,
+engine compilation and exception frames remains unproved. In particular, the
+1MiB per-stream command ceiling and 4MiB traffic ceiling do not alone prove a
+64MiB Python graph bound. The focused original-engine test demonstrates custody
+separation for its authored inputs; it does not certify every accepted response
+or full workload fit. Native/runtime admission and original weekly criteria
+remain pending. No reservation or cap is reduced to hide this obligation.

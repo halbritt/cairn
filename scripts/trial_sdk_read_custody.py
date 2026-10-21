@@ -1,8 +1,9 @@
 """Callback-local offers from held service results, never producer inventories.
 
 This narrows current-read admission; the downstream server remains authoritative.
-Parsing/retention uses the original command working quote transferred unchanged
-by CallbackPhases. It is not a complete physical quote or a new allowance.
+Parsing uses the original command working quote. Generic callers transfer that
+quote unchanged; the fixed exclusive callback owner charges retained normalized
+metadata separately before retiring the command. Neither path proves process RSS.
 """
 import json
 import uuid
@@ -10,6 +11,14 @@ import uuid
 from trial_sdk_command_policy import FixedCommandPolicy
 from trial_sdk_engine_adapter import CommandTextOutcome
 from trial_sdk_incoming import canonical_size_sha256, MAX_DOCUMENT_BYTES, parse_document
+
+# Retained normalized UUID keys, record/version tuples and bounded span pairs.
+# The 128KiB canonical inventory bounds both characters and structural entries.
+# 512 bytes per canonical byte covers the dictionary table, keys/values, strings,
+# integers, tuple slots and allocator padding. Parsing and old/new publication
+# overlap remain charged to the original command quote until its frame returns.
+# This additional callback charge never covers producer-side decoded JSON graphs.
+RETAINED_WORKING = 512 * MAX_DOCUMENT_BYTES
 
 
 class ReadCustodyError(ValueError):
@@ -70,7 +79,7 @@ class ReadCustody:
         """Inspect only the RPC's held request; return no payload/permit borrow."""
         try:
             self._live()
-            pending = self._rpc.pending_request()
+            pending = self._rpc._pending_request(self._rpc._command_owner)
             require(pending is not None, 'read_custody_pending')
             request = pending.request
             plan = self._policy.plan(request.operation, request.args, request.body)

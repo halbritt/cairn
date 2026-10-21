@@ -11,6 +11,7 @@ from trial_sdk_session_driver import SDKSessionDriver
 from trial_sdk_engine_adapter import engine_context
 from trial_sdk_command_operation import OperationQuote
 from trial_sdk_resource_failure import annotate_resource_failure, freeze_resource
+from trial_sdk_read_custody import RETAINED_WORKING
 
 
 class FixedCallbackDriver:
@@ -35,6 +36,37 @@ class FixedCallbackDriver:
         self._state = 'running'
         self._busy = self._failed = False
         self._faults = set()
+        # Only a pristine RPC can be lent exclusively. A late wrapper remains
+        # generic: prior public pending/result borrows cannot be revoked.
+        rpc = self._rpc
+        require(rpc._command_owner is None, 'outer_command_owner')
+        if rpc._phase == 'idle' and rpc.transcript.operation == 0 and not rpc._closed:
+            require(rpc._operation is None
+                    and rpc._request is None and rpc._read_custody._last_operation is None,
+                    'outer_command_owner')
+            rpc._command_owner = self
+
+    def _release_command(self, phases):
+        """Healthy serialized return; all parent result/parse frames have ended."""
+        rpc, c = self._rpc, self._coordinator
+        require(rpc._command_owner is self and phases is rpc._phases
+                and not self._failed and self._state == 'running'
+                and c.rpc is rpc and c.operation is None
+                and rpc._phase == 'phase_return' and rpc._cancel_reason is None,
+                'outer_command_return')
+        phases._settled()
+        operation = rpc._operation
+        require(operation is not None and operation._closed and not operation._unknown
+                and not operation._retired and phases.state.phase == 'command'
+                and rpc._read_custody._last_operation is operation,
+                'outer_command_return')
+        rpc._read_custody._live()  # Exact original service/configuration custody.
+        # Publish persistent metadata backing BEFORE the parent ticket is freed.
+        # This is a one-time charge, not a reduced command quote or a refund of
+        # generic borrowed results. Exceptions retain both tickets conservatively.
+        phases._transition(phases.state.row[2],
+            max(phases.state.row[3], phases.initial_working + RETAINED_WORKING), 'return')
+        rpc._retire_operation()
 
     def _queue_reply(self):
         # This frame must RETURN before detach/retirement. On any exception its
@@ -64,7 +96,7 @@ class FixedCallbackDriver:
                 self._state = 'writing'
                 return 'reply_queued'
             if self._rpc._phase == 'handoff':
-                if not c.prepare_next_command(self._quote):
+                if not c.prepare_next_command(self._quote, owner=self._rpc._command_owner):
                     self._pump()  # Incomplete producer stdin must still progress.
             else:
                 self._pump()

@@ -1,7 +1,8 @@
 """Original callback ticket transitions at actual serialized owner boundaries.
 
-Only canonical scratch reservations end here. All working bytes remain held;
-retired command working quotes accumulate for potentially borrowed results.
+Canonical scratch ends at returning frames. Generic command working quotes
+accumulate for borrowed results; the fixed exclusive owner separately charges
+retained metadata before ending its unborrowed parent command result.
 Named raw floors below reject undercounts, never establish a complete quote.
 """
 from trial_sdk_incoming import MAX_CHUNK_BYTES
@@ -96,8 +97,11 @@ class CallbackPhases:
 
     def before_status(self):
         require(self.rpc._phase == 'phase_return', 'rpc_phase_boundary')
-        self.retain_command_working()
-        self.rpc._retire_operation()
+        if self.rpc._command_owner is None:
+            self.retain_command_working()
+            self.rpc._retire_operation()
+        else:
+            self.rpc._command_owner._release_command(self)
         self._transition(self.initial_raw - PRODUCER_CANONICAL, self.state.row[3], 'request')
 
     def snapshot(self):

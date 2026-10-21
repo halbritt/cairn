@@ -137,7 +137,7 @@ class CleanupFaults(unittest.TestCase):
     def test_parent_operation_handoff_cleanup_poison(self):
         h = Harness(self)
         with h.readiness():
-            self.interrupt_cleanup(ProducerRPC.start_operation,
+            self.interrupt_cleanup(ProducerRPC._start_operation,
                                    lambda: h.client.call('search', ARGS))
         self.assertIsNotNone(h.rpc._operation)
         self.assert_parent_retained(h)
