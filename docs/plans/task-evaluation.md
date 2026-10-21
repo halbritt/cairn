@@ -647,3 +647,42 @@ remain outside this export, and retained passage metadata does not prove which
 preview the renderer displayed. These are historical search decisions, not
 current eligibility, applicability, causal memory use or task-benefit evidence.
 Existing sealed runs and their missing observations remain unchanged.
+
+## Dated run report and Cairn note (CAIRN-107)
+
+`scripts/trial_run_report.py` turns one paired run's existing evidence into a
+dated report and a short shareable note draft. It reads a
+`cairn.task-eval.agent/1` document and the `cairn.grading-join-report/1` from
+`trial_grading_custody.join_results`:
+
+```sh
+python3 scripts/trial_run_report.py render --agent OUT/agent/agent.json \
+  --join OUT/grading-join.json --date 2026-10-28 --out OUT/report
+python3 scripts/trial_run_report.py publish --report OUT/report/task-eval-run-2026-10-28.json \
+  --token-file TOKEN_FILE --repo "$HOME/git/cairn"
+```
+
+`render` writes `task-eval-run-DATE.{json,md,note.json}`. An identical rerun is
+a no-op; different content for the same date refuses. The report states planned,
+admitted, finished, failed and unstarted attempts, provider-limit losses
+(capacity-exhausted attempts plus attempts left unstarted by that stop), each of
+the 63 pairs' arm outcomes and grading comparison, the second grader's coverage,
+the declared agreement rate and every disagreement as `pending_owner`.
+
+It reads only allowlisted identifiers, counts and outcome tokens. Answers,
+traces, errors, memory deliveries, verdicts, reasons and grader or coordinator
+identities are never copied; unknown outcome tokens become `other`. The note
+has counts only, without case, seed or run identifiers, so a later memory arm
+cannot retrieve per-case results from it.
+
+The report fails closed. Unstarted, unfinished or failed attempts, provider
+losses, agent/join run mismatch, undetermined selection, missing or conflicting
+second grades and pending disagreements each add an `incomplete_reasons` entry.
+Without any, the status is only `declared_complete`: `custody` stays `unknown`
+and `actual_campaign_success` stays false whatever the inputs claim.
+
+`publish` checks the report digest, regenerates the note and saves it through
+`cairn agent remember --shareable --stdin`. The request ID is a UUIDv5 of the
+date and report digest, so a replay returns the same record and a changed body
+for the same request refuses. Tests use a fake CLI runner and synthetic
+evidence only; they launch no provider and write to no store.
