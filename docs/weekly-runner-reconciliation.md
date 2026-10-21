@@ -421,6 +421,78 @@ modified.
 - A complete receipt's observed native SHA-256 and effort must equal the
   declared ones (`bridge_runner_execution_mismatch`).
 
+### Semantic-fallback selector identity (proposed; still refused)
+
+**What the selector is.** An `ambient` arm with `semantic_fallback: true`
+takes `memory.recall`'s `verified_candidate` path
+(`integrations/lifecycle/memory.py`, the `elif
+memory.config.get("semantic_fallback")` branch). It calls `select_json` for
+the `preview` and `recall` stages. `select_json` runs `config["claude"]
+--print --output-format json ... --tools ""` with `--model
+selector_model(config, stage)`. `selector_model` reads `preview_model` or
+`recall_model` first, then `model`. An `agent_tools` arm never calls it, and
+neither does `inbox_recall` (it only uses `semantic` search).
+
+The legacy harness writes `claude=/tmp/trial/selector/claude` and
+`model=args.selector_model` (default `sonnet`) into the hook configuration. It
+binds `--selector-binary` (default `shutil.which("claude")`) read-only at that
+target. For codex it also binds `--selector-auth-file`. The plan records
+`selector_version` and `selector_binary_sha256`. These are ambient flag values,
+not declarations.
+
+**The original contract does not pin it.** `cairn.weekly-execution/1`
+(`trial_weekly_input._execution`, `docs/weekly-input-bundle-v1.md`) has a
+closed `memory_arms` shape. It has no selector binary or model. `native` is the
+actor's binary and model, so it is not the selector's. No value is inferred
+from current behaviour, and the refusal
+`original_execution_unsupported:semantic_fallback_selector` stays until root
+selects a declaration.
+
+**Proposed closed declaration** (`trial_semantic_selector.typed`):
+
+```json
+{"schema": "cairn.semantic-selector-identity/1",
+ "binary": {"path": "/abs/claude", "sha256": "<64 lowercase hex>"},
+ "model": "<selector model name>"}
+```
+
+- There are exactly these keys. `model` follows the hook's own
+  `selector_model` rule: nonempty, at most 256 characters, no whitespace or
+  control characters.
+- The one `model` is written to the hook configuration's `model` key, so it
+  applies to both selector stages. Stage-specific `preview_model` and
+  `recall_model` are not part of the declaration and refuse as malformed.
+  Note that `model` also selects the hook's Stop capture model.
+- Anything else raises `ValueError('semantic_selector_declaration')`.
+- It would be carried as a pinned file, like the embedding model identity. The
+  file's SHA-256 pins the declaration. It is not the binary's SHA-256.
+
+**Observation and comparison** (`trial_semantic_selector.compare`). These use
+only evidence the harness already has:
+- `observed_binary(path)` hashes the regular file the harness binds as the
+  selector. An unreadable or non-regular file is `None`.
+- `observed_calls(hook_invocations)` reads `requested_model` and `outcome`
+  from each retained `recall.preview_process` or `recall.model_process`. These
+  are the `cairn.task-hook-observation/1` rows that `hook_observations`
+  already returns.
+
+The result keeps `declared`, `observed`, `result`
+(`matched`/`mismatched`/`unobserved`) and `refusals` separate:
+- `semantic_selector_binary_unobserved` or `_binary_mismatch`.
+- `semantic_selector_model_unobserved`. This covers no selector call at all,
+  or a process record without `requested_model`, such as a hook revision that
+  never recorded it.
+- `semantic_selector_model_mismatch`. A null `requested_model` is a mismatch:
+  the CLI default ran.
+- `semantic_selector_observation_malformed`. This is a refusal, never an
+  exception.
+
+`requested_model` is the argument the hook passed. It is not the model the
+provider served. `not_observed` always lists `served_model` and
+`provider_account`. The hook's `modelUsage` reading goes only to the recall
+meter, not the observer, so the served model is not claimed. No new probe or
+protocol is added.
+
 ## Verifying the selected harness before launch (analysis)
 
 Question: before launch, can the runner verify that the exact exported
@@ -545,6 +617,10 @@ Limits and account selection:
 - The runner tests also cover account refusals and mismatch, a harness
   without the selector or the flag, and limit, late-memory and unobserved
   rows.
+- `test_trial_semantic_selector` (6 synthetic tests) covers the typed
+  declaration and malformed declarations, and a matching, mismatched,
+  unobserved and malformed selector observation. It uses a fake binary file
+  and fabricated hook rows only.
 
 ## Remaining work
 
@@ -552,7 +628,9 @@ Limits and account selection:
   capacity evidence for the selected `account_id`.
 - The artifact and evaluator channels (actor-final capture before grading).
 - The hook selector model and binary for an ambient arm with
-  `semantic_fallback` (`semantic_fallback_selector`).
+  `semantic_fallback` (`semantic_fallback_selector`). The declaration and
+  comparison exist in `trial_semantic_selector`. Root must still select the
+  contract field, and the harness and runner wiring is still to do.
 - Real capacity-adapter input for the bound account, and a root-issued live
   selection for one concrete slot.
 - Real conversion materials, a grader release authority, delivery, the
