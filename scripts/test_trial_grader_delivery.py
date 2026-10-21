@@ -504,7 +504,8 @@ class CollectTests(Case):
         self.setUp(); self.plan(); fabric = FakeFabric(); receipt = self.dispatch(fabric)
         request = fabric.request_of(receipt['deliveries'][0]['event_id'])
         for change in (dict(verdicts={'opaque-A': 'pass'}), dict(verdicts={'opaque-A': 'maybe', 'opaque-B': 'pass'}),
-                       dict(state='undetermined'), dict(reason='x'*16385), dict(extra=1)):
+                       dict(state='undetermined'), dict(reason='x'*16385), dict(extra=1),
+                       dict(reason='\ud800'), dict(state=[]), dict(pair_id={}), dict(verdicts=[])):
             body = dict(schema='cairn.grader-response/1', request_id=request['request_id'], pair_id='pair-A',
                         slot='primary', packet_sha256=request['packet_sha256'], binding_sha256=request['binding_sha256'],
                         state='determinate', verdicts={'opaque-A': 'pass', 'opaque-B': 'pass'}, reason='r')
@@ -513,6 +514,38 @@ class CollectTests(Case):
                 dict(pair_id='pair-A', samples=['opaque-B', 'opaque-A']),
                 dict(slot='primary', packet_sha256=request['packet_sha256']),
                 dict(binding_sha256=request['binding_sha256']), {'pass', 'fail'}))
+
+    def test_unhashable_or_deeply_nested_returns_are_invalid_without_refusing_other_grades(self):
+        def journal():
+            return {str(p.relative_to(self.root/'run')): p.read_bytes()
+                    for p in sorted((self.root/'run').rglob('*')) if p.is_file()}
+        malformed = {'list': lambda body: body['verdicts'].__setitem__('opaque-A', []),
+                     'object': lambda body: body['verdicts'].__setitem__('opaque-B', {}),
+                     'nested': None}
+        for name, change in malformed.items():
+            with self.subTest(verdict=name):
+                self.setUp(); self.plan(); fabric = FakeFabric(); receipt = self.dispatch(fabric)
+                self.answer(fabric, receipt, dict(primary=['pass', 'pass'], secondary=['pass', 'pass']))
+                ref = fabric.events[receipt['deliveries'][0]['event_id']]['deliveries'][0]['result']
+                row = fabric.records[(ref['record_id'], 1)]
+                if change is None:
+                    row['body'] = '[' * 30000 + ']' * 30000  # fits one note, exceeds the JSON nesting limit
+                else:
+                    body = json.loads(row['body']); change(body); row['body'] = json.dumps(body)
+                published = [c for c in fabric.calls if c[0] in ('remember', 'publish')]
+                report = self.collect(fabric)
+                self.assertEqual([g['state'] for g in report['grades']], ['invalid', 'graded'])
+                self.assertEqual(report['grades'][0]['result']['body_sha256'], sha(row['body']))
+                self.assertEqual(report['grades'][1]['verdicts'], {'opaque-A': 'pass', 'opaque-B': 'pass'})
+                self.assertEqual((report['coverage']['invalid'], report['coverage']['graded']), (1, 1))
+                self.assertEqual(report['agreement']['denominator'], 0)
+                before = journal()
+                self.assertEqual(self.collect(fabric), report)
+                self.assertEqual(journal(), before)
+                self.assertEqual([c for c in fabric.calls if c[0] in ('remember', 'publish')], published)
+                routed = grader.route_disagreements(self.root/'plan', self.root/'run', fabric=fabric, config=config(), now=NOW)
+                self.assertEqual(routed['disputes'], [])
+                self.assertEqual([c for c in fabric.calls if c[0] in ('remember', 'publish')], published)
 
     def test_collect_before_dispatch_refuses(self):
         self.plan()

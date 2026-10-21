@@ -277,8 +277,8 @@ def _response(body, intent, pair, delivery, plan, labels):
     """Parse a grader body; any mismatch yields None (retained as invalid, never retried)."""
     try:
         value = blind._json(body.encode('utf-8'))
-    except (paired.Refusal, ValueError, UnicodeError):
-        return None
+    except (paired.Refusal, ValueError, UnicodeError, RecursionError):
+        return None  # includes nesting beyond the parser's depth limit
     expected = dict(schema=RESPONSE_SCHEMA, request_id=intent['publication_id'], pair_id=pair['pair_id'],
                     slot=delivery['slot'], packet_sha256=delivery['packet_sha256'], binding_sha256=plan['binding_sha256'])
     if not isinstance(value, dict) or set(value) != set(expected) | {'state', 'verdicts', 'reason'}:
@@ -291,7 +291,7 @@ def _response(body, intent, pair, delivery, plan, labels):
         return value if value['verdicts'] is None else None
     if value['state'] != 'determinate' or not isinstance(value['verdicts'], dict):
         return None
-    if set(value['verdicts']) != set(pair['samples']) or any(v not in labels for v in value['verdicts'].values()):
+    if set(value['verdicts']) != set(pair['samples']) or any(type(v) is not str or v not in labels for v in value['verdicts'].values()):
         return None
     return value
 
