@@ -97,7 +97,8 @@ def _join(join):
     binding, aggregate, pairs = join.get('binding'), join.get('aggregate'), join.get('pairs')
     need(isinstance(binding, dict) and isinstance(aggregate, dict), 'report_join_shape')
     need(isinstance(pairs, list) and len(pairs) == ORIGINAL_PAIRS, 'report_join_pairs')
-    rows, keys = [], set()
+    rows, keys, mismatch = [], set(), False
+    counts = dict(missing=0, failed=0, changed=0, secondary=0, dual=0, conflicts=0)
     for pair in pairs:
         need(isinstance(pair, dict) and isinstance(pair.get('attempts'), dict), 'report_join_pairs')
         key = _token(pair.get('case')), _seed(pair.get('seed'))
@@ -105,12 +106,32 @@ def _join(join):
              and pair.get('declared_comparison') in COMPARISONS
              and pair.get('disposition_state', 'missing') in DISPOSITIONS, 'report_join_pairs')
         keys.add(key)
-        attempts = {}
+        attempts, states = {}, []
         for arm in ARMS:
             attempt = pair['attempts'].get(arm)
             need(isinstance(attempt, dict) and attempt.get('state') in ('missing', 'completed', 'failed'),
                  'report_join_pairs')
+            states.append(attempt['state'])
+            counts['missing'] += attempt['state'] == 'missing'
+            counts['failed'] += attempt['state'] == 'failed'
             attempts[arm] = None if attempt['state'] == 'missing' else _token(attempt.get('run_id'))
+        grades = pair.get('grade_states')
+        need(isinstance(grades, dict) and all(grades.get(slot) in
+             ('missing', 'conflict', 'determinate', 'undetermined')
+             for slot in ('primary', 'secondary')), 'report_join_pairs')
+        pair_issues = pair.get('issues')
+        need(isinstance(pair_issues, list), 'report_join_pairs')
+        changed = pair['selection'] == 'changed'
+        comparison = pair['declared_comparison']
+        eligible = (all(state == 'completed' for state in states)
+                    and all(grades[slot] == 'determinate' for slot in ('primary', 'secondary'))
+                    and not pair_issues)
+        determinate = comparison in ('agreement', 'disagreement')
+        mismatch |= (changed and determinate != eligible) or (not changed and comparison != 'not_selected')
+        counts['changed'] += changed
+        counts['secondary'] += changed and grades['secondary'] != 'missing'
+        counts['dual'] += changed and eligible and determinate
+        counts['conflicts'] += sum(changed and grades[slot] == 'conflict' for slot in ('primary', 'secondary'))
         rows.append(dict(case=key[0], seed=key[1], selection=pair['selection'],
                          comparison=pair['declared_comparison'],
                          disposition=pair.get('disposition_state', 'missing'), runs=attempts,
@@ -119,7 +140,7 @@ def _join(join):
     coverage = aggregate.get('changed_pair_coverage')
     issues = aggregate.get('changed_pair_issues')
     need(isinstance(attempts, dict) and isinstance(coverage, dict) and isinstance(issues, dict), 'report_join_shape')
-    return dict(
+    projected = dict(
         campaign_id=_token(binding.get('campaign_id')), occurrence_id=_token(binding.get('occurrence_id')),
         request_id=_token(binding.get('request_id')), pairs=rows,
         missing=_count(attempts.get('missing'), 'report_join_shape'),
@@ -130,6 +151,12 @@ def _join(join):
         conflicts=sum(_count(issues.get(k, 0), 'report_join_shape')
                       for k in ('primary_conflict', 'secondary_conflict')),
         undetermined=aggregate.get('selection_completeness') != 'declared')
+    # Summaries cannot override the per-pair declarations they summarize.
+    mismatch |= any(projected[key] != value for key, value in counts.items())
+    undetermined = any(pair['selection'] == 'undetermined' for pair in rows)
+    mismatch |= projected['undetermined'] != undetermined
+    projected.update(counts, undetermined=undetermined, mismatch=mismatch)
+    return projected
 
 
 def report_digest(report):
@@ -140,7 +167,9 @@ def build_report(agent, join, run_date):
     """Return a deterministic body-free report; performs no I/O."""
     run_date = _date(run_date)
     a, j = _agent(agent), _join(join)
-    by_key, mismatch = {}, False
+    by_key, mismatch = {}, j['mismatch']
+    mismatch |= (a['admitted'] > a['planned'] or len(a['records']) > a['admitted']
+                 or a['admitted'] + a['not_started'] != a['planned'])
     for row in a['records']:
         key = (row['case'], row['seed'], row['arm'])
         mismatch |= key in by_key or row['arm'] not in ARMS
@@ -175,6 +204,7 @@ def build_report(agent, join, run_date):
         'attempts_not_started': a['not_started'] > 0 or a['admitted'] < a['planned'],
         'attempts_unfinished': len(a['records']) < a['planned'],
         'attempt_failures': bool(failed),
+        'attempt_outcome_unknown': any(r['outcome'] == 'other' for r in a['records']),
         'provider_limit_losses': limit_losses > 0,
         'provider_auth_failures': auth > 0,
         'measurement_failures': a['measurement_failures'] > 0,

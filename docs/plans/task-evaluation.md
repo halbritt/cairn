@@ -686,3 +686,10 @@ and `actual_campaign_success` stays false whatever the inputs claim.
 date and report digest, so a replay returns the same record and a changed body
 for the same request refuses. Tests use a fake CLI runner and synthetic
 evidence only; they launch no provider and write to no store.
+
+The run-report renderer checks admission arithmetic and reconciles join summary
+counts with per-pair attempt, selection, and grade-state declarations. Contradictory
+counts or ineligible comparisons yield `incomplete` with `evidence_mismatch`;
+unknown attempt outcomes also prevent `declared_complete`. The displayed coverage
+comes from the pair rows rather than a contradictory aggregate. These consistency
+checks do not authenticate grades, establish custody, or resolve disagreements.

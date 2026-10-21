@@ -103,6 +103,42 @@ class ReportTests(unittest.TestCase):
         self.assertIs(report['actual_campaign_success'], False)
         self.assertEqual(report['report_sha256'], run_report.report_digest(report))
 
+    def test_inconsistent_declared_evidence_cannot_report_complete(self):
+        variants = ('over_admitted', 'too_few_admitted', 'secondary_count',
+                    'ineligible_pair', 'missing_grade', 'failed_attempt',
+                    'undetermined_selection', 'unknown_outcome')
+        for variant in variants:
+            with self.subTest(variant=variant):
+                agent, join = complete_inputs()
+                pair = next(p for p in join['pairs'] if p['selection'] == 'changed')
+                if variant == 'over_admitted':
+                    agent['admission']['admitted'] = 127
+                elif variant == 'too_few_admitted':
+                    agent['admission']['admitted'] = 125
+                elif variant == 'secondary_count':
+                    join['aggregate']['changed_pair_coverage']['secondary_present'] = 0
+                elif variant == 'ineligible_pair':
+                    pair['declared_comparison'] = 'ineligible'
+                elif variant == 'missing_grade':
+                    pair['grade_states']['secondary'] = 'missing'
+                elif variant == 'failed_attempt':
+                    pair['attempts']['CURRENT']['state'] = 'failed'
+                elif variant == 'undetermined_selection':
+                    pair['selection'] = 'undetermined'
+                else:
+                    agent['records'][0]['outcome'] = 'unsupported'
+                report = run_report.build_report(agent, join, '2026-10-21')
+                self.assertEqual(report['status'], 'incomplete')
+                self.assertTrue(report['incomplete_reasons'])
+                self.assertIn('Status: incomplete', run_report.note_draft(report)['body'])
+                self.assertFalse(report['actual_campaign_success'])
+                if variant == 'missing_grade':
+                    self.assertEqual(report['grading']['second_grader_reviewed'], 1)
+                    self.assertEqual(report['grading']['dual_determinate'], 1)
+                if variant == 'secondary_count':
+                    self.assertEqual(report['grading']['second_grader_reviewed'], 2)
+                    self.assertIn('evidence_mismatch', report['incomplete_reasons'])
+
     def test_report_is_deterministic_and_independent_of_record_order(self):
         agent, join = complete_inputs()
         first = run_report.build_report(agent, join, '2026-10-21')
