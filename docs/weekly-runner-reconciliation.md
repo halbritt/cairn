@@ -248,6 +248,82 @@ These are delegated decisions made in this lane.
 - **Timer.** `Mon 06:00 UTC`, which must equal the profile schedule;
   `Persistent=false`. Not installed.
 
+## Retained baseline verification
+
+agent-504's 86298af makes `run_agent` capture a pre-actor baseline outside
+the writable work tree and record its pin as `baseline_custody`. Before this
+change, the runner never checked it: a run could be `complete` and issue a
+pair binding with no retained baseline at all.
+
+Now, before a run can be `complete` or issue a binding, every attempt row
+must carry `baseline_custody`. The runner loads that baseline with the
+unchanged `trial_attempt_custody.AttemptBaseline.load`, which checks:
+- the exact bytes and SHA-256 against the pin;
+- the private file policy (a 0700 directory, a 0600 file with a single
+  link, and the runner's uid);
+- the schema;
+- the identity `{run_id, case, arm, seed, cwd}` of this exact attempt.
+
+The `cwd` comes from the reviewed harness's case metadata, carried in
+`spec.tasks[case].cwd`.
+
+Outcomes:
+- A missing pin gives `incomplete` / `attempt_baseline_missing`.
+- A missing file, tampered bytes, another attempt's baseline (swapped), a
+  wrong identity or a wrong file policy gives `rejected` /
+  `attempt_baseline_invalid`.
+- No baseline is ever reconstructed.
+- A complete receipt records `baseline_custody: {verified: 126, proof:
+  harness_retained_baseline}`.
+
+This is harness custody under the existing mount boundary, as
+`docs/original-attempt-custody.md` states. It is not independent
+attestation, source-version evidence or final-artifact custody. The
+prospective path is unchanged.
+
+## Verifying the selected harness before launch (analysis)
+
+Question: before launch, can the runner verify that the exact exported
+harness implements the required instruments? Those are the original-limits
+configuration, capture and process custody, baseline custody and the content
+hashes.
+
+Today it cannot. The runner checks three things:
+- an exact `harness_commit` exported with `git archive`;
+- the frozen label pins;
+- two marker strings (`selected = credentials_source()` and
+  `"--original-limits"`) plus the presence of two module files.
+
+The markers show only that the text exists. They do not show that the code
+paths behave correctly, so they are not proof. Proposal, in order of
+strength:
+
+1. **Reviewed instrument manifest (recommended first step).** An
+   independent reviewer, not the engineer, issues a pinned
+   `cairn.weekly-harness-review/1`. It names `harness_commit` and the SHA-256
+   of each instrument file: `trial_task_eval.py`, `trial_legacy_limits.py`,
+   `trial_account_selection.py`, `trial_native_capture.py`,
+   `trial_process_custody.py`, `trial_attempt_custody.py`,
+   `trial_hook_observer.py`, `trial_task_runtime.py` and
+   `trial-task-eval.sh`, with the reviewed test results. The runner
+   re-hashes those files in the export and refuses on any difference. The
+   live selection also pins the review's hash. This binds the launch to
+   reviewed bytes, and it also makes the marker checks redundant.
+2. **Pre-launch inert conformance run of the export itself.** Before
+   claiming the slot, the runner would run the exported tree's own synthetic
+   boundary suites (`test_trial_original_limits_boundary`,
+   `test_trial_attempt_custody` and `test_trial_account_selection`) in a
+   subprocess. They use fakes only, with no provider, case or oracle. Their
+   pass/fail and counts would be recorded in the claim. This gives behavioral
+   evidence for the exact bytes, but the bytes test themselves, so it
+   complements (1) and does not replace it.
+3. Neither shows how a native binary or account behaves at runtime; that
+   still needs the live run's own evidence.
+
+Neither (1) nor (2) is implemented here. (1) needs an issuer role and a
+schema decision from root, and (2) changes the runner's pre-claim cost and
+needs a test-selection contract.
+
 ## Joins to an actual campaign
 
 Each join from this runner to an actual 21-case / 126-attempt /
@@ -262,7 +338,7 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |
 | Artifact, action and evaluator channels | `trial_legacy_blind_selection` refuses `legacy_channel_unbound` | **Not implemented**; owned by agent-504 (workspace setup and channel recording). Only task statement, grading instructions and final answer are bound |
-| Baseline custody per attempt | `baseline_custody` (agent-504, `trial_attempt_custody.py`, after this lands) to `_agent_result` | **Not implemented**. The row checks ignore unknown fields and do not require it. A later change can bind it as a declared value next to `stream_sha256`/`prompt_sha256` |
+| Baseline custody per attempt | `baseline_custody` (agent-504, `trial_attempt_custody.AttemptBaseline.load`) to `_limit_result` | **Implemented**: required and verified for every attempt before `complete` or a binding (harness custody, not attestation) |
 | Snapshot integrity for outcomes | `prepare_workspace` `:667` / grade `:1303` | **Blocker 3**, agent-504 |
 | Grader delivery release authority | `trial_grader_delivery._check_authority` (`cairn.grader-release-authority/1`) | **Not implemented here**. Requires an owner- or coordinator-issued authority and fresh eligible grader sessions; none exists |
 | Grades to grading join | `trial_grading_custody.join_results(bundle, submissions, dispositions)` | **Not implemented** for legacy-derived selections. Needs returned grades from delivery and a bundle that matches the converted selection; unverified |

@@ -32,6 +32,7 @@ import sys
 import uuid
 
 import trial_account_selection as selection
+import trial_attempt_custody as custody
 import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
 import trial_legacy_limits as limits
@@ -421,9 +422,10 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
     tasks = {}
     for case in loaded:
         prompt = (case.get('wordings') or {}).get('task')
-        need(type(prompt) is str, 'harness_case_identity')
+        need(type(prompt) is str and type(case.get('cwd')) is str and case['cwd'], 'harness_case_identity')
+        # cwd is the reviewed case's attempt identity field for its retained baseline.
         tasks[case['id']] = dict(prompt_sha256=hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
-                                 input_bytes=limits.input_charge(prompt, te.MEMORY_INSTRUCTION))
+                                 input_bytes=limits.input_charge(prompt, te.MEMORY_INSTRUCTION), cwd=case['cwd'])
     spec = dict(schema=SPEC_SCHEMA, slot_id=claim['slot_id'], arms=arms,
                 harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
@@ -512,6 +514,15 @@ def _limit_result(result, run_dir, records, spec):
         if record['prompt_sha256'] != task['prompt_sha256']:
             return dict(result, status='rejected', code='task_prompt_mismatch')
         base = run_dir / 'runs' / record['run_id']
+        # The retained pre-actor baseline must exist, match its pin and file policy, and
+        # name exactly this attempt (trial_attempt_custody.AttemptBaseline.load). Never rebuilt.
+        if 'baseline_custody' not in record:
+            return dict(result, status='incomplete', code='attempt_baseline_missing')
+        try:
+            custody.AttemptBaseline.load(base, dict(id=record['case'], cwd=task['cwd']), record['arm'],
+                                         record['seed'], record['baseline_custody'])
+        except custody.BaselineError:
+            return dict(result, status='rejected', code='attempt_baseline_invalid')
         try:
             stream = _read_limited(base / 'stream.jsonl')
             hooks = base / 'hook-state/observations.jsonl'
@@ -528,7 +539,8 @@ def _limit_result(result, run_dir, records, spec):
         for reason in assessment['failures'] + assessment['unknown']:
             reasons[reason] = reasons.get(reason, 0) + 1
     result = dict(result, limit_assessment=dict(counts, reasons=dict(sorted(reasons.items())),
-                                                limits=dict(paired.ORIGINAL_LIMITS)))
+                                                limits=dict(paired.ORIGINAL_LIMITS)),
+                  baseline_custody=dict(verified=len(records), proof='harness_retained_baseline'))
     if counts['failed']:
         return dict(result, status='incomplete', code='original_limit_exceeded')
     if counts['unknown']:
@@ -550,9 +562,10 @@ def _pair_binding(slot, spec, campaign_id, agent, plan):
 
 
 def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None,
-            limit_assessment=None):
+            limit_assessment=None, baseline_custody=None):
     receipt = dict(claim, schema=RECEIPT_SCHEMA, status=status, code=code, agent=agent, attempts=attempts,
                    harness_exit_code=harness_exit_code, pair_binding=pair_binding, limit_assessment=limit_assessment,
+                   baseline_custody=baseline_custody,
                    pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)

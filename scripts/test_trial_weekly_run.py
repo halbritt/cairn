@@ -44,7 +44,7 @@ def write_synthetic_trial(repo, count=21):
     root = repo / 'trials/task-eval'
     root.mkdir(parents=True)
     (root / 'cases.json').write_text(json.dumps(dict(
-        baseline_commit='0' * 40, cases=[dict(id=f'synthetic-{n}', wordings=dict(task=f'Synthetic task for synthetic-{n}.\n'))
+        baseline_commit='0' * 40, cases=[dict(id=f'synthetic-{n}', cwd='project', wordings=dict(task=f'Synthetic task for synthetic-{n}.\n'))
                                          for n in range(count)])))
     (root / 'corpus.json').write_text(json.dumps(dict(notes=[])))
     manifest = te.label_manifest(1, root=root)
@@ -126,6 +126,42 @@ stop = None
 if capped:
     stop = dict(run_id=rows[-1][0]['run_id'], provider='claude', reason='capacity_exhausted', api_error_status=429)
     rows[-1][0]['trace'] = dict(admission_failure=dict(provider='claude', reason='capacity_exhausted', api_error_status=429))
+# Synthetic pre-actor baselines in trial_attempt_custody's retained format (fixture only).
+baselines = out / 'baselines'
+baselines.mkdir(mode=0o700, exist_ok=True)
+
+def baseline_path(run_id):
+    return baselines / (hashlib.sha256(run_id.encode()).hexdigest() + '.json')
+
+def retain_baseline(row, **identity):
+    document = dict(schema='cairn.attempt-baseline/1', base_commit='1' * 40, snapshot={}, repository={},
+                    identity=dict(dict(run_id=row['run_id'], case=row['case'], arm=row['arm'], seed=row['seed'],
+                                       cwd='project'), **identity))
+    raw = json.dumps(document, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()
+    path = baseline_path(row['run_id'])
+    path.unlink(missing_ok=True)
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    row['baseline_custody'] = dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+
+for row, _ in rows:
+    retain_baseline(row)
+target, other = rows[7][0], rows[8][0]
+if mode == 'baseline_missing':
+    target.pop('baseline_custody')
+elif mode == 'baseline_absent':
+    baseline_path(target['run_id']).unlink()
+elif mode == 'baseline_tampered':
+    path = baseline_path(target['run_id'])
+    path.write_bytes(path.read_bytes().replace(b'1' * 40, b'2' * 40))
+elif mode == 'baseline_swapped':
+    baseline_path(target['run_id']).write_bytes(baseline_path(other['run_id']).read_bytes())
+    target['baseline_custody'] = dict(other['baseline_custody'])
+elif mode == 'baseline_identity':
+    retain_baseline(target, seed=target['seed'] + 1)
+elif mode == 'baseline_policy':
+    baseline_path(target['run_id']).chmod(0o644)
+
 for row, text in rows:
     base = out / 'runs' / row['run_id']
     base.mkdir(parents=True, exist_ok=True)
@@ -709,6 +745,29 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual((failed['status'], failed['code']),
                          ('failed_before_execution', 'harness_original_limits_unsupported'))
         self.assertEqual(self.executor.executed, [])
+
+
+    def test_complete_run_verifies_every_retained_baseline_before_binding(self):
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['status'], 'complete')
+        self.assertEqual(receipt['baseline_custody'], dict(verified=126, proof='harness_retained_baseline'))
+        self.assertIsNotNone(receipt['pair_binding'])
+
+    def test_missing_tampered_swapped_or_wrong_identity_baselines_never_complete_or_bind(self):
+        for mode, status, code in (('baseline_missing', 'incomplete', 'attempt_baseline_missing'),
+                                   ('baseline_absent', 'rejected', 'attempt_baseline_invalid'),
+                                   ('baseline_tampered', 'rejected', 'attempt_baseline_invalid'),
+                                   ('baseline_swapped', 'rejected', 'attempt_baseline_invalid'),
+                                   ('baseline_identity', 'rejected', 'attempt_baseline_invalid'),
+                                   ('baseline_policy', 'rejected', 'attempt_baseline_invalid')):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.executor.harness_mode = mode
+                receipt = self.run_weekly()
+                self.assertEqual((receipt['status'], receipt['code']), (status, code))
+                self.assertIsNone(receipt['pair_binding'])
+                self.assertFalse((self.runs / receipt['slot_id'] / 'pair-binding.json').exists())
 
 
 if __name__ == '__main__':
