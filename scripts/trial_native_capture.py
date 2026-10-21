@@ -201,7 +201,7 @@ def retain_metadata(path, value):
         os.fsync(output.fileno())
 
 
-def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=None):
+def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=None, pass_fds=()):
     """Legacy four-tuple; classification is distinct from observed child status."""
     started = time.monotonic()
     deadline = started + timeout
@@ -209,7 +209,8 @@ def capture(command, timeout, timing_path, *, input_bytes=None, custody_path=Non
     timings, sent, stderr_total = [], 0, 0
     classification, code, pipe_eof = 'completed', None, set()
     child = subprocess.Popen(command, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                             pass_fds=pass_fds)
     owner = OwnedProcesses(child)
     def timing(line):
         timings.append(dict(line=len(timings)+1, received_seconds=time.monotonic()-started,

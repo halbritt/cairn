@@ -792,6 +792,56 @@ Owned-file changes this needs (not made):
 - `trial_original_execution.check_observed` (:150-184): consume the
   per-attempt classification.
 
+## Owned writer leaf and release result (harness, root-selected)
+
+The legacy harness accepts an optional `--original-writer-cgroup PARENT`
+together with a pinned `cairn.writer-controls/1` resource policy
+(`--original-writer-controls` with its SHA-256); `--original-limits` is
+required. Root selects both; nothing infers them. With both set, each
+original attempt runs as follows (`trial_writer_release`):
+
+1. **Leaf.** An exclusive new leaf is created through
+   `trial_owned_workers.OwnedCgroup`. `OwnedCgroup` now takes an explicit
+   `controls` policy: `None` keeps the fixture default `CONTROLS` unchanged,
+   and the legacy route applies exactly the selected policy, which may be
+   empty. A leaf that cannot be created refuses the attempt before the actor
+   starts (`original_writer_containment_unavailable`).
+2. **Membership before exec.** `trial_writer_launcher` writes its pid to the
+   held `cgroup.procs` descriptor and requires `/proc/self/cgroup` to name
+   the leaf. Only then does it report `member PID` and exec the unchanged
+   sandbox command. Otherwise it exits 125 without exec. It adds no rlimits,
+   keeps the legacy environment and adds no namespaces. The fixture
+   launcher, its `RLIMIT_FSIZE`/`RLIMIT_CORE` caps, `--json-status-fd` and
+   `verify_namespace` are not used.
+3. **Release before grading.** After the existing capture returns, the
+   owner kills the leaf through the held `cgroup.kill` descriptor and reads
+   `populated` from the held `cgroup.events` descriptor. The row's
+   `writer_release` (`cairn.legacy-writer-release/1`) is bound to the run ID
+   and workspace. Its `state` is exactly one of:
+   - `released`;
+   - `bootstrap_unobserved`;
+   - `kill_unknown`;
+   - `events_unknown`;
+   - `not_released`;
+   - `close_unknown` (released, but a close error occurred).
+
+   Any state other than `released` is a row failure
+   (`writer_release_<state>`), and the row is never graded.
+4. **Kept separate.** The real `waitpid` status (`observed_wait_status`,
+   `observed_returncode`, `leader_reaped`) and stream EOF are recorded as
+   separate observations. `complete_descendant_custody` stays `False`, and
+   `observed_clear` is never mapped to a release.
+   `migration_control: unknown`: the legacy route has no cgroup namespace, so
+   a same-user writer could move itself to another leaf it can write. A
+   released leaf is therefore not final-artifact custody.
+
+The tests separate synthetic owner machinery from real cgroup operations.
+The synthetic tests use a fake group with a regular-file `cgroup.procs` and
+scripted population; real local processes run through the launcher,
+capture and `run_agent`. The real delegated-leaf test (double-fork, setsid
+and after-pipe-close writers) runs only inside an already delegated fixture
+service. It was skipped in the authoring session and is not claimed.
+
 ## Verifying the selected harness before launch (analysis)
 
 Question: before launch, can the runner verify that the exact exported

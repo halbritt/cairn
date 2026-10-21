@@ -32,8 +32,14 @@ class WaitFact:
 
 
 class OwnedCgroup:
-    """Only an exclusive new domain leaf; all effects use held directory/file FDs."""
-    def __init__(self, delegated):
+    """Only an exclusive new domain leaf; all effects use held directory/file FDs.
+
+    ``controls`` is an explicit resource policy. None keeps the fixture default,
+    CONTROLS, unchanged; another route passes its own selected policy (which may
+    be empty) instead of inheriting the fixture caps.
+    """
+    def __init__(self, delegated, controls=None):
+        controls = CONTROLS if controls is None else controls
         self.name = 'cairn-fixture-'+str(uuid.uuid4())
         self.parent = os.open(delegated, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         self.fd = None
@@ -48,7 +54,7 @@ class OwnedCgroup:
             self.relative = self.path.removeprefix('/sys/fs/cgroup')
             if self.read('cgroup.type').strip() != 'domain':
                 raise Unavailable('cgroup_domain_unavailable')
-            for field, value in CONTROLS.items():
+            for field, value in controls.items():
                 name = field.replace('_', '.')
                 self.write(name, str(value).encode())
                 if self.read(name).strip() != str(value):

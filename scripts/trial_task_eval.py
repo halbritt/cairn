@@ -41,6 +41,7 @@ import trial_codex_weekly_limits as codex_weekly_limits
 import trial_native_copy as native_copy
 import trial_original_arms as original_arm_controls
 import trial_embedding_identity as identity_declaration
+import trial_writer_release as writer_release
 from trial_native_observation import capture, measure
 from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
@@ -1095,6 +1096,15 @@ def codex_weekly_command(codex_entry, model, effort):
 BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
 
 
+def paired_json_pin(path, sha256):
+    """A closed JSON control document pinned by path and SHA-256 (trial_paired_request rules)."""
+    import trial_paired_request as paired
+    try:
+        return paired.read_json_pin(dict(path=path, sha256=sha256))
+    except paired.Refusal as error:
+        raise ValueError("original_writer_controls_unavailable") from error
+
+
 def original_binding_check(root, cwd_name, binds, env, harness, sandbox_options, base, timeout):
     """Run BINDING_CHECK in the attempt sandbox for an original agent_tools arm; refuse before launch."""
     checked = sandbox_command(root, cwd_name, binds, env, prerequisite_command(BINDING_CHECK), harness, **sandbox_options)
@@ -1295,6 +1305,14 @@ def run_agent(case, arm, seed, order, args, stores, out):
     else:
         provider += ["--", prompt]
     command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
+    writer_leaf = writer_record = None
+    if original and getattr(args, "_original_writer", None):
+        # Root-selected owned leaf: the actor joins it before exec. Unavailable refuses before launch.
+        try:
+            writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"])
+        except writer_release.WriterUnavailable as error:
+            raise RuntimeError("original_writer_containment_unavailable: " + str(error)) from None
+        command = writer_leaf.wrap(command)
     started = time.monotonic()
     capture_error = None
     raw_stdout, raw_stderr = b'', b''
@@ -1307,8 +1325,18 @@ def run_agent(case, arm, seed, order, args, stores, out):
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
         elif original or codex_weekly:
             # The existing capture records per-line receive times for the last-memory bound.
-            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json",
-                                                          custody_path=base / "native-process-custody.json")
+            try:
+                raw_stdout, raw_stderr, code, timings = capture(
+                    command, args.timeout, base / "stream-timing.json", custody_path=base / "native-process-custody.json",
+                    pass_fds=writer_leaf.pass_fds if writer_leaf is not None else ())
+            except BaseException:
+                if writer_leaf is not None:
+                    # Never leave the owned leaf populated; this attempt fails regardless.
+                    try:
+                        writer_leaf.release(time.monotonic() + 5)
+                    finally:
+                        writer_leaf.close()
+                raise
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
         else:
             result = subprocess.run(command, capture_output=True, timeout=args.timeout)
@@ -1351,6 +1379,19 @@ def run_agent(case, arm, seed, order, args, stores, out):
             if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
                     or process_custody["cleanup"]["status"] != "observed_clear"):
                 custody_failure = "process_custody_unknown"
+            if writer_leaf is not None:
+                # Owner-derived release before any grading: bootstrap membership, then the leaf release.
+                try:
+                    bootstrap = writer_leaf.bootstrap()
+                    released = writer_leaf.release(time.monotonic() + 5)
+                finally:
+                    closed = writer_leaf.close()
+                writer_record = writer_release.result(
+                    run_id=run_id, workspace=cwd, bootstrap=bootstrap, release=released, close_errors=closed,
+                    custody=process_custody, controls=args._original_writer["controls"])
+                (base / "writer-release.json").write_text(json.dumps(writer_record, indent=2))
+                if writer_record["state"] != "released" and custody_failure is None:
+                    custody_failure = "writer_release_" + writer_record["state"]
         if (original or codex_weekly) and arm in stores:
             hook_rows = None  # malformed observations stay unknown in the assessment
             observations = base / "hook-state/observations.jsonl"
@@ -1464,6 +1505,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if codex_weekly:
             record["codex_weekly_limits"] = limit_assessment
             record["process_custody"] = process_custody
+        if writer_record is not None:
+            record["writer_release"] = writer_record
     if prospective:
         record["selected_input"] = selected_input
         record["process_custody"] = process_custody
@@ -1663,6 +1706,18 @@ def cmd_agent(args):
         execution.update(original_native=args._original_native, reasoning_effort=args.reasoning_effort,
                          harness_version=args._original_native["observed"]["version"])
     declared_identity = None
+    if getattr(args, "original_writer_cgroup", None) and not prospective:
+        # Root-selected delegated parent and explicit resource policy for the owned writer leaf.
+        controls = paired_json_pin(args.original_writer_controls, args.original_writer_controls_sha256)
+        if not (isinstance(controls, dict) and set(controls) == {"schema", "controls"}
+                and controls["schema"] == "cairn.writer-controls/1"):
+            raise ValueError("original_writer_controls_invalid")
+        args._original_writer = dict(delegated=args.original_writer_cgroup,
+                                     controls=writer_release.check_controls(controls["controls"]))
+        execution["original_writer"] = dict(delegated=args.original_writer_cgroup,
+                                            controls=dict(path=args.original_writer_controls,
+                                                          sha256=args.original_writer_controls_sha256),
+                                            policy=args._original_writer["controls"])
     if getattr(args, "original_arms", None) and not prospective:
         # Before any store starts: the literal per-arm controls and raw recall blobs.
         execution["original_arms"], args._original_arms = original_arm_controls.load_controls(
@@ -2031,6 +2086,9 @@ def main(argv=None):
     a.add_argument("--original-arms-sha256")
     a.add_argument("--original-embedding-identity", help="typed cairn.embedding-model-identity/1 declaration")
     a.add_argument("--original-embedding-identity-sha256")
+    a.add_argument("--original-writer-cgroup", help="root-selected delegated cgroup parent for the owned writer leaf")
+    a.add_argument("--original-writer-controls", help="cairn.writer-controls/1: the selected leaf resource policy")
+    a.add_argument("--original-writer-controls-sha256")
     a.add_argument("--original-limits", action="store_true",
                    help="legacy Claude fixtures under trial_paired_request.ORIGINAL_LIMITS (5 s hooks, 32000 tool room, "
                         "task wire charged, captured stream timing); exceeding rows are measurement failures")
@@ -2048,7 +2106,10 @@ def main(argv=None):
         return 0
     if args.command == "agent":
         originals = (args.original_native_path, args.original_native_sha256, args.original_arms, args.original_arms_sha256,
-                     args.original_embedding_identity, args.original_embedding_identity_sha256)
+                     args.original_embedding_identity, args.original_embedding_identity_sha256,
+                     args.original_writer_controls, args.original_writer_controls_sha256)
+        if bool(args.original_writer_cgroup) != bool(args.original_writer_controls):
+            parser.error("--original-writer-cgroup and --original-writer-controls go together")
         if args.prospective_input and any(originals):
             parser.error("original execution is a legacy-fixtures option")
         for path, digest in zip(originals[::2], originals[1::2]):
