@@ -99,6 +99,7 @@ class ProducerRPC:
         self._decoder = self._request = self._result = self._wire_sizes = None
         self._read_custody = None
         self._command_owner = None
+        self._call_attempts = dict.fromkeys(('search', 'pull', 'pull-evidence', 'history', 'other'), 0)
         self._text_chunk = None
         self._phases = self._status_code = None
         self._text_stream = self._text_position = self._text_offset = 0
@@ -276,6 +277,8 @@ class ProducerRPC:
             self._request = PendingRequest(self.transcript.operation, self._deadline,
                 HookRequest(document['operation'], tuple(document['args']), document['body']),
                 size, digest)
+            operation = document['operation']
+            self._call_attempts[operation if operation in self._call_attempts else 'other'] += 1
             self._decoder = None
             self._phase = 'handoff'
         elif frame.kind == wire.SESSION_END:

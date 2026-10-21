@@ -18,6 +18,7 @@ from pathlib import Path
 import sys
 import time
 from trial_source_delivery import hook_delivery
+from trial_observation_storage import text_size_sha256
 
 
 RECALL_FIELDS = (
@@ -47,9 +48,9 @@ def bounded_identity(value):
     if value is None:
         return dict(state='absent', sha256=None)
     try:
-        if not isinstance(value,str) or not value.strip() or len(value.encode()) > 256 or any(ord(c)<32 for c in value):
+        if not isinstance(value,str) or not value.strip() or text_size_sha256(value)[0] > 256 or any(ord(c)<32 for c in value):
             raise ValueError('invalid identity')
-        return dict(state='present', sha256=hashlib.sha256(value.encode()).hexdigest())
+        return dict(state='present', sha256=text_size_sha256(value)[1])
     except (ValueError,UnicodeError):
         return dict(state='invalid', sha256=None)
 
@@ -64,7 +65,7 @@ def prompt_metadata(event, frozen_sha256=None):
     matches=None
     if frozen_sha256 is not None and isinstance(text,str):
         try:
-            matches=hashlib.sha256(text.encode()).hexdigest()==frozen_sha256
+            matches=text_size_sha256(text)[1]==frozen_sha256
         except UnicodeError:
             pass
     return dict(prompt_id_state=identity['state'],prompt_id_sha256=identity['sha256'],

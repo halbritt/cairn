@@ -100,12 +100,57 @@ The original 9500 selected-input ceiling charges task+hook input and every
 native-rendered tool result, including errors and repeats. The MCP response's
 bytes are NOT an equivalent measurement. `remaining_selected_bytes` is only the
 controller's local budget; the 32000 per-result ceiling and 4MiB transport ledger
-do not establish 9500 fit. `SessionStreamRetention` records bytes/digests but does
-not persist authenticated per-frame timing rows. `EvidencePublication` is source
-custody only and ungraded. Root's incremental `measure_lines` evaluator prepares
-a separate qualification seam; control filtering, native correlation, timing
-custody and bounded integration are still required. No source-ready or fixture
-success state implies that qualification passed.
+do not establish 9500 fit. The fixed run now binds `SelectedInput` before launch.
+The original pump lends each complete line and already validated graph to
+`LineMeasurement.consume_document`. Completion timing comes from the original
+`StreamLineReceipt`; callback deadlines still begin at the first byte.
+`SDKControl.receive_owned` must validate control frames before the observer
+counts them. Controls remain in the original retained stdout and aggregate
+hash, but do not become public task actions. Unknown/malformed controls poison
+the attempt instead of being silently filtered.
+
+The observer hashes strict original UTF-8 text in <=512-byte fragments and adds
+only the assembler's consumed LF. It never serializes JSON to reconstruct a line
+hash. It uses the evaluator's original compact JSON serialization only for the
+native result-envelope byte charge. Errors and every repeat are charged.
+Producer stdout/stderr counts, digest, wait and release come from the actual
+producer; five fixed RPC attempt counters are updated at validated REQUEST_END.
+The fixed callback lends these facts before detach. Hook elapsed time is the
+conservative first-read-through-reply-write interval; its existing five-second
+deadline is unchanged. Native rendered call counts are cross-checked with the
+shared dispatch gate; this is not selected-version protocol compatibility proof.
+
+Finalization requires the original terminal, native EOF/wait/release, completed
+private stream readback, and matching original stdout count/hash across pump,
+retention and incremental observer. Publication rechecks these bindings and
+exports a copy of the owner-produced report. Missing qualification remains
+explicitly unknown; an ungraded private evidence receipt cannot assert a pass.
+No full stream, per-read timing sidecar or per-line timing list is accumulated.
+
+An additional standing allocation on the original native domain holds 1024 raw
+bytes and 96MiB working storage. Existing quotes are unchanged. Base64 input and
+decoded fragments overlap below 1024 bytes; other text encodes are <=512 bytes
+and end before the next fragment. The original preparation owns the incoming
+graph. Source-delivery parsing can overlap two additional nested documents,
+each bounded by the incoming 128KiB line. Each receives a 256-working-bytes per
+encoded-input-byte allowance for containers, temporary key/value pairs, scalars
+and parsing overhead (32MiB each); the remaining 32MiB covers Unicode serialization,
+parse traversal, temporary projected inventories and their exported copy. This
+is an explicit source reservation, not a measured physical process bound.
+Native call and hook identity maps each hold at most 256 entries, IDs at most
+256 UTF-8 bytes, hook names at most 64 bytes, and memory tool names at most 128
+bytes. Hook telemetry holds at most 128 rows; public actions at most 256; prompt
+metadata at most 32; delivered-source projections at most 128 rows/512 items,
+with a separate 512-item pending hook projection bound. Unknown reasons are a
+deduplicated closed source vocabulary. Overflow sets unknown; it cannot certify
+complete measurement. The original 9500/30s/5s and call limits are unchanged.
+
+With the production command-return lifetime, the additional observer brings the
+source quote to at most 483MiB working plus 130798 raw bytes during commands.
+Both raw131072 and combined512MiB caps stay fixed, as does traffic4MiB. The
+inert full two-search/four-pull test holds this observer reservation throughout;
+it does not establish native admission, the remaining producer physical bound,
+or the original weekly workload's fit.
 
 Real runtime selection, dedicated whole-campaign capacity, two complete weekly
 21-case/126-attempt/1900-distractor runs, independent changed-pair grading and

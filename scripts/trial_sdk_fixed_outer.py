@@ -34,6 +34,7 @@ class FixedCallbackDriver:
         self._rpc = coordinator.rpc  # Survives coordinator detach for original retirement.
         self._quote = command_quote
         self._state = 'running'
+        self._selected_input = None
         self._busy = self._failed = False
         self._faults = set()
         # Only a pristine RPC can be lent exclusively. A late wrapper remains
@@ -105,6 +106,8 @@ class FixedCallbackDriver:
             if not c._reply_written:
                 self._pump()
                 return 'progress'
+            if self._selected_input is not None:
+                self._selected_input.hook(self)
             self._detach()
             self._state = 'detached'
             return 'detached'

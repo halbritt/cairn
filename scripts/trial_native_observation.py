@@ -3,12 +3,12 @@
 This module is not an executor entry point. It starts only the command supplied
 by run_agent, retaining its original stream for the existing graders/importer.
 """
-import hashlib
 import json
 import math
 from itertools import zip_longest
 from pathlib import Path
 from trial_native_capture import capture
+from trial_observation_storage import text_size_sha256, canonical_size
 from trial_source_delivery import hook_delivery, native_delivery
 from trial_hook_observer import prompt_metadata, bounded_identity
 from trial_task_permissions import ALLOW, DENY, command_metadata, background_result
@@ -20,7 +20,7 @@ def action_path(value, workspace):
     if not isinstance(value, str) or not value or workspace is None:
         return None
     try:
-        if len(value.encode()) > 512 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        if text_size_sha256(value)[0] > 512 or any(ord(c) < 32 or ord(c) == 127 for c in value):
             return None
         path, root = Path(value), Path(workspace).resolve(strict=True)
         if '..' in path.parts:
@@ -86,11 +86,11 @@ class PublicActions:
                 row['command_sha256'] = None
                 row['validation_label'] = None
                 try:
-                    encoded = command.encode() if isinstance(command, str) else None
+                    encoded = text_size_sha256(command) if isinstance(command, str) else None
                 except UnicodeError:
                     encoded = None
-                if encoded is not None and len(encoded) <= 65536:
-                    row['command_sha256'] = hashlib.sha256(encoded).hexdigest()
+                if encoded is not None and encoded[0] <= 65536:
+                    row['command_sha256'] = encoded[1]
                     row['validation_label'] = next((label for label, value in self.commands.items() if command == value), None)
                 else:
                     self.unknown.add('command_identity_unknown')
@@ -177,8 +177,8 @@ def measure_lines(lines, timings, hook_rows, *, input_bytes, expects_hooks, mode
     """Consume complete text lines and matching timing rows once, in lockstep.
 
     Callers own line framing, size limits and provenance. This removes the need
-    to retain a complete stream; it does not bound per-line parsing or retained
-    correlation state, validate SDK control frames, or grant runtime admission.
+    to retain a complete stream. Correlations and projections have fixed limits;
+    per-line parsing, SDK controls and custody remain the caller's obligations.
     Iterator failures propagate without returning a partial success report.
     """
     observer = LineMeasurement(input_bytes=input_bytes, expects_hooks=expects_hooks,
@@ -196,12 +196,18 @@ _MISSING = object()
 _FINISH = object()
 
 
+class _ParsedDocument:
+    def __init__(self, graph, raw_bytes):
+        self.graph, self.raw_bytes = graph, raw_bytes
+
+
 class LineMeasurement:
     """Single-use incremental observer; consumes each borrowed line synchronously.
 
     The caller supplies complete original text lines and capture timing, then
     final hook observations. Failure consumes this observer. This owns the same
-    correlation state as the batch evaluator, not a new storage/authority bound.
+    accounting semantics as the batch evaluator. Correlation overflow is unknown;
+    this library supplies neither an allocation ticket nor stream authority.
     """
     def __init__(self, *, input_bytes, expects_hooks, model, prompt, workspace=None,
                  public_validation_commands=None):
@@ -220,6 +226,17 @@ class LineMeasurement:
             self.close()
             raise
 
+    def consume_document(self, document, raw_bytes, timing):
+        """Borrow an already parsed graph; caller owns original-byte provenance.
+
+        This method supplies no custody authority. The SDK owner separately
+        validates original text, receipt offsets/digest and final retained stream.
+        """
+        if not isinstance(document, dict) or type(raw_bytes) is not int or raw_bytes <= 0:
+            self.close()
+            raise ValueError('measurement_document')
+        self.consume(_ParsedDocument(document, raw_bytes), timing)
+
     def finish(self, hook_rows):
         if self._closed:
             raise ValueError('measurement_consumed')
@@ -237,9 +254,20 @@ class LineMeasurement:
         self._steps.close()
 
 
+class _Reasons(list):
+    # Closed source-defined reason vocabulary; repeated malformed frames cannot
+    # grow retained state. No caller strings are admitted here.
+    def append(self, reason):
+        if reason not in self:
+            super().append(reason)
+
+
+CORRELATION_LIMIT = 256
+
+
 def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=None,
                        public_validation_commands=None):
-    failures, unknown = [], []
+    failures, unknown = [], _Reasons()
     actions = PublicActions(workspace, public_validation_commands)
     def fail(reason):
         if reason not in failures:
@@ -249,8 +277,9 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
     hook_started, hook_finished, hook_sources = {}, {}, {}
     source_deliveries = []
     native_prompt_events, native_prompt_events_omitted = [], 0
-    frozen_prompt_sha256 = hashlib.sha256(prompt.encode()).hexdigest()
+    frozen_prompt_sha256 = text_size_sha256(prompt)[1]
     source_items, source_events_omitted, source_empty_events = 0, 0, 0
+    hook_source_items = 0
     def retain_delivery(row):
         nonlocal source_items, source_events_omitted, source_empty_events
         # Empty successful hooks are still charged/correlated below, but cannot
@@ -272,7 +301,7 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
     missing = _MISSING
     while True:
         # End borrowed line/timing and transient parsed graphs before suspension.
-        item = raw = timing = event = message = blocks = part = args = text = selected_event = None
+        item = raw = timing = event = message = blocks = part = args = text = selected_event = row = ident = name = None
         item = yield
         if item[0] is _FINISH:
             hook_rows = item[1]
@@ -284,15 +313,19 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
             if raw is missing:
                 continue
             timing = {}
-        if timing.get('sha256') != hashlib.sha256(raw.encode()).hexdigest():
-            unknown.append('stream_timing_mismatch')
-            actions.unknown.add('action_timing_unknown')
-        try:
-            event = json.loads(raw)
-        except ValueError:
-            unknown.append('unparsed_native_event')
-            actions.unknown.add('native_action_format_unknown')
-            continue
+        if type(raw) is _ParsedDocument:
+            event, raw_size = raw.graph, raw.raw_bytes
+        else:
+            raw_size, digest = text_size_sha256(raw)
+            if timing.get('sha256') != digest:
+                unknown.append('stream_timing_mismatch')
+                actions.unknown.add('action_timing_unknown')
+            try:
+                event = json.loads(raw)
+            except ValueError:
+                unknown.append('unparsed_native_event')
+                actions.unknown.add('native_action_format_unknown')
+                continue
         if not isinstance(event,dict):
             unknown.append('unparsed_native_event')
             actions.unknown.add('native_action_format_unknown')
@@ -305,8 +338,12 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
                 fail('reported_model_mismatch')
         if event.get('type') == 'system' and event.get('subtype') in ('hook_started','hook_response'):
             ident, name = event.get('hook_id'), event.get('hook_event')
-            if not isinstance(ident,str) or not isinstance(name,str):
+            if (bounded_identity(ident)['state'] != 'present' or not isinstance(name,str)
+                    or text_size_sha256(name)[0] > 64):
                 unknown.append('native_hook_identity_missing')
+            elif (ident not in hook_started and len(hook_started) >= CORRELATION_LIMIT
+                  or ident not in hook_finished and len(hook_finished) >= CORRELATION_LIMIT):
+                unknown.append('hook_correlation_limit')
             elif event['subtype'] == 'hook_started':
                 if ident in hook_started:
                     unknown.append('duplicate_native_hook')
@@ -315,13 +352,20 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
                 if ident in hook_finished:
                     unknown.append('duplicate_native_hook')
                 text = event.get('stdout')
-                hook_finished[ident] = (name, hashlib.sha256(text.encode()).hexdigest() if isinstance(text,str) else None)
+                hook_finished[ident] = (name, text_size_sha256(text)[1] if isinstance(text,str) else None)
                 code = event.get('exit_code')
                 known_exit = type(code) is int and -128 <= code <= 255
                 if not known_exit:
                     unknown.append('native_hook_exit_unobserved')
                 if event.get('outcome') == 'success' and known_exit and code == 0 and isinstance(text,str):
-                    hook_sources[ident] = dict(delivery=hook_delivery(text), received_seconds=timing.get('received_seconds'))
+                    delivery = hook_delivery(text)
+                    count = len(delivery['items'])
+                    if hook_source_items + count > 512:
+                        unknown.append('source_delivery_limit')
+                    else:
+                        hook_source_items += count
+                        hook_sources[ident] = dict(delivery=delivery, received_seconds=timing.get('received_seconds'))
+                    delivery = None
                 if event.get('outcome') != 'success' or (known_exit and code != 0):
                     fail('native_hook_failed')
         if event.get('type') == 'result':
@@ -364,7 +408,7 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
                 if seen_prompt:
                     fail('duplicate_task_input')
                 seen_prompt = True
-                if len(raw.encode()) > input_bytes:
+                if raw_size > input_bytes:
                     fail('task_framing_reserve_exceeded')
         if not isinstance(blocks,list):
             continue
@@ -383,10 +427,15 @@ def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=N
                 native_searches += int(name == 'mcp__cairn__cairn_search')
                 pulls += int(name in ('mcp__cairn__cairn_pull','mcp__cairn__cairn_pull_evidence')
                              or name == 'mcp__cairn__cairn_history' and isinstance(args,dict) and type(args.get('version')) is int and args['version'] > 0)
-                calls[ident] = name
+                if bounded_identity(ident)['state'] != 'present':
+                    unknown.append('memory_identity_unknown')
+                elif ident not in calls and len(calls) >= CORRELATION_LIMIT:
+                    unknown.append('memory_correlation_limit')
+                else:
+                    calls[ident] = name if text_size_sha256(name)[0] <= 128 else 'unknown'
             elif part.get('type') == 'tool_result' and ident in calls:
                 # Include error envelopes and every repeated result, never only successful bodies.
-                memory_bytes += len(json.dumps(part,ensure_ascii=False,separators=(',',':')).encode())
+                memory_bytes += canonical_size(part)
                 last_memory = timing.get('received_seconds')
                 completed.add(ident)
                 tool = calls[ident]

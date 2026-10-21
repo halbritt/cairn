@@ -50,6 +50,7 @@ class SDKStreamDriver:
     def __init__(self, control, native, *, _resources=None):
         self._resources = _resources
         self._retention = None
+        self._selected_input = None
         self._io = native if _resources is None else _resources
         # Also checks exact types, pristine control and an unlaunched owner.
         self._writer = SDKDirectWriter(control, native, _resources=_resources)
@@ -98,6 +99,8 @@ class SDKStreamDriver:
                 raise
 
     def _poison(self):
+        if getattr(self, '_selected_input', None) is not None:
+            self._selected_input.abort()
         self._failure = self._failure or 'sdk_stream_operation_failed'
         try:
             self._drop_lines()
@@ -116,6 +119,8 @@ class SDKStreamDriver:
             raise StreamDriverError('sdk_stream_busy')
         if not self._cancelled:
             self._cancelled = True
+            if self._selected_input is not None:
+                self._selected_input.abort()
             self._drop_lines()
 
     def _line(self):
@@ -137,9 +142,11 @@ class SDKStreamDriver:
         self._line_offset = end
         document = validate_line(line)
         first = document.first_byte_ns
-        line = None
         if document.kind is not None and document.kind.startswith('control_'):
             callback = self._control.receive_owned(document)
+            if self._selected_input is not None:
+                self._selected_input.consume(line, document, receipt)
+            line = None
             if callback is None:
                 return StreamEvent('control', line_receipt=receipt)
             if type(callback) is MemoryRequest:
@@ -164,6 +171,8 @@ class SDKStreamDriver:
             return StreamEvent('callback', callback=callback,
                 observation={k: v for k, v in self._active.items() if k not in ('request_id', 'row')},
                 line_receipt=receipt)
+        if self._selected_input is not None:
+            self._selected_input.consume(line, document, receipt)
         return StreamEvent('document', document=document, line_receipt=receipt)
 
     @resource_boundary

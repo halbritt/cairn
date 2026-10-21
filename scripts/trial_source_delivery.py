@@ -10,6 +10,7 @@ import copy
 import hashlib
 import json
 import re
+from trial_observation_storage import text_size_sha256
 
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
@@ -26,10 +27,23 @@ def _digest(value):
 def _text(value):
     if not isinstance(value,str):
         raise ValueError('text')
-    data=value.encode('utf-8')
-    if len(data)>65536:
+    data=text_size_sha256(value)
+    if data[0]>65536:
         raise ValueError('body size')
     return data
+
+
+def _base64_identity(value):
+    digest, size = hashlib.sha256(), 0
+    for offset in range(0, len(value), 512):
+        part = value[offset:offset+512]
+        if offset+512 < len(value) and '=' in part:
+            raise ValueError('excess data after padding')
+        data = base64.b64decode(part, validate=True)
+        digest.update(data)
+        size += len(data)
+        del data
+    return size, digest.hexdigest()
 
 
 def _integer(value,minimum=0):
@@ -50,7 +64,7 @@ def _hash(data):
 
 
 def _json(raw):
-    if not isinstance(raw,str) or len(raw.encode('utf-8'))>MAX_BYTES:
+    if not isinstance(raw,str) or text_size_sha256(raw)[0]>MAX_BYTES:
         raise ValueError('envelope size')
     def unique(pairs):
         result={}
@@ -89,22 +103,22 @@ class _Extract:
                 value=span['body_base64']
                 if not isinstance(value,str) or len(value)>90000:
                     raise ValueError('span base64')
-                data=base64.b64decode(value,validate=True)
+                data=_base64_identity(value)
             else:
                 data=_text(span.get('body',''))
-            if len(data)!=end-offset or _hash(data)!=_digest(span.get('sha256')):
+            if data[0]!=end-offset or data[1]!=_digest(span.get('sha256')):
                 raise ValueError('span identity')
             source=_digest(declared if historical else span.get('source_sha256'))
             item.update(extent='partial_span',source_sha256=source,
                         span=dict(offset=offset,end=end,total_bytes=total),
-                        delivered_sha256=_hash(data),delivered_bytes=len(data))
+                        delivered_sha256=data[1],delivered_bytes=data[0])
         else:
             data=_text(record.get('body'))
-            digest=_hash(data)
+            digest=data[1]
             if declared is not None and digest!=_digest(declared):
                 raise ValueError('body identity')
             item.update(extent='full_body',source_sha256=digest,
-                        delivered_sha256=digest,delivered_bytes=len(data))
+                        delivered_sha256=digest,delivered_bytes=data[0])
         self.add(item)
 
     def selection(self,selected,span=None):
@@ -172,7 +186,7 @@ class _Extract:
                 raise ValueError('preview')
             data=_text(entry.get('summary'))
             item=dict(_identity(entry),extent='preview',historical=False,
-                      delivered_sha256=_hash(data),delivered_bytes=len(data))
+                      delivered_sha256=data[1],delivered_bytes=data[0])
             if entry.get('body_sha256') is not None:
                 item['source_sha256']=_digest(entry['body_sha256'])
             # A summary may contain omission marks: its location is a hint,

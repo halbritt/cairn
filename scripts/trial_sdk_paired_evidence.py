@@ -365,11 +365,13 @@ class EvidencePublication:
                 need(type(environment) is WeeklyEnvironmentOwner, 'weekly_corpus_owner')
             corpus_observation = (environment.corpus_observation(run)
                                   if environment is not None else None)
+            from trial_sdk_selected_input import qualification
             self.receipt = dict(schema='cairn.sdk-private-evidence/1',join=run._paired_join,
                 selected_overlay=paired.overlay, selected_resolved_corpus=paired.resolved_corpus,
                 observed_corpus_sha256=None,
                 store_corpus_observation=corpus_observation,
                 streams=streams,native_owners=waits,
+                selected_input=qualification(run),
                 terminal_observed=run._terminal_metadata is not None,
                 failure=run._failed,cleanup_faults=sorted(run._faults),
                 containment='unavailable',work_product_export='unavailable',grade='ungraded')

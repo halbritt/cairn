@@ -25,7 +25,7 @@ class LineReceiptTests(unittest.TestCase):
         pump._io = Reads(chunks)
         pump._stdout, pump._stderr = bytearray(512), bytearray(512)
         pump._assembler = LineAssembler(MAX_DOCUMENT_BYTES)
-        pump._active = pump._lines = pump._clock = pump._retention = None
+        pump._active = pump._lines = pump._clock = pump._retention = pump._selected_input = None
         pump._stdout_completed_ns = None
         pump._line_offset = 0
         pump._bytes = dict(stdout=0, stderr=0)

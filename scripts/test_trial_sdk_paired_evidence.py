@@ -96,6 +96,7 @@ class PairedEvidenceTests(unittest.TestCase):
         self.assertEqual(receipt['containment'],'unavailable')
         self.assertEqual(receipt['streams']['state'],'unknown')
         self.assertEqual(receipt['grade'],'ungraded')
+        self.assertEqual(receipt['selected_input']['status'],'unknown')
         self.assertEqual(binding.resources._memory,held)
         with self.assertRaisesRegex(ValueError,'run_publication_consumed'):run.publish_evidence(str(self.root/'retry'))
         self.assertFalse((self.root/'retry').exists())

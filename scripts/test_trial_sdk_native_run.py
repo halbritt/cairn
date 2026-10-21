@@ -128,7 +128,7 @@ class NativeRunTests(unittest.TestCase):
         self.assertEqual(_prctl(4, 0), 0)
         self.addCleanup(_prctl, 4, previous)
         self.document['hook_interface']={'profile':'sdk-hosted-memory/1'}
-        self.change('cli', NATIVE.replace("MODE = 'complete'", 'MODE = '+repr(mode)).encode())
+        self.change('cli', getattr(self,'native_source',NATIVE).replace("MODE = 'complete'", 'MODE = '+repr(mode)).encode())
         self.change('mcp_binary', COMMAND.replace('# INTERRUPT_DELAY',
             'time.sleep(60)' if mode == 'interrupt' else 'pass').encode())
         self.change('mcp', json.dumps({'mcpServers':{'cairn':{'type':'sdk','name':'cairn'}}}).encode())
@@ -168,9 +168,10 @@ class NativeRunTests(unittest.TestCase):
     def test_source_ready_then_once_only_launch_dispatch_reply_and_cleanup(self):
         owner=self.prepare()
         self.assertIsNone(owner._session.native_owner.snapshot()['pid'])
+        self.assertIsNotNone(owner._selected_input)
         owner.require_complete()  # No circular prior native-observation requirement.
-        self.assertEqual(owner.resources.snapshot()['raw_reserved'],PREPARATION_RAW+2566+5184)
-        self.assertEqual(owner.resources.snapshot()['working_reserved'],PREPARATION_WORKING+2*2**20)
+        self.assertEqual(owner.resources.snapshot()['raw_reserved'],PREPARATION_RAW+2566+5184+1024)
+        self.assertEqual(owner.resources.snapshot()['working_reserved'],PREPARATION_WORKING+2*2**20+96*2**20)
         owner.start_service()
         self.until(owner.step,lambda:owner.snapshot()['state']=='session')
         owner.start_native()
@@ -178,6 +179,11 @@ class NativeRunTests(unittest.TestCase):
         self.assertEqual(owner._coordinator.gate.snapshot()['native_searches_debited'],2)
         self.assertEqual(owner._coordinator.gate.snapshot()['expansions_debited'],2)
         self.assertEqual(owner._evidence._terminal_graph['result'],'inert ungraded terminal')
+        measured=owner._selected_input.evidence()
+        self.assertEqual(measured['measurement']['status'],'unknown')
+        self.assertIn('rendered_memory_dispatch_uncorrelated',measured['measurement']['unknown'])
+        self.assertEqual(measured['stdout_sha256'],owner._evidence.snapshot()['sha256']['stdout'])
+        self.assertGreater(measured['validated_controls'],0)
         self.assertGreater(owner.resources.snapshot()['traffic_spent'],0)
         self.assertLessEqual(owner.resources.snapshot()['raw_peak'],131072)
         self.assertFalse(owner.resources.snapshot()['unknown'])

@@ -47,6 +47,7 @@ class FixedRunOwner:
         self._connect_cursor = 0
         self._native_launch = self._memory = None
         self._native_start_attempted = False
+        self._selected_input = None
 
     def _now(self):
         now=self._clock()
@@ -57,6 +58,9 @@ class FixedRunOwner:
 
     def _fail(self, primary):
         self._failed = True
+        if self._selected_input is not None:
+            try:self._selected_input.abort()
+            except BaseException:self._faults.add('run_measurement_cleanup_unknown')
         if self._memory is not None and self._memory.operation is not None:
             try:self._memory.operation._poison('run_native_memory_failed')
             except BaseException:self._faults.add('run_native_memory_poison_unknown')
@@ -139,6 +143,9 @@ class FixedRunOwner:
         require(type(self._native_launch) is SDKNativeLaunch and self._memory is not None,
                 'run_native_launch_unbound')
         self._native_launch.verify(self._session)
+        from trial_sdk_selected_input import SelectedInput
+        require(type(self._selected_input) is SelectedInput, 'run_selected_input_unbound')
+        self._selected_input.check()
         self._service._check()
         scope = self._session._custody._initial['native_memory_scope']
         policy = self._service._runtime.policy
@@ -164,6 +171,10 @@ class FixedRunOwner:
             self._native_launch = SDKNativeLaunch.__new__(SDKNativeLaunch)
             SDKNativeLaunch.__init__(self._native_launch, self._session,
                                     source_directory, cwd, env, capture_origin_ns)
+            from trial_sdk_selected_input import SelectedInput
+            self._selected_input = SelectedInput.__new__(SelectedInput)
+            SelectedInput.__init__(self._selected_input, self)
+            self._session._pump._selected_input = self._selected_input
             self.require_complete()
         except BaseException as primary:
             self._fail(primary)
@@ -232,6 +243,7 @@ class FixedRunOwner:
         c.rpc.prestart(directory)
         c.bind_fixed_producer(self._service)
         self._callback = FixedCallbackDriver(c,self._service,self._command_quote)
+        self._callback._selected_input = self._selected_input
         self._service.start_producer(c.producer)
         self._state = 'callback_connecting'
 
@@ -281,6 +293,11 @@ class FixedRunOwner:
                     'run_terminal_cleanup_unknown')
             require(self._evidence is not None, 'run_evidence_missing')
             self._evidence.finish(self._session._pump)
+            if self._session._custody.control._memory is not None:
+                require(self._selected_input is not None, 'run_selected_input_unbound')
+                self._selected_input.finish()
+            # Legacy source-custody fixtures have no native-memory profile.
+            # require_complete still refuses that profile; export stays unknown.
             require(self._now() < self._deadline, 'run_deadline')
             self._evidence._terminal_graph = self._terminal_graph
             self._terminal_graph = None
@@ -329,6 +346,8 @@ class FixedRunOwner:
     def cancel(self):
         require(not self._busy and not self._cancelled, 'run_cancel_consumed')
         try:
+            if self._selected_input is not None:
+                self._selected_input.abort()
             self._cancelled = True  # Suppress all future output before protocol effects.
             if self._memory is not None and self._memory.operation is not None:
                 self._memory.operation.cancel()
@@ -367,6 +386,8 @@ class FixedRunOwner:
 
     def _cleanup(self):
         self._cleanup_started = True
+        if self._selected_input is not None:
+            self._selected_input.abort()
         self._cancelled = True
         operation = None if self._memory is None else self._memory.operation
         if (operation is not None and hasattr(operation, '_closed')
