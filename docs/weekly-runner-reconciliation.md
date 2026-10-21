@@ -674,8 +674,10 @@ Binding points:
   and `22e052e`). Matching is staged. Each stage searches for *any*
   one-to-one assignment of ledger rows to native hooks under all constraints
   so far (augmenting paths). It refuses only when no valid assignment exists
-  at that stage. The order of rows and native events never changes the
-  result. The claims stay separate:
+  at that stage. The claims, refusals and `assignment` status do not depend
+  on the order of rows or native events. When the assignment is ambiguous,
+  the selected valid `pairs` may differ with order. The claims stay
+  separate:
   1. `output_correlated`: event and stdout digest. An extra replayed frame or
      a dropped stub frame breaks the counts.
   2. `window_correlated`: each frame arrived after its `hook_started` line
