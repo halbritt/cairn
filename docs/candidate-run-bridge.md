@@ -94,6 +94,18 @@ receipt remains held. The bridge never removes runner state or automatically
 replays an uncertain executor. Resuming still requires the original valid
 selection window; a historical receipt can be read without running the bridge.
 
+## Original execution contract
+
+The runner profile's `execution` pin must equal the reviewed request's
+`weekly_input.execution`. Otherwise the bridge refuses
+`bridge_execution_mismatch` before it writes anything. A stored claim must
+carry that same pin. Before the effect, the runner spec's declared native
+binary pin, model and effort must equal the reviewed declaration. A complete
+runner receipt must report observed native SHA-256 and effort equal to the
+declared ones (`bridge_runner_execution_mismatch`). The recall and
+embedding-config controls stay named runner refusals. See
+[the runner reconciliation](weekly-runner-reconciliation.md).
+
 ## Boundaries requiring later integration
 
 This binds selected identities and retained artifacts. It does not establish

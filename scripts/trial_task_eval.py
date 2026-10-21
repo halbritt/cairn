@@ -36,6 +36,7 @@ import uuid
 
 from trial_account_selection import credentials_source
 import trial_legacy_limits as legacy_limits
+import trial_native_copy as native_copy
 from trial_native_observation import capture, measure
 from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
@@ -447,8 +448,11 @@ class TrialStore:
                 if (last["state"] == "ready" and type(last["indexed"]) is int
                         and type(last["eligible"]) is int and last["eligible"] > 0
                         and last["indexed"] == last["eligible"]):
+                    # The backend's validated identity from this same discovery response (observed).
+                    identity = dict(model_sha256=discovery.get("model_sha256"), algorithm=discovery.get("algorithm"))
                     self.readiness = dict(backend=self.backend, state="full_eligible_coverage", coverage=last,
-                                          cold_seconds=round(time.monotonic() - self.started, 3), polls=polls)
+                                          cold_seconds=round(time.monotonic() - self.started, 3), polls=polls,
+                                          identity=identity)
                     print(json.dumps(dict(index_readiness=self.readiness)), flush=True)
                     return
             except (RuntimeError, subprocess.TimeoutExpired):
@@ -1049,7 +1053,7 @@ def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None
     return command
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None, common_runtime=None, runtime_identity=None):
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None, common_runtime=None, runtime_identity=None, credentials_readonly=None):
     """Add the chosen provider and owned trial paths to the runtime filesystem."""
     home = Path.home()
     command = runtime_sandbox(common_runtime=common_runtime, runtime_identity=runtime_identity, writable=root)
@@ -1060,7 +1064,10 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
         selected = credentials_source()
         command += ["--ro-bind", str(Path(native_executable).resolve(strict=True) if native_executable else claude.resolve(strict=True)), str(claude),
                     "--dir", str(home / ".claude"),
-                    "--ro-bind" if native_executable else "--bind", str(selected or credentials), str(credentials)]
+                    # Prospective native runs keep their read-only credentials; legacy runs keep the
+                    # original read-write bind even with an original-execution binary.
+                    "--ro-bind" if (bool(native_executable) if credentials_readonly is None else credentials_readonly)
+                    else "--bind", str(selected or credentials), str(credentials)]
     elif harness != "codex":
         raise ValueError("unknown harness " + harness)
     command += ["--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name)]  # absolute gitdirs
@@ -1100,6 +1107,14 @@ def run_agent(case, arm, seed, order, args, stores, out):
                GIT_COMMITTER_NAME="trial agent", GIT_COMMITTER_EMAIL="agent@example.invalid")
     binds = []
     sandbox_options = dict(native_executable=checked_file(prospective["document"]["native"]["binary"])) if prospective else {}
+    original_native = None if prospective else getattr(args, "_original_native", None)
+    if original_native is not None:
+        # Re-hash the retained copy immediately before this attempt; mount it at the sandbox target.
+        copy = original_native["observed"]["source"]
+        row_sha256 = native_copy.file_sha256(copy)
+        if row_sha256 != original_native["declared"]["sha256"]:
+            raise RuntimeError("original native copy changed before launch")
+        sandbox_options = dict(native_executable=Path(copy), credentials_readonly=False)
     common_runtime = prospective['document'].get('runtime') if prospective else None
     runtime_identity = None
     if common_runtime is not None:
@@ -1112,6 +1127,10 @@ def run_agent(case, arm, seed, order, args, stores, out):
         provider = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
                     "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
                     "--max-turns", str(args.max_turns)]
+        if original_native is not None:
+            # The retained bytes run at the absolute sandbox target, never an ambient PATH lookup.
+            provider = [original_native["observed"]["target"], "-p", "--model", args.model,
+                        "--effort", args.reasoning_effort, *provider[4:]]
         if prospective:
             provider = ["claude", "-p", "--model", args.model, "--effort", args.reasoning_effort,
                         "--output-format", "stream-json", "--verbose", "--permission-prompts", "none",
@@ -1378,6 +1397,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
     if not prospective:
         record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
         record["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if original_native is not None:
+            record["original_native"] = dict(binary_sha256=row_sha256, effort=args.reasoning_effort,
+                                             target=original_native["observed"]["target"])
         if original:
             record["original_limits"] = limit_assessment
             record["process_custody"] = process_custody
@@ -1556,11 +1578,17 @@ def cmd_agent(args):
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      receipt_exporter_sha256=hashlib.sha256((ROOT / "scripts/trial_receipt_explanation.py").read_bytes()).hexdigest(),
-                     harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
+                     harness_version=None if getattr(args, "original_native_path", None) and not prospective else
+                     run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
     if getattr(args, "original_limits", False) and not prospective:
         execution["original_limits"] = dict(legacy_limits.LIMITS)
     out = Path(args.output)
     out.mkdir(mode=0o700)
+    if getattr(args, "original_native_path", None) and not prospective:
+        # Before any store starts: retain, hash and version the declared binary; never run the ambient one.
+        args._original_native = native_copy.retain(args.original_native_path, args.original_native_sha256, out)
+        execution.update(original_native=args._original_native, reasoning_effort=args.reasoning_effort,
+                         harness_version=args._original_native["observed"]["version"])
     if prospective:
         if out.resolve().is_relative_to(prospective["root"]):
             raise ValueError("output must be outside prospective input")
@@ -1905,6 +1933,8 @@ def main(argv=None):
                    help="maximum cold passage-index readiness wait in seconds; separate from task timeout")
     a.add_argument("--timeout", type=int, default=900)
     a.add_argument("--parallel", type=int, default=3)
+    a.add_argument("--original-native-path", help="legacy original execution: absolute declared native binary")
+    a.add_argument("--original-native-sha256", help="its declared SHA-256; the run uses a verified retained copy")
     a.add_argument("--original-limits", action="store_true",
                    help="legacy Claude fixtures under trial_paired_request.ORIGINAL_LIMITS (5 s hooks, 32000 tool room, "
                         "task wire charged, captured stream timing); exceeding rows are measurement failures")
@@ -1919,6 +1949,8 @@ def main(argv=None):
         print(json.dumps(freeze_input(args.input)["frozen"], indent=2))
         return 0
     if args.command == "agent":
+        if args.prospective_input and (args.original_native_path or args.original_native_sha256):
+            parser.error("original native execution is a legacy-fixtures option")
         if args.prospective_input:
             if args.arms is not None or args.memory or args.semantic_recall or args.semantic_worker or args.embedding_worker:
                 parser.error("prospective arms and components come only from frozen input")
@@ -1929,6 +1961,11 @@ def main(argv=None):
             if args.reasoning_effort not in {"low", "medium", "high", "xhigh", "max"}:
                 parser.error("unsupported prospective Claude effort")
         else:
+            if (args.original_native_path is None) != (args.original_native_sha256 is None):
+                parser.error("--original-native-path and --original-native-sha256 go together")
+            if args.original_native_path is not None and (
+                    not args.original_limits or args.reasoning_effort not in {"low", "medium", "high", "xhigh", "max"}):
+                parser.error("original native execution requires --original-limits and an explicit Claude --reasoning-effort")
             args.arms = args.arms if args.arms is not None else ["none", "direct"]
             args.reasoning_effort = args.reasoning_effort or "high"
         if args.original_limits and (args.prospective_input or args.harness != "claude" or args.wording != "task"):

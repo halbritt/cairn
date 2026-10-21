@@ -286,6 +286,105 @@ This is harness custody under the existing mount boundary, as
 attestation, source-version evidence or final-artifact custody. The
 prospective path is unchanged.
 
+## Original execution seam (intermediate subset)
+
+This implements design revision 2
+(`agent501-original-execution-20261021/DESIGN.md`) with root's corrections.
+The runner profile gains an `execution` pin to the reviewed
+`cairn.weekly-execution/1` declaration. `trial_original_execution.declared`
+keeps every originally selected control and checks it with the unchanged
+`trial_weekly_input._execution`. It also checks:
+- the frozen source;
+- that the model equals the capacity models;
+- that the arm API revisions equal the run's commits;
+- that the shared embedding worker equals the profile's.
+
+Without the pin, the executor is blocked with `original_execution_unbound`.
+
+**Carried today (`LEGACY_CAPABILITIES`):**
+- **Native binary.** `trial_task_eval.py agent --legacy-fixtures
+  --original-limits --original-native-path P --original-native-sha256 S
+  --reasoning-effort E` takes structured flags, never `PATH:SHA`. Before any
+  store starts, `trial_native_copy.retain` copies the binary to
+  `out/native/claude` (mode 0500). The copy is bounded: a source that grows
+  after hashing refuses before anything past the hashed size is written. The
+  copy is re-hashed and checked against the declaration. Inputs open with
+  `O_NONBLOCK | O_NOFOLLOW` and the opened descriptor must be a regular file,
+  so a FIFO or device (including one swapped in after hashing) refuses
+  without blocking. Every descriptor is closed on every error path.
+  `--version` runs through the existing owned-process capture. Its result is
+  accepted only when classification is `completed`, the leader was reaped,
+  cleanup is `observed_clear` and the exit code is 0.
+  `VERSION_LIMIT=4096` is an acceptance check applied after capture: stdout
+  or stderr longer than 4096 bytes refuses. It does not limit what the
+  generic capture allocates, which keeps its own larger finite limits. It
+  is not a bound on the original aggregate memory or traffic envelope.
+- **Per attempt.** The copy is re-hashed before launch and mounted read-only
+  at the sandbox target `~/.local/bin/claude`. The provider runs that
+  absolute target path with `--model` and `--effort`. The plan records
+  `original_native.observed.source` (the retained host copy) and
+  `original_native.observed.target` (the child path) separately. Each row
+  records `original_native {binary_sha256, effort, target}`.
+- **Credentials.** The legacy bind is unchanged: read-write, or the
+  explicitly selected account. The tests assert this.
+- **Model and effort.** These are compared on the plan and on every row.
+- **Embedding worker.** This is the runner's shared worker.
+- **Embedding model identity.** The declaration file must be the typed
+  `semantic.EmbeddingIdentity` shape
+  `{schema: cairn.embedding-model-identity/1, model_sha256, algorithm,
+  dimensions}`. Anything opaque or untyped refuses
+  `original_execution_unsupported:model_identity_declaration`.
+  `TrialStore.wait_for_full_coverage` now keeps the backend's
+  `{model_sha256, algorithm}` from the same discovery response it already
+  reads. The runner compares those values per arm with the declared values,
+  never with the declaration file's own SHA-256. Dimensions stay declared:
+  discovery does not expose them, so the receipt records
+  `dimensions: unobserved`. Three things stay separate: the declaration pin,
+  the declared values and the observed values.
+
+**Refused until implemented** (follow-ons, design section 5):
+- `original_execution_unsupported:recall_mode`
+- `original_execution_unsupported:semantic_fallback`
+- `original_execution_unsupported:recall_revision`
+- `original_execution_unsupported:embedding_config`
+
+The legacy executor always refuses these by name, before any effect.
+Ambient or no-fallback values are never chosen to make a run complete. While
+these refusals stand, the default executor cannot run, so this is an
+intermediate subset, not full CAIRN-107 execution.
+
+**Runner comparison** (`check_observed`):
+- An absent observation gives `incomplete`: `original_execution_unobserved`
+  or `original_execution_identity_unobserved`.
+- A malformed observation gives `rejected` /
+  `original_execution_observation_malformed`, never an escaped exception.
+  This covers a non-object backend, readiness or identity value. It also
+  covers a retained-copy record that lacks the producer's `source` (an
+  absolute `.../native/claude`, distinct from the target), `observed_at`
+  (UTC), `sha256`, `version` or `target`.
+- A contradiction gives `rejected`: `original_execution_mismatch` or
+  `original_execution_identity_mismatch`.
+- The receipt records
+  `original_execution {declared, observed, proof: harness_observed_copy}`.
+  The proof is the hash of the mounted copy, not provider or model
+  attestation.
+
+**Replay.** A stored slot is replayed only if its receipt's
+`original_execution.declared` equals the current declaration. Otherwise the
+runner refuses `stored_slot_execution_mismatch`. That includes a receipt
+written before the contract existed, and a current profile that dropped a
+recorded execution pin. Nothing is re-executed and no receipt is
+modified.
+
+**Bridge** (`trial_candidate_run_bridge`):
+- The runner profile's `execution` must be the reviewed request's
+  `weekly_input.execution` (`bridge_execution_mismatch`).
+- A stored claim must carry the same execution pin.
+- Before execution, the spec's declared native pin, model and effort must
+  equal the reviewed declaration.
+- A complete receipt's observed native SHA-256 and effort must equal the
+  declared ones (`bridge_runner_execution_mismatch`).
+
 ## Verifying the selected harness before launch (analysis)
 
 Question: before launch, can the runner verify that the exact exported

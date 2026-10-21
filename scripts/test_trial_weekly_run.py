@@ -17,6 +17,7 @@ import unittest.mock
 
 import trial_paired_request as paired
 import trial_task_eval as te
+import trial_original_execution as original
 import trial_weekly_run as weekly
 from trial_capacity_adapter import adapt
 from test_trial_capacity_adapter import Inputs
@@ -25,6 +26,11 @@ from test_trial_provider_mapping import END, NOW
 
 NOW_DT = paired.utc(NOW)
 ACCOUNTS = ['account-A', 'account-B']
+
+
+def _write(path, content):
+    path.write_text(content)
+    return path
 
 
 def git(repo, *args):
@@ -87,10 +93,16 @@ def hook_rows(seconds=0.2):
                  memory_call_attempts={'search': 1, 'pull': 0, 'pull-evidence': 0, 'history': 0, 'other': 0})
             for event in ('SessionStart', 'UserPromptSubmit')]
 
+native_path, native_sha, effort = value('--original-native-path'), value('--original-native-sha256'), value('--reasoning-effort')
+native_target = '/home/synthetic/.local/bin/claude'
+identity = json.loads(os.environ['FAKE_IDENTITY'])
+
 def record(c, a, s, answer=None, prefix=''):
     answer = answer or f'Synthetic answer {c} {a} {s}.'
     outcome = 'mistake' if a == 'CAND' and c.endswith(('0', '5')) else 'correct'
     return dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s, order=0, harness='claude', model=model,
+                original_native=dict(binary_sha256=native_sha, effort='low' if mode == 'oe_effort' and (c, a, s) == plan[3] else effort,
+                                     target=native_target),
                 wording='task', prompt_bytes=len(task(c).encode()), outcome=outcome, answer_chars=len(answer),
                 stream_sha256=hashlib.sha256((prefix + stream(answer)).encode()).hexdigest(),
                 prompt_sha256=hashlib.sha256(task(c).encode()).hexdigest()), prefix + stream(answer)
@@ -186,7 +198,28 @@ for row, text in rows:
                    sha256=hashlib.sha256(line.encode()).hexdigest()) for i, line in enumerate(lines)]
     if not (mode == 'limit_unobserved' and row['run_id'] == rows[2][0]['run_id']):
         (base / 'stream-timing.json').write_text(json.dumps(timing))
-(out / 'plan.json').write_text(json.dumps(dict(arms=arms, wording='task', runs=[[c, a, s, 0] for c, a, s in plan]), indent=2))
+identities = {arm: dict(identity) for arm in arms}
+if mode == 'oe_identity_mismatch':
+    identities = {arm: dict(identity, model_sha256='f' * 64) for arm in arms}
+elif mode == 'oe_identity_arms':
+    identities['CAND'] = dict(identity, algorithm='other-embedding/1')
+elif mode == 'oe_identity_missing':
+    identities['CURRENT'] = dict(model_sha256=None, algorithm=None)
+if mode == 'oe_row_missing':
+    rows[5][0].pop('original_native')
+native = dict(declared=dict(path=native_path, sha256=native_sha),
+              observed=dict(source=str(out / 'native/claude'), sha256='0' * 64 if mode == 'oe_plan_sha' else native_sha,
+                            version='fake-claude 9.9.9', observed_at='2026-10-09T19:59:30Z', target=native_target))
+plan_document = dict(arms=arms, wording='task', runs=[[c, a, s, 0] for c, a, s in plan], model=model,
+                     reasoning_effort=effort, original_native=native,
+                     memory_backends={arm: dict(backend='embedding-command',
+                                                readiness=dict(state='full_eligible_coverage', identity=identities[arm]))
+                                      for arm in arms})
+if mode == 'oe_unobserved':
+    plan_document.pop('original_native')
+if mode == 'oe_backend_string':
+    plan_document['memory_backends']['CURRENT'] = 'malformed backend'
+(out / 'plan.json').write_text(json.dumps(plan_document, indent=2))
 document = dict(schema='cairn.task-eval.agent/1', frozen=frozen, arms=arms, model='other-model' if mode == 'model' else model,
                 wording='task', harness='claude', distractors=1900,
                 admission=dict(state='stopped_provider_failure' if stop else 'complete', stop=stop,
@@ -243,12 +276,14 @@ class FakeExecutor(weekly.LegacyHarnessExecutor):
     """
 
     name = 'fake'
+    capabilities = frozenset(original.FIELDS)  # the double carries every declared field
 
     def __init__(self, account, harness_mode='complete', accounts=ACCOUNTS):
         super().__init__(account)
         self.limits = dict(paired.ORIGINAL_LIMITS)
         self.account_ids = list(accounts)
         self.harness_mode = harness_mode
+        self.discovery = None
         self.checked, self.executed = [], []
 
     def check(self, preview):
@@ -257,7 +292,9 @@ class FakeExecutor(weekly.LegacyHarnessExecutor):
 
     def execute(self, spec, run_dir):
         self.executed.append(copy.deepcopy(spec))
-        with unittest.mock.patch.dict(os.environ, FAKE_HARNESS_MODE=self.harness_mode,
+        declared = spec['original_execution']['identity']
+        identity = self.discovery or {k: declared[k] for k in ('model_sha256', 'algorithm')}  # discovery has no dimensions
+        with unittest.mock.patch.dict(os.environ, FAKE_HARNESS_MODE=self.harness_mode, FAKE_IDENTITY=json.dumps(identity),
                                       CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/ambient/must-not-pass',
                                       OPENROUTER_API_KEY='must-not-pass', ANTHROPIC_API_KEY='must-not-pass'):
             return super().execute(spec, run_dir)
@@ -294,13 +331,51 @@ class WeeklyRunTests(unittest.TestCase):
             postgres=dict(bin_dir=str(self.root / 'pgbin')),
             capacity=dict(receipt=self.receipt_pin, plan=self.plan_pin,
                           models=dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'fixture-model')),
-            executor='fake', selection=None, account=None)
+            executor='fake', selection=None, account=None, execution=None)
+        self.profile['execution'] = self.execution_pin()
         config_home = self.root / 'accounts/weekly'
         config_home.mkdir(parents=True)
         (config_home / '.credentials.json').write_text('{"synthetic": "never read"}')
         self.profile['account'] = dict(account_id='account-A', config_home=str(config_home))
         self.executor = FakeExecutor(self.profile['account'])
         self.select()
+
+    def execution_document(self):
+        return json.loads(Path(self.profile['execution']['path']).read_text())
+
+    def execution_pin(self, **changes):
+        """A synthetic cairn.weekly-execution/1 declaration for this run (trial_weekly_input._execution)."""
+        declared = self.root / 'declared'
+        declared.mkdir(exist_ok=True)
+
+        def pinned(name, content):
+            return write_pin(declared / name, content) if not isinstance(content, str) else \
+                dict(path=str(_write(declared / name, content)), sha256=hashlib.sha256(content.encode()).hexdigest())
+        identity = changes.pop('identity', None) or pinned('model-identity.json', dict(
+            schema='cairn.embedding-model-identity/1', model_sha256='a' * 64, algorithm='synthetic-embedding/1',
+            dimensions=384))
+        arm = lambda name, commit: dict(binary=pinned(name + '-cairn', '#!/bin/sh\n'), hook=pinned(name + '-hook.py', '#\n'),
+                                        bridge=pinned(name + '-bridge.py', '#\n'), api_revision=commit,
+                                        recall_revision=commit, recall_mode='agent_tools', semantic_fallback=True,
+                                        embedding_worker=self.profile['embedding']['worker'],
+                                        embedding_config=pinned('embedding-config.json', '{}'),
+                                        embedding_model_identity=identity)
+        generator = Path(te.__file__).resolve()
+        document = dict(schema='cairn.weekly-execution/1',
+                        weekly_source=dict(root=str(self.repo.path / 'trials/task-eval'), **self.profile['weekly_source']),
+                        actor_api_base=self.repo.current,
+                        native=dict(binary=pinned('claude', '#!/bin/sh\n# synthetic native\n'), model='fixture-model',
+                                    effort='xhigh'),
+                        arms=['CURRENT', 'CAND'],
+                        memory_arms=dict(CURRENT=arm('current', self.repo.current), CAND=arm('cand', self.repo.candidate)),
+                        seeds=[1, 2, 3], wording='task', workload=pinned('workload.json', '{}'),
+                        distractors=dict(count=1900, seed=20260928,
+                                         generator_source=dict(path=str(generator),
+                                                               sha256=hashlib.sha256(generator.read_bytes()).hexdigest()),
+                                         generated_sha256='0' * 64))
+        for key, value in changes.items():
+            document[key] = value
+        return write_pin(declared / 'execution.json', document)
 
     def select(self, **changes):
         frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
@@ -331,10 +406,15 @@ class WeeklyRunTests(unittest.TestCase):
         self.profile['account'] = None
         refusal = self.refuses('weekly_executor_blocked', executors=weekly.default_executors(None))
         self.assertEqual(refusal.blockers, ['dedicated_account_unbound'])
-        # With a selected account the legacy executor is no longer blocked; the fixture's
-        # two-account capacity evidence then refuses the single selected account.
-        self.profile['account'] = account
-        self.refuses('capacity_account_mismatch', executors=weekly.default_executors(account))
+        # With a selected account and no execution pin, the contract is unbound.
+        self.profile['account'], execution = account, self.profile['execution']
+        self.profile['execution'] = None
+        refusal = self.refuses('weekly_executor_blocked', executors=weekly.default_executors(account))
+        self.assertEqual(refusal.blockers, ['original_execution_unbound'])
+        # With both, every originally selected control the legacy harness cannot carry refuses by name.
+        self.profile['execution'] = execution
+        refusal = self.refuses('original_execution_unsupported:recall_mode', executors=weekly.default_executors(account))
+        self.assertEqual(refusal.fields, ['original_execution_unsupported:recall_mode', 'original_execution_unsupported:semantic_fallback', 'original_execution_unsupported:recall_revision', 'original_execution_unsupported:embedding_config'])
 
     def test_legacy_blockers_are_computed_from_configuration_and_account(self):
         account = self.profile['account']
@@ -357,6 +437,7 @@ class WeeklyRunTests(unittest.TestCase):
         executor = FakeExecutor(self.profile['account'], accounts=['account-A'])
         self.refuses('capacity_account_mismatch', executors={'fake': executor})
         real = weekly.LegacyHarnessExecutor(self.profile['account'])
+        real.capabilities = frozenset(original.FIELDS)  # past the named refusals, to reach the capacity gate
         self.profile['executor'] = 'legacy-harness'
         self.refuses('capacity_account_mismatch', executors={'legacy-harness': real})
 
@@ -403,12 +484,15 @@ class WeeklyRunTests(unittest.TestCase):
         spec = dict(harness=dict(root='/h'), seeds=[0, 1, 2], distractors=1900, actor_model='sonnet',
                     embedding=dict(worker=dict(path='/w')), postgres=dict(bin_dir='/pg'),
                     arms={name: dict(binary=dict(path=f'/{name}/cairn'), hook=dict(path=f'/{name}/memory.py'))
-                          for name in ('CURRENT', 'CAND')})
+                          for name in ('CURRENT', 'CAND')},
+                    original_execution=dict(native=dict(path='/declared:with/colon/claude', sha256='b' * 64), effort='max'))
         self.assertEqual(weekly.legacy_argv(spec, Path('/out')), [
             '/h/scripts/trial-task-eval.sh', 'agent', '--legacy-fixtures', '--original-limits', '--output', '/out', '--arms',
             '--memory', 'CURRENT:/CURRENT/cairn:/CURRENT/memory.py', '--memory', 'CAND:/CAND/cairn:/CAND/memory.py',
             '--distractors', '1900', '--seeds', '3', '--first-seed', '0', '--embedding-worker', '/w',
-            '--harness', 'claude', '--model', 'sonnet', '--max-turns', '40', '--timeout', '900', '--parallel', '3'])
+            '--harness', 'claude', '--model', 'sonnet', '--max-turns', '40', '--timeout', '900', '--parallel', '3',
+            '--original-native-path', '/declared:with/colon/claude', '--original-native-sha256', 'b' * 64,
+            '--reasoning-effort', 'max'])
         with self.assertRaisesRegex(paired.Refusal, '^legacy_seed_list$'):
             weekly.legacy_argv(dict(spec, seeds=[1, 2, 4]), Path('/out'))
         spec['account'] = dict(account_id='account-A', config_home='/accounts/weekly')
@@ -460,7 +544,9 @@ class WeeklyRunTests(unittest.TestCase):
         git(self.repo.path, 'checkout', '-q', 'candidate')
         (self.repo.path / 'integrations/lifecycle/memory.py').write_text('# second candidate\n')
         git(self.repo.path, 'commit', '-qam', 'second candidate')
+        self.repo.candidate = git(self.repo.path, 'rev-parse', 'HEAD')
         git(self.repo.path, 'checkout', '-q', 'main')
+        self.profile['execution'] = self.execution_pin()
         with self.assertRaisesRegex(paired.Refusal, '^weekly_slot_other_pair$'):
             self.run_weekly()
         self.assertEqual(len(self.executor.executed), 1)
@@ -473,11 +559,13 @@ class WeeklyRunTests(unittest.TestCase):
 
     def test_preparation_failure_is_recorded_and_retried_in_the_same_slot(self):
         self.profile['weekly_source']['frozen_sha256'] = '0' * 64
+        self.profile['execution'] = self.execution_pin()
         failed = self.run_weekly()
         self.assertEqual((failed['status'], failed['code']), ('failed_before_execution', 'harness_frozen_mismatch'))
         self.assertEqual(self.executor.executed, [])
         frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
         self.profile['weekly_source']['frozen_sha256'] = hashlib.sha256(frozen.read_bytes()).hexdigest()
+        self.profile['execution'] = self.execution_pin()
         self.assertEqual(self.run_weekly()['status'], 'complete')
         self.assertEqual(os.listdir(self.runs / 'failed'), [failed['slot_id'] + '.1'])
 
@@ -522,7 +610,7 @@ class WeeklyRunTests(unittest.TestCase):
             code = weekly.main(['--profile', str(profile), '--now', NOW])
         result = json.loads(output.getvalue())
         self.assertEqual(code, 2)
-        self.assertEqual(result['code'], 'capacity_account_mismatch')
+        self.assertEqual((result['code'], result['unsupported']), ('original_execution_unsupported:recall_mode', ['original_execution_unsupported:recall_mode', 'original_execution_unsupported:semantic_fallback', 'original_execution_unsupported:recall_revision', 'original_execution_unsupported:embedding_config']))
         self.assertFalse(result['runtime_admission'])
         self.assertNotIn(str(self.root), output.getvalue())
         self.assertEqual(os.listdir(self.runs), [])
@@ -567,6 +655,7 @@ class WeeklyRunTests(unittest.TestCase):
 
     def test_refused_retry_of_a_failed_slot_leaves_it_unchanged_and_retryable(self):
         self.profile['weekly_source']['frozen_sha256'] = '0' * 64
+        self.profile['execution'] = self.execution_pin()
         failed = self.run_weekly()
         self.assertEqual(failed['status'], 'failed_before_execution')
         slot = self.runs / failed['slot_id']
@@ -672,10 +761,12 @@ class WeeklyRunTests(unittest.TestCase):
 
     def test_interleaved_retry_never_executes_the_slot_twice_or_archives_a_completed_slot(self):
         self.profile['weekly_source']['frozen_sha256'] = '0' * 64
+        self.profile['execution'] = self.execution_pin()
         failed = self.run_weekly()
         self.assertEqual(failed['status'], 'failed_before_execution')
         frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
         self.profile['weekly_source']['frozen_sha256'] = hashlib.sha256(frozen.read_bytes()).hexdigest()
+        self.profile['execution'] = self.execution_pin()
         patch, inner = self.interleave()
         with patch:
             outer = self.run_weekly()
@@ -792,6 +883,117 @@ class WeeklyRunTests(unittest.TestCase):
                 self.assertEqual(stored['code'], 'attempt_baseline_invalid')
                 self.assertEqual(self.run_weekly()['replayed'], True)
                 self.assertEqual(len(self.executor.executed), 1)
+
+
+    def oe_rejected(self, mode, status, code):
+        self.executor.harness_mode = mode
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), (status, code))
+        self.assertIsNone(receipt['pair_binding'])
+
+    def test_complete_receipt_records_declared_and_observed_execution_separately(self):
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['status'], 'complete')
+        execution = receipt['original_execution']
+        self.assertEqual(execution['proof'], 'harness_observed_copy')
+        self.assertEqual(execution['declared']['effort'], 'xhigh')
+        self.assertEqual(execution['declared']['arms']['CAND'],
+                         dict(recall_mode='agent_tools', semantic_fallback=True, recall_revision=self.repo.candidate))
+        self.assertEqual(execution['observed']['native']['sha256'], execution['declared']['native']['sha256'])
+        self.assertEqual(execution['declared']['identity'],
+                         dict(model_sha256='a' * 64, algorithm='synthetic-embedding/1', dimensions=384))
+        self.assertEqual(execution['observed']['identities']['CAND'],
+                         dict(model_sha256='a' * 64, algorithm='synthetic-embedding/1', dimensions='unobserved'))
+        self.assertNotEqual(execution['declared']['embedding']['model_identity']['sha256'], 'a' * 64)
+        argv = json.loads((Path(receipt['agent']['path']).parent / 'argv.json').read_text())['argv']
+        self.assertEqual(argv[argv.index('--original-native-sha256') + 1], execution['declared']['native']['sha256'])
+        self.assertEqual(argv[argv.index('--reasoning-effort') + 1], 'xhigh')
+
+    def test_observed_execution_mismatches_never_complete_or_bind(self):
+        for mode, status, code in (('oe_plan_sha', 'rejected', 'original_execution_mismatch'),
+                                   ('oe_effort', 'rejected', 'original_execution_mismatch'),
+                                   ('oe_unobserved', 'incomplete', 'original_execution_unobserved'),
+                                   ('oe_row_missing', 'incomplete', 'original_execution_unobserved'),
+                                   ('oe_identity_mismatch', 'rejected', 'original_execution_identity_mismatch'),
+                                   ('oe_identity_arms', 'rejected', 'original_execution_identity_mismatch'),
+                                   ('oe_identity_missing', 'incomplete', 'original_execution_identity_unobserved')):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.oe_rejected(mode, status, code)
+
+    def test_declaration_must_match_the_run_before_any_effect(self):
+        document = self.execution_document()
+        self.profile['execution'] = self.execution_pin(native=dict(document['native'], model='other-model'))
+        self.refuses('original_execution_model_mismatch')
+        arms = document['memory_arms']
+        arms['CAND'] = dict(arms['CAND'], api_revision=self.repo.current)
+        self.profile['execution'] = self.execution_pin(memory_arms=arms)
+        self.refuses('original_execution_arm_mismatch')
+        arms['CAND'] = dict(arms['CAND'], api_revision=self.repo.candidate)
+        for content in (dict(schema='x'), 'opaque model identity', dict(model_sha256='a' * 64, algorithm='a'),
+                        dict(schema='cairn.embedding-model-identity/1', model_sha256='a' * 64, algorithm='a')):
+            with self.subTest(content=content):
+                identity = write_pin(self.root / 'declared/bad-identity.json', content) if isinstance(content, dict) \
+                    else dict(path=str(_write(self.root / 'declared/bad-identity.json', content)),
+                              sha256=hashlib.sha256(content.encode()).hexdigest())
+                for name in ('CURRENT', 'CAND'):
+                    arms[name] = dict(arms[name], embedding_model_identity=identity)
+                self.profile['execution'] = self.execution_pin(memory_arms=arms)
+                refusal = self.refuses('original_execution_unsupported:model_identity_declaration')
+                self.assertEqual(refusal.fields, ['original_execution_unsupported:model_identity_declaration'])
+
+    def test_replay_satisfies_only_the_recorded_execution_contract(self):
+        first = self.run_weekly()
+        self.assertEqual(self.run_weekly(), dict(first, replayed=True))
+        native = dict(self.execution_document()['native'], effort='max')
+        self.profile['execution'] = self.execution_pin(native=native)
+        with self.assertRaisesRegex(paired.Refusal, '^stored_slot_execution_mismatch$'):
+            self.run_weekly()
+        self.assertEqual(len(self.executor.executed), 1)
+
+    def test_receipt_from_before_the_contract_never_satisfies_it(self):
+        receipt = self.run_weekly()
+        slot = self.runs / receipt['slot_id']
+        legacy = {k: v for k, v in receipt.items() if k != 'original_execution'}
+        (slot / 'receipt.json').unlink()
+        paired.write_selected(slot / 'receipt.json', legacy)
+        with self.assertRaisesRegex(paired.Refusal, '^stored_slot_execution_mismatch$'):
+            self.run_weekly()
+        self.assertEqual(len(self.executor.executed), 1)
+
+
+    def test_declared_identity_compares_typed_values_never_the_declaration_file_hash(self):
+        declaration = self.execution_document()['memory_arms']['CURRENT']['embedding_model_identity']
+        for discovery, status, code in (
+                (dict(model_sha256='a' * 64, algorithm='synthetic-embedding/1'), 'complete', None),
+                (dict(model_sha256='b' * 64, algorithm='synthetic-embedding/1'), 'rejected', 'original_execution_identity_mismatch'),
+                (dict(model_sha256='a' * 64, algorithm='other/1'), 'rejected', 'original_execution_identity_mismatch'),
+                # The declaration file's own SHA-256 is not the backend model hash.
+                (dict(model_sha256=declaration['sha256'], algorithm='synthetic-embedding/1'), 'rejected',
+                 'original_execution_identity_mismatch')):
+            with self.subTest(discovery=discovery):
+                self.tearDown()
+                self.setUp()
+                self.executor.discovery = discovery
+                receipt = self.run_weekly()
+                self.assertEqual((receipt['status'], receipt['code']), (status, code))
+
+
+    def test_dropping_the_execution_pin_never_replays_a_contract_completion(self):
+        self.run_weekly()
+        self.profile['execution'] = None
+        with self.assertRaisesRegex(paired.Refusal, '^stored_slot_execution_mismatch$'):
+            self.run_weekly()
+        self.assertEqual(len(self.executor.executed), 1)
+
+    def test_malformed_backend_observation_is_terminal_and_never_held(self):
+        self.executor.harness_mode = 'oe_backend_string'
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), ('rejected', 'original_execution_observation_malformed'))
+        self.assertIsNone(receipt['pair_binding'])
+        self.assertEqual(self.run_weekly()['replayed'], True)
+        self.assertEqual(len(self.executor.executed), 1)
 
 
 if __name__ == '__main__':

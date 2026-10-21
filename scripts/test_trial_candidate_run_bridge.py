@@ -48,6 +48,10 @@ class BridgeTests(unittest.TestCase):
         shutil.copy(Path(weekly.limits.__file__), harness.parent/'trial_legacy_limits.py')
         (harness.parent/'trial_task_eval.py').write_text(
             '# synthetic\nselected = credentials_source()\na.add_argument("--original-limits")\n')
+        # The original-execution seam reads a structured model-identity declaration.
+        self.f.profile['embedding']['model_identity'] = write_pin(self.root/'model-identity.json', dict(
+            schema='cairn.embedding-model-identity/1', model_sha256='a'*64, algorithm='synthetic-embedding/1',
+            dimensions=384))
         git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'synthetic harness')
         self.harness = git(repo, 'rev-parse', 'HEAD')
         queued = self.f.run_request()
@@ -72,7 +76,8 @@ class BridgeTests(unittest.TestCase):
             capacity=dict(receipt=pin(evidence/'adapted/receipt.json'),
                 plan=write_pin(evidence/'plan.json', provider.plan),
                 models=dict.fromkeys(('CURRENT','CAND','primary','secondary'), 'fixture-model')),
-            executor='fake', selection=None, account=None)
+            executor='fake', selection=None, account=None,
+            execution=paired.read_json(self.entry/'proposal.json')['weekly_input']['execution'])
         config_home = self.root/'accounts/weekly'
         config_home.mkdir(parents=True, mode=0o700)
         (config_home/'.credentials.json').write_text('{"synthetic": "never read"}')
@@ -103,6 +108,9 @@ class BridgeTests(unittest.TestCase):
 
     def test_default_executor_gets_selected_account_and_keeps_capacity_gate(self):
         self.select_default_executor(self.profile['account'])
+        # Past the named original-execution refusals (tested below) to reach the capacity gate.
+        self.addCleanup(setattr, weekly.LegacyHarnessExecutor, 'capabilities', weekly.LegacyHarnessExecutor.capabilities)
+        weekly.LegacyHarnessExecutor.capabilities = frozenset(weekly.original.FIELDS)
         # Production construction reaches capacity checking with its one selected
         # account. This fixture deliberately reserves two; no executor may run.
         with self.assertRaisesRegex(paired.Refusal, '^capacity_account_mismatch$'):
@@ -286,6 +294,38 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(paired.Refusal, '^bridge_stored_slot_mismatch$'): self.run_bridge()
         self.assertFalse(self.output.exists())
         self.assertEqual(len(self.executor.executed), 1)
+
+
+    def test_runner_profile_must_carry_the_reviewed_execution_declaration(self):
+        for execution in (None, write_pin(self.root/'other-execution.json', {'schema': 'other'})):
+            with self.subTest(execution=execution):
+                self.profile['execution'] = execution
+                self.selection['runner_profile'] = write_pin(self.root/'runner-profile.json', self.profile)
+                with self.assertRaisesRegex(paired.Refusal, '^bridge_execution_mismatch$'):
+                    self.run_bridge()
+                self.assertFalse(self.output.exists())
+                self.assertEqual(list(self.runs.iterdir()), [])
+
+    def test_complete_bridge_receipt_requires_the_observed_native_sha_and_effort(self):
+        result = self.run_bridge()
+        execution = paired.read_json(self.entry/'execution.json')
+        observed = result['runner']['original_execution']['observed']
+        self.assertEqual(observed['native']['sha256'], execution['native']['binary']['sha256'])
+        self.assertEqual(observed['reasoning_effort'], execution['native']['effort'])
+        slot = next(self.runs.iterdir())
+        receipt = json.loads((slot/'receipt.json').read_bytes())
+        receipt['original_execution']['observed']['native']['sha256'] = '0'*64
+        (slot/'receipt.json').write_text(json.dumps(receipt))
+        self.output = self.root/'other-bridge'
+        with self.assertRaisesRegex(paired.Refusal, '^bridge_runner_execution_mismatch$'): self.run_bridge()
+
+    def test_default_executor_refuses_the_unsupported_recall_and_embedding_controls(self):
+        self.select_default_executor(self.profile['account'])
+        with self.assertRaisesRegex(paired.Refusal, '^original_execution_unsupported:recall_mode$') as caught:
+            self.run_bridge(executors=None)
+        self.assertEqual(caught.exception.fields, ['original_execution_unsupported:' + field for field in
+                         ('recall_mode', 'semantic_fallback', 'recall_revision', 'embedding_config')])
+        self.assertEqual(list(self.runs.iterdir()), [])
 
 
 if __name__ == '__main__':

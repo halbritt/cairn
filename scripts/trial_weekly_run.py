@@ -36,6 +36,7 @@ import trial_attempt_custody as custody
 import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
 import trial_legacy_limits as limits
+import trial_original_execution as original
 import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
@@ -48,7 +49,7 @@ CLAIM_SCHEMA = 'cairn.weekly-run-claim/1'
 SELECTION_SCHEMA = 'cairn.weekly-run-selection/1'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
-                  'weekly_source embedding postgres capacity executor selection account')
+                  'weekly_source embedding postgres capacity executor selection account execution')
 SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
@@ -117,7 +118,8 @@ def legacy_argv(spec, output):
     return argv + ['--distractors', str(spec['distractors']), '--seeds', str(len(seeds)),
                    '--first-seed', str(seeds[0]), '--embedding-worker', spec['embedding']['worker']['path'],
                    '--harness', 'claude', '--model', spec['actor_model'],
-                   '--max-turns', '40', '--timeout', '900', '--parallel', '3']
+                   '--max-turns', '40', '--timeout', '900', '--parallel', '3',
+                   *original.harness_flags(spec['original_execution'])]
 
 
 def legacy_environment(spec, base=None):
@@ -148,11 +150,17 @@ class LegacyHarnessExecutor:
         self.account = account
         self.account_ids = () if account is None else (account['account_id'],)
 
+    capabilities = original.LEGACY_CAPABILITIES
+
     def check(self, preview):
         check_account(self.account)
         blockers = legacy_blockers(self.configuration, self.account)
+        if preview.get('original_execution') is None:
+            blockers.append('original_execution_unbound')
         if blockers:
             raise ExecutorBlocked(blockers)
+        # Every originally selected control the harness cannot carry refuses by name.
+        original.check_supported(preview['original_execution'], self.capabilities)
 
     def execute(self, spec, run_dir):
         output = Path(run_dir) / 'agent'
@@ -198,6 +206,7 @@ def check_profile(profile):
     need(type(profile['executor']) is str, 'profile_executor')
     need(profile['selection'] is None or isinstance(profile['selection'], dict), 'profile_selection')
     need(profile['account'] is None or isinstance(profile['account'], dict), 'account_selection_invalid')
+    need(profile['execution'] is None or isinstance(profile['execution'], dict), 'original_execution_unbound')
     return repo, runs
 
 
@@ -305,14 +314,23 @@ def _runs_lock(runs):
 
 def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness):
     """Under the runs lock: stored receipt, or every check, retirement and the recorded claim."""
+    fragment = None if profile['execution'] is None else original.declared(
+        profile, current=current, candidate=cand, models=profile['capacity']['models'])
     stored, retry = _stored_slot(runs, slot_id, current, cand)
     if stored is not None:
+        # A replay satisfies only the exact execution contract it recorded. A receipt from
+        # before the contract existed, or under another binary, effort or model, never does.
+        # A selection that drops a recorded contract does not name the completion either.
+        recorded = stored.get('original_execution')
+        need((recorded.get('declared') if isinstance(recorded, dict) else None) == fragment,
+             'stored_slot_execution_mismatch')
         return stored
     executor = executors.get(profile['executor'])
     need(executor is not None, 'weekly_executor_unknown')
     preview = dict(slot_id=slot_id, scheduled_at=candidate._iso(start), expires_at=candidate._iso(end),
                    current=current, candidate=cand, harness=harness, limits=dict(paired.ORIGINAL_LIMITS),
-                   cases=WEEKLY_CASES, attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS)
+                   cases=WEEKLY_CASES, attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS,
+                   original_execution=fragment)
     executor.check(preview)
     need(executor.limits == paired.ORIGINAL_LIMITS, 'executor_limits_unenforced')
     capacity, plan = capacity_gate(profile['capacity'], now=now, slot_end=end, account_ids=executor.account_ids)
@@ -324,7 +342,7 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
                  scheduled_at=preview['scheduled_at'], expires_at=preview['expires_at'],
                  current=dict(ref=profile['current_ref'], commit=current),
                  candidate=dict(ref=profile['candidate_ref'], commit=cand), harness_commit=harness,
-                 executor=executor.name, capacity=capacity, selection=selection)
+                 executor=executor.name, capacity=capacity, selection=selection, original_execution=fragment)
     try:
         slot.mkdir(mode=0o700)
     except FileExistsError:
@@ -430,7 +448,7 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
                 embedding=profile['embedding'], postgres=profile['postgres'],
-                actor_model=profile['capacity']['models']['CURRENT'],
+                actor_model=claim['original_execution']['model'], original_execution=claim['original_execution'],
                 cases=WEEKLY_CASES, arm_count=WEEKLY_ARMS, seeds=list(plan['seeds']),
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
                 capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned),
@@ -503,6 +521,11 @@ def _agent_result(path, spec):
         return dict(result, status='incomplete', code='attempt_failures')
     if not all(type(r.get(k)) is str and len(r[k]) == 64 for r in records for k in ('stream_sha256', 'prompt_sha256')):
         return dict(result, status='incomplete', code='original_attempt_provenance_unavailable')
+    mismatch = original.check_observed(plan, records, spec['original_execution'])
+    if mismatch is not None:
+        return dict(result, status=mismatch[0], code=mismatch[1])
+    result['original_execution'] = dict(declared=spec['original_execution'], observed=original.observed(plan),
+                                        proof='harness_observed_copy')
     return _limit_result(result, Path(path).parent, records, spec)
 
 
@@ -564,10 +587,12 @@ def _pair_binding(slot, spec, campaign_id, agent, plan):
 
 
 def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None,
-            limit_assessment=None, baseline_custody=None):
+            limit_assessment=None, baseline_custody=None, original_execution=None):
     receipt = dict(claim, schema=RECEIPT_SCHEMA, status=status, code=code, agent=agent, attempts=attempts,
                    harness_exit_code=harness_exit_code, pair_binding=pair_binding, limit_assessment=limit_assessment,
                    baseline_custody=baseline_custody,
+                   original_execution=original_execution or dict(declared=claim['original_execution'], observed=None,
+                                                                 proof=None),
                    pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)
@@ -584,6 +609,9 @@ def main(argv=None):
         profile = paired.read_json(paired.plain_path(args.profile))
         now = paired.utc(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
         result = run(profile, now=now)
+    except original.Unsupported as error:
+        result = dict(schema=RECEIPT_SCHEMA, status='refused', code=str(error), unsupported=error.fields,
+                      runtime_admission=False)
     except ExecutorBlocked as error:
         result = dict(schema=RECEIPT_SCHEMA, status='refused', code=str(error), blockers=error.blockers,
                       runtime_admission=False)

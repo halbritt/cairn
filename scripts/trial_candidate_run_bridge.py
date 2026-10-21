@@ -122,6 +122,8 @@ def _load(selection_pin, now):
          execution['wording'] == schedule['wording'] == 'task', 'bridge_execution_mismatch')
     need(execution['native']['model'] == profile['capacity']['models']['CURRENT'] ==
          profile['capacity']['models']['CAND'], 'bridge_model_mismatch')
+    # The runner's execution contract is the reviewed request's exact execution declaration.
+    need(profile.get('execution') == request['weekly_input']['execution'], 'bridge_execution_mismatch')
     planned = sorted((dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s)
                       for c in plan['cases'] for s in plan['seeds'] for a in plan['arms']), key=lambda r:r['run_id'])
     observed = sorted((dict(run_id=f"{r['case']}.{r['arm']}.s{r['seed']}",
@@ -142,7 +144,9 @@ def _load(selection_pin, now):
              claim['current']['commit'] == commits['CURRENT'] and
              claim['candidate']['commit'] == commits['CAND'] and
              claim['capacity']['receipt_sha256'] == profile['capacity']['receipt']['sha256'] and
-             claim['selection']['sha256'] == profile['selection']['sha256'], 'bridge_stored_slot_mismatch')
+             claim['selection']['sha256'] == profile['selection']['sha256'] and
+             (claim.get('original_execution') or {}).get('execution') == profile['execution'],
+             'bridge_stored_slot_mismatch')
     binding = dict(candidate=dict(request_id=ids['request'], occurrence_id=ids['occurrence'],
                        request_sha256=preparation['request_sha256'], schedule_sha256=schedule['sha256'],
                        schedule_file_sha256=request['schedule']['sha256']),
@@ -196,6 +200,10 @@ def _run(selection_pin, output, now, executors, compiler, runner):
                  pair['request_sha256'] == spec_pin['sha256'] and
                  pair['occurrence_id'] == binding['runner']['occurrence_id'] and
                  pair['schedule_sha256'] == binding['runner']['schedule_sha256'], 'bridge_runner_binding_mismatch')
+            # A complete run must have observed exactly the declared native bytes and effort.
+            observed = (content.get('original_execution') or {}).get('observed') or {}
+            need((observed.get('native') or {}).get('sha256') == execution['native']['binary']['sha256'] and
+                 observed.get('reasoning_effort') == execution['native']['effort'], 'bridge_runner_execution_mismatch')
         return dict(schema=RECEIPT, selection=dict(selection_pin), binding=binding, status=content['status'],
                     runner_spec=spec_pin, runner_receipt=_pin(retained), runner=content, runtime_admitted=False)
 
@@ -205,6 +213,10 @@ def _run(selection_pin, output, now, executors, compiler, runner):
              spec['schedule_sha256'] == binding['runner']['schedule_sha256'] and
              spec['harness']['commit'] == binding['harness_commit'] and
              spec['account'] == profile['account'], 'bridge_runner_mismatch')
+        declared = spec['original_execution']
+        need(declared['execution'] == binding['execution'] and declared['native'] == execution['native']['binary'] and
+             declared['model'] == spec['actor_model'] == execution['native']['model'] and
+             declared['effort'] == execution['native']['effort'], 'bridge_runner_mismatch')
         for arm, wanted in execution['memory_arms'].items():
             actual = spec['arms'][arm]
             need(actual['commit'] == binding['commits'][arm], 'bridge_runner_mismatch')
