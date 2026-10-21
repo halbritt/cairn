@@ -132,7 +132,11 @@ details refuse. Every phase record is checked for its schema, phase name and
 The state's `complete` is true only when the occurrence is finished, its note
 is published and the report is `declared_complete`. A note draft or missing
 grades never count. `runtime_admitted` and `grades_created` are false, and
-`custody` is `declared_only`.
+`custody` is `declared_only`. `complete` describes this occurrence's report.
+It does not mean that campaign acceptance requires unanimous grades. CAIRN-107
+requires disagreements to be routed to the owner, not resolved. A routed
+dispute leaves this report incomplete. Whether the campaign is accepted is
+decided outside this module.
 
 ## Interface needed from elsewhere
 

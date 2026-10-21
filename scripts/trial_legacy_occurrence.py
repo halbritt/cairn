@@ -9,7 +9,9 @@ Runs, in order and only through the existing functions:
     dispatch     trial_grader_delivery.dispatch                         (changed pairs only)
     collect      trial_grader_delivery.collect / route_disagreements    (changed pairs only)
     report       trial_legacy_grading_bundle.report_join, trial_run_report.build_report,
-                 render_markdown, note_draft (the note is drafted, never published here)
+                 render_markdown, note_draft
+    publication  the configured publisher (trial_run_report.publish_note); terminal
+                 occurrences only, pending note_publication_unconfigured without one
 
 Each completed phase is recorded once under <out>/phases/<phase>.json with its
 exact inputs and output pins. A repeat invocation verifies both and continues;
