@@ -17,56 +17,79 @@ The original harness route (`trial-task-eval.sh agent --legacy-fixtures`) can
 produce the original shape: 21 frozen v12 cases, two memory arms, 3 seeds,
 126 attempts and 1900 distractors. It uses one shared embedding worker and a
 disposable PostgreSQL cluster. Under the later constraints, three concrete
-blockers keep it from producing valid weekly outcomes:
+blockers kept it from producing valid weekly outcomes. As of the
+limits-and-account change, blockers 1 and 2 are closed in source and blocker
+3 is with agent-504:
 
-1. **`original_limits_unenforced`.** The legacy `run_agent` does not apply
-   `trial_paired_request.ORIGINAL_LIMITS` (`trial_paired_request.py:17-19`).
-   Those limits must stay unchanged (`docs/weekly-request-draft-v1.md:29`,
-   `trial_paired_request.py:329`). The legacy gaps:
-   - The hook timeout is 13 s (`:1143`); the limit is `hook_seconds=5`.
-   - Hook context is bounded at 9500 bytes (`:50`), but the task wire is not
-     charged against it.
-   - The MCP server arguments carry no `--tokens/--max-tokens 32000` tool room
-     (`:1145-1147`; compare `trial_paired_request.py:74-75`).
-   - Nothing enforces 2 native searches, 4 pulls, an 8192-byte final answer or
-     a 30 s last memory call.
+1. **`original_limits_unenforced`, closed in source.** The legacy `run_agent`
+   did not apply `trial_paired_request.ORIGINAL_LIMITS`. It had a 13 s hook
+   timeout, no MCP tool room, hook context that did not charge the task wire,
+   no per-line timing, and no search, pull, answer or last-memory bound.
+   `trial_task_eval.py agent --legacy-fixtures --original-limits` now does
+   the following, for Claude with task wording only. Without the flag, the
+   legacy configuration is unchanged.
+   - It sets the hook timeout to `ORIGINAL_LIMITS['hook_seconds']` (5 s).
+   - It appends `--tokens 32000 --max-tokens 32000` to the MCP server
+     arguments (`trial_legacy_limits.mcp_tool_room_arguments`, the same
+     values as `trial_paired_request.mcp_arguments`).
+   - It sets hook context to `9500 - (task wire + 512 + memory instruction)`,
+     the prospective formula.
+   - It runs the actor through the existing `trial_native_capture.capture`,
+     which writes `stream-timing.json` and `native-process-custody.json`.
+   - It checks each memory-arm attempt with `trial_legacy_limits.assess`
+     against all seven original values. Each timing row must match its line's
+     index, byte count and SHA-256. Malformed, missing or truncated evidence,
+     a missing terminal `result`, and invalid timings are `unknown`, never
+     within limits.
+   - It records `original_limits` and `process_custody` on the row, and lists
+     every memory-arm row that is not `within_original_limits` in
+     `measurement_failures` (exit code 2).
+   - If capture custody is unknown, the row is `harness_error` /
+     `process_custody_unknown` and is never graded (`grade` and `evaluate`
+     are not called). This covers exit 0 with cleanup `unknown`, an
+     unreaped leader, or missing custody metadata. `observed_clear` stays
+     the capture's scoped observation; it is not a claim that every
+     descendant was reaped.
 
-   The prospective branch measures these limits, but only with
-   `--prospective-input --distractors 0` (`:1850-1853`), which does not fit
-   21/126/1900.
-   *Missing integration:* a legacy-mode `run_agent` that applies the paired
-   MCP ceiling (`trial_paired_request.mcp_arguments`), sets a 5 s hook
-   timeout and charges the task wire. It must also stop or mark any attempt
-   that exceeds the search, pull, answer or last-memory bound, for example by
-   running `trial_native_observation.measure` over the legacy stream. This
-   changes measured behavior relative to the 2026-09-29 run, so it needs its
-   own reviewed change.
-2. **`dedicated_account_unbound`.** The executor has no account binding to
-   compare with the capacity evidence. The sandbox binds the host
-   `~/.claude/.credentials.json` read-write (`:1041-1043`), and the harness has
-   no option that selects a different credential file. As a result,
-   `LegacyHarnessExecutor.account_ids` is empty, and the runner cannot require
-   it to equal the accounts in the capacity evidence's `account_binding`
-   (`trial_paired_request.capacity_accounts`, `:253-266`). The capacity gate
-   therefore refuses `capacity_account_mismatch`.
+   The runner passes `--original-limits`. It refuses a harness export without
+   that support (`harness_original_limits_unsupported`). It then re-checks
+   every attempt itself from the retained stream, hook observations and
+   timing, and reports `original_limit_exceeded` or
+   `original_limit_unobserved` as `incomplete`, never `complete`.
+   Remaining limitation: the legacy prompt is passed as an argument, so the
+   charged task wire is the prospective JSON-wire formula applied to the same
+   prompt, not an observed stdin wire.
+2. **`dedicated_account_unbound`, closed in source when an account is
+   selected.** The sandbox used to bind the host `~/.claude/.credentials.json`
+   read-write. Now the account is selected explicitly:
+   - The profile field `account: {account_id, config_home}` names a Claude
+     config home by reference.
+   - `trial_account_selection.selected_credentials` checks it by metadata
+     only. Credential content is never opened. The path must be absolute,
+     resolve to a directory and contain a regular `.credentials.json`. If it
+     resolves to the ambient `~/.claude`, even through a symlink, the runner
+     refuses `ambient_credentials_refused`.
+   - The executor passes it to the harness as
+     `CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR`. Any inherited value is replaced.
+   - `trial_task_eval.sandbox_command` binds that file in place of the
+     ambient one. A bad selection refuses; it never falls back.
+   - The executor's `account_ids` is the selected `account_id`. It must equal
+     the capacity evidence's account binding (`capacity_account_mismatch`).
+     The legacy harness binds one credential for both arms, so the capacity
+     evidence must have exactly one account.
+   - A harness export without the selector refuses
+     `harness_account_selector_unsupported`.
+   - With no account selected, the executor still refuses
+     `dedicated_account_unbound`.
 
-   Three pieces are missing. The first is a harness field that names the
-   credential file the actor and selector use. The second is a declared
-   `account_id` for that file, carried in the executor and equal to the
-   `cairn.paired-account-binding/1` account. The third is evidence for the
-   `dedicated: true, interactive_use: false` declaration on that account; it
-   is currently a declared, unauthenticated boolean. Usage-endpoint aliases
-   such as `codex` or `codex-harm` show neither a dedicated nor a shared
-   identity. Whether a new account must be provisioned is unproven.
-3. **Writable workspace snapshot, owned by agent-504's investigation.**
-   `prepare_workspace` writes `.eval-snapshot.json` into the run root
-   (`:667`). The sandbox binds that root writable for the actor, and grading
-   reads the snapshot from the same place (`:1303`; regrade at `:1748`). The
-   actor can therefore change the snapshot that its deterministic outcome is
-   graded against, and with it which pairs count as changed. No protection has
-   been demonstrated, so this blocks *valid campaign outcomes*. It is not a
-   runner refusal: workspace setup, the setup/commit/snapshot join and channel
-   recording belong to agent-504. This lane does not edit them.
+   Still declared, not observed: which account the file belongs to, and the
+   `dedicated: true, interactive_use: false` flags in the capacity evidence.
+3. **Writable workspace snapshot, owned by agent-504.** The actor could write
+   the `.eval-snapshot.json` that grading read. agent-504's 86298af binds
+   original grading to a privately retained pre-actor baseline; see
+   `docs/original-attempt-custody.md` for its scope. That document, not this
+   lane, makes the claim. Full artifact, action and evaluator channel
+   custody remains unproven there.
 
 **Authorization is a bound input, not a blocker.** The `--legacy-fixtures`
 help says the flag is "not authorization to replay" (`:1807`). Selecting the
@@ -81,14 +104,16 @@ the selecting identity. Without one, the runner refuses
 `declared_unauthenticated`. No selection exists today, because root has not
 selected a live invocation.
 
-**Executor path.** `LegacyHarnessExecutor.execute` is real, not a placeholder.
-It builds the original argv (`legacy_argv`), runs the exported harness's
-`trial-task-eval.sh` with a cleaned environment (`legacy_environment`), and
-returns the `agent.json` path and exit code. The tests run this path from
-start to finish against a fake `trial-task-eval.sh`. `check` derives the
-blockers from the declared legacy limits and account selector, and refuses
-with `weekly_executor_blocked`, `blockers: ["original_limits_unenforced",
-"dedicated_account_unbound"]` before any effect.
+**Executor path.** `LegacyHarnessExecutor.execute` is real. It builds the
+original argv with `--original-limits` (`legacy_argv`) and runs the exported
+harness's `trial-task-eval.sh` with a cleaned environment and the selected
+account (`legacy_environment`). It returns the `agent.json` path and exit
+code. The tests run this path from start to finish against a fake
+`trial-task-eval.sh`. With a selected account, `check` reports no blockers.
+Without one, it refuses `weekly_executor_blocked`,
+`blockers: ["dedicated_account_unbound"]`, before any effect. A live run
+still needs real capacity evidence for that one account and a root-issued
+selection.
 
 ## Ledger
 
@@ -101,11 +126,11 @@ with `weekly_executor_blocked`, `blockers: ["original_limits_unenforced",
 | Grader independence | CAIRN-107 Proposal 3; `trial_paired_request.grading_check` (`:292-303`) | The harness grades only with the deterministic oracle | The runner never grades. It emits the pair binding for the converter; the second grader is downstream |
 | Original counts 21/126/1900 | `check_weekly_paired_eval.py:24-28` | Yes | Fixed constants; exact planned identity set enforced on output |
 | Same embedding worker, disposable PostgreSQL | CAIRN-107 Proposal 1; `trial-task-eval.sh:14-47` | Yes | One pinned worker; `CAIRN_PG_BIN` from the profile; `CAIRN_*` stripped from the environment |
-| Current caps (`ORIGINAL_LIMITS`) | `trial_paired_request.py:17-19,329` | **No**, blocker 1 | `executor_limits_unenforced` unless the executor declares exactly `ORIGINAL_LIMITS` |
+| Current caps (`ORIGINAL_LIMITS`) | `trial_paired_request.py:17-19,329` | Yes, with `--original-limits` (blocker 1 closed in source) | Harness applies and checks them; the runner re-checks every attempt and refuses a harness export without the flag |
 | Provider-cap stop | f376915; `:913-925,1656` | Yes | `provider_cap_stop`; a started slot never runs again. Any row with a provider failure is never complete |
 | Comparable whole-run usage pre-check | CAIRN-107 Proposal 2: estimate from the last run and refuse unless the remaining budget covers the whole run | Not part of the harness | `capacity_gate` over existing `trial_capacity_adapter` evidence (see below) |
 | Absolute allowance units | `trial_capacity_adapter.py:76` (current implementation) | n/a | A constraint of the current implementation, not an original acceptance requirement. The adapter refuses percentage units; a calibrated comparable estimate would need its own adapter change |
-| Dedicated account | CAIRN-107 Notes | **No**, blocker 2 | Capacity accounts must equal the executor's `account_ids` |
+| Dedicated account | CAIRN-107 Notes | By explicit selection (blocker 2 closed in source); dedication is declared | `account.config_home` bound by reference; `account_id` must equal the capacity account binding |
 | Valid outcomes: snapshot integrity | `:667,1303` | **No**, blocker 3 (agent-504) | Named; not handled in this lane |
 | Subscription-only routing, no OpenRouter | `AGENTS.md` Model routing | Yes: `claude -p` under `bwrap --clearenv` (`:1012,1089`) | The executor also strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `OPENAI_*` and `OPENROUTER_*` |
 | Six review dispositions | `docs/candidate-paired-request.md:82,148-149` | Not in the original issue | Optional; not on the runner path |
@@ -232,7 +257,7 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | --- | --- | --- |
 | Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Real input missing: no absolute-allowance observation and no account binding for the executor's account exist (blocker 2). The absolute unit is the current adapter constraint |
 | Live selection to runner | `cairn.weekly-run-selection/1` to `selection_gate` | **Implemented**. No selection issued (root decision) |
-| Runner to harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures` | **Implemented**, fake harness only. Blocked by `original_limits_unenforced` and `dedicated_account_unbound` |
+| Runner to harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` | **Implemented**, fake harness only. Needs a selected account |
 | Harness content hashes | `trial_task_eval.run_agent` `stream_sha256`/`prompt_sha256` (`:1323-1324`, 04ba225) to `_agent_result` | **Implemented**: required on every row. Present only in runs from a harness commit at or after 04ba225; older runs, including 2026-09-29, can never be complete |
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |
@@ -285,12 +310,26 @@ row-binding guards are all detected.
 `scripts/test_trial_task_eval.py` (`StoreLifecycleTest`, 4 tests) covers
 R1-R3.
 
+Limits and account selection:
+- `test_trial_legacy_limits` (14 tests) covers each original value, absent
+  or malformed evidence, and capture-row timing binding.
+- `test_trial_account_selection` (5 tests) checks the bind mounts at
+  `sandbox_command` and the ambient, missing and invalid refusals, and that
+  only metadata is read.
+- `test_trial_original_limits_boundary` (7 tests) runs the inert full
+  `run_agent` boundary. It checks the applied 5 s timeout, tool room, charged
+  wire and captured timing, and limit failures. It covers exit 0 with
+  `process_scan_unknown` cleanup and missing custody, each never graded,
+  the unchanged path without the flag, and `measurement_failures` in
+  `cmd_agent`.
+- The runner tests also cover account refusals and mismatch, a harness
+  without the selector or the flag, and limit, late-memory and unobserved
+  rows.
+
 ## Remaining work
 
-- Blocker 1: legacy-mode enforcement of `ORIGINAL_LIMITS`.
-- Blocker 2: a harness credential selector, an executor `account_id` equal
-  to the capacity account binding, and evidence for the dedicated
-  declaration.
+- Evidence for the dedicated-account declaration, and real single-account
+  capacity evidence for the selected `account_id`.
 - Blocker 3: snapshot integrity, plus the artifact, action and evaluator
   channels (agent-504).
 - Real capacity-adapter input for the bound account, and a root-issued live

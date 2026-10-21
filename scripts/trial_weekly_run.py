@@ -31,8 +31,10 @@ import subprocess
 import sys
 import uuid
 
+import trial_account_selection as selection
 import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
+import trial_legacy_limits as limits
 import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
@@ -45,7 +47,7 @@ CLAIM_SCHEMA = 'cairn.weekly-run-claim/1'
 SELECTION_SCHEMA = 'cairn.weekly-run-selection/1'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
-                  'weekly_source embedding postgres capacity executor selection')
+                  'weekly_source embedding postgres capacity executor selection account')
 SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
@@ -66,27 +68,40 @@ class ExecutorBlocked(paired.Refusal):
 
 # ---------------------------------------------------------------- executors
 
-# Limits the legacy run_agent actually applies (trial_task_eval.py): hook
-# context only (CLAUDE_CONTEXT_BYTES), a 13 s hook timeout (settings hook
-# timeout), and no native search, pull, final-answer or tool-room bound.
-LEGACY_LIMITS = dict(selected_input_bytes=None, final_answer_bytes=None, tool_room_bytes=None,
-                     native_searches=None, pulls=None, hook_seconds=13, last_native_memory_seconds=None)
-# trial_task_eval.sandbox_command binds the host ~/.claude/.credentials.json
-# read-write; the harness has no way to select a dedicated account.
-LEGACY_ACCOUNT_SELECTOR = None
+# What `trial_task_eval.py agent --legacy-fixtures --original-limits` applies
+# (tested in test_trial_original_limits_boundary): the original 5 s hook
+# timeout, the MCP tool-room arguments, hook context net of the charged task
+# wire, and per-line stream timing from the existing capture. The runner
+# refuses a harness export without that flag and still re-checks every
+# attempt against ORIGINAL_LIMITS (trial_legacy_limits).
+REQUIRED_CONFIGURATION = dict(hook_timeout_seconds=limits.hook_timeout_seconds(),
+                              mcp_tool_room=limits.mcp_tool_room_arguments(),
+                              task_wire_charged=True, stream_timing=True)
+LEGACY_CONFIGURATION = dict(REQUIRED_CONFIGURATION)  # only with --original-limits in legacy_argv
 # Provider routes the harness process must never inherit (subscription only).
 STRIPPED_ENVIRONMENT = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY',
                         'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL')
+ACCOUNT_FIELDS = 'account_id config_home'
 
 
-def legacy_blockers(limits=LEGACY_LIMITS, account_selector=LEGACY_ACCOUNT_SELECTOR):
-    """Concrete source blockers of the legacy route, computed from its declared behavior."""
+def legacy_blockers(configuration=LEGACY_CONFIGURATION, account=None):
+    """Concrete source blockers of the legacy route, computed from its configuration and selection."""
     blockers = []
-    if limits != paired.ORIGINAL_LIMITS:
+    if configuration != REQUIRED_CONFIGURATION:
         blockers.append('original_limits_unenforced')
-    if account_selector is None:
+    if account is None:
         blockers.append('dedicated_account_unbound')
     return blockers
+
+
+def check_account(account):
+    """A selected account: declared id plus a config home checked by metadata only."""
+    if account is None:
+        return None
+    paired.shape(account, ACCOUNT_FIELDS, 'account_selection_invalid')
+    need(paired.capacity_name(account['account_id']), 'account_selection_invalid')
+    selection.selected_credentials(account['config_home'])
+    return account
 
 
 def legacy_argv(spec, output):
@@ -94,7 +109,7 @@ def legacy_argv(spec, output):
     seeds = spec['seeds']
     need(seeds == list(range(seeds[0], seeds[0] + len(seeds))), 'legacy_seed_list')
     argv = [str(Path(spec['harness']['root']) / 'scripts/trial-task-eval.sh'), 'agent', '--legacy-fixtures',
-            '--output', str(output), '--arms']
+            '--original-limits', '--output', str(output), '--arms']
     for name in ARMS:
         arm = spec['arms'][name]
         argv += ['--memory', f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
@@ -105,41 +120,53 @@ def legacy_argv(spec, output):
 
 
 def legacy_environment(spec, base=None):
-    """Harness environment: the profile's PostgreSQL binaries, no API-key or OpenRouter route."""
+    """Harness environment: PostgreSQL binaries and the selected account; no API-key or OpenRouter route.
+
+    Any inherited account selection is dropped; only the spec's selection is passed.
+    """
     base = os.environ if base is None else base
     env = {k: v for k, v in base.items() if k not in STRIPPED_ENVIRONMENT and not k.startswith('CAIRN_')}
-    return dict(env, CAIRN_PG_BIN=spec['postgres']['bin_dir'], PYTHONDONTWRITEBYTECODE='1')
+    need(spec.get('account') is not None, 'dedicated_account_unbound')
+    return dict(env, CAIRN_PG_BIN=spec['postgres']['bin_dir'], PYTHONDONTWRITEBYTECODE='1',
+                **{selection.ENVIRONMENT: spec['account']['config_home']})
 
 
 class LegacyHarnessExecutor:
     """Runs `trial-task-eval.sh agent --legacy-fixtures` from the exported harness commit.
 
-    `check` refuses while any concrete blocker from `legacy_blockers` applies;
-    `execute` is the real invocation and is exercised only with a fake harness.
+    `check` validates the selected account by reference and refuses while any
+    concrete blocker from `legacy_blockers` applies. `execute` is the real
+    invocation; tests exercise it only with a fake harness.
     """
 
     name = 'legacy-harness'
-    limits = LEGACY_LIMITS
-    account_ids = ()
+    limits = paired.ORIGINAL_LIMITS  # checked per attempt by trial_legacy_limits
+    configuration = LEGACY_CONFIGURATION
+
+    def __init__(self, account=None):
+        self.account = account
+        self.account_ids = () if account is None else (account['account_id'],)
 
     def check(self, preview):
-        blockers = legacy_blockers(self.limits, LEGACY_ACCOUNT_SELECTOR)
+        check_account(self.account)
+        blockers = legacy_blockers(self.configuration, self.account)
         if blockers:
             raise ExecutorBlocked(blockers)
 
     def execute(self, spec, run_dir):
         output = Path(run_dir) / 'agent'
         argv = legacy_argv(spec, output)
+        env = legacy_environment(spec)
         with open(Path(run_dir) / 'harness.log', 'xb') as log:
             os.chmod(log.name, 0o600)
-            done = subprocess.run(argv, cwd=spec['harness']['root'], env=legacy_environment(spec),
+            done = subprocess.run(argv, cwd=spec['harness']['root'], env=env,
                                   stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         # 0 is complete and 2 a provider or observer stop; the runner judges any other status.
         return dict(agent=output / 'agent.json', exit_code=done.returncode)
 
 
-def default_executors():
-    return {LegacyHarnessExecutor.name: LegacyHarnessExecutor()}
+def default_executors(account=None):
+    return {LegacyHarnessExecutor.name: LegacyHarnessExecutor(account)}
 
 
 # ---------------------------------------------------------------- profile and slot
@@ -169,6 +196,7 @@ def check_profile(profile):
     paired.shape(profile['capacity'], 'receipt plan models', 'profile_capacity')
     need(type(profile['executor']) is str, 'profile_executor')
     need(profile['selection'] is None or isinstance(profile['selection'], dict), 'profile_selection')
+    need(profile['account'] is None or isinstance(profile['account'], dict), 'account_selection_invalid')
     return repo, runs
 
 
@@ -237,7 +265,7 @@ def run(profile, *, now, executors=None, compiler=None):
     Every refusal before the slot claim writes nothing. A repeated call for a
     recorded slot returns the stored receipt without building or executing.
     """
-    executors = default_executors() if executors is None else executors
+    executors = default_executors(profile.get('account')) if executors is None else executors
     repo, runs = check_profile(profile)
     start, end = current_slot(profile['schedule'], now)
     slot_id = str(uuid.uuid5(NAMESPACE, profile['campaign_id'] + '|' + candidate._iso(start)))
@@ -374,13 +402,28 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
         frozen = te.verify_frozen(version, root=trial)
     except SystemExit:
         raise paired.Refusal('harness_frozen_mismatch') from None
-    case_ids = [case['id'] for case in te.load_cases(version, root=trial)]
+    # The selected account reaches the actor only through a harness that binds it.
+    harness_eval = harness / 'scripts/trial_task_eval.py'
+    harness_source = harness_eval.read_text() if harness_eval.is_file() else ''
+    need((harness / 'scripts/trial_account_selection.py').is_file()
+         and 'selected = credentials_source()' in harness_source, 'harness_account_selector_unsupported')
+    need((harness / 'scripts/trial_legacy_limits.py').is_file() and '"--original-limits"' in harness_source,
+         'harness_original_limits_unsupported')
+    loaded = te.load_cases(version, root=trial)
+    case_ids = [case['id'] for case in loaded]
     need(len(case_ids) == WEEKLY_CASES and sorted(case_ids) == sorted(plan['cases']), 'harness_cases_not_planned')
     # The exact planned attempt identities (legacy run_id is case.arm.sSEED).
     need(all(type(c) is str and c and '.' not in c and '/' not in c for c in case_ids), 'harness_case_identity')
     planned = sorted((dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s)
                       for s in plan['seeds'] for c in case_ids for a in ARMS), key=lambda r: r['run_id'])
     need(len(planned) == WEEKLY_ATTEMPTS, 'harness_cases_not_planned')
+    # Per-case task identity and selected-input charge; no task text is retained.
+    tasks = {}
+    for case in loaded:
+        prompt = (case.get('wordings') or {}).get('task')
+        need(type(prompt) is str, 'harness_case_identity')
+        tasks[case['id']] = dict(prompt_sha256=hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
+                                 input_bytes=limits.input_charge(prompt, te.MEMORY_INSTRUCTION))
     spec = dict(schema=SPEC_SCHEMA, slot_id=claim['slot_id'], arms=arms,
                 harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
@@ -388,7 +431,8 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 actor_model=profile['capacity']['models']['CURRENT'],
                 cases=WEEKLY_CASES, arm_count=WEEKLY_ARMS, seeds=list(plan['seeds']),
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
-                capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned))
+                capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned),
+                tasks=tasks, account=profile['account'])
     paired.write_selected(slot / 'spec.json', spec)
     return spec
 
@@ -457,6 +501,38 @@ def _agent_result(path, spec):
         return dict(result, status='incomplete', code='attempt_failures')
     if not all(type(r.get(k)) is str and len(r[k]) == 64 for r in records for k in ('stream_sha256', 'prompt_sha256')):
         return dict(result, status='incomplete', code='original_attempt_provenance_unavailable')
+    return _limit_result(result, Path(path).parent, records, spec)
+
+
+def _limit_result(result, run_dir, records, spec):
+    """Check every attempt against ORIGINAL_LIMITS; an exceeding or unmeasured row is never complete."""
+    counts, reasons = dict(within_original_limits=0, failed=0, unknown=0), {}
+    for record in records:
+        task = spec['tasks'][record['case']]
+        if record['prompt_sha256'] != task['prompt_sha256']:
+            return dict(result, status='rejected', code='task_prompt_mismatch')
+        base = run_dir / 'runs' / record['run_id']
+        try:
+            stream = _read_limited(base / 'stream.jsonl')
+            hooks = base / 'hook-state/observations.jsonl'
+            rows = [json.loads(line) for line in _read_limited(hooks).decode().splitlines()] if hooks.exists() else []
+            timing = base / 'stream-timing.json'
+            timings = json.loads(_read_limited(timing)) if timing.exists() else None
+        except (paired.Refusal, OSError, ValueError):
+            return dict(result, status='incomplete', code='original_limit_unobserved')
+        if hashlib.sha256(stream).hexdigest() != record['stream_sha256']:
+            return dict(result, status='rejected', code='attempt_content_mismatch')
+        assessment = limits.assess(stream.decode('utf-8', errors='replace'), rows, input_bytes=task['input_bytes'],
+                                   timings=timings)
+        counts[assessment['status']] += 1
+        for reason in assessment['failures'] + assessment['unknown']:
+            reasons[reason] = reasons.get(reason, 0) + 1
+    result = dict(result, limit_assessment=dict(counts, reasons=dict(sorted(reasons.items())),
+                                                limits=dict(paired.ORIGINAL_LIMITS)))
+    if counts['failed']:
+        return dict(result, status='incomplete', code='original_limit_exceeded')
+    if counts['unknown']:
+        return dict(result, status='incomplete', code='original_limit_unobserved')
     return dict(result, status='complete', code=None)
 
 
@@ -473,9 +549,10 @@ def _pair_binding(slot, spec, campaign_id, agent, plan):
     return dict(path=str(slot / 'pair-binding.json'), bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
 
 
-def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None):
+def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None,
+            limit_assessment=None):
     receipt = dict(claim, schema=RECEIPT_SCHEMA, status=status, code=code, agent=agent, attempts=attempts,
-                   harness_exit_code=harness_exit_code, pair_binding=pair_binding,
+                   harness_exit_code=harness_exit_code, pair_binding=pair_binding, limit_assessment=limit_assessment,
                    pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)

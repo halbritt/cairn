@@ -44,7 +44,8 @@ def write_synthetic_trial(repo, count=21):
     root = repo / 'trials/task-eval'
     root.mkdir(parents=True)
     (root / 'cases.json').write_text(json.dumps(dict(
-        baseline_commit='0' * 40, cases=[dict(id=f'synthetic-{n}') for n in range(count)])))
+        baseline_commit='0' * 40, cases=[dict(id=f'synthetic-{n}', wordings=dict(task=f'Synthetic task for synthetic-{n}.\n'))
+                                         for n in range(count)])))
     (root / 'corpus.json').write_text(json.dumps(dict(notes=[])))
     manifest = te.label_manifest(1, root=root)
     (root / 'FROZEN.json').write_text(json.dumps(manifest))
@@ -56,10 +57,13 @@ FAKE_HARNESS = r'''#!/usr/bin/env python3
 import hashlib, json, os, sys
 from pathlib import Path
 argv = sys.argv[1:]
+if '--original-limits' not in argv:
+    sys.exit(3)
 value = lambda flag: argv[argv.index(flag) + 1]
 out = Path(value('--output'))
 out.mkdir(mode=0o700)
 (out / 'argv.json').write_text(json.dumps(dict(argv=argv, pg_bin=os.environ.get('CAIRN_PG_BIN'),
+    config_home=os.environ.get('CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR'),
     leaked=sorted(k for k in os.environ if 'OPENROUTER' in k or k == 'ANTHROPIC_API_KEY'))))
 cases = [c['id'] for c in json.loads(Path('trials/task-eval/cases.json').read_text())['cases']]
 frozen = json.loads(Path('trials/task-eval/FROZEN.json').read_text())
@@ -75,15 +79,21 @@ def task(case):
     return f'Synthetic task for {case}.\n'
 
 def stream(answer):
-    return json.dumps(dict(type='assistant', message=dict(content=[dict(type='text', text=answer)]))) + '\n'
+    return (json.dumps(dict(type='assistant', message=dict(content=[dict(type='text', text=answer)]))) + '\n'
+            + json.dumps(dict(type='result', result=answer, is_error=False, num_turns=1)) + '\n')
 
-def record(c, a, s):
-    answer = f'Synthetic answer {c} {a} {s}.'
+def hook_rows(seconds=0.2):
+    return [dict(event=event, exit_code=0, stdout_bytes=50, stderr_bytes=0, process_seconds=seconds,
+                 memory_call_attempts={'search': 1, 'pull': 0, 'pull-evidence': 0, 'history': 0, 'other': 0})
+            for event in ('SessionStart', 'UserPromptSubmit')]
+
+def record(c, a, s, answer=None, prefix=''):
+    answer = answer or f'Synthetic answer {c} {a} {s}.'
     outcome = 'mistake' if a == 'CAND' and c.endswith(('0', '5')) else 'correct'
     return dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s, order=0, harness='claude', model=model,
                 wording='task', prompt_bytes=len(task(c).encode()), outcome=outcome, answer_chars=len(answer),
-                stream_sha256=hashlib.sha256(stream(answer).encode()).hexdigest(),
-                prompt_sha256=hashlib.sha256(task(c).encode()).hexdigest()), stream(answer)
+                stream_sha256=hashlib.sha256((prefix + stream(answer)).encode()).hexdigest(),
+                prompt_sha256=hashlib.sha256(task(c).encode()).hexdigest()), prefix + stream(answer)
 
 rows = [record(*key) for key in plan[:admitted]]
 if mode == 'duplicate':      # root's reproduction: 126 copies of CURRENT/case0/seed0
@@ -102,6 +112,14 @@ elif mode == 'nohash':
     rows[0][0].pop('stream_sha256')
 elif mode == 'row_provider':
     rows[3][0]['trace'] = dict(admission_failure=dict(provider='claude', reason='authentication_failed', api_error_status=401))
+elif mode == 'limit_answer':
+    rows[2] = record(*plan[2], answer='x' * 8193)
+elif mode in ('limit_unobserved', 'limit_late'):
+    use = json.dumps(dict(type='assistant', message=dict(content=[dict(type='tool_use', id='toolu_1', name='mcp__cairn__cairn_search', input={})]))) + '\n'
+    result = json.dumps(dict(type='user', message=dict(content=[dict(type='tool_result', tool_use_id='toolu_1', content='r')]))) + '\n'
+    rows[2] = record(*plan[2], prefix=use + result)
+elif mode == 'prompt':
+    rows[2][0]['prompt_sha256'] = '0' * 64
 elif mode == 'row_error':
     rows[5][0]['outcome'] = 'harness_error'
 stop = None
@@ -113,6 +131,16 @@ for row, text in rows:
     base.mkdir(parents=True, exist_ok=True)
     (base / 'result.json').write_text(json.dumps(row, indent=2))
     (base / 'stream.jsonl').write_text(text)
+    (base / 'hook-state').mkdir(exist_ok=True)
+    slow = mode == 'limit_hook' and row['run_id'] == rows[4][0]['run_id']
+    (base / 'hook-state/observations.jsonl').write_text(''.join(json.dumps(h) + '\n' for h in hook_rows(6 if slow else 0.2)))
+    # trial_native_capture.capture timing rows, one per LF-terminated stream line.
+    lines = [part + '\n' for part in text.split('\n')[:-1]]
+    late = mode == 'limit_late' and row['run_id'] == rows[2][0]['run_id']
+    timing = [dict(line=i + 1, received_seconds=31.0 if late else 0.5 + i, bytes=len(line.encode()),
+                   sha256=hashlib.sha256(line.encode()).hexdigest()) for i, line in enumerate(lines)]
+    if not (mode == 'limit_unobserved' and row['run_id'] == rows[2][0]['run_id']):
+        (base / 'stream-timing.json').write_text(json.dumps(timing))
 (out / 'plan.json').write_text(json.dumps(dict(arms=arms, wording='task', runs=[[c, a, s, 0] for c, a, s in plan]), indent=2))
 document = dict(schema='cairn.task-eval.agent/1', frozen=frozen, arms=arms, model='other-model' if mode == 'model' else model,
                 wording='task', harness='claude', distractors=1900,
@@ -145,6 +173,11 @@ class Repo:
         harness.parent.mkdir()
         harness.write_text(FAKE_HARNESS)
         harness.chmod(0o755)
+        # The account selector the runner requires in the exported harness.
+        shutil.copy(Path(weekly.selection.__file__), self.path / 'scripts/trial_account_selection.py')
+        shutil.copy(Path(weekly.limits.__file__), self.path / 'scripts/trial_legacy_limits.py')
+        (self.path / 'scripts/trial_task_eval.py').write_text(
+            '# synthetic\n        selected = credentials_source()\n    a.add_argument("--original-limits")\n')
         write_synthetic_trial(self.path, cases)
         git(self.path, 'add', '-A')
         git(self.path, 'commit', '-q', '-m', 'harness')
@@ -158,22 +191,29 @@ class Repo:
 
 
 class FakeExecutor(weekly.LegacyHarnessExecutor):
-    """The real legacy executor with its concrete blockers lifted, run against the fake harness."""
+    """The real legacy executor with the original configuration declared, run against the fake harness.
+
+    The fixture's capacity evidence routes CAND to a second account, so this
+    double declares both synthetic account ids for the one selected config home.
+    """
 
     name = 'fake'
 
-    def __init__(self, harness_mode='complete', limits=None, accounts=ACCOUNTS):
-        self.limits = dict(paired.ORIGINAL_LIMITS) if limits is None else limits
+    def __init__(self, account, harness_mode='complete', accounts=ACCOUNTS):
+        super().__init__(account)
+        self.limits = dict(paired.ORIGINAL_LIMITS)
         self.account_ids = list(accounts)
         self.harness_mode = harness_mode
         self.checked, self.executed = [], []
 
     def check(self, preview):
         self.checked.append(copy.deepcopy(preview))
+        super().check(preview)
 
     def execute(self, spec, run_dir):
         self.executed.append(copy.deepcopy(spec))
         with unittest.mock.patch.dict(os.environ, FAKE_HARNESS_MODE=self.harness_mode,
+                                      CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/ambient/must-not-pass',
                                       OPENROUTER_API_KEY='must-not-pass', ANTHROPIC_API_KEY='must-not-pass'):
             return super().execute(spec, run_dir)
 
@@ -209,8 +249,12 @@ class WeeklyRunTests(unittest.TestCase):
             postgres=dict(bin_dir=str(self.root / 'pgbin')),
             capacity=dict(receipt=self.receipt_pin, plan=self.plan_pin,
                           models=dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'fixture-model')),
-            executor='fake', selection=None)
-        self.executor = FakeExecutor()
+            executor='fake', selection=None, account=None)
+        config_home = self.root / 'accounts/weekly'
+        config_home.mkdir(parents=True)
+        (config_home / '.credentials.json').write_text('{"synthetic": "never read"}')
+        self.profile['account'] = dict(account_id='account-A', config_home=str(config_home))
+        self.executor = FakeExecutor(self.profile['account'])
         self.select()
 
     def select(self, **changes):
@@ -238,13 +282,38 @@ class WeeklyRunTests(unittest.TestCase):
 
     def test_default_legacy_executor_refuses_with_concrete_blockers_before_effects(self):
         self.profile['executor'] = 'legacy-harness'
-        refusal = self.refuses('weekly_executor_blocked', executors=weekly.default_executors())
-        self.assertEqual(refusal.blockers, ['original_limits_unenforced', 'dedicated_account_unbound'])
+        account = self.profile['account']
+        self.profile['account'] = None
+        refusal = self.refuses('weekly_executor_blocked', executors=weekly.default_executors(None))
+        self.assertEqual(refusal.blockers, ['dedicated_account_unbound'])
+        # With a selected account the legacy executor is no longer blocked; the fixture's
+        # two-account capacity evidence then refuses the single selected account.
+        self.profile['account'] = account
+        self.refuses('capacity_account_mismatch', executors=weekly.default_executors(account))
 
-    def test_legacy_blockers_are_computed_from_declared_limits_and_account_selector(self):
-        self.assertEqual(weekly.legacy_blockers(dict(paired.ORIGINAL_LIMITS), 'selector'), [])
-        self.assertEqual(weekly.legacy_blockers(dict(paired.ORIGINAL_LIMITS, hook_seconds=13), 'selector'),
+    def test_legacy_blockers_are_computed_from_configuration_and_account(self):
+        account = self.profile['account']
+        self.assertEqual(weekly.legacy_blockers(weekly.REQUIRED_CONFIGURATION, account), [])
+        self.assertEqual(weekly.legacy_blockers(dict(weekly.REQUIRED_CONFIGURATION, hook_timeout_seconds=13), account),
                          ['original_limits_unenforced'])
+        self.assertEqual(weekly.REQUIRED_CONFIGURATION['hook_timeout_seconds'], paired.ORIGINAL_LIMITS['hook_seconds'])
+        self.assertEqual(weekly.REQUIRED_CONFIGURATION['mcp_tool_room'], ['--tokens', '32000', '--max-tokens', '32000'])
+
+    def test_account_selection_refusals_before_effects(self):
+        home = Path.home() / '.claude'
+        for account, code in ((dict(self.profile['account'], config_home=str(home)), 'ambient_credentials_refused'),
+                              (dict(self.profile['account'], config_home=str(self.root)), 'account_credentials_missing'),
+                              (dict(self.profile['account'], config_home='relative'), 'account_selection_invalid'),
+                              (dict(account_id='account-A'), 'account_selection_invalid')):
+            with self.subTest(code=code):
+                self.refuses(code, executors={'fake': FakeExecutor(account)})
+
+    def test_selected_account_must_match_the_capacity_account_binding(self):
+        executor = FakeExecutor(self.profile['account'], accounts=['account-A'])
+        self.refuses('capacity_account_mismatch', executors={'fake': executor})
+        real = weekly.LegacyHarnessExecutor(self.profile['account'])
+        self.profile['executor'] = 'legacy-harness'
+        self.refuses('capacity_account_mismatch', executors={'legacy-harness': real})
 
     def test_no_selected_live_invocation_refuses_before_effects(self):
         self.profile['selection'] = None
@@ -291,15 +360,17 @@ class WeeklyRunTests(unittest.TestCase):
                     arms={name: dict(binary=dict(path=f'/{name}/cairn'), hook=dict(path=f'/{name}/memory.py'))
                           for name in ('CURRENT', 'CAND')})
         self.assertEqual(weekly.legacy_argv(spec, Path('/out')), [
-            '/h/scripts/trial-task-eval.sh', 'agent', '--legacy-fixtures', '--output', '/out', '--arms',
+            '/h/scripts/trial-task-eval.sh', 'agent', '--legacy-fixtures', '--original-limits', '--output', '/out', '--arms',
             '--memory', 'CURRENT:/CURRENT/cairn:/CURRENT/memory.py', '--memory', 'CAND:/CAND/cairn:/CAND/memory.py',
             '--distractors', '1900', '--seeds', '3', '--first-seed', '0', '--embedding-worker', '/w',
             '--harness', 'claude', '--model', 'sonnet', '--max-turns', '40', '--timeout', '900', '--parallel', '3'])
         with self.assertRaisesRegex(paired.Refusal, '^legacy_seed_list$'):
             weekly.legacy_argv(dict(spec, seeds=[1, 2, 4]), Path('/out'))
+        spec['account'] = dict(account_id='account-A', config_home='/accounts/weekly')
         env = weekly.legacy_environment(spec, dict(PATH='/bin', OPENROUTER_API_KEY='x', ANTHROPIC_API_KEY='y',
                                                     CAIRN_DATABASE_URL='postgres://shared'))
-        self.assertEqual(env, dict(PATH='/bin', CAIRN_PG_BIN='/pg', PYTHONDONTWRITEBYTECODE='1'))
+        self.assertEqual(env, dict(PATH='/bin', CAIRN_PG_BIN='/pg', PYTHONDONTWRITEBYTECODE='1',
+                                   CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/accounts/weekly'))
 
     def test_complete_run_pins_both_arms_original_counts_and_report_readable_agent_document(self):
         receipt = self.run_weekly()
@@ -322,6 +393,8 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(argv['argv'].count('--embedding-worker'), 1)
         self.assertEqual(argv['pg_bin'], self.profile['postgres']['bin_dir'])
         self.assertEqual(argv['leaked'], [])
+        self.assertEqual(argv['config_home'], self.profile['account']['config_home'])
+        self.assertEqual(receipt['limit_assessment']['within_original_limits'], 126)
         self.assertEqual(receipt['harness_exit_code'], 0)
         self.assertEqual(receipt['selection']['proof'], 'declared_unauthenticated')
         agent = paired.read_json_pin(receipt['agent'])
@@ -404,8 +477,7 @@ class WeeklyRunTests(unittest.TestCase):
             code = weekly.main(['--profile', str(profile), '--now', NOW])
         result = json.loads(output.getvalue())
         self.assertEqual(code, 2)
-        self.assertEqual((result['code'], result['blockers']),
-                         ('weekly_executor_blocked', ['original_limits_unenforced', 'dedicated_account_unbound']))
+        self.assertEqual(result['code'], 'capacity_account_mismatch')
         self.assertFalse(result['runtime_admission'])
         self.assertNotIn(str(self.root), output.getvalue())
         self.assertEqual(os.listdir(self.runs), [])
@@ -585,6 +657,57 @@ class WeeklyRunTests(unittest.TestCase):
             self.refuses('weekly_run_in_progress')
         finally:
             os.close(descriptor)
+        self.assertEqual(self.executor.executed, [])
+
+
+    def test_original_limit_violations_are_row_failures(self):
+        for mode, code in (('limit_answer', 'original_limit_exceeded'), ('limit_hook', 'original_limit_exceeded'),
+                           ('limit_late', 'original_limit_exceeded'), ('limit_unobserved', 'original_limit_unobserved')):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.executor.harness_mode = mode
+                receipt = self.run_weekly()
+                self.assertEqual((receipt['status'], receipt['code']), ('incomplete', code))
+                self.assertIsNone(receipt['pair_binding'])
+                self.assertEqual(receipt['limit_assessment']['within_original_limits'], 125)
+
+    def test_attempt_prompt_must_be_the_frozen_task(self):
+        self.executor.harness_mode = 'prompt'
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), ('rejected', 'task_prompt_mismatch'))
+
+    def test_harness_without_the_account_selector_is_never_executed(self):
+        git(self.repo.path, 'checkout', '-q', '-b', 'old-harness', self.repo.harness)
+        (self.repo.path / 'scripts/trial_account_selection.py').unlink()
+        git(self.repo.path, 'commit', '-qam', 'harness before account selection')
+        self.profile['harness_commit'] = git(self.repo.path, 'rev-parse', 'HEAD')
+        git(self.repo.path, 'checkout', '-q', 'main')
+        self.select(harness_commit=self.profile['harness_commit'])
+        failed = self.run_weekly()
+        self.assertEqual((failed['status'], failed['code']),
+                         ('failed_before_execution', 'harness_account_selector_unsupported'))
+        self.assertEqual(self.executor.executed, [])
+
+    def test_executor_environment_never_carries_an_ambient_or_inherited_account(self):
+        spec = dict(postgres=dict(bin_dir='/pg'), account=None)
+        with self.assertRaisesRegex(paired.Refusal, '^dedicated_account_unbound$'):
+            weekly.legacy_environment(spec, dict(PATH='/bin', CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/ambient'))
+        env = weekly.legacy_environment(dict(spec, account=self.profile['account']),
+                                        dict(PATH='/bin', CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/ambient'))
+        self.assertEqual(env['CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR'], self.profile['account']['config_home'])
+
+
+    def test_harness_without_original_limits_support_is_never_executed(self):
+        git(self.repo.path, 'checkout', '-q', '-b', 'no-limits', self.repo.harness)
+        (self.repo.path / 'scripts/trial_legacy_limits.py').unlink()
+        git(self.repo.path, 'commit', '-qam', 'harness before original limits')
+        self.profile['harness_commit'] = git(self.repo.path, 'rev-parse', 'HEAD')
+        git(self.repo.path, 'checkout', '-q', 'main')
+        self.select(harness_commit=self.profile['harness_commit'])
+        failed = self.run_weekly()
+        self.assertEqual((failed['status'], failed['code']),
+                         ('failed_before_execution', 'harness_original_limits_unsupported'))
         self.assertEqual(self.executor.executed, [])
 
 

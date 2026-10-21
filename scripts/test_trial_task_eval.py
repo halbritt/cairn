@@ -765,6 +765,13 @@ class LegacyAttemptContentTest(unittest.TestCase):
 
         def workspace(case, root):
             (root/'project').mkdir()
+            (root/'project/synthetic.txt').write_text('synthetic\n')
+            # The pre-actor baseline (trial_attempt_custody) needs a committed, eval-base tagged workspace.
+            env = dict(os.environ, GIT_AUTHOR_NAME='fixture', GIT_AUTHOR_EMAIL='fixture@example.invalid',
+                       GIT_COMMITTER_NAME='fixture', GIT_COMMITTER_EMAIL='fixture@example.invalid')
+            for command in (['git', 'init', '-q'], ['git', 'add', '.'], ['git', 'commit', '-qm', 'synthetic'],
+                            ['git', 'tag', 'eval-base']):
+                subprocess.run(command, cwd=root/'project', env=env, check=True, capture_output=True)
             (root/'.eval-snapshot.json').write_text('{}')
 
         with tempfile.TemporaryDirectory() as directory:

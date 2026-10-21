@@ -34,6 +34,8 @@ import tempfile
 import time
 import uuid
 
+from trial_account_selection import credentials_source
+import trial_legacy_limits as legacy_limits
 from trial_native_observation import capture, measure
 from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
@@ -1053,9 +1055,12 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     command = runtime_sandbox(common_runtime=common_runtime, runtime_identity=runtime_identity, writable=root)
     if harness == "claude":
         claude = home / ".local/bin/claude"
+        credentials = home / ".claude/.credentials.json"
+        # An explicitly selected account replaces the ambient file; a bad selection refuses, never falls back.
+        selected = credentials_source()
         command += ["--ro-bind", str(Path(native_executable).resolve(strict=True) if native_executable else claude.resolve(strict=True)), str(claude),
                     "--dir", str(home / ".claude"),
-                    "--ro-bind" if native_executable else "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json")]
+                    "--ro-bind" if native_executable else "--bind", str(selected or credentials), str(credentials)]
     elif harness != "codex":
         raise ValueError("unknown harness " + harness)
     command += ["--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name)]  # absolute gitdirs
@@ -1083,6 +1088,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
     cwd = root / case["cwd"]
     baseline = AttemptBaseline.capture(base, case, arm, seed)
     prospective = getattr(args, "_prospective", None)
+    # Legacy fixtures under the original paired limits (trial_legacy_limits).
+    original = bool(getattr(args, "original_limits", False)) and not prospective
     memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
     corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
     prompt = case["wordings"][args.wording]
@@ -1130,7 +1137,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
     elif arm != "none":
         store = stores[arm]
         task_wire = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
-        context_limit = 9500 - len(task_wire) - 512 - len(memory_instruction.encode()) if prospective else (CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
+        context_limit = 9500 - len(task_wire) - 512 - len(memory_instruction.encode()) if prospective else (
+            legacy_limits.hook_context_bytes(prompt, memory_instruction) if original
+            else CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
         if context_limit < 1000:
             raise ValueError("task leaves insufficient hook allowance")
         session_state = base / "hook-state"
@@ -1156,11 +1165,13 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if prospective:
             hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
             hook_cmd += " --frozen-prompt-sha256 " + hashlib.sha256(prompt.encode()).hexdigest()
-        settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
+        hook_timeout = legacy_limits.hook_timeout_seconds() if original else 13
+        settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=hook_timeout)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
             "mcp", "--socket", str(trial / "sock/api.sock"), "--token-file", str(trial / "agent.token"), "--repo", TRIAL_REPO,
-            "--task", "task-eval/" + run_id, "--run", run_id])))
+            "--task", "task-eval/" + run_id, "--run", run_id,
+            *(legacy_limits.mcp_tool_room_arguments() if original else [])])))
         (base / "mcp.json").write_text(json.dumps(mcp))
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
                   (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
@@ -1217,9 +1228,15 @@ def run_agent(case, arm, seed, order, args, stores, out):
     capture_error = None
     raw_stdout, raw_stderr = b'', b''
     timings = []
+    custody_failure = None  # original-limits capture custody (legacy only)
     try:
         if prospective:
             raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
+                                                          custody_path=base / "native-process-custody.json")
+            stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
+        elif original:
+            # The existing capture records per-line receive times for the last-memory bound.
+            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json",
                                                           custody_path=base / "native-process-custody.json")
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
         else:
@@ -1253,6 +1270,25 @@ def run_agent(case, arm, seed, order, args, stores, out):
         stream_bytes = stdout.encode("utf-8")
         (base / "stream.jsonl").write_bytes(stream_bytes)
         (base / "stderr.txt").write_text(stderr[-20000:])
+        limit_assessment = None
+        if original:
+            # The capture keeps exit status apart from cleanup custody: exit 0 can still
+            # have unknown cleanup. Anything short of the observed-clear record is a
+            # row failure, and that row is never graded. observed_clear is the capture's
+            # scoped observation only, not proof that every descendant was reaped.
+            process_custody = read_custody(base / "native-process-custody.json")
+            if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
+                    or process_custody["cleanup"]["status"] != "observed_clear"):
+                custody_failure = "process_custody_unknown"
+        if original and arm in stores:
+            hook_rows = None  # malformed observations stay unknown in the assessment
+            observations = base / "hook-state/observations.jsonl"
+            try:
+                hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
+            except (OSError, ValueError):
+                pass
+            limit_assessment = legacy_limits.assess(stdout, hook_rows, timings=timings,
+                                                    input_bytes=legacy_limits.input_charge(prompt, memory_instruction))
     else:
         (base / "native-output-metadata.json").write_text(json.dumps(dict(
             stdout_bytes=len(raw_stdout) if capture_error is None else None,
@@ -1318,8 +1354,11 @@ def run_agent(case, arm, seed, order, args, stores, out):
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
                snapshot=baseline.snapshot, baseline=baseline,
                common_runtime=common_runtime, runtime_identity=runtime_identity)
-    graded = grade(case, ctx)
-    if failure:
+    if custody_failure is None:
+        graded = grade(case, ctx)
+    else:
+        graded = dict(outcome="harness_error", execution_failure=custody_failure, error=custody_failure)
+    if failure and custody_failure is None:
         graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
                       error="prospective_native_failure" if prospective else stderr[-600:])
     try:
@@ -1339,6 +1378,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
     if not prospective:
         record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
         record["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if original:
+            record["original_limits"] = limit_assessment
+            record["process_custody"] = process_custody
     if prospective:
         record["selected_input"] = selected_input
         record["process_custody"] = process_custody
@@ -1515,6 +1557,8 @@ def cmd_agent(args):
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      receipt_exporter_sha256=hashlib.sha256((ROOT / "scripts/trial_receipt_explanation.py").read_bytes()).hexdigest(),
                      harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
+    if getattr(args, "original_limits", False) and not prospective:
+        execution["original_limits"] = dict(legacy_limits.LIMITS)
     out = Path(args.output)
     out.mkdir(mode=0o700)
     if prospective:
@@ -1686,10 +1730,15 @@ def cmd_agent(args):
         if prospective:
             report["measurement_failures"] = [r["run_id"] for r in records
                                                if (r.get("selected_input") or {}).get("status") != "within_observed_limits"]
+        elif getattr(args, "original_limits", False):
+            # Memory-arm rows must be measured within the original limits; a missing assessment fails.
+            report["measurement_failures"] = [r["run_id"] for r in records if r.get("arm") in stores
+                                               and (r.get("original_limits") or {}).get("status") != "within_original_limits"]
         report["summary"] = summarise_agent(report["records"], arms)
         (out / "agent.json").write_text(json.dumps(report, indent=2))
         print(json.dumps(report["summary"], indent=2))
-        return 2 if stop or (prospective and (execution["corpus_integrity"]["unchanged"] is not True or report["measurement_failures"])) else 0
+        return 2 if stop or (prospective and (execution["corpus_integrity"]["unchanged"] is not True or report["measurement_failures"])) \
+            or report.get("measurement_failures") else 0
 
 
 def summarise_agent(records, arms):
@@ -1856,6 +1905,9 @@ def main(argv=None):
                    help="maximum cold passage-index readiness wait in seconds; separate from task timeout")
     a.add_argument("--timeout", type=int, default=900)
     a.add_argument("--parallel", type=int, default=3)
+    a.add_argument("--original-limits", action="store_true",
+                   help="legacy Claude fixtures under trial_paired_request.ORIGINAL_LIMITS (5 s hooks, 32000 tool room, "
+                        "task wire charged, captured stream timing); exceeding rows are measurement failures")
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
@@ -1879,6 +1931,8 @@ def main(argv=None):
         else:
             args.arms = args.arms if args.arms is not None else ["none", "direct"]
             args.reasoning_effort = args.reasoning_effort or "high"
+        if args.original_limits and (args.prospective_input or args.harness != "claude" or args.wording != "task"):
+            parser.error("--original-limits applies only to legacy Claude fixtures with task wording")
         if args.cold_readiness_timeout <= 0 or args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:
             parser.error("invalid execution limits")
         labels = [s.split(":", 1)[0] for s in args.memory]
