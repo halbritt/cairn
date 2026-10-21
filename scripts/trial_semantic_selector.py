@@ -618,6 +618,25 @@ def _native_hooks(events):
     return hooks
 
 
+def _perfect_matching(rows, hooks, fits, banned=None):
+    """One perfect row->hook assignment under ``fits``, or None (augmenting paths)."""
+    if len(rows) != len(hooks):
+        return None
+    owner = {}
+
+    def place(index, seen):
+        for ident in hooks:
+            if ident not in seen and (index, ident) != banned and fits(rows[index], hooks[ident]):
+                seen.add(ident)
+                if ident not in owner or place(owner[ident], seen):
+                    owner[ident] = index
+                    return True
+        return False
+    if not all(place(i, set()) for i in range(len(rows))):
+        return None
+    return {index: ident for ident, index in owner.items()}
+
+
 def correlate_native(ledger, native_events, *, hook_seconds=HOOK_SECONDS):
     """Correlate owner executions with the CLI's own hook events; keep each claim separate.
 
@@ -625,79 +644,76 @@ def correlate_native(ledger, native_events, *, hook_seconds=HOOK_SECONDS):
     the capture clock. ``native_events`` are the CLI's hook_started and
     hook_response events with the owner's ``received_seconds`` for each line.
 
-    Claims:
-    - ``output_correlated``: a one-to-one pairing on event and stdout digest;
-    - ``window_correlated``: each frame arrived after its hook_started line and
-      the execution finished before its hook_response line;
-    - ``deadline_from_native_start``: each execution's deadline is its
-      hook_started receipt plus ``hook_seconds`` (never frame receipt plus
-      ``hook_seconds``), and it completed by then;
-    - ``input``: ``anchored`` only when the CLI exposes an input digest that
-      equals the executed input; ``unanchored`` otherwise. Owner execution of
-      an input never stands in for that input being the CLI's hook input.
+    Matching is staged. Each stage looks for any one-to-one assignment under
+    all constraints so far, and refuses only when none exists:
+    1. ``output_correlated``: event and stdout digest;
+    2. ``window_correlated``: each frame arrived after its hook_started line
+       and finished before its hook_response line;
+    3. ``deadline_from_native_start_receipt``: each deadline is that
+       hook_started line's owner receipt time plus ``hook_seconds`` (never
+       frame receipt plus ``hook_seconds``), and it completed by then. Receipt
+       is later than the CLI's own spawn by an unobserved delay, so this is
+       not the CLI's actual deadline;
+    4. ``input``: ``anchored`` only when the CLI exposes an input digest on
+       every hook and some assignment also matches it; ``mismatched`` when it
+       exposes one and none does; ``unanchored`` otherwise.
 
-    ``gaps`` names native observations that are missing, never filled in.
+    ``assignment`` is ``unique`` or ``ambiguous`` for the deepest stage
+    reached (None when no stage matched). A match, unique or not, is never
+    causal authentication. ``gaps`` names native observations that are missing.
     """
-    refusals, gaps = [], []
+    claims = dict(output_correlated=False, window_correlated=False,
+                  deadline_from_native_start_receipt=False, input='unanchored')
     try:
         hooks = _native_hooks(native_events)
     except ValueError as exc:
-        return dict(claims=dict(output_correlated=False, window_correlated=False,
-                                deadline_from_native_start=False, input='unanchored'),
-                    pairs=None, refusals=[str(exc)], gaps=[])
+        return dict(claims=claims, pairs=None, assignment=None, refusals=[str(exc)], gaps=[])
     rows = list(ledger) if isinstance(ledger, list) else []
+    anchored = bool(hooks) and all(hook['input_sha256'] is not None for hook in hooks.values())
 
-    def fits(row, hook, *, timing):
-        if (row['event'], row['stdout_sha256']) != (hook['event'], hook['stdout_sha256']):
-            return False
-        return not timing or hook['started'] <= row['frame_received_seconds'] <= row['completed_seconds'] <= hook['responded']
+    def output(row, hook):
+        return (row['event'], row['stdout_sha256']) == (hook['event'], hook['stdout_sha256'])
 
-    def matching(timing):
-        # Augmenting-path bipartite matching; concurrent hooks may interleave.
-        owner = {}
+    def window(row, hook):
+        return (output(row, hook) and hook['started'] <= row['frame_received_seconds']
+                <= row['completed_seconds'] <= hook['responded'])
 
-        def place(index, seen):
-            for ident, hook in hooks.items():
-                if ident not in seen and fits(rows[index], hook, timing=timing):
-                    seen.add(ident)
-                    if ident not in owner or place(owner[ident], seen):
-                        owner[ident] = index
-                        return True
-            return False
-        complete = len(rows) == len(hooks) and all(place(i, set()) for i in range(len(rows)))
-        return {index: ident for ident, index in owner.items()} if complete else None
+    def deadline_set(row, hook):
+        return window(row, hook) and row['deadline_seconds'] == hook['started'] + hook_seconds
 
-    output = matching(False)
-    pairs = matching(True) if output is not None else None
-    if output is None:
-        refusals.append('semantic_selector_owner_output_uncorrelated')
-    elif pairs is None:
-        refusals.append('semantic_selector_owner_window_uncorrelated')
-    deadline = pairs is not None
+    def deadline(row, hook):
+        return deadline_set(row, hook) and row['completed_seconds'] <= row['deadline_seconds']
+
+    def given(row, hook):
+        return deadline(row, hook) and row['hook_input_sha256'] == hook['input_sha256']
+
+    stages = [('output_correlated', output, 'semantic_selector_owner_output_uncorrelated'),
+              ('window_correlated', window, 'semantic_selector_owner_window_uncorrelated'),
+              ('deadline_from_native_start_receipt', deadline, None)]
+    if anchored:
+        stages.append(('input', given, 'semantic_selector_owner_input_mismatch'))
+    refusals, pairs, fits = [], None, None
+    for claim, test, code in stages:
+        found = _perfect_matching(rows, hooks, test)
+        if found is None:
+            if claim == 'deadline_from_native_start_receipt':
+                code = ('semantic_selector_owner_deadline_restarted'
+                        if _perfect_matching(rows, hooks, deadline_set) is None
+                        else 'semantic_selector_owner_deadline_exceeded')
+            if claim == 'input':
+                claims['input'] = 'mismatched'
+            refusals.append(code)
+            break
+        claims[claim] = 'anchored' if claim == 'input' else True
+        pairs, fits = found, test
+    assignment = None
     if pairs is not None:
-        for index, ident in pairs.items():
-            expected = hooks[ident]['started'] + hook_seconds
-            if rows[index]['deadline_seconds'] != expected:
-                deadline = False
-                if 'semantic_selector_owner_deadline_restarted' not in refusals:
-                    refusals.append('semantic_selector_owner_deadline_restarted')
-            elif rows[index]['completed_seconds'] > expected:
-                deadline = False
-                if 'semantic_selector_owner_deadline_exceeded' not in refusals:
-                    refusals.append('semantic_selector_owner_deadline_exceeded')
-    gaps.append('native_hook_spawn_time_unobserved')  # hook_started receipt is later than the CLI's own start
-    anchors = [hook['input_sha256'] for hook in hooks.values()]
-    if not hooks or any(anchor is None for anchor in anchors):
+        # Another valid assignment exists iff some chosen pair can be excluded.
+        ambiguous = any(_perfect_matching(rows, hooks, fits, banned=(index, ident)) is not None
+                        for index, ident in pairs.items())
+        assignment = 'ambiguous' if ambiguous else 'unique'
+    gaps = ['native_hook_spawn_time_unobserved']  # hook_started receipt is later than the CLI's own start
+    if not anchored:
         gaps.append('native_hook_input_unobserved')
-        input_claim = 'unanchored'
-    elif pairs is None:
-        input_claim = 'unanchored'
-    elif all(rows[index]['hook_input_sha256'] == hooks[ident]['input_sha256'] for index, ident in pairs.items()):
-        input_claim = 'anchored'
-    else:
-        input_claim = 'mismatched'
-        refusals.append('semantic_selector_owner_input_mismatch')
-    return dict(claims=dict(output_correlated=output is not None, window_correlated=pairs is not None,
-                            deadline_from_native_start=deadline, input=input_claim),
-                pairs=None if pairs is None else {rows[i]['sequence']: ident for i, ident in pairs.items()},
-                refusals=refusals, gaps=gaps)
+    return dict(claims=claims, pairs=None if pairs is None else {rows[i]['sequence']: h for i, h in pairs.items()},
+                assignment=assignment, refusals=refusals, gaps=gaps)

@@ -670,20 +670,34 @@ Binding points:
   engine, with these bindings, on these bytes, producing this observation
   line. This is the owner's own claim, and it is kept apart from the next
   three.
-- **Native correlation** (`correlate_native`, agent-341 review of `ceff369`).
-  Each claim is kept separate:
-  - `output_correlated`: a one-to-one pairing of ledger rows and native
-    hooks on `(event, stdout_sha256)`. An extra replayed frame or a dropped
-    stub frame breaks the counts.
-  - `window_correlated`: each frame arrived after its `hook_started` line and
-    finished before its `hook_response` line, in the owner's capture clock.
-    The pairing uses augmenting paths, so concurrent hooks pair correctly. A
-    replay outside the native window refuses.
-  - `deadline_from_native_start`: each deadline equals the hook's
-    `hook_started` receipt plus 5 s, and the execution finished by then. A
-    deadline restarted from frame receipt refuses
-    `semantic_selector_owner_deadline_restarted`.
-  - `input`: `anchored`, `unanchored` or `mismatched`.
+- **Native correlation** (`correlate_native`; agent-341 reviews of `ceff369`
+  and `22e052e`). Matching is staged. Each stage searches for *any*
+  one-to-one assignment of ledger rows to native hooks under all constraints
+  so far (augmenting paths). It refuses only when no valid assignment exists
+  at that stage. The order of rows and native events never changes the
+  result. The claims stay separate:
+  1. `output_correlated`: event and stdout digest. An extra replayed frame or
+     a dropped stub frame breaks the counts.
+  2. `window_correlated`: each frame arrived after its `hook_started` line
+     and finished before its `hook_response` line, in the owner's capture
+     clock. A replay outside the window refuses.
+  3. `deadline_from_native_start_receipt`: each deadline equals that
+     `hook_started` line's *owner receipt* time plus 5 s, and the execution
+     finished by then. Receipt is later than the CLI's own spawn by an
+     unobserved delay, so this is not the CLI's actual hook deadline. With no
+     valid assignment, it refuses `semantic_selector_owner_deadline_restarted`
+     (no assignment has receipt-based deadlines) or
+     `semantic_selector_owner_deadline_exceeded`.
+  4. `input`: checked only when every native hook carries an input digest
+     (none does today). `anchored` means some assignment also matches it;
+     `mismatched` means none does; `unanchored` otherwise.
+- **`assignment`** is `unique` or `ambiguous` at the deepest stage reached,
+  shown by trying to exclude each chosen pair. A match, unique or ambiguous,
+  is never causal authentication. Ambiguous valid assignments are reported,
+  never turned into a false mismatch.
+  - agent-341's counterexample: two PostToolUse hooks with the same stdout and
+    overlapping windows, told apart only by deadline and input. It now yields
+    the valid pairing in every row and event order.
 - **What the native stream exposes.** Retained Claude CLI streams show
   `hook_started` = `{type, subtype, hook_id, hook_name, hook_event,
   session_id, uuid}`. `hook_response` adds `{stdout, stderr, output,
@@ -873,11 +887,12 @@ Limits and account selection:
 - The runner tests also cover account refusals and mismatch, a harness
   without the selector or the flag, and limit, late-memory and unobserved
   rows.
-- `test_trial_semantic_selector` (35 synthetic tests) covers the declaration
+- `test_trial_semantic_selector` (38 synthetic tests) covers the declaration
   and malformed declarations, the `/1` and `/2` arm rules, binary custody,
   configuration conflicts, the reviewed hook's argv (static only; a hook
   with top-level effects is refused and never runs), the owner ledger,
-  native correlation (replacement, replay, window, deadline, concurrency),
+  staged native correlation (replacement, replay, window, deadline,
+  concurrency, agent-341's counterexample with permutations, ambiguity),
   capture demand, schema-checked parsing, and per-attempt `matched`,
   `not_invoked`, `mismatched`, `incomplete` and unauthenticated results. It
   uses fake binary files and fabricated hook rows only.

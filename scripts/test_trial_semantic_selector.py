@@ -527,8 +527,9 @@ class NativeCorrelationTest(unittest.TestCase):
     def test_genuine_executions_correlate_but_input_stays_unanchored(self):
         result = selector.correlate_native(self.genuine, self.native(self.hooks))
         self.assertEqual(result['claims'], dict(output_correlated=True, window_correlated=True,
-                                                deadline_from_native_start=True, input='unanchored'))
+                                                deadline_from_native_start_receipt=True, input='unanchored'))
         self.assertEqual(result['pairs'], {0: 'h1', 1: 'h2'})
+        self.assertEqual(result['assignment'], 'unique')
         self.assertEqual(result['refusals'], [])
         self.assertEqual(result['gaps'], ['native_hook_spawn_time_unobserved', 'native_hook_input_unobserved'])
 
@@ -570,7 +571,7 @@ class NativeCorrelationTest(unittest.TestCase):
         restarted = [self.genuine[0], dict(self.genuine[1], deadline_seconds=3.2 + 5)]
         result = selector.correlate_native(restarted, self.native(self.hooks))
         self.assertEqual(result['refusals'], ['semantic_selector_owner_deadline_restarted'])
-        self.assertFalse(result['claims']['deadline_from_native_start'])
+        self.assertFalse(result['claims']['deadline_from_native_start_receipt'])
         slow = {'h1': self.hooks['h1'], 'h2': ('UserPromptSubmit', 3.0, 8.5, '{"b":2}')}
         late = [self.genuine[0], dict(self.genuine[1], completed_seconds=8.2)]
         self.assertEqual(selector.correlate_native(late, self.native(slow))['refusals'],
@@ -583,6 +584,67 @@ class NativeCorrelationTest(unittest.TestCase):
                 self.execution(1, 'PostToolUse', '{}', frame=5.2, completed=6.5, deadline=10.0)]
         result = selector.correlate_native(rows, self.native(hooks))
         self.assertEqual((result['pairs'], result['refusals']), ({0: 'p2', 1: 'p1'}, []))
+
+    def counterexample(self):
+        """agent-341's case: equal output and window, told apart only by deadline and input."""
+        hooks = {'p1': ('PostToolUse', 5.0, 7.0, '{}'), 'p2': ('PostToolUse', 5.1, 7.0, '{}')}
+        anchors = {'p1': '1' * 64, 'p2': '2' * 64}
+        rows = [self.execution(0, 'PostToolUse', '{}', frame=5.2, completed=5.8, deadline=10.0, given='1' * 64),
+                self.execution(1, 'PostToolUse', '{}', frame=5.2, completed=5.8, deadline=10.1, given='2' * 64)]
+        return hooks, anchors, rows
+
+    def test_staged_matching_finds_the_valid_assignment(self):
+        hooks, anchors, rows = self.counterexample()
+        expected = dict(claims=dict(output_correlated=True, window_correlated=True,
+                                    deadline_from_native_start_receipt=True, input='anchored'),
+                        pairs={0: 'p1', 1: 'p2'}, assignment='unique', refusals=[],
+                        gaps=['native_hook_spawn_time_unobserved'])
+        events = self.native(hooks, anchors)
+        started, responses = events[0::2], events[1::2]
+        for ledger in (rows, rows[::-1]):
+            for native in (events, events[::-1], started + responses, responses[::-1] + started[::-1],
+                           [events[2], events[0], events[3], events[1]]):
+                with self.subTest(rows=[r['sequence'] for r in ledger], native=[(e['subtype'], e['hook_id'])
+                                                                                 for e in native]):
+                    self.assertEqual(selector.correlate_native(ledger, native), expected)
+        # Without the native input digest, the deadline alone still separates them; input is unanchored.
+        result = selector.correlate_native(rows, self.native(hooks))
+        self.assertEqual((result['pairs'], result['assignment'], result['refusals'], result['claims']['input']),
+                         ({0: 'p1', 1: 'p2'}, 'unique', [], 'unanchored'))
+
+    def test_genuine_mismatch_only_when_no_assignment_exists(self):
+        hooks, anchors, rows = self.counterexample()
+        swapped = {'p1': '2' * 64, 'p2': '1' * 64}  # deadlines pin row0->p1, row1->p2; inputs say otherwise
+        result = selector.correlate_native(rows, self.native(hooks, swapped))
+        self.assertEqual((result['claims']['input'], result['refusals']),
+                         ('mismatched', ['semantic_selector_owner_input_mismatch']))
+        self.assertTrue(result['claims']['deadline_from_native_start_receipt'])
+        both_restarted = [dict(rows[0], deadline_seconds=10.2), dict(rows[1], deadline_seconds=10.2)]
+        self.assertEqual(selector.correlate_native(both_restarted, self.native(hooks, anchors))['refusals'],
+                         ['semantic_selector_owner_deadline_restarted'])
+
+    def test_ambiguous_valid_assignments_are_reported_and_never_a_false_mismatch(self):
+        # Two indistinguishable hooks and executions: both pairings satisfy every stage.
+        hooks = {'p1': ('PostToolUse', 5.0, 7.0, '{}'), 'p2': ('PostToolUse', 5.0, 7.0, '{}')}
+        rows = [self.execution(0, 'PostToolUse', '{}', frame=5.2, completed=5.8, deadline=10.0),
+                self.execution(1, 'PostToolUse', '{}', frame=5.3, completed=5.9, deadline=10.0)]
+        for anchors in (None, {'p1': 'a' * 64, 'p2': 'a' * 64}):
+            events = self.native(hooks, anchors)
+            for native in (events, events[::-1]):
+                for ledger in (rows, rows[::-1]):
+                    with self.subTest(anchors=anchors is not None):
+                        result = selector.correlate_native(ledger, native)
+                        self.assertEqual(result['refusals'], [])
+                        self.assertEqual(result['assignment'], 'ambiguous')
+                        self.assertTrue(result['claims']['deadline_from_native_start_receipt'])
+        # Ambiguous at the window stage, resolved by the deadline stage: unique, no mismatch.
+        hooks = {'p1': ('PostToolUse', 5.0, 7.0, '{}'), 'p2': ('PostToolUse', 5.1, 7.0, '{}')}
+        rows = [self.execution(0, 'PostToolUse', '{}', frame=5.2, completed=5.8, deadline=10.1),
+                self.execution(1, 'PostToolUse', '{}', frame=5.2, completed=5.8, deadline=10.0)]
+        result = selector.correlate_native(rows, self.native(hooks))
+        self.assertEqual((result['pairs'], result['assignment'], result['refusals']), ({0: 'p2', 1: 'p1'}, 'unique', []))
+        # Ambiguity remains non-authenticating.
+        self.assertEqual(selector.AUTHENTICATION_METHODS, frozenset())
 
     def test_malformed_or_unfinished_native_events_refuse(self):
         events = self.native(self.hooks)
