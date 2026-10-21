@@ -18,7 +18,9 @@ Original-attempt content needs the stream_sha256 and prompt_sha256 that
 trial_task_eval.run_agent records per attempt. Older output lacks them and
 refuses original_attempt_provenance_unavailable. Those hashes are the
 harness's own record, reported as declared, not as independent custody.
-Indeterminate pairs are listed and block changed-pair completion.
+Indeterminate pairs are listed and block changed-pair completion. A run with
+no changed pair gets a receipt only (no selection or packet); it reports
+no_grading_needed only when every pair is determinate and unchanged.
 
 The converter reads only the selected answer, the attempt identity and the
 deterministic outcome of each legacy record. It never copies check verdicts,
@@ -103,6 +105,10 @@ def _identity(records, arms):
 def _coverage(plan, agent, records):
     need(isinstance(plan, dict) and plan.get('arms') == agent['arms'] and isinstance(plan.get('runs'), list),
          'legacy_plan_mismatch')
+    # An empty plan or record set would pass every coverage check vacuously and
+    # then classify as no_grading_needed. The weekly 126/63 shape is the
+    # runner's check; this converter only forbids empty runs.
+    need(plan['runs'] and records, 'legacy_run_empty')
     planned = [tuple(row[:3]) for row in plan['runs'] if isinstance(row, list) and len(row) == 4]
     need(len(planned) == len(plan['runs']) and len(set(planned)) == len(planned), 'legacy_plan_mismatch')
     need(set(planned) == {(r['case'], r['arm'], r['seed']) for r in records}, 'legacy_attempt_missing')
@@ -110,6 +116,7 @@ def _coverage(plan, agent, records):
     for record in records:
         pairs.setdefault((record['case'], record['seed']), {})[record['arm']] = record
     need(all(set(cell) == set(agent['arms']) for cell in pairs.values()), 'legacy_attempt_missing')
+    need(pairs, 'legacy_run_empty')
     return pairs
 
 
@@ -118,6 +125,28 @@ def _classify(cell):
     if not all(o in DETERMINISTIC for o in outcomes):
         return 'indeterminate'
     return 'changed' if len(set(outcomes)) > 1 else 'unchanged'
+
+
+JOIN_STATES = dict(changed='changed', unchanged='unchanged', indeterminate='undetermined')
+
+
+def _grading(counts):
+    """What changed-pair grading still requires. Only a run whose every pair is
+    determinate and unchanged needs no grading; indeterminate pairs block it."""
+    if counts['indeterminate']:
+        if not counts['changed'] and not counts['unchanged']:
+            return dict(state='incomplete_all_pairs_indeterminate', complete=False, deliveries_required=None,
+                        reason='no_pair_classified')
+        # Changed pairs still need their deliveries; the run cannot complete either way.
+        return dict(state='blocked_indeterminate_pairs', complete=False,
+                    deliveries_required=2*counts['changed'] if counts['changed'] else None,
+                    reason='indeterminate_pairs_present')
+    if counts['changed']:
+        # One delivery to each of the two blind grader slots per changed pair.
+        return dict(state='awaiting_grading', complete=False, deliveries_required=2*counts['changed'],
+                    reason='changed_pairs_selected')
+    return dict(state='no_grading_needed', complete=True, deliveries_required=0,
+                reason='all_pairs_determinate_unchanged')
 
 
 def _materials(request, changed):
@@ -206,7 +235,10 @@ def _plan(request_pin, output):
 
     classes = {key: _classify(cell) for key, cell in pairs.items()}
     changed = sorted(key for key, value in classes.items() if value == 'changed')
-    need(changed, 'legacy_no_changed_pairs')
+    # Every coverage, identity, provenance and binding check above has run.
+    # With no changed pair there is nothing to select: no blind selection or
+    # packet is produced (the packet contract stays nonempty), and the receipt
+    # alone classifies the run. See _grading for when that is complete.
     materials = _materials(request, changed)
 
     namespace = request['namespace']
@@ -245,20 +277,27 @@ def _plan(request_pin, output):
         comparisons.append(dict(
             comparison_id='pair-' + hashlib.sha256(packet.canonical_bytes([namespace, pair_key])).hexdigest()[:32],
             pair_key=pair_key, samples=sorted(ids)))
-    selection = dict(schema='cairn.blind-selection/2', namespace=namespace, policy=request['policy'],
-                     policy_ref=request['policy_ref'], case_contracts=[contracts[k] for k in sorted(contracts)],
-                     samples=sorted(samples, key=lambda s: s['sample_id']),
-                     comparisons=sorted(comparisons, key=lambda c: c['comparison_id']),
-                     review_measurement=request['review_measurement'])
-    files['selection.json'] = packet.canonical_bytes(selection)
+    selection_pin = None
+    comparisons = sorted(comparisons, key=lambda c: c['comparison_id'])
+    if changed:
+        selection = dict(schema='cairn.blind-selection/2', namespace=namespace, policy=request['policy'],
+                         policy_ref=request['policy_ref'], case_contracts=[contracts[k] for k in sorted(contracts)],
+                         samples=sorted(samples, key=lambda s: s['sample_id']), comparisons=comparisons,
+                         review_measurement=request['review_measurement'])
+        files['selection.json'] = packet.canonical_bytes(selection)
+        selection_pin = dict(path=str(output/'selection.json'), **_digest(files['selection.json']))
     indeterminate = [dict(case=case, seed=seed) for (case, seed), value in sorted(classes.items())
                      if value == 'indeterminate']
     counts = {name: sum(1 for v in classes.values() if v == name) for name in ('changed', 'unchanged', 'indeterminate')}
     receipt = dict(schema=RECEIPT_SCHEMA, request=dict(request_pin),
                    sources=dict(agent=request['agent'], plan=request['plan'], binding=request['binding']),
-                   selection=dict(path=str(output/'selection.json'), **_digest(files['selection.json'])),
+                   selection=selection_pin,
                    pairs=dict(total=len(classes), **counts),
-                   comparisons=[c['comparison_id'] for c in selection['comparisons']],
+                   # Join vocabulary (trial_grading_custody bundle selection rows).
+                   pair_classification=[dict(case=case, seed=seed, state=JOIN_STATES[value])
+                                        for (case, seed), value in sorted(classes.items())],
+                   changed_pair_grading=_grading(counts),
+                   comparisons=[c['comparison_id'] for c in comparisons],
                    unselected=sorted([case, seed, value] for (case, seed), value in classes.items() if value != 'changed'),
                    # A pair that cannot be classified may hide a change; changed-pair
                    # grading cannot be complete while any such pair exists.
@@ -289,12 +328,13 @@ def _convert(request_pin, output):
         return receipt
     output.mkdir(mode=0o700)
     try:
-        (output/'answers').mkdir(mode=0o700)
-        for name in sorted(files):
-            if name != 'receipt.json':
-                paired.write_selected_bytes(output/name, files[name])
-        # The unchanged draft contract is the acceptance check for composition.
-        packet.approval_subject(receipt['selection'])
+        if receipt['selection'] is not None:
+            (output/'answers').mkdir(mode=0o700)
+            for name in sorted(files):
+                if name != 'receipt.json':
+                    paired.write_selected_bytes(output/name, files[name])
+            # The unchanged draft contract is the acceptance check for composition.
+            packet.approval_subject(receipt['selection'])
         paired.write_selected_bytes(output/'receipt.json', files['receipt.json'])
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)

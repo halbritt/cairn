@@ -34,18 +34,19 @@ def stream(answer):
 
 
 class Fixture:
-    def __init__(self, root):
+    def __init__(self, root, outcomes=None, tasks=None):
         self.root = root
         self.run = root/'run'; (self.run/'runs').mkdir(parents=True)
         self.materials = root/'materials'; self.materials.mkdir()
         self.records, self.answers = [], {}
-        for (case, seed), outcomes in OUTCOMES.items():
+        self.original_tasks = dict(tasks or TASKS)
+        for (case, seed), outcomes in (outcomes or OUTCOMES).items():
             for arm, outcome in zip((BASE, CAND), outcomes):
                 self.add(case, arm, seed, outcome)
         self.contracts = {case: dict(schema='cairn.blind-case-contract/2', case_key=case, case_class='synthetic',
                                      required_channels=['task_statement', 'grading_instructions', 'final_answer'],
-                                     artifact_inventory=[]) for case in TASKS}
-        self.tasks = dict(TASKS)
+                                     artifact_inventory=[]) for case in self.original_tasks}
+        self.tasks = dict(self.original_tasks)
         self.binding = dict(schema='cairn.legacy-pair-binding/1', request_id='request-A', request_sha256='1'*64,
                             campaign_id='campaign-A', occurrence_id='occurrence-A', schedule_sha256='2'*64,
                             arm_roles={BASE: 'CURRENT', CAND: 'CAND'})
@@ -57,12 +58,12 @@ class Fixture:
         answer = f'Synthetic answer for {case} seed {seed} by {"one" if arm == BASE else "two"}.'
         record = dict(run_id=run_id, case=case, category='synthetic', primary=True, provenance='synthetic', arm=arm,
                       seed=seed, order=0, harness='claude', model='synthetic-model', wording='task', exit=0,
-                      seconds=1.0, prompt_bytes=len(TASKS[case].encode()), outcome=outcome,
+                      seconds=1.0, prompt_bytes=len(self.original_tasks[case].encode()), outcome=outcome,
                       correct=[True], mistake=[False], stratum='completion',
                       check_log=[dict(run=SECRET, outcome='ok')], trace=dict(turns=1), commands=0,
                       answer_chars=len(answer), memory=dict(delivered=['fixture-note']),
                       stream_sha256=hashlib.sha256(stream(answer).encode()).hexdigest(),
-                      prompt_sha256=hashlib.sha256(TASKS[case].encode()).hexdigest())
+                      prompt_sha256=hashlib.sha256(self.original_tasks[case].encode()).hexdigest())
         self.records.append(record); self.answers[run_id] = answer
 
     def save(self, *, binding=True):
@@ -90,7 +91,7 @@ class Fixture:
         cases = [dict(case=case, contract=pin(self.materials/f'contract-{case}.json', C(self.contracts[case])),
                       task_statement=pin(self.materials/f'task-{case}.txt', self.tasks[case].encode()),
                       grading_instructions=pin(self.materials/f'grading-{case}.txt', b'Selected synthetic rubric.\n'))
-                 for case in sorted(TASKS)]
+                 for case in sorted(self.tasks)]
         bound = None
         if binding:
             bound = pin(self.materials/'binding.json', C(dict(self.binding, agent_sha256=agent_pin['sha256'],
@@ -282,10 +283,129 @@ class ConversionTests(Case):
         self.f.wording = 'terse'
         self.refused('legacy_wording_unsupported', self.f.save())
 
-    def test_no_changed_pairs_refuses(self):
+    def test_small_all_unchanged_run_emits_no_grading_needed_receipt(self):
         for record in self.f.records:
             record['outcome'] = 'correct'
-        self.refused('legacy_no_changed_pairs', self.f.save())
+        receipt = legacy.convert(self.f.save(), self.root/'out')
+        self.assertEqual(receipt['changed_pair_grading']['state'], 'no_grading_needed')
+        self.assertEqual(sorted(p.name for p in (self.root/'out').iterdir()), ['receipt.json'])
+
+
+SHAPE_TASKS = {f'task-{i:02d}': f'Synthetic task number {i}.\n' for i in range(21)}
+
+
+def full_shape(root, state_of):
+    """21 synthetic tasks x 3 seeds x 2 arms = 126 attempts, 63 pairs."""
+    outcomes = {(case, seed): state_of(index, seed) for index, case in enumerate(sorted(SHAPE_TASKS))
+                for seed in range(3)}
+    return Fixture(root, outcomes=outcomes, tasks=SHAPE_TASKS)
+
+
+class ZeroChangedTests(Case):
+    def test_full_shape_all_unchanged_is_classified_with_no_grading_needed(self):
+        # agent-341's reproduction: 126 attempts, all correct/correct, hashes kept.
+        f = full_shape(self.root/'full', lambda i, s: ('correct', 'correct'))
+        self.assertEqual(len(f.records), 126)
+        receipt = legacy.convert(f.save(), self.root/'out')
+        self.assertEqual(receipt['pairs'], dict(total=63, changed=0, unchanged=63, indeterminate=0))
+        self.assertEqual(receipt['changed_pair_grading'], dict(
+            state='no_grading_needed', complete=True, deliveries_required=0,
+            reason='all_pairs_determinate_unchanged'))
+        self.assertIsNone(receipt['selection'])
+        self.assertEqual(receipt['comparisons'], [])
+        self.assertEqual(receipt['changed_pair_coverage'],
+                         dict(state='all_pairs_classified', complete_possible=True, indeterminate=[]))
+        self.assertEqual(len(receipt['pair_classification']), 63)
+        self.assertEqual({row['state'] for row in receipt['pair_classification']}, {'unchanged'})
+        # No blind selection, answers or packets are fabricated.
+        self.assertEqual(sorted(p.name for p in (self.root/'out').iterdir()), ['receipt.json'])
+        self.assertEqual(json.loads((self.root/'out/receipt.json').read_bytes()), receipt)
+        for flag in ('runtime_admitted', 'release_authority_verified', 'delivery_available', 'grading_performed'):
+            self.assertIs(receipt[flag], False)
+        self.assertEqual(legacy.convert(f.save(), self.root/'out'), receipt)
+
+    def test_full_shape_all_indeterminate_stays_incomplete(self):
+        f = full_shape(self.root/'full', lambda i, s: ('undetermined', 'needs_review'))
+        receipt = legacy.convert(f.save(), self.root/'out')
+        self.assertEqual(receipt['pairs'], dict(total=63, changed=0, unchanged=0, indeterminate=63))
+        self.assertEqual(receipt['changed_pair_grading'], dict(
+            state='incomplete_all_pairs_indeterminate', complete=False, deliveries_required=None,
+            reason='no_pair_classified'))
+        self.assertEqual(receipt['changed_pair_coverage']['state'], 'blocked_indeterminate_pairs')
+        self.assertEqual({row['state'] for row in receipt['pair_classification']}, {'undetermined'})
+        self.assertIsNone(receipt['selection'])
+
+    def test_full_shape_mixed_unchanged_and_indeterminate_stays_blocked(self):
+        f = full_shape(self.root/'full', lambda i, s: ('correct', 'undetermined') if (i, s) == (20, 2) else ('mistake', 'mistake'))
+        receipt = legacy.convert(f.save(), self.root/'out')
+        self.assertEqual(receipt['pairs'], dict(total=63, changed=0, unchanged=62, indeterminate=1))
+        self.assertEqual(receipt['changed_pair_grading'], dict(
+            state='blocked_indeterminate_pairs', complete=False, deliveries_required=None,
+            reason='indeterminate_pairs_present'))
+        self.assertEqual(receipt['changed_pair_coverage']['indeterminate'], [dict(case='task-20', seed=2)])
+        self.assertIsNone(receipt['selection'])
+
+    def test_full_shape_with_one_changed_pair_keeps_the_selection_path(self):
+        f = full_shape(self.root/'full', lambda i, s: ('correct', 'mistake') if (i, s) == (7, 1) else ('correct', 'correct'))
+        receipt = legacy.convert(f.save(), self.root/'out')
+        self.assertEqual(receipt['pairs'], dict(total=63, changed=1, unchanged=62, indeterminate=0))
+        self.assertEqual(receipt['changed_pair_grading'], dict(
+            state='awaiting_grading', complete=False, deliveries_required=2, reason='changed_pairs_selected'))
+        selection = json.loads(Path(receipt['selection']['path']).read_bytes())
+        self.assertEqual([(c['pair_key']['case'], c['pair_key']['seed']) for c in selection['comparisons']],
+                         [('task-07', 1)])
+        packet.approval_subject(receipt['selection'])
+
+    def test_every_zero_changed_outcome_still_refuses_missing_provenance_or_coverage(self):
+        shapes = dict(unchanged=lambda i, s: ('correct', 'correct'),
+                      indeterminate=lambda i, s: ('undetermined', 'undetermined'),
+                      mixed=lambda i, s: ('correct', 'undetermined') if s == 0 else ('incomplete', 'incomplete'),
+                      changed=lambda i, s: ('correct', 'mistake') if (i, s) == (0, 0) else ('correct', 'correct'))
+        breaks = dict(
+            original_attempt_provenance_unavailable=lambda f: f.records[5].pop('stream_sha256'),
+            legacy_attempt_missing=lambda f: f.records.pop(),
+            legacy_run_incomplete=lambda f: setattr(f, 'admission', dict(state='stopped_provider_failure',
+                stop=dict(run_id='x'), planned=126, admitted=125, not_started=[])),
+            legacy_attempt_not_graded=lambda f: f.records[3].update(outcome='harness_error'))
+        for name, state_of in shapes.items():
+            for code, damage in breaks.items():
+                with self.subTest(shape=name, code=code):
+                    f = full_shape(self.root/name/code, state_of); damage(f)
+                    request = f.save()
+                    if code == 'legacy_attempt_missing':
+                        plan = json.loads((f.run/'plan.json').read_bytes())
+                        plan['runs'].append(['task-20', CAND, 2, 0])
+                        f.request['plan'] = pin(f.run/'plan.json', json.dumps(plan, indent=2).encode())
+                        binding = json.loads(Path(f.request['binding']['path']).read_bytes())
+                        binding['plan_sha256'] = f.request['plan']['sha256']
+                        f.request['binding'] = pin(f.materials/'binding.json', C(binding))
+                        request = f.resave_request()
+                    with self.assertRaisesRegex(paired.Refusal, '^'+code+'$'):
+                        legacy.convert(request, f.root/'out')
+                    self.assertFalse((f.root/'out').exists())
+
+    def test_empty_plan_and_records_refuse_instead_of_completing(self):
+        # agent-341's reproduction: every check passed vacuously on zero attempts.
+        self.f.records = []
+        self.refused('legacy_run_empty', self.f.save())
+
+    def test_empty_records_with_a_nonempty_plan_refuse(self):
+        f = self.f
+        planned = [[r['case'], r['arm'], r['seed'], r['order']] for r in f.records]
+        f.records = []
+        f.save()
+        f.request['plan'] = pin(f.run/'plan.json', json.dumps(dict(arms=[BASE, CAND], wording='task',
+                                                                   runs=planned), indent=2).encode())
+        binding = json.loads(Path(f.request['binding']['path']).read_bytes())
+        binding['plan_sha256'] = f.request['plan']['sha256']
+        f.request['binding'] = pin(f.materials/'binding.json', C(binding))
+        self.refused('legacy_run_empty', f.resave_request())
+
+    def test_zero_changed_run_still_requires_identity_binding(self):
+        f = full_shape(self.root/'full', lambda i, s: ('correct', 'correct'))
+        with self.assertRaisesRegex(paired.Refusal, '^legacy_pair_identity_unbound$'):
+            legacy.convert(f.save(binding=False), self.root/'out')
+        self.assertFalse((self.root/'out').exists())
 
 
 class CliTests(Case):

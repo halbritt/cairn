@@ -129,6 +129,57 @@ legacy defects. Their effect on this converter, checked against current
   `prompt_sha256`. See the second blocker above. Wording must be `task`
   (`legacy_wording_unsupported`).
 
+## Runs with no changed pair
+
+An empty plan or an empty record set refuses `legacy_run_empty`, because
+every coverage check would otherwise pass vacuously. The converter keeps
+exact coverage of whatever plan it is given. Requiring the full weekly shape
+(126 attempts, 63 pairs) is the runner's job.
+
+After every coverage, identity, provenance and binding check has passed, a run
+can have zero changed pairs. In that case the converter writes only
+`receipt.json`. It produces no blind selection, answers or packets, so the
+nonempty packet contract is unchanged. The receipt's `selection` is `null`
+and `comparisons` is empty. `changed_pair_grading` then says what grading
+still requires:
+
+| Pairs | `state` | `complete` | `deliveries_required` |
+|---|---|---|---|
+| all determinate and unchanged | `no_grading_needed` | true | 0 |
+| all indeterminate | `incomplete_all_pairs_indeterminate` | false | null |
+| unchanged and indeterminate, none changed | `blocked_indeterminate_pairs` | false | null |
+| changed and indeterminate | `blocked_indeterminate_pairs` | false | 2 per changed pair |
+| changed, none indeterminate | `awaiting_grading` | false | 2 per changed pair |
+
+Only the first row says grading is complete, and only because there is
+nothing to grade. For a full 126-attempt run with 63 determinate unchanged
+pairs, `pairs` is `{total: 63, changed: 0, unchanged: 63, indeterminate: 0}`.
+
+### Downstream join input
+
+The grading join (`trial_grading_custody.join_results`) and
+`trial_run_report` should consume these receipt fields:
+
+- `pair_classification`: one `{case, seed, state}` row per pair, with
+  `state` already in the join's vocabulary (`changed`, `unchanged`,
+  `undetermined`). These are the grading bundle's `selection` rows. In the
+  zero-changed case every row is `unchanged`, so the join marks every pair
+  `not_selected`. Its `changed_pair_coverage.denominator` is 0 and
+  `selection_completeness` is `declared`. The report then has no
+  `changed_pairs_not_dual_graded` reason and reports agreement as `null`
+  over a 0 denominator.
+- `changed_pair_grading`: `state`, `complete` and `deliveries_required`.
+  A coordinator plans zero deliveries only when `state` is
+  `no_grading_needed`. Any indeterminate pair appears as `undetermined` in
+  `pair_classification`, which the join and report already treat as
+  `selection_undetermined`, so the run stays incomplete.
+- `pairs`, `changed_pair_coverage`, `sources` (the pinned `agent.json`,
+  `plan.json` and binding) and the custody flags, unchanged. `agent.json`
+  remains the report's attempt input.
+
+This classification is the converter's own. It is not admission, release
+authority or a grade, and the receipt's flags stay false.
+
 ## Interface
 
 ```python
