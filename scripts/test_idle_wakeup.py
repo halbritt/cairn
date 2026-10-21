@@ -1455,6 +1455,75 @@ time.sleep(30)
         self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
         self.assertEqual(result.stderr, '', 'the same refusal was logged again on the next cycle')
 
+    def terminal_condition(self):
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.prompts(), [])
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
+        observed = self.observations()[-1]
+        self.assertEqual(observed.get('delivery_id'), 'delivery-one')
+        return observed['condition'], json.loads(self.path.read_text())['wake_refusal']['reason'], result.stderr
+
+    def test_zero_matching_terminal_targets_are_missing_not_ambiguous(self):
+        self.fixture['host']['agent_session']['value'] = 'different-native'
+        self.save_fixture()
+        condition, reason, stderr = self.terminal_condition()
+        self.assertEqual(condition, 'terminal_target_missing')
+        self.assertIn('no Herdr pane identifies this session', reason)
+        self.assertNotIn('ambiguous', stderr)
+
+    def test_zero_eligible_targets_distinguish_not_idle_and_focused_session_panes(self):
+        for change, expected in ((dict(agent_status='working'), 'terminal_target_not_idle'),
+                                 (dict(agent_status='blocked', focused=True), 'terminal_target_not_idle'),
+                                 (dict(focused=True), 'terminal_target_focused')):
+            with self.subTest(change=change):
+                self.fixture['host'].update(dict(agent_status='idle', focused=False), **change)
+                self.save_fixture()
+                condition, reason, _ = self.terminal_condition()
+                self.assertEqual(condition, expected)
+                self.assertRegex(reason, r'^0 eligible Herdr panes match this session \(\d+ not idle, \d+ focused\)')
+
+    def test_another_foreground_owner_is_missing_not_a_session_target(self):
+        self.fixture['process_info']['foreground_processes'] = [dict(pid=1)]
+        self.fixture['host']['agent_status'] = 'working'
+        self.save_fixture()
+        condition, _, _ = self.terminal_condition()
+        self.assertEqual(condition, 'terminal_target_missing')
+
+    def test_multiple_eligible_targets_remain_ambiguous_and_never_prompt(self):
+        self.fixture['extra_hosts'] = [dict(self.fixture['host'], pane_id='fixture:p2', terminal_id='terminal-two')]
+        self.save_fixture()
+        condition, reason, _ = self.terminal_condition()
+        self.assertEqual(condition, 'terminal_target_ambiguous')
+        self.assertTrue(reason.startswith('2 eligible Herdr panes match this session'), reason)
+
+    def test_busy_duplicate_does_not_make_one_eligible_target_ambiguous(self):
+        self.fixture['extra_hosts'] = [dict(self.fixture['host'], pane_id='fixture:p2', agent_status='working')]
+        self.save_fixture()
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(self.prompts()[0][2], 'fixture:p1')
+
+    def test_one_target_still_revalidates_after_a_missing_diagnosis(self):
+        self.fixture['host']['agent_session']['value'] = 'different-native'
+        self.save_fixture()
+        self.assertEqual(self.terminal_condition()[0], 'terminal_target_missing')
+        self.fixture['host']['agent_session']['value'] = 'native-one'
+        self.fixture['on_recheck'] = dict(revision=2)  # Target changed between list and submission.
+        self.save_fixture()
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.prompts(), [])
+        state = json.loads(self.path.read_text())
+        self.assertNotIn('idle_wake', state)
+        self.assertEqual(self.observations()[-1]['condition'], 'none')  # Old missing cause is not restamped.
+        self.fixture.pop('on_recheck')
+        self.save_fixture()
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertNotIn('wake_refusal', json.loads(self.path.read_text()))
+
     def test_claude_without_channel_never_falls_back_to_terminal(self):
         self.config['harness'] = 'claude'
         self.agent['metadata']['harness'] = 'claude'

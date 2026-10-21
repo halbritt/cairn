@@ -45,6 +45,35 @@ the cause of another delivery's delay. Missing or stale observations mean
 unknown. An empty readiness hint does not establish an empty inbox: busy
 sessions, retained holds, and admission rules can prevent a new claim.
 
+### Terminal wake target conditions
+
+The Herdr terminal route admits a wake only when exactly one pane is both this
+session's own terminal (harness, native session or Codex rollout association,
+and foreground ownership by the observed process) and idle/done and unfocused.
+Anything else is refused with one of these conditions:
+
+| Condition | Host observation |
+| --- | --- |
+| `terminal_target_missing` | No pane identifies this session. |
+| `terminal_target_not_idle` | Only panes that are not idle/done (working, blocked or unknown) identify it. |
+| `terminal_target_focused` | Only idle panes that are focused identify it. |
+| `terminal_target_ambiguous` | More than one eligible pane matches. |
+| `terminal_host_unavailable` | The native process has no Herdr host environment. |
+
+The watcher log reports only pane counts. Pane IDs, terminal content and
+process environments are not included in the observation. Before 2026-10-21
+hosts reported every count other than one as `terminal_target_ambiguous`; those
+stored rows remain readable, but an older ambiguous report may describe zero
+matching panes. None of these conditions causes a pane to be selected, a prompt
+to be injected, work to be replayed or a session to be restarted. With exactly
+one eligible pane, the watcher still revalidates pane, terminal, revision,
+state sequence, process ownership and Cairn readiness before submission; a
+target that changed in between defers to a later cycle.
+
+Waiting is not explicit acknowledgement. A delivery that stays pending behind
+any of these conditions has not been claimed or handled, however long it waits.
+Only a native claim and explicit handling record progress.
+
 A missing transport suggests inspecting the recipient's configured native
 delivery route. A retained submitted or uncertain wake suggests inspecting that
 exact wake and native handling. Neither observation authorizes a new wake,

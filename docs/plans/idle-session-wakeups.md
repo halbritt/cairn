@@ -29,7 +29,9 @@ Herdr's native session ID identifies Claude, Agy, OpenCode and Hermes when their
 installed integrations report it. For Codex, which currently omits that field,
 the unique open rollout-file UUID supplies the association. No transcript body
 is read. Missing or ambiguous evidence causes deferral, never a replacement
-conversation or a guessed pane.
+conversation or a guessed pane. The refusal distinguishes no identifying pane,
+only non-idle or only focused identifying panes, and several eligible panes; see
+[terminal wake target conditions](../delivery-health.md#terminal-wake-target-conditions).
 
 Immediately before submission the watcher rechecks pane/terminal identity,
 revision, state sequence, process ownership and Cairn readiness. It writes an

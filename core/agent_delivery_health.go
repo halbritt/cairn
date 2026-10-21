@@ -32,7 +32,10 @@ var observationScopes = map[string]string{
 	"channel_unconfigured":         "session",
 	"native_transport_unavailable": "session",
 	"terminal_host_unavailable":    "session",
-	"terminal_target_ambiguous":    "session",
+	"terminal_target_ambiguous":    "session", // More than one eligible pane.
+	"terminal_target_missing":      "session", // No pane identifies this session.
+	"terminal_target_not_idle":     "session", // Only non-idle panes identify this session.
+	"terminal_target_focused":      "session", // Only focused idle panes identify this session.
 	"owner_turn_required":          "session",
 	"busy":                         "session",
 	"unknown":                      "session",

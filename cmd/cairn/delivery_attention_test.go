@@ -375,3 +375,23 @@ func TestCoordinationReviewAgent463IncidentAndNotifications(t *testing.T) {
 		t.Fatalf("publisher_notifications second run: %+v %v", review.Attention, err)
 	}
 }
+
+func TestAttentionDistinguishesMissingFromAmbiguousTerminalTargets(t *testing.T) {
+	checks := map[string]string{}
+	for _, condition := range []string{"terminal_target_missing", "terminal_target_not_idle", "terminal_target_focused", "terminal_target_ambiguous", "terminal_host_unavailable"} {
+		result, _, err := summarizeAttention([]attentionDelivery{attentionFixture("one", "request", condition)}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
+		if err != nil || len(result.Changed) != 1 || result.Changed[0].Condition != condition {
+			t.Fatalf("%s: %+v %v", condition, result, err)
+		}
+		next := result.Changed[0].NextCheck
+		for other, seen := range checks {
+			if seen == next {
+				t.Fatalf("%s and %s share next check %q", condition, other, next)
+			}
+		}
+		if !strings.Contains(next, "not acknowledgement") {
+			t.Fatalf("%s next check does not say waiting is not acknowledgement: %q", condition, next)
+		}
+		checks[condition] = next
+	}
+}

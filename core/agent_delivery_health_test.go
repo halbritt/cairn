@@ -444,3 +444,23 @@ func TestDeliveryDiagnosisWithholdsLocalOnlyObservation(t *testing.T) {
 	_, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{Session: f.ref, DeliveryID: privateDelivery, Condition: "channel_not_launched", ObservedAt: dbNow(t, f.receiver)}, f.dest)
 	requireCode(t, err, "NOT_FOUND")
 }
+
+// Terminal target refusals stay distinguishable through the store, and the
+// legacy ambiguity condition already retained in older rows remains readable.
+func TestTerminalTargetConditionsAreDistinctAndLegacyReadable(t *testing.T) {
+	f := newHealthFixture(t)
+	event, delivery := f.publish(t, "request", f.agent.Inbox)
+	for _, condition := range []string{"terminal_target_missing", "terminal_target_not_idle", "terminal_target_focused", "terminal_target_ambiguous"} {
+		got := f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: condition, ObservedAt: dbNow(t, f.receiver)})
+		if !got.Applied || got.Observation.Condition != condition || got.Observation.Scope != "session" || got.Observation.DeliveryID != delivery {
+			t.Fatalf("%s: %+v", condition, got)
+		}
+		diag := f.diagnosis(t, event.EventID)
+		if diag.Host == nil || diag.Host.Condition != condition || diag.Host.Applies != "exact" || diag.Host.Freshness != "current" {
+			t.Fatalf("%s diagnosis: %+v", condition, diag.Host)
+		}
+	}
+	// A terminal refusal still names the exact observed delivery.
+	_, err := f.receiver.ObserveSessionDelivery(context.Background(), SessionDeliveryObservation{Session: f.ref, Condition: "terminal_target_missing", ObservedAt: dbNow(t, f.receiver)}, f.dest)
+	requireCode(t, err, "INVALID_REQUEST")
+}

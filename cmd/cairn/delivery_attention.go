@@ -239,6 +239,16 @@ func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (atten
 		g.NextCheck = "Inspect this delivery's retained wake and native handling; no new claim observed."
 	case "owner_turn_required":
 		g.NextCheck = "This recipient needs an owner turn for native delivery."
+	case "terminal_target_missing":
+		g.NextCheck = "No Herdr pane identifies this session; check that the session still runs in its own pane. Waiting is not acknowledgement."
+	case "terminal_target_not_idle":
+		g.NextCheck = "This session's Herdr pane is not idle; the wake waits for an idle boundary. Waiting is not acknowledgement."
+	case "terminal_target_focused":
+		g.NextCheck = "This session's idle Herdr pane is focused; terminal wake defers to the owner. Waiting is not acknowledgement."
+	case "terminal_target_ambiguous":
+		g.NextCheck = "Several eligible Herdr panes match this session; no pane is chosen. Waiting is not acknowledgement."
+	case "terminal_host_unavailable":
+		g.NextCheck = "The session's process has no Herdr host environment; no terminal wake is available. Waiting is not acknowledgement."
 	case "unknown":
 		g.NextCheck = "Check current recipient and host observations; the cause of delay is unknown."
 	default:

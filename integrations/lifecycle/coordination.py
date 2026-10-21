@@ -167,8 +167,22 @@ def bounded_herdr_command(command, environment):
 
 
 def host_matches(config, state, host, environment):
-    if (host.get('agent') != config['harness'] or host.get('agent_status') not in ('idle', 'done')
-            or host.get('focused') is not False):
+    """An eligible terminal target: this exact session, idle/done and unfocused."""
+    return host_eligible(host) and host_identifies_session(config, state, host, environment)
+
+
+def host_eligible(host):
+    return host.get('agent_status') in ('idle', 'done') and host.get('focused') is False
+
+
+def host_identifies_session(config, state, host, environment):
+    """Whether a pane is this session's own terminal, independent of its status.
+
+    Identity uses the same checks as admission: harness, native session (or the
+    Codex rollout association) and foreground process ownership. It reads no
+    terminal content and no process environment.
+    """
+    if host.get('agent') != config['harness']:
         return False
     native = state['agent']['native_session_id']
     session = host.get('agent_session')
@@ -676,11 +690,11 @@ def prepare_idle_wake(config, state, path, cycle=None):
         return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment',
                                 'terminal_host_unavailable', cycle)
     candidates = herdr_call(config, environment, 'agent', 'list')['agents']
-    matches = [h for h in candidates if host_matches(config, state, h, environment)]
+    identified = [h for h in candidates if host_identifies_session(config, state, h, environment)]
+    matches = [h for h in identified if host_eligible(h)]
     if len(matches) != 1:
-        return note_wake_refusal(config, state, delivery,
-            f'{len(matches)} idle Herdr panes match this session; exactly one is required',
-            'terminal_target_ambiguous', cycle)
+        reason, condition = terminal_target_diagnosis(identified, matches)
+        return note_wake_refusal(config, state, delivery, reason, condition, cycle)
     host = matches[0]
     current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
     keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
@@ -695,6 +709,26 @@ def prepare_idle_wake(config, state, path, cycle=None):
         target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
     write_state(path, state)
     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
+
+
+def terminal_target_diagnosis(identified, matches):
+    """Bounded refusal for anything other than exactly one eligible target.
+
+    Only counts of identity-matched panes are reported: no pane IDs, terminal
+    content or process environment. Exactly one eligible pane is still required;
+    none of these conditions selects or prompts a pane.
+    """
+    if len(matches) > 1:
+        return (f'{len(matches)} eligible Herdr panes match this session; exactly one is required',
+                'terminal_target_ambiguous')
+    if not identified:
+        return ('no Herdr pane identifies this session (harness, native session and foreground '
+                'process); exactly one eligible pane is required', 'terminal_target_missing')
+    not_idle = sum(1 for h in identified if h.get('agent_status') not in ('idle', 'done'))
+    focused = sum(1 for h in identified if h.get('focused') is not False)
+    reason = (f'0 eligible Herdr panes match this session ({not_idle} not idle, {focused} focused); '
+              'exactly one idle unfocused pane is required')
+    return reason, 'terminal_target_not_idle' if not_idle else 'terminal_target_focused'
 
 
 def process_identity(ref):
