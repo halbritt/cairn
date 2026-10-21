@@ -161,6 +161,15 @@ elif mode == 'baseline_identity':
     retain_baseline(target, seed=target['seed'] + 1)
 elif mode == 'baseline_policy':
     baseline_path(target['run_id']).chmod(0o644)
+elif mode.startswith('baseline_raw:'):
+    # A malformed retained document whose pin is updated to match its bytes.
+    raw = dict(null=b'null', number=b'5', string=b'"baseline"', bool=b'true', list=b'[{"schema": 1}]',
+               keys=b'{"schema": "cairn.attempt-baseline/1"}',
+               types=b'{"schema": "cairn.attempt-baseline/1", "identity": [], "snapshot": [], "base_commit": 1, "repository": null}',
+               invalid=b'{broken', deep=b'[' * 100000 + b']' * 100000)[mode.split(':', 1)[1]]
+    path = baseline_path(target['run_id'])
+    path.write_bytes(raw)
+    target['baseline_custody'] = dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
 
 for row, text in rows:
     base = out / 'runs' / row['run_id']
@@ -768,6 +777,21 @@ class WeeklyRunTests(unittest.TestCase):
                 self.assertEqual((receipt['status'], receipt['code']), (status, code))
                 self.assertIsNone(receipt['pair_binding'])
                 self.assertFalse((self.runs / receipt['slot_id'] / 'pair-binding.json').exists())
+
+
+    def test_malformed_retained_baseline_documents_end_in_a_terminal_rejected_receipt(self):
+        for shape in ('null', 'number', 'string', 'bool', 'list', 'keys', 'types', 'invalid', 'deep'):
+            with self.subTest(shape=shape):
+                self.tearDown()
+                self.setUp()
+                self.executor.harness_mode = 'baseline_raw:' + shape
+                receipt = self.run_weekly()
+                self.assertEqual((receipt['status'], receipt['code']), ('rejected', 'attempt_baseline_invalid'))
+                self.assertIsNone(receipt['pair_binding'])
+                stored = json.loads((self.runs / receipt['slot_id'] / 'receipt.json').read_text())
+                self.assertEqual(stored['code'], 'attempt_baseline_invalid')
+                self.assertEqual(self.run_weekly()['replayed'], True)
+                self.assertEqual(len(self.executor.executed), 1)
 
 
 if __name__ == '__main__':

@@ -271,7 +271,12 @@ Outcomes:
 - A missing pin gives `incomplete` / `attempt_baseline_missing`.
 - A missing file, tampered bytes, another attempt's baseline (swapped), a
   wrong identity or a wrong file policy gives `rejected` /
-  `attempt_baseline_invalid`.
+  `attempt_baseline_invalid`. So does a malformed retained document whose
+  pin matches its bytes: JSON `null`, a scalar, a list, wrong or missing
+  keys, wrong types, invalid JSON or JSON nested too deeply. The runner
+  catches only these data errors (`BaselineError`, `TypeError`,
+  `ValueError`, `KeyError`, `RecursionError`) around the unchanged load, so
+  the receipt is terminal, and a started slot is never retried.
 - No baseline is ever reconstructed.
 - A complete receipt records `baseline_custody: {verified: 126, proof:
   harness_retained_baseline}`.
@@ -320,9 +325,11 @@ strength:
 3. Neither shows how a native binary or account behaves at runtime; that
    still needs the live run's own evidence.
 
-Neither (1) nor (2) is implemented here. (1) needs an issuer role and a
-schema decision from root, and (2) changes the runner's pre-claim cost and
-needs a test-selection contract.
+This section is a proposal only. Neither (1) nor (2) is implemented, no
+reviewer role is made mandatory, and no self-tests run at runtime. Both
+need a separate design decision by root: (1) needs an issuer role and a
+schema, and (2) would change the runner's pre-claim cost and needs a
+test-selection contract.
 
 ## Joins to an actual campaign
 

@@ -521,7 +521,9 @@ def _limit_result(result, run_dir, records, spec):
         try:
             custody.AttemptBaseline.load(base, dict(id=record['case'], cwd=task['cwd']), record['arm'],
                                          record['seed'], record['baseline_custody'])
-        except custody.BaselineError:
+        except (custody.BaselineError, TypeError, ValueError, KeyError, RecursionError):
+            # Malformed retained data only (wrong JSON shape, scalar, null, invalid or
+            # too-deep JSON); OS and process failures are not caught here.
             return dict(result, status='rejected', code='attempt_baseline_invalid')
         try:
             stream = _read_limited(base / 'stream.jsonl')
