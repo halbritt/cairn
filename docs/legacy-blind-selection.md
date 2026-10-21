@@ -57,8 +57,8 @@ legacy runs, including the 2026-09-29 run, therefore refuse
 `original_attempt_provenance_unavailable`. Grading release from them has no
 custody for the original attempt's content.
 
-**Resolution.** `trial_task_eval.run_agent` now writes the exact stream bytes
-and records `stream_sha256` and `prompt_sha256` (the prompt actually sent) in
+**Resolution.** `trial_task_eval.run_agent` now records the retained stream bytes
+and `stream_sha256` and `prompt_sha256` (the prompt actually sent) in
 each legacy attempt record, in both `result.json` and `agent.json`. The
 converter requires both hashes on every record. The stream bytes must hash to
 `stream_sha256` (`legacy_attempt_content_mismatch`). The supplied task
@@ -67,7 +67,9 @@ statement must hash to `prompt_sha256` and match `prompt_bytes`
 only as a consistency check. These hashes are the harness's own testimony,
 written by the same process that wrote the stream. A later substitution is
 detected only because the binding pins the `agent.json` hash. They are not
-independent custody.
+independent custody. The legacy path decodes subprocess stdout with replacement
+before encoding `stream.jsonl`; invalid UTF-8 therefore prevents interpreting
+this digest as the original subprocess-byte digest.
 
 **Declared and observed stay separate.** The receipt has:
 
@@ -106,12 +108,15 @@ legacy defects. Their effect on this converter, checked against current
   converter reads no memory record IDs and no delivery evidence, so pair
   identity does not depend on them.
 - **Join between setup, commit and snapshot.** Legacy `prepare_workspace`
-  does not verify the workspace base. For this reason the converter emits no
+  checks optional `workspace_commit`, tags `eval-base`, and records the initial
+  file snapshot. These checks do not bind a stopped attempt's final workspace,
+  index/refs or grader execution to this converter. It therefore emits no
   `artifact_bundle`, `action_trace` or `evaluator_observation`. A contract
   that requires any of them refuses `legacy_channel_unbound`. The
-  deterministic outcome that selects a pair rests on that same unverified
-  setup. Both arms use the same setup, so it is applied equally to each, but
-  it is not verified.
+  deterministic outcome comes from the harness's evaluator testimony, not an
+  independently bound captured workspace. The SDK weekly path separately has
+  a selected-root setup owner; it is not wired into legacy conversion. See
+  [the current source review and integration design](original-attempt-custody.md).
 - **Run ID map.** `run_id` is `case.arm.sSEED` (`trial_task_eval.py:1048`).
   This map is not injective when a case or arm contains a dot, so dotted
   names refuse `legacy_attempt_identity_ambiguous`. So do a `run_id` that
@@ -218,6 +223,8 @@ Remaining work:
 - a reviewed issuer for the pair binding (the weekly runner lane), which
   ties request identity and arm roles to the commits that were actually run
 - the owner-held release authority and grader choice for delivery
-- artifact, trace and evaluator-observation channels, which need an owned
-  workspace setup and an observation contract
+- artifact, trace and evaluator-observation channels, whose original per-case
+  requirements are not established by the public schema alone; they need the
+  selected contract and completed-attempt capture/evaluator joins described in
+  [the custody design](original-attempt-custody.md)
 - conversion of a real run, then delivery, grading and the agreement report

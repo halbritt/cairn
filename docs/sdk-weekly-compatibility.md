@@ -1,10 +1,17 @@
 # Original weekly compatibility correction
 
-Status: source-only candidate; DO_NOT_ADOPT for runtime. The selected source is
+Status: source-only compatibility history; not runtime admission. The original
+review selected source is
 b1e16415's trial_task_eval.py, Git blob 6655a423fbfb16e438eb6bf39ef24c8890dca17e,
 SHA256 4ad15e6a32765b96f842b7a3f1815e765b60a85ea771fa59ec1c31b325b0b087.
 Complete retained run_agent, cmd_agent, prepare_workspace, TrialStore,
 import_provenance and distractor units establish the following contract.
+
+Current-source reconciliation at `04ba225` (2026-10-21): the workspace and
+corpus owners described below now exist. The earlier selected source remains
+historical evidence, not the current implementation. See
+[original attempt custody](original-attempt-custody.md) for source locations,
+remaining final-artifact/evaluator joins and missing per-case channel metadata.
 
 ## Implemented joins
 
@@ -37,35 +44,43 @@ seed zero. The original seven-field provider plan is unchanged.
 Do not call legacy cmd_agent/run_agent directly as the weekly adapter. Their
 nonprospective load_cases/load_corpus calls select default latest, and
 prepare_workspace resolves default TRIAL. The loader's selected workspace_paths
-are not an owned setup execution capability. A source-owned workspace constructor
-must consume the selected case/root/version, copy excluding root setup.sh and
-__pycache__, run the selected setup with original fixed Git identity/date,
-check requested workspace_commit, tag eval-base, and retain the exact initial
-snapshot. It must bind that actual workspace result to SDK preparation; a
-workspace_sha256 declaration alone does not do so. No setup/bash/git was run.
+alone are not an owned setup execution capability.
+`WeeklyWorkspaceOwner.prepare` in `trial_sdk_weekly_owners.py` now consumes the
+held selected case/root/version, checks its manifest before and after setup,
+and calls `prepare_workspace` with an explicit `source_root`. That function
+copies excluding root setup.sh and __pycache__, uses the fixed Git identity/date,
+checks optional workspace_commit, tags eval-base and retains the initial snapshot.
+The owner also retains HEAD and original refs; `verify_preparation` and
+`WeeklyEnvironmentOwner.bind_run` join the workspace digest and actual cwd to
+SDK preparation. These source joins have synthetic tests, not original setup or
+campaign evidence. Final artifact/index/ref capture and evaluator custody remain
+separate from the initial workspace binding.
 Memory instruction parity and selected native binary/arm engine/hook/bridge and
 embedding configuration identity still need actual held launch/source joins.
 Model/effort binding does not discharge these obligations.
 
-An actual corpus owner must preserve TrialStore.remember's fixture-ID to actual
+`WeeklyStoreOwner.prepare` now preserves TrialStore.remember's fixture-ID to actual
 record-ID maps (both directions), entity-association verification, provenance,
 seed_corpus's import-then-supersede transitions, distractor growth, and shared
-embedding readiness before warm timing. It must own actual service load results
-and relate selected bytes to those IDs and same-store pre/post observations.
+embedding readiness before warm timing. It retains service load results
+and relates selected inputs to those IDs and same-store pre/post observations.
 corpus-fingerprint/2 contains generated IDs/times and compares a DB to itself;
 it is neither a selected-overlay digest nor a cross-import equivalence proof.
-TrialStore.stop kills on timeout without waiting again; preserve that as legacy
-behavior to correct in an owned lifecycle, not containment-release evidence.
-FixedServiceLaunch/RuntimeBinding currently own policy/config/processes, not
-this corpus loading contract. This is authored implementation work, not an
-owner-permission barrier or justification for another SDK acquisition.
+At this review's baseline, TrialStore.stop kills on timeout without waiting
+again; agent501 owns that legacy cleanup correction. The SDK weekly store owner
+already performs a second wait itself and retains unknown cleanup.
+`WeeklyEnvironmentOwner` owns cluster/store loading and joins its actual store
+policy into the fixed run. These source mechanisms and synthetic observations
+do not establish actual original corpus import or containment release.
 
-The next critical source lane is that corpus-load owner and its workspace/setup
-handoff, tested with synthetic service responses at the actual import/supersede/
-entity/readiness boundary. It must retain uncertainty and real cleanup authority;
-no caller success boolean or flat seed-only loader can stand in for it. Supported
-native launch, complete physical bounds/standing admission, containment exporter,
-blind comparison and both grader joins remain additional full-goal requirements.
+`test_trial_sdk_weekly_owners.py` exercises the import/supersede/entity/readiness
+and workspace handoff boundaries with synthetic service/process responses,
+including partial setup/import and cleanup uncertainty. Do not implement a
+second flat loader or constructor in place of these owners. The remaining
+attempt-content lane needs selected per-case release contracts and final
+workspace/action/evaluator custody. Selected native compatibility, complete
+physical bounds, containment export, blind comparison and both grader joins
+remain full-goal requirements.
 
 ## Validation and resource scope
 
@@ -83,5 +98,11 @@ There is no new per-note limit and no fixed-scratch claim. Complete validation
 precedes destination creation; interrupted output still belongs to the snapshot
 and original preparation failure charge. Parsed notes/metadata, source snapshots,
 retained exception frames and allocator/kernel/internal storage remain unbounded
-by the current physical proof. All 56 phase-table physical bounds remain unknown;
-transitions stay disabled. Raw reservations remain 136353/153325 against 131072.
+by the current physical proof. The historical 56-row phase table describes its
+selected fixture, including the caller-selected 65536 preparation raw quote
+and 136353/153325 totals. Those totals are not a universal current launch
+refusal: `trial_sdk_source_profile.py` supplies the current named preparation
+profile, and integrated synthetic native launch/dispatch is exercised under the
+original caps. See [SDK launch and hosted retrieval](sdk-native-launch.md) for
+the current allocations and limitations. Logical resource admission and these
+synthetic tests do not establish physical fit or weekly campaign acceptance.
