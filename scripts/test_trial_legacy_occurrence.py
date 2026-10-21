@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import subprocess
+import uuid
 from types import SimpleNamespace
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -38,7 +39,7 @@ class FakeNotes:
             self.lose_response -= 1
             raise subprocess.TimeoutExpired(argv, timeout)
         return SimpleNamespace(stdout=json.dumps(dict(status='OK', data=dict(
-            record_id='record-' + request_id, version=1, body=input))))
+            record_id=str(uuid.uuid5(uuid.NAMESPACE_URL, request_id)), version=1, body=input))))
 
     def publisher(self, built):
         return report.publish_note(built, binary='cairn', token_file='/synthetic/token', repo='/synthetic/repo',
@@ -283,6 +284,80 @@ class IncompleteEvidenceTests(Case):
         self.assertEqual(len(o.notes.store), 1)
         o.run(fabric=False)
         self.assertEqual(len(o.notes.calls), 2)
+
+
+class PublicationReceiptTests(Case):
+    """agent-341's reproduction: a publisher returning only the request ID."""
+
+    def run_with(self, o, publisher):
+        return occurrence.run_occurrence(o.pin_input(), o.out, publisher=publisher, now=NOW)
+
+    def test_a_new_publication_without_a_usable_store_reference_refuses(self):
+        def returns(make):
+            return lambda built: make(report.note_draft(built)['request_id'])
+        cases = {
+            'no_ref': returns(lambda rid: dict(request_id=rid)),
+            'null_ref': returns(lambda rid: dict(request_id=rid, record_id=None, version=1)),
+            'malformed_ref': returns(lambda rid: dict(request_id=rid, record_id='record-1', version=1)),
+            'nil_uuid': returns(lambda rid: dict(request_id=rid, record_id=str(uuid.UUID(int=0)), version=1)),
+            'zero_version': returns(lambda rid: dict(request_id=rid, record_id=str(uuid.uuid4()), version=0)),
+            'bool_version': returns(lambda rid: dict(request_id=rid, record_id=str(uuid.uuid4()), version=True)),
+            'string_version': returns(lambda rid: dict(request_id=rid, record_id=str(uuid.uuid4()), version='1')),
+        }
+        for name, publisher in cases.items():
+            with self.subTest(name=name):
+                o = Occurrence(self.root/name, lambda i, s: UNCHANGED)
+                with self.assertRaisesRegex(paired.Refusal, '^occurrence_publication_invalid$'):
+                    self.run_with(o, publisher)
+                self.assertEqual(list((o.out/'phases').glob('publication-*')), [])
+                state = o.run(fabric=False, publish=False)
+                self.assertEqual((state['pending'], state['note_published'], state['complete']),
+                                 ('note_publication_unconfigured', False, False))
+
+    def test_a_mismatched_request_id_refuses(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        with self.assertRaisesRegex(paired.Refusal, '^occurrence_publication_mismatch$'):
+            self.run_with(o, lambda built: dict(request_id=str(uuid.uuid4()), record_id=str(uuid.uuid4()), version=1))
+        self.assertEqual(list((o.out/'phases').glob('publication-*')), [])
+
+    def test_a_valid_reference_publishes_exactly_once(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        state = o.run(fabric=False)
+        self.assertEqual((state['note_published'], state['complete']), (True, True))
+        publication = next(p for p in state['phases'] if p['phase'] == 'publication')
+        self.assertEqual(str(uuid.UUID(publication['record_id'])), publication['record_id'])
+        self.assertEqual(publication['version'], 1)
+        o.run(fabric=False)
+        self.assertEqual(len(o.notes.calls), 1)
+
+    def test_a_replayed_publication_record_with_empty_or_tampered_details_refuses(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        o.run(fabric=False)
+        path = next((o.out/'phases').glob('publication-*'))
+        original = json.loads(path.read_bytes())
+        tamper = {
+            'empty_publication': lambda r: r.update(publication={}),
+            'no_publication': lambda r: r.pop('publication'),
+            'request_id': lambda r: r['publication'].update(request_id=str(uuid.uuid4())),
+            'record_id': lambda r: r['publication'].update(record_id='not-a-uuid'),
+            'version': lambda r: r['publication'].update(version=0),
+            'report': lambda r: r['publication'].update(report_sha256='0'*64),
+            'schema': lambda r: r.update(schema='other'),
+            'phase': lambda r: r.update(phase='publication-other'),
+            'phase_id': lambda r: r.update(phase_id='0'*64),
+            'outputs': lambda r: r.update(outputs=dict(extra=None)),
+            'extra_field': lambda r: r.update(extra=1),
+        }
+        for name, mutate in tamper.items():
+            with self.subTest(name=name):
+                record = json.loads(json.dumps(original)); mutate(record)
+                path.chmod(0o600); path.write_bytes(C(record))
+                with self.assertRaisesRegex(paired.Refusal, '^occurrence_publication-[0-9a-f]{20}_record_invalid$|'
+                                                            '^occurrence_publication_record_invalid$'):
+                    o.run(fabric=False)
+        path.write_bytes(C(original))
+        self.assertIs(o.run(fabric=False)['complete'], True)
+        self.assertEqual(len(o.notes.calls), 1)
 
 
 class ResumeTests(Case):

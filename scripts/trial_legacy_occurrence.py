@@ -27,6 +27,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import uuid
 
 import trial_blind_packet_draft as blind
 import trial_grading_custody as custody
@@ -95,7 +96,10 @@ class _Phases:
         if not path.exists():
             return None
         record = blind._json(legacy._read_path(path))
+        need(isinstance(record, dict) and record.get('schema') == PHASE_SCHEMA and record.get('phase') == phase
+             and isinstance(record.get('outputs'), dict), f'occurrence_{phase}_record_invalid')
         need(record.get('inputs') == inputs, f'occurrence_{phase}_input_changed')
+        need(record.get('phase_id') == paired.canonical_sha(inputs), f'occurrence_{phase}_record_invalid')
         for reference in record['outputs'].values():
             if reference is not None:
                 _verify(reference, f'occurrence_{phase}_output_changed')
@@ -301,7 +305,13 @@ def _publish(phases, snapshot, built, publisher):
     path = phases.dir/(phase+'.json')
     if path.exists():
         record = phases.recorded(phase, inputs)
-        phases.note('publication', 'published', snapshot=snapshot, request_id=draft['request_id'])
+        # A recorded receipt is re-validated in full; empty or tampered details refuse.
+        need(set(record) == {'schema', 'phase', 'phase_id', 'inputs', 'outputs', 'publication'}
+             and record['outputs'] == {}, 'occurrence_publication_record_invalid')
+        _receipt(record['publication'], draft['request_id'], built['report_sha256'],
+                 'occurrence_publication_record_invalid')
+        phases.note('publication', 'published', snapshot=snapshot, request_id=draft['request_id'],
+                    record_id=record['publication']['record_id'], version=record['publication']['version'])
         return record, None
     if publisher is None:
         phases.note('publication', 'pending', snapshot=snapshot, request_id=draft['request_id'])
@@ -320,9 +330,26 @@ def _publish(phases, snapshot, built, publisher):
         return None, 'note_publication_uncertain_retry'
     need(isinstance(published, dict) and published.get('request_id') == draft['request_id'],
          'occurrence_publication_mismatch')
-    record = phases.complete(phase, inputs, {}, publication=dict(published))
-    phases.note('publication', 'published', snapshot=snapshot, request_id=draft['request_id'])
+    receipt = dict(request_id=published['request_id'], record_id=published.get('record_id'),
+                   version=published.get('version'), report_sha256=built['report_sha256'])
+    # Only a usable store reference publishes; anything else refuses and nothing is recorded.
+    _receipt(receipt, draft['request_id'], built['report_sha256'], 'occurrence_publication_invalid')
+    record = phases.complete(phase, inputs, {}, publication=receipt)
+    phases.note('publication', 'published', snapshot=snapshot, request_id=draft['request_id'],
+                record_id=receipt['record_id'], version=receipt['version'])
     return record, None
+
+
+def _receipt(receipt, request_id, report_sha256, code):
+    """An exact store reference: canonical record UUID, positive version, the expected request."""
+    need(isinstance(receipt, dict) and set(receipt) == {'request_id', 'record_id', 'version', 'report_sha256'}
+         and receipt['request_id'] == request_id and receipt['report_sha256'] == report_sha256
+         and type(receipt['version']) is int and receipt['version'] >= 1 and type(receipt['record_id']) is str, code)
+    try:
+        need(str(uuid.UUID(receipt['record_id'])) == receipt['record_id'] and receipt['record_id'] != str(uuid.UUID(int=0)),
+             code)
+    except ValueError:
+        raise paired.Refusal(code) from None
 
 
 def _grading(join, collection, routing):

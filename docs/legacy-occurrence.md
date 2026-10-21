@@ -118,6 +118,17 @@ note's request ID is derived from the exact report by `note_draft`. An
 interrupted publication is replayed with the same request ID, and the
 publication is recorded once per snapshot.
 
+The publisher must return an exact store reference. That is the expected
+`request_id`, a canonical non-nil `record_id` UUID and an integer
+`version` of at least 1. A missing or malformed reference refuses
+`occurrence_publication_invalid`, and a different request ID refuses
+`occurrence_publication_mismatch`. In both cases nothing is recorded. The
+recorded receipt is `{request_id, record_id, version, report_sha256}`. On
+replay the phase envelope is re-validated in full: schema, phase name,
+`phase_id`, inputs, empty outputs and the receipt fields. Empty or tampered
+details refuse. Every phase record is checked for its schema, phase name and
+`phase_id` before it is reused.
+
 The state's `complete` is true only when the occurrence is finished, its note
 is published and the report is `declared_complete`. A note draft or missing
 grades never count. `runtime_admitted` and `grades_created` are false, and
