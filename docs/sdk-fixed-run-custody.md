@@ -1,5 +1,10 @@
 # Fixed run custody candidate
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 This source-only candidate extends frozen6cf4bd0. It keeps original allocations,
 source restrictions, deadlines and unsupported native admission. No source test
 or `closed` status grants launch, native compatibility, physical fit or task

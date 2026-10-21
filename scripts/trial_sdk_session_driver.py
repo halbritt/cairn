@@ -182,8 +182,25 @@ class SDKSessionDriver:
             self._busy = False
 
     def require_complete(self):
-        self.source_bindings()
-        raise PreparationRefusal('hook_interface_unavailable')
+        self.verify_sources()
+        if self._custody.control._memory is None:
+            raise PreparationRefusal('hook_interface_unavailable')
+        if self._resources is None or self._pump._memory_deadline is None:
+            raise PreparationRefusal('sdk_native_resources_unbound')
+
+    @resource_boundary
+    def memory_reply(self, request_id, result):
+        self._live()
+        self._busy = True
+        try:
+            if self._terminal_observed is not None:
+                raise SessionDriverError('sdk_session_input_ended')
+            self._pump.memory_reply(request_id, result)
+        except BaseException:
+            self._poison()
+            raise
+        finally:
+            self._busy = False
 
     def _poison(self):
         self._failure = self._failure or 'sdk_session_operation_failed'

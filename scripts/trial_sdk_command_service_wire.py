@@ -57,8 +57,8 @@ def parse_request(text, raw_bytes, operation):
     The caller binds these exact bytes to the transcript digest and operation.
     A returned request or plan confers no current-attempt read authority.
     """
-    names = ('search', 'pull', 'pull-evidence', 'history')
-    _require(type(operation) is int and 1 <= operation <= 4, 'service_request')
+    names = ('search', 'pull', 'pull-evidence', 'history', 'native-search', 'native-pull')
+    _require(type(operation) is int and 1 <= operation <= 6, 'service_request')
     try:
         graph = parse_document(text, raw_bytes)
     except IncomingError as exc:
@@ -186,7 +186,7 @@ class ServiceTranscript:
             _require(not self._attempt_failed, 'service_attempt_failed')
             _require(self._last_operation < operation <= MAX_OPERATION, 'service_operation')
             op, deadline, lease, raw, working, length, digest = fields
-            _require(op in (1, 2, 3, 4) and deadline > 0, 'service_request')
+            _require(op in (1, 2, 3, 4, 5, 6) and deadline > 0, 'service_request')
             _require(1 <= lease <= MAX_OPERATION, 'service_lease')
             _require(raw <= RAW_LIMIT and raw + working <= WORKING_LIMIT, 'service_quote')
             _require(1 <= length <= RAW_LIMIT, 'service_request_length')

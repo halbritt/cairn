@@ -13,6 +13,7 @@ import select
 import time
 
 from trial_sdk_control import SDKControlError
+from trial_sdk_mcp_control import MemoryRequest
 from trial_sdk_direct_writer import SDKDirectWriter
 from trial_sdk_session_resources import resource_boundary
 from trial_sdk_incoming import LineAssembler, MAX_DOCUMENT_BYTES, validate_line
@@ -50,6 +51,7 @@ class SDKStreamDriver:
         self._wait_reported = False
         self._completed = 0
         self._last_write_ns = None
+        self._memory_deadline = None
 
     def _now(self):
         now = time.monotonic_ns()
@@ -58,6 +60,8 @@ class SDKStreamDriver:
             raise StreamDriverError('sdk_stream_clock_unknown')
         self._clock = now
         if self._active is not None and now >= self._active['deadline_ns']:
+            if self._active.get('memory'):
+                self._control._refuse('sdk_memory_deadline')
             self._control.callback_timeout(self._active['request_id'])
         return now
 
@@ -112,6 +116,17 @@ class SDKStreamDriver:
             callback = self._control.receive_owned(document)
             if callback is None:
                 return StreamEvent('control')
+            if type(callback) is MemoryRequest:
+                if self._memory_deadline is None:
+                    raise StreamDriverError('sdk_memory_deadline_unbound')
+                self._active = dict(request_id=callback.request_id,
+                    request_sha256=hashlib.sha256(callback.request_id.encode()).hexdigest(),
+                    memory=True, first_byte_ns=first, deadline_ns=self._memory_deadline)
+                if self._native.snapshot()['wait'] is not None:
+                    raise StreamDriverError('sdk_stream_callback_after_wait')
+                self._now()
+                return StreamEvent('memory', callback=callback,
+                    observation={k: v for k, v in self._active.items() if k != 'request_id'})
             self._active = dict(request_id=callback.request_id,
                 request_sha256=hashlib.sha256(callback.request_id.encode()).hexdigest(),
                 row=len(self._control.ledger()['rows']) - 1,
@@ -149,6 +164,15 @@ class SDKStreamDriver:
     def _completed_reply(self):
         if self._active is None:
             return None
+        if self._active.get('memory'):
+            row = self._control._memory.rows[self._active['request_id']]
+            if not row['reply_written']:
+                return None
+            now = self._now()
+            observation = {k: v for k, v in self._active.items() if k != 'request_id'}
+            observation['completed_ns'] = now
+            self._active = None
+            return StreamEvent('memory_reply_written', observation=observation)
         row = self._control.ledger()['rows'][self._active['row']]
         if row['request_sha256'] != self._active['request_sha256']:
             raise StreamDriverError('sdk_stream_callback_drift')
@@ -160,6 +184,23 @@ class SDKStreamDriver:
         self._active = None
         self._completed += 1
         return StreamEvent('reply_written', observation=observation)
+
+    @resource_boundary
+    def memory_reply(self, request_id, result):
+        self._usable()
+        self._busy = True
+        try:
+            self._now()
+            if (self._active is None or not self._active.get('memory')
+                    or self._active['request_id'] != request_id):
+                raise StreamDriverError('sdk_stream_memory_binding')
+            self._control.memory_reply(request_id, result)
+            self._now()
+        except BaseException:
+            self._poison()
+            raise
+        finally:
+            self._busy = False
 
     def _read(self, name):
         before = self._native.io_receipt()

@@ -113,7 +113,7 @@ class RetentionTests(unittest.TestCase):
                 method=SessionStreamRetention._open if 'fds[name]' in needle else SessionStreamRetention.__init__
                 with self.assertRaises(KeyboardInterrupt):
                     interrupt_line(method,needle,lambda:owner.prepare(review,binding,self.config(),
-                        str(self.root/('fixed'+str(n))),str(self.root/'callbacks'),rf.AGGREGATE,rf.OP_QUOTE,
+                        str(self.root/('fixed'+str(n))),str(self.root/('callbacks'+str(n))),rf.AGGREGATE,rf.OP_QUOTE,
                         stream_output=str(self.root/('streams'+str(n)))))
                 owner.snapshot()
                 self.assertEqual(owner.cleanup_step(),'closed_unknown')

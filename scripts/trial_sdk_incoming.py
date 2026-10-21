@@ -568,15 +568,33 @@ def canonical_chunks(value):
     belongs to the caller. Refusal can follow earlier chunks, so size/hash first
     when partial output matters.
     """
-    buffer = bytearray()
+    # Fixed backing: bytearray += may overallocate beyond the named slab.
+    buffer = bytearray(MAX_CHUNK_BYTES)
+    used = 0
     for piece in _pieces(value):
         encoded = piece.encode('utf-8')
-        if len(buffer) + len(encoded) > MAX_CHUNK_BYTES:
-            yield bytes(buffer)
-            buffer.clear()
-        buffer += encoded
-    if buffer:
-        yield bytes(buffer)
+        if used + len(encoded) > MAX_CHUNK_BYTES:
+            yield bytes(memoryview(buffer)[:used])
+            used = 0
+        buffer[used:used + len(encoded)] = encoded
+        used += len(encoded)
+        encoded = None
+    if used:
+        yield bytes(memoryview(buffer)[:used])
+
+
+def canonical_fragments(value):
+    """Unbuffered canonical pieces for a streaming writer with its own cursor.
+
+    Each piece has at most 8190 raw bytes; release it before the next encode.
+    A consumer retaining its prior piece must charge that separate backing too.
+    """
+    for piece in _pieces(value):
+        encoded = piece.encode('utf-8')
+        try:
+            yield encoded
+        finally:
+            encoded = None
 
 
 def canonical_size_sha256(value):

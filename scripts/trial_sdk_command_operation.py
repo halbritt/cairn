@@ -9,10 +9,10 @@ import sys
 import time
 
 from trial_sdk_command_service_broker import ServiceLink
-from trial_sdk_memory_gate import MemoryDispatchGate, HookRequest
+from trial_sdk_memory_gate import MemoryDispatchGate, HookRequest, NativeRequest
 from trial_sdk_memory_command_job import RAW_RESERVATION, TEXT_RESERVATION
-from trial_sdk_engine_adapter import CommandTextOutcome
-from trial_sdk_incoming import BodyDecoder, canonical_chunks, canonical_size_sha256
+from trial_sdk_engine_adapter import CommandTextOutcome, _text_utf8_size
+from trial_sdk_incoming import BodyDecoder, canonical_chunks, canonical_size_sha256, parse_document
 import trial_sdk_command_service_wire as wire
 
 
@@ -85,6 +85,26 @@ class HookOperationForward:
         return self._operation.forward_hook(request, deadline_ns)
 
 
+class NativeOperationForward:
+    """Native lane of the same service and gate; never a direct MCP process."""
+    def __init__(self, link):
+        _require(type(link) is ServiceLink, 'operation_forward_link')
+        self.link, self._operation, self._gate = link, None, None
+
+    def bind(self, operation, gate):
+        _require(type(operation) is CommandOperation and operation.link is self.link
+                 and type(gate) is MemoryDispatchGate and gate._native_forward is self
+                 and (self._gate is None or self._gate is gate), 'operation_gate_binding')
+        prior = self._operation
+        _require(prior is None or prior._closed and prior._retired and not prior._unknown,
+                 'operation_forward_pending')
+        self._operation, self._gate = operation, gate
+
+    def __call__(self, request, deadline_ns):
+        _require(self._operation is not None, 'operation_forward_unbound')
+        return self._operation.forward_native(request, deadline_ns)
+
+
 class CommandOperation:
     """Exactly one operation; a returned gate forward retains this object.
 
@@ -119,6 +139,8 @@ class CommandOperation:
         self._rx_mode = self._tx_kind = None
         self._phase = 'unprepared'
         self._request = self._document = self._chunks = self._chunk = None
+        self._native_request = None
+        self._native_lane = False
         self._offset = self._request_size = 0
         self._digest = None
         self._data = self._data_grant = None
@@ -146,15 +168,35 @@ class CommandOperation:
             self.resources.freeze()
             raise
 
-    def bind_gate(self, gate):
+    def bind_gate(self, gate, *, native=False):
         _require(self._gate is None and type(gate) is MemoryDispatchGate,
                  'operation_gate_binding')
+        _require(type(native) is bool, 'operation_gate_binding')
+        if native:
+            _require(type(gate._native_forward) is NativeOperationForward,
+                     'operation_gate_binding')
+            gate._native_forward.bind(self, gate)
+            self._native_lane, self._gate = True, gate
+            return
         forward = gate._hook_forward
         _require(forward == self.forward_hook or type(forward) is HookOperationForward,
                  'operation_gate_binding')
         if type(forward) is HookOperationForward:
             forward.bind(self, gate)
         self._gate = gate
+
+    def prepare_native(self, tool, arguments, policy):
+        from trial_sdk_native_request import command_request
+        _require(self._native_lane and self._native_request is None,
+                 'operation_gate_binding')
+        try:
+            request = command_request(tool, arguments, policy)
+            self._native_request = NativeRequest(tool, parse_document(
+                request.body, _text_utf8_size(request.body)))
+            self.prepare_hook(request.operation, request.args, request.body)
+        except BaseException as exc:
+            self._poison(type(exc).__name__)
+            raise
 
     def _now(self):
         now = self._clock()
@@ -188,7 +230,8 @@ class CommandOperation:
         try:
             self._now()
             _require(type(operation) is str and operation in
-                     ('search', 'pull', 'pull-evidence', 'history') and
+                     (('native-search', 'native-pull') if self._native_lane else
+                      ('search', 'pull', 'pull-evidence', 'history')) and
                      type(args) is tuple and all(type(arg) is str for arg in args)
                      and (body is None or type(body) is str), 'operation_request')
             _require(body is None or sys.getsizeof(body) <= self.quote.job_body_working,
@@ -211,7 +254,7 @@ class CommandOperation:
 
     def forward_hook(self, request, deadline_ns):
         """Only the bound shared gate calls this after its sole logical debit."""
-        _require(self._dispatch_attempted and not self._forwarded and
+        _require(not self._native_lane and self._dispatch_attempted and not self._forwarded and
                  self._phase == 'prepared' and type(request) is HookRequest and
                  request == self._request and deadline_ns == self.deadline,
                  'operation_forward_binding')
@@ -219,6 +262,16 @@ class CommandOperation:
         if not self._stage(113, (40, 33), 'start'):
             return self
         self._queue(wire.START, self._a, self.lease)
+        return self
+
+    def forward_native(self, request, deadline_ns):
+        _require(self._native_lane and self._dispatch_attempted and not self._forwarded
+                 and self._phase == 'prepared' and type(request) is NativeRequest
+                 and request == self._native_request and deadline_ns == self.deadline,
+                 'operation_forward_binding')
+        self._forwarded = True
+        if self._stage(113, (40, 33), 'start'):
+            self._queue(wire.START, self._a, self.lease)
         return self
 
     def cancel(self, reason=1):
@@ -396,7 +449,7 @@ class CommandOperation:
         if self._phase == 'prepare':
             if not self._stage(32 + wire.STRUCTS[wire.PREPARE].size, (), None):
                 return
-            name = ('search', 'pull', 'pull-evidence', 'history').index(self._request.operation) + 1
+            name = ('search', 'pull', 'pull-evidence', 'history', 'native-search', 'native-pull').index(self._request.operation) + 1
             self._queue(wire.PREPARE, self._a, name, self.deadline, self.lease,
                         self.quote.child_raw, self.quote.child_working,
                         self._request_size, self._digest)
@@ -423,6 +476,10 @@ class CommandOperation:
                 return
             _require(not self._dispatch_attempted, 'operation_dispatch_consumed')
             self._dispatch_attempted = True
+            if self._native_lane:
+                self._handle = self._gate.native_start(self._native_request.tool,
+                                                       self._native_request.arguments)
+                return
             channel = self._gate.hook(self.deadline)
             try:
                 self._handle = channel.start(self._request.operation,
@@ -534,6 +591,7 @@ class CommandOperation:
                  'operation_retirement_pending')
         try:
             self._request = self._document = self._chunks = self._chunk = None
+            self._native_request = None
             self._decoders = self._result = None
             self._digest = None
             self.resources.release(self._parent)

@@ -79,6 +79,7 @@ class ResourceFailureTests(unittest.TestCase):
     def test_pump_failure_after_transfer_closes_source_and_native_owners(self):
         baseline = set(os.listdir('/proc/self/fd'))
         prepared, binding = self.setup_binding()
+        original_control = prepared.launch.control
         primary = RuntimeError('primary pump construction')
         with patch.object(sessions, 'SDKStreamDriver', side_effect=primary), \
                 patch.object(binding.resources, 'freeze', side_effect=KeyboardInterrupt('secondary')):
@@ -87,7 +88,9 @@ class ResourceFailureTests(unittest.TestCase):
         self.assertIs(caught.exception, primary)
         self.assertIn('resource_freeze_unknown', primary.cleanup_faults)
         self.assertTrue(prepared._transferred)
-        self.assertTrue(prepared.launch.control.ledger()['closed'])
+        self.assertTrue(original_control.ledger()['closed'])
+        with self.assertRaisesRegex(bootstrap.PreparationRefusal, 'sdk_review_transferred'):
+            prepared.launch
         self.assertTrue(binding.owner.snapshot()['release']['handles_detached'])
         self.assertEqual(set(os.listdir('/proc/self/fd')), baseline)
         self.assertTrue(binding.snapshot()['unknown'])

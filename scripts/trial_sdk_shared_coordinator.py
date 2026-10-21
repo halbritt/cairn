@@ -8,7 +8,7 @@ Returned events/output remain charged until their actual owners end all aliases.
 from dataclasses import dataclass
 import time
 
-from trial_sdk_command_operation import CommandOperation, HookOperationForward, unsupported_native
+from trial_sdk_command_operation import CommandOperation, HookOperationForward, NativeOperationForward, unsupported_native
 from trial_sdk_command_service_broker import ServiceLink
 from trial_sdk_engine_memory_rpc import ProducerRPC, RPCQuote
 from trial_sdk_memory_gate import MemoryDispatchGate
@@ -80,7 +80,8 @@ class SharedCoordinator:
                 and type(gate) is MemoryDispatchGate and type(link) is ServiceLink
                 and callable(clock), 'coordinator_binding')
         bank = session._resources.resources
-        require(link.resources is bank and gate._native_forward is unsupported_native
+        require(link.resources is bank and (gate._native_forward is unsupported_native or
+                type(gate._native_forward) is NativeOperationForward and gate._native_forward.link is link)
                 and type(gate._hook_forward) is HookOperationForward
                 and gate._hook_forward.link is link, 'coordinator_binding')
         session._live()

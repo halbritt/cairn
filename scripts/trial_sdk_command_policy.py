@@ -123,6 +123,11 @@ class FixedCommandPolicy:
         object.__setattr__(self,'context',tuple(normalized))
 
     def plan(self,operation,args=(),body=None):
+        if operation in ('native-search', 'native-pull'):
+            from trial_sdk_native_request import native_plan
+            if args:
+                _refuse()
+            return native_plan(self, operation, body)
         if (type(operation) is not str or operation not in ('search','pull','pull-evidence','history')
                 or type(args) is not tuple or any(type(arg) is not str for arg in args)
                 or body is not None and type(body) is not str):

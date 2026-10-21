@@ -171,6 +171,15 @@ class PairedEvidenceTests(unittest.TestCase):
 
     def test_actual_schema_rejection_does_not_import_legacy_evaluator(self):
         import sys
+        import subprocess
+        if os.environ.get('CAIRN_TEST_IMPORT_BOUNDARY') != '1':
+            environment = dict(os.environ, CAIRN_TEST_IMPORT_BOUNDARY='1')
+            completed = subprocess.run([sys.executable, '-B', '-m', 'unittest',
+                'test_trial_sdk_paired_evidence.PairedEvidenceTests.'
+                'test_actual_schema_rejection_does_not_import_legacy_evaluator'],
+                cwd=Path(__file__).parent, env=environment, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            return
         preparation,binding=self.setup_binding();selected=WeeklyPreparationOwner(preparation)
         self.addCleanup(selected.close)
         self.assertNotIn('trial_task_eval',sys.modules)

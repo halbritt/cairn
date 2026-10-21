@@ -1,5 +1,10 @@
 # Snapshot decoder and full phase-table disposition
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 _utf8_parts borrows the read block through memoryview. Only a carry of at most
 three bytes plus at most three new bytes is concatenated. Large remaining input
 is decoded through a view. Snapshot._readback still hashes every original byte,

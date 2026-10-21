@@ -23,6 +23,7 @@ from trial_sdk_incoming import BodyDecoder, MAX_DOCUMENT_BYTES, canonical_chunks
 from trial_sdk_engine_adapter import EngineMemoryAdapter, engine_context
 from trial_sdk_engine_memory_rpc_client import ProducerClient, ClientQuote
 from trial_sdk_command_service_runtime import serve
+from trial_sdk_peer import _prctl
 
 
 def read_document(source, expected, deadline_ns, *, clock=time.monotonic_ns):
@@ -100,6 +101,9 @@ def load_engine(directory, expected):
 
 def producer(source, target, bootstrap_sha256, deadline_ns, directory, engine_sha256):
     """Called only by the fixed parent's actual launch, never as a quote grant."""
+    # exec resets dumpability. Establish the same required socket-peer property
+    # as the fixed service before accepting bootstrap input or loading memory.
+    require(_prctl(4, 0) == 0 and _prctl(3) == 0, 'fixed_producer_dumpable')
     document = read_document(source, bootstrap_sha256, deadline_ns)
     require(document.get('deadline_ns') == deadline_ns, 'fixed_entry_deadline')
     # The original parent already holds the complete allocation before first

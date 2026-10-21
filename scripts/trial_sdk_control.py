@@ -12,10 +12,9 @@ import math
 import re
 import uuid
 
-from selected_native.evidence import EvidenceError
-from selected_native.frames import FrameError, parse
 from trial_sdk_incoming import (IncomingError, OwnedJSON, canonical_chunks,
                                 canonical_size_sha256, parse_document)
+from trial_sdk_mcp_control import MemoryControl, MemoryWrite
 
 
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure')
@@ -185,8 +184,8 @@ class SDKControl:
                 or not user_message.endswith(b'\n') or user_message.count(b'\n') != 1):
             raise SDKControlError('sdk_user_frame')
         try:
-            user = parse(user_message)
-        except (FrameError, EvidenceError):
+            user = parse_document(user_message.decode('utf-8'), len(user_message))
+        except (IncomingError, UnicodeError):
             error = 'sdk_user_frame'
         if error is not None:
             raise SDKControlError(error)
@@ -232,6 +231,7 @@ class SDKControl:
         self._empty_replies = {}
         self._failure, self._closed = None, False
         self._input_ended = False
+        self._memory = None
         if self._held_reply_bytes() > min(self.remaining_wire_bytes, self.remaining_selected_bytes):
             raise SDKControlError('sdk_input_budget')
 
@@ -239,6 +239,11 @@ class SDKControl:
     def bindings(self):
         return dict(session_id=self._session, initialize_request_id=self._initialize_id,
                     callback_ids=dict(self._callback_ids))
+
+    def enable_native_memory(self):
+        self.pristine_binding()
+        self._need(self._memory is None, 'sdk_memory_consumed')
+        self._memory = MemoryControl()
 
     def pristine_binding(self):
         """Non-consuming source-review projection of the actual initial writer.
@@ -255,6 +260,7 @@ class SDKControl:
             and self._user_written_bytes == self._written_bytes == 0
             and self._instruction_bytes == self._initial_instruction_bytes
             and not self._callbacks and not self._rows and not self._expected_replays
+            and (self._memory is None or not self._memory.rows)
             and not self._empty_replies and self._future_required == set(REQUIRED_EVENTS)
             and (self._session, self._initialize_id, tuple(self._callback_ids.items())) == self._initial_identity
             and type(self._user) is bytes and (len(self._user), _sha(self._user)) == self._initial_user
@@ -268,7 +274,8 @@ class SDKControl:
                 and self._reserved_wire == len(head.wire) + len(self._user))
         if not pristine:
             raise SDKControlError('sdk_control_not_pristine')
-        return dict(schema='cairn.sdk-pristine-control/1', profile='sdk-hooks/1',
+        return dict(schema='cairn.sdk-pristine-control/1',
+                    profile='sdk-hooks/1' if self._memory is None else 'sdk-hosted-memory/1',
                     bindings=self.bindings, user_message_bytes=len(self._user),
                     user_message_sha256=self._initial_user[1],
                     initialize_bytes=len(head.wire), initialize_sha256=self._initial_wire[1],
@@ -368,6 +375,8 @@ class SDKControl:
         if not self._queue:
             return None
         pending = self._queue[0]
+        if type(pending) is MemoryWrite:
+            return pending.pending(512 if maximum is None else maximum)
         end = None if maximum is None else pending.offset + maximum
         return pending.wire[pending.offset:end]
 
@@ -393,12 +402,24 @@ class SDKControl:
                    and all(row['reply_written'] for row in self._rows)
                    and not self._empty_replies, 'sdk_input_not_drained')
         self._need(not self._future_required, 'sdk_required_callbacks_unobserved')
+        self._need(self._memory is None or all(row['reply_written'] for row in self._memory.rows.values()),
+                   'sdk_memory_not_drained')
         self._input_ended = True
 
     def written(self, count):
         self._input_open()
         self._need(bool(self._queue), 'sdk_write_without_frame')
         head = self._queue[0]
+        if type(head) is MemoryWrite:
+            self._need(type(count) is int and 0 < count <= len(head.wire) - head.offset,
+                       'sdk_write_progress')
+            complete = head.written(count)
+            self._written_bytes += count
+            if complete:
+                self._queue.popleft()
+                self._memory.rows[head.request_id]['reply_written'] = True
+                self._queue_user()
+            return
         self._need(type(count) is int and 0 < count <= len(head.wire) - head.offset,
                    'sdk_write_progress')
         head.offset += count
@@ -425,7 +446,8 @@ class SDKControl:
 
     def _queue_user(self):
         if (self._initialized and not self._user_written and not self._user_enqueued and not self._queue
-                and all(row['reply_written'] for row in self._rows)):
+                and all(row['reply_written'] for row in self._rows)
+                and (self._memory is None or all(row['reply_written'] for row in self._memory.rows.values()))):
             self._queue.append(_Write('user', '', self._user))
             self._user_enqueued = True
             if not self._user_queued:
@@ -460,7 +482,7 @@ class SDKControl:
             error = ('sdk_frame_bounds' if exc.code in ('incoming_depth', 'incoming_graph_bounds',
                      'incoming_document_bytes', 'canonical_depth', 'canonical_graph_bounds')
                      else 'sdk_frame_shape')
-        except (FrameError, EvidenceError, UnicodeError, ValueError, TypeError, RecursionError):
+        except (UnicodeError, ValueError, TypeError, RecursionError):
             error = 'sdk_frame_shape'
         if error is not None:
             self._refuse(error)
@@ -516,11 +538,32 @@ class SDKControl:
         if kind == 'control_cancel_request':
             self._need(set(frame) == {'type', 'request_id'}, 'sdk_cancel_shape')
             ident = frame['request_id']
+            if type(ident) is str and self._memory is not None and ident in self._memory.rows:
+                self._memory.rows[ident]['cancelled'] = True
+                self._refuse('sdk_memory_cancelled')
             self._need(type(ident) is str and ident in self._callbacks, 'sdk_unknown_cancel')
             self._callbacks[ident]['cancelled'] = True
             self._refuse('sdk_callback_cancelled')
         self._need(kind == 'control_request', 'sdk_unknown_control')
+        if type(frame.get('request')) is dict and frame['request'].get('subtype') == 'mcp_message':
+            self._need(self._memory is not None, 'sdk_memory_unbound')
+            self._need(type(frame.get('request_id')) is str
+                       and frame.get('request_id') not in self._callbacks
+                       and frame.get('request_id') != self._initialize_id, 'sdk_memory_identity')
+            self._defer_unstarted_user()
+            return self._memory.receive(frame, metadata, self._need)
+        self._need(type(frame.get('request_id')) is str
+                   and frame.get('request_id') != self._initialize_id and
+                   (self._memory is None or frame.get('request_id') not in self._memory.rows),
+                   'sdk_callback_identity')
         return self._callback(frame, metadata)
+
+    def memory_reply(self, request_id, result):
+        self._input_open()
+        self._need(self._memory is not None, 'sdk_memory_unbound')
+        write = self._memory.reply(request_id, result, self._need)
+        self._queued_bytes += write.size
+        self._queue.append(write)
 
     def _response(self, frame):
         self._need(set(frame) == {'type', 'response'} and type(frame['response']) is dict,

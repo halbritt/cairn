@@ -132,7 +132,9 @@ def _declaration(document, *, schema=SCHEMA):
     need(document['permission_sha256'] == IMPLEMENTATION_SETTINGS_SHA,
          'permission_settings_mismatch')
     # There is no reviewed complete producer contract to interpret or execute.
-    need(document['hook_interface'] is None, 'hook_interface_unavailable')
+    need(document['hook_interface'] is None or schema == SDK_SCHEMA and
+         document['hook_interface'] == {'profile': 'sdk-hosted-memory/1'},
+         'hook_interface_unavailable')
     need(isinstance(document['sources'], dict)
          and set(document['sources']) == set(SOURCE_ROLES), 'bootstrap_sources')
     for role, reference in document['sources'].items():
@@ -178,6 +180,8 @@ def _configuration(snapshot, document, launch, mcp_args):
     mcp = _json(_text(snapshot, 'mcp.json', 'bootstrap_json'))
     expected = dict(mcpServers=dict(cairn=dict(type='stdio', command='/native/cairn',
                                                args=mcp_args)))
+    if document['hook_interface'] == {'profile': 'sdk-hosted-memory/1'}:
+        expected = dict(mcpServers=dict(cairn=dict(type='sdk', name='cairn')))
     need(mcp == expected, 'bootstrap_mcp')
 
 
@@ -337,6 +341,7 @@ class SDKReviewPreparation(ReviewPreparation):
         self._move_attempted = self._move_failed = False
         self._move_recovery = None
         self._binding = dict(declaration['binding'])
+        self._memory_scope = dict(declaration['mcp_binding']) if self._control._memory is not None else None
         self._declaration_sha = canonical_sha(declaration)
         self._launch_sha = canonical_sha(list(launch.argv))
         self._user_binding = launch.user_message_bytes, launch.user_message_sha256
@@ -380,6 +385,7 @@ class SDKReviewPreparation(ReviewPreparation):
             annotate_resource_failure(primary, faults)
             raise
         return dict(schema=SDK_SCHEMA, status='source_prepared_for_review',
+                    native_memory_scope=self._memory_scope,
                     complete_bootstrap=False, runtime_attested=False,
                     missing_gates=list(GATES), input_mode='controller_owned',
                     binding=dict(self._binding), declaration_sha256=self._declaration_sha,
@@ -649,6 +655,8 @@ def prepare_sdk_review(document, output, *, _allocation=None):
              'bootstrap_launch_profile')
         control = launch.control
         _configuration(snapshot, document, launch, mcp_args)
+        if document['hook_interface'] == {'profile': 'sdk-hosted-memory/1'}:
+            control.enable_native_memory()
         owner = SDKReviewPreparation(snapshot, launch, document, _allocation=_allocation)
         owner.review_bindings()
         return owner

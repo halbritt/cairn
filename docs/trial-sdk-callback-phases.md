@@ -1,5 +1,10 @@
 # Original callback ticket phase handoff
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 This source candidate adds a ledger transaction to the actual producer/RPC/
 command-service composition. It does not establish a complete attempt quote,
 physical fit, native MCP origin, hosted dispatch, or runtime admission.

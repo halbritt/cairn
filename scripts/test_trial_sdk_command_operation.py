@@ -75,7 +75,8 @@ class Endpoint:
 
 
 class Harness:
-    def __init__(self, test, out=b'hello', err=b'bad\xff', code=17, args=ARGS, reusable=False):
+    def __init__(self, test, out=b'hello', err=b'bad\xff', code=17, args=ARGS, reusable=False,
+                 native=False):
         self.test = test
         self.now = 1
         self.resources = AttemptResources()
@@ -105,9 +106,14 @@ class Harness:
         self.operation = CommandOperation(self.link, QUOTE, operation=1, lease=1,
                                           deadline_ns=10000, clock=lambda: self.now)
         forward = operations.HookOperationForward(self.link) if reusable else self.operation.forward_hook
-        self.gate = MemoryDispatchGate(operations.unsupported_native, forward, 10000)
-        self.operation.bind_gate(self.gate)
-        self.operation.prepare_hook('search', args)
+        native_forward = operations.NativeOperationForward(self.link) if native else operations.unsupported_native
+        self.gate = MemoryDispatchGate(native_forward, forward, 10000)
+        self.operation.bind_gate(self.gate, native=native)
+        if native:
+            self.operation.prepare_native('mcp__cairn__cairn_search',
+                {'query': 'q', 'available_tokens': 1024}, self.service._policy)
+        else:
+            self.operation.prepare_hook('search', args)
 
     def cleanup_owner(self):
         self.owner.closed = self.owner.released = True
@@ -135,6 +141,21 @@ class Harness:
 
 
 class OperationTests(unittest.TestCase):
+    def test_native_uses_original_service_traffic_and_gate_debit(self):
+        h = Harness(self, native=True)
+        def before(kind):
+            if kind == w.START:
+                self.assertEqual(h.gate.snapshot()['native_searches_debited'], 1)
+                self.assertEqual(h.gate.snapshot()['hook_searches'], 0)
+                self.assertIsNotNone(h.gate.snapshot()['pending'])
+                self.assertFalse(h.owner.launched)
+        h.endpoint.before_send = before
+        result = h.finish()
+        self.assertEqual((result.stdout, result.returncode), ('hello', 17))
+        self.assertEqual(h.gate.snapshot()['returned'], 1)
+        self.assertGreater(h.resources.snapshot()['traffic_spent'], 0)
+        self.assertEqual(h.resources.snapshot()['raw_reserved'], 5184 + QUOTE.parent_raw)
+
     def test_full_actual_core_sequence_debit_before_start_and_charged_result(self):
         h = Harness(self)
         def before(kind):

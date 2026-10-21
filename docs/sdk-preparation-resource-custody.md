@@ -1,5 +1,10 @@
 # SDK preparation allocation custody
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 `prepare_sdk_review_with_resources(document, output, resources, raw=..., working=...)`
 reserves the caller's original `AttemptResources.local` standing slot before
 snapshot creation, declaration freezing, source copying or launch compilation.

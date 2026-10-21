@@ -1,5 +1,10 @@
 # Direct SDK session input termination
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 `scripts/trial_sdk_session_driver.py` composes original source custody,
 `SDKControl`, `SDKStreamDriver` and a fresh `NativeProcessOwner`. It adds an
 explicit result-to-input-EOF transition. It does not implement a runtime

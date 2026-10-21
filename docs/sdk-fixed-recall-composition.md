@@ -1,5 +1,10 @@
 # Fixed callback bootstrap and service custody (source candidate)
 
+Current SDK launch composition: [source-bound native launch](sdk-native-launch.md).
+The older quote totals and null-profile refusal below describe their original
+fixtures; the new profile has separate source reservations and still does not
+establish runtime compatibility, physical fit or original evaluation acceptance.
+
 This follow-on preserves frozen custody draft `600a35d9`. It adds a fixed parent-owned stdin bootstrap and paired entrypoint, while retaining the original coordinator, RPC/client, adapter, bank, native owners, allocation, deadline and command gate. It is not runtime admission or complete CAIRN-107 acceptance. Main remains unchanged pending review.
 
 `FixedServiceLaunch.prepare` checks the original session preparation allocation and service standing ticket before cloning configuration or creating another held `Snapshot`. The snapshot contains a closed inventory of 20 pinned authored entry dependencies, including the engine, plus generated `service.json`. Sources must satisfy the existing strict mode/ownership policy; group-writable worktree files are refused. The isolated candidate's source inputs were made non-group-writable, without weakening that policy. The original source preparation ticket remains held. Its numerical quote alone does not prove the expanded physical backing fits.

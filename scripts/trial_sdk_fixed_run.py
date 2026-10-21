@@ -1,4 +1,4 @@
-"""Source-owned run custody. No supported native launch/admission is supplied.
+"""Source-owned run custody and once-only launch; runtime admission is separate.
 
 Construct this owner before prepare, retain it through any exception, and end
 upstream preparation/config/event aliases in the builder's returning frame.
@@ -16,7 +16,7 @@ from trial_sdk_session_driver import SDKSessionDriver, TerminalDocument
 from trial_sdk_fixed_bootstrap import FixedServiceLaunch
 from trial_sdk_fixed_outer import FixedCallbackDriver
 from trial_sdk_command_service_broker import ServiceLink
-from trial_sdk_command_operation import HookOperationForward, unsupported_native
+from trial_sdk_command_operation import HookOperationForward, NativeOperationForward, unsupported_native
 from trial_sdk_memory_gate import MemoryDispatchGate
 from trial_sdk_shared_coordinator import SharedCoordinator, AggregateQuote, require
 from trial_sdk_native_process_owner import NativeProcessOwner
@@ -45,6 +45,8 @@ class FixedRunOwner:
         self._service_start_attempted = False
         self._ready_credit = None
         self._connect_cursor = 0
+        self._native_launch = self._memory = None
+        self._native_start_attempted = False
 
     def _now(self):
         now=self._clock()
@@ -55,6 +57,9 @@ class FixedRunOwner:
 
     def _fail(self, primary):
         self._failed = True
+        if self._memory is not None and self._memory.operation is not None:
+            try:self._memory.operation._poison('run_native_memory_failed')
+            except BaseException:self._faults.add('run_native_memory_poison_unknown')
         if self._coordinator is not None:
             try:self._coordinator._fail(primary)
             except BaseException:self._faults.add('run_coordinator_poison_unknown')
@@ -78,6 +83,9 @@ class FixedRunOwner:
             require(type(callback_root) is str and Path(callback_root).is_absolute(),
                     'run_callback_root')
             self._callback_root = callback_root
+            # Fresh root and per-request leaves prevent reusing a consumed run.
+            # The broker validates the complete path at binding.
+            Path(callback_root).mkdir(mode=0o700)
             self._callback_quote, self._command_quote = callback_quote, command_quote
             self._construct_session()
             self._preparation = None
@@ -92,8 +100,14 @@ class FixedRunOwner:
             self._owners.append(self._link.owner)
             self._service = FixedServiceLaunch.__new__(FixedServiceLaunch)
             self._service.prepare_owned(self._session,self._link,service_document,source_output)
-            gate = MemoryDispatchGate(unsupported_native, HookOperationForward(self._link), self._deadline)
+            native = self._session._custody.control._memory is not None
+            forward = NativeOperationForward(self._link) if native else unsupported_native
+            gate = MemoryDispatchGate(forward, HookOperationForward(self._link), self._deadline)
             self._coordinator = SharedCoordinator(self._session,gate,self._link,clock=self._clock)
+            if native:
+                from trial_sdk_native_memory import NativeMemory
+                self._session._pump._memory_deadline = self._deadline
+                self._memory = NativeMemory(self)
             self._state = 'session'
         except BaseException as primary:
             self._fail(primary)
@@ -116,8 +130,58 @@ class FixedRunOwner:
             raise
 
     def require_complete(self):
-        # No invented native contract, namespace or successful launch fallback.
-        raise PreparationRefusal('hook_interface_unavailable')
+        require(not self._failed and not self._cancelled and not self._busy
+                and self._state == 'session', 'run_unavailable')
+        self._session.require_complete()
+        from trial_sdk_source_profile import require_preparation, SERVICE_RAW
+        from trial_sdk_native_launch import SDKNativeLaunch
+        require_preparation(self._session._custody._allocation)
+        require(type(self._native_launch) is SDKNativeLaunch and self._memory is not None,
+                'run_native_launch_unbound')
+        self._native_launch.verify(self._session)
+        self._service._check()
+        scope = self._session._custody._initial['native_memory_scope']
+        policy = self._service._runtime.policy
+        require(type(scope) is dict and all(getattr(policy, key) == scope[key]
+                for key in ('socket', 'token_file', 'repo', 'task', 'run'))
+                and policy.executable == self._native_launch.memory_executable,
+                'run_native_scope_binding')
+        self._callback_quote.check()
+        self._command_quote.check()
+        service_row = self.resources._lookup(self.resources._memory, self._link._allocation)
+        require(service_row[2] >= SERVICE_RAW, 'run_service_underquoted')
+        require(self._native_launch.deadline_ns == self._deadline, 'run_native_deadline')
+        require(self._coordinator.gate._native_forward.link is self._link
+                and self._coordinator.gate._hook_forward.link is self._link,
+                'run_native_gate_binding')
+        require(self._now() < self._deadline, 'run_deadline')
+
+    def bind_native_launch(self, source_directory, cwd, env, capture_origin_ns):
+        from trial_sdk_native_launch import SDKNativeLaunch
+        require(self._state == 'session' and not self._busy and not self._failed
+                and self._native_launch is None, 'run_native_launch_consumed')
+        try:
+            self._native_launch = SDKNativeLaunch.__new__(SDKNativeLaunch)
+            SDKNativeLaunch.__init__(self._native_launch, self._session,
+                                    source_directory, cwd, env, capture_origin_ns)
+            self.require_complete()
+        except BaseException as primary:
+            self._fail(primary)
+            raise
+
+    def start_native(self):
+        """Single actual launch edge; outer runtime selection remains required."""
+        require(not self._native_start_attempted, 'run_native_launch_consumed')
+        try:
+            self._native_start_attempted = True  # Consume before validation/effects.
+            self.require_complete()
+            require(self._service_start_attempted and self._service._started
+                    and self._link.transcript.snapshot()['phase'] == 'idle', 'run_service_not_ready')
+            binding = self._native_launch
+            self._session.native_owner.start(binding.argv, binding.cwd, dict(binding.env))
+        except BaseException as primary:
+            self._fail(primary)
+            raise
 
     def start_service(self):
         """Actual service edge for a separately selected runtime; no SDK launch."""
@@ -164,6 +228,7 @@ class FixedRunOwner:
         self._callback_domain = self.resources.bind(self._callback_owner)
         c.reserve_callback(c._event,self._callback_owner,self._callback_domain,self._callback_quote)
         directory = str(Path(self._callback_root)/c._event.observation['request_sha256'])
+        Path(directory).mkdir(mode=0o700)
         c.rpc.prestart(directory)
         c.bind_fixed_producer(self._service)
         self._callback = FixedCallbackDriver(c,self._service,self._command_quote)
@@ -177,6 +242,10 @@ class FixedRunOwner:
         event = turn.result
         if event.kind == 'callback':
             self._state = 'binding'  # Return event-bearing frame BEFORE binding.
+        elif event.kind == 'memory':
+            require(self._memory is not None, 'run_native_memory_unbound')
+            self._memory.bind(event)
+            self._state = 'memory'
         elif event.kind == 'document':
             require(self._evidence is not None and self._session._pump._retention is self._evidence
                     and self._evidence.state == 'open', 'run_document_retention_missing')
@@ -192,7 +261,12 @@ class FixedRunOwner:
         else:
             require(event.kind in ('idle','progress','control','stdout_eof','stderr_eof','wait'),
                     'run_unsupported_document')
-            require(event.kind != 'wait', 'run_wait_without_terminal')
+            # Child exit can precede draining its already-written terminal line.
+            # The original pump retains those bytes; EOF without a terminal is
+            # the refusal boundary, not pidfd readiness by itself.
+            state = self._session.native_owner.snapshot()
+            require(not (state['wait'] is not None and state['stdout_eof']),
+                    'run_wait_without_terminal')
 
     def _drain_terminal(self):
         # Retain the terminal graph while bounded session I/O reaches actual EOF
@@ -214,6 +288,10 @@ class FixedRunOwner:
         return self._state
 
     def _advance(self):
+        if self._state == 'memory':
+            if self._memory.step() == 'idle':
+                self._state = 'session'
+            return self._state
         if self._state == 'service_connecting':
             return self._service_step()
         if self._state == 'callback_connecting':
@@ -252,6 +330,8 @@ class FixedRunOwner:
         require(not self._busy and not self._cancelled, 'run_cancel_consumed')
         try:
             self._cancelled = True  # Suppress all future output before protocol effects.
+            if self._memory is not None and self._memory.operation is not None:
+                self._memory.operation.cancel()
             if self._coordinator is not None:self._coordinator.cancel()
         except BaseException as primary:
             self._fail(primary)
@@ -288,6 +368,19 @@ class FixedRunOwner:
     def _cleanup(self):
         self._cleanup_started = True
         self._cancelled = True
+        operation = None if self._memory is None else self._memory.operation
+        if (operation is not None and hasattr(operation, '_closed')
+                and not operation._closed and not operation._unknown and not self._failed):
+            # Keep the original child owner alive to perform CANCEL, actual
+            # command wait and RELEASE. Never kill its service while a known
+            # operation can still complete that ownership protocol.
+            try:
+                operation.cancel()
+                operation.step()
+                return 'cleanup_pending'
+            except BaseException as primary:
+                self._fail(primary)
+                return 'cleanup_pending'  # End the failed protocol frame before signals.
         pending = False
         primary_error = None
         for owner in self._original_owners():
@@ -301,7 +394,11 @@ class FixedRunOwner:
                         previous=self._stop_sent.get(owner,0)
                         if level > previous:
                             self._stop_sent[owner]=level  # Consume before signal uncertainty.
-                            owner.signal(level,int(signal.SIGKILL if level==2 else signal.SIGTERM))
+                            # The authored Python service's finally block owns
+                            # abandoned command cleanup. SIGINT enters that block;
+                            # default SIGTERM would bypass it and orphan a child.
+                            graceful = signal.SIGINT if self._link is not None and owner is self._link.owner else signal.SIGTERM
+                            owner.signal(level,int(signal.SIGKILL if level==2 else graceful))
                         pending=True
                         continue
                 receipt=(owner.cleanup_after_wait() if state['wait'] is not None
@@ -321,6 +418,8 @@ class FixedRunOwner:
         if not self._sources_closed:
             # Independent source owners: failure closing one must not skip another.
             actions=[]
+            if self._native_launch is not None and hasattr(self._native_launch, '_tree'):
+                actions.append(('native_launch', self._native_launch.close))
             if self._evidence is not None:
                 actions.append(('evidence', self._evidence.close))
             if self._service is not None and hasattr(self._service,'_snapshot') and self._service._snapshot is not None:

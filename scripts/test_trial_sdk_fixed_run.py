@@ -79,7 +79,7 @@ class RunTests(unittest.TestCase):
         review,binding=self.setup_binding();owner=FixedRunOwner(binding.resources,clock=lambda:1)
         self.addCleanup(owner.cleanup_step)
         with patch('time.monotonic_ns',return_value=1):
-            owner.prepare(review,binding,self.config(),str(self.root/('fixed'+suffix)),str(self.root/'callbacks'),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+suffix)))
+            owner.prepare(review,binding,self.config(),str(self.root/('fixed'+suffix)),str(self.root/('callbacks'+suffix)),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+suffix)))
         return owner,review,binding
 
     def test_real_prepare_and_unlaunched_cleanup_preserve_all_charges(self):
@@ -172,7 +172,7 @@ class RunTests(unittest.TestCase):
                     with self.assertRaises(KeyboardInterrupt):
                         interrupt_line(FixedRunOwner.prepare,needle,lambda:owner.prepare(
                             review,binding,self.config(),str(self.root/('source'+str(n))),
-                            str(self.root/'callbacks'),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+str(n)))))
+                            str(self.root/('callbacks'+str(n))),AGGREGATE,OP_QUOTE,stream_output=str(self.root/("streams"+str(n)))))
                 self.assertTrue(owner._failed)
                 self.assertIn(binding.allocation,binding.resources._memory)
                 self.assertEqual(owner.cleanup_step(),'closed_unknown')
