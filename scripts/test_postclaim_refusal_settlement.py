@@ -369,6 +369,122 @@ class HandleTests(Base):
             (self.memory_dir / (SESSION + '.inbox-recall.json')).read_text())['grants'])
 
 
+class PreClaimGrantConflictTests(Base):
+    """CAIRN-173: an existing recall grant for the wake's native prompt refuses the wake before any claim."""
+
+    def setUp(self):
+        super().setUp()
+        for key in ('inbox_intent', 'inbox_attempt', 'inbox_journals', 'inbox_result_policy',
+                    'inbox_completion', 'inbox_response', 'active_prompt'):
+            self.state.pop(key)
+        self.state['delivered_since_idle'] = False
+        self.state['idle_wake'] = dict(transport='claude-channel', delivery_id=DELIVERY,
+                                       session=dict(agent_id=AGENT, execution_id=EXEC))
+        self.save()
+        wake = coord.wake_message(dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=DELIVERY))
+        self.event = dict(hook_event_name='UserPromptSubmit', session_id=SESSION, prompt_id=PROMPT, cwd=str(self.root),
+                          prompt=f'<channel source="cairn-events" native_session_id="{SESSION}" agent_id="{AGENT}" '
+                                 f'execution_id="{EXEC}" delivery_id="{DELIVERY}">\n{wake}\n</channel>')
+
+    def ledger_with(self, identity, required=None):
+        grant = dict(identity=identity, limit_bytes=9500, output_bytes=1200, native_allowance_bytes=0)
+        if required is not None:
+            grant['required'] = required
+        ledger = dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={'b' * 64: grant},
+                      active='b' * 64, pending_bytes=0)
+        self.ledger.write_text(json.dumps(ledger))
+        return self.ledger.read_bytes()
+
+    def run_hook(self):
+        claims = []
+
+        def claim(config, state, path):  # As the store: the bound intent claims exactly its delivery.
+            intent = state.get('inbox_intent')
+            if intent and not state.get('inbox_attempt'):
+                claims.append(dict(intent))
+                state['inbox_attempt'] = dict(attempt_id=intent['request_id'], session=intent['session'],
+                                              native_turn_id=intent['native_turn_id'], delivery=self.delivery)
+                state['inbox_journals'] = [intent['request_id']]
+                coord.write_state(path, state)
+        with self.patched(), patch.object(coord, 'owner_process', return_value=self.process), \
+             patch.object(coord, 'heartbeat', return_value=self.state['agent']), patch.object(coord, 'associate_wake'), \
+             patch.object(coord, 'recover_inbox', side_effect=claim), \
+             patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
+            with self.assertRaises(coord.NativePromptRefused):
+                coord.handle(self.cc, self.event, _inbox_resolved=True)
+        return claims
+
+    def assert_refused_before_claim(self, claims, before, grant, kind):
+        saved = self.load()
+        self.assertEqual(claims, [], 'a delivery was claimed into a conflicting prompt')
+        self.assertFalse(any(k in saved for k in ('inbox_intent', 'inbox_attempt', 'idle_wake')))
+        self.assertEqual(self.ledger.read_bytes(), before, 'grant ledger changed: deleted, rebound or charged')
+        self.assertEqual(self.ops, [], 'no store operation may follow a pre-claim refusal')
+        diagnostic = saved['wake_preclaim_refusal']
+        self.assertEqual((diagnostic['phase'], diagnostic['reason'], diagnostic['grant'], diagnostic['grant_kind']),
+                         ('before_claim', 'ledger_grant', grant, kind))
+        self.assertEqual((diagnostic['delivery_id'], diagnostic['native_turn_id']), (DELIVERY, TURN))
+        self.assertNotIn('wake_refusal_diagnostic', saved, 'pre-claim refusal is not post-claim delivery evidence')
+        self.assertEqual(saved['active_prompt'].get('refused_delivery'), DELIVERY)
+        self.assertTrue(saved['active_prompt'].get('joined'))
+        calls = self.root / 'calls.jsonl'
+        self.assertFalse(calls.exists(), 'pre-claim refusal read memory or source')
+
+    def test_ordinary_prompt_grant_then_bound_channel_wake_for_same_owner_is_refused_before_claim(self):
+        # Required status of the ordinary grant stays pending and uncharged; no optional allowance is opened.
+        before = self.ledger_with(dict(native_owner=TURN, boundary='ordinary_prompt'),
+                                  required=dict(count=1, selection_sha256='c' * 64, pending=True))
+        self.assert_refused_before_claim(self.run_hook(), before, 'present', 'ordinary_context')
+
+    def test_genuine_inbox_grant_for_same_owner_is_refused_before_claim(self):
+        before = self.ledger_with(dict(attempt_id='99999999-9999-4999-8999-999999999999',
+            delivery_id='99999999-9999-4999-8999-999999999998', event_id=RECORD,
+            session=dict(agent_id=AGENT, execution_id=EXEC), source=dict(record_id=RECORD, version=1),
+            native_owner=TURN, boundary='claude_prompt_delivery'))
+        self.assert_refused_before_claim(self.run_hook(), before, 'present', 'inbox_delivery')
+
+    def test_ambiguous_required_only_wake_emission_is_refused_before_claim(self):
+        before = self.ledger_with(dict(native_owner=TURN, wake_sha256='d' * 64,
+            session=dict(agent_id=AGENT, execution_id=EXEC), boundary='unadmitted_wake'))
+        self.assert_refused_before_claim(self.run_hook(), before, 'present', 'unadmitted_wake')
+
+    def test_corrupt_ledger_is_ambiguous_and_refused_before_claim(self):
+        self.ledger.write_text('{not json')
+        self.assert_refused_before_claim(self.run_hook(), b'{not json', 'unknown', 'unknown')
+
+    def test_unrelated_grant_still_claims_and_required_failure_settles_exactly(self):
+        # A grant for another prompt is no conflict: the wake claims its own prompt, and a later
+        # required-context failure in the bridge settles that exact attempt without a grant.
+        before = self.ledger_with(dict(native_owner='claude-channel:' + OTHER_PROMPT, boundary='ordinary_prompt'))
+        claims = self.run_hook()
+        saved = self.load()
+        self.assertEqual([(c['delivery_id'], c['native_turn_id']) for c in claims], [(DELIVERY, TURN)])
+        self.assertNotIn('wake_preclaim_refusal', saved)
+        self.assertEqual(self.ledger.read_bytes(), before, 'failed required read opened or charged a grant')
+        attempt = claims[0]['request_id']
+        self.assertEqual(saved['wake_refusal_diagnostic']['attempt_id'], attempt)
+        self.assertEqual((saved['wake_refusal_diagnostic']['settlement'], saved['wake_refusal_diagnostic']['grant']),
+                         ('turn_ended', 'absent'))
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles() if r['reason'] == 'turn_ended'],
+                         [(attempt, 'turn_ended')])
+
+    def test_held_post_claim_diagnostic_distinguishes_ordinary_context_from_inbox_delivery(self):
+        for identity, kind, evidence in (
+                (dict(native_owner=TURN, boundary='ordinary_prompt'), 'ordinary_context', 'ordinary_grant_present_manual_review'),
+                (dict(attempt_id=ATTEMPT, native_owner=TURN, boundary='claude_prompt_delivery'), 'inbox_delivery',
+                 'grant_present_manual_review')):
+            with self.subTest(kind=kind):
+                Base.setUp(self)
+                self.ledger_with(identity)
+                diagnostic, _ = self.settle()
+                self.assertEqual((diagnostic['settlement'], diagnostic['grant'], diagnostic['grant_kind']),
+                                 ('held', 'present', kind))
+                self.assertEqual(self.reconciles(), [])
+                with patch.object(coord, 'process_alive', return_value=True):
+                    obs = coord.held_attempt_refusal_observation(self.cc, self.load())
+                self.assertEqual((obs['grant'], obs['grant_kind'], obs['evidence_state']), ('present', kind, evidence))
+
+
 class OperatorRecoveryTests(Base):
     def recover(self, session=SESSION, attempt=ATTEMPT, turn=TURN):
         with self.patched(), patch.object(coord, 'process_alive', return_value=True):

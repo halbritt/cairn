@@ -1000,6 +1000,80 @@ time.sleep(30)
             claimed = json.loads(path.read_text())['inbox_attempt']
             self.assertEqual(claimed['native_turn_id'], 'claude-channel:fresh-prompt-one')
 
+    @mock.patch.object(coordination, 'claude_channel_enabled', new=lambda config, process: True)
+    def test_channel_wake_reusing_a_stopped_prompt_id_is_refused_before_claim(self):
+        # CAIRN-173: Stop clears active_prompt, so an earlier prompt_id that
+        # reappears afterwards was admitted as fresh and claimed work onto a
+        # prompt whose ordinary recall grant already exists. A previously seen
+        # prompt never starts a fresh request boundary.
+        host = os.getppid()
+        channel_dir = self.root/'channels'
+        channel_dir.mkdir()
+        host_ref = coordination.process_reference(host)
+        agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
+        delivery_id = '00000000-0000-4000-8000-000000000020'
+        marker = dict(transport='claude-channel', delivery_id=delivery_id, session=coordination.session_ref(agent))
+        state_dir = self.root/'reuse-state'
+        state_dir.mkdir()
+        config = dict(harness='claude', state_dir=str(state_dir), native_delivery=True,
+                      idle_wakeup=str(self.root/'herdr'), claude_channel_dir=str(channel_dir),
+                      cairn='/absent/cairn', socket='/absent/api.sock', token_file='/absent/token',
+                      repo='fixture', binding='reuse', process_names=[])
+        path = coordination.state_path(config, 'native-one')
+        coordination.write_state(path, dict(schema='cairn.native-session/1', process=host_ref, agent=agent,
+                                            workspace=str(self.root)))
+        recorded = []
+
+        def fake_call(config, operation, request=None, **kwargs):
+            recorded.append(operation)
+            current = json.loads(path.read_text())
+            if operation == 'agent-heartbeat':
+                return current['agent']
+            if operation == 'agent-context':
+                return dict(current['agent'], context_revision=current['agent']['context_revision']+1,
+                            metadata=json.loads(json.dumps(request['metadata'])))
+            if operation == 'session-inbox-claim':
+                return dict(attempt=dict(attempt_id=request['request_id'], session=request['session'],
+                    native_turn_id=request.get('native_turn_id'),
+                    delivery=dict(delivery_id=delivery_id, lease_id='lease-one',
+                        event=dict(event_id='event-one', kind='request',
+                                   ref=dict(record_id='r', version=1), **{'from': 'agent:x'}))))
+            if operation == 'event-renew':
+                return current['inbox_attempt']['delivery']
+            if operation == 'session-inbox-reconcile':
+                raise coordination.CoordinationError('DELIVERY_ACTIVE', 'delivery still active')
+            raise AssertionError('unexpected API operation '+operation)
+
+        owner_prompt = dict(session_id='native-one', cwd=str(self.root), hook_event_name='UserPromptSubmit',
+                            prompt_id='c0ffee00-0000-4000-8000-0000000000aa', prompt='ordinary owner work', host_pid=host)
+        wake_prompt = dict(owner_prompt,
+            prompt=f'<channel source="cairn-events">{coordination.wake_message(marker)}</channel>')
+        with mock.patch.object(coordination, 'call', fake_call):
+            coordination.handle(config, owner_prompt)
+            coordination.handle(config, dict(owner_prompt, hook_event_name='Stop'))
+            self.assertNotIn('active_prompt', json.loads(path.read_text()))
+            state = json.loads(path.read_text())
+            state['idle_wake'] = marker
+            coordination.write_state(path, state)
+            recorded.clear()
+            with self.assertRaisesRegex(coordination.CoordinationError, 'NATIVE_PROMPT_REFUSED'):
+                coordination.handle(config, wake_prompt)  # The stopped prompt_id reappears.
+            after = json.loads(path.read_text())
+            self.assertNotIn('session-inbox-claim', recorded, 'claimed onto a previously seen prompt')
+            self.assertNotIn('inbox_intent', after)
+            self.assertNotIn('idle_wake', after, 'refused wake kept its marker')
+            self.assertEqual(after['active_prompt'].get('refused_delivery'), delivery_id)
+            self.assertTrue(after['active_prompt'].get('joined'))
+            self.assertEqual(after['wake_preclaim_refusal']['reason'], 'seen_prompt')
+            self.assertEqual(after['wake_preclaim_refusal']['delivery_id'], delivery_id)
+            # Retry when idle: a genuinely fresh prompt still claims normally.
+            after['idle_wake'] = marker
+            coordination.write_state(path, after)
+            coordination.handle(config, dict(wake_prompt, prompt_id='c0ffee00-0000-4000-8000-0000000000bb'))
+            self.assertIn('session-inbox-claim', recorded)
+            self.assertEqual(json.loads(path.read_text())['inbox_attempt']['native_turn_id'],
+                             'claude-channel:c0ffee00-0000-4000-8000-0000000000bb')
+
     def test_owner_input_joining_a_wake_owned_prompt_shares_it_safely(self):
         # Inverse of the busy-race ordering (parent live evidence): owner
         # input can join a WAKE-owned prompt. First sighting never implies

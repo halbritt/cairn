@@ -275,6 +275,19 @@ initialization marker exist and, read under the bridge's session lock, contain n
 delivery or prompt. Any doubt (a grant, a missing, busy or unreadable ledger, a joined owner prompt, an
 observed tool, or any other journal content) keeps the existing hold and records only
 `wake_refusal_diagnostic` (phase, origin, error and cause class, identities, grant state, settlement).
+When a grant is present, `grant_kind` separates inbox delivery evidence (`inbox_delivery`) from
+ordinary memory context emitted into the same prompt (`ordinary_context`) and required-only wake
+output (`unadmitted_wake`); every kind keeps the hold.
+
+A bound Claude channel wake is refused before any claim when its native prompt cannot be a fresh
+request boundary (CAIRN-173). The hook keeps a bounded set of prompt ids it has seen, which survives
+`Stop`, so an earlier prompt id that reappears is a join, not a fresh prompt. It also reads the
+bridge ledger under the bridge's session lock: any grant for that native prompt (ordinary context,
+an earlier inbox delivery or required-only output), or an unreadable ledger, refuses the wake. A busy
+ledger is left to the bridge's own refusal. In both cases the wake marker is cleared and the delivery
+stays pending for a later idle cycle on a fresh prompt. Nothing is claimed, read, charged or deleted;
+the hook records `wake_preclaim_refusal` (phase `before_claim`, reason `seen_prompt` or `ledger_grant`,
+grant state and kind, delivery and prompt), which is not inbox delivery evidence.
 
 Unrelated attempts' journal entries do not establish progress on this refused attempt.
 Recovery checks this attempt's own command journal; it does not discard unrelated unused entries,

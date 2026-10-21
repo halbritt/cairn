@@ -860,9 +860,14 @@ def channel_wake_binding(state, event, joined=False):
     return dict(delivery_id=wake['delivery_id'], native_turn_id='claude-channel:' + prompt_id)
 
 
+SEEN_PROMPT_LIMIT = 256
+
+
 def claude_prompt_admission(state, observation, event):
     """Record the first sighting and any joins of each native Claude prompt.
 
+    A bounded record of seen prompt ids survives Stop, so an earlier prompt id
+    that reappears after its Stop is a join, not a fresh prompt.
     Returns 'fresh' when this event starts a previously unseen prompt,
     'joined' when its prompt was already active — the observed native
     behavior in BOTH directions: a channel wake joining an owner prompt, and
@@ -876,6 +881,16 @@ def claude_prompt_admission(state, observation, event):
     name = observation['event']
     if name == 'UserPromptSubmit' and key:
         active = state.get('active_prompt')
+        seen = state.get('seen_prompts')
+        seen = [item for item in seen if isinstance(item, str)] if isinstance(seen, list) else []
+        reused = not (active and active.get('id') == key) and key in seen
+        if reused:
+            # Stop cleared this prompt, but it was already observed (CAIRN-173):
+            # its ordinary memory grant can persist, so a reappearance is a join
+            # of that earlier prompt, never a fresh request boundary.
+            active = dict(id=key)
+        if key not in seen:
+            state['seen_prompts'] = (seen + [key])[-SEEN_PROMPT_LIMIT:]
         if active and active.get('id') == key:
             wake = state.get('idle_wake', {})
             refusal = None
@@ -889,6 +904,9 @@ def claude_prompt_admission(state, observation, event):
             shared = dict(active, joined=True)
             if refusal is not None:
                 shared['refused_delivery'] = refusal
+                if reused:
+                    state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='seen_prompt',
+                        delivery_id=refusal, native_turn_id=key, at=time.time())
             state['active_prompt'] = shared
             return dict(joined=True, refused_delivery=refusal)
         state['active_prompt'] = dict(id=key)
@@ -898,6 +916,33 @@ def claude_prompt_admission(state, observation, event):
         if active and active.get('id') == key:
             state.pop('active_prompt', None)
     return None
+
+
+def refuse_conflicting_claude_wake(config, state, path, binding):
+    """Refuse a bound Claude channel wake, before any claim, whose prompt already has a recall grant.
+
+    The bound bridge refuses any second grant for one Claude native prompt; a
+    delivery claimed into such a prompt could only be refused after the claim
+    and stay held (CAIRN-173). Proven grants and ledger doubt refuse here, while
+    the delivery is still pending: the marker is cleared and a later idle cycle
+    retries it on a fresh prompt. A busy ledger is the bridge's own concurrent
+    work and is left to the bridge's own refusal. Nothing is claimed, read,
+    charged or deleted, and the diagnostic is pre-claim, never delivery evidence.
+    """
+    if not config.get('inbox_recall_binding') or state.get('inbox_intent') or state.get('inbox_attempt'):
+        return
+    owner = binding.get('native_turn_id')
+    status, kind = recall_grant_evidence(config, state, native_owner=owner, require_files=False)
+    if status in ('absent', 'busy'):
+        return
+    state.pop('idle_wake', None)
+    state['active_prompt'] = dict(state.get('active_prompt') or dict(id=owner), joined=True,
+                                  refused_delivery=binding['delivery_id'])
+    state['wake_preclaim_refusal'] = dict(phase='before_claim', reason='ledger_grant', grant=status,
+        grant_kind=kind or 'unknown', delivery_id=binding['delivery_id'], native_turn_id=owner, at=time.time())
+    write_state(path, state)
+    raise NativePromptRefused('channel wake prompt already holds a recall grant; '
+                              'nothing claimed, a fresh copy retries when idle')
 
 
 def hermes_wake_binding(state, event):
@@ -2464,6 +2509,87 @@ def refusal_cause_details(cause, wrapper=None):
     return result
 
 
+GRANT_KINDS = ('inbox_delivery', 'ordinary_context', 'unadmitted_wake', 'mixed', 'unknown')
+
+
+def recall_grant_kind(identity):
+    """Fixed-vocabulary evidence class of one bridge/memory ledger grant identity.
+
+    'inbox_delivery' names a delivered inbox attempt; 'ordinary_context' is
+    ordinary (or launcher-task) memory context emitted into a prompt and is not
+    inbox delivery evidence; 'unadmitted_wake' is required-only output for a wake
+    that had no admitted attempt. Anything else stays 'unknown'.
+    """
+    boundary = identity.get('boundary')
+    if identity.get('attempt_id') or identity.get('delivery_id') or boundary in ('claude_prompt_delivery', 'native_turn'):
+        return 'inbox_delivery'
+    if boundary in ('ordinary_prompt', 'launcher_task'):
+        return 'ordinary_context'
+    if boundary == 'unadmitted_wake':
+        return 'unadmitted_wake'
+    return 'unknown'
+
+
+def summarize_grant_kinds(kinds):
+    kinds = set(kinds)
+    if not kinds:
+        return None
+    return kinds.pop() if len(kinds) == 1 else 'mixed'
+
+
+def recall_grant_evidence(config, state, attempt=None, native_owner=None, *, require_files=True):
+    """Read the bound bridge's own ledger for grants naming an attempt, its delivery or a native prompt.
+
+    Returns (status, kind). status is 'present' when some grant names them,
+    'absent' only when the ledger was read under the bridge's session lock and
+    none does, 'busy' when that lock is held elsewhere, and 'unknown' for any
+    other doubt. kind classifies present grants (see recall_grant_kind) and is
+    'mixed' for several classes; it is diagnostic only and never authority.
+    With require_files, a missing ledger or marker is doubt; without it, both
+    missing is the bridge's own empty-ledger state, as load_grants reads it.
+    """
+    owner = native_owner if native_owner is not None else (attempt or {}).get('native_turn_id')
+    try:
+        bridge = load_inbox_recall(config, validate=False)
+        _, memory = bridge.binding(config)
+        directory = Path(memory['state_dir'])
+        native = state['agent']['native_session_id']
+        if not require_files and directory.is_absolute() and not os.path.lexists(directory):
+            return 'absent', None  # The bridge creates its directory with an empty ledger.
+        info = directory.stat()
+        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            return 'unknown', 'unknown'
+        with (directory / (native + '.lock')).open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return 'busy', 'unknown'
+            ledger_path = directory / (native + '.inbox-recall.json')
+            # load_grants treats a missing ledger and marker as an empty ledger. For a
+            # claimed attempt absence of evidence is not evidence of absence.
+            for required in (ledger_path, ledger_path.with_suffix('.initialized')):
+                try:
+                    info = os.lstat(required)
+                except FileNotFoundError:
+                    if require_files:
+                        return 'unknown', 'unknown'
+                    continue
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                    return 'unknown', 'unknown'
+            ledger = bridge.load_grants(ledger_path, native)
+            kinds = set()
+            for grant in ledger['grants'].values():
+                identity = grant['identity']
+                if attempt and (identity.get('attempt_id') == attempt['attempt_id']
+                                or identity.get('delivery_id') == attempt['delivery']['delivery_id']):
+                    kinds.add('inbox_delivery')
+                elif owner and identity.get('native_owner') == owner:
+                    kinds.add(recall_grant_kind(identity))
+            return ('present', summarize_grant_kinds(kinds)) if kinds else ('absent', None)
+    except Exception:  # Any doubt keeps the conservative hold.
+        return 'unknown', 'unknown'
+
+
 def recall_grant_state(config, state, attempt):
     """What the bound bridge's own ledger says about this claimed attempt.
 
@@ -2471,33 +2597,8 @@ def recall_grant_state(config, state, attempt):
     grant names this attempt, its delivery or its native prompt. A busy lock, an
     unreadable or corrupt ledger, or any other doubt is 'unknown', never absent.
     """
-    try:
-        bridge = load_inbox_recall(config, validate=False)
-        _, memory = bridge.binding(config)
-        directory = Path(memory['state_dir'])
-        native = state['agent']['native_session_id']
-        info = directory.stat()
-        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
-            return 'unknown'
-        with (directory / (native + '.lock')).open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            ledger_path = directory / (native + '.inbox-recall.json')
-            # load_grants treats a missing ledger and marker as an empty ledger. Here
-            # absence of evidence is not evidence of absence: both must be real files.
-            for required in (ledger_path, ledger_path.with_suffix('.initialized')):
-                info = os.lstat(required)
-                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-                    return 'unknown'
-            ledger = bridge.load_grants(ledger_path, native)
-            for grant in ledger['grants'].values():
-                identity = grant['identity']
-                if (identity.get('attempt_id') == attempt['attempt_id']
-                        or identity.get('delivery_id') == attempt['delivery']['delivery_id']
-                        or identity.get('native_owner') == attempt.get('native_turn_id')):
-                    return 'present'
-            return 'absent'
-    except Exception:  # Any doubt keeps the conservative hold.
-        return 'unknown'
+    status, _ = recall_grant_evidence(config, state, attempt)
+    return 'unknown' if status == 'busy' else status
 
 
 def attempt_commands_absent(config, attempt):
@@ -2564,8 +2665,16 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
     eligible = refused_claude_wake_settleable(config, state, turn)
     if eligible and require_active and (state.get('active_prompt') or {}).get('id') != turn:
         eligible = False
-    grant = recall_grant_state(config, state, attempt) if eligible else 'not_checked'
+    if eligible:
+        grant, kind = recall_grant_evidence(config, state, attempt)
+        grant = 'unknown' if grant == 'busy' else grant
+    else:
+        grant, kind = 'not_checked', None
     diagnostic['grant'] = grant
+    if kind is not None:
+        # Ordinary context emitted into the prompt is not inbox delivery evidence;
+        # either keeps the hold, but the diagnostic must not conflate them.
+        diagnostic['grant_kind'] = kind
     if not eligible or grant != 'absent':
         state['wake_refusal_diagnostic'] = dict(diagnostic, settlement='held')
         write_state(path, state)
@@ -3229,6 +3338,9 @@ def held_attempt_refusal_observation(config, state, now=None):
     grant = recorded.get('grant')
     if grant not in ('absent', 'present', 'unknown', 'not_checked'):
         grant = 'unknown'
+    grant_kind = recorded.get('grant_kind')
+    if grant_kind is not None and grant_kind not in GRANT_KINDS:
+        grant_kind = 'unknown'
     if config.get('harness') == 'claude':
         turn_state = 'active' if (state.get('active_prompt') or {}).get('id') == turn else 'ended'
     elif config.get('harness') == 'codex':
@@ -3240,6 +3352,8 @@ def held_attempt_refusal_observation(config, state, now=None):
         turn_state = 'unknown'
     if recorded['settlement'] == 'turn_ended_pending':
         evidence_state = 'reconcile_pending'
+    elif grant == 'present' and grant_kind == 'ordinary_context':
+        evidence_state = 'ordinary_grant_present_manual_review'
     elif grant == 'present':
         evidence_state = 'grant_present_manual_review'
     elif config.get('harness') == 'codex':
@@ -3265,6 +3379,7 @@ def held_attempt_refusal_observation(config, state, now=None):
         error_class=error_class,
         cause_class=cause_class,
         grant=grant,
+        grant_kind=grant_kind,
         session_activity=(agent.get('metadata') or {}).get('state') if (agent.get('metadata') or {}).get('state') in ('idle', 'busy') else 'unknown',
         native_turn_state=turn_state,
         freshness='current_attempt',
@@ -3611,7 +3726,10 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 # model. The owner prompt and any other hook output continue.
                 raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
         if observation["phase"] != "interrupted":
-            inbox = inbox_context(config, state, path, observation, wake_binding(config, state, event, joined))
+            binding = wake_binding(config, state, event, joined)
+            if config['harness'] == 'claude' and binding:
+                refuse_conflicting_claude_wake(config, state, path, binding)
+            inbox = inbox_context(config, state, path, observation, binding)
         if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
                 state.get('inbox_attempt', {}).get('turn_exclusive') and
                 state['inbox_attempt'].get('native_turn_id') == observation['native_turn_id']):
