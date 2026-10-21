@@ -129,7 +129,7 @@ class NativeRunTests(unittest.TestCase):
         self.addCleanup(_prctl, 4, previous)
         self.document['hook_interface']={'profile':'sdk-hosted-memory/1'}
         self.change('cli', getattr(self,'native_source',NATIVE).replace("MODE = 'complete'", 'MODE = '+repr(mode)).encode())
-        self.change('mcp_binary', COMMAND.replace('# INTERRUPT_DELAY',
+        self.change('mcp_binary', getattr(self,'command_source',COMMAND).replace('# INTERRUPT_DELAY',
             'time.sleep(60)' if mode == 'interrupt' else 'pass').encode())
         self.change('mcp', json.dumps({'mcpServers':{'cairn':{'type':'sdk','name':'cairn'}}}).encode())
         self.document['binding']['source_set_sha256']=canonical_sha(

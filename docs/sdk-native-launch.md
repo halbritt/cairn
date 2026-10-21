@@ -152,6 +152,18 @@ inert full two-search/four-pull test holds this observer reservation throughout;
 it does not establish native admission, the remaining producer physical bound,
 or the original weekly workload's fit.
 
+`test_trial_sdk_positive_workload` additionally completes two successful native
+searches, two whole pulls with competing records, and two span/opening pulls
+through the real inert fixed-run service. It renders the actual returned MCP
+content as native tool results, observes both original hooks, and qualifies
+`within_observed_limits`. The test independently recounts all six selected-input
+envelopes from retained stdout and checks the original hash, source identities,
+9500-byte total, 30-second last-memory receipt, 5-second hooks and whole-bank
+caps. The older dispatch-only fixture still reports unknown for missing rendered
+events/incomplete source rows. Native EOF/wait/release is observed; service
+shutdown can retain its separate unknown pipe-EOF cleanup status. This authored
+positive fixture proves neither selected executable compatibility nor usefulness.
+
 Real runtime selection, dedicated whole-campaign capacity, two complete weekly
 21-case/126-attempt/1900-distractor runs, independent changed-pair grading and
 branch automation remain required. The inert tests exercise authored processes
@@ -229,3 +241,36 @@ engine compilation and exception frames remains unproved. In particular, the
 separation for its authored inputs; it does not certify every accepted response
 or full workload fit. Native/runtime admission and original weekly criteria
 remain pending. No reservation or cap is reduced to hide this obligation.
+
+The next source-bound step should follow actual phases, not multiply the largest
+single response by six. The original shared traffic bank also charges request,
+framing and repeated transport bytes. First derive cumulative admitted producer
+stdout/stderr payload from the actual RPC credit/receive path and its settled
+prefixes, including interrupted and refused operations. Root's synthetic wide
+and nested response observations exhausted that bank before six maximum replies;
+their retained-container lower bounds are not physical upper bounds.
+
+For the selected Python build, bound JSON objects against those cumulative
+payload bytes using the accepted grammar, container capacity growth, strings,
+integers and decoder temporaries. Then inventory simultaneously reachable roots
+at `run_json`, `Memory.call`, `recall`, `eager_agent_candidates`,
+`render_agent_candidates` and excerpt fitting: count shared objects once, but
+include copied dictionaries/lists, Unicode/UTF-8 caches, rendered strings and
+exception traceback locals. Exercise the original recall/renderer path with
+wide and nested synthetic replies near the cumulative traffic limit; observations
+check that inventory but cannot replace the upper-bound argument.
+
+Compilation is a separate earlier phase. Root observed the exact tracked engine
+SHA `53d826f6ed396156de21b23865814f9f7e1db67051600c31ec40e8ef07efe896`
+through `load_engine` on Python 3.12.3: traced current 1721561 bytes and peak
+12251312 bytes after fixed-entry imports; process max RSS was 38144 KiB including
+the harness. This exceeds the named producer1MiB partition, not the held aggregate,
+and excludes untraced allocations. Loading precedes `ProducerClient` construction;
+compiler scratch can share later storage only through an explicit verified phase
+accounting change that keeps the full aggregate held and charges retained module/
+code objects into the later phase. Source Unicode and compiler graphs are working
+memory. Do not count compiler scratch as raw storage or assume client storage is
+free after construction. Include failure tracebacks that prolong either phase.
+If the simultaneous bound does not fit, identify its allocation and last-use
+boundary before selecting a production ownership correction; no quote reduction
+or cap increase follows from these observations.
