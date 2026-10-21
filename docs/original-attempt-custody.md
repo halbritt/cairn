@@ -35,10 +35,13 @@ The blind draft's `_contract` permits six channels and checks an explicitly
 supplied ordered contract. `_render` requires exact coverage, artifact metadata,
 and a separately pinned observation/subject for `action_trace` and
 `evaluator_observation`. It does not derive a contract from the private checks.
-The converter's `_materials` currently accepts only `task_statement`,
-`grading_instructions`, and `final_answer`; additional channels refuse
-`legacy_channel_unbound`. The tracked schema examples in the blind draft and
-converter tests are synthetic. They do not establish original-case requirements.
+The converter's request `/1` accepts `task_statement`, `grading_instructions`,
+and `final_answer`. Explicit request `/2` also supports selected `action_trace`
+through the existing parsers, with pinned parser sources and private
+attempt/stream/subject bindings. See [selected legacy action traces](legacy-action-selection.md).
+Artifact and evaluator-observation channels still refuse `legacy_channel_unbound`.
+The examples and tests are synthetic; they do not establish original-case
+requirements or release authority.
 
 ## Existing custody to reuse
 
@@ -170,12 +173,15 @@ After the metadata is selected, extend the original-attempt owner in
    custody, with changes during capture causing refusal. Bound counts and reads
    before allocation. Preserve partial output on interruptions; never retry an
    uncertain capture as a fresh attempt.
-3. **Actions.** Feed original stream bytes and their existing timing/correlation
-   custody into the selected action projection. Keep error, repeat, incomplete
-   and denied actions distinct. Bind the projection to original stream digest,
-   byte count, attempt identity and parser source. Do not manufacture raw-line
-   custody by re-encoding parsed JSON or substitute command hashes for original
-   `tool_output` semantics.
+3. **Actions.** The implemented conversion `/2` projects commands and correlated
+   command outputs from the hash-verified retained legacy stream, preserving the
+   existing parsers' error, repeat, background and incomplete-command semantics.
+   Its private subject binds retained byte count/digest, attempt identity and
+   selected parser sources. This is `legacy-retained-utf8/1`, not original pipe
+   bytes or independent capture. Selected contracts and release review remain
+   required; the existing 32000-byte projection ceiling may refuse a legitimate
+   attempt. Do not substitute command hashes for original `tool_output` semantics
+   or infer complete timing/denial custody from this projection.
 4. **Evaluation.** An authorized evaluator consumes the captured original state
    and original selected checks through `grade`/`evaluate`. Bind its source,
    exact input snapshot, actual execution/exit and outcome before projecting the
