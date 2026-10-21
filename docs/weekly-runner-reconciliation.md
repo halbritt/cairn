@@ -491,11 +491,29 @@ file's, never the binary's.
   `semantic_selector_config_conflict` if `preview_model` or `recall_model` is
   present (either would replace the declared model), or if a different
   `claude` or `model` is already set.
-- `selector_argv` loads the pinned `memory.py` and lets its own `select_json`
-  build each stage's command, with `run_json` replaced so nothing is spawned.
-- The argv must start with the target and carry exactly one `--model`, the
-  declared one. Otherwise it refuses `semantic_selector_argv`, including when
-  a pinned revision has another `select_json` contract.
+- `selector_argv` never imports or runs hook source on the host (agent-341
+  review of `be9fcc1`). It reads the bytes and hashes them. A hash not in
+  `REVIEWED_HOOKS` refuses `semantic_selector_hook_unreviewed` before the
+  source is even parsed.
+- `REVIEWED_HOOKS` maps a reviewed `memory.py` SHA-256 to its git revision and
+  argv contract (`ARGV_CONTRACT`). It holds one entry, `43c4b61`'s blob
+  (`53d826f6...`), and that entry is **proposed for root review**. Root adds or
+  strikes entries, including the original `recall_revision` blobs.
+- For an allow-listed hash, `argv_contract` uses `ast.parse` alone. It checks
+  four things in the parse tree:
+  - the `command` list in `select_json`;
+  - the single guarded `command += ["--model", model]`;
+  - no other `command` writes or method calls;
+  - the `selector_model` key order and its resolution loop.
+
+  The extracted contract must equal the reviewed one. Otherwise it refuses
+  `semantic_selector_argv`.
+- The argv is then built from the contract. It refuses if `claude` is not the
+  target, if `preview_model` or `recall_model` is set, or if the resolved model
+  is not the declared one.
+- A test writes a hook with a top-level sentinel file and an environment
+  variable. Unlisted, it refuses as unreviewed. Even force-listed, it refuses
+  by static extraction. Neither side effect ever occurs.
 
 **The capture consumer of `config.model`** (`registered_events`):
 - `memory.handle_event` calls `capture` for `PreCompact`, `SessionEnd` and
@@ -557,14 +575,131 @@ of exactly these bytes.
 `refusals` names every failed part. `not_observed` is always `served_model`
 and `provider_account`. `requested_model` is never called served.
 
-**Authentication gap.** `AUTHENTICATION_METHODS` is empty in current source.
-The observer appends `observations.jsonl` inside the read-write
-`/tmp/trial/hookstate` mount, which the actor's tools can also write. Native
-correlation binds each row's event and stdout, but not its `recall` content.
-So every real attempt refuses `semantic_selector_capture_unauthenticated`
-until root accepts a channel. A channel must bind the parsed bytes to a
-producer that the actor cannot write. Tests patch the set with a synthetic
-channel only.
+**Authentication gap.** `AUTHENTICATION_METHODS` is empty in current source,
+so every real attempt refuses `semantic_selector_capture_unauthenticated`:
+- The observer appends `observations.jsonl` inside the read-write
+  `/tmp/trial/hookstate` mount (`trial_task_eval.py:1189`, `:1223-1227`). The
+  actor's tools can also write that mount.
+- Native correlation binds each row's event and stdout digest through the
+  owner-held native stdout (`trial_native_observation.py:339-367`, `:461-494`).
+  It does not bind the row's `recall` content.
+
+#### Proposed protected producer for selector observations
+
+**Today: actor-invoked wrapper.**
+- The native CLI runs the hook command, `bash -c 'python3 -B
+  /tmp/trial/hook-observer.py ... | tee -a calls.jsonl'`. It runs inside the
+  actor's sandbox, as the actor's uid, in the actor's PID namespace.
+- No owner-held channel can be handed to it, because tool processes inherit
+  the CLI's descriptors and can reach `/proc/<cli>/fd`.
+- So no transport bound to this process separates the hook from the actor.
+  This rules out a socket with peer credentials (`docs/sdk-memory-broker-socket`
+  binds a live peer, not its executable, source or causing callback), an
+  `OwnedWorker` stream, and a `--json-status-fd`/`pass_fds` FD.
+
+**Existing SDK coordinator: not reusable without changing original
+semantics.**
+- `trial_sdk_control.SDKControl` receives `hook_callback` requests on
+  owner-held native stdio and runs recall host-side through
+  `EngineMemoryAdapter`. The incompatibilities are:
+  1. **Engine binding.** `EngineMemoryAdapter` requires `recall_mode ==
+     agent_tools` and `recall_observations is False`
+     (`trial_sdk_engine_adapter.py:58-62`). It replaces `run_json` and
+     `bounded_command` with a gated broker channel. An ambient selector's
+     `select_json` would go through that broker instead of running the
+     selector binary, and no `preview_process`/`model_process` record would
+     exist.
+  2. **Hook kind and stdout contract.** The original route uses a command
+     hook whose stdout JSON the CLI parses, timed by the hook `timeout`.
+     SDK callbacks are a `control_request`/`control_response` exchange with
+     `hookCallbackIds` registered in `initialize`
+     (`trial_sdk_control.py:204-208`). That changes the native launch mode,
+     the event ordering on the stream (`hook_started`/`hook_response` versus
+     control frames) and the response bytes.
+  3. **Failure behaviour.** A command hook's nonzero exit or timeout is a CLI
+     hook error. An SDK callback failure is a control error or
+     `sdk_callback_timeout` refusal (`trial_sdk_control.py:673-679`). The two
+     have different native consequences.
+  4. **Timing.** Both use 5 s (`HOOK_SECONDS`, `LIMITS['hook_seconds']`), but
+     the SDK clock starts at the control request, not at the command spawn,
+     and includes the owner's producer start-up (`trial_sdk_fixed_run.py:240-251`).
+
+**Proposal: owner-launched engine, legacy command hook kept.**
+
+Ownership:
+- The legacy harness process that already owns `capture()` and the native
+  stdout (`trial_task_eval.run_agent`) creates, per attempt, an *owner hook
+  executor*. It holds:
+  - a listening `SOCK_SEQPACKET` socket in an owner directory, bind-mounted
+    read-only into the sandbox at `/tmp/trial/hook-signal`;
+  - an owner-only `hookstate` directory, which is no longer mounted into the
+    actor sandbox;
+  - an append-only ledger and observations file outside every actor mount.
+
+Interface:
+- The actor's command hook becomes a reviewed, read-only *signal stub*. It
+  sends one bounded frame `{event bytes}`, waits, writes the returned stdout
+  bytes unchanged and exits with the returned code.
+- For each frame, the owner runs the unchanged pinned `memory.py` under the
+  unchanged `trial_hook_observer`. It runs in an owner-launched bwrap that
+  mirrors today's hook view: the same paths, ro hook, ro config, ro selector
+  mount, the store socket, the workspace at its path, `--clearenv` with the
+  same variables, and `state_dir` on the owner-only hookstate. It uses the
+  deadline of the 5 s limit, measured from frame receipt.
+- The owner appends the observer's row to its observations file. It appends
+  one `cairn.selector-owner-execution/1` ledger row (`check_owner_executions`)
+  binding:
+  - `attempt_id` and a contiguous `sequence`;
+  - `event` and `hook_input_sha256`;
+  - `stdout_sha256` and `exit_code`;
+  - the observation line's SHA-256;
+  - the engine, observer, config and selector SHA-256 values it mounted.
+- It then returns stdout and the exit code to the stub.
+
+Binding points:
+- **Reviewed source and config:** the owner mounts the retained blobs and
+  config that `trial_original_arms`, `retain`/`mount` and `selector_argv`
+  checked, and records their digests in every ledger row.
+- **Attempt:** one executor, socket, ledger and `attempt_id` per attempt.
+- **Causing callback:** each native `hook_started`/`hook_response` pair on
+  the owner-held stdout must correlate one-to-one, by `(event,
+  stdout_sha256)`, with exactly one ledger row (`classify_attempt`'s
+  completeness).
+  - A frame forged by an actor tool produces a ledger row with no native
+    response, so the counts differ and the attempt refuses.
+  - A rewritten observation fails its line digest.
+  - The actor can no longer write the rows, because they never enter its
+    mounts.
+- **Completeness accounting:** the owner owns the ledger, the native stream
+  and the comparison.
+
+Residual and unresolved:
+- The event bytes still come from the stub, which the actor can reach. A
+  forged event that the CLI never sent cannot pass correlation. A copied
+  genuine event duplicates a ledger row and refuses.
+- Running the engine outside the CLI's process tree changes these
+  properties, each of which needs root's acceptance:
+  - which process the CLI kills on timeout: the stub, so the owner must kill
+    the engine at the same deadline;
+  - stderr routing;
+  - the hook's view of `/proc` and PIDs;
+  - the round-trip latency inside the 5 s budget.
+- Once it is wired and root accepts it, the owner would supply
+  `authentication={method: 'owner_launched_engine/1', observations_sha256}`
+  only after `check_owner_executions` returns no refusal. Only then would that
+  method be added to `AUTHENTICATION_METHODS`.
+
+Owned-file changes this needs (not made):
+- `trial_task_eval.py`:
+  - :1185-1214: take the hookstate bind out of the actor binds, replace
+    `hook_cmd` with the stub, and add the signal mount.
+  - :1223-1227: the binds list.
+  - :1334/:1370/:1414: read the owner files.
+- A new owner executor module, in the writer worker's lane.
+- `trial_native_observation.py:277-367`: expose the per-hook `{hook_id,
+  event, stdout_sha256}` it already builds.
+- `trial_original_execution.check_observed` (:150-184): consume the
+  per-attempt classification.
 
 ## Verifying the selected harness before launch (analysis)
 
@@ -690,9 +825,10 @@ Limits and account selection:
 - The runner tests also cover account refusals and mismatch, a harness
   without the selector or the flag, and limit, late-memory and unobserved
   rows.
-- `test_trial_semantic_selector` (24 synthetic tests) covers the declaration
+- `test_trial_semantic_selector` (29 synthetic tests) covers the declaration
   and malformed declarations, the `/1` and `/2` arm rules, binary custody,
-  configuration conflicts, the pinned hook's argv (built, never spawned),
+  configuration conflicts, the reviewed hook's argv (static only; a hook
+  with top-level effects is refused and never runs), the owner ledger,
   capture demand, schema-checked parsing, and per-attempt `matched`,
   `not_invoked`, `mismatched`, `incomplete` and unauthenticated results. It
   uses fake binary files and fabricated hook rows only.
@@ -704,8 +840,9 @@ Limits and account selection:
 - The artifact and evaluator channels (actor-final capture before grading).
 - The hook selector for an ambient arm with `semantic_fallback`
   (`semantic_fallback_selector`). The seam is in `trial_semantic_selector`.
-  Still to do: `/2` dispatch in the owned files, harness and runner wiring, and
-  an accepted authentication channel for hook observations.
+  Still to do: `/2` dispatch in the owned files, harness and runner wiring,
+  root review of `REVIEWED_HOOKS`, and the proposed owner-launched engine
+  (or another accepted channel) for hook observations.
 - Real capacity-adapter input for the bound account, and a root-issued live
   selection for one concrete slot.
 - Real conversion materials, a grader release authority, delivery, the

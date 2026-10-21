@@ -21,18 +21,20 @@ full-boundary wiring and tests exist:
 - ``retain`` / ``mount``: a retained read-only copy of the declared binary,
   re-hashed before each attempt and bound at ``TARGET``;
 - ``hook_config`` / ``selector_argv``: the hook configuration and the exact
-  selector argv that the pinned hook source builds from it, before effects;
+  selector argv of a reviewed pinned hook, derived statically (the hook is
+  never imported or run on the host);
 - ``registered_events``: the capture side effect of ``config["model"]``;
 - ``parse_observations`` / ``classify_attempt``: one attempt's schema-checked
   hook rows, classified on their own.
+- ``check_owner_executions``: the proposed owner-launched engine's per-attempt
+  ledger (docs/weekly-runner-reconciliation.md); it authenticates nothing alone.
 
 ``requested_model`` is the ``--model`` argument the hook passed. It is never the
 served model. The served model and the provider account are never observed.
 """
+import ast
 import collections
-import copy
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -212,38 +214,153 @@ def hook_config(config, declared, target=TARGET):
     return dict(config, claude=target, model=declared['model'])
 
 
-def selector_argv(hook_path, config, declared, target=TARGET):
-    """The exact argv the pinned hook source builds for each selector stage, built before effects.
+# The reviewed selector argv contract of memory.select_json / selector_model.
+# ('config', 'claude') is the configured selector path; ('argument', name) is a
+# per-call value select_json fills in (the JSON schema and the system prompt).
+ARGV_CONTRACT = dict(
+    argv=(('config', 'claude'), '--print', '--output-format', 'json', '--disable-slash-commands',
+          '--no-session-persistence', '--setting-sources', '', '--settings', '{"disableAllHooks":true}',
+          '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--max-turns', '2',
+          '--json-schema', ('argument', 'schema'), '--system-prompt', ('argument', 'prompt')),
+    model_flag='--model',
+    validated_keys=('preview_model', 'recall_model'),
+    model_keys=dict(preview=('preview_model', 'recall_model', 'model'), recall=('recall_model', 'model'),
+                    other=('model',)))
+# SHA-256 of a reviewed memory.py -> the git revision it came from and its contract.
+# The 43c4b61 entry is PROPOSED for root review; root adds or strikes entries.
+REVIEWED_HOOKS = {
+    '53d826f6ed396156de21b23865814f9f7e1db67051600c31ec40e8ef07efe896':
+        dict(revision='43c4b6170f1f7784d70d55ca6669d770ab214ed1', contract=ARGV_CONTRACT),
+}
+HOOK_BYTES = 8 * 1024 * 1024
 
-    The pinned ``memory.py`` is loaded and its own ``select_json`` builds the
-    command; its ``run_json`` is replaced so nothing is spawned.
+
+def _function(tree, name):
+    found = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name]
+    if len(found) != 1:
+        raise ValueError('semantic_selector_argv')
+    return found[0]
+
+
+def _strings(node):
+    if not (isinstance(node, ast.Tuple) and all(isinstance(e, ast.Constant) and type(e.value) is str
+                                                  for e in node.elts)):
+        raise ValueError('semantic_selector_argv')
+    return tuple(e.value for e in node.elts)
+
+
+def _argv_element(node):
+    if isinstance(node, ast.Constant) and type(node.value) is str:
+        return node.value
+    if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == 'config'
+            and isinstance(node.slice, ast.Constant) and node.slice.value == 'claude'):
+        return ('config', 'claude')
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'encoded'
+            and len(node.args) == 1 and not node.keywords and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == 'schema'):
+        return ('argument', 'schema')
+    if isinstance(node, ast.Name) and node.id == 'prompt':
+        return ('argument', 'prompt')
+    raise ValueError('semantic_selector_argv')
+
+
+def argv_contract(source):
+    """Statically extract the selector argv contract from hook source; nothing is executed.
+
+    Only ``ast.parse`` reads the source. Any construction outside the reviewed
+    form refuses ``semantic_selector_argv``.
     """
-    spec = importlib.util.spec_from_file_location(
-        'semantic_selector_hook_' + hashlib.sha256(str(hook_path).encode()).hexdigest()[:8], hook_path)
-    engine = importlib.util.module_from_spec(spec)
     try:
-        spec.loader.exec_module(engine)
-    except Exception:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
         raise ValueError('semantic_selector_argv') from None
-    built = {}
+    select = _function(tree, 'select_json')
+    names = [a.arg for a in select.args.args]
+    if names[:4] != ['config', 'schema', 'prompt', 'excerpt'] or 'stage' not in names:
+        raise ValueError('semantic_selector_argv')
+    writes = [n for n in ast.walk(select)
+              if isinstance(n, (ast.Assign, ast.AugAssign, ast.AnnAssign))
+              and any(isinstance(t, ast.Name) and t.id == 'command'
+                      for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))]
+    mutations = [n for n in ast.walk(select) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+                 and n.value.id == 'command']
+    if len(writes) != 2 or mutations:
+        raise ValueError('semantic_selector_argv')
+    initial, extension = writes
+    if not (isinstance(initial, ast.Assign) and isinstance(initial.value, ast.List)):
+        raise ValueError('semantic_selector_argv')
+    argv = tuple(_argv_element(e) for e in initial.value.elts)
+    model_assign = [n for n in select.body if isinstance(n, ast.Assign) and len(n.targets) == 1
+                    and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'model']
+    guarded = [n for n in select.body if isinstance(n, ast.If) and isinstance(n.test, ast.Name)
+               and n.test.id == 'model' and not n.orelse and n.body == [extension]]
+    if not (len(model_assign) == 1 and len(guarded) == 1 and isinstance(extension, ast.AugAssign)
+            and isinstance(extension.op, ast.Add) and isinstance(extension.value, ast.List)
+            and len(extension.value.elts) == 2 and isinstance(extension.value.elts[0], ast.Constant)
+            and isinstance(extension.value.elts[1], ast.Name) and extension.value.elts[1].id == 'model'):
+        raise ValueError('semantic_selector_argv')
+    call = model_assign[0].value
+    if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == 'selector_model'
+            and [a.id for a in call.args if isinstance(a, ast.Name)] == ['config', 'stage'] and len(call.args) == 2):
+        raise ValueError('semantic_selector_argv')
+    resolver = _function(tree, 'selector_model')
+    loops = [n for n in resolver.body if isinstance(n, ast.For)]
+    if len(loops) != 2:
+        raise ValueError('semantic_selector_argv')
+    validated, chain = loops[0].iter, loops[1].iter
+    body = loops[1].body
+    # The resolution loop must be exactly: if config.get(key): return config[key]
+    if not (len(body) == 1 and isinstance(body[0], ast.If) and not body[0].orelse
+            and ast.dump(body[0].test) == ast.dump(ast.parse('config.get(key)', mode='eval').body)
+            and len(body[0].body) == 1 and isinstance(body[0].body[0], ast.Return)
+            and ast.dump(body[0].body[0].value) == ast.dump(ast.parse('config[key]', mode='eval').body)
+            and ast.dump(resolver.body[-1]) == ast.dump(ast.parse('return None').body[0])):
+        raise ValueError('semantic_selector_argv')
+    model_keys = {}
+    while isinstance(chain, ast.IfExp):
+        test = chain.test
+        if not (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name) and test.left.id == 'stage'
+                and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)
+                and isinstance(test.comparators[0], ast.Constant) and type(test.comparators[0].value) is str):
+            raise ValueError('semantic_selector_argv')
+        model_keys[test.comparators[0].value] = _strings(chain.body)
+        chain = chain.orelse
+    model_keys['other'] = _strings(chain)
+    return dict(argv=argv, model_flag=extension.value.elts[0].value, validated_keys=_strings(validated),
+                model_keys=model_keys)
 
-    def capture(command, **_):
-        built['command'] = list(command)
-        return {}
-    engine.run_json = capture
+
+def selector_argv(hook_path, config, declared, target=TARGET):
+    """The selector argv the reviewed pinned hook builds from ``config``, without loading the hook.
+
+    The hook bytes are hashed first: unreviewed source refuses
+    ``semantic_selector_hook_unreviewed`` before it is even parsed. Reviewed
+    source is parsed statically (never imported or run) and must still yield
+    its reviewed contract. ``('argument', name)`` slots are per-call values.
+    """
+    try:
+        with open(hook_path, 'rb') as source:
+            data = source.read(HOOK_BYTES + 1)
+    except OSError:
+        raise ValueError('semantic_selector_hook_unreviewed') from None
+    review = REVIEWED_HOOKS.get(hashlib.sha256(data).hexdigest()) if len(data) <= HOOK_BYTES else None
+    if review is None:
+        raise ValueError('semantic_selector_hook_unreviewed')
+    contract = argv_contract(data)
+    if contract != review['contract']:
+        raise ValueError('semantic_selector_argv')
+    if config.get('claude') != target or any(key in config for key in contract['validated_keys']):
+        raise ValueError('semantic_selector_argv')
     result = {}
     for stage in ('preview', 'recall'):
-        built.clear()
-        try:
-            engine.select_json(copy.deepcopy(config), {}, '', {}, stage=stage, observation={})
-        except Exception:  # a pinned revision with another select_json contract is not bound here
-            raise ValueError('semantic_selector_argv') from None
-        argv = built.get('command')
-        models = [argv[i + 1] for i, part in enumerate(argv[:-1]) if part == '--model'] if argv else []
-        if not argv or argv[0] != target or models != [declared['model']] or argv.count('--model') != 1:
+        keys = contract['model_keys'].get(stage, contract['model_keys']['other'])
+        model = next((config[key] for key in keys if config.get(key)), None)
+        if model != declared['model']:
             raise ValueError('semantic_selector_argv')
-        result[stage] = argv
-    return result
+        argv = [target if part == ('config', 'claude') else list(part) if isinstance(part, tuple) else part
+                for part in contract['argv']]
+        result[stage] = argv + [contract['model_flag'], model]
+    return dict(revision=review['revision'], argv=result)
 
 
 def registered_events(events):
@@ -393,3 +510,62 @@ def classify_attempt(declared, *, mounted, observations, native_hooks, authentic
                 observed=dict(binary_sha256=binary, calls=calls,
                               observations_sha256=parsed['sha256'] if parsed is not None else None),
                 result=result, model=model, refusals=refusals, not_observed=list(NOT_OBSERVED))
+
+
+# ---------------------------------------------------------------- owner-launched engine (proposed)
+
+LEDGER_SCHEMA = 'cairn.selector-owner-execution/1'
+BINDINGS = ('engine_sha256', 'observer_sha256', 'config_sha256', 'selector_sha256')
+LEDGER_FIELDS = frozenset(('schema', 'attempt_id', 'sequence', 'event', 'hook_input_sha256', 'stdout_sha256',
+                           'exit_code', 'observation_sha256') + BINDINGS)
+
+
+def check_owner_executions(ledger, observations, *, attempt_id, bindings):
+    """Check the proposed owner ledger of engine executions for one attempt.
+
+    In the proposed owner-launched model the owner, not the actor, runs the
+    engine for every hook signal and appends one ``cairn.selector-owner-execution/1``
+    row per execution, outside every actor mount. Each row must:
+    - belong to ``attempt_id``, in contiguous ``sequence`` order;
+    - carry exactly the reviewed ``bindings`` (engine, observer, config and
+      selector SHA-256 values the owner mounted);
+    - bind the observation line at the same position by its SHA-256, event and
+      stdout digest.
+
+    It returns the refusal codes; an empty list is not authentication by itself.
+    Native correlation (``classify_attempt``) still decides completeness, and no
+    method is added to ``AUTHENTICATION_METHODS`` until the owner wiring exists
+    and root accepts it.
+    """
+    if not (isinstance(bindings, dict) and set(bindings) == set(BINDINGS)
+            and all(_sha256(bindings[k]) for k in BINDINGS)):
+        raise ValueError('semantic_selector_owner_bindings')
+    if not (isinstance(ledger, list) and type(observations) is bytes):
+        return ['semantic_selector_owner_ledger_malformed']
+    lines = observations.splitlines()
+    refusals = []
+    for index, row in enumerate(ledger):
+        if not (isinstance(row, dict) and set(row) == LEDGER_FIELDS and row['schema'] == LEDGER_SCHEMA
+                and type(row['sequence']) is int and row['event'] in OBSERVER_EVENTS
+                and all(_sha256(row[k]) for k in ('hook_input_sha256', 'stdout_sha256', 'observation_sha256'))
+                and (row['exit_code'] is None or type(row['exit_code']) is int)):
+            return ['semantic_selector_owner_ledger_malformed']
+        if row['attempt_id'] != attempt_id or row['sequence'] != index:
+            code = 'semantic_selector_owner_attempt_mismatch'
+        elif any(row[k] != bindings[k] for k in BINDINGS):
+            code = 'semantic_selector_owner_binding_mismatch'
+        elif index >= len(lines) or hashlib.sha256(lines[index]).hexdigest() != row['observation_sha256']:
+            code = 'semantic_selector_owner_observation_unbound'
+        else:
+            try:
+                line = json.loads(lines[index])
+            except ValueError:
+                line = None
+            code = (None if isinstance(line, dict) and line.get('event') == row['event']
+                    and line.get('stdout_sha256') == row['stdout_sha256']
+                    else 'semantic_selector_owner_observation_unbound')
+        if code and code not in refusals:
+            refusals.append(code)
+    if len(lines) != len(ledger) and 'semantic_selector_owner_observation_unbound' not in refusals:
+        refusals.append('semantic_selector_owner_observation_unbound')
+    return refusals

@@ -3,8 +3,8 @@
 No provider, model, store, case or oracle is used, and no selector is spawned.
 Hook rows mirror trial_hook_observer's ``cairn.task-hook-observation/1``;
 process records mirror what ``memory.bounded_command`` and ``select_json``
-write. ``selector_argv`` loads the repository's own lifecycle ``memory.py`` and
-replaces its ``run_json``, so the argv is built and never run.
+write. ``selector_argv`` reads the reviewed ``memory.py`` blob from git and parses
+it statically; no hook source is imported or run.
 """
 import hashlib
 import json
@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -19,7 +20,6 @@ from unittest.mock import patch
 import trial_semantic_selector as selector
 
 ROOT = Path(__file__).resolve().parents[1]
-HOOK = ROOT / 'integrations/lifecycle/memory.py'
 BINARY_BYTES = b'#!/bin/sh\necho synthetic-selector\n'
 BINARY_SHA = hashlib.sha256(BINARY_BYTES).hexdigest()
 MODEL = 'synthetic-selector-model'
@@ -195,28 +195,83 @@ class ConfigArgvTest(unittest.TestCase):
                     self.assertRaisesRegex(ValueError, '^semantic_selector_config_conflict$'):
                 selector.hook_config(dict(self.base, **conflict), self.declared)
 
-    def test_pinned_hook_builds_the_exact_selector_argv_without_spawning(self):
+    def reviewed_hook(self, directory, transform=lambda text: text):
+        """Write the reviewed memory.py blob (from git, at its recorded revision) into a temporary file."""
+        (digest, review), = selector.REVIEWED_HOOKS.items()
+        blob = subprocess.run(['git', '-C', str(ROOT), 'cat-file', 'blob',
+                               review['revision'] + ':integrations/lifecycle/memory.py'],
+                              check=True, capture_output=True).stdout
+        self.assertEqual(hashlib.sha256(blob).hexdigest(), digest)
+        path = Path(directory) / 'memory.py'
+        path.write_bytes(transform(blob.decode()).encode())
+        return path
+
+    def test_reviewed_hook_yields_the_exact_selector_argv_statically(self):
         config = selector.hook_config(self.base, self.declared)
-        with patch('subprocess.Popen', side_effect=AssertionError('spawned')):
-            argv = selector.selector_argv(HOOK, config, self.declared)
-        for stage in ('preview', 'recall'):
-            with self.subTest(stage=stage):
-                self.assertEqual(argv[stage][0], '/tmp/trial/selector/claude')
-                self.assertEqual(argv[stage][argv[stage].index('--model') + 1], MODEL)
-                self.assertEqual(argv[stage].count('--model'), 1)
-                self.assertEqual(argv[stage][argv[stage].index('--tools') + 1], '')
+        with tempfile.TemporaryDirectory() as directory:
+            hook = self.reviewed_hook(directory)
+            with patch('subprocess.Popen', side_effect=AssertionError('spawned')), \
+                    patch('importlib.util.spec_from_file_location', side_effect=AssertionError('imported')):
+                built = selector.selector_argv(hook, config, self.declared)
+        self.assertEqual(built['revision'], '43c4b6170f1f7784d70d55ca6669d770ab214ed1')
+        # Expected argv written out from the reviewed select_json source, not from the module's contract.
+        expected = ['/tmp/trial/selector/claude', '--print', '--output-format', 'json', '--disable-slash-commands',
+                    '--no-session-persistence', '--setting-sources', '', '--settings', '{"disableAllHooks":true}',
+                    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--max-turns', '2',
+                    '--json-schema', ['argument', 'schema'], '--system-prompt', ['argument', 'prompt'],
+                    '--model', MODEL]
+        self.assertEqual(built['argv'], dict(preview=expected, recall=expected))
+
+    def test_unreviewed_hook_with_top_level_effects_is_refused_without_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sentinel = Path(directory) / 'sentinel'
+            hook = Path(directory) / 'memory.py'
+            hook.write_text("import os, pathlib\n"
+                            f"pathlib.Path({str(sentinel)!r}).write_text('ran')\n"
+                            "os.environ['CAIRN_SELECTOR_SENTINEL'] = 'ran'\n"
+                            "def selector_model(config, stage):\n    return config.get('model')\n"
+                            "def select_json(config, schema, prompt, excerpt, timeout=35, stage='capture', observation=None):\n"
+                            "    pathlib.Path(" + repr(str(sentinel)) + ").write_text('ran')\n    return {}\n")
+            config = selector.hook_config(self.base, self.declared)
+            with self.assertRaisesRegex(ValueError, '^semantic_selector_hook_unreviewed$'):
+                selector.selector_argv(hook, config, self.declared)
+            # Even an allow-listed hash never runs the source: static extraction refuses it.
+            digest = hashlib.sha256(hook.read_bytes()).hexdigest()
+            with patch.dict(selector.REVIEWED_HOOKS, {digest: dict(revision='0' * 40, contract=selector.ARGV_CONTRACT)}):
+                with self.assertRaisesRegex(ValueError, '^semantic_selector_argv$'):
+                    selector.selector_argv(hook, config, self.declared)
+            self.assertFalse(sentinel.exists())
+            self.assertNotIn('CAIRN_SELECTOR_SENTINEL', os.environ)
+            with self.assertRaisesRegex(ValueError, '^semantic_selector_hook_unreviewed$'):
+                selector.selector_argv(Path(directory) / 'absent.py', config, self.declared)
+
+    def test_allow_listed_source_must_still_match_its_reviewed_contract(self):
+        config = selector.hook_config(self.base, self.declared)
+        edits = [lambda t: t.replace('"--max-turns", "2"', '"--max-turns", "9"'),
+                 lambda t: t.replace('command += ["--model", model]', 'command += ["--model", model, "--x"]'),
+                 lambda t: t.replace('        command += ["--model", model]\n',
+                                     '        command += ["--model", model]\n    command.append("--y")\n'),
+                 lambda t: t.replace('else ("recall_model", "model") if stage == "recall"',
+                                     'else ("model", "recall_model") if stage == "recall"')]
+        for edit in edits:
+            with tempfile.TemporaryDirectory() as directory:
+                hook = self.reviewed_hook(directory, edit)
+                self.assertNotEqual(hashlib.sha256(hook.read_bytes()).hexdigest(), next(iter(selector.REVIEWED_HOOKS)))
+                digest = hashlib.sha256(hook.read_bytes()).hexdigest()
+                with patch.dict(selector.REVIEWED_HOOKS, {digest: dict(revision='0' * 40,
+                                                                       contract=selector.ARGV_CONTRACT)}), \
+                        self.assertRaisesRegex(ValueError, '^semantic_selector_argv$'):
+                    selector.selector_argv(hook, config, self.declared)
 
     def test_argv_without_the_declared_model_refuses(self):
-        for config in (dict(self.base, claude='/tmp/trial/selector/claude'),  # CLI default model
-                       dict(self.base, claude='/tmp/trial/selector/claude', model='other-model'),
-                       dict(self.base, claude='/elsewhere/claude', model=MODEL)):
-            with self.subTest(config=config), self.assertRaisesRegex(ValueError, '^semantic_selector_argv$'):
-                selector.selector_argv(HOOK, config, self.declared)
         with tempfile.TemporaryDirectory() as directory:
-            broken = Path(directory) / 'memory.py'
-            broken.write_text('def select_json(config):\n    return {}\n')
-            with self.assertRaisesRegex(ValueError, '^semantic_selector_argv$'):
-                selector.selector_argv(broken, selector.hook_config(self.base, self.declared), self.declared)
+            hook = self.reviewed_hook(directory)
+            for config in (dict(self.base, claude='/tmp/trial/selector/claude'),  # CLI default model
+                           dict(self.base, claude='/tmp/trial/selector/claude', model='other-model'),
+                           dict(self.base, claude='/tmp/trial/selector/claude', model=MODEL, recall_model=MODEL),
+                           dict(self.base, claude='/elsewhere/claude', model=MODEL)):
+                with self.subTest(config=config), self.assertRaisesRegex(ValueError, '^semantic_selector_argv$'):
+                    selector.selector_argv(hook, config, self.declared)
 
     def test_capture_consumer_of_config_model_has_zero_legacy_demand(self):
         self.assertEqual(selector.registered_events(LEGACY_HOOK_EVENTS),
@@ -377,6 +432,67 @@ class ClassifyTest(unittest.TestCase):
         # The first attempt's authenticated digest never authenticates the second's bytes.
         result = self.classify(second, authentication=dict(method=CHANNEL,
                                                            observations_sha256=hashlib.sha256(jsonl(first)).hexdigest()))
+        self.assertEqual(result['refusals'], ['semantic_selector_capture_unauthenticated'])
+
+
+class OwnerLedgerTest(unittest.TestCase):
+    attempt = '6f1c2f0e-6c1b-4e0a-9d47-3c8d2b1a0f11'
+    bindings = dict(engine_sha256='1' * 64, observer_sha256='2' * 64, config_sha256='3' * 64,
+                    selector_sha256=BINARY_SHA)
+
+    def ledger(self, rows):
+        data = jsonl(rows)
+        entries = [dict(schema='cairn.selector-owner-execution/1', attempt_id=self.attempt, sequence=i,
+                        event=r['event'], hook_input_sha256='4' * 64, stdout_sha256=r['stdout_sha256'], exit_code=0,
+                        observation_sha256=hashlib.sha256(line).hexdigest(), **self.bindings)
+                   for i, (r, line) in enumerate(zip(rows, data.splitlines()))]
+        return entries, data
+
+    def check(self, entries, data, **changes):
+        return selector.check_owner_executions(entries, data, **dict(dict(attempt_id=self.attempt,
+                                                                            bindings=self.bindings), **changes))
+
+    def test_bound_ledger_has_no_refusal(self):
+        entries, data = self.ledger(attempt_rows(model_process=process()))
+        self.assertEqual(self.check(entries, data), [])
+
+    def test_unbound_or_foreign_executions_refuse(self):
+        rows = attempt_rows(model_process=process())
+        entries, data = self.ledger(rows)
+        other_rows = [row('SessionStart', b'other')] + rows[1:]
+        _, other_data = self.ledger(other_rows)
+        cases = [
+            (entries, data, dict(attempt_id='00000000-0000-4000-8000-000000000000'),
+             ['semantic_selector_owner_attempt_mismatch']),
+            ([dict(entries[0], engine_sha256='9' * 64)] + entries[1:], data, {},
+             ['semantic_selector_owner_binding_mismatch']),
+            ([entries[1], entries[0]] + entries[2:], data, {}, ['semantic_selector_owner_attempt_mismatch']),
+            (entries, other_data, {}, ['semantic_selector_owner_observation_unbound']),  # rewritten observation
+            # Same event and stdout, rewritten selector record: only the line digest binds it.
+            (entries, jsonl(attempt_rows(model_process=process('other-model'))), {},
+             ['semantic_selector_owner_observation_unbound']),
+            ([dict(entries[0], stdout_sha256='5' * 64)] + entries[1:], data, {},
+             ['semantic_selector_owner_observation_unbound']),
+            (entries[:-1], data, {}, ['semantic_selector_owner_observation_unbound']),  # unledgered row
+            (entries, data + jsonl([row('UserPromptSubmit', b'forged')]), {},
+             ['semantic_selector_owner_observation_unbound']),
+            ([dict(entries[0], extra=1)] + entries[1:], data, {}, ['semantic_selector_owner_ledger_malformed']),
+            ('opaque', data, {}, ['semantic_selector_owner_ledger_malformed']),
+        ]
+        for ledger, observed, changes, refusals in cases:
+            with self.subTest(refusals=refusals, changes=changes):
+                self.assertEqual(self.check(ledger, observed, **changes), refusals)
+        with self.assertRaisesRegex(ValueError, '^semantic_selector_owner_bindings$'):
+            self.check(entries, data, bindings=dict(self.bindings, engine_sha256='x'))
+
+    def test_owner_ledger_alone_never_authenticates(self):
+        entries, data = self.ledger(attempt_rows(model_process=process()))
+        self.assertEqual(self.check(entries, data), [])
+        self.assertEqual(selector.AUTHENTICATION_METHODS, frozenset())
+        result = selector.classify_attempt(
+            selector.typed(declaration()), mounted=dict(sha256=BINARY_SHA), observations=data,
+            native_hooks=native(attempt_rows(model_process=process())),
+            authentication=dict(method='owner_launched_engine/1', observations_sha256=hashlib.sha256(data).hexdigest()))
         self.assertEqual(result['refusals'], ['semantic_selector_capture_unauthenticated'])
 
 
