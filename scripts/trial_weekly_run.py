@@ -246,6 +246,36 @@ def run(profile, *, now, executors=None, compiler=None):
     need(cand != current, 'candidate_equals_current')
     harness = candidate.resolve(repo, profile['harness_commit'], 'harness_unresolved')
     need(harness == profile['harness_commit'], 'harness_unresolved')
+    # One owner per runs_root from the retry decision through the recorded claim.
+    with _runs_lock(runs):
+        admitted = _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness)
+    if 'claim' not in admitted:
+        return admitted
+    slot, claim, plan, executor = admitted['slot'], admitted['claim'], admitted['plan'], admitted['executor']
+    return _execute(profile, slot, claim, plan, executor, repo, compiler)
+
+
+def _runs_lock(runs):
+    """Exclusive non-blocking flock on the runs_root directory itself; creates no file."""
+    import contextlib
+    import fcntl
+
+    @contextlib.contextmanager
+    def held():
+        descriptor = os.open(runs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise paired.Refusal('weekly_run_in_progress') from None
+            yield
+        finally:
+            os.close(descriptor)  # releases the lock
+    return held()
+
+
+def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness):
+    """Under the runs lock: stored receipt, or every check, retirement and the recorded claim."""
     stored, retry = _stored_slot(runs, slot_id, current, cand)
     if stored is not None:
         return stored
@@ -271,6 +301,11 @@ def run(profile, *, now, executors=None, compiler=None):
     except FileExistsError:
         raise paired.Refusal('weekly_run_in_progress') from None
     paired.write_selected(slot / 'claim.json', claim)
+    return dict(slot=slot, claim=claim, plan=plan, executor=executor)
+
+
+def _execute(profile, slot, claim, plan, executor, repo, compiler):
+    slot_id = claim['slot_id']
     try:
         spec = _prepare(profile, slot, claim, plan, repo, compiler or candidate.go_build)
     except paired.Refusal as error:

@@ -158,6 +158,14 @@ These are delegated decisions made in this lane.
   executor's blockers, executor limits, capacity and selection. None of these
   checks writes anything, including on a retry. A refused retry leaves a
   failed slot unchanged and retryable.
+- **Serialized ownership.** From the stored-slot read through the recorded
+  claim, the runner holds an exclusive non-blocking `flock` on the
+  `runs_root` directory itself (`_runs_lock`); it creates no file. A second
+  invocation in that window refuses `weekly_run_in_progress`. The retry
+  decision, retirement and claim are therefore one critical section: a slot
+  that another invocation completed or is executing is never archived or run
+  again. Execution itself runs after the lock is released, guarded by the
+  claimed slot directory.
 - **Effects.** Only after every check passes does the runner retire a
   `failed_before_execution` slot to `failed/SLOT.N` (`_retire`) and claim the
   slot directory with an exclusive `mkdir`. Effects then run in this order:
@@ -238,7 +246,7 @@ Each join from this runner to an actual 21-case / 126-attempt /
 
 ## Tests
 
-`scripts/test_trial_weekly_run.py` has 32 tests. They use an owned temporary
+`scripts/test_trial_weekly_run.py` has 35 tests. They use an owned temporary
 Git repository with synthetic case IDs, a fake compiler, a fake
 `trial-task-eval.sh` that writes synthetic legacy output (agent, plan, runs,
 streams), and the capacity adapter's synthetic 21-case/126-attempt evidence.
@@ -253,7 +261,10 @@ They cover:
 - the complete path through the real `execute`;
 - replay; another pair; in-progress state; retry after a preparation
   failure; a refused retry that leaves the failed slot untouched (agent-341's
-  reproduction); a started slot that is never retried;
+  reproduction); a started slot that is never retried; agent-341's
+  interleaved retry (inner run inside the outer retry's checks) and two
+  interleaved fresh claims, each executing once; a held lock refusing
+  without writes;
 - a later label revision;
 - the provider-cap stop;
 - the CLI;

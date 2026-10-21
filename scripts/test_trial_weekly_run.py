@@ -540,5 +540,53 @@ class WeeklyRunTests(unittest.TestCase):
                 self.assertEqual((result['status'], result['code']), ('rejected', 'agent_row_not_selected'))
 
 
+    def interleave(self):
+        """Patch selection_gate so the outer call runs one inner run_weekly before its own gate."""
+        real, inner, entered = weekly.selection_gate, [], []
+        def gate(*args, **kwargs):
+            if not entered:
+                entered.append(True)
+                try:
+                    inner.append(self.run_weekly()['status'])
+                except paired.Refusal as refusal:
+                    inner.append(str(refusal))
+            return real(*args, **kwargs)
+        return unittest.mock.patch.object(weekly, 'selection_gate', side_effect=gate), inner
+
+    def test_interleaved_retry_never_executes_the_slot_twice_or_archives_a_completed_slot(self):
+        self.profile['weekly_source']['frozen_sha256'] = '0' * 64
+        failed = self.run_weekly()
+        self.assertEqual(failed['status'], 'failed_before_execution')
+        frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
+        self.profile['weekly_source']['frozen_sha256'] = hashlib.sha256(frozen.read_bytes()).hexdigest()
+        patch, inner = self.interleave()
+        with patch:
+            outer = self.run_weekly()
+        self.assertEqual(inner, ['weekly_run_in_progress'])
+        self.assertEqual(outer['status'], 'complete')
+        self.assertEqual(len(self.executor.executed), 1)
+        archived = [json.loads((path / 'receipt.json').read_text())['status']
+                    for path in (self.runs / 'failed').iterdir()]
+        self.assertEqual(archived, ['failed_before_execution'])
+
+    def test_concurrent_fresh_claims_execute_once(self):
+        patch, inner = self.interleave()
+        with patch:
+            outer = self.run_weekly()
+        self.assertEqual(inner, ['weekly_run_in_progress'])
+        self.assertEqual(outer['status'], 'complete')
+        self.assertEqual(len(self.executor.executed), 1)
+
+    def test_held_slot_lock_refuses_without_writing(self):
+        import fcntl
+        descriptor = os.open(self.runs, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            self.refuses('weekly_run_in_progress')
+        finally:
+            os.close(descriptor)
+        self.assertEqual(self.executor.executed, [])
+
+
 if __name__ == '__main__':
     unittest.main()
