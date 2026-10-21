@@ -106,3 +106,7 @@ They establish no actual campaign, fresh grading, account qualification or
 operational candidate self-service. Trusted runtime integration, sufficient blind
 packets, fresh independent grading and two consecutive actual weekly campaigns
 remain full-goal work; original limits and engineer grading exclusions are unchanged.
+
+To request a draft for a candidate branch without building the proposal by hand,
+use the [candidate-branch request](candidate-paired-request.md) command. It builds
+both arms, runs the usage pre-check and calls this producer.
