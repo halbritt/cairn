@@ -136,7 +136,10 @@ The runtime distinguishes a bounded current-context delivery from optional-read
 permission; neither measures the model's actual free context.
 
 Recall I/O shares a five-second deadline; each source/pull operation is bounded by
-two seconds. Coordination admission and final lease renewal use the enclosing
+two seconds. A required-memory lookup attempt instead waits for the remaining
+recall time minus a one-second reserve, but at least two seconds while that much
+remains. A hung first attempt therefore leaves one retry window, and a slow
+successful lookup leaves time for the task-source read and optional recall. Coordination admission and final lease renewal use the enclosing
 hook deadline. This is not a measured five-second end-to-end latency guarantee.
 The normal coordination hook must have enough timeout for admission and cleanup.
 
@@ -144,7 +147,9 @@ With an engine advertising `INBOX_REQUIRED_SEARCH_RETRY_VERSION = 1`, the initia
 required lookup retries once after `TIMEOUT`, `API_UNAVAILABLE`, or
 `API_CONNECTION_FAILED`. Both calls use the same request UUID and query under the
 original deadline. The API's existing receipt idempotency and current-source
-checks still apply. This retries only a memory read, never an inbox claim or task.
+checks still apply. The retry gains no work from a timed-out attempt: the API
+computes the search again before it matches the request ID to a stored receipt
+(a same-ID repeat measured as slow as the first call on 2026-10-21). This retries only a memory read, never an inbox claim or task.
 Permanent refusals, a second failure, or an exhausted deadline still refuse the
 native prompt without granting context. Older pinned engines keep one lookup.
 

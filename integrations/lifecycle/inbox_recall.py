@@ -12,6 +12,21 @@ import uuid
 
 SCHEMA = 'cairn.inbox-recall-binding/1'
 RECALL_OBSERVATION_VERSION = 1
+# The required lookup is the only recall phase whose failure refuses delivery.
+# Each attempt may use the remaining recall time except this reserve, and never
+# less than the former fixed two-second limit while that much time remains. A
+# hung first attempt therefore leaves one retry window; a successful one leaves
+# time for the exact task-source read and optional recall, which degrade on
+# their own deadline. A retry gains no work from a timed-out attempt: the API
+# recomputes the search before matching the request ID to a stored receipt.
+REQUIRED_SEARCH_RESERVE_SECONDS = 1.0
+REQUIRED_SEARCH_MIN_SECONDS = 2
+
+
+def required_search_timeout(engine, deadline):
+    """Seconds one required lookup may wait; raises the engine TIMEOUT when exhausted."""
+    remaining = engine.recall_timeout(deadline, float('inf'))
+    return max(remaining - REQUIRED_SEARCH_RESERVE_SECONDS, min(remaining, REQUIRED_SEARCH_MIN_SECONDS))
 
 
 class InboxRouteTrace:
@@ -546,7 +561,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             try:
                 required = memory.search(required_query, room=engine.RECALL_SEARCH_ROOM,
                                          kinds=('decision', 'preference'),
-                                         timeout=engine.recall_timeout(deadline, 2), **search_options)
+                                         timeout=required_search_timeout(engine, deadline), **search_options)
                 break
             except engine.HookError as exc:
                 # Retry the same read intent once, never the inbox claim or task.

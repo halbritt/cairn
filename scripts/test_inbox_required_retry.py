@@ -78,7 +78,8 @@ class RequiredLookupRetryTests(unittest.TestCase):
                 required = 'Required whole instruction: retain source and ownership checks.'
                 case.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
                 case.freeze()
-                fail = ("import time;time.sleep(3)" if failure == 'process_timeout' else
+                # A hung first lookup, not merely a slow one, reaches the client timeout.
+                fail = ("import time;time.sleep(30)" if failure == 'process_timeout' else
                         f"print(json.dumps(dict(ok=False,status={failure!r})));sys.exit(7)")
                 case.cli.write_text(case.cli.read_text().replace("if op=='search':", """if op=='search':
  if len([x for x in (root/'calls.jsonl').read_text().splitlines() if json.loads(x)['op']=='search'])==1:
@@ -111,6 +112,114 @@ class RequiredLookupRetryTests(unittest.TestCase):
         self.assertEqual((result['code'], result['stdout']), (2, ''))
         self.assertEqual(len(case.calls()), 1)
         self.assertNotIn('--request-id', case.calls()[0]['args'])
+
+
+def slow_required_search(case, delays):
+    """Delay each successive required lookup in the fake CLI by delays[n] seconds."""
+    case.cli.write_text(case.cli.read_text().replace("if op=='search':", f"""if op=='search' and '--kind' in args:
+ import time
+ n=len([x for x in (root/'calls.jsonl').read_text().splitlines() if json.loads(x)['op']=='search'])-1
+ time.sleep({list(delays)!r}[min(n,{len(delays) - 1})])
+if op=='search':""", 1))
+
+
+def record_timeouts(case, seen):
+    """Observe the timeout each memory operation receives, without changing it."""
+    original_load = fixtures.coord.load_inbox_recall
+
+    def load(config, **kwargs):
+        bridge = original_load(config, **kwargs)
+        original_bind = bridge.binding
+
+        def bind(config):
+            engine, settings = original_bind(config)
+            original_call = engine.Memory.call
+
+            def call(instance, operation, *args, **kwargs):
+                seen.append((operation, kwargs.get('timeout'), time.monotonic()))
+                return original_call(instance, operation, *args, **kwargs)
+
+            engine.Memory.call = call
+            return engine, settings
+
+        bridge.binding = bind
+        return bridge
+
+    return patch.object(fixtures.coord, 'load_inbox_recall', side_effect=load)
+
+
+class RequiredLookupBudgetTests(unittest.TestCase):
+    """A slow but successful required lookup is not cut off at a fixed two seconds."""
+
+    def case(self):
+        case = fixtures.InboxRecallBridgeTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        return case
+
+    def test_required_lookup_slower_than_two_seconds_delivers_task_in_one_attempt(self):
+        case = self.case()
+        slow_required_search(case, [2.5])
+        case.freeze()
+        result = case.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn(case.body, text)
+        ops = [c['op'] for c in case.calls()]
+        self.assertEqual(ops[:2], ['search', 'history'])
+        self.assertEqual(sum('--kind' in c['args'] for c in case.calls()), 1)
+
+    def test_required_lookup_beyond_whole_budget_refuses_with_same_diagnostics(self):
+        case = self.case()
+        slow_required_search(case, [30])
+        case.freeze()
+        started = time.monotonic()
+        with self.assertRaises(fixtures.coord.NativePromptRefused) as raised:
+            case.invoke()
+        elapsed = time.monotonic() - started
+        meta = raised.exception.__cause__.cairn_recall_failure
+        self.assertEqual({k: meta[k] for k in ('recall_phase', 'recall_operation', 'recall_attempts',
+                                               'recall_max_attempts')},
+                         dict(recall_phase='required_search', recall_operation='search',
+                              recall_attempts=2, recall_max_attempts=2))
+        self.assertIsInstance(meta['deadline_remaining_ms'], int)
+        self.assertLess(meta['deadline_remaining_ms'], 500)
+        self.assertEqual([c['op'] for c in case.calls()], ['search', 'search'])
+        self.assertEqual(case.calls()[0]['args'], case.calls()[1]['args'])
+        # The unchanged five-second recall cap still bounds the refusal.
+        self.assertLess(elapsed, 7)
+        self.assertFalse((case.root/'memory'/f'{fixtures.SESSION}.inbox-recall.json').exists())
+
+    def test_hung_first_lookup_leaves_its_reserve_for_one_retry(self):
+        case = self.case()
+        slow_required_search(case, [30, 0])
+        case.freeze()
+        seen = []
+        with record_timeouts(case, seen):
+            result = case.invoke()
+        self.assertIn(case.body, result['hookSpecificOutput']['additionalContext'])
+        searches = [c for c in case.calls() if '--kind' in c['args']]
+        self.assertEqual(len(searches), 2)
+        self.assertEqual(searches[0]['args'], searches[1]['args'])
+        first, retry = [t for op, t, _ in seen[:2]]
+        self.assertGreater(first, 3.5)
+        self.assertLessEqual(first, 4.0)
+        self.assertGreater(retry, 0.5)
+
+    def test_slow_successful_required_lookup_leaves_later_phases_their_reserve(self):
+        case = self.case()
+        slow_required_search(case, [3.0])
+        case.freeze()
+        seen = []
+        with record_timeouts(case, seen):
+            result = case.invoke()
+        self.assertIn(case.body, result['hookSpecificOutput']['additionalContext'])
+        operations = [op for op, _, _ in seen]
+        self.assertEqual(operations[:2], ['search', 'history'])
+        first = seen[0][1]
+        self.assertLessEqual(first, 4.0)
+        history = seen[1][1]
+        self.assertGreater(history, 0.8)
+        self.assertLessEqual(history, 2)
 
 
 if __name__ == '__main__':

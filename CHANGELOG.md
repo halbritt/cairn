@@ -14,6 +14,15 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-21
+
+- Bound inbox recall no longer caps each required-memory lookup attempt at two
+  seconds. An attempt may use the remaining five-second recall time except a
+  one-second reserve, so a slow lookup under host load can complete instead of
+  refusing the delivery. The reserve gives a hung first attempt one retry, or the
+  task-source read and optional recall time after a slow success. The overall cap,
+  outer hook deadline, read identity and refusal diagnostics are unchanged.
+
 ## 2026-10-19
 
 - Bound inbox recall retries one transient initial required-memory lookup with
