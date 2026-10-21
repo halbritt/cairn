@@ -1,9 +1,10 @@
 # Original weekly attempt custody: source review and integration boundary
 
 Reviewed against `04ba225af14e806207e5b0924bec08c10e1c3b65`, 2026-10-21.
-This is a source-bound integration design, not a new channel implementation or
-campaign qualification. No private cases, labels, oracles, retained actor output,
-provider, namespace or store execution was inspected or performed.
+This includes a source-bound channel integration design and the original-baseline
+integrity correction below. It is not a channel implementation or campaign
+qualification. Validation uses synthetic cases and inert Python children, with
+no provider, namespace, store or original-case execution.
 
 ## What the public contract establishes
 
@@ -83,7 +84,59 @@ Thus it is not a hash of the original subprocess bytes when stdout has invalid
 UTF-8. Do not describe it as independent or byte-exact native capture. Existing
 legacy records without these hashes still cannot gain retrospective custody.
 
-## Missing evidence and smallest coherent integration
+## Implemented original-baseline integrity correction
+
+`scripts/trial_attempt_custody.py` retains the initial baseline immediately after
+trusted setup and before `run_agent` admits the actor. The old
+`work/.eval-snapshot.json` and `eval-base` remain for compatibility. Their
+post-actor contents no longer supply the original built-in baseline checks.
+
+`AttemptBaseline.capture` records the original snapshot, commit identity,
+repository paths/directory identities and case/arm/seed/run/cwd binding in an
+exclusive private `baselines/<run-id-hash>.json`, a sibling of `runs/`. This
+location is outside both the actor's work bind and the shell evaluator's
+cwd-parent bind. It fsyncs and reads back the record; failure prevents actor
+admission. `run_agent` holds the initial snapshot in memory and emits
+`baseline_custody: {bytes, sha256}` in the attempt record. That pin authenticates
+neither the harness nor a campaign; it binds the harness's own retained record.
+
+`unchanged` consumes the retained snapshot. `added` and `commit_files` use the
+retained original commit rather than resolving the actor's `eval-base` tag.
+The baseline Git operations disable replacement objects, external diff and
+textconv. They use private Git configuration/index/attribute state over the
+original object directory, verify object backing with `fsck`, and refuse if
+actor Git configuration or `.git` indirection redirects the original repository
+paths/directory identities. A legitimate actor commit remains the current HEAD
+for `commit_files`; moving or deleting `eval-base` cannot redefine the baseline.
+
+For `added`, raw regular files and literal symlink targets are hashed with
+`hash-object --no-filters` and installed through `update-index --index-info`.
+This avoids executing actor-configured clean filters. Worktree `.gitignore`
+rules still govern discovery of untracked paths; private repository metadata
+supplies no actor `info/exclude` or global excludes. Empty attribute-source
+selection prevents actor binary/diff attributes from hiding textual changes.
+Git's ordinary binary detection remains active. Tracked deletions and new
+untracked files are included; the actor's index is untouched. This makes the
+check about raw added content, closing the demonstrated filter-substitution
+defect, rather than preserving arbitrary actor-configured transformations.
+
+`cmd_regrade` loads the original retained record with the attempt's pin before
+grading. Missing, altered or mismatched baseline custody yields `not_regradable`;
+it never reconstructs an original snapshot from post-run files. Old reports
+without this pin cannot acquire baseline custody retrospectively. Direct
+lower-level `evaluate` callers can still supply trusted synthetic contexts
+without an owner; actual `run_agent` and regrade paths supply it.
+
+This correction does not capture final artifact custody, authorize shell checks,
+prove process quiescence or establish physical fit. It uses Git 2.43+'s explicit
+`--attr-source`; an older Git refuses rather than falling back to actor attributes.
+The baseline record uses the existing 8 MiB metadata-file ceiling; exceeding it
+refuses before launch. Encoding and Git subprocess output retain the legacy
+executor's physical-bound obligations. Original repository/object directories
+must be inside the prepared work root. Compatibility for every original case
+remains unproved; no original cases were executed for validation.
+
+## Missing evidence and smallest coherent channel integration
 
 No per-case channel incidence is established by this review. The missing input
 is a version-bound, owner/evaluator-selected metadata inventory for all 21
@@ -96,13 +149,14 @@ Opaque shell checks may require evaluator-authored metadata rather than any
 automatic inference. Such metadata must be chosen before outcomes. Engineers
 need not open private check bodies to receive it.
 
-Until that inventory exists, the minimum coherent result is this integration
+Until that inventory exists, channel implementation remains this integration
 design and correction of stale claims. A new generic collector would choose
 unestablished retention/privacy semantics; a second workspace constructor would
-duplicate an existing owner. No new attempt-record field is introduced here.
+duplicate an existing owner. The separable baseline fix does not depend on a
+channel inventory.
 
-After the metadata is selected, implement one original-attempt owner in a new
-`scripts/trial_attempt_custody.py` (proposed, not present):
+After the metadata is selected, extend the original-attempt owner in
+`scripts/trial_attempt_custody.py` (currently baseline custody only):
 
 1. **Preparation.** Consume the selected row and original workspace owner, not
    an arbitrary workspace hash. Keep the actual root/version/source identity,
@@ -130,8 +184,8 @@ After the metadata is selected, implement one original-attempt owner in a new
    the workspace-root join. Preserve unknowns and the original mistake/review
    precedence. This engineering lane neither invokes those checks nor grades.
 5. **Publication.** Persist a private attempt-custody record before the attempt
-   result; the result may reference its digest and size. Final field names and
-   schema require runner coordination. Runner inclusion is declared binding,
+   result; the result may reference its digest and size. Additional final-artifact
+   field names and schema require runner coordination. Runner inclusion is declared binding,
    not independent observation. Only after this path exists should the owner
    assign a converter extension that emits exact contracted artifact entries
    and action/evaluator observation pins into the unchanged blind draft. Keep
@@ -180,8 +234,9 @@ work or claim that these extra backings fit.
 ## Coordination
 
 Agent501 owns runner correction, pair-binding emission, `TrialStore` partial
-construction/stop and `cmd_agent` store cleanup. Agent504 owns this source review
-and proposed workspace/custody integration; new helpers require the established
-seam. Runner lands first before adjacent shared-file integration. No converter,
-SDK or runner implementation changed in this review. Root owns admission,
+construction/stop and `cmd_agent` store cleanup. Agent504 owns this source review,
+baseline correction and proposed final-custody integration. Agent501 was notified
+of `baseline_custody` and shared call sites; cleanup sections and `cmd_agent` are
+untouched. Runner lands first before trunk integration. No converter, SDK or
+runner implementation changed in this lane. Root owns admission,
 channel selection, evaluator access, campaign execution and fresh grading.

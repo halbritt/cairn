@@ -117,6 +117,10 @@ legacy defects. Their effect on this converter, checked against current
   independently bound captured workspace. The SDK weekly path separately has
   a selected-root setup owner; it is not wired into legacy conversion. See
   [the current source review and integration design](original-attempt-custody.md).
+  New attempts also retain `baseline_custody` outside the actor bind for the
+  built-in `unchanged`, `added` and `commit_files` checks. Regrade refuses missing
+  or altered baseline custody. This closes baseline substitution, not the
+  final-artifact/action/evaluator release channels or independent provenance.
 - **Run ID map.** `run_id` is `case.arm.sSEED` (`trial_task_eval.py:1048`).
   This map is not injective when a case or arm contains a dot, so dotted
   names refuse `legacy_attempt_identity_ambiguous`. So do a `run_id` that

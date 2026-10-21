@@ -41,7 +41,12 @@ class ProspectiveInputTests(unittest.TestCase):
             with self.subTest(prospective=prospective), tempfile.TemporaryDirectory() as directory:
                 base = Path(directory)
                 prompt = 'Inspect the café project against its saved decisions.'
-                case = dict(id='contract', cwd='project', wordings={'task': prompt},
+                source = base/'source'
+                source.mkdir()
+                (source/'content.txt').write_text('Synthetic initial workspace.\n')
+                (source/'setup.sh').write_text('git init -q\ngit add .\ngit commit -qm initial\n')
+                case = dict(id='contract', cwd='project', copy_to='project',
+                            _prospective_workspace=str(source), wordings={'task': prompt},
                             preflight=[['true']])
                 binary = dict(path=sys.executable,
                               sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest())
@@ -58,8 +63,7 @@ class ProspectiveInputTests(unittest.TestCase):
                         commands.append(argv)
                         raise NativeBoundary()
                     return argv
-                with patch.object(te, 'prepare_workspace',
-                                  side_effect=lambda case, root: (root/'project').mkdir()), \
+                with patch.object(te, 'load_corpus', return_value=[]), \
                      patch.object(te, 'sandbox_command', side_effect=sandbox):
                     with self.assertRaises(NativeBoundary):
                         te.run_agent(case, 'baseline', 0, 0, args, stores, base)

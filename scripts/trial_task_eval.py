@@ -42,6 +42,7 @@ from trial_receipt_explanation import export_receipts, retain_hook_explanations,
 from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
 from trial_task_input import corpus_entities, freeze_input, load_input
 from trial_task_permissions import settings_permissions, command_metadata, error_metadata, denial_metadata, background_result
+from trial_attempt_custody import AttemptBaseline, BaselineError
 
 ROOT = Path(__file__).resolve().parents[1]
 TRIAL = ROOT / "trials" / "task-eval"
@@ -731,7 +732,10 @@ def evaluate(check, ctx):
         return found == expect
     if kind == "added":
         if "added" not in ctx:
-            ctx["added"] = added_lines(cwd)
+            try:
+                ctx["added"] = ctx['baseline'].added_lines(cwd) if 'baseline' in ctx else added_lines(cwd)
+            except BaselineError as error:
+                raise Undetermined(str(error)) from None
         return any(re.search(check["pattern"], line) for line in ctx["added"]) == expect
     if kind == "unchanged":
         path = cwd / check["path"]
@@ -768,7 +772,11 @@ def evaluate(check, ctx):
             raise Undetermined("grader exit %d: %s" % (result.returncode, output[-200:]))
         return result.returncode == check.get("expect_exit", 0)
     if kind == "commit_files":
-        names = run(["git", "diff", "--name-only", "eval-base", "HEAD"], cwd=cwd, check=False).stdout.decode().split()
+        try:
+            names = (ctx['baseline'].commit_files(cwd) if 'baseline' in ctx else
+                     run(["git", "diff", "--name-only", "eval-base", "HEAD"], cwd=cwd, check=False).stdout.decode().split())
+        except BaselineError as error:
+            raise Undetermined(str(error)) from None
         if "equals" in check:
             return sorted(names) == sorted(check["equals"])
         return bool(set(check["includes"]) & set(names))
@@ -1066,6 +1074,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     root.mkdir()
     prepare_workspace(case, root)
     cwd = root / case["cwd"]
+    baseline = AttemptBaseline.capture(base, case, arm, seed)
     prospective = getattr(args, "_prospective", None)
     memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
     corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
@@ -1300,7 +1309,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
                       if prospective and arm in stores else None)
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
-               snapshot=json.loads((root / ".eval-snapshot.json").read_text()),
+               snapshot=baseline.snapshot, baseline=baseline,
                common_runtime=common_runtime, runtime_identity=runtime_identity)
     graded = grade(case, ctx)
     if failure:
@@ -1319,6 +1328,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
+    record['baseline_custody'] = baseline.pin
     if not prospective:
         record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
         record["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
@@ -1743,9 +1753,15 @@ def cmd_regrade(args):
                 records.append(record)
                 continue
             stream = (base / "stream.jsonl").read_text()
+            try:
+                baseline = AttemptBaseline.load(base, case, record['arm'], record['seed'], record.get('baseline_custody'))
+            except BaselineError as error:
+                record.update(outcome='not_regradable', correct=None, mistake=None, regrade_reason=str(error))
+                records.append(record)
+                continue
             ctx = dict(cwd=base / "work" / case["cwd"], commands=trace["commands"], answer=trace["answer"],
                        tool_outputs=parse_tool_outputs(stream, record.get("harness", data.get("harness", "claude"))),
-                       snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
+                       snapshot=baseline.snapshot, baseline=baseline)
             record.update(grade(case, ctx))
         records.append(record)
     if getattr(args, "adjudications", None):
