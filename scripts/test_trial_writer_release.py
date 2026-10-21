@@ -11,6 +11,7 @@ Two kinds of test are kept apart:
   delegated fixture service): these exercise the actual OwnedCgroup leaf.
   They are not run, and not claimed, in an ordinary agent session.
 """
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -51,7 +52,9 @@ class FakeGroup:
         self.files = {'cgroup.procs': os.open(self.procs_path, os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC, 0o600)}
         self.relative = relative
         self.population, self.kill_error, self.events_error = list(populated), kill_error, events_error
-        self.close_errors, self.kills = list(close_errors), 0
+        self.close_errors, self.kills, self.closes = list(close_errors), 0, 0
+        info = os.stat(self.root)
+        self.identity = (info.st_dev, info.st_ino)
 
     def kill(self):
         self.kills += 1
@@ -64,7 +67,9 @@ class FakeGroup:
         return self.population.pop(0) if len(self.population) > 1 else self.population[0]
 
     def close(self):
-        os.close(self.files.pop('cgroup.procs'))
+        self.closes += 1
+        if 'cgroup.procs' in self.files:
+            os.close(self.files.pop('cgroup.procs'))
         return list(self.close_errors)
 
 
@@ -99,14 +104,10 @@ class Base(unittest.TestCase):
         run = Path(tempfile.mkdtemp(dir=self.root))
         out, err, code, _ = capture(command, timeout, run / 'timing.json', custody_path=run / 'custody.json',
                                     pass_fds=leaf.pass_fds)
-        bootstrap = leaf.bootstrap()
-        try:
-            released = leaf.release(time.monotonic() + 0.3)
-        finally:
-            closed = leaf.close()
+        observed = leaf.finish(time.monotonic() + 0.3)
         custody = json.loads((run / 'custody.json').read_text())
-        return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', bootstrap=bootstrap,
-                             release=released, close_errors=closed, custody=custody, controls={}), out, code
+        return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', leaf=leaf,
+                             observed=observed, custody=custody), out, code
 
 
 
@@ -140,6 +141,19 @@ class PolicyTests(Base):
         for bad in (None, [], dict(io_max='x'), dict(pids_max=None), dict(pids_max='')):
             with self.subTest(bad=bad), self.assertRaisesRegex(writer.WriterUnavailable, 'writer_controls_invalid'):
                 writer.check_controls(bad)
+
+    def test_status_pipe_failure_closes_the_acquired_group_and_keeps_the_original_error(self):
+        groups = []
+
+        def factory(delegated, controls):
+            groups.append(FakeGroup(delegated, controls, close_errors=('cgroup_directory_removal_unknown',)))
+            return groups[-1]
+        with patch.object(writer.os, 'pipe2', side_effect=OSError(24, 'synthetic descriptor exhaustion')):
+            with self.assertRaises(OSError) as caught:
+                writer.WriterLeaf(str(self.root), {}, group_factory=factory)
+        self.assertEqual(caught.exception.errno, 24)
+        self.assertEqual(groups[0].closes, 1)
+        self.assertIn('writer cleanup: cgroup_directory_removal_unknown', caught.exception.__notes__)
 
     def test_unavailable_containment_refuses_before_launch(self):
         def unavailable(delegated, controls):
@@ -184,7 +198,7 @@ class LauncherTests(Base):
         target = json.loads(report.read_text())
         self.assertEqual(code, 0)
         self.assertEqual((self.root / 'procs').read_text(), str(target['pid']))
-        self.assertEqual(status, b'member %d\n' % target['pid'])
+        self.assertEqual(status, b'member %d 0::%s\n' % (target['pid'], CURRENT.encode()))
 
     def test_legacy_rlimits_and_environment_pass_through_unchanged(self):
         code, _, report = self.launch(env=dict(PATH='/usr/bin:/bin', MARKER='kept', HOME='/legacy-home'))
@@ -215,7 +229,16 @@ class ReleaseMappingTests(Base):
         # waitpid status and stream EOF are separate observations; descendant custody is never upgraded.
         self.assertEqual((result['waitpid']['observed_returncode'], result['waitpid']['leader_reaped']), (0, True))
         self.assertEqual(result['stream_eof'], dict(stdout=True, stderr=True))
-        self.assertEqual((result['migration_control'], result['complete_descendant_custody']), ('unknown', False))
+        self.assertEqual((result['migration_control'], result['complete_descendant_custody']),
+                         (dict(state='unknown', reasons=['launch_evidence_absent']), False))
+        self.assertEqual((result['writer_quiescence'], result['final_artifact_custody']),
+                         ('not_established', 'not_established'))
+        # The owner's held identity, the selected parent and the membership the joined process observed.
+        info = os.stat(self.root)
+        self.assertEqual(result['leaf'], dict(parent=str(self.root), relative=CURRENT,
+                                              held_identity=[info.st_dev, info.st_ino]))
+        self.assertEqual(result['bootstrap']['observed_cgroup'], '0::' + CURRENT)
+        self.assertIsInstance(result['bootstrap']['pid'], int)
 
     def test_each_failure_keeps_its_own_state(self):
         cases = (
@@ -289,6 +312,77 @@ if os.fork() == 0:
 ''',
 }
 
+
+
+class MigrationEvidenceTests(Base):
+    """The in-sandbox probe in a real bwrap filesystem sandbox (inert command; synthetic group, real cgroupfs device)."""
+
+    def leaf_with_device(self):
+        group = FakeGroup(str(self.root))
+        group.fd = os.open('/sys/fs/cgroup', os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, group.fd)
+        return writer.WriterLeaf(str(self.root), {}, group_factory=lambda delegated, controls: group)
+
+    def sandboxed(self, leaf, inner):
+        import trial_task_eval as task
+        provider, (source, target, _) = leaf.probe(inner)
+        command = task.runtime_sandbox() + ['--ro-bind', str(source), target, *provider]
+        run = Path(tempfile.mkdtemp(dir=self.root))
+        out, err, code, _ = capture(leaf.wrap(command), 20, run / 'timing.json', custody_path=run / 'custody.json',
+                                    pass_fds=leaf.pass_fds)
+        observed = leaf.finish(time.monotonic() + 0.3)
+        return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', leaf=leaf, observed=observed,
+                             custody=json.loads((run / 'custody.json').read_text())), out, code
+
+    @unittest.skipUnless(__import__('shutil').which('bwrap'), 'needs the local filesystem sandbox')
+    def test_probe_reports_launch_evidence_then_execs_the_unchanged_command(self):
+        result, out, code = self.sandboxed(self.leaf_with_device(), ['/usr/bin/echo', 'inert'])
+        self.assertEqual((code, out), (0, b'inert\n'))
+        evidence = result['launch_evidence']
+        self.assertEqual(set(evidence['caps'].values()), {writer.ZERO_CAPS})
+        self.assertFalse(set(evidence['mount_types']) & writer.CGROUP_TYPES)
+        self.assertEqual(evidence['cgroupfs_descriptors'], [])
+        self.assertNotEqual(evidence['pid'], result['bootstrap']['pid'])
+        expected = [] if evidence['max_user_namespaces'] == 0 else ['user_namespace_creation_available']
+        self.assertEqual(result['migration_control'],
+                         dict(state='controlled' if not expected else 'unknown', reasons=expected))
+
+    def test_controlled_requires_every_observation(self):
+        bootstrap = dict(state='member', pid=4242)
+        good = dict(caps=dict.fromkeys(('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'), writer.ZERO_CAPS),
+                    no_new_privs='1', mount_types=['devtmpfs', 'proc', 'tmpfs'], cgroupfs_descriptors=[], pid=2,
+                    cgroup='0::/leaf', max_user_namespaces=0)
+        check = lambda evidence, **kw: writer.migration_control(evidence, bootstrap=kw.get('bootstrap', bootstrap),
+                                                                relative='/leaf', cgroup_dev=kw.get('dev', '0:30'))
+        self.assertEqual(check(good), dict(state='controlled', reasons=[]))
+        for change, reason in ((dict(caps=dict(good['caps'], CapBnd='000001ffffffffff')), 'capabilities_present'),
+                               (dict(no_new_privs='0'), 'no_new_privs_absent'),
+                               (dict(mount_types=['cgroup2', 'proc']), 'cgroupfs_mount_visible'),
+                               (dict(cgroupfs_descriptors=[7]), 'cgroupfs_descriptor_open'),
+                               (dict(pid=4242), 'pid_namespace_unobserved'),
+                               (dict(cgroup='0::/elsewhere'), 'probe_membership_mismatch'),
+                               (dict(max_user_namespaces=514295), 'user_namespace_creation_available')):
+            with self.subTest(reason=reason):
+                self.assertEqual(check(dict(good, **change)), dict(state='unknown', reasons=[reason]))
+        self.assertEqual(check(None)['reasons'], ['launch_evidence_absent'])
+        self.assertEqual(check(good, dev=None)['reasons'], ['launch_evidence_absent'])
+        self.assertEqual(check(good, bootstrap=dict(state='unobserved'))['reasons'], ['launch_evidence_absent'])
+
+    def test_probe_outside_the_sandbox_is_not_controlled(self):
+        result, out, code = self.sandboxed_outside()
+        self.assertEqual(result['migration_control']['state'], 'unknown')
+        self.assertIn('pid_namespace_unobserved', result['migration_control']['reasons'])
+
+    def sandboxed_outside(self):
+        leaf = self.leaf_with_device()
+        provider, _ = leaf.probe(['/usr/bin/true'])
+        provider[provider.index(writer.PROBE_TARGET)] = str(writer.PROBE)
+        run = Path(tempfile.mkdtemp(dir=self.root))
+        out, err, code, _ = capture(leaf.wrap(provider), 20, run / 'timing.json', custody_path=run / 'custody.json',
+                                    pass_fds=leaf.pass_fds)
+        observed = leaf.finish(time.monotonic() + 0.3)
+        return writer.result(run_id='synthetic.CURRENT.s0', workspace=self.root / 'work', leaf=leaf, observed=observed,
+                             custody=json.loads((run / 'custody.json').read_text())), out, code
 
 class EscapingWriterSyntheticTests(Base):
     """Without real delegation the owner cannot observe population: escaping writers are never 'released'."""
@@ -378,6 +472,62 @@ class RunAgentIntegrationTests(Base):
                 self.assertEqual(record['writer_release']['state'], state)
                 self.assertEqual((record['outcome'], record['execution_failure']), ('harness_error', 'writer_release_' + state))
                 grade.assert_not_called()
+
+    def failing_run(self, **patches):
+        import trial_task_eval as task
+        groups = []
+        factory = lambda delegated, controls: groups.append(FakeGroup(delegated, controls, populated=(True, False))) or groups[-1]
+
+        def inert(root, cwd, binds, env, argv, harness, **kwargs):
+            hookstate = next(src for src, target, _ in binds if str(target) == '/tmp/trial/hookstate')
+            return [sys.executable, '-c', self.boundary.ACTOR, str(hookstate), '0.1', 'Done.']
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(task, 'load_corpus', return_value=[]))
+            stack.enter_context(patch.object(task, 'sandbox_command', side_effect=inert))
+            stack.enter_context(patch.object(writer.owned, 'OwnedCgroup', side_effect=factory))
+            grade = stack.enter_context(patch.object(task, 'grade', side_effect=task.grade))
+            for target, name, value in patches.values():
+                stack.enter_context(patch.object(target, name, value))
+            with self.assertRaises(Exception) as caught:
+                task.run_agent(self.case, 'CURRENT', 0, 0, self.args, self.stores, self.out)
+        grade.assert_not_called()
+        return caught.exception, groups[0]
+
+    def test_failures_after_capture_still_release_close_and_record_without_success(self):
+        import trial_task_eval as task
+        real_capture = task.capture
+
+        class Undecodable(bytes):
+            def decode(self, *args, **kwargs):
+                raise UnicodeDecodeError('utf-8', b'x', 0, 1, 'synthetic decode failure')
+
+        def undecodable(*args, **kwargs):
+            out, err, code, timings = real_capture(*args, **kwargs)
+            return Undecodable(out), err, code, timings
+        real_write = Path.write_bytes
+
+        def failing_storage(path, data):
+            if path.name == 'stream.jsonl':
+                raise OSError(28, 'synthetic storage failure')
+            return real_write(path, data)
+        cases = dict(
+            decode=(dict(capture=(task, 'capture', undecodable)), UnicodeDecodeError),
+            storage=(dict(write=(Path, 'write_bytes', failing_storage)), OSError),
+            custody=(dict(custody=(task, 'read_custody', lambda path: (_ for _ in ()).throw(ValueError('custody_shape')))),
+                     ValueError))
+        for name, (patches, kind) in cases.items():
+            with self.subTest(failure=name):
+                import shutil
+                shutil.rmtree(self.out)
+                self.out.mkdir(mode=0o700)
+                error, group = self.failing_run(**patches)
+                self.assertIsInstance(error, kind)
+                self.assertEqual(group.closes, 1)
+                self.assertGreaterEqual(group.kills, 1)
+                recorded = json.loads((self.out / 'runs/synthetic.CURRENT.s0/writer-release.json').read_text())
+                self.assertEqual(recorded['state'], 'attempt_failed')
+                self.assertEqual(recorded['release'], 'released')  # observed, but never claimed as success
+                self.assertEqual(recorded['bootstrap']['state'], 'member')
 
     def test_unavailable_containment_refuses_before_the_actor(self):
         import trial_task_eval as task

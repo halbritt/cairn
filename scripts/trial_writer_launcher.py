@@ -4,7 +4,7 @@ argv: PROCS_FD EXPECTED_CGROUP STATUS_FD COMMAND...
 
 The process writes its own pid to the held cgroup.procs descriptor, then reads
 /proc/self/cgroup and requires exactly '0::EXPECTED_CGROUP'. Only after that
-does it report 'member PID' on the status descriptor and exec. If any step
+does it report 'member PID 0::CGROUP' on the status descriptor and exec. If any step
 fails, it exits 125 without exec. Unlike the fixture launcher, it sets no
 rlimits and changes no environment: the legacy actor's limits and environment
 pass through unchanged.
@@ -24,9 +24,11 @@ def main(argv):
         os.write(procs, str(os.getpid()).encode())
         os.close(procs)
         with open('/proc/self/cgroup') as membership:
-            if membership.read().strip() != '0::' + expected:
-                return REFUSED
-        os.write(status, b'member %d\n' % os.getpid())
+            observed = membership.read().strip()
+        if observed != '0::' + expected:
+            return REFUSED
+        # The joined pid and the membership it observed, reported before exec.
+        os.write(status, b'member %d %s\n' % (os.getpid(), observed.encode()))
         os.close(status)
     except (OSError, ValueError, IndexError):
         return REFUSED

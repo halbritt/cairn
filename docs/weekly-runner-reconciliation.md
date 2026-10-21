@@ -830,10 +830,44 @@ original attempt runs as follows (`trial_writer_release`):
 4. **Kept separate.** The real `waitpid` status (`observed_wait_status`,
    `observed_returncode`, `leader_reaped`) and stream EOF are recorded as
    separate observations. `complete_descendant_custody` stays `False`, and
-   `observed_clear` is never mapped to a release.
-   `migration_control: unknown`: the legacy route has no cgroup namespace, so
-   a same-user writer could move itself to another leaf it can write. A
-   released leaf is therefore not final-artifact custody.
+   `observed_clear` is never mapped to a release. The result carries:
+   - the selected parent;
+   - the held leaf's device and inode;
+   - the joined pid and the `/proc/self/cgroup` line it observed before
+     exec.
+   `writer_quiescence` and `final_artifact_custody` are both
+   `not_established`.
+5. **Guarded lifetime.** Leaf acquisition is staged with rollback, so a
+   failure after the group exists closes it and keeps the original error. The
+   leaf's whole lifetime in `run_agent`, from building the sandbox command
+   through capture, stream storage and custody reading, runs inside one
+   guard. Any failure still releases and closes the leaf and writes the
+   observations with `state: attempt_failed`. The primary error propagates,
+   and a release is never claimed.
+6. **Migration control from launch evidence.** `trial_writer_probe` runs
+   inside the unchanged legacy sandbox, as the process that becomes the actor,
+   before it execs the unchanged provider argv. It reports:
+   - its capability sets and NoNewPrivs;
+   - its mount types;
+   - any descriptor on the host cgroupfs device (taken from the held leaf
+     directory);
+   - its namespace pid and cgroup line;
+   - `user.max_user_namespaces`.
+
+   `migration_control` is `controlled` only when every capability set is
+   empty, NoNewPrivs is set, no cgroup/cgroup2/sysfs mount and no cgroupfs
+   descriptor is present, the pid namespace is observed, the cgroup line names
+   the leaf, and user namespace creation is disabled. Otherwise it is
+   `unknown`, with reasons. On this host the probe observed empty
+   capabilities, NoNewPrivs, no cgroupfs mount or descriptor, and a separate
+   pid namespace, but `max_user_namespaces = 514295`.
+
+   **Missing for `controlled`:** a guarantee that the actor cannot create a
+   user namespace. The legacy route adds none, and `bwrap --disable-userns`
+   requires `--unshare-user`, which this lane must not add. Root could
+   instead accept the kernel rule that a new cgroup namespace is rooted at the
+   caller's current cgroup (the leaf). That would be a decision, not an
+   observation, so the code does not encode it.
 
 The tests separate synthetic owner machinery from real cgroup operations.
 The synthetic tests use a fake group with a regular-file `cgroup.procs` and

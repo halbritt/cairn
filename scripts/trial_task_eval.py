@@ -1304,7 +1304,6 @@ def run_agent(case, arm, seed, order, args, stores, out):
             raise ValueError("task and framing leave less than1000 bytes; no provider launched")
     else:
         provider += ["--", prompt]
-    command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
     writer_leaf = writer_record = None
     if original and getattr(args, "_original_writer", None):
         # Root-selected owned leaf: the actor joins it before exec. Unavailable refuses before launch.
@@ -1312,104 +1311,110 @@ def run_agent(case, arm, seed, order, args, stores, out):
             writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"])
         except writer_release.WriterUnavailable as error:
             raise RuntimeError("original_writer_containment_unavailable: " + str(error)) from None
-        command = writer_leaf.wrap(command)
-    started = time.monotonic()
-    capture_error = None
-    raw_stdout, raw_stderr = b'', b''
-    timings = []
-    custody_failure = None  # original-limits capture custody (legacy only)
+    writer_observed = None
+    # The owned leaf's whole lifetime, from capture to release and close, is guarded: any failure
+    # still releases and closes it, records the observations, and never claims a successful release.
     try:
-        if prospective:
-            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
-                                                          custody_path=base / "native-process-custody.json")
-            stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
-        elif original or codex_weekly:
-            # The existing capture records per-line receive times for the last-memory bound.
-            try:
+        if writer_leaf is not None:
+            # The in-sandbox launch-evidence probe runs first and execs the unchanged provider argv.
+            provider, probe_bind = writer_leaf.probe(provider)
+            binds = binds + [probe_bind]
+        command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
+        started = time.monotonic()
+        capture_error = None
+        raw_stdout, raw_stderr = b'', b''
+        timings = []
+        custody_failure = None  # original-limits capture custody (legacy only)
+        try:
+            if prospective:
+                raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
+                                                              custody_path=base / "native-process-custody.json")
+                stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
+            elif original or codex_weekly:
+                # The existing capture records per-line receive times for the last-memory bound.
                 raw_stdout, raw_stderr, code, timings = capture(
-                    command, args.timeout, base / "stream-timing.json", custody_path=base / "native-process-custody.json",
+                    writer_leaf.wrap(command) if writer_leaf is not None else command, args.timeout,
+                    base / "stream-timing.json", custody_path=base / "native-process-custody.json",
                     pass_fds=writer_leaf.pass_fds if writer_leaf is not None else ())
-            except BaseException:
-                if writer_leaf is not None:
-                    # Never leave the owned leaf populated; this attempt fails regardless.
-                    try:
-                        writer_leaf.release(time.monotonic() + 5)
-                    finally:
-                        writer_leaf.close()
+                stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
+            else:
+                result = subprocess.run(command, capture_output=True, timeout=args.timeout)
+                stdout, stderr, code = result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"), result.returncode
+        except subprocess.TimeoutExpired as expired:
+            stdout = (expired.stdout or b"").decode(errors="replace")
+            stderr, code = "timeout", 124
+            if prospective:
+                capture_error = 'capture_timeout_exception'
+        except Exception:
+            if not prospective:
                 raise
-            stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
-        else:
-            result = subprocess.run(command, capture_output=True, timeout=args.timeout)
-            stdout, stderr, code = result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"), result.returncode
-    except subprocess.TimeoutExpired as expired:
-        stdout = (expired.stdout or b"").decode(errors="replace")
-        stderr, code = "timeout", 124
+            stdout, stderr, code = '', '', 125
+            capture_error = 'capture_exception'
+        except (KeyboardInterrupt, SystemExit):
+            if not prospective:
+                raise
+            stdout, stderr, code = '', '', 125
+            capture_error = 'observer_interrupted'
         if prospective:
-            capture_error = 'capture_timeout_exception'
-    except Exception:
-        if not prospective:
-            raise
-        stdout, stderr, code = '', '', 125
-        capture_error = 'capture_exception'
-    except (KeyboardInterrupt, SystemExit):
-        if not prospective:
-            raise
-        stdout, stderr, code = '', '', 125
-        capture_error = 'observer_interrupted'
-    if prospective:
-        process_custody = read_custody(base / "native-process-custody.json")
-        if process_custody['classification'] == 'unknown' or capture_error:
-            selected_failure = dict(schema='cairn.process-custody-unknown/1',
-                                    reason=capture_error or 'process_custody_unknown', process_custody=process_custody)
-            retain_observation_error(base, selected_failure, name='process-custody-unknown.json')
-    elapsed = time.monotonic() - started
-    if not prospective:
-        # Record the exact stream bytes written, so blind grading can bind the
-        # original attempt's answer (CAIRN-107 legacy blind selection).
-        stream_bytes = stdout.encode("utf-8")
-        (base / "stream.jsonl").write_bytes(stream_bytes)
-        (base / "stderr.txt").write_text(stderr[-20000:])
-        limit_assessment = None
-        if original:
-            # The capture keeps exit status apart from cleanup custody: exit 0 can still
-            # have unknown cleanup. Anything short of the observed-clear record is a
-            # row failure, and that row is never graded. observed_clear is the capture's
-            # scoped observation only, not proof that every descendant was reaped.
             process_custody = read_custody(base / "native-process-custody.json")
-            if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
-                    or process_custody["cleanup"]["status"] != "observed_clear"):
-                custody_failure = "process_custody_unknown"
-            if writer_leaf is not None:
-                # Owner-derived release before any grading: bootstrap membership, then the leaf release.
+            if process_custody['classification'] == 'unknown' or capture_error:
+                selected_failure = dict(schema='cairn.process-custody-unknown/1',
+                                        reason=capture_error or 'process_custody_unknown', process_custody=process_custody)
+                retain_observation_error(base, selected_failure, name='process-custody-unknown.json')
+        elapsed = time.monotonic() - started
+        if not prospective:
+            # Record the exact stream bytes written, so blind grading can bind the
+            # original attempt's answer (CAIRN-107 legacy blind selection).
+            stream_bytes = stdout.encode("utf-8")
+            (base / "stream.jsonl").write_bytes(stream_bytes)
+            (base / "stderr.txt").write_text(stderr[-20000:])
+            limit_assessment = None
+            if original:
+                # The capture keeps exit status apart from cleanup custody: exit 0 can still
+                # have unknown cleanup. Anything short of the observed-clear record is a
+                # row failure, and that row is never graded. observed_clear is the capture's
+                # scoped observation only, not proof that every descendant was reaped.
+                process_custody = read_custody(base / "native-process-custody.json")
+                if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
+                        or process_custody["cleanup"]["status"] != "observed_clear"):
+                    custody_failure = "process_custody_unknown"
+
+            if (original or codex_weekly) and arm in stores:
+                hook_rows = None  # malformed observations stay unknown in the assessment
+                observations = base / "hook-state/observations.jsonl"
                 try:
-                    bootstrap = writer_leaf.bootstrap()
-                    released = writer_leaf.release(time.monotonic() + 5)
-                finally:
-                    closed = writer_leaf.close()
-                writer_record = writer_release.result(
-                    run_id=run_id, workspace=cwd, bootstrap=bootstrap, release=released, close_errors=closed,
-                    custody=process_custody, controls=args._original_writer["controls"])
-                (base / "writer-release.json").write_text(json.dumps(writer_record, indent=2))
-                if writer_record["state"] != "released" and custody_failure is None:
-                    custody_failure = "writer_release_" + writer_record["state"]
-        if (original or codex_weekly) and arm in stores:
-            hook_rows = None  # malformed observations stay unknown in the assessment
-            observations = base / "hook-state/observations.jsonl"
+                    hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
+                except (OSError, ValueError):
+                    pass
+                checker = codex_weekly_limits if codex_weekly else legacy_limits
+                limit_assessment = checker.assess(stdout, hook_rows, timings=timings,
+                                                  input_bytes=checker.input_charge(prompt, memory_instruction))
+        else:
+            (base / "native-output-metadata.json").write_text(json.dumps(dict(
+                stdout_bytes=len(raw_stdout) if capture_error is None else None,
+                stdout_sha256=hashlib.sha256(raw_stdout).hexdigest() if capture_error is None else None,
+                stderr_bytes=len(raw_stderr) if capture_error is None else None,
+                stderr_sha256=hashlib.sha256(raw_stderr).hexdigest() if capture_error is None else None,
+                capture_returned=capture_error is None,
+                raw_stream_retained=False)))
+    except BaseException:
+        if writer_leaf is not None:
+            writer_observed = writer_leaf.finish(time.monotonic() + 5)
+            failed = writer_release.result(run_id=run_id, workspace=cwd, leaf=writer_leaf, observed=writer_observed,
+                                           custody=None, attempt_failed=True)
             try:
-                hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
-            except (OSError, ValueError):
-                pass
-            checker = codex_weekly_limits if codex_weekly else legacy_limits
-            limit_assessment = checker.assess(stdout, hook_rows, timings=timings,
-                                              input_bytes=checker.input_charge(prompt, memory_instruction))
-    else:
-        (base / "native-output-metadata.json").write_text(json.dumps(dict(
-            stdout_bytes=len(raw_stdout) if capture_error is None else None,
-            stdout_sha256=hashlib.sha256(raw_stdout).hexdigest() if capture_error is None else None,
-            stderr_bytes=len(raw_stderr) if capture_error is None else None,
-            stderr_sha256=hashlib.sha256(raw_stderr).hexdigest() if capture_error is None else None,
-            capture_returned=capture_error is None,
-            raw_stream_retained=False)))
+                (base / "writer-release.json").write_text(json.dumps(failed, indent=2))
+            except OSError:
+                pass  # the primary failure propagates; the result is also on the exception
+        raise
+    if writer_leaf is not None:
+        # Owner-derived release before any grading: bootstrap membership, then the leaf release.
+        writer_observed = writer_leaf.finish(time.monotonic() + 5)
+        writer_record = writer_release.result(run_id=run_id, workspace=cwd, leaf=writer_leaf, observed=writer_observed,
+                                              custody=process_custody)
+        (base / "writer-release.json").write_text(json.dumps(writer_record, indent=2))
+        if writer_record["state"] != "released" and custody_failure is None:
+            custody_failure = "writer_release_" + writer_record["state"]
     trace = parse_stream(stdout, args.harness)
     if prospective:
         # Retain only fixed terminal admission metadata before fallible grading.
