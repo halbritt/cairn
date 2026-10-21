@@ -841,9 +841,11 @@ original attempt runs as follows (`trial_writer_release`):
    failure after the group exists closes it and keeps the original error. The
    leaf's whole lifetime in `run_agent`, from building the sandbox command
    through capture, stream storage and custody reading, runs inside one
-   guard. Any failure still releases and closes the leaf and writes the
-   observations with `state: attempt_failed`. The primary error propagates,
-   and a release is never claimed.
+   guard. Any failure still releases and closes the leaf and records the
+   observations with `state: attempt_failed`. Sanitized observations are
+   attached to the primary exception as a note. If the receipt file cannot
+   be written, that failure is attached too. The primary error propagates
+   with its original traceback, and a release is never claimed.
 6. **Migration control from launch evidence.** `trial_writer_probe` runs
    inside the unchanged legacy sandbox, as the process that becomes the actor,
    before it execs the unchanged provider argv. It reports:
@@ -851,14 +853,23 @@ original attempt runs as follows (`trial_writer_release`):
    - its mount types;
    - any descriptor on the host cgroupfs device (taken from the held leaf
      directory);
-   - its namespace pid and cgroup line;
+   - the inodes of its pid and mount namespaces, and its cgroup line;
    - `user.max_user_namespaces`.
 
    `migration_control` is `controlled` only when every capability set is
    empty, NoNewPrivs is set, no cgroup/cgroup2/sysfs mount and no cgroupfs
-   descriptor is present, the pid namespace is observed, the cgroup line names
-   the leaf, and user namespace creation is disabled. Otherwise it is
-   `unknown`, with reasons. On this host the probe observed empty
+   descriptor is present, the probe's pid and mount namespace inodes differ
+   from the owner's own (recorded by the owner at leaf creation; a different
+   pid in the same namespace is not evidence), the cgroup line names the
+   leaf, and user namespace creation is disabled. Otherwise it is
+   `unknown`, with reasons. Every result carries
+   `argument: proposed_sufficiency_not_proof`. These instant observations are
+   a proposed sufficiency argument for root review, not a proof. Even
+   `controlled` never sets writer quiescence or final-artifact custody. The
+   probe's report is trusted only as far as its provenance goes: its evidence
+   pipe's write end was handed only to the launcher chain the owner started.
+   The runtime policy is not changed; no sysctl is tuned. On this host the
+   probe observed empty
    capabilities, NoNewPrivs, no cgroupfs mount or descriptor, and a separate
    pid namespace, but `max_user_namespaces = 514295`.
 

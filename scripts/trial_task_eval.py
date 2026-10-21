@@ -1397,15 +1397,19 @@ def run_agent(case, arm, seed, order, args, stores, out):
                 stderr_sha256=hashlib.sha256(raw_stderr).hexdigest() if capture_error is None else None,
                 capture_returned=capture_error is None,
                 raw_stream_retained=False)))
-    except BaseException:
+    except BaseException as primary:
         if writer_leaf is not None:
             writer_observed = writer_leaf.finish(time.monotonic() + 5)
             failed = writer_release.result(run_id=run_id, workspace=cwd, leaf=writer_leaf, observed=writer_observed,
                                            custody=None, attempt_failed=True)
+            # Sanitized observations travel with the primary error, whatever happens to the receipt file.
+            primary.add_note("writer_release: " + json.dumps(dict(state=failed["state"], release=failed["release"],
+                             bootstrap=failed["bootstrap"].get("state"), close_errors=failed["close_errors"]),
+                             sort_keys=True))
             try:
                 (base / "writer-release.json").write_text(json.dumps(failed, indent=2))
-            except OSError:
-                pass  # the primary failure propagates; the result is also on the exception
+            except OSError as error:
+                primary.add_note("writer_release_receipt_unwritten: " + type(error).__name__)
         raise
     if writer_leaf is not None:
         # Owner-derived release before any grading: bootstrap membership, then the leaf release.

@@ -7,7 +7,7 @@ the sandbox. It reads, without changing anything:
 - its capability sets and NoNewPrivs;
 - the filesystem types in its mount table;
 - whether any open descriptor is on the host cgroupfs device CGROUP_DEV;
-- its namespace pid;
+- its pid and its pid and mount namespace inodes;
 - its /proc/self/cgroup line;
 - user.max_user_namespaces.
 It writes one JSON line to EVIDENCE_FD, closes that descriptor and execs
@@ -39,7 +39,8 @@ def evidence(evidence_fd, cgroup_dev):
         userns = int(open('/proc/sys/user/max_user_namespaces').read().strip())
     except (OSError, ValueError):
         userns = None
-    return dict(schema='cairn.writer-launch-evidence/1', pid=os.getpid(), caps=caps,
+    namespaces = {name: os.stat('/proc/self/ns/' + name).st_ino for name in ('pid', 'mnt')}
+    return dict(schema='cairn.writer-launch-evidence/1', pid=os.getpid(), namespaces=namespaces, caps=caps,
                 no_new_privs=status.get('NoNewPrivs', '').strip(), mount_types=types,
                 cgroupfs_descriptors=on_cgroupfs, cgroup=open('/proc/self/cgroup').read().strip(),
                 max_user_namespaces=userns)

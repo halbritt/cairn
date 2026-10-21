@@ -45,6 +45,9 @@ PROBE = Path(__file__).resolve().with_name('trial_writer_probe.py')
 PROBE_TARGET = '/tmp/trial/writer-probe.py'
 ZERO_CAPS = '0000000000000000'
 CGROUP_TYPES = frozenset(('cgroup', 'cgroup2', 'sysfs'))
+# These observations are a proposed sufficiency argument for root review, not a proof. They never set
+# writer quiescence or final-artifact custody.
+ARGUMENT = 'proposed_sufficiency_not_proof'
 CONTROL_FIELDS = frozenset(owned.CONTROLS)
 
 
@@ -66,6 +69,7 @@ class WriterLeaf:
         self.parent = str(delegated)
         self.status_read = self.status_write = self.evidence_read = self.evidence_write = None
         self.cgroup_dev = None
+        self.owner_namespaces = None
         self.closed = None
         try:
             self.group = (group_factory or owned.OwnedCgroup)(delegated, controls=self.controls)
@@ -74,6 +78,8 @@ class WriterLeaf:
         # Staged acquisition: anything acquired is released if a later step fails.
         try:
             self.identity = list(self.group.identity)
+            # The owner's own namespaces at launch: the probe must report different ones.
+            self.owner_namespaces = {name: os.stat('/proc/self/ns/' + name).st_ino for name in ('pid', 'mnt')}
             self.status_read, self.status_write = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
             self.evidence_read, self.evidence_write = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
             info = os.fstat(self.group.fd) if getattr(self.group, 'fd', None) is not None else None
@@ -193,20 +199,22 @@ class WriterLeaf:
         return observed
 
 
-def migration_control(evidence, *, bootstrap, relative, cgroup_dev):
+def migration_control(evidence, *, bootstrap, relative, cgroup_dev, owner_namespaces):
     """'controlled' only from observed launch evidence that the actor has no cgroupfs view or means to gain one.
 
     Required observations:
     - every capability set is empty and NoNewPrivs is 1;
     - no cgroup, cgroup2 or sysfs mount is visible;
     - no descriptor is on the host cgroupfs device;
-    - the probe runs in its own pid namespace (its pid differs from the joined host pid);
+    - the probe's pid and mount namespace inodes differ from the owner's own (observed by the owner at
+      leaf creation); a different pid alone is not namespace evidence;
     - its cgroup line names the leaf;
     - user namespace creation is disabled (max_user_namespaces == 0).
     Anything absent or different stays 'unknown', with the reasons.
     """
-    if not isinstance(evidence, dict) or cgroup_dev is None or bootstrap.get('state') != 'member':
-        return dict(state='unknown', reasons=['launch_evidence_absent'])
+    if (not isinstance(evidence, dict) or cgroup_dev is None or bootstrap.get('state') != 'member'
+            or not isinstance(owner_namespaces, dict)):
+        return dict(state='unknown', reasons=['launch_evidence_absent'], argument=ARGUMENT)
     reasons = []
     caps = evidence.get('caps') if isinstance(evidence.get('caps'), dict) else {}
     if set(caps) != {'CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'} or set(caps.values()) != {ZERO_CAPS}:
@@ -218,13 +226,17 @@ def migration_control(evidence, *, bootstrap, relative, cgroup_dev):
         reasons.append('cgroupfs_mount_visible')
     if evidence.get('cgroupfs_descriptors') != []:
         reasons.append('cgroupfs_descriptor_open')
-    if type(evidence.get('pid')) is not int or evidence['pid'] == bootstrap.get('pid'):
+    namespaces = evidence.get('namespaces') if isinstance(evidence.get('namespaces'), dict) else {}
+    if (set(namespaces) != {'pid', 'mnt'} or not all(type(v) is int for v in namespaces.values())
+            or namespaces['pid'] == owner_namespaces.get('pid')):
         reasons.append('pid_namespace_unobserved')
+    elif namespaces['mnt'] == owner_namespaces.get('mnt'):
+        reasons.append('mount_namespace_unobserved')
     if evidence.get('cgroup') != '0::' + relative:
         reasons.append('probe_membership_mismatch')
     if evidence.get('max_user_namespaces') != 0:
         reasons.append('user_namespace_creation_available')
-    return dict(state='unknown' if reasons else 'controlled', reasons=reasons)
+    return dict(state='unknown' if reasons else 'controlled', reasons=reasons, argument=ARGUMENT)
 
 
 def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
@@ -247,7 +259,8 @@ def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
         state = 'released'
     custody = custody if isinstance(custody, dict) else {}
     return dict(schema=SCHEMA, attempt=dict(run_id=run_id, workspace=str(workspace)), state=state,
-                leaf=dict(parent=leaf.parent, relative=leaf.group.relative, held_identity=leaf.identity),
+                leaf=dict(parent=leaf.parent, relative=leaf.group.relative, held_identity=leaf.identity,
+                          owner_namespaces=leaf.owner_namespaces),
                 bootstrap=bootstrap, release=release, close_errors=list(close_errors), controls=dict(leaf.controls),
                 waitpid=dict(observed_wait_status=custody.get('observed_wait_status'),
                              observed_returncode=custody.get('observed_returncode'),
@@ -255,6 +268,7 @@ def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
                 stream_eof=dict(stdout=custody.get('stdout_eof'), stderr=custody.get('stderr_eof')),
                 launch_evidence=observed.get('launch_evidence'),
                 migration_control=migration_control(observed.get('launch_evidence'), bootstrap=bootstrap,
-                                                    relative=leaf.group.relative, cgroup_dev=leaf.cgroup_dev),
+                                                    relative=leaf.group.relative, cgroup_dev=leaf.cgroup_dev,
+                                                    owner_namespaces=leaf.owner_namespaces),
                 complete_descendant_custody=False,
                 writer_quiescence='not_established', final_artifact_custody='not_established')

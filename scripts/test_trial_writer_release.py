@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 import trial_owned_workers as owned
@@ -230,13 +231,15 @@ class ReleaseMappingTests(Base):
         self.assertEqual((result['waitpid']['observed_returncode'], result['waitpid']['leader_reaped']), (0, True))
         self.assertEqual(result['stream_eof'], dict(stdout=True, stderr=True))
         self.assertEqual((result['migration_control'], result['complete_descendant_custody']),
-                         (dict(state='unknown', reasons=['launch_evidence_absent']), False))
+                         (dict(state='unknown', reasons=['launch_evidence_absent'], argument=writer.ARGUMENT), False))
         self.assertEqual((result['writer_quiescence'], result['final_artifact_custody']),
                          ('not_established', 'not_established'))
         # The owner's held identity, the selected parent and the membership the joined process observed.
         info = os.stat(self.root)
         self.assertEqual(result['leaf'], dict(parent=str(self.root), relative=CURRENT,
-                                              held_identity=[info.st_dev, info.st_ino]))
+                                              held_identity=[info.st_dev, info.st_ino],
+                                              owner_namespaces={name: os.stat('/proc/self/ns/' + name).st_ino
+                                                                for name in ('pid', 'mnt')}))
         self.assertEqual(result['bootstrap']['observed_cgroup'], '0::' + CURRENT)
         self.assertIsInstance(result['bootstrap']['pid'], int)
 
@@ -342,31 +345,39 @@ class MigrationEvidenceTests(Base):
         self.assertEqual(set(evidence['caps'].values()), {writer.ZERO_CAPS})
         self.assertFalse(set(evidence['mount_types']) & writer.CGROUP_TYPES)
         self.assertEqual(evidence['cgroupfs_descriptors'], [])
-        self.assertNotEqual(evidence['pid'], result['bootstrap']['pid'])
+        self.assertNotEqual(evidence['namespaces']['pid'], result['leaf']['owner_namespaces']['pid'])
+        self.assertNotEqual(evidence['namespaces']['mnt'], result['leaf']['owner_namespaces']['mnt'])
         expected = [] if evidence['max_user_namespaces'] == 0 else ['user_namespace_creation_available']
-        self.assertEqual(result['migration_control'],
-                         dict(state='controlled' if not expected else 'unknown', reasons=expected))
+        self.assertEqual(result['migration_control'], dict(state='controlled' if not expected else 'unknown',
+                                                           reasons=expected, argument=writer.ARGUMENT))
 
     def test_controlled_requires_every_observation(self):
         bootstrap = dict(state='member', pid=4242)
         good = dict(caps=dict.fromkeys(('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'), writer.ZERO_CAPS),
                     no_new_privs='1', mount_types=['devtmpfs', 'proc', 'tmpfs'], cgroupfs_descriptors=[], pid=2,
-                    cgroup='0::/leaf', max_user_namespaces=0)
+                    namespaces=dict(pid=11, mnt=12), cgroup='0::/leaf', max_user_namespaces=0)
+        owner = dict(pid=21, mnt=22)
         check = lambda evidence, **kw: writer.migration_control(evidence, bootstrap=kw.get('bootstrap', bootstrap),
-                                                                relative='/leaf', cgroup_dev=kw.get('dev', '0:30'))
-        self.assertEqual(check(good), dict(state='controlled', reasons=[]))
+                                                                relative='/leaf', cgroup_dev=kw.get('dev', '0:30'),
+                                                                owner_namespaces=kw.get('owner', owner))
+        self.assertEqual(check(good), dict(state='controlled', reasons=[], argument=writer.ARGUMENT))
         for change, reason in ((dict(caps=dict(good['caps'], CapBnd='000001ffffffffff')), 'capabilities_present'),
                                (dict(no_new_privs='0'), 'no_new_privs_absent'),
                                (dict(mount_types=['cgroup2', 'proc']), 'cgroupfs_mount_visible'),
                                (dict(cgroupfs_descriptors=[7]), 'cgroupfs_descriptor_open'),
-                               (dict(pid=4242), 'pid_namespace_unobserved'),
+                               # A different pid in the SAME namespace is not namespace evidence.
+                               (dict(pid=7, namespaces=dict(pid=21, mnt=12)), 'pid_namespace_unobserved'),
+                               (dict(namespaces=dict(pid=11)), 'pid_namespace_unobserved'),
+                               (dict(namespaces=dict(pid=11, mnt=22)), 'mount_namespace_unobserved'),
                                (dict(cgroup='0::/elsewhere'), 'probe_membership_mismatch'),
                                (dict(max_user_namespaces=514295), 'user_namespace_creation_available')):
             with self.subTest(reason=reason):
-                self.assertEqual(check(dict(good, **change)), dict(state='unknown', reasons=[reason]))
+                self.assertEqual(check(dict(good, **change)),
+                                 dict(state='unknown', reasons=[reason], argument=writer.ARGUMENT))
         self.assertEqual(check(None)['reasons'], ['launch_evidence_absent'])
         self.assertEqual(check(good, dev=None)['reasons'], ['launch_evidence_absent'])
         self.assertEqual(check(good, bootstrap=dict(state='unobserved'))['reasons'], ['launch_evidence_absent'])
+        self.assertEqual(check(good, owner=None)['reasons'], ['launch_evidence_absent'])
 
     def test_probe_outside_the_sandbox_is_not_controlled(self):
         result, out, code = self.sandboxed_outside()
@@ -488,10 +499,14 @@ class RunAgentIntegrationTests(Base):
             grade = stack.enter_context(patch.object(task, 'grade', side_effect=task.grade))
             for target, name, value in patches.values():
                 stack.enter_context(patch.object(target, name, value))
-            with self.assertRaises(Exception) as caught:
+            try:  # keep the traceback (assertRaises would strip it)
                 task.run_agent(self.case, 'CURRENT', 0, 0, self.args, self.stores, self.out)
+            except Exception as raised:
+                error = raised
+            else:
+                self.fail('the injected failure did not propagate')
         grade.assert_not_called()
-        return caught.exception, groups[0]
+        return error, groups[0] if groups else None
 
     def test_failures_after_capture_still_release_close_and_record_without_success(self):
         import trial_task_eval as task
@@ -528,6 +543,47 @@ class RunAgentIntegrationTests(Base):
                 self.assertEqual(recorded['state'], 'attempt_failed')
                 self.assertEqual(recorded['release'], 'released')  # observed, but never claimed as success
                 self.assertEqual(recorded['bootstrap']['state'], 'member')
+
+    def test_receipt_write_failure_keeps_the_primary_error_with_observations(self):
+        import trial_task_eval as task
+        real_write = Path.write_text
+
+        def failing_receipt(path, data, *args, **kwargs):
+            if path.name == 'writer-release.json':
+                raise OSError(28, 'synthetic receipt failure')
+            return real_write(path, data, *args, **kwargs)
+
+        def malformed(path):
+            raise ValueError('custody_shape')
+        error, group = self.failing_run(custody=(task, 'read_custody', malformed),
+                                        write=(Path, 'write_text', failing_receipt))
+        self.assertEqual(str(error), 'custody_shape')
+        frames = []
+        tb = error.__traceback__
+        while tb is not None:
+            frames.append(tb.tb_frame.f_code.co_name)
+            tb = tb.tb_next
+        self.assertEqual(frames[-1], 'malformed')  # the original traceback, not the receipt failure
+        notes = '\n'.join(error.__notes__)
+        self.assertIn('writer_release: {"bootstrap": "member", "close_errors": [], "release": "released", '
+                      '"state": "attempt_failed"}', notes)
+        self.assertIn('writer_release_receipt_unwritten: OSError', notes)
+        self.assertEqual(group.closes, 1)
+
+    def test_uncertain_cleanup_on_a_failed_attempt_is_unknown_never_released(self):
+        import trial_task_eval as task
+        groups = []
+        factory = lambda delegated, controls: groups.append(FakeGroup(
+            delegated, controls, events_error=True, close_errors=('cgroup_directory_removal_unknown',))) or groups[-1]
+
+        def malformed(path):
+            raise ValueError('custody_shape')
+        error, _ = self.failing_run(custody=(task, 'read_custody', malformed),
+                                    group=(writer.owned, 'OwnedCgroup', unittest.mock.Mock(side_effect=factory)))
+        recorded = json.loads((self.out / 'runs/synthetic.CURRENT.s0/writer-release.json').read_text())
+        self.assertEqual((recorded['state'], recorded['release'], recorded['close_errors']),
+                         ('attempt_failed', 'events_unknown', ['cgroup_directory_removal_unknown']))
+        self.assertIn('"release": "events_unknown"', '\n'.join(error.__notes__))
 
     def test_unavailable_containment_refuses_before_the_actor(self):
         import trial_task_eval as task
