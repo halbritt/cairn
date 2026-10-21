@@ -497,8 +497,18 @@ file's, never the binary's.
   source is even parsed.
 - `REVIEWED_HOOKS` maps a reviewed `memory.py` SHA-256 to its git revision and
   argv contract (`ARGV_CONTRACT`). It holds one entry, `43c4b61`'s blob
-  (`53d826f6...`), and that entry is **proposed for root review**. Root adds or
-  strikes entries, including the original `recall_revision` blobs.
+  (`53d826f6ed396156de21b23865814f9f7e1db67051600c31ec40e8ef07efe896`).
+  - **What the review covers.** Root (agent-341, 2026-10-21) reviewed that
+    entry **only for static argv and model-precedence eligibility**. Its
+    basis: the current `memory.py` is byte-identical to `43c4b61`'s, the whole
+    `select_json`, `selector_model` and `bounded_command` route was read, and
+    the AST contract matches exactly.
+  - **What it does not cover:** complete hook safety, eligibility of the
+    original frozen revision, authenticated observation, deadline
+    preservation, or runtime admission. It enables no fallback.
+  - **Original frozen revisions.** The original frozen hook revisions
+    (`recall_revision` blobs) need their own review before any use. Root adds
+    or strikes entries.
 - For an allow-listed hash, `argv_contract` uses `ast.parse` alone. It checks
   four things in the parse tree:
   - the `command` list in `select_json`;
@@ -907,7 +917,8 @@ Limits and account selection:
 - The hook selector for an ambient arm with `semantic_fallback`
   (`semantic_fallback_selector`). The seam is in `trial_semantic_selector`.
   Still to do: `/2` dispatch in the owned files, harness and runner wiring,
-  root review of `REVIEWED_HOOKS`, and the proposed owner-launched engine
+  review of the original frozen hook revisions for `REVIEWED_HOOKS`, and the
+  proposed owner-launched engine
   (or another accepted channel) for hook observations.
 - Real capacity-adapter input for the bound account, and a root-issued live
   selection for one concrete slot.

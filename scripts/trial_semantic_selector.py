@@ -227,7 +227,12 @@ ARGV_CONTRACT = dict(
     model_keys=dict(preview=('preview_model', 'recall_model', 'model'), recall=('recall_model', 'model'),
                     other=('model',)))
 # SHA-256 of a reviewed memory.py -> the git revision it came from and its contract.
-# The 43c4b61 entry is PROPOSED for root review; root adds or strikes entries.
+# The 43c4b61 entry is root-reviewed (agent-341, 2026-10-21) ONLY for static argv and
+# model-precedence eligibility: the select_json, selector_model and bounded_command route
+# was read and the AST contract matches exactly. It does NOT cover complete hook safety,
+# eligibility of the original frozen revision, authenticated observation, deadline
+# preservation or runtime admission, and enables no fallback. Original frozen hook
+# revisions need their own review before any use. Root adds or strikes entries.
 REVIEWED_HOOKS = {
     '53d826f6ed396156de21b23865814f9f7e1db67051600c31ec40e8ef07efe896':
         dict(revision='43c4b6170f1f7784d70d55ca6669d770ab214ed1', contract=ARGV_CONTRACT),
