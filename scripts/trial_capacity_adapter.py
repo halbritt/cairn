@@ -13,6 +13,18 @@ its route names. A pool that several jobs or accounts share is summed once
 per window and metric. This module only checks that the observations bind the
 exact accounts, pool, window and counter that the routes charge.
 
+Source custody. The closed capacity/2 and mapping schemas carry values only,
+so two evidence sets with equal values but different provenance (different
+allowance or reservation basis files) produce byte-identical capacity,
+mapping, binding and reservation files. They are not interchangeable
+evidence: the receipt's ``sources`` records ``input_sha256`` (canonical
+SHA-256 of the whole input document) and the full inventory of allowance
+basis pins (with their pool, window, metric and accounts) plus the
+reservation basis pin. Distinct provenance therefore always yields a
+distinct receipt, and ``verify_sources`` re-hashes every recorded source and
+output pin to detect later changes. A matching hash shows the bytes are the
+recorded ones; it does not authenticate who produced them.
+
 What this is not:
 
 - Usage percentages and ``dedicated``/``interactive_use`` booleans are
@@ -57,7 +69,7 @@ def _route_accounts(routes):
 
 def _resources(allowances, totals, owners, now):
     need(type(allowances) is list and 0 < len(allowances) <= 1024, 'allowance_shape')
-    resources, observed, until = {}, [], []
+    resources, bases, observed, until = {}, {}, [], []
     for row in allowances:
         paired.shape(row, 'accounts pool_id window_id metric unit remaining observed_at valid_until basis',
                      'allowance_shape')
@@ -75,10 +87,13 @@ def _resources(allowances, totals, owners, now):
         paired.pin(row['basis'])
         resources[key] = dict(pool_id=key[0], window_id=key[1], metric=key[2],
                               remaining=row['remaining'], required=totals[key])
+        bases[key] = dict(pool_id=key[0], window_id=key[1], metric=key[2],
+                          accounts=sorted(row['accounts']), basis=dict(row['basis']))
         observed.append((start, row['observed_at']))
         until.append((end, row['valid_until']))
     need(set(resources) == set(totals), 'allowance_missing')
-    return [resources[key] for key in sorted(resources)], max(observed)[1], min(until)[1]
+    return ([resources[key] for key in sorted(resources)], [bases[key] for key in sorted(bases)],
+            max(observed)[1], min(until)[1])
 
 
 class _Output:
@@ -118,7 +133,7 @@ def _adapt(document, output, now):
     jobs = paired.provider_workload(plan, models)
     accounts = paired.capacity_accounts(accounts_ref)
     totals = paired.provider_demands(routes_ref, plan, jobs, accounts)
-    resources, observed_at, valid_until = _resources(
+    resources, allowance_bases, observed_at, valid_until = _resources(
         document['allowances'], totals, _route_accounts(document['routes']), current)
     hold = document['reservation']
     paired.shape(hold, 'state valid_until basis', 'reservation_shape')
@@ -143,6 +158,8 @@ def _adapt(document, output, now):
     receipt = dict(schema=RECEIPT_SCHEMA, plan_sha256=plan['sha256'], adapted_at=now,
                    account_binding=accounts_ref, route_binding=routes_ref, reservation=reservation_ref,
                    capacity=capacity_ref, mapping=mapping_ref, projection=projection,
+                   sources=dict(input_sha256=paired.canonical_sha(document), allowances=allowance_bases,
+                                reservation_basis=dict(hold['basis'])),
                    account_proof='declared_unauthenticated', runtime_admission=False,
                    limits='Offline declarations checked for consistency and whole-run sufficiency; '
                           'not account, authorization, funding or provider-side proof.')
@@ -158,6 +175,34 @@ def adapt(document, output_directory, *, now):
     except BaseException:
         output.discard()
         raise
+
+
+def verify_sources(receipt_reference):
+    """Re-hash every source and output pin recorded in a pinned receipt; refuse on any change.
+
+    This detects changed or substituted evidence bytes. It does not
+    authenticate their origin and admits nothing.
+    """
+    receipt = paired.read_json_pin(receipt_reference)
+    need(isinstance(receipt, dict) and receipt.get('schema') == RECEIPT_SCHEMA
+         and isinstance(receipt.get('sources'), dict), 'receipt_schema')
+    sources = receipt['sources']
+    paired.shape(sources, 'input_sha256 allowances reservation_basis', 'receipt_sources_shape')
+    need(type(sources['allowances']) is list and sources['allowances'], 'receipt_sources_shape')
+    capacity = paired.read_json_pin(receipt['capacity'])
+    keys = []
+    for row in sources['allowances']:
+        paired.shape(row, 'pool_id window_id metric accounts basis', 'receipt_sources_shape')
+        paired.pin(row['basis'])
+        keys.append((row['pool_id'], row['window_id'], row['metric']))
+    need(keys == [(r['pool_id'], r['window_id'], r['metric']) for r in capacity['resources']],
+         'receipt_sources_coverage')
+    paired.pin(sources['reservation_basis'])
+    for field in ('account_binding', 'route_binding', 'reservation', 'mapping'):
+        paired.pin(receipt[field])
+    return dict(status='sources_match_recorded_pins', receipt_sha256=receipt_reference['sha256'],
+                input_sha256=sources['input_sha256'], allowance_bases=len(keys),
+                account_proof='declared_unauthenticated', runtime_admission=False)
 
 
 def main(argv=None):

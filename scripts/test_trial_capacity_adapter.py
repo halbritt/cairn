@@ -3,11 +3,12 @@ import copy
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
 import trial_paired_request as paired
-from trial_capacity_adapter import adapt, main
+from trial_capacity_adapter import adapt, main, verify_sources
 from test_trial_paired_capacity import write_pin
 from test_trial_provider_mapping import END, NOW, START, Fixture
 
@@ -72,6 +73,57 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(mapping['capacity_sha256'], receipt['capacity']['sha256'])
         self.assertEqual(sorted(os.listdir(self.output)), sorted(
             ['accounts.json', 'routes.json', 'reservation.json', 'capacity.json', 'mapping.json', 'receipt.json']))
+
+    def outputs(self):
+        return {name: (self.output / name).read_bytes() for name in sorted(os.listdir(self.output))}
+
+    def rebase_sources(self, tag):
+        """Same values, different provenance: fresh basis files with different hashes."""
+        for i, row in enumerate(self.inputs.allowances):
+            row['basis'] = write_pin(self.root / f'allowance-basis-{tag}-{i}.json', {'source': tag, 'row': i})
+        self.inputs.reservation['basis'] = write_pin(self.root / f'reservation-basis-{tag}.json', {'hold': tag})
+
+    def test_same_values_from_different_sources_produce_distinguishable_receipts(self):
+        first = adapt(self.inputs.document(), self.output, now=NOW)
+        before = self.outputs()
+        shutil.rmtree(self.output)
+        self.rebase_sources('other')
+        second = adapt(self.inputs.document(), self.output, now=NOW)
+        after = self.outputs()
+        for name in ('accounts.json', 'routes.json', 'reservation.json', 'capacity.json', 'mapping.json'):
+            self.assertEqual(before[name], after[name], name)  # closed schemas carry values only
+        self.assertNotEqual(before['receipt.json'], after['receipt.json'])
+        self.assertNotEqual(first['sources']['input_sha256'], second['sources']['input_sha256'])
+        recorded = {(a['pool_id'], a['window_id'], a['metric']): a['basis'] for a in second['sources']['allowances']}
+        self.assertEqual(recorded, {(r['pool_id'], r['window_id'], r['metric']): r['basis']
+                                    for r in self.inputs.allowances})
+        self.assertEqual(second['sources']['reservation_basis'], self.inputs.reservation['basis'])
+        self.assertEqual(second['sources']['allowances'][0]['accounts'], ['account-A', 'account-B'])
+
+    def test_recorded_sources_verify_and_detect_tampering(self):
+        adapt(self.inputs.document(), self.output, now=NOW)
+        receipt = dict(path=str(self.output / 'receipt.json'),
+                       sha256=hashlib.sha256((self.output / 'receipt.json').read_bytes()).hexdigest())
+        result = verify_sources(receipt)
+        self.assertEqual(result['status'], 'sources_match_recorded_pins')
+        self.assertFalse(result['runtime_admission'])
+        Path(self.inputs.allowances[1]['basis']['path']).write_text('{"tampered": true}')
+        with self.assertRaisesRegex(paired.Refusal, '^pin_mismatch$'):
+            verify_sources(receipt)
+
+    def test_tampered_reservation_basis_or_output_is_detected(self):
+        adapt(self.inputs.document(), self.output, now=NOW)
+        receipt = dict(path=str(self.output / 'receipt.json'),
+                       sha256=hashlib.sha256((self.output / 'receipt.json').read_bytes()).hexdigest())
+        capacity = self.output / 'capacity.json'
+        original = capacity.read_bytes()
+        capacity.write_bytes(original.replace(b'"declared"', b'"declared" '))
+        with self.assertRaisesRegex(paired.Refusal, '^pin_mismatch$'):
+            verify_sources(receipt)
+        capacity.write_bytes(original)
+        Path(self.inputs.reservation['basis']['path']).write_text('{"other": "hold"}')
+        with self.assertRaisesRegex(paired.Refusal, '^pin_mismatch$'):
+            verify_sources(receipt)
 
     def test_existing_output_is_never_overwritten(self):
         self.output.mkdir()
