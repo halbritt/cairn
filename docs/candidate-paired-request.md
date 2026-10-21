@@ -57,11 +57,21 @@ without paths. A usage refusal also includes the path-free pre-check summary.
 10. Writes `entry.json` with `state: queued_for_review` and the receipt,
     including the draft file hashes.
 
-Any refusal after step 6 leaves the entry with `state: failed` and its code.
+A refusal after step 6 leaves the entry with `state: failed` and its code,
+except uncertain PostgreSQL shutdown, which records `state: cleanup_unknown`.
 A later request for the same pair moves it to `QUEUE/failed/REQUEST_ID.N` and
 tries again with the same IDs. An entry without `entry.json` is still being
 written and refuses `candidate_request_in_progress`. `list` shows queued,
-prepared, failed and incomplete entries.
+prepared, failed, cleanup-unknown and incomplete entries.
+
+The optional PostgreSQL smoke test attempts shutdown even when startup times
+out. If shutdown fails or times out, it refuses `postgres_smoke_cleanup_unknown`
+and preserves both the cluster directory and socket directory for recovery.
+It never deletes a pre-existing cluster directory. A subsequent request for an
+entry marked `cleanup_unknown` refuses `candidate_cleanup_unknown` without
+moving the entry, rebuilding either arm, or repeating the smoke test. Recovery
+requires resolving the existing server's state first; the request command does
+not infer cleanup from elapsed time.
 
 ## Preparing a reviewed entry
 

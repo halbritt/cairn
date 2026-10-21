@@ -251,26 +251,33 @@ def smoke_postgres(entry, bin_dir):
     """Create, query and remove one disposable cluster owned by this call."""
     root = entry/'pg-smoke'
     socket = Path(tempfile.mkdtemp(prefix='cairn-pg-'))
-    started = False
+    start_attempted = root_owned = False
     try:
         root.mkdir(mode=0o700)
+        root_owned = True
         run = lambda *args: subprocess.run([str(a) for a in args], check=True, capture_output=True, timeout=120)
         run(bin_dir/'initdb', '-D', root/'data', '--auth-local=trust', '--auth-host=reject', '--no-locale', '-E', 'UTF8')
+        start_attempted = True  # A timeout does not prove the server never started.
         run(bin_dir/'pg_ctl', '-D', root/'data', '-l', root/'postgres.log',
             '-o', f"-F -k {socket} -c listen_addresses=''", '-w', 'start')
-        started = True
         value = run(bin_dir/'psql', '-h', socket, '-d', 'postgres', '-Atc', 'select 1').stdout.decode().strip()
         paired.need(value == '1', 'postgres_smoke_failed')
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         raise paired.Refusal('postgres_smoke_failed') from None
     finally:
-        stopped = True
-        if started:
-            stopped = subprocess.run([str(bin_dir/'pg_ctl'), '-D', str(root/'data'), '-m', 'immediate', '-w', 'stop'],
-                                     capture_output=True, timeout=120).returncode == 0
-        if stopped:
-            shutil.rmtree(root, ignore_errors=True)
-        shutil.rmtree(socket, ignore_errors=True)
+        if start_attempted:
+            try:
+                stopped = subprocess.run(
+                    [str(bin_dir/'pg_ctl'), '-D', str(root/'data'), '-m', 'immediate', '-w', 'stop'],
+                    capture_output=True, timeout=120).returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                stopped = False
+            if not stopped:
+                # Keep data, PID file, log and socket available for recovery.
+                raise paired.Refusal('postgres_smoke_cleanup_unknown') from None
+        if root_owned:
+            shutil.rmtree(root)
+        shutil.rmtree(socket)
     return dict(status='passed', query='select 1')
 
 
@@ -292,6 +299,7 @@ def request(profile, candidate_ref, *, now, compiler=None, smoke_postgres=False)
     IDs are derived from campaign, occurrence and both commits, so repeating a
     request for an already queued pair returns the stored receipt without a
     rebuild. A failed attempt is moved under `failed/` and may be retried.
+    Unknown smoke-test cleanup preserves the entry and refuses automatic retry.
     """
     compiler = compiler or go_build
     repo, queue, bin_dir = check_profile(profile)
@@ -304,6 +312,7 @@ def request(profile, candidate_ref, *, now, compiler=None, smoke_postgres=False)
     if entry.exists():
         stored = _entry(entry)
         paired.need(stored is not None, 'candidate_request_in_progress')
+        paired.need(stored['state'] != 'cleanup_unknown', 'candidate_cleanup_unknown')
         if stored['state'] != 'failed':
             return dict(stored['receipt'], status='already_queued', state=stored['state'])
         failed = queue/'failed'
@@ -324,7 +333,8 @@ def request(profile, candidate_ref, *, now, compiler=None, smoke_postgres=False)
     try:
         receipt = _queue(profile, entry, record, ids, repo, bin_dir, current, cand, compiler, smoke_postgres, now)
     except paired.Refusal as error:
-        paired.write_selected(entry/'entry.json', dict(record, state='failed', code=str(error)))
+        state = 'cleanup_unknown' if str(error) == 'postgres_smoke_cleanup_unknown' else 'failed'
+        paired.write_selected(entry/'entry.json', dict(record, state=state, code=str(error)))
         raise
     except (OSError, ValueError, TypeError, KeyError):
         paired.write_selected(entry/'entry.json', dict(record, state='failed', code='candidate_request_failed'))

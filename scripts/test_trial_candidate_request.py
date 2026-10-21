@@ -391,6 +391,23 @@ class CandidateRequestTests(unittest.TestCase):
         self.assertEqual((status, refused['status']), (2, 'refused'))
         self.assertNotIn(str(self.root), json.dumps(refused))
 
+    def test_uncertain_smoke_cleanup_preserves_entry_and_refuses_retry(self):
+        compiler = FakeCompiler()
+        with patch.object(candidate, 'smoke_postgres',
+                          side_effect=paired.Refusal('postgres_smoke_cleanup_unknown')) as smoke:
+            with self.assertRaisesRegex(paired.Refusal, '^postgres_smoke_cleanup_unknown$'):
+                self.run_request(compiler=compiler, smoke_postgres=True)
+            entries = candidate.list_queue(self.profile)
+            self.assertEqual([e['state'] for e in entries], ['cleanup_unknown'])
+            entry = self.queue/entries[0]['request_id']
+            before = (entry/'entry.json').read_bytes()
+            with self.assertRaisesRegex(paired.Refusal, '^candidate_cleanup_unknown$'):
+                self.run_request(compiler=compiler, smoke_postgres=True)
+            self.assertEqual((entry/'entry.json').read_bytes(), before)
+            self.assertFalse((self.queue/'failed').exists())
+            self.assertEqual(len(compiler.calls), 2)
+            self.assertEqual(smoke.call_count, 1)
+
     @unittest.skipUnless((PG_BIN/'initdb').exists(), 'PostgreSQL binaries unavailable')
     def test_smoke_postgres_uses_and_removes_its_own_disposable_cluster(self):
         self.profile['postgres']['bin_dir'] = str(PG_BIN)
