@@ -516,8 +516,9 @@ def classify_attempt(declared, *, mounted, observations, native_hooks, authentic
 
 LEDGER_SCHEMA = 'cairn.selector-owner-execution/1'
 BINDINGS = ('engine_sha256', 'observer_sha256', 'config_sha256', 'selector_sha256')
+TIMES = ('frame_received_seconds', 'deadline_seconds', 'completed_seconds')
 LEDGER_FIELDS = frozenset(('schema', 'attempt_id', 'sequence', 'event', 'hook_input_sha256', 'stdout_sha256',
-                           'exit_code', 'observation_sha256') + BINDINGS)
+                           'exit_code', 'observation_sha256') + BINDINGS + TIMES)
 
 
 def check_owner_executions(ledger, observations, *, attempt_id, bindings):
@@ -548,7 +549,9 @@ def check_owner_executions(ledger, observations, *, attempt_id, bindings):
         if not (isinstance(row, dict) and set(row) == LEDGER_FIELDS and row['schema'] == LEDGER_SCHEMA
                 and type(row['sequence']) is int and row['event'] in OBSERVER_EVENTS
                 and all(_sha256(row[k]) for k in ('hook_input_sha256', 'stdout_sha256', 'observation_sha256'))
-                and (row['exit_code'] is None or type(row['exit_code']) is int)):
+                and (row['exit_code'] is None or type(row['exit_code']) is int)
+                and all(_number(row[k]) for k in TIMES)
+                and row['frame_received_seconds'] <= row['completed_seconds']):
             return ['semantic_selector_owner_ledger_malformed']
         if row['attempt_id'] != attempt_id or row['sequence'] != index:
             code = 'semantic_selector_owner_attempt_mismatch'
@@ -569,3 +572,132 @@ def check_owner_executions(ledger, observations, *, attempt_id, bindings):
     if len(lines) != len(ledger) and 'semantic_selector_owner_observation_unbound' not in refusals:
         refusals.append('semantic_selector_owner_observation_unbound')
     return refusals
+
+
+# Native hook fields observed in retained Claude CLI streams (keys only):
+#   hook_started:  type subtype hook_id hook_name hook_event session_id uuid
+#   hook_response: the same plus stdout stderr output exit_code outcome
+# Neither carries the hook's input bytes, an input digest or a CLI timestamp.
+# The only clock is the owner's receive time of each stream line
+# (trial_native_capture.capture timings, seconds since capture start).
+NATIVE_INPUT_FIELD = 'input_sha256'  # NOT emitted by the CLI today; named as the missing observation
+HOOK_SECONDS = 5  # original LIMITS['hook_seconds'] and the legacy command-hook timeout
+
+
+def _native_hooks(events):
+    """Pair native hook events by hook_id: {id: (event, started_s, response_s, stdout_sha256, input_sha256)}."""
+    if not isinstance(events, list):
+        raise ValueError('semantic_selector_native_malformed')
+    started, finished = {}, {}
+    for item in events:
+        if not (isinstance(item, dict) and item.get('subtype') in ('hook_started', 'hook_response')
+                and type(item.get('hook_id')) is str and item['hook_id']
+                and item.get('hook_event') in OBSERVER_EVENTS and _number(item.get('received_seconds'))):
+            raise ValueError('semantic_selector_native_malformed')
+        target = started if item['subtype'] == 'hook_started' else finished
+        if item['hook_id'] in target:
+            raise ValueError('semantic_selector_native_malformed')
+        if item['subtype'] == 'hook_started':
+            anchor = item.get(NATIVE_INPUT_FIELD)
+            if anchor is not None and not _sha256(anchor):
+                raise ValueError('semantic_selector_native_malformed')
+            started[item['hook_id']] = (item['hook_event'], item['received_seconds'], anchor)
+        else:
+            if type(item.get('stdout')) is not str:
+                raise ValueError('semantic_selector_native_malformed')
+            finished[item['hook_id']] = (item['hook_event'], item['received_seconds'],
+                                         hashlib.sha256(item['stdout'].encode()).hexdigest())
+    if set(started) != set(finished):
+        raise ValueError('semantic_selector_native_unfinished')
+    hooks = {}
+    for ident, (event, start, anchor) in started.items():
+        end_event, end, stdout = finished[ident]
+        if end_event != event or end < start:
+            raise ValueError('semantic_selector_native_malformed')
+        hooks[ident] = dict(event=event, started=start, responded=end, stdout_sha256=stdout, input_sha256=anchor)
+    return hooks
+
+
+def correlate_native(ledger, native_events, *, hook_seconds=HOOK_SECONDS):
+    """Correlate owner executions with the CLI's own hook events; keep each claim separate.
+
+    ``ledger`` rows are ``check_owner_executions``-valid rows whose times share
+    the capture clock. ``native_events`` are the CLI's hook_started and
+    hook_response events with the owner's ``received_seconds`` for each line.
+
+    Claims:
+    - ``output_correlated``: a one-to-one pairing on event and stdout digest;
+    - ``window_correlated``: each frame arrived after its hook_started line and
+      the execution finished before its hook_response line;
+    - ``deadline_from_native_start``: each execution's deadline is its
+      hook_started receipt plus ``hook_seconds`` (never frame receipt plus
+      ``hook_seconds``), and it completed by then;
+    - ``input``: ``anchored`` only when the CLI exposes an input digest that
+      equals the executed input; ``unanchored`` otherwise. Owner execution of
+      an input never stands in for that input being the CLI's hook input.
+
+    ``gaps`` names native observations that are missing, never filled in.
+    """
+    refusals, gaps = [], []
+    try:
+        hooks = _native_hooks(native_events)
+    except ValueError as exc:
+        return dict(claims=dict(output_correlated=False, window_correlated=False,
+                                deadline_from_native_start=False, input='unanchored'),
+                    pairs=None, refusals=[str(exc)], gaps=[])
+    rows = list(ledger) if isinstance(ledger, list) else []
+
+    def fits(row, hook, *, timing):
+        if (row['event'], row['stdout_sha256']) != (hook['event'], hook['stdout_sha256']):
+            return False
+        return not timing or hook['started'] <= row['frame_received_seconds'] <= row['completed_seconds'] <= hook['responded']
+
+    def matching(timing):
+        # Augmenting-path bipartite matching; concurrent hooks may interleave.
+        owner = {}
+
+        def place(index, seen):
+            for ident, hook in hooks.items():
+                if ident not in seen and fits(rows[index], hook, timing=timing):
+                    seen.add(ident)
+                    if ident not in owner or place(owner[ident], seen):
+                        owner[ident] = index
+                        return True
+            return False
+        complete = len(rows) == len(hooks) and all(place(i, set()) for i in range(len(rows)))
+        return {index: ident for ident, index in owner.items()} if complete else None
+
+    output = matching(False)
+    pairs = matching(True) if output is not None else None
+    if output is None:
+        refusals.append('semantic_selector_owner_output_uncorrelated')
+    elif pairs is None:
+        refusals.append('semantic_selector_owner_window_uncorrelated')
+    deadline = pairs is not None
+    if pairs is not None:
+        for index, ident in pairs.items():
+            expected = hooks[ident]['started'] + hook_seconds
+            if rows[index]['deadline_seconds'] != expected:
+                deadline = False
+                if 'semantic_selector_owner_deadline_restarted' not in refusals:
+                    refusals.append('semantic_selector_owner_deadline_restarted')
+            elif rows[index]['completed_seconds'] > expected:
+                deadline = False
+                if 'semantic_selector_owner_deadline_exceeded' not in refusals:
+                    refusals.append('semantic_selector_owner_deadline_exceeded')
+    gaps.append('native_hook_spawn_time_unobserved')  # hook_started receipt is later than the CLI's own start
+    anchors = [hook['input_sha256'] for hook in hooks.values()]
+    if not hooks or any(anchor is None for anchor in anchors):
+        gaps.append('native_hook_input_unobserved')
+        input_claim = 'unanchored'
+    elif pairs is None:
+        input_claim = 'unanchored'
+    elif all(rows[index]['hook_input_sha256'] == hooks[ident]['input_sha256'] for index, ident in pairs.items()):
+        input_claim = 'anchored'
+    else:
+        input_claim = 'mismatched'
+        refusals.append('semantic_selector_owner_input_mismatch')
+    return dict(claims=dict(output_correlated=output is not None, window_correlated=pairs is not None,
+                            deadline_from_native_start=deadline, input=input_claim),
+                pairs=None if pairs is None else {rows[i]['sequence']: ident for i, ident in pairs.items()},
+                refusals=refusals, gaps=gaps)

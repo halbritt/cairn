@@ -642,18 +642,23 @@ Interface:
   bytes unchanged and exits with the returned code.
 - For each frame, the owner runs the unchanged pinned `memory.py` under the
   unchanged `trial_hook_observer`. It runs in an owner-launched bwrap that
-  mirrors today's hook view: the same paths, ro hook, ro config, ro selector
-  mount, the store socket, the workspace at its path, `--clearenv` with the
-  same variables, and `state_dir` on the owner-only hookstate. It uses the
-  deadline of the 5 s limit, measured from frame receipt.
+  mirrors today's hook view: the same paths, ro hook, config and selector,
+  the store socket, the workspace, `--clearenv` with the same variables, and
+  `state_dir` on the owner-only hookstate. Its deadline is the matching
+  `hook_started` line's
+  receipt time plus 5 s, never frame receipt plus 5 s (see the deadline
+  bullet below).
 - The owner appends the observer's row to its observations file. It appends
   one `cairn.selector-owner-execution/1` ledger row (`check_owner_executions`)
   binding:
   - `attempt_id` and a contiguous `sequence`;
-  - `event` and `hook_input_sha256`;
+  - `event` and `hook_input_sha256` (the bytes the owner received, not
+    proven to be the CLI's input);
   - `stdout_sha256` and `exit_code`;
   - the observation line's SHA-256;
-  - the engine, observer, config and selector SHA-256 values it mounted.
+  - the engine, observer, config and selector SHA-256 values it mounted;
+  - `frame_received_seconds`, `deadline_seconds` and `completed_seconds`, in
+    the capture clock.
 - It then returns stdout and the exit code to the stub.
 
 Binding points:
@@ -661,33 +666,72 @@ Binding points:
   config that `trial_original_arms`, `retain`/`mount` and `selector_argv`
   checked, and records their digests in every ledger row.
 - **Attempt:** one executor, socket, ledger and `attempt_id` per attempt.
-- **Causing callback:** each native `hook_started`/`hook_response` pair on
-  the owner-held stdout must correlate one-to-one, by `(event,
-  stdout_sha256)`, with exactly one ledger row (`classify_attempt`'s
-  completeness).
-  - A frame forged by an actor tool produces a ledger row with no native
-    response, so the counts differ and the attempt refuses.
-  - A rewritten observation fails its line digest.
-  - The actor can no longer write the rows, because they never enter its
-    mounts.
+- **Owner execution** (`check_owner_executions`): the owner ran this
+  engine, with these bindings, on these bytes, producing this observation
+  line. This is the owner's own claim, and it is kept apart from the next
+  three.
+- **Native correlation** (`correlate_native`, agent-341 review of `ceff369`).
+  Each claim is kept separate:
+  - `output_correlated`: a one-to-one pairing of ledger rows and native
+    hooks on `(event, stdout_sha256)`. An extra replayed frame or a dropped
+    stub frame breaks the counts.
+  - `window_correlated`: each frame arrived after its `hook_started` line and
+    finished before its `hook_response` line, in the owner's capture clock.
+    The pairing uses augmenting paths, so concurrent hooks pair correctly. A
+    replay outside the native window refuses.
+  - `deadline_from_native_start`: each deadline equals the hook's
+    `hook_started` receipt plus 5 s, and the execution finished by then. A
+    deadline restarted from frame receipt refuses
+    `semantic_selector_owner_deadline_restarted`.
+  - `input`: `anchored`, `unanchored` or `mismatched`.
+- **What the native stream exposes.** Retained Claude CLI streams show
+  `hook_started` = `{type, subtype, hook_id, hook_name, hook_event,
+  session_id, uuid}`. `hook_response` adds `{stdout, stderr, output,
+  exit_code, outcome}`. Neither carries the hook's input bytes, an input
+  digest or a CLI timestamp. The only clock is the owner's per-line receive
+  time (`trial_native_capture.capture` timings).
+- **Consequence: a one-for-one replacement is invisible.** An actor frame
+  that replaces the stub's, with different input but the same stdout, passes
+  the output and window claims. A replay inside the window does too. So
+  `input` stays `unanchored`, with gap `native_hook_input_unobserved`. "The
+  owner executed X" never stands in for "X was the CLI's hook input". The
+  tests show both cases, and show that a synthetic native input digest would
+  expose the replacement (`semantic_selector_owner_input_mismatch`).
+- **Named missing native observations** (each needs the CLI to emit it; not
+  derivable from current data):
+  1. **Input anchor.** `hook_started.input_sha256`: the SHA-256 of the exact
+     stdin bytes the CLI writes to the hook command, or the input bytes
+     themselves. Without it, input provenance is unprovable.
+  2. **Start anchor.** A CLI-side hook start time, or the CLI's own timeout
+     deadline, on `hook_started`. Today `hook_started` receipt is later than
+     the CLI's spawn by an unobserved emission and pipe delay (gap
+     `native_hook_spawn_time_unobserved`). The owner deadline is therefore
+     at most that delay later than the CLI's, never a restarted 5 s.
+  3. **Clock bridge.** The executor needs the capture's monotonic start (or
+     absolute monotonic receive times) to share the timing clock. Today
+     `capture` keeps `started` local (`trial_native_capture.py:206-215`).
 - **Completeness accounting:** the owner owns the ledger, the native stream
   and the comparison.
 
 Residual and unresolved:
-- The event bytes still come from the stub, which the actor can reach. A
-  forged event that the CLI never sent cannot pass correlation. A copied
-  genuine event duplicates a ledger row and refuses.
-- Running the engine outside the CLI's process tree changes these
+- Until observations 1 and 2 exist, the proposal can claim owner execution,
+  output and window correlation, and a native-start-bounded deadline. It
+  cannot claim input provenance. Root must decide whether that is enough. If
+  not, the producer stays blocked on the CLI, or on another input witness
+  the actor cannot reach.
+- Whether the CLI writes `hook_started` before or after it spawns the hook
+  is unobserved. If it spawns first, a genuine frame can arrive before its
+  `hook_started` line. The owner then has no native start for the deadline,
+  and window correlation refuses. This fails closed, but it could refuse
+  legitimate attempts. Start anchor 2 would remove this.
+- Running the engine outside the CLI's process tree also changes these
   properties, each of which needs root's acceptance:
   - which process the CLI kills on timeout: the stub, so the owner must kill
-    the engine at the same deadline;
+    the engine at the native-start deadline;
   - stderr routing;
-  - the hook's view of `/proc` and PIDs;
-  - the round-trip latency inside the 5 s budget.
-- Once it is wired and root accepts it, the owner would supply
-  `authentication={method: 'owner_launched_engine/1', observations_sha256}`
-  only after `check_owner_executions` returns no refusal. Only then would that
-  method be added to `AUTHENTICATION_METHODS`.
+  - the hook's view of `/proc` and PIDs.
+- Nothing is added to `AUTHENTICATION_METHODS`, and no call site is wired,
+  until these points are resolved.
 
 Owned-file changes this needs (not made):
 - `trial_task_eval.py`:
@@ -696,6 +740,10 @@ Owned-file changes this needs (not made):
   - :1223-1227: the binds list.
   - :1334/:1370/:1414: read the owner files.
 - A new owner executor module, in the writer worker's lane.
+- `trial_native_capture.capture` (:204-215): expose the capture's monotonic
+  start, or absolute receive times, so ledger times share its clock. Also
+  retain `hook_started`/`hook_response` events with their line receive times
+  for `correlate_native`.
 - `trial_native_observation.py:277-367`: expose the per-hook `{hook_id,
   event, stdout_sha256}` it already builds.
 - `trial_original_execution.check_observed` (:150-184): consume the
@@ -825,10 +873,11 @@ Limits and account selection:
 - The runner tests also cover account refusals and mismatch, a harness
   without the selector or the flag, and limit, late-memory and unobserved
   rows.
-- `test_trial_semantic_selector` (29 synthetic tests) covers the declaration
+- `test_trial_semantic_selector` (35 synthetic tests) covers the declaration
   and malformed declarations, the `/1` and `/2` arm rules, binary custody,
   configuration conflicts, the reviewed hook's argv (static only; a hook
   with top-level effects is refused and never runs), the owner ledger,
+  native correlation (replacement, replay, window, deadline, concurrency),
   capture demand, schema-checked parsing, and per-attempt `matched`,
   `not_invoked`, `mismatched`, `incomplete` and unauthenticated results. It
   uses fake binary files and fabricated hook rows only.

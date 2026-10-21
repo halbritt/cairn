@@ -444,7 +444,8 @@ class OwnerLedgerTest(unittest.TestCase):
         data = jsonl(rows)
         entries = [dict(schema='cairn.selector-owner-execution/1', attempt_id=self.attempt, sequence=i,
                         event=r['event'], hook_input_sha256='4' * 64, stdout_sha256=r['stdout_sha256'], exit_code=0,
-                        observation_sha256=hashlib.sha256(line).hexdigest(), **self.bindings)
+                        observation_sha256=hashlib.sha256(line).hexdigest(), frame_received_seconds=1.0 + i,
+                        deadline_seconds=5.9 + i, completed_seconds=1.5 + i, **self.bindings)
                    for i, (r, line) in enumerate(zip(rows, data.splitlines()))]
         return entries, data
 
@@ -477,6 +478,8 @@ class OwnerLedgerTest(unittest.TestCase):
             (entries, data + jsonl([row('UserPromptSubmit', b'forged')]), {},
              ['semantic_selector_owner_observation_unbound']),
             ([dict(entries[0], extra=1)] + entries[1:], data, {}, ['semantic_selector_owner_ledger_malformed']),
+            ([dict(entries[0], completed_seconds=0.5)] + entries[1:], data, {},
+             ['semantic_selector_owner_ledger_malformed']),
             ('opaque', data, {}, ['semantic_selector_owner_ledger_malformed']),
         ]
         for ledger, observed, changes, refusals in cases:
@@ -494,6 +497,108 @@ class OwnerLedgerTest(unittest.TestCase):
             native_hooks=native(attempt_rows(model_process=process())),
             authentication=dict(method='owner_launched_engine/1', observations_sha256=hashlib.sha256(data).hexdigest()))
         self.assertEqual(result['refusals'], ['semantic_selector_capture_unauthenticated'])
+
+
+class NativeCorrelationTest(unittest.TestCase):
+    """Owner executions against the CLI's own hook events, in the capture clock (seconds)."""
+
+    def native(self, hooks, anchors=None):
+        events = []
+        for ident, (event, start, end, stdout) in hooks.items():
+            started = dict(subtype='hook_started', hook_id=ident, hook_event=event, received_seconds=start)
+            if anchors is not None:
+                started['input_sha256'] = anchors[ident]
+            events += [started, dict(subtype='hook_response', hook_id=ident, hook_event=event,
+                                     received_seconds=end, stdout=stdout)]
+        return events
+
+    def execution(self, sequence, event, stdout, *, frame, completed, deadline, given='a' * 64):
+        return dict(sequence=sequence, event=event, stdout_sha256=hashlib.sha256(stdout.encode()).hexdigest(),
+                    hook_input_sha256=given, frame_received_seconds=frame, completed_seconds=completed,
+                    deadline_seconds=deadline)
+
+    def setUp(self):
+        # SessionStart line received at 1.0 s, its response at 2.0 s; UserPromptSubmit 3.0 s to 4.5 s.
+        self.hooks = {'h1': ('SessionStart', 1.0, 2.0, '{"a":1}'), 'h2': ('UserPromptSubmit', 3.0, 4.5, '{"b":2}')}
+        self.genuine = [self.execution(0, 'SessionStart', '{"a":1}', frame=1.1, completed=1.9, deadline=6.0),
+                        self.execution(1, 'UserPromptSubmit', '{"b":2}', frame=3.2, completed=4.4, deadline=8.0,
+                                       given='b' * 64)]
+
+    def test_genuine_executions_correlate_but_input_stays_unanchored(self):
+        result = selector.correlate_native(self.genuine, self.native(self.hooks))
+        self.assertEqual(result['claims'], dict(output_correlated=True, window_correlated=True,
+                                                deadline_from_native_start=True, input='unanchored'))
+        self.assertEqual(result['pairs'], {0: 'h1', 1: 'h2'})
+        self.assertEqual(result['refusals'], [])
+        self.assertEqual(result['gaps'], ['native_hook_spawn_time_unobserved', 'native_hook_input_unobserved'])
+
+    def test_one_for_one_replacement_with_the_same_stdout_is_never_input_provenance(self):
+        # The actor's frame replaced the stub's: other input bytes, identical stdout, one execution.
+        replaced = [self.genuine[0], dict(self.genuine[1], hook_input_sha256='f' * 64)]
+        result = selector.correlate_native(replaced, self.native(self.hooks))
+        self.assertTrue(result['claims']['output_correlated'] and result['claims']['window_correlated'])
+        self.assertEqual(result['claims']['input'], 'unanchored')  # nothing ties the executed input to the CLI's
+        self.assertIn('native_hook_input_unobserved', result['gaps'])
+        # Only a native input digest (named missing observation) would expose the replacement.
+        anchored = self.native(self.hooks, anchors={'h1': 'a' * 64, 'h2': 'b' * 64})
+        self.assertEqual(selector.correlate_native(self.genuine, anchored)['claims']['input'], 'anchored')
+        result = selector.correlate_native(replaced, anchored)
+        self.assertEqual((result['claims']['input'], result['refusals']),
+                         ('mismatched', ['semantic_selector_owner_input_mismatch']))
+
+    def test_replay_with_the_same_output_is_refused_or_unanchored(self):
+        # An extra replayed execution: counts differ.
+        extra = self.genuine + [dict(self.genuine[1], sequence=2, frame_received_seconds=3.3, completed_seconds=4.0)]
+        self.assertEqual(selector.correlate_native(extra, self.native(self.hooks))['refusals'],
+                         ['semantic_selector_owner_output_uncorrelated'])
+        # A native hook the owner never executed (the stub's frame was dropped): counts differ.
+        self.assertEqual(selector.correlate_native(self.genuine[:1], self.native(self.hooks))['refusals'],
+                         ['semantic_selector_owner_output_uncorrelated'])
+        # A replay standing in for the genuine execution but outside the hook's native window.
+        for late in (dict(frame_received_seconds=4.6, completed_seconds=4.8), dict(frame_received_seconds=2.9),
+                     dict(completed_seconds=4.6)):
+            with self.subTest(late=late):
+                replay = [self.genuine[0], dict(self.genuine[1], **late)]
+                result = selector.correlate_native(replay, self.native(self.hooks))
+                self.assertEqual(result['refusals'], ['semantic_selector_owner_window_uncorrelated'])
+                self.assertFalse(result['claims']['window_correlated'])
+        # A replay inside the window that yields the same stdout is a one-for-one replacement: never anchored.
+        replay = [self.genuine[0], dict(self.genuine[1], frame_received_seconds=3.05, hook_input_sha256='b' * 64)]
+        self.assertEqual(selector.correlate_native(replay, self.native(self.hooks))['claims']['input'], 'unanchored')
+
+    def test_deadline_runs_from_the_native_hook_start_not_frame_receipt(self):
+        restarted = [self.genuine[0], dict(self.genuine[1], deadline_seconds=3.2 + 5)]
+        result = selector.correlate_native(restarted, self.native(self.hooks))
+        self.assertEqual(result['refusals'], ['semantic_selector_owner_deadline_restarted'])
+        self.assertFalse(result['claims']['deadline_from_native_start'])
+        slow = {'h1': self.hooks['h1'], 'h2': ('UserPromptSubmit', 3.0, 8.5, '{"b":2}')}
+        late = [self.genuine[0], dict(self.genuine[1], completed_seconds=8.2)]
+        self.assertEqual(selector.correlate_native(late, self.native(slow))['refusals'],
+                         ['semantic_selector_owner_deadline_exceeded'])
+
+    def test_concurrent_hooks_are_paired_one_to_one(self):
+        hooks = {'p1': ('PostToolUse', 5.0, 7.0, '{}'), 'p2': ('PostToolUse', 5.1, 6.0, '{}')}
+        # Execution 0 fits either hook and is tried first against p1; only an augmenting pairing succeeds.
+        rows = [self.execution(0, 'PostToolUse', '{}', frame=5.15, completed=5.9, deadline=10.1),
+                self.execution(1, 'PostToolUse', '{}', frame=5.2, completed=6.5, deadline=10.0)]
+        result = selector.correlate_native(rows, self.native(hooks))
+        self.assertEqual((result['pairs'], result['refusals']), ({0: 'p2', 1: 'p1'}, []))
+
+    def test_malformed_or_unfinished_native_events_refuse(self):
+        events = self.native(self.hooks)
+        for bad, code in ((events[:-1], 'semantic_selector_native_unfinished'),
+                          (events + [events[0]], 'semantic_selector_native_malformed'),
+                          ([dict(events[0], received_seconds=-1)] + events[1:], 'semantic_selector_native_malformed'),
+                          ([dict(events[0], input_sha256='x')] + events[1:], 'semantic_selector_native_malformed'),
+                          (events[:1] + [dict(events[1], hook_event='Stop')] + events[2:],
+                           'semantic_selector_native_malformed'),
+                          (events[:1] + [dict(events[1], received_seconds=0.5)] + events[2:],
+                           'semantic_selector_native_malformed'),
+                          ('opaque', 'semantic_selector_native_malformed')):
+            with self.subTest(code=code):
+                result = selector.correlate_native(self.genuine, bad)
+                self.assertEqual(result['refusals'], [code])
+                self.assertIsNone(result['pairs'])
 
 
 if __name__ == '__main__':
