@@ -892,7 +892,9 @@ service. It was skipped in the authoring session and is not claimed.
 
 ### Writer quiescence from the observed pid-namespace init exit
 
-`writer_quiescence` is `namespace_init_exited` only when all three hold:
+`writer_quiescence` is `namespace_init_exited` only when all of these hold:
+- the runtime identities recorded at attempt start equal the root-selected
+  reviewed pins (`runtime_identity_unreviewed` otherwise; see below);
 - the owner bound the sandbox's pid-namespace init;
 - the actor's reported pid namespace is that init's;
 - the owner observed the init's exit through its held pidfd.
@@ -967,6 +969,36 @@ exit.
   `4d6c71db380bb69d19a09501bd5caec92e46bf54c7f505805e75687daf783939`. Both
   match the `.dsc` and came from Launchpad
   `+sourcefiles/bubblewrap/0.9.0-1ubuntu0.3`.
+
+**Runtime identity scope.** The ordering above was reviewed only for this
+host's identities. The claim is never universal. At the start of each
+attempt the owner records:
+- `uname -r` and the `/proc/version` build string;
+- the bwrap executable the launcher will run: its realpath on the owner's
+  PATH, which the launcher then execs by that absolute path, and the
+  sha256 of the bytes the owner read.
+
+These must equal the reviewed pins in the pinned controls document
+(`reviewed_identity`, schema `cairn.writer-reviewed-identity/1`). The pins
+are kernel `release` and `version`, bwrap `path` and `sha256`, and
+`source_scope` naming the reviewed `linux` 6.8.0-146.146 and
+`bubblewrap` 0.9.0-1ubuntu0.3. A missing pin, missing identity or any
+mismatch gives `not_established` / `runtime_identity_unreviewed`.
+`bwrap --version` text and dpkg declarations are never used as identity.
+The basis tag is `reviewed_identity_source_zap_before_pidfd_notify`, and the
+result echoes the scope.
+
+**Remaining gap between the bwrap bytes and the reviewed source.** On this
+host, `/usr/bin/bwrap` has:
+- sha256 `e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71`;
+- md5 `9431038d6685be091292626d9f33a3cc`, which equals dpkg's
+  `bubblewrap.md5sums` entry. That shows the installed file matches what
+  dpkg installed, but it is a dpkg declaration, not proof of the source.
+
+The binary was built by Ubuntu from 0.9.0-1ubuntu0.3. That source-to-binary
+correspondence has not been reproduced or checked against the Launchpad
+`.deb`. Root's reviewed `bwrap.sha256` pin therefore binds "these exact
+bytes" to the reviewed source only by that unverified mapping.
 
 **Limits.** This covers actor-origin writers only. Same-uid host processes
 outside the sandbox are outside actor custody. The claim rests on the

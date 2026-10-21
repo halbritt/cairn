@@ -1308,7 +1308,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
     if original and getattr(args, "_original_writer", None):
         # Root-selected owned leaf: the actor joins it before exec. Unavailable refuses before launch.
         try:
-            writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"])
+            writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"],
+                                                    reviewed=args._original_writer.get("reviewed"))
         except writer_release.WriterUnavailable as error:
             raise RuntimeError("original_writer_containment_unavailable: " + str(error)) from None
     writer_observed = None
@@ -1719,11 +1720,13 @@ def cmd_agent(args):
     if getattr(args, "original_writer_cgroup", None) and not prospective:
         # Root-selected delegated parent and explicit resource policy for the owned writer leaf.
         controls = paired_json_pin(args.original_writer_controls, args.original_writer_controls_sha256)
-        if not (isinstance(controls, dict) and set(controls) == {"schema", "controls"}
+        if not (isinstance(controls, dict) and set(controls) in ({"schema", "controls"},
+                                                                 {"schema", "controls", "reviewed_identity"})
                 and controls["schema"] == "cairn.writer-controls/1"):
             raise ValueError("original_writer_controls_invalid")
         args._original_writer = dict(delegated=args.original_writer_cgroup,
-                                     controls=writer_release.check_controls(controls["controls"]))
+                                     controls=writer_release.check_controls(controls["controls"]),
+                                     reviewed=writer_release.check_reviewed(controls.get("reviewed_identity")))
         execution["original_writer"] = dict(delegated=args.original_writer_cgroup,
                                             controls=dict(path=args.original_writer_controls,
                                                           sha256=args.original_writer_controls_sha256),

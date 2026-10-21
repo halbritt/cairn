@@ -32,8 +32,11 @@ Even ``migration_conditions_observed`` plus ``released`` is not writer quiescenc
 final-artifact custody. ``complete_descendant_custody`` stays ``False``.
 Unavailable containment refuses before launch; nothing is assumed.
 """
+import hashlib
 import json
 import os
+import shutil
+import stat
 import select
 import signal
 from pathlib import Path
@@ -67,9 +70,65 @@ def check_controls(controls):
     return dict(controls)
 
 
+REVIEWED_SCHEMA = 'cairn.writer-reviewed-identity/1'
+BASIS = 'reviewed_identity_source_zap_before_pidfd_notify'
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise ValueError('not_regular')
+        while block := source.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def runtime_identity():
+    """The identities this attempt actually runs on, recorded by the owner at attempt start.
+
+    kernel: ``uname -r`` and the /proc/version build string. bwrap: the executable the launcher
+    will exec (resolved on the owner's PATH, then exec'd by that absolute path) and the sha256 of
+    its bytes as read by the owner. Missing values stay None; nothing is inferred from version text.
+    """
+    identity = dict(kernel=dict(release=None, version=None), bwrap=dict(path=None, sha256=None))
+    try:
+        identity['kernel']['release'] = os.uname().release
+        identity['kernel']['version'] = Path('/proc/version').read_text().strip()
+    except OSError:
+        pass
+    try:
+        resolved = shutil.which('bwrap')
+        if resolved is not None:
+            path = os.path.realpath(resolved)
+            identity['bwrap'] = dict(path=path, sha256=file_sha256(path))
+    except (OSError, ValueError):
+        pass
+    return identity
+
+
+def check_reviewed(reviewed):
+    """Root-selected reviewed pins: kernel release and build string, bwrap path and sha256, plus the
+    reviewed source scope they are bound to. Closed shape; refuses anything else."""
+    if reviewed is None:
+        return None
+    if not (isinstance(reviewed, dict) and set(reviewed) == {'schema', 'kernel', 'bwrap', 'source_scope'}
+            and reviewed['schema'] == REVIEWED_SCHEMA
+            and isinstance(reviewed['kernel'], dict) and set(reviewed['kernel']) == {'release', 'version'}
+            and isinstance(reviewed['bwrap'], dict) and set(reviewed['bwrap']) == {'path', 'sha256'}
+            and all(type(v) is str and v for v in (*reviewed['kernel'].values(), *reviewed['bwrap'].values()))
+            and isinstance(reviewed['source_scope'], dict)):
+        raise WriterUnavailable('writer_reviewed_identity_invalid')
+    return reviewed
+
+
 class WriterLeaf:
-    def __init__(self, delegated, controls, *, group_factory=None):
+    def __init__(self, delegated, controls, *, group_factory=None, reviewed=None):
         self.controls = check_controls(controls)
+        self.reviewed = check_reviewed(reviewed)
+        # Recorded at attempt start, before anything is launched.
+        self.runtime = runtime_identity()
         self.parent = str(delegated)
         self.status_read = self.status_write = self.evidence_read = self.evidence_write = None
         self.cgroup_dev = None
@@ -173,6 +232,9 @@ class WriterLeaf:
         return document if isinstance(document, dict) else None
 
     def wrap(self, argv):
+        if argv and argv[0] == 'bwrap' and self.runtime['bwrap']['path'] is not None:
+            # Exec exactly the executable whose bytes the owner hashed.
+            argv = [self.runtime['bwrap']['path'], *argv[1:]]
         return ['/usr/bin/python3', '-B', str(LAUNCHER), str(self.group.files['cgroup.procs']), self.group.relative,
                 str(self.status_write), *argv]
 
@@ -316,7 +378,15 @@ def require_proved_migration_control(result):
     return True
 
 
-def writer_quiescence(observed, evidence):
+def identity_reviewed(runtime, reviewed):
+    """True only when every recorded identity equals the root-selected reviewed pin exactly."""
+    if not isinstance(reviewed, dict) or not isinstance(runtime, dict):
+        return False
+    return (runtime.get('kernel') == reviewed['kernel'] and runtime.get('bwrap') == reviewed['bwrap']
+            and None not in (*runtime['kernel'].values(), *runtime['bwrap'].values()))
+
+
+def writer_quiescence(observed, evidence, *, runtime=None, reviewed=None):
     """'namespace_init_exited' only when the bound init's exit was observed for the actor's namespace.
 
     Installed source (Ubuntu linux 6.8.0-146.146): do_exit -> exit_notify -> forget_original_parent
@@ -325,7 +395,13 @@ def writer_quiescence(observed, evidence):
     BEFORE exit_state is set and do_notify_parent -> do_notify_pidfd wakes pidfd pollers;
     pidfd_poll reports readiness only when thread_group_exited. A ready init pidfd therefore means
     no other process of that namespace (or of namespaces nested in it) remains.
+
+    That ordering was reviewed only for the exact identities in the root-selected ``reviewed`` pin
+    (kernel release and build string; the bwrap executable's path and bytes). Any other or missing
+    runtime identity gives 'runtime_identity_unreviewed'; nothing here holds universally.
     """
+    if not identity_reviewed(runtime, reviewed):
+        return dict(state='not_established', reason='runtime_identity_unreviewed')
     init = observed.get('init') or {}
     if init.get('state') != 'bound':
         return dict(state='not_established', reason='init_' + str(init.get('state', 'unbound')))
@@ -334,7 +410,7 @@ def writer_quiescence(observed, evidence):
         return dict(state='not_established', reason='actor_namespace_unbound')
     if observed.get('init_exit') != 'exited':
         return dict(state='not_established', reason='init_' + str(observed.get('init_exit')))
-    return dict(state='namespace_init_exited', basis='installed_kernel_source_zap_before_pidfd_notify')
+    return dict(state='namespace_init_exited', basis=BASIS, scope=reviewed['source_scope'])
 
 
 def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
@@ -370,5 +446,7 @@ def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
                                                     owner_namespaces=leaf.owner_namespaces),
                 complete_descendant_custody=False,
                 init=observed.get('init'), init_exit=observed.get('init_exit'),
-                writer_quiescence=writer_quiescence(observed, observed.get('launch_evidence')),
+                runtime_identity=leaf.runtime, reviewed_identity=leaf.reviewed,
+                writer_quiescence=writer_quiescence(observed, observed.get('launch_evidence'),
+                                                    runtime=leaf.runtime, reviewed=leaf.reviewed),
                 final_artifact_custody='not_established')

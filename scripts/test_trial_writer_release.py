@@ -20,6 +20,7 @@ import select
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
 import time
 import unittest
@@ -233,7 +234,7 @@ class ReleaseMappingTests(Base):
         self.assertEqual((result['migration_control'], result['complete_descendant_custody']),
                          (dict(state='unknown', reasons=['launch_evidence_absent'], argument=writer.ARGUMENT), False))
         self.assertEqual((result['writer_quiescence'], result['final_artifact_custody']),
-                         (dict(state='not_established', reason='init_unbound'), 'not_established'))
+                         (dict(state='not_established', reason='runtime_identity_unreviewed'), 'not_established'))
         # The owner's held identity, the selected parent and the membership the joined process observed.
         info = os.stat(self.root)
         self.assertEqual(result['leaf'], dict(parent=str(self.root), relative=CURRENT,
@@ -400,11 +401,86 @@ class MigrationEvidenceTests(Base):
                              custody=json.loads((run / 'custody.json').read_text())), out, code
 
 
+
+class RuntimeIdentityTests(unittest.TestCase):
+    """Quiescence is scoped to the root-reviewed identities; version text and declarations never count."""
+
+    def setUp(self):
+        self.pin = dict(schema=writer.REVIEWED_SCHEMA,
+                        kernel=dict(release='6.8.0-146-generic', version='Linux version 6.8.0-146-generic (synthetic build)'),
+                        bwrap=dict(path='/usr/bin/bwrap', sha256='a' * 64),
+                        source_scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3'))
+        self.observed = dict(init=dict(state='bound', pid_namespace=dict(inode=11, dev=3)), init_exit='exited')
+        self.evidence = dict(namespaces=dict(pid=11, mnt=12))
+
+    def quiescence(self, **changes):
+        runtime = dict(kernel=dict(self.pin['kernel']), bwrap=dict(self.pin['bwrap']))
+        for key, value in changes.items():
+            section, field = key.split('_', 1)
+            runtime[section][field] = value
+        return writer.writer_quiescence(self.observed, self.evidence, runtime=runtime, reviewed=self.pin)
+
+    def test_matching_identities_allow_quiescence(self):
+        self.assertEqual(self.quiescence(), dict(state='namespace_init_exited', basis=writer.BASIS,
+                                                 scope=self.pin['source_scope']))
+
+    def test_any_mismatch_or_missing_identity_is_unreviewed(self):
+        unreviewed = dict(state='not_established', reason='runtime_identity_unreviewed')
+        for change in (dict(kernel_release='6.8.0-147-generic'), dict(kernel_version='Linux version other build'),
+                       dict(bwrap_sha256='b' * 64), dict(bwrap_path='/usr/local/bin/bwrap'),
+                       dict(kernel_release=None), dict(bwrap_sha256=None), dict(bwrap_path=None)):
+            with self.subTest(change=change):
+                self.assertEqual(self.quiescence(**change), unreviewed)
+        self.assertEqual(writer.writer_quiescence(self.observed, self.evidence, runtime=None, reviewed=self.pin), unreviewed)
+        self.assertEqual(writer.writer_quiescence(self.observed, self.evidence,
+                                                  runtime=dict(kernel=self.pin['kernel'], bwrap=self.pin['bwrap']),
+                                                  reviewed=None), unreviewed)
+
+    def test_recorded_identity_is_the_executed_bwrap_bytes_not_version_text(self):
+        import shutil
+        runtime = writer.runtime_identity()
+        if shutil.which('bwrap') is None:
+            self.skipTest('no bwrap')
+        path = os.path.realpath(shutil.which('bwrap'))
+        self.assertEqual(runtime['bwrap'], dict(path=path, sha256=__import__('hashlib').sha256(Path(path).read_bytes()).hexdigest()))
+        self.assertEqual(runtime['kernel']['release'], os.uname().release)
+        self.assertEqual(runtime['kernel']['version'], Path('/proc/version').read_text().strip())
+        leaf = writer.WriterLeaf(tempfile.mkdtemp(), {}, group_factory=lambda d, controls: FakeGroup(d, controls))
+        try:
+            self.assertEqual(leaf.wrap(['bwrap', '--x'])[6:], [path, '--x'])  # exec'd by the hashed absolute path
+        finally:
+            leaf.close()
+
+    def test_reviewed_pin_shape_is_closed(self):
+        for bad in (dict(self.pin, extra=1), dict(self.pin, kernel=dict(release='x')), dict(self.pin, schema='other'),
+                    dict(self.pin, bwrap=dict(path='/usr/bin/bwrap', sha256=''))):
+            with self.subTest(bad=bad), self.assertRaisesRegex(writer.WriterUnavailable, 'writer_reviewed_identity_invalid'):
+                writer.check_reviewed(bad)
+
 @unittest.skipUnless(__import__('shutil').which('bwrap'), 'needs the local filesystem sandbox')
 class NamespaceInitTests(Base):
     """The bwrap pid-namespace init bound by pidfd during capture (ordinary sandbox, inert commands)."""
 
-    leaf_with_device = MigrationEvidenceTests.leaf_with_device
+    def leaf_with_device(self):
+        group = FakeGroup(str(self.root))
+        group.fd = os.open('/sys/fs/cgroup', os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, group.fd)
+        return writer.WriterLeaf(str(self.root), {}, group_factory=lambda delegated, controls: group,
+                                 reviewed=self.reviewed())
+
+    @staticmethod
+    def reviewed(**changes):
+        """A test pin equal to this host's recorded identities (the matching path); changes make it differ."""
+        runtime = writer.runtime_identity()
+        pin = dict(schema=writer.REVIEWED_SCHEMA, kernel=dict(runtime['kernel']), bwrap=dict(runtime['bwrap']),
+                   source_scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3'))
+        for key, value in changes.items():
+            section, field = key.split('_', 1)
+            if value is None:
+                pin[section].pop(field)
+            else:
+                pin[section][field] = value
+        return pin
 
     def run_bound(self, inner, *, observe=True, writable=None):
         import trial_task_eval as task
@@ -432,7 +508,9 @@ class NamespaceInitTests(Base):
         self.assertEqual(result['launch_evidence']['namespaces']['pid'], init['pid_namespace']['inode'])
         self.assertEqual(result['init_exit'], 'exited')
         self.assertEqual(result['writer_quiescence'],
-                         dict(state='namespace_init_exited', basis='installed_kernel_source_zap_before_pidfd_notify'))
+                         dict(state='namespace_init_exited', basis=writer.BASIS,
+                              scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3')))
+        self.assertEqual(result['runtime_identity']['bwrap']['path'], os.path.realpath(shutil.which('bwrap')))
         self.assertEqual(result['final_artifact_custody'], 'not_established')
 
     ESCAPES = {
@@ -487,7 +565,9 @@ class NamespaceInitTests(Base):
     def test_quiescence_requires_the_bound_namespace_and_an_observed_exit(self):
         bound = dict(state='bound', pid_namespace=dict(inode=11, dev=3))
         evidence = dict(namespaces=dict(pid=11, mnt=12))
-        q = writer.writer_quiescence
+        pin = self.reviewed()
+        runtime = dict(kernel=dict(pin['kernel']), bwrap=dict(pin['bwrap']))
+        q = lambda observed, evidence: writer.writer_quiescence(observed, evidence, runtime=runtime, reviewed=pin)
         self.assertEqual(q(dict(init=bound, init_exit='exited'), evidence)['state'], 'namespace_init_exited')
         self.assertEqual(q(dict(init=bound, init_exit='exited'), dict(namespaces=dict(pid=99, mnt=12))),
                          dict(state='not_established', reason='actor_namespace_unbound'))
