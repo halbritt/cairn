@@ -22,6 +22,7 @@ from trial_sdk_shared_coordinator import SharedCoordinator, AggregateQuote, requ
 from trial_sdk_native_process_owner import NativeProcessOwner
 from trial_sdk_resource_failure import freeze_resource, annotate_resource_failure
 from trial_sdk_stream_retention import SessionStreamRetention
+from trial_sdk_service_shutdown import ServiceOutput, ServiceShutdown
 
 
 class FixedRunOwner:
@@ -48,6 +49,7 @@ class FixedRunOwner:
         self._native_launch = self._memory = None
         self._native_start_attempted = False
         self._selected_input = None
+        self._service_output = self._service_shutdown = None
 
     def _now(self):
         now=self._clock()
@@ -201,6 +203,8 @@ class FixedRunOwner:
                 'run_service_consumed')
         try:
             self._service_start_attempted = True
+            self._service_output=ServiceOutput.__new__(ServiceOutput)
+            ServiceOutput.__init__(self._service_output,self._link)
             self._state='service_connecting'
             self._ready_credit=self._link.credit(32)
             self._link.arm_receive(self._ready_credit,32)
@@ -385,10 +389,17 @@ class FixedRunOwner:
             raise
 
     def _cleanup(self):
+        if (not self._cleanup_started and not self._failed and not self._cancelled
+                and self._state=='terminal_waited' and self._link is not None
+                and self._link.owner.snapshot()['launched']):
+            self._service_shutdown=ServiceShutdown.__new__(ServiceShutdown)
+            ServiceShutdown.__init__(self._service_shutdown,self)
         self._cleanup_started = True
         if self._selected_input is not None:
             self._selected_input.abort()
         self._cancelled = True
+        if self._service_shutdown is not None and not self._failed:
+            if not self._service_shutdown.step():return 'cleanup_pending'
         operation = None if self._memory is None else self._memory.operation
         if (operation is not None and hasattr(operation, '_closed')
                 and not operation._closed and not operation._unknown and not self._failed):

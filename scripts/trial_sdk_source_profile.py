@@ -8,8 +8,7 @@ from trial_sdk_control import CAPTURE_LIMIT
 from trial_sdk_incoming import MAX_CHUNK_BYTES, MAX_DOCUMENT_BYTES
 from trial_task_permissions import settings_permissions
 from trial_sdk_incoming import canonical_size_sha256
-from trial_sdk_command_service_broker import ServiceLink
-from trial_sdk_command_service_runtime import RAW_STORAGE as SERVICE_CHILD_RAW
+from trial_sdk_service_shutdown import ServiceOutput
 
 # Retained controller wire <=8500; fixed permissions are retained independently.
 # Four fixed canonical slabs cover caller's prior block, yielded block, encoder
@@ -22,7 +21,7 @@ PREPARATION_RAW = CAPTURE_LIMIT + PERMISSION_BYTES + 4 * MAX_CHUNK_BYTES + 12
 # by the 128KiB document grammar; 512 bytes/node includes Python container/table
 # and allocator overhead. This is a source storage bound, not process RSS.
 PREPARATION_WORKING = 512 * MAX_DOCUMENT_BYTES
-SERVICE_RAW = ServiceLink.RAW_STORAGE + SERVICE_CHILD_RAW
+SERVICE_RAW = ServiceOutput.MINIMUM_RAW
 
 
 def prepare_native_review(document, output, resources):

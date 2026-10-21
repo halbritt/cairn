@@ -10,7 +10,6 @@ from test_trial_sdk_engine_memory_rpc_parent import OP_QUOTE
 from trial_native_bootstrap import SDKSessionCustody, PreparationRefusal
 from trial_sdk_session_driver import SDKSessionDriver
 from trial_sdk_fixed_run import FixedRunOwner
-from trial_sdk_command_service_runtime import RAW_STORAGE
 
 class MoveTests(unittest.TestCase):
     setUp=bf.SDKReviewTests.setUp
@@ -72,7 +71,7 @@ class RunTests(unittest.TestCase):
             repo='repo',task='task',run='run',context={}),engine=dict(harness='claude',recall_mode='agent_tools',
             recall_observations=False,state_dir=str(self.root/'state')),cwd='/fixed',env={},
             path=str(self.root/'service'/'memory.sock'),deadline_ns=5_000_000_001,
-            standing_raw=RAW_STORAGE,standing_working=2**20,preparation_raw=40000,preparation_working=32*2**20)
+            standing_raw=5184,standing_working=2**20,preparation_raw=40000,preparation_working=32*2**20)
 
     def prepared(self,suffix=''):
         self.output=str(self.root/('prepared'+suffix))

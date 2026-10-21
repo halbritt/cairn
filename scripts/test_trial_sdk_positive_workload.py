@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import test_trial_sdk_native_run as native
 import test_trial_sdk_selected_input as selected
@@ -134,11 +135,26 @@ class PositiveWorkloadTests(unittest.TestCase):
         self.assertTrue(native_state['release']['released'])
         self.assertTrue(native_state['release']['handles_detached'])
         self.cleanup(owner)
-        # Service shutdown can retain unknown pipe EOF; do not turn known
-        # native stream custody into a claim of complete service cleanup.
+        self.assertEqual(owner._state,'closed')
+        self.assertEqual(owner._faults,set())
+        self.assertEqual(owner._link.transcript.snapshot()['phase'],'closed')
+        service_state=owner._link.owner.snapshot()
+        self.assertEqual(service_state['wait']['returncode'],0)
+        self.assertTrue(service_state['stdout_eof'] and service_state['stderr_eof'])
+        self.assertTrue(service_state['release']['released'])
+        self.assertEqual(owner._service_output.stream.snapshot()['known'],0)
+        self.assertTrue(owner._service_output.stream.snapshot()['closed'])
+        self.assertEqual(owner._service_shutdown.credit.snapshot()['known'],64)
+        self.assertLessEqual(owner.resources.snapshot()['committed_peak'],4*2**20)
+        self.assertLessEqual(owner.resources.snapshot()['raw_peak'],131072)
+        self.assertLessEqual(owner.resources.snapshot()['known_allocation_peak'],512*2**20)
         self.assertTrue(all(o.snapshot()['release']['handles_detached']
                             for o in owner._original_owners()))
         self.assertEqual(owner._selected_input.evidence(),report)
+        # A completed cleanup is idempotent after the original deadline; no
+        # additional I/O, deadline extension or renewed shutdown is authorized.
+        with patch.object(owner,'_clock',return_value=owner._deadline+1):
+            self.assertEqual(owner.cleanup_step(),'closed')
 
 
 if __name__=='__main__':unittest.main()

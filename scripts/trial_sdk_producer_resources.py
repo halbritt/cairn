@@ -19,6 +19,12 @@ class ProducerResources:
     # Named canonical buffers, output slabs and UTF-8 carry only; working
     # objects and other endpoints must also be covered by the builder's quote.
     MINIMUM_RAW = 3 * MAX_CHUNK_BYTES + 1024 + 4
+    # Source-selected ports fix their original allocation/traffic relationship;
+    # these checks never allocate a replacement ticket or authorize a process.
+    ALLOCATION_LIFETIME = 'operation'
+
+    def _stream_domain(self, resources, domain):
+        return domain
 
     def __init__(self, resources, owner, domain, allocation, stream):
         if (type(resources) is not AttemptResources or type(owner) is not NativeProcessOwner
@@ -27,8 +33,8 @@ class ProducerResources:
         resources._check()
         held_domain, lifetime, raw, working = resources._lookup(resources._memory, allocation)
         if (resources._domain(domain)['owner'] is not owner or held_domain is not domain
-                or lifetime != 'operation' or raw < self.MINIMUM_RAW or working <= 0
-                or resources._stream_row(stream.ticket)['domain'] is not domain
+                or lifetime != self.ALLOCATION_LIFETIME or raw < self.MINIMUM_RAW or working <= 0
+                or resources._stream_row(stream.ticket)['domain'] is not self._stream_domain(resources,domain)
                 or owner.snapshot()['launch_attempted']):
             raise ProducerResourceError('producer_resource_binding')
         stream._check()

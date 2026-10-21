@@ -160,9 +160,10 @@ content as native tool results, observes both original hooks, and qualifies
 envelopes from retained stdout and checks the original hash, source identities,
 9500-byte total, 30-second last-memory receipt, 5-second hooks and whole-bank
 caps. The older dispatch-only fixture still reports unknown for missing rendered
-events/incomplete source rows. Native EOF/wait/release is observed; service
-shutdown can retain its separate unknown pipe-EOF cleanup status. This authored
-positive fixture proves neither selected executable compatibility nor usefulness.
+events/incomplete source rows. Native EOF/wait/release is observed. Normal service
+closure now also observes protocol shutdown, both pipe EOFs and successful wait/
+release. This authored positive fixture proves neither selected executable
+compatibility nor usefulness.
 
 Real runtime selection, dedicated whole-campaign capacity, two complete weekly
 21-case/126-attempt/1900-distractor runs, independent changed-pair grading and
@@ -174,6 +175,25 @@ stopping the service. An abandoned command with unobserved stdout/stderr EOF
 produces unknown RELEASE: the bank remains quarantined and quotes remain held.
 Service interruption enters its owned cleanup through SIGINT; original deadline
 escalation remains unchanged. This is not clean completion or a traffic refund.
+
+After healthy terminal completion, `ServiceShutdown` uses the existing service
+`SHUTDOWN`/`BYE` protocol with 64 bytes of original-bank control credit. It then
+drains the actual service stdout/stderr and observes wait before release, without
+signalling the healthy idle service. Its original deadline still bounds pending
+shutdown. `ServiceOutput` reuses the receipt-backed `ProducerResources` I/O path,
+bound to the original service standing allocation and the parent's DATA slot;
+command transport continues to own the service DATA slot. Its one 512-byte slab
+is part of the existing 5184-byte service quote, now enforced as the full source
+minimum. All earlier standing reservations and the three original caps remain.
+
+The fixed service has no console-output protocol. Any positive diagnostic prefix
+is charged, retained in that slab and refused; it is not discarded or labelled
+EOF. Interrupted reads reconcile the native owner's actual receipt through the
+existing stream credit and quarantine the held allocation/traffic. Failed or
+cancelled runs retain the independent signal/wait/detach fallback, including
+unknown EOF when it was not observed. Tests cover normal full two-search/four-pull
+known closure, real oversized exit output, and interruption after a real positive
+read. The failure cases retain their exact observed prefix and cannot qualify.
 
 The generic whole-bank regression still completes three callback commands and
 refuses the fourth: prior borrowed results retain 451MiB before the child would
