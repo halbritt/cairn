@@ -52,30 +52,79 @@ def write_synthetic_trial(repo, count=21):
 
 
 FAKE_HARNESS = r'''#!/usr/bin/env python3
-"""Fake trial-task-eval.sh: records argv and writes a synthetic agent/1 document."""
-import json, os, sys
+# Fake trial-task-eval.sh: records argv and writes synthetic legacy output (agent/1, plan, runs).
+import hashlib, json, os, sys
 from pathlib import Path
 argv = sys.argv[1:]
-out = Path(argv[argv.index('--output') + 1])
+value = lambda flag: argv[argv.index(flag) + 1]
+out = Path(value('--output'))
 out.mkdir(mode=0o700)
 (out / 'argv.json').write_text(json.dumps(dict(argv=argv, pg_bin=os.environ.get('CAIRN_PG_BIN'),
     leaked=sorted(k for k in os.environ if 'OPENROUTER' in k or k == 'ANTHROPIC_API_KEY'))))
 cases = [c['id'] for c in json.loads(Path('trials/task-eval/cases.json').read_text())['cases']]
 frozen = json.loads(Path('trials/task-eval/FROZEN.json').read_text())
+arms = [spec.split(':', 1)[0] for i, spec in enumerate(argv) if i and argv[i - 1] == '--memory']
+first, count = int(value('--first-seed')), int(value('--seeds'))
+model = value('--model')
 mode = os.environ.get('FAKE_HARNESS_MODE', 'complete')
-plan = [(c, a, s) for s in range(3) for c in cases for a in ('CURRENT', 'CAND')]
-admitted = len(plan) if mode == 'complete' else 40
-records = [dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s, outcome='correct') for c, a, s in plan[:admitted]]
+plan = [(c, a, s) for s in range(first, first + count) for c in cases for a in arms]
+capped = mode in ('cap', 'bad_unstarted_cap')
+admitted = len(plan) if not capped else 40
+
+def task(case):
+    return f'Synthetic task for {case}.\n'
+
+def stream(answer):
+    return json.dumps(dict(type='assistant', message=dict(content=[dict(type='text', text=answer)]))) + '\n'
+
+def record(c, a, s):
+    answer = f'Synthetic answer {c} {a} {s}.'
+    outcome = 'mistake' if a == 'CAND' and c.endswith(('0', '5')) else 'correct'
+    return dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s, order=0, harness='claude', model=model,
+                wording='task', prompt_bytes=len(task(c).encode()), outcome=outcome, answer_chars=len(answer),
+                stream_sha256=hashlib.sha256(stream(answer).encode()).hexdigest(),
+                prompt_sha256=hashlib.sha256(task(c).encode()).hexdigest()), stream(answer)
+
+rows = [record(*key) for key in plan[:admitted]]
+if mode == 'duplicate':      # root's reproduction: 126 copies of CURRENT/case0/seed0
+    rows = [record(cases[0], 'CURRENT', first)] * len(plan)
+elif mode == 'replace':      # one planned row missing, replaced by an unplanned arm
+    rows = rows[:-1] + [record(cases[0], 'none', first)]
+elif mode == 'dup_one':      # every planned row once, plus one exact duplicate
+    rows = rows + [rows[0]]
+elif mode == 'missing':      # one planned row silently absent, counters still claim complete
+    rows = rows[:-1]
+elif mode == 'extra':
+    rows = rows + [record('synthetic-extra', 'CURRENT', first)]
+elif mode == 'wrong_seed':
+    rows = [record(c, a, s + 1) for c, a, s in plan]
+elif mode == 'nohash':
+    rows[0][0].pop('stream_sha256')
+elif mode == 'row_provider':
+    rows[3][0]['trace'] = dict(admission_failure=dict(provider='claude', reason='authentication_failed', api_error_status=401))
+elif mode == 'row_error':
+    rows[5][0]['outcome'] = 'harness_error'
 stop = None
-if mode == 'cap':
-    stop = dict(run_id=records[-1]['run_id'], provider='claude', reason='capacity_exhausted', api_error_status=429)
-    records[-1]['trace'] = dict(admission_failure=dict(provider='claude', reason='capacity_exhausted', api_error_status=429))
-document = dict(schema='cairn.task-eval.agent/1', frozen=frozen, arms=['CURRENT', 'CAND'], distractors=1900,
+if capped:
+    stop = dict(run_id=rows[-1][0]['run_id'], provider='claude', reason='capacity_exhausted', api_error_status=429)
+    rows[-1][0]['trace'] = dict(admission_failure=dict(provider='claude', reason='capacity_exhausted', api_error_status=429))
+for row, text in rows:
+    base = out / 'runs' / row['run_id']
+    base.mkdir(parents=True, exist_ok=True)
+    (base / 'result.json').write_text(json.dumps(row, indent=2))
+    (base / 'stream.jsonl').write_text(text)
+(out / 'plan.json').write_text(json.dumps(dict(arms=arms, wording='task', runs=[[c, a, s, 0] for c, a, s in plan]), indent=2))
+document = dict(schema='cairn.task-eval.agent/1', frozen=frozen, arms=arms, model='other-model' if mode == 'model' else model,
+                wording='task', harness='claude', distractors=1900,
                 admission=dict(state='stopped_provider_failure' if stop else 'complete', stop=stop,
                                planned=len(plan), admitted=admitted,
-                               not_started=[dict(run_id=f'{c}.{a}.s{s}') for c, a, s in plan[admitted:]]),
-                records=records)
-(out / 'agent.json').write_text(json.dumps(document))
+                               not_started=[dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s) for c, a, s in plan[admitted:]]),
+                records=sorted((row for row, _ in rows), key=lambda r: r['run_id']))
+if mode == 'bad_unstarted_cap':
+    document['admission']['not_started'][0]['seed'] = 9
+if mode == 'measurement':
+    document['measurement_failures'] = [rows[0][0]['run_id']]
+(out / 'agent.json').write_text(json.dumps(document, indent=2))
 sys.exit(2 if stop else 0)
 '''
 
@@ -360,6 +409,135 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertFalse(result['runtime_admission'])
         self.assertNotIn(str(self.root), output.getvalue())
         self.assertEqual(os.listdir(self.runs), [])
+
+
+    def rejected(self, mode, code):
+        self.executor.harness_mode = mode
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), ('rejected', code))
+        self.assertIsNone(receipt['pair_binding'])
+        return receipt
+
+    def test_root_reproduction_126_duplicates_of_one_row_is_never_complete(self):
+        self.rejected('duplicate', 'agent_rows_not_planned')
+
+    def test_missing_row_replaced_by_unplanned_row_is_rejected(self):
+        self.rejected('replace', 'agent_rows_not_planned')
+
+    def test_extra_row_is_rejected(self):
+        self.rejected('extra', 'agent_rows_not_planned')
+
+    def test_wrong_seeds_are_rejected(self):
+        self.rejected('wrong_seed', 'agent_rows_not_planned')
+
+    def test_actor_model_mismatch_is_rejected(self):
+        self.rejected('model', 'agent_document_not_original')
+
+    def test_row_level_failures_are_never_complete(self):
+        for mode in ('row_provider', 'row_error', 'measurement'):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.executor.harness_mode = mode
+                receipt = self.run_weekly()
+                self.assertEqual((receipt['status'], receipt['code']), ('incomplete', 'attempt_failures'))
+
+    def test_missing_harness_content_hashes_are_never_complete(self):
+        self.executor.harness_mode = 'nohash'
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), ('incomplete', 'original_attempt_provenance_unavailable'))
+
+
+    def test_refused_retry_of_a_failed_slot_leaves_it_unchanged_and_retryable(self):
+        self.profile['weekly_source']['frozen_sha256'] = '0' * 64
+        failed = self.run_weekly()
+        self.assertEqual(failed['status'], 'failed_before_execution')
+        slot = self.runs / failed['slot_id']
+        before = {p.relative_to(slot): p.read_bytes() for p in slot.rglob('*') if p.is_file()}
+        self.profile['selection'] = None
+        with self.assertRaisesRegex(paired.Refusal, '^live_invocation_not_selected$'):
+            self.run_weekly()
+        self.assertTrue(slot.is_dir())
+        self.assertEqual({p.relative_to(slot): p.read_bytes() for p in slot.rglob('*') if p.is_file()}, before)
+        self.assertFalse((self.runs / 'failed').exists())
+        self.assertEqual(self.executor.executed, [])
+        self.assertEqual(json.loads((slot / 'receipt.json').read_text())['code'], 'harness_frozen_mismatch')
+
+
+    def test_complete_receipt_issues_the_pair_binding_that_the_converter_accepts(self):
+        import trial_blind_packet_draft as packet
+        import trial_legacy_blind_selection as legacy
+        from test_trial_legacy_blind_selection import C, pin
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['pair_identity'], 'declared_binding')
+        binding = paired.read_json_pin({k: receipt['pair_binding'][k] for k in ('path', 'sha256')})
+        self.assertEqual(binding['request_id'], receipt['slot_id'])
+        self.assertEqual(binding['agent_sha256'], receipt['agent']['sha256'])
+        self.assertEqual(binding['arm_roles'], dict(CURRENT='CURRENT', CAND='CAND'))
+        spec = json.loads((self.runs / receipt['slot_id'] / 'spec.json').read_text())
+        self.assertEqual(binding['schedule_sha256'], paired.canonical_sha(spec['planned']))
+        self.assertEqual(len(spec['planned']), 126)
+        agent_path = Path(receipt['agent']['path'])
+        materials = self.root / 'materials'
+        materials.mkdir()
+        cases = []
+        for n in range(21):
+            case = f'synthetic-{n}'
+            contract = dict(schema='cairn.blind-case-contract/2', case_key=case, case_class='synthetic',
+                            required_channels=['task_statement', 'grading_instructions', 'final_answer'],
+                            artifact_inventory=[])
+            cases.append(dict(case=case, contract=pin(materials / f'contract-{case}.json', C(contract)),
+                              task_statement=pin(materials / f'task-{case}.txt', f'Synthetic task for {case}.\n'.encode()),
+                              grading_instructions=pin(materials / f'grading-{case}.txt', b'Synthetic rubric.\n')))
+        policy = dict(schema='cairn.blind-policy/2', **{
+            name: dict(version='synthetic-v1', pin=pin(materials / (name + '.bin'), ('PRIVATE ' + name).encode()))
+            for name in packet.POLICIES})
+        review = dict(schema='cairn.blind-review-measurement/1', unit='bytes', semantics='comparison_plus_control',
+                      graders=[dict(slot=i, limit=100000, control=pin(materials / f'control-{i}', b'SYNTHETIC CONTROL'))
+                               for i in (1, 2)])
+        agent_bytes = agent_path.read_bytes()
+        plan_bytes = (agent_path.parent / 'plan.json').read_bytes()
+        request = dict(schema='cairn.legacy-blind-conversion/1',
+                       agent=dict(path=str(agent_path), bytes=len(agent_bytes), sha256=hashlib.sha256(agent_bytes).hexdigest()),
+                       plan=dict(path=str(agent_path.parent / 'plan.json'), bytes=len(plan_bytes),
+                                 sha256=hashlib.sha256(plan_bytes).hexdigest()),
+                       binding=receipt['pair_binding'], namespace='namespace-A', policy=policy,
+                       policy_ref=dict(schema='cairn.blind-policy-ref/1', id='public-policy-A'),
+                       review_measurement=review, cases=cases)
+        converted = legacy.convert(pin(self.root / 'request.json', C(request)), self.root / 'converted')
+        self.assertEqual(converted['pairs'], dict(total=63, changed=15, unchanged=48, indeterminate=0))
+        self.assertEqual(converted['sources']['binding'], receipt['pair_binding'])
+        self.assertIs(converted['runtime_admitted'], False)
+
+
+    def test_one_extra_duplicate_of_a_planned_row_is_rejected(self):
+        self.rejected('dup_one', 'agent_rows_not_planned')
+
+    def test_missing_planned_row_with_complete_counters_is_rejected(self):
+        self.rejected('missing', 'agent_rows_not_planned')
+
+    def test_unstarted_row_with_unplanned_identity_is_rejected(self):
+        self.executor.harness_mode = 'bad_unstarted_cap'
+        receipt = self.run_weekly()
+        self.assertEqual((receipt['status'], receipt['code']), ('rejected', 'agent_rows_not_planned'))
+
+    def test_every_attempt_row_must_carry_the_selected_model_harness_and_wording(self):
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['status'], 'complete')
+        path = Path(receipt['agent']['path'])
+        spec = json.loads((self.runs / receipt['slot_id'] / 'spec.json').read_text())
+        original = json.loads(path.read_text())
+        for field, value in (('model', 'unselected-synthetic-model'), ('model', None), ('harness', 'codex'),
+                             ('harness', None), ('wording', 'paraphrase'), ('wording', None)):
+            with self.subTest(field=field, value=value):
+                document = copy.deepcopy(original)
+                if value is None:
+                    document['records'][0].pop(field)
+                else:
+                    document['records'][0][field] = value
+                path.write_text(json.dumps(document))
+                result = weekly._agent_result(path, spec)
+                self.assertEqual((result['status'], result['code']), ('rejected', 'agent_row_not_selected'))
 
 
 if __name__ == '__main__':

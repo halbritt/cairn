@@ -43,6 +43,7 @@ SPEC_SCHEMA = 'cairn.weekly-run-spec/1'
 RECEIPT_SCHEMA = 'cairn.weekly-run-receipt/1'
 CLAIM_SCHEMA = 'cairn.weekly-run-claim/1'
 SELECTION_SCHEMA = 'cairn.weekly-run-selection/1'
+BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
                   'weekly_source embedding postgres capacity executor selection')
 SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
@@ -245,7 +246,7 @@ def run(profile, *, now, executors=None, compiler=None):
     need(cand != current, 'candidate_equals_current')
     harness = candidate.resolve(repo, profile['harness_commit'], 'harness_unresolved')
     need(harness == profile['harness_commit'], 'harness_unresolved')
-    stored = _stored_slot(runs, slot_id, current, cand)
+    stored, retry = _stored_slot(runs, slot_id, current, cand)
     if stored is not None:
         return stored
     executor = executors.get(profile['executor'])
@@ -258,6 +259,8 @@ def run(profile, *, now, executors=None, compiler=None):
     capacity, plan = capacity_gate(profile['capacity'], now=now, slot_end=end, account_ids=executor.account_ids)
     selection = selection_gate(profile, preview, executor.name, capacity)
     slot = runs / slot_id
+    if retry:
+        _retire(runs, slot_id)  # only after every check above has passed
     claim = dict(schema=CLAIM_SCHEMA, slot_id=slot_id, campaign_id=profile['campaign_id'],
                  scheduled_at=preview['scheduled_at'], expires_at=preview['expires_at'],
                  current=dict(ref=profile['current_ref'], commit=current),
@@ -282,14 +285,17 @@ def run(profile, *, now, executors=None, compiler=None):
     result = _agent_result(Path(executed['agent']), spec)
     if executed['exit_code'] not in (0, 2) and result['status'] == 'complete':
         result.update(status='incomplete', code='harness_exit_unexpected')
+    plan = result.pop('plan', None)
+    if result['status'] == 'complete':
+        result['pair_binding'] = _pair_binding(slot, spec, profile['campaign_id'], result['agent'], plan)
     return _finish(slot, claim, harness_exit_code=executed['exit_code'], **result)
 
 
 def _stored_slot(runs, slot_id, current, cand):
-    """Return a recorded slot's receipt, retire a retryable failure, or refuse; read-only otherwise."""
+    """Read-only: (stored receipt, None), (None, retryable) or (None, False); refuse otherwise."""
     slot = runs / slot_id
     if not slot.exists():
-        return None
+        return None, False
     try:
         claim = paired.read_json(slot / 'claim.json')
         receipt = paired.read_json(slot / 'receipt.json')
@@ -297,12 +303,19 @@ def _stored_slot(runs, slot_id, current, cand):
         raise paired.Refusal('weekly_run_in_progress') from None
     need((claim['current']['commit'], claim['candidate']['commit']) == (current, cand), 'weekly_slot_other_pair')
     if receipt['status'] != 'failed_before_execution' or (slot / 'execution-started.json').exists():
-        return dict(receipt, replayed=True)
+        return dict(receipt, replayed=True), False
+    return None, True
+
+
+def _retire(runs, slot_id):
+    """Move a failed-before-execution slot aside for a retry that passed every check."""
     failed = runs / 'failed'
     failed.mkdir(mode=0o700, exist_ok=True)
     attempt = 1 + sum(1 for path in failed.iterdir() if path.name.startswith(slot_id + '.'))
-    slot.rename(failed / f'{slot_id}.{attempt}')
-    return None
+    try:
+        (runs / slot_id).rename(failed / f'{slot_id}.{attempt}')
+    except OSError:
+        raise paired.Refusal('weekly_run_in_progress') from None
 
 
 def _prepare(profile, slot, claim, plan, repo, compiler):
@@ -328,6 +341,11 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
         raise paired.Refusal('harness_frozen_mismatch') from None
     case_ids = [case['id'] for case in te.load_cases(version, root=trial)]
     need(len(case_ids) == WEEKLY_CASES and sorted(case_ids) == sorted(plan['cases']), 'harness_cases_not_planned')
+    # The exact planned attempt identities (legacy run_id is case.arm.sSEED).
+    need(all(type(c) is str and c and '.' not in c and '/' not in c for c in case_ids), 'harness_case_identity')
+    planned = sorted((dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s)
+                      for s in plan['seeds'] for c in case_ids for a in ARMS), key=lambda r: r['run_id'])
+    need(len(planned) == WEEKLY_ATTEMPTS, 'harness_cases_not_planned')
     spec = dict(schema=SPEC_SCHEMA, slot_id=claim['slot_id'], arms=arms,
                 harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
@@ -335,42 +353,95 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 actor_model=profile['capacity']['models']['CURRENT'],
                 cases=WEEKLY_CASES, arm_count=WEEKLY_ARMS, seeds=list(plan['seeds']),
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
-                capacity=claim['capacity'])
+                capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned))
     paired.write_selected(slot / 'spec.json', spec)
     return spec
 
 
+def _read_limited(path):
+    with open(paired.plain_path(str(path)), 'rb') as source:
+        content = source.read(AGENT_LIMIT + 1)
+    need(len(content) <= AGENT_LIMIT, 'agent_document_limit')
+    return content
+
+
+def _identity(row):
+    return (row.get('run_id'), row.get('case'), row.get('arm'), row.get('seed')) if isinstance(row, dict) else None
+
+
 def _agent_result(path, spec):
-    """Check the executor output with the run report's own reader; counts only."""
+    """Check the executor output against the exact planned attempt set; never trust its counters."""
     try:
-        with open(paired.plain_path(str(path)), 'rb') as source:
-            content = source.read(AGENT_LIMIT + 1)
-        need(len(content) <= AGENT_LIMIT, 'agent_document_limit')
+        content = _read_limited(path)
         document = paired.decode_json(content)
         summary = report._agent(document)
+        plan_content = _read_limited(Path(path).parent / 'plan.json')
+        plan = paired.decode_json(plan_content)
     except (paired.Refusal, OSError):
         return dict(status='incomplete', code='agent_document_unavailable')
     pin = dict(path=str(path), sha256=hashlib.sha256(content).hexdigest())
+    records = document.get('records') or []
     attempts = dict(planned=summary['planned'], admitted=summary['admitted'],
-                    not_started=summary['not_started'], records=len(summary['records']))
+                    not_started=summary['not_started'], records=len(records))
     result = dict(agent=pin, attempts=attempts)
     frozen = document.get('frozen') or {}
     if (frozen.get('label_version', 1) != spec['harness']['label_version']
             or frozen.get('labels_sha256') != spec['harness']['labels_sha256']
             or document.get('distractors') != DISTRACTORS or summary['planned'] != WEEKLY_ATTEMPTS
-            or not set(ARMS) <= set(document.get('arms') or ())):
-        return dict(result, status='incomplete', code='agent_document_not_original')
+            or document.get('arms') != list(ARMS) or document.get('model') != spec['actor_model']
+            or document.get('wording') != 'task'):
+        return dict(result, status='rejected', code='agent_document_not_original')
+    planned = {(r['run_id'], r['case'], r['arm'], r['seed']) for r in spec['planned']}
+    observed = [_identity(r) for r in records]
+    unstarted = [_identity(r) for r in document['admission']['not_started']]
+    rows = observed + [row for row in unstarted if row is not None and row[1:] != (None, None, None)]
+    unstarted_ids = {row[0] for row in unstarted if row is not None}
+    # Records and unstarted rows together must be exactly the plan, each once.
+    if (len(set(observed)) != len(observed) or not set(observed) <= planned
+            or len(unstarted_ids) != len(unstarted)
+            or {row[0] for row in observed} & unstarted_ids
+            or {row[0] for row in observed} | unstarted_ids != {row[0] for row in planned}
+            or not set(rows) <= planned
+            or not isinstance(plan, dict) or plan.get('arms') != list(ARMS)
+            or sorted(tuple(row[:3]) for row in plan.get('runs') or [] if isinstance(row, list))
+            != sorted((r['case'], r['arm'], r['seed']) for r in spec['planned'])):
+        return dict(result, status='rejected', code='agent_rows_not_planned')
+    # Read from the raw rows: report._agent drops these fields. A runner-exception
+    # row without wording is rejected too; it could never be complete.
+    selected = dict(model=spec['actor_model'], harness='claude', wording='task')
+    if not all(record.get(key) == value for record in records for key, value in selected.items()):
+        return dict(result, status='rejected', code='agent_row_not_selected')
+    result['plan'] = dict(path=str(Path(path).parent / 'plan.json'), sha256=hashlib.sha256(plan_content).hexdigest())
     if summary['stopped_reason'] == 'capacity_exhausted':
         return dict(result, status='incomplete', code='provider_cap_stop')
-    if summary['state'] != 'complete' or summary['admitted'] != WEEKLY_ATTEMPTS or summary['not_started'] \
-            or len(summary['records']) != WEEKLY_ATTEMPTS:
+    if summary['state'] != 'complete' or summary['admitted'] != WEEKLY_ATTEMPTS or unstarted \
+            or len(observed) != WEEKLY_ATTEMPTS:
         return dict(result, status='incomplete', code='attempts_unfinished')
+    if summary['measurement_failures'] or any(row['provider'] is not None or row['outcome'] in report.FAILED_OUTCOMES
+                                              or row['outcome'] == 'other' for row in summary['records']):
+        return dict(result, status='incomplete', code='attempt_failures')
+    if not all(type(r.get(k)) is str and len(r[k]) == 64 for r in records for k in ('stream_sha256', 'prompt_sha256')):
+        return dict(result, status='incomplete', code='original_attempt_provenance_unavailable')
     return dict(result, status='complete', code=None)
 
 
-def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None):
+def _pair_binding(slot, spec, campaign_id, agent, plan):
+    """Issue the declared cairn.legacy-pair-binding/1 for a complete run of exactly the planned attempts."""
+    spec_bytes = (slot / 'spec.json').read_bytes()
+    binding = dict(schema=BINDING_SCHEMA, agent_sha256=agent['sha256'], plan_sha256=plan['sha256'],
+                   request_id=spec['slot_id'], request_sha256=hashlib.sha256(spec_bytes).hexdigest(),
+                   campaign_id=campaign_id,
+                   occurrence_id=str(uuid.uuid5(NAMESPACE, 'occurrence|' + spec['slot_id'])),
+                   schedule_sha256=spec['schedule_sha256'], arm_roles={name: name for name in ARMS})
+    content = paired.selected_bytes(binding)
+    paired.write_selected_bytes(slot / 'pair-binding.json', content)
+    return dict(path=str(slot / 'pair-binding.json'), bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+
+
+def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None):
     receipt = dict(claim, schema=RECEIPT_SCHEMA, status=status, code=code, agent=agent, attempts=attempts,
-                   harness_exit_code=harness_exit_code,
+                   harness_exit_code=harness_exit_code, pair_binding=pair_binding,
+                   pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)
     paired.write_selected(slot / 'receipt.json', receipt)
