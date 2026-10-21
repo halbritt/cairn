@@ -64,3 +64,15 @@ rollback with later whole-stream data, failed terminal counters, missing tails,
 malformed timing, transport bounds, invalid chunks, private extra hook payloads,
 measurement faults, interrupts and task/input declarations. They launch no
 provider and establish no runtime admission or measured usefulness.
+
+`trial_native_observation.measure_lines` accepts single-pass iterables of complete
+text lines and corresponding timing rows. It performs the same accounting as
+the existing batch `measure` entry point, including repeated error-result bytes,
+missing or surplus timing rows, and the original 9,500-byte and 30-second checks.
+An input iterator failure propagates without a partial success report.
+
+This entry point avoids requiring a complete stream string. It does not bound
+the caller's line buffers or the evaluator's correlation state, authenticate
+timing rows, or classify SDK control frames. The current coding composer still
+uses the batch entry point. Connecting retained SDK streams requires those
+separate framing, resource, provenance and control-frame contracts.

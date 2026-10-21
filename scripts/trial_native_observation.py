@@ -6,6 +6,7 @@ by run_agent, retaining its original stream for the existing graders/importer.
 import hashlib
 import json
 import math
+from itertools import zip_longest
 from pathlib import Path
 from trial_native_capture import capture
 from trial_source_delivery import hook_delivery, native_delivery
@@ -166,6 +167,20 @@ class PublicActions:
 
 def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, prompt, workspace=None, public_validation_commands=None):
     """Observed selected-input wire bound, not the entire provider context window."""
+    return measure_lines(stream.splitlines(keepends=True), timings, hook_rows,
+                         input_bytes=input_bytes, expects_hooks=expects_hooks,
+                         model=model, prompt=prompt, workspace=workspace,
+                         public_validation_commands=public_validation_commands)
+
+
+def measure_lines(lines, timings, hook_rows, *, input_bytes, expects_hooks, model, prompt, workspace=None, public_validation_commands=None):
+    """Consume complete text lines and matching timing rows once, in lockstep.
+
+    Callers own line framing, size limits and provenance. This removes the need
+    to retain a complete stream; it does not bound per-line parsing or retained
+    correlation state, validate SDK control frames, or grant runtime admission.
+    Iterator failures propagate without returning a partial success report.
+    """
     failures, unknown = [], []
     actions = PublicActions(workspace, public_validation_commands)
     def fail(reason):
@@ -196,12 +211,14 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
         if row['delivery']['status'] == 'unknown' and 'source_delivery_unknown' not in unknown:
             unknown.append('source_delivery_unknown')
     calls, completed, seen_init, seen_prompt = {}, set(), False, False
-    lines = stream.splitlines(keepends=True)
-    if len(lines) != len(timings):
-        unknown.append('stream_timing_incomplete')
-        actions.unknown.add('action_timing_unknown')
-    for number, raw in enumerate(lines):
-        timing = timings[number] if number < len(timings) else {}
+    missing = object()
+    for raw, timing in zip_longest(lines, timings, fillvalue=missing):
+        if raw is missing or timing is missing:
+            unknown.append('stream_timing_incomplete')
+            actions.unknown.add('action_timing_unknown')
+            if raw is missing:
+                continue
+            timing = {}
         if timing.get('sha256') != hashlib.sha256(raw.encode()).hexdigest():
             unknown.append('stream_timing_mismatch')
             actions.unknown.add('action_timing_unknown')
