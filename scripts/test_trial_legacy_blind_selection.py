@@ -34,14 +34,15 @@ def stream(answer):
 
 
 class Fixture:
-    def __init__(self, root, outcomes=None, tasks=None):
+    def __init__(self, root, outcomes=None, tasks=None, arms=(BASE, CAND)):
+        self.arms = tuple(arms)
         self.root = root
         self.run = root/'run'; (self.run/'runs').mkdir(parents=True)
         self.materials = root/'materials'; self.materials.mkdir()
         self.records, self.answers = [], {}
         self.original_tasks = dict(tasks or TASKS)
         for (case, seed), outcomes in (outcomes or OUTCOMES).items():
-            for arm, outcome in zip((BASE, CAND), outcomes):
+            for arm, outcome in zip(self.arms, outcomes):
                 self.add(case, arm, seed, outcome)
         self.contracts = {case: dict(schema='cairn.blind-case-contract/2', case_key=case, case_class='synthetic',
                                      required_channels=['task_statement', 'grading_instructions', 'final_answer'],
@@ -49,15 +50,15 @@ class Fixture:
         self.tasks = dict(self.original_tasks)
         self.binding = dict(schema='cairn.legacy-pair-binding/1', request_id='request-A', request_sha256='1'*64,
                             campaign_id='campaign-A', occurrence_id='occurrence-A', schedule_sha256='2'*64,
-                            arm_roles={BASE: 'CURRENT', CAND: 'CAND'})
+                            arm_roles={self.arms[0]: 'CURRENT', self.arms[1]: 'CAND'})
         self.admission = None
         self.wording = 'task'
 
     def add(self, case, arm, seed, outcome):
         run_id = f'{case}.{arm}.s{seed}'
-        answer = f'Synthetic answer for {case} seed {seed} by {"one" if arm == BASE else "two"}.'
+        answer = f'Synthetic answer for {case} seed {seed} by {"one" if arm == self.arms[0] else "two"}.'
         record = dict(run_id=run_id, case=case, category='synthetic', primary=True, provenance='synthetic', arm=arm,
-                      seed=seed, order=0, harness='claude', model='synthetic-model', wording='task', exit=0,
+                      seed=seed, order=self.arms.index(arm), harness='claude', model='synthetic-model', wording='task', exit=0,
                       seconds=1.0, prompt_bytes=len(self.original_tasks[case].encode()), outcome=outcome,
                       correct=[True], mistake=[False], stratum='completion',
                       check_log=[dict(run=SECRET, outcome='ok')], trace=dict(turns=1), commands=0,
@@ -72,13 +73,13 @@ class Fixture:
             base.mkdir(exist_ok=True)
             (base/'result.json').write_text(json.dumps(record, indent=2))
             (base/'stream.jsonl').write_text(stream(self.answers[record['run_id']]))
-        plan = dict(arms=[BASE, CAND], wording=self.wording,
+        plan = dict(arms=list(self.arms), wording=self.wording,
                     runs=[[r['case'], r['arm'], r['seed'], r['order']] for r in self.records])
         plan_pin = pin(self.run/'plan.json', json.dumps(plan, indent=2).encode())
         admission = self.admission or dict(state='complete', stop=None, planned=len(self.records),
                                             admitted=len(self.records), not_started=[])
         agent = dict(schema='cairn.task-eval.agent/1', frozen=dict(version=12, cases_sha256='3'*64),
-                     arms=[BASE, CAND], model='synthetic-model', wording=self.wording, harness='claude',
+                     arms=list(self.arms), model='synthetic-model', wording=self.wording, harness='claude',
                      distractors=1900, admission=admission,
                      records=sorted(self.records, key=lambda r: r['run_id']))
         agent_pin = pin(self.run/'agent.json', json.dumps(agent, indent=2).encode())

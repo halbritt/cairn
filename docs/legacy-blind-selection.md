@@ -166,6 +166,9 @@ pairs, `pairs` is `{total: 63, changed: 0, unchanged: 63, indeterminate: 0}`.
 
 ### Downstream join input
 
+`scripts/trial_legacy_grading_bundle.py` implements this hand-off; see
+[legacy grading bundle](legacy-grading-bundle.md).
+
 The grading join (`trial_grading_custody.join_results`) and
 `trial_run_report` should consume these receipt fields:
 

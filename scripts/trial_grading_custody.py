@@ -23,6 +23,8 @@ def _pair(row):
 
 def _schedule(bundle):
     shape(bundle, 'schema binding plan schedule inventory selection packets policy', 'grading_bundle')
+    if bundle['schema'] == LEGACY_SCHEMA:
+        return _legacy_schedule(bundle)
     need(bundle['schema'] == 'cairn.grading-join-input/1', 'grading_schema')
     binding = bundle['binding']
     shape(binding, 'request_id campaign_id occurrence_id request_sha256 rubric_sha256 '
@@ -59,6 +61,92 @@ def _schedule(bundle):
         observed.add(key)
         positions.add(position)
     need(observed == expected, 'grading_schedule_coverage')
+    return sorted({key[:2] for key in expected})
+
+
+LEGACY_SCHEMA = 'cairn.legacy-grading-join-input/1'
+LEGACY_PLAN = 'cairn.legacy-weekly-plan/1'
+LEGACY_PAIR_BINDING = 'cairn.legacy-pair-binding/1'
+LEGACY_ARMS = ['CURRENT', 'CAND']
+
+
+def _legacy_schedule(bundle):
+    """Separate branch for legacy harness output (docs/legacy-grading-bundle.md).
+
+    The schedule is exactly the runner's planned identities, the list whose
+    canonical hash is the runner's schedule_sha256; the plan carries the
+    declared pair binding and the adapter's observations in separate fields.
+    The SDK weekly-schedule/1 path above is not used or changed.
+    """
+    binding = bundle['binding']
+    shape(binding, 'request_id campaign_id occurrence_id request_sha256 rubric_sha256 '
+          'changed_pair_definition_sha256 blinding_policy_sha256 '
+          'plan_sha256 schedule_sha256 inventory_sha256 selection_sha256 packets_sha256 policy_sha256',
+          'grading_binding')
+    for field, value in binding.items():
+        (_digest if field.endswith('_sha256') else _name)(value)
+    for field in ('plan', 'schedule', 'inventory', 'selection', 'packets', 'policy'):
+        need(binding[field + '_sha256'] == canonical_sha(bundle[field]), 'grading_binding_mismatch')
+    plan = bundle['plan']
+    shape(plan, 'schema cases arms seeds attempts pairs distractors declared observed sha256', 'legacy_plan')
+    need(plan['schema'] == LEGACY_PLAN and plan['arms'] == LEGACY_ARMS, 'legacy_plan')
+    need(type(plan['cases']) is list and len(plan['cases']) == 21 and len(set(plan['cases'])) == 21
+         and type(plan['seeds']) is list and len(plan['seeds']) == 3 and len(set(plan['seeds'])) == 3
+         and plan['attempts'] == 126 and plan['pairs'] == 63 and plan['distractors'] == 1900, 'legacy_plan_shape')
+    for case in plan['cases']:
+        _name(case)
+        need('.' not in case, 'legacy_plan_shape')
+    need(all(type(seed) is int and 0 <= seed <= 2**31-1 for seed in plan['seeds']), 'legacy_plan_shape')
+    need(plan['sha256'] == canonical_sha({k: v for k, v in plan.items() if k != 'sha256'}), 'legacy_plan_hash')
+    declared, observed = plan['declared'], plan['observed']
+    shape(declared, 'pair_binding pair_binding_pin', 'legacy_declared')
+    pair_binding, pin = declared['pair_binding'], declared['pair_binding_pin']
+    shape(pair_binding, 'schema agent_sha256 plan_sha256 request_id request_sha256 campaign_id occurrence_id '
+          'schedule_sha256 arm_roles', 'legacy_declared')
+    shape(pin, 'path bytes sha256', 'legacy_declared')
+    need(pair_binding['schema'] == LEGACY_PAIR_BINDING and type(pin['path']) is str and type(pin['bytes']) is int
+         and pair_binding['arm_roles'] == {arm: arm for arm in LEGACY_ARMS}, 'legacy_declared')
+    for field in ('agent_sha256', 'plan_sha256', 'request_sha256', 'schedule_sha256'):
+        _digest(pair_binding[field])
+    _digest(pin['sha256'])
+    shape(observed, 'agent_sha256 plan_file_sha256 conversion_receipt_sha256 distractors positions', 'legacy_observed')
+    for field in ('agent_sha256', 'plan_file_sha256', 'conversion_receipt_sha256'):
+        _digest(observed[field])
+    # Declared values must match what was observed and what the join binds.
+    need(pair_binding['agent_sha256'] == observed['agent_sha256']
+         and pair_binding['plan_sha256'] == observed['plan_file_sha256']
+         and observed['distractors'] == plan['distractors'], 'legacy_declared_observed_mismatch')
+    need(all(binding[field] == pair_binding[field]
+             for field in ('request_id', 'request_sha256', 'campaign_id', 'occurrence_id', 'schedule_sha256')),
+         'legacy_pair_binding_mismatch')
+    expected = {(case, seed, arm) for case in plan['cases'] for seed in plan['seeds'] for arm in LEGACY_ARMS}
+    schedule = bundle['schedule']
+    need(type(schedule) is list and len(schedule) == 126, 'grading_schedule_coverage')
+    observed_runs = set()
+    for run in schedule:
+        shape(run, 'run_id case arm seed', 'grading_run')
+        key = (*_pair(run), run['arm'])
+        need(key in expected and key not in observed_runs
+             and run['run_id'] == f"{run['case']}.{run['arm']}.s{run['seed']}", 'grading_schedule_coverage')
+        observed_runs.add(key)
+    need(observed_runs == expected and schedule == sorted(schedule, key=lambda r: r['run_id']),
+         'grading_schedule_coverage')
+    # Each retained attempt must carry the exact planned run identity.
+    planned = {(run['case'], run['seed'], run['arm']): run['run_id'] for run in schedule}
+    need(type(bundle['inventory']) is list and all(
+        type(row) is dict and row.get('run_id') == planned.get((row.get('case'), row.get('seed'), row.get('arm')))
+        for row in bundle['inventory']), 'legacy_attempt_identity')
+    positions = observed['positions']
+    need(type(positions) is list and len(positions) == 126, 'grading_schedule_coverage')
+    seen, slots = set(), set()
+    for row in positions:
+        shape(row, 'case seed arm position', 'grading_run')
+        key = (*_pair(row), row['arm'])
+        need(type(row['position']) is int and row['position'] in (0, 1), 'grading_position')
+        need(key in expected and key not in seen and (*key[:2], row['position']) not in slots,
+             'grading_schedule_coverage')
+        seen.add(key)
+        slots.add((*key[:2], row['position']))
     return sorted({key[:2] for key in expected})
 
 
