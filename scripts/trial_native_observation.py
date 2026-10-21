@@ -181,6 +181,64 @@ def measure_lines(lines, timings, hook_rows, *, input_bytes, expects_hooks, mode
     correlation state, validate SDK control frames, or grant runtime admission.
     Iterator failures propagate without returning a partial success report.
     """
+    observer = LineMeasurement(input_bytes=input_bytes, expects_hooks=expects_hooks,
+                               model=model, prompt=prompt, workspace=workspace,
+                               public_validation_commands=public_validation_commands)
+    try:
+        for raw, timing in zip_longest(lines, timings, fillvalue=_MISSING):
+            observer.consume(raw, timing)
+        return observer.finish(hook_rows)
+    finally:
+        observer.close()
+
+
+_MISSING = object()
+_FINISH = object()
+
+
+class LineMeasurement:
+    """Single-use incremental observer; consumes each borrowed line synchronously.
+
+    The caller supplies complete original text lines and capture timing, then
+    final hook observations. Failure consumes this observer. This owns the same
+    correlation state as the batch evaluator, not a new storage/authority bound.
+    """
+    def __init__(self, *, input_bytes, expects_hooks, model, prompt, workspace=None,
+                 public_validation_commands=None):
+        self._steps = _measurement_steps(input_bytes=input_bytes, expects_hooks=expects_hooks,
+            model=model, prompt=prompt, workspace=workspace,
+            public_validation_commands=public_validation_commands)
+        self._closed = False
+        next(self._steps)
+
+    def consume(self, line, timing):
+        if self._closed:
+            raise ValueError('measurement_consumed')
+        try:
+            self._steps.send((line, timing))
+        except BaseException:
+            self.close()
+            raise
+
+    def finish(self, hook_rows):
+        if self._closed:
+            raise ValueError('measurement_consumed')
+        self._closed = True
+        try:
+            self._steps.send((_FINISH, hook_rows))
+        except StopIteration as result:
+            return result.value
+        finally:
+            self._steps.close()
+        raise RuntimeError('measurement_finish_incomplete')
+
+    def close(self):
+        self._closed = True
+        self._steps.close()
+
+
+def _measurement_steps(*, input_bytes, expects_hooks, model, prompt, workspace=None,
+                       public_validation_commands=None):
     failures, unknown = [], []
     actions = PublicActions(workspace, public_validation_commands)
     def fail(reason):
@@ -211,8 +269,15 @@ def measure_lines(lines, timings, hook_rows, *, input_bytes, expects_hooks, mode
         if row['delivery']['status'] == 'unknown' and 'source_delivery_unknown' not in unknown:
             unknown.append('source_delivery_unknown')
     calls, completed, seen_init, seen_prompt = {}, set(), False, False
-    missing = object()
-    for raw, timing in zip_longest(lines, timings, fillvalue=missing):
+    missing = _MISSING
+    while True:
+        # End borrowed line/timing and transient parsed graphs before suspension.
+        item = raw = timing = event = message = blocks = part = args = text = selected_event = None
+        item = yield
+        if item[0] is _FINISH:
+            hook_rows = item[1]
+            break
+        raw, timing = item
         if raw is missing or timing is missing:
             unknown.append('stream_timing_incomplete')
             actions.unknown.add('action_timing_unknown')

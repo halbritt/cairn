@@ -76,3 +76,18 @@ the caller's line buffers or the evaluator's correlation state, authenticate
 timing rows, or classify SDK control frames. The current coding composer still
 uses the batch entry point. Connecting retained SDK streams requires those
 separate framing, resource, provenance and control-frame contracts.
+
+`LineMeasurement` provides the same evaluator as a single-use incremental owner.
+Call `consume(line, timing)` for each complete original text line, then
+`finish(hook_rows)` once final hook observations are available. Each consume ends
+its borrowed line and timing references before returning. An exception consumes
+the observer; `close()` is idempotent and also ends an unfinished observation.
+The batch `measure` and `measure_lines` interfaces delegate to this owner and
+retain their existing charges, unknown states, and limits.
+
+This interface does not yet connect SDK stream custody to qualification. It
+retains the evaluator's existing correlation state, whose bounds still need
+review for the SDK allocation. The live integration must supply complete-line
+receipt time separately from the first-byte callback deadline, explicitly
+validate and classify SDK control frames, and bind final measurements to the
+retained stream. Calling `finish` alone does not establish that provenance.
