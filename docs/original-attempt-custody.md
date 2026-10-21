@@ -236,7 +236,13 @@ work or claim that these extra backings fit.
 Agent501 owns runner correction, pair-binding emission, `TrialStore` partial
 construction/stop and `cmd_agent` store cleanup. Agent504 owns this source review,
 baseline correction and proposed final-custody integration. Agent501 was notified
-of `baseline_custody` and shared call sites; cleanup sections and `cmd_agent` are
-untouched. Runner lands first before trunk integration. No converter, SDK or
-runner implementation changed in this lane. Root owns admission,
+of `baseline_custody` and shared call sites. Runner landed first at `642c9cb`.
+The integration check exposed a constructor/weekly-owner cleanup interaction:
+the constructor had already removed its socket directory before the retained
+owner attempted removal. The owner-authorized integration correction records
+the constructor's actual removal outcome and recognizes it only while the path
+remains absent. Failed removal stays unknown without retry; a recreated path is
+retained and refused. Process-closure checks and ordinary cleanup errors remain
+in force. Synthetic tests cover all three outcomes. `cmd_agent` and converter
+implementation are unchanged by this lane. Root owns admission,
 channel selection, evaluator access, campaign execution and fresh grading.

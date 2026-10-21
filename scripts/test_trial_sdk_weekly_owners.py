@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -268,8 +269,41 @@ class OwnerTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):self.environment(selected)
             env=selected._environment;owner=env.stores['CURRENT']
             self.assertIsNotNone(owner.store.sockdir);self.assertEqual(len(boundary.databases),1)
+            self.assertEqual(owner.store._constructor_socket_cleanup,'removed')
+            self.assertFalse(owner.store.sockdir.exists())
             boundary.fail=None;self.assertTrue(env.close())
             self.assertFalse(owner.store.sockdir.exists())
+
+    def test_constructor_socket_cleanup_failure_remains_unknown_without_retry(self):
+        _,selected,_,_,boundary=self.fixture();boundary.fail=lambda cmd:len(cmd)>1 and cmd[1]=='migrate'
+        original=shutil.rmtree;attempts=[]
+        def removal(path,*args,**kwargs):
+            if Path(path).name.startswith('cte-sock-'):
+                attempts.append(path);raise PermissionError('synthetic socket cleanup failure')
+            return original(path,*args,**kwargs)
+        with boundary.active(),patch('trial_task_eval.shutil.rmtree',side_effect=removal):
+            with self.assertRaises(KeyboardInterrupt):self.environment(selected)
+            env=selected._environment;owner=env.stores['CURRENT'];path=owner.store.sockdir
+            self.assertEqual(owner.store._constructor_socket_cleanup,'unknown')
+            self.assertTrue(path.is_dir());self.assertEqual(len(attempts),1)
+            boundary.fail=None
+            with self.assertRaisesRegex(ValueError,'weekly_constructor_socket_cleanup_unknown'):env.close()
+            self.assertEqual(owner.close_states['socket'],'unknown')
+            self.assertEqual(owner.close_states['process'],'closed')
+            self.assertFalse(owner.close());self.assertEqual(len(attempts),1)
+        original(path)
+
+    def test_recreated_constructor_socket_is_not_removed_as_original(self):
+        _,selected,_,_,boundary=self.fixture();boundary.fail=lambda cmd:len(cmd)>1 and cmd[1]=='migrate'
+        with boundary.active():
+            with self.assertRaises(KeyboardInterrupt):self.environment(selected)
+            env=selected._environment;owner=env.stores['CURRENT'];path=owner.store.sockdir
+            path.mkdir();(path/'replacement').write_text('synthetic replacement')
+            boundary.fail=None
+            with self.assertRaisesRegex(ValueError,'weekly_constructor_socket_reappeared'):env.close()
+            self.assertEqual(owner.close_states['socket'],'unknown')
+            self.assertTrue((path/'replacement').exists())
+        shutil.rmtree(path)
 
     def test_unknown_cluster_status_retains_original_directory(self):
         _,selected,_,_,boundary=self.fixture()

@@ -151,7 +151,14 @@ class WeeklyStoreOwner:
                 home=getattr(store,'home',None);path=home/'identities.json' if home else None
             else:path=getattr(store,'sockdir',None)
             if path is not None:
-                if name=='socket':shutil.rmtree(path)
+                if name=='socket':
+                    constructor_cleanup=getattr(store,'_constructor_socket_cleanup',None)
+                    need(constructor_cleanup!='unknown','weekly_constructor_socket_cleanup_unknown')
+                    if constructor_cleanup=='removed':
+                        try:path.lstat()
+                        except FileNotFoundError:return
+                        need(False,'weekly_constructor_socket_reappeared')
+                    shutil.rmtree(path)
                 else:path.unlink(missing_ok=True)
 
     def close(self):

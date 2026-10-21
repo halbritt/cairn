@@ -308,6 +308,7 @@ class TrialStore:
         self.home.mkdir(mode=0o700)
         # Unix socket paths are limited to 108 bytes; keep the socket directory short.
         self.sockdir = Path(tempfile.mkdtemp(prefix="cte-sock-", dir="/tmp"))
+        self._constructor_socket_cleanup = None
         self.token_file = self.root / "agent.token"
         # The caller registers stop() only after construction returns, so a
         # partial construction releases what it acquired here. The database
@@ -328,7 +329,13 @@ class TrialStore:
         except BaseException:
             self.token_file.unlink(missing_ok=True)
             (self.home / "identities.json").unlink(missing_ok=True)
-            shutil.rmtree(self.sockdir, ignore_errors=True)
+            self._constructor_socket_cleanup = 'unknown'
+            try:
+                shutil.rmtree(self.sockdir)
+            except OSError:
+                pass  # Preserve the construction error; the retained owner keeps unknown cleanup.
+            else:
+                self._constructor_socket_cleanup = 'removed'
             raise
         self.principal = "agent:task-eval-" + label
 
