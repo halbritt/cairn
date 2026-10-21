@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import unittest
+import unittest.mock
 
 import trial_candidate_request as candidate
 import trial_candidate_run_bridge as bridge
@@ -15,7 +16,7 @@ from test_trial_capacity_adapter import Inputs
 import test_trial_candidate_request as candidate_fixtures
 from test_trial_candidate_request import FakeCompiler, PREPARE_NOW, git
 from test_trial_paired_capacity import write_pin
-from test_trial_weekly_run import FAKE_HARNESS, FakeExecutor
+from test_trial_weekly_run import FAKE_HARNESS, FakeExecutor, embedding_fixture
 
 
 def pin(path):
@@ -48,6 +49,9 @@ class BridgeTests(unittest.TestCase):
         shutil.copy(Path(weekly.limits.__file__), harness.parent/'trial_legacy_limits.py')
         (harness.parent/'trial_task_eval.py').write_text(
             '# synthetic\nselected = credentials_source()\na.add_argument("--original-limits")\n')
+        # The original-execution seam prepares the declared config and launcher through trial_embedding_launch.
+        config, launcher = embedding_fixture(self.root)
+        self.f.profile['embedding'].update(config=config, worker=pin(launcher))
         # The original-execution seam reads a structured model-identity declaration.
         self.f.profile['embedding']['model_identity'] = write_pin(self.root/'model-identity.json', dict(
             schema='cairn.embedding-model-identity/1', model_sha256='a'*64, algorithm='synthetic-embedding/1',
@@ -72,7 +76,7 @@ class BridgeTests(unittest.TestCase):
             candidate_ref='feature/recall', harness_commit=self.harness, runs_root=str(self.runs),
             campaign_id=self.f.profile['campaign_id'], schedule=self.f.profile['schedule'],
             weekly_source={k:self.f.profile['weekly_source'][k] for k in ('label_version','frozen_sha256')},
-            embedding=dict(worker=self.f.fixture.component), postgres=self.f.profile['postgres'],
+            embedding=dict(worker=self.f.profile['embedding']['worker']), postgres=self.f.profile['postgres'],
             capacity=dict(receipt=pin(evidence/'adapted/receipt.json'),
                 plan=write_pin(evidence/'plan.json', provider.plan),
                 models=dict.fromkeys(('CURRENT','CAND','primary','secondary'), 'fixture-model')),
@@ -108,9 +112,6 @@ class BridgeTests(unittest.TestCase):
 
     def test_default_executor_gets_selected_account_and_keeps_capacity_gate(self):
         self.select_default_executor(self.profile['account'])
-        # Past the named original-execution refusals (tested below) to reach the capacity gate.
-        self.addCleanup(setattr, weekly.LegacyHarnessExecutor, 'capabilities', weekly.LegacyHarnessExecutor.capabilities)
-        weekly.LegacyHarnessExecutor.capabilities = frozenset(weekly.original.FIELDS)
         # Production construction reaches capacity checking with its one selected
         # account. This fixture deliberately reserves two; no executor may run.
         with self.assertRaisesRegex(paired.Refusal, '^capacity_account_mismatch$'):
@@ -319,14 +320,24 @@ class BridgeTests(unittest.TestCase):
         self.output = self.root/'other-bridge'
         with self.assertRaisesRegex(paired.Refusal, '^bridge_runner_execution_mismatch$'): self.run_bridge()
 
-    def test_default_executor_refuses_the_unsupported_recall_and_embedding_controls(self):
+    def test_default_executor_carries_the_full_declared_contract_to_the_capacity_gate(self):
         self.select_default_executor(self.profile['account'])
-        with self.assertRaisesRegex(paired.Refusal, '^original_execution_unsupported:recall_mode$') as caught:
+        with self.assertRaisesRegex(paired.Refusal, '^capacity_account_mismatch$'):
             self.run_bridge(executors=None)
-        self.assertEqual(caught.exception.fields, ['original_execution_unsupported:' + field for field in
-                         ('recall_mode', 'semantic_fallback', 'recall_revision', 'embedding_config')])
         self.assertEqual(list(self.runs.iterdir()), [])
 
+    def test_runner_spec_embedding_must_be_the_reviewed_declaration(self):
+        def changed_embedding(profile, **kwargs):
+            real = weekly._prepare
+            def prepare(*args, **inner):
+                spec = real(*args, **inner)
+                spec['embedding']['selected_config'] = dict(spec['embedding']['selected_config'], sha256='0'*64)
+                return spec
+            with unittest.mock.patch.object(weekly, '_prepare', side_effect=prepare):
+                return weekly.run(profile, **kwargs)
+        result = self.run_bridge(runner=changed_embedding)
+        self.assertEqual((result['status'], result['runner']['code']), ('incomplete', 'executor_failed'))
+        self.assertEqual(self.executor.executed, [])
 
 if __name__ == '__main__':
     unittest.main()

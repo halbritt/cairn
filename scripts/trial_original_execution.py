@@ -11,17 +11,23 @@ evidence stay separate:
 
 None of them stands in for another.
 
-The intermediate subset that the legacy harness implements today is
-``LEGACY_CAPABILITIES``. The native binary is run as a retained copy in the
-run directory, mounted read-only at the sandbox target ``~/.local/bin/claude``
-and executed there by absolute path. The model and the effort are passed to
-the provider. The embedding worker is the runner's shared worker.
+What the legacy harness carries (``LEGACY_CAPABILITIES``, tested in
+test_trial_original_execution and test_trial_recall_controls):
 
-The other originally selected controls are never dropped, coerced or replaced
-by ambient values. These are per-arm ``recall_mode``, ``semantic_fallback`` and
-``recall_revision``, plus the embedding config and model identity. A declared
-field the harness cannot carry refuses ``original_execution_unsupported:<field>``.
+- the native binary, as a retained copy run at the sandbox target;
+- the model and the effort;
+- per-arm ``recall_mode`` and ``semantic_fallback``, literally;
+- ``recall_revision``, bound to the raw ``memory.py`` and ``inbox_recall.py``
+  blobs at that commit;
+- the embedding worker and config, through ``trial_embedding_launch.prepare``;
+- the typed embedding model identity, compared before any attempt.
+
+One combination stays refused: an ambient arm with ``semantic_fallback``
+needs a hook selector model and binary that the execution contract does not
+declare. It refuses ``original_execution_unsupported:semantic_fallback_selector``.
+No value is ever dropped, coerced or replaced by an ambient one.
 """
+import trial_embedding_identity as identity_declaration
 import trial_paired_request as paired
 import trial_weekly_input as weekly_input
 
@@ -29,12 +35,8 @@ SCHEMA = 'cairn.original-execution/1'
 ARMS = ('CURRENT', 'CAND')
 FIELDS = ('native', 'model', 'effort', 'recall_mode', 'semantic_fallback', 'recall_revision',
           'embedding_worker', 'embedding_config', 'embedding_model_identity')
-# What trial_task_eval.py agent --legacy-fixtures --original-native-* carries today
-# (test_trial_original_execution): the retained native copy, model and effort; the
-# shared embedding worker; and the backend identity observed at index readiness.
-# Recall controls and embedding-config consumption are follow-ons.
-LEGACY_CAPABILITIES = frozenset(('native', 'model', 'effort', 'embedding_worker', 'embedding_model_identity'))
-IDENTITY_SCHEMA = 'cairn.embedding-model-identity/1'
+LEGACY_CAPABILITIES = frozenset(FIELDS)
+IDENTITY_SCHEMA = identity_declaration.SCHEMA
 need = paired.need
 
 
@@ -65,32 +67,23 @@ def declared(profile, *, current, candidate, models):
 
 
 def _identity(reference):
-    """Typed backend values declared in the pinned model-identity file.
-
-    The file's own SHA-256 pins the declaration; it is never the backend's
-    model hash. The contents must be the semantic.EmbeddingIdentity shape
-    {model_sha256, algorithm, dimensions} under IDENTITY_SCHEMA. An opaque or
-    untyped declaration refuses; nothing is reinterpreted.
-    """
+    """Typed backend values declared in the pinned model-identity file (trial_embedding_identity)."""
     try:
         document = paired.read_json_pin(reference)
-        paired.shape(document, 'schema model_sha256 algorithm dimensions', 'identity')
-        model = document['model_sha256']
-        need(document['schema'] == IDENTITY_SCHEMA and type(model) is str and len(model) == 64
-             and all(c in '0123456789abcdef' for c in model)
-             and type(document['algorithm']) is str and 0 < len(document['algorithm']) <= 128
-             and type(document['dimensions']) is int and document['dimensions'] > 0, 'identity')
+        return identity_declaration.typed(document)
     except paired.Refusal as refusal:
         if str(refusal) in ('pin_mismatch', 'pin_shape', 'pin_digest'):
             raise
+        raise Unsupported(['model_identity_declaration']) from None  # opaque bytes, never reinterpreted
+    except ValueError:
         raise Unsupported(['model_identity_declaration']) from None
-    return {k: document[k] for k in ('model_sha256', 'algorithm', 'dimensions')}
 
 
 def _fragment(reference, native, arms):
     return dict(schema=SCHEMA, execution=dict(reference), native=dict(native['binary']), model=native['model'],
                 effort=native['effort'],
-                arms={name: {k: arms[name][k] for k in ('recall_mode', 'semantic_fallback', 'recall_revision')}
+                arms={name: {k: (dict(arms[name][k]) if k in ('hook', 'bridge') else arms[name][k])
+                             for k in ('recall_mode', 'semantic_fallback', 'recall_revision', 'hook', 'bridge')}
                       for name in ARMS},
                 embedding={k: dict(arms['CURRENT']['embedding_' + k]) for k in ('worker', 'config', 'model_identity')})
 
@@ -102,15 +95,36 @@ def supported(fragment, capabilities):
 
 def check_supported(fragment, capabilities):
     unsupported = supported(fragment, capabilities)
+    if 'semantic_fallback' not in unsupported and any(
+            arm['recall_mode'] == 'ambient' and arm['semantic_fallback'] for arm in fragment['arms'].values()):
+        # Ambient fallback calls a hook selector whose model and binary the contract does not declare.
+        unsupported.append('semantic_fallback_selector')
     if unsupported:
         raise Unsupported(unsupported)
 
 
-def harness_flags(fragment):
+CONTROLS_SCHEMA = 'cairn.original-arm-controls/1'
+
+
+def arm_controls(fragment, recall):
+    """The per-arm controls document the harness receives: literal recall controls plus the
+    retained raw recall blobs (``recall`` maps arm -> {hook, bridge} pins of those blobs)."""
+    return dict(schema=CONTROLS_SCHEMA, arms={
+        name: dict(recall_mode=fragment['arms'][name]['recall_mode'],
+                   semantic_fallback=fragment['arms'][name]['semantic_fallback'],
+                   recall_revision=fragment['arms'][name]['recall_revision'],
+                   hook=dict(recall[name]['hook']), bridge=dict(recall[name]['bridge'])) for name in ARMS})
+
+
+def harness_flags(fragment, controls):
     """Structured legacy harness flags; no PATH:SHA concatenation."""
+    identity = fragment['embedding']['model_identity']
     return ['--original-native-path', fragment['native']['path'],
             '--original-native-sha256', fragment['native']['sha256'],
-            '--reasoning-effort', fragment['effort']]
+            '--reasoning-effort', fragment['effort'],
+            '--original-arms', controls['path'], '--original-arms-sha256', controls['sha256'],
+            '--original-embedding-identity', identity['path'],
+            '--original-embedding-identity-sha256', identity['sha256']]
 
 
 def _hex64(value):
@@ -173,11 +187,23 @@ def check_observed(plan, records, fragment):
                 k: fragment['identity'][k] for k in ('model_sha256', 'algorithm')}:
             return 'rejected', 'original_execution_identity_mismatch'
     expected = dict(binary_sha256=fragment['native']['sha256'], effort=fragment['effort'], target=copy['target'])
+    arms = {name: dict(recall_mode=arm['recall_mode'], semantic_fallback=arm['semantic_fallback'],
+                       recall_revision=arm['recall_revision'], hook_sha256=arm['hook']['sha256'],
+                       bridge_sha256=arm['bridge']['sha256']) for name, arm in fragment['arms'].items()}
+    loaded = plan.get('original_arms')
+    if loaded is None:
+        return 'incomplete', 'original_execution_unobserved'
+    if not isinstance(loaded, dict) or not isinstance(loaded.get('arms'), dict):
+        return 'rejected', 'original_execution_observation_malformed'
+    if loaded['arms'] != arms:
+        return 'rejected', 'original_execution_mismatch'
     for record in records:
         row = record.get('original_native') if isinstance(record, dict) else None
-        if row is None:
+        arm = record.get('original_arm') if isinstance(record, dict) else None
+        if row is None or arm is None:
             return 'incomplete', 'original_execution_unobserved'
-        if row != expected or record.get('model') != fragment['model']:
+        if (row != expected or record.get('model') != fragment['model']
+                or arm != arms.get(record.get('arm'))):
             return 'rejected', 'original_execution_mismatch'
     return None
 
@@ -185,6 +211,7 @@ def check_observed(plan, records, fragment):
 def observed(plan):
     """Receipt projection of what the harness observed (no declared values)."""
     return dict(native=plan['original_native']['observed'], reasoning_effort=plan['reasoning_effort'],
+                arms=plan.get('original_arms'),
                 identities={name: dict(model_sha256=plan['memory_backends'][name]['readiness']['identity']['model_sha256'],
                                        algorithm=plan['memory_backends'][name]['readiness']['identity']['algorithm'],
                                        dimensions='unobserved') for name in ARMS})

@@ -169,14 +169,21 @@ class ObservationShapeTests(unittest.TestCase):
         self.original = original
         native = dict(path='/declared/claude', sha256='c' * 64)
         identity = dict(model_sha256='a' * 64, algorithm='synthetic-embedding/1')
-        self.fragment = dict(native=native, model='m', effort='high', identity=dict(identity, dimensions=384))
+        arm = dict(recall_mode='agent_tools', semantic_fallback=True, recall_revision='r' * 40,
+                   hook=dict(path='/x/memory.py', sha256='d' * 64), bridge=dict(path='/x/inbox_recall.py', sha256='e' * 64))
+        self.fragment = dict(native=native, model='m', effort='high', identity=dict(identity, dimensions=384),
+                             arms=dict(CURRENT=arm, CAND=arm))
+        observed_arm = dict(recall_mode='agent_tools', semantic_fallback=True, recall_revision='r' * 40,
+                            hook_sha256='d' * 64, bridge_sha256='e' * 64)
         self.plan = dict(model='m', reasoning_effort='high',
                          original_native=dict(declared=dict(native), observed=dict(
                              source='/run/out/native/claude', sha256='c' * 64, version='fake 1.0',
                              observed_at='2026-10-09T19:59:30Z', target='/home/x/.local/bin/claude')),
-                         memory_backends={arm: dict(readiness=dict(identity=dict(identity))) for arm in ('CURRENT', 'CAND')})
-        self.records = [dict(model='m', original_native=dict(binary_sha256='c' * 64, effort='high',
-                                                             target='/home/x/.local/bin/claude'))]
+                         memory_backends={arm: dict(readiness=dict(identity=dict(identity))) for arm in ('CURRENT', 'CAND')},
+                         original_arms=dict(controls=dict(path='/run/original-arms.json', sha256='f' * 64),
+                                            arms=dict(CURRENT=observed_arm, CAND=observed_arm)))
+        self.records = [dict(model='m', arm='CURRENT', original_arm=dict(observed_arm),
+                             original_native=dict(binary_sha256='c' * 64, effort='high', target='/home/x/.local/bin/claude'))]
 
     def check(self, **observed):
         plan = json.loads(json.dumps(self.plan))

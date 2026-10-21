@@ -217,6 +217,11 @@ def _run(selection_pin, output, now, executors, compiler, runner):
         need(declared['execution'] == binding['execution'] and declared['native'] == execution['native']['binary'] and
              declared['model'] == spec['actor_model'] == execution['native']['model'] and
              declared['effort'] == execution['native']['effort'], 'bridge_runner_mismatch')
+        # The runner prepares the reviewed embedding config; the declared worker stays separate.
+        reviewed = execution['memory_arms']['CURRENT']
+        need(spec['embedding']['declared_worker'] == reviewed['embedding_worker'] and
+             spec['embedding']['selected_config'] == reviewed['embedding_config'] and
+             spec['embedding']['model_identity'] == reviewed['embedding_model_identity'], 'bridge_runner_mismatch')
         for arm, wanted in execution['memory_arms'].items():
             actual = spec['arms'][arm]
             need(actual['commit'] == binding['commits'][arm], 'bridge_runner_mismatch')

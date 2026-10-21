@@ -102,8 +102,10 @@ The runner profile's `execution` pin must equal the reviewed request's
 carry that same pin. Before the effect, the runner spec's declared native
 binary pin, model and effort must equal the reviewed declaration. A complete
 runner receipt must report observed native SHA-256 and effort equal to the
-declared ones (`bridge_runner_execution_mismatch`). The recall and
-embedding-config controls stay named runner refusals. See
+declared ones (`bridge_runner_execution_mismatch`). The spec's
+`declared_worker`, `selected_config` and `model_identity` must equal the
+reviewed declaration's embedding pins; the recall hook and bridge pins are
+compared with the reviewed pins as before. See
 [the runner reconciliation](weekly-runner-reconciliation.md).
 
 ## Boundaries requiring later integration

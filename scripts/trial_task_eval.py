@@ -37,6 +37,8 @@ import uuid
 from trial_account_selection import credentials_source
 import trial_legacy_limits as legacy_limits
 import trial_native_copy as native_copy
+import trial_original_arms as original_arm_controls
+import trial_embedding_identity as identity_declaration
 from trial_native_observation import capture, measure
 from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
@@ -1078,6 +1080,25 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     return command + provider_args
 
 
+# Inside the sandbox, before the provider: the mounted engine's task-key contract and the
+# owner-only inbox recall binding (shared by prospective and original weekly agent_tools arms).
+BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
+
+
+def original_binding_check(root, cwd_name, binds, env, harness, sandbox_options, base, timeout):
+    """Run BINDING_CHECK in the attempt sandbox for an original agent_tools arm; refuse before launch."""
+    checked = sandbox_command(root, cwd_name, binds, env, prerequisite_command(BINDING_CHECK), harness, **sandbox_options)
+    try:
+        done = subprocess.run(checked, capture_output=True, timeout=min(120, timeout))
+        row = dict(argv=BINDING_CHECK, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
+                   stderr_sha256=hashlib.sha256(done.stderr).hexdigest())
+    except subprocess.TimeoutExpired:
+        row = dict(argv=BINDING_CHECK, exit=None, error="prerequisite_timeout")
+    (base / "original-binding-check.json").write_text(json.dumps(row, indent=2))
+    if row["exit"] != 0:
+        raise RuntimeError("original_recall_binding_invalid: binding check failed before provider launch")
+
+
 def prerequisite_command(argv):
     """Give a prerequisite a waiting non-init parent; preserve shell-style signal status."""
     supervisor = ("import subprocess,sys; result=subprocess.run(sys.argv[1:]); "
@@ -1168,17 +1189,23 @@ def run_agent(case, arm, seed, order, args, stores, out):
                       repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate",
                       context_bytes=context_limit,
                       harness=args.harness, semantic_fallback=arm in args.semantic_recall)
-        arm_config = stores[arm].get("configuration", {}) if prospective else {}
-        if prospective:
+        original_arms = None if prospective else getattr(args, "_original_arms", None)
+        arm_config = stores[arm].get("configuration", {}) if prospective or original_arms else {}
+        if prospective or original_arms:
+            # Literal per-arm controls (prospective input, or the original weekly contract).
             config["semantic_fallback"] = arm_config["semantic_fallback"]
             config["recall_mode"] = arm_config["recall_mode"]
+        if original_arms:
+            if config["semantic_fallback"] and config["recall_mode"] != "agent_tools":
+                raise ValueError("original_execution_unsupported:semantic_fallback_selector")
+            observed_arm = original_arm_controls.observed_arm(arm_config)
         if config["semantic_fallback"] and config.get("recall_mode") != "agent_tools":
             config.update(claude="/tmp/trial/selector/claude", model=args.selector_model)
             binds.append((Path(args.selector_binary).resolve(), config["claude"], "ro"))
             if args.harness == "codex":
                 binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
-        if prospective and config["recall_mode"] == "agent_tools":
+        if (prospective or original_arms) and config["recall_mode"] == "agent_tools":
             binds += bind_ordinary_claude(base, config, arm_config["bridge"], launcher_task=True)
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
         if prospective:
@@ -1221,7 +1248,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             binds += [(settings_path, "/tmp/trial/settings.json", "ro"), (mcp_path, "/tmp/trial/mcp.json", "ro")]
             provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json"]
         prerequisites = []
-        binding_check = [["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
+        binding_check = [BINDING_CHECK] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
         prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
         for argv in prerequisite_commands:
             checked = sandbox_command(root, case["cwd"], binds, env, prerequisite_command(argv), args.harness, **sandbox_options)
@@ -1235,6 +1262,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
             (base / "preflight.json").write_text(json.dumps(prerequisites, indent=2))
             if row["exit"] != 0:
                 raise RuntimeError("prospective prerequisite failed before provider launch")
+    if not prospective and arm in stores and getattr(args, "_original_arms", None) \
+            and stores[arm]["configuration"]["recall_mode"] == "agent_tools":
+        original_binding_check(root, case["cwd"], binds, env, args.harness, sandbox_options, base, args.timeout)
     if prospective:
         native_input = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
         input_charge = len(native_input) + 512 + (len(memory_instruction.encode()) if arm not in ("none", "direct") else 0)
@@ -1400,6 +1430,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if original_native is not None:
             record["original_native"] = dict(binary_sha256=row_sha256, effort=args.reasoning_effort,
                                              target=original_native["observed"]["target"])
+        if arm in stores and getattr(args, "_original_arms", None):
+            record["original_arm"] = observed_arm
         if original:
             record["original_limits"] = limit_assessment
             record["process_custody"] = process_custody
@@ -1589,6 +1621,14 @@ def cmd_agent(args):
         args._original_native = native_copy.retain(args.original_native_path, args.original_native_sha256, out)
         execution.update(original_native=args._original_native, reasoning_effort=args.reasoning_effort,
                          harness_version=args._original_native["observed"]["version"])
+    declared_identity = None
+    if getattr(args, "original_arms", None) and not prospective:
+        # Before any store starts: the literal per-arm controls and raw recall blobs.
+        execution["original_arms"], args._original_arms = original_arm_controls.load_controls(
+            args.original_arms, args.original_arms_sha256, args.memory)
+    if getattr(args, "original_embedding_identity", None) and not prospective:
+        execution["original_embedding_identity"], declared_identity = original_arm_controls.load_identity(
+            args.original_embedding_identity, args.original_embedding_identity_sha256)
     if prospective:
         if out.resolve().is_relative_to(prospective["root"]):
             raise ValueError("output must be outside prospective input")
@@ -1620,7 +1660,8 @@ def cmd_agent(args):
         arms = list(args.arms)
         for spec in args.memory:
             label, binary, hook = spec.split(":", 2)
-            arm_config = pinned_arms[label] if prospective else {}
+            arm_config = pinned_arms[label] if prospective else (
+                args._original_arms[label] if getattr(args, "_original_arms", None) else {})
             store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
                                embedding_worker=arm_config.get("embedding_worker") if prospective else args.embedding_worker)
             cleanup.callback(store.token_file.unlink, missing_ok=True)
@@ -1632,6 +1673,10 @@ def cmd_agent(args):
             store.grow(args.distractors, 0)
             store.start()
             store.wait_for_full_coverage(timeout=args.cold_readiness_timeout)
+            if declared_identity is not None and not identity_declaration.matches(
+                    (store.readiness or {}).get("identity"), declared_identity):
+                # Compared before any attempt; dimensions are declared only, never observed.
+                raise ValueError("original_execution_identity_mismatch")
             stores[label] = dict(store=store, hook=str(Path(hook).resolve()), configuration=arm_config)
             arms.append(label)
         plan = []
@@ -1935,6 +1980,10 @@ def main(argv=None):
     a.add_argument("--parallel", type=int, default=3)
     a.add_argument("--original-native-path", help="legacy original execution: absolute declared native binary")
     a.add_argument("--original-native-sha256", help="its declared SHA-256; the run uses a verified retained copy")
+    a.add_argument("--original-arms", help="cairn.original-arm-controls/1: literal per-arm recall controls and raw recall blobs")
+    a.add_argument("--original-arms-sha256")
+    a.add_argument("--original-embedding-identity", help="typed cairn.embedding-model-identity/1 declaration")
+    a.add_argument("--original-embedding-identity-sha256")
     a.add_argument("--original-limits", action="store_true",
                    help="legacy Claude fixtures under trial_paired_request.ORIGINAL_LIMITS (5 s hooks, 32000 tool room, "
                         "task wire charged, captured stream timing); exceeding rows are measurement failures")
@@ -1949,8 +1998,15 @@ def main(argv=None):
         print(json.dumps(freeze_input(args.input)["frozen"], indent=2))
         return 0
     if args.command == "agent":
-        if args.prospective_input and (args.original_native_path or args.original_native_sha256):
-            parser.error("original native execution is a legacy-fixtures option")
+        originals = (args.original_native_path, args.original_native_sha256, args.original_arms, args.original_arms_sha256,
+                     args.original_embedding_identity, args.original_embedding_identity_sha256)
+        if args.prospective_input and any(originals):
+            parser.error("original execution is a legacy-fixtures option")
+        for path, digest in zip(originals[::2], originals[1::2]):
+            if (path is None) != (digest is None):
+                parser.error("original execution paths and SHA-256 values go together")
+        if any(originals) and not args.original_limits:
+            parser.error("original execution requires --original-limits")
         if args.prospective_input:
             if args.arms is not None or args.memory or args.semantic_recall or args.semantic_worker or args.embedding_worker:
                 parser.error("prospective arms and components come only from frozen input")

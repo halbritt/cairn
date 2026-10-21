@@ -28,6 +28,29 @@ NOW_DT = paired.utc(NOW)
 ACCOUNTS = ['account-A', 'account-B']
 
 
+def embedding_fixture(root):
+    """A closed trial_embedding_launch config and its rendered launcher (no model, no worker run)."""
+    semantic = root / 'semantic'
+    semantic.mkdir()
+    for name in ('embedding_worker.py', 'semantic_rank.py'):
+        shutil.copyfile(Path(__file__).with_name(name), semantic / name)
+    python = semantic / 'python'
+    python.write_text('#!/bin/sh\nexit 99\n')
+    python.chmod(0o700)
+    (semantic / 'model').mkdir()
+    config = write_pin(semantic / 'embedding-config.json', dict(
+        schema='cairn.weekly-embedding-launch/1', python=str(python),
+        worker=dict(path=str(semantic / 'embedding_worker.py'),
+                    sha256=hashlib.sha256((semantic / 'embedding_worker.py').read_bytes()).hexdigest()),
+        scorer=dict(path=str(semantic / 'semantic_rank.py'),
+                    sha256=hashlib.sha256((semantic / 'semantic_rank.py').read_bytes()).hexdigest()),
+        model_dir=str(semantic / 'model')))
+    worker = semantic / 'worker-embeddings'
+    worker.write_text(f'#!/bin/sh\nexec {python} {semantic}/embedding_worker.py --model-dir {semantic}/model\n')
+    worker.chmod(0o700)
+    return config, worker
+
+
 def _write(path, content):
     path.write_text(content)
     return path
@@ -96,11 +119,18 @@ def hook_rows(seconds=0.2):
 native_path, native_sha, effort = value('--original-native-path'), value('--original-native-sha256'), value('--reasoning-effort')
 native_target = '/home/synthetic/.local/bin/claude'
 identity = json.loads(os.environ['FAKE_IDENTITY'])
+controls_path, controls_sha = value('--original-arms'), value('--original-arms-sha256')
+controls = json.loads(Path(controls_path).read_text())
+observed_arms = {label: dict(recall_mode=arm['recall_mode'], semantic_fallback=arm['semantic_fallback'],
+                             recall_revision=arm['recall_revision'], hook_sha256=arm['hook']['sha256'],
+                             bridge_sha256=arm['bridge']['sha256']) for label, arm in controls['arms'].items()}
 
 def record(c, a, s, answer=None, prefix=''):
     answer = answer or f'Synthetic answer {c} {a} {s}.'
     outcome = 'mistake' if a == 'CAND' and c.endswith(('0', '5')) else 'correct'
     return dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s, order=0, harness='claude', model=model,
+                original_arm=dict(observed_arms[a], recall_mode='ambient') if mode == 'oe_arm' and (c, a, s) == plan[3]
+                else dict(observed_arms.get(a, {})),
                 original_native=dict(binary_sha256=native_sha, effort='low' if mode == 'oe_effort' and (c, a, s) == plan[3] else effort,
                                      target=native_target),
                 wording='task', prompt_bytes=len(task(c).encode()), outcome=outcome, answer_chars=len(answer),
@@ -212,11 +242,16 @@ native = dict(declared=dict(path=native_path, sha256=native_sha),
                             version='fake-claude 9.9.9', observed_at='2026-10-09T19:59:30Z', target=native_target))
 plan_document = dict(arms=arms, wording='task', runs=[[c, a, s, 0] for c, a, s in plan], model=model,
                      reasoning_effort=effort, original_native=native,
+                     original_arms=dict(controls=dict(path=controls_path, sha256=controls_sha), arms=observed_arms),
                      memory_backends={arm: dict(backend='embedding-command',
                                                 readiness=dict(state='full_eligible_coverage', identity=identities[arm]))
                                       for arm in arms})
 if mode == 'oe_unobserved':
     plan_document.pop('original_native')
+if mode == 'oe_arms_missing':
+    plan_document.pop('original_arms')
+if mode == 'oe_plan_arms':  # the plan's loaded controls differ while every row still matches
+    plan_document['original_arms']['arms']['CAND'] = dict(observed_arms['CAND'], semantic_fallback=False)
 if mode == 'oe_backend_string':
     plan_document['memory_backends']['CURRENT'] = 'malformed backend'
 (out / 'plan.json').write_text(json.dumps(plan_document, indent=2))
@@ -318,8 +353,7 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(receipt['plan_sha256'], plan['sha256'])
         self.runs = self.root / 'runs'
         self.runs.mkdir(mode=0o700)
-        worker = self.root / 'embedding-worker'
-        worker.write_text('#!/bin/sh\n# synthetic worker\n')
+        worker = self.embedding_fixture()
         frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
         self.profile = dict(
             schema=weekly.PROFILE_SCHEMA, repo=str(self.repo.path), current_ref='main', candidate_ref='candidate',
@@ -340,6 +374,15 @@ class WeeklyRunTests(unittest.TestCase):
         self.executor = FakeExecutor(self.profile['account'])
         self.select()
 
+    def embedding_fixture(self):
+        self.embedding_config, worker = embedding_fixture(self.root)
+        return worker
+
+    def recall_blob(self, commit, name):
+        content = git(self.repo.path, 'cat-file', 'blob', f'{commit}:integrations/lifecycle/{name}') + '\n'
+        return dict(path=str(_write(self.root / 'declared' / f'{commit[:8]}-{name}', content)),
+                    sha256=hashlib.sha256(content.encode()).hexdigest())
+
     def execution_document(self):
         return json.loads(Path(self.profile['execution']['path']).read_text())
 
@@ -354,11 +397,13 @@ class WeeklyRunTests(unittest.TestCase):
         identity = changes.pop('identity', None) or pinned('model-identity.json', dict(
             schema='cairn.embedding-model-identity/1', model_sha256='a' * 64, algorithm='synthetic-embedding/1',
             dimensions=384))
-        arm = lambda name, commit: dict(binary=pinned(name + '-cairn', '#!/bin/sh\n'), hook=pinned(name + '-hook.py', '#\n'),
-                                        bridge=pinned(name + '-bridge.py', '#\n'), api_revision=commit,
-                                        recall_revision=commit, recall_mode='agent_tools', semantic_fallback=True,
+        controls = changes.pop('controls', dict(recall_mode='agent_tools', semantic_fallback=True))
+        arm = lambda name, commit: dict(binary=pinned(name + '-cairn', '#!/bin/sh\n'),
+                                        hook=self.recall_blob(commit, 'memory.py'),
+                                        bridge=self.recall_blob(commit, 'inbox_recall.py'), api_revision=commit,
+                                        recall_revision=commit, **controls,
                                         embedding_worker=self.profile['embedding']['worker'],
-                                        embedding_config=pinned('embedding-config.json', '{}'),
+                                        embedding_config=self.embedding_config,
                                         embedding_model_identity=identity)
         generator = Path(te.__file__).resolve()
         document = dict(schema='cairn.weekly-execution/1',
@@ -411,10 +456,14 @@ class WeeklyRunTests(unittest.TestCase):
         self.profile['execution'] = None
         refusal = self.refuses('weekly_executor_blocked', executors=weekly.default_executors(account))
         self.assertEqual(refusal.blockers, ['original_execution_unbound'])
-        # With both, every originally selected control the legacy harness cannot carry refuses by name.
+        # With both, the full contract is carried; the fixture's two-account capacity then refuses.
         self.profile['execution'] = execution
-        refusal = self.refuses('original_execution_unsupported:recall_mode', executors=weekly.default_executors(account))
-        self.assertEqual(refusal.fields, ['original_execution_unsupported:recall_mode', 'original_execution_unsupported:semantic_fallback', 'original_execution_unsupported:recall_revision', 'original_execution_unsupported:embedding_config'])
+        self.refuses('capacity_account_mismatch', executors=weekly.default_executors(account))
+        # An ambient arm with semantic fallback still names its undeclared selector.
+        self.profile['execution'] = self.execution_pin(controls=dict(recall_mode='ambient', semantic_fallback=True))
+        refusal = self.refuses('original_execution_unsupported:semantic_fallback_selector',
+                               executors=weekly.default_executors(account))
+        self.assertEqual(refusal.fields, ['original_execution_unsupported:semantic_fallback_selector'])
 
     def test_legacy_blockers_are_computed_from_configuration_and_account(self):
         account = self.profile['account']
@@ -485,14 +534,17 @@ class WeeklyRunTests(unittest.TestCase):
                     embedding=dict(worker=dict(path='/w')), postgres=dict(bin_dir='/pg'),
                     arms={name: dict(binary=dict(path=f'/{name}/cairn'), hook=dict(path=f'/{name}/memory.py'))
                           for name in ('CURRENT', 'CAND')},
-                    original_execution=dict(native=dict(path='/declared:with/colon/claude', sha256='b' * 64), effort='max'))
+                    original_execution=dict(native=dict(path='/declared:with/colon/claude', sha256='b' * 64), effort='max',
+                                            embedding=dict(model_identity=dict(path='/declared/identity.json', sha256='c' * 64))),
+                    original_arms=dict(path='/slot/original-arms.json', sha256='d' * 64))
         self.assertEqual(weekly.legacy_argv(spec, Path('/out')), [
             '/h/scripts/trial-task-eval.sh', 'agent', '--legacy-fixtures', '--original-limits', '--output', '/out', '--arms',
             '--memory', 'CURRENT:/CURRENT/cairn:/CURRENT/memory.py', '--memory', 'CAND:/CAND/cairn:/CAND/memory.py',
             '--distractors', '1900', '--seeds', '3', '--first-seed', '0', '--embedding-worker', '/w',
             '--harness', 'claude', '--model', 'sonnet', '--max-turns', '40', '--timeout', '900', '--parallel', '3',
             '--original-native-path', '/declared:with/colon/claude', '--original-native-sha256', 'b' * 64,
-            '--reasoning-effort', 'max'])
+            '--reasoning-effort', 'max', '--original-arms', '/slot/original-arms.json', '--original-arms-sha256', 'd' * 64,
+            '--original-embedding-identity', '/declared/identity.json', '--original-embedding-identity-sha256', 'c' * 64])
         with self.assertRaisesRegex(paired.Refusal, '^legacy_seed_list$'):
             weekly.legacy_argv(dict(spec, seeds=[1, 2, 4]), Path('/out'))
         spec['account'] = dict(account_id='account-A', config_home='/accounts/weekly')
@@ -516,10 +568,15 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(spec['arms']['CURRENT']['commit'], self.repo.current)
         self.assertEqual(spec['arms']['CAND']['commit'], self.repo.candidate)
         self.assertNotEqual(spec['arms']['CURRENT']['hook']['sha256'], spec['arms']['CAND']['hook']['sha256'])
-        self.assertEqual(spec['embedding'], self.profile['embedding'])
+        # The retained launcher runs for both arms; the declared worker and config stay separate.
+        self.assertEqual(spec['embedding']['declared_worker'], self.profile['embedding']['worker'])
+        self.assertEqual(spec['embedding']['selected_config'], self.embedding_config)
+        self.assertEqual(spec['embedding']['worker']['sha256'], self.profile['embedding']['worker']['sha256'])
+        self.assertNotEqual(spec['embedding']['worker']['path'], self.profile['embedding']['worker']['path'])
         # One embedding worker for both arms; the harness owns the disposable cluster.
         argv = json.loads((Path(receipt['agent']['path']).parent / 'argv.json').read_text())
         self.assertEqual(argv['argv'].count('--embedding-worker'), 1)
+        self.assertEqual(argv['argv'][argv['argv'].index('--embedding-worker') + 1], spec['embedding']['worker']['path'])
         self.assertEqual(argv['pg_bin'], self.profile['postgres']['bin_dir'])
         self.assertEqual(argv['leaked'], [])
         self.assertEqual(argv['config_home'], self.profile['account']['config_home'])
@@ -610,7 +667,7 @@ class WeeklyRunTests(unittest.TestCase):
             code = weekly.main(['--profile', str(profile), '--now', NOW])
         result = json.loads(output.getvalue())
         self.assertEqual(code, 2)
-        self.assertEqual((result['code'], result['unsupported']), ('original_execution_unsupported:recall_mode', ['original_execution_unsupported:recall_mode', 'original_execution_unsupported:semantic_fallback', 'original_execution_unsupported:recall_revision', 'original_execution_unsupported:embedding_config']))
+        self.assertEqual(result['code'], 'capacity_account_mismatch')
         self.assertFalse(result['runtime_admission'])
         self.assertNotIn(str(self.root), output.getvalue())
         self.assertEqual(os.listdir(self.runs), [])
@@ -898,7 +955,9 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(execution['proof'], 'harness_observed_copy')
         self.assertEqual(execution['declared']['effort'], 'xhigh')
         self.assertEqual(execution['declared']['arms']['CAND'],
-                         dict(recall_mode='agent_tools', semantic_fallback=True, recall_revision=self.repo.candidate))
+                         dict(recall_mode='agent_tools', semantic_fallback=True, recall_revision=self.repo.candidate,
+                              hook=self.recall_blob(self.repo.candidate, 'memory.py'),
+                              bridge=self.recall_blob(self.repo.candidate, 'inbox_recall.py')))
         self.assertEqual(execution['observed']['native']['sha256'], execution['declared']['native']['sha256'])
         self.assertEqual(execution['declared']['identity'],
                          dict(model_sha256='a' * 64, algorithm='synthetic-embedding/1', dimensions=384))
@@ -994,6 +1053,70 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertIsNone(receipt['pair_binding'])
         self.assertEqual(self.run_weekly()['replayed'], True)
         self.assertEqual(len(self.executor.executed), 1)
+
+
+    def test_complete_run_carries_literal_controls_raw_recall_blobs_and_the_retained_launcher(self):
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['status'], 'complete')
+        slot = self.runs / receipt['slot_id']
+        spec = json.loads((slot / 'spec.json').read_text())
+        controls = json.loads((slot / 'original-arms.json').read_text())
+        for name, commit in (('CURRENT', self.repo.current), ('CAND', self.repo.candidate)):
+            arm = controls['arms'][name]
+            self.assertEqual((arm['recall_mode'], arm['semantic_fallback'], arm['recall_revision']),
+                             ('agent_tools', True, commit))
+            for role, file in (('hook', 'memory.py'), ('bridge', 'inbox_recall.py')):
+                self.assertEqual(arm[role]['path'], str(slot / 'arms' / name / 'recall' / file))
+                self.assertEqual(arm[role]['sha256'], self.recall_blob(commit, file)['sha256'])
+                self.assertEqual(spec['arms'][name][role], arm[role])
+        argv = json.loads((Path(receipt['agent']['path']).parent / 'argv.json').read_text())['argv']
+        self.assertEqual(argv[argv.index('--original-arms') + 1], str(slot / 'original-arms.json'))
+        self.assertIn(f"CAND:{spec['arms']['CAND']['binary']['path']}:{slot / 'arms/CAND/recall/memory.py'}", argv)
+        self.assertEqual(argv[argv.index('--embedding-worker') + 1], str(slot / 'embedding/worker-embeddings'))
+        observed = receipt['original_execution']['observed']['arms']['arms']
+        self.assertEqual(observed['CAND']['bridge_sha256'], self.recall_blob(self.repo.candidate, 'inbox_recall.py')['sha256'])
+
+    def test_recall_blob_must_be_the_declared_hook_and_bridge_at_the_revision(self):
+        document = self.execution_document()
+        arms = document['memory_arms']
+        arms['CAND'] = dict(arms['CAND'], bridge=write_pin(self.root / 'declared/other-bridge.json', {'not': 'the blob'}))
+        self.profile['execution'] = self.execution_pin(memory_arms=arms)
+        failed = self.run_weekly()
+        self.assertEqual((failed['status'], failed['code']), ('failed_before_execution', 'original_execution_recall_mismatch'))
+        self.assertEqual(self.executor.executed, [])
+
+    def test_recall_revision_must_resolve_to_that_exact_commit(self):
+        arms = self.execution_document()['memory_arms']
+        arms['CAND'] = dict(arms['CAND'], recall_revision='candidate')
+        self.profile['execution'] = self.execution_pin(memory_arms=arms)
+        failed = self.run_weekly()
+        self.assertEqual((failed['status'], failed['code']), ('failed_before_execution', 'original_execution_recall_unresolved'))
+
+    def test_replacement_objects_never_substitute_the_recall_blob(self):
+        git(self.repo.path, 'replace', self.repo.candidate, self.repo.current)
+        receipt = self.run_weekly()
+        controls = json.loads((self.runs / receipt['slot_id'] / 'original-arms.json').read_text())
+        self.assertEqual(controls['arms']['CAND']['hook']['sha256'],
+                         hashlib.sha256(b'# synthetic candidate hook\n').hexdigest())
+
+    def test_embedding_config_is_prepared_by_the_launch_helper_or_refused(self):
+        changed = json.loads(Path(self.embedding_config['path']).read_text())
+        changed['scorer'] = dict(changed['scorer'], sha256='0' * 64)
+        self.embedding_config = write_pin(self.root / 'semantic/bad-config.json', changed)
+        self.profile['execution'] = self.execution_pin()
+        failed = self.run_weekly()
+        self.assertEqual((failed['status'], failed['code']),
+                         ('failed_before_execution', 'original_execution_embedding_embedding_source_unsupported'))
+        self.assertEqual(self.executor.executed, [])
+
+    def test_observed_arm_controls_must_match_the_declaration(self):
+        for mode, status, code in (('oe_arm', 'rejected', 'original_execution_mismatch'),
+                                   ('oe_plan_arms', 'rejected', 'original_execution_mismatch'),
+                                   ('oe_arms_missing', 'incomplete', 'original_execution_unobserved')):
+            with self.subTest(mode=mode):
+                self.tearDown()
+                self.setUp()
+                self.oe_rejected(mode, status, code)
 
 
 if __name__ == '__main__':

@@ -18,8 +18,9 @@ produce the original shape: 21 frozen v12 cases, two memory arms, 3 seeds,
 126 attempts and 1900 distractors. It uses one shared embedding worker and a
 disposable PostgreSQL cluster. Under the later constraints, three concrete
 blockers kept it from producing valid weekly outcomes. As of the
-limits-and-account change, blockers 1 and 2 are closed in source and blocker
-3 is with agent-504:
+limits-and-account change, blockers 1 and 2 are closed in source. Blocker 3
+is addressed by the retained pre-actor baseline (86298af, e83914b), which the
+runner verifies (5b52a0f):
 
 1. **`original_limits_unenforced`, closed in source.** The legacy `run_agent`
    did not apply `trial_paired_request.ORIGINAL_LIMITS`. It had a 13 s hook
@@ -84,12 +85,12 @@ limits-and-account change, blockers 1 and 2 are closed in source and blocker
 
    Still declared, not observed: which account the file belongs to, and the
    `dedicated: true, interactive_use: false` flags in the capacity evidence.
-3. **Writable workspace snapshot, owned by agent-504.** The actor could write
-   the `.eval-snapshot.json` that grading read. agent-504's 86298af binds
-   original grading to a privately retained pre-actor baseline; see
-   `docs/original-attempt-custody.md` for its scope. That document, not this
-   lane, makes the claim. Full artifact, action and evaluator channel
-   custody remains unproven there.
+3. **Writable workspace snapshot, addressed.** The actor could write the
+   `.eval-snapshot.json` that grading read. 86298af binds original grading to
+   a privately retained pre-actor baseline, and the runner verifies each
+   attempt's baseline (5b52a0f). See `docs/original-attempt-custody.md` for
+   its scope; that document, not this lane, makes the claim. The artifact and
+   evaluator channels remain unavailable and refused.
 
 **Authorization is a bound input, not a blocker.** The `--legacy-fixtures`
 help says the flag is "not authorization to replay" (`:1807`). Selecting the
@@ -131,7 +132,7 @@ selection.
 | Comparable whole-run usage pre-check | CAIRN-107 Proposal 2: estimate from the last run and refuse unless the remaining budget covers the whole run | Not part of the harness | `capacity_gate` over existing `trial_capacity_adapter` evidence (see below) |
 | Absolute allowance units | `trial_capacity_adapter.py:76` (current implementation) | n/a | A constraint of the current implementation, not an original acceptance requirement. The adapter refuses percentage units; a calibrated comparable estimate would need its own adapter change |
 | Dedicated account | CAIRN-107 Notes | By explicit selection (blocker 2 closed in source); dedication is declared | `account.config_home` bound by reference; `account_id` must equal the capacity account binding |
-| Valid outcomes: snapshot integrity | `:667,1303` | **No**, blocker 3 (agent-504) | Named; not handled in this lane |
+| Valid outcomes: snapshot integrity | `:667,1303` | Addressed by the retained pre-actor baseline (86298af, e83914b) | The runner verifies every attempt's baseline (5b52a0f) |
 | Subscription-only routing, no OpenRouter | `AGENTS.md` Model routing | Yes: `claude -p` under `bwrap --clearenv` (`:1012,1089`) | The executor also strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `OPENAI_*` and `OPENROUTER_*` |
 | Six review dispositions | `docs/candidate-paired-request.md:82,148-149` | Not in the original issue | Optional; not on the runner path |
 | Physical RSS, SDK selected-input custody | `docs/sdk-native-launch.md:75-80` | Not applicable to the CLI route | Not runner gates. Their figures describe the SDK path and are not live legacy blockers |
@@ -140,22 +141,22 @@ selection.
 
 Ownership, per agent-341: this lane owns R1 (`TrialStore.__init__` cleanup),
 R2 (the second wait in `TrialStore.stop`) and R3 (the `cmd_agent` store
-setup and import-provenance block). Agent-504 owns the default TRIAL
-workspace, the setup/commit/snapshot join, case workspace creation, and
-artifact, action and evaluator channel recording.
+setup and import-provenance block). The default TRIAL workspace and the
+setup/commit/snapshot join were agent-504's; its baseline work has landed
+(86298af, e83914b). Artifact and evaluator channel capture remain open.
 
-1. **Default TRIAL workspace and latest version (agent-504).** Live.
+1. **Default TRIAL workspace and latest version.** Live.
    `load_cases`, `load_corpus` and `verify_frozen` default to the latest
    version (`:87`, `:188`, called at `:1462-1463` and `:1071`).
    `prepare_workspace` defaults to `source_root=TRIAL` (`:642`, `:1067`).
    This does not block the runner. It runs a pinned exported harness commit
    and checks that latest equals the pinned `label_version` and frozen hash,
    so "latest" equals v12 by construction.
-2. **Owned setup, commit and snapshot join (agent-504).** Live. None of the
-   21 v12 cases declares `workspace_commit` (counted only), so the setup
-   result is never checked (`:658-661`). The snapshot hash is not retained,
-   and the snapshot is writable by the actor (blocker 3). The runner does not
-   implement any of this.
+2. **Owned setup, commit and snapshot join.** None of the 21 v12 cases
+   declares `workspace_commit` (counted only), so the setup result is never
+   checked against a commit (`:658-661`). The writable snapshot is superseded
+   for grading by the retained pre-actor baseline (86298af), verified per
+   attempt by the runner (5b52a0f).
 3. **Fixture-to-record ID maps (R3).** Live before this change: the maps
    existed only in memory (`:291-292`). **Fixed:** legacy runs now retain
    `import-provenance.json` (`:1541-1542`) and keep their original 8-worker
@@ -286,7 +287,7 @@ This is harness custody under the existing mount boundary, as
 attestation, source-version evidence or final-artifact custody. The
 prospective path is unchanged.
 
-## Original execution seam (intermediate subset)
+## Original execution seam
 
 This implements design revision 2
 (`agent501-original-execution-20261021/DESIGN.md`) with root's corrections.
@@ -342,16 +343,51 @@ Without the pin, the executor is blocked with `original_execution_unbound`.
   `dimensions: unobserved`. Three things stay separate: the declaration pin,
   the declared values and the observed values.
 
-**Refused until implemented** (follow-ons, design section 5):
-- `original_execution_unsupported:recall_mode`
-- `original_execution_unsupported:semantic_fallback`
-- `original_execution_unsupported:recall_revision`
-- `original_execution_unsupported:embedding_config`
+**Per-arm recall controls and embedding config (carried since the
+recall-controls lane):**
+- **Literal controls.** `recall_mode` and `semantic_fallback` reach each
+  arm's hook configuration exactly as declared. An `agent_tools` arm is
+  bound with the existing `bind_ordinary_claude` (inbox-recall binding,
+  launcher task key), as the prospective route binds it. Before the provider
+  starts, the attempt sandbox runs the same `BINDING_CHECK` that prospective
+  prerequisites use: the engine's `RECALL_TASK_VERSION` and `recall_task_key`,
+  then `inbox_recall.validate_binding(..., require_enabled=True)`. Any failure
+  refuses `original_recall_binding_invalid` and the provider never runs. The
+  controls document's hook and bridge pins are checked for their closed
+  `{path, sha256}` shape first (`original_arms_shape`). Prospective input,
+  its `validate_arms` and its schedule are not used; the legacy schedule and
+  the original 21/126/1900 and caps are unchanged.
+- **`recall_revision`.** It must resolve to exactly that full commit, with
+  Git replacement objects disabled. The runner retains the raw
+  `integrations/lifecycle/memory.py` and `inbox_recall.py` blobs at that
+  commit. Each blob must equal the declared hook or bridge pin; otherwise the
+  slot fails `original_execution_recall_mismatch` or `_recall_unresolved`.
+  The harness mounts those retained blobs (the `--memory` hook path), and
+  `trial_original_arms` checks them against the controls document
+  (`cairn.original-arm-controls/1`, passed as `--original-arms` with its
+  SHA-256). Each attempt re-hashes the hook and bridge before launch and
+  records `original_arm {recall_mode, semantic_fallback, recall_revision,
+  hook_sha256, bridge_sha256}`.
+- **`embedding_config`.** The runner calls agent-504's
+  `trial_embedding_launch.prepare(config, {CURRENT: worker, CAND: worker},
+  slot/embedding)` and passes the retained launcher as the single
+  `--embedding-worker`. The spec keeps `declared_worker`, `selected_config`,
+  the retained `config` and the preparation receipt in separate fields. A
+  helper refusal fails the slot as `original_execution_embedding_<code>`.
+  The helper's limits are documented in `docs/weekly-embedding-launch.md`:
+  no transitive Python identity, concurrent custody or admission.
+- **Identity before attempts.** The harness receives the typed identity
+  declaration (`--original-embedding-identity` with its SHA-256). After each
+  store reaches full coverage, and before any attempt, it compares
+  discovery's `model_sha256` and `algorithm` with the declared values. A
+  mismatch or missing identity refuses
+  `original_execution_identity_mismatch`. Dimensions stay declared only.
 
-The legacy executor always refuses these by name, before any effect.
-Ambient or no-fallback values are never chosen to make a run complete. While
-these refusals stand, the default executor cannot run, so this is an
-intermediate subset, not full CAIRN-107 execution.
+**Still refused** (named follow-on): an `ambient` arm with
+`semantic_fallback: true` calls the hook's selector model, and the execution
+contract declares neither that model nor its binary. It refuses
+`original_execution_unsupported:semantic_fallback_selector`, both in the
+runner and in the harness, and is never replaced by an ambient selector.
 
 **Runner comparison** (`check_observed`):
 - An absent observation gives `incomplete`: `original_execution_unobserved`
@@ -439,17 +475,19 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | --- | --- | --- |
 | Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Real input missing: no absolute-allowance observation and no account binding for the executor's account exist (blocker 2). The absolute unit is the current adapter constraint |
 | Live selection to runner | `cairn.weekly-run-selection/1` to `selection_gate` | **Implemented**. No selection issued (root decision) |
-| Runner to harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` | **Implemented**, fake harness only. Needs a selected account |
+| Runner to harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` plus the original-execution flags | **Implemented**, fake harness only. Carries every declared control except an ambient arm with `semantic_fallback` (`semantic_fallback_selector`). Needs a selected account |
 | Harness content hashes | `trial_task_eval.run_agent` `stream_sha256`/`prompt_sha256` (`:1323-1324`, 04ba225) to `_agent_result` | **Implemented**: required on every row. Present only in runs from a harness commit at or after 04ba225; older runs, including 2026-09-29, can never be complete |
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |
-| Artifact, action and evaluator channels | `trial_legacy_blind_selection` refuses `legacy_channel_unbound` | **Not implemented**; owned by agent-504 (workspace setup and channel recording). Only task statement, grading instructions and final answer are bound |
+| Action channel | `trial_legacy_blind_selection` conversion/2 `action_trace` from the retained, hash-verified stream | **Supported** as of agent-504's 7d4333f (accepted candidate 1c4a9e9) |
+| Artifact and evaluator channels | `trial_legacy_blind_selection` refuses `legacy_channel_unbound` | **Unavailable and refused**: `artifact_bundle` and `evaluator_observation` need actor-final capture before grading |
 | Baseline custody per attempt | `baseline_custody` (agent-504, `trial_attempt_custody.AttemptBaseline.load`) to `_limit_result` | **Implemented**: required and verified for every attempt before `complete` or a binding (harness custody, not attestation) |
-| Snapshot integrity for outcomes | `prepare_workspace` `:667` / grade `:1303` | **Blocker 3**, agent-504 |
+| Snapshot integrity for outcomes | retained pre-actor baseline (86298af, e83914b) verified by the runner (5b52a0f) | **Implemented** (harness custody, not attestation) |
 | Grader delivery release authority | `trial_grader_delivery._check_authority` (`cairn.grader-release-authority/1`) | **Not implemented here**. Requires an owner- or coordinator-issued authority and fresh eligible grader sessions; none exists |
-| Grades to grading join | `trial_grading_custody.join_results(bundle, submissions, dispositions)` | **Not implemented** for legacy-derived selections. Needs returned grades from delivery and a bundle that matches the converted selection; unverified |
+| Grades to grading join | `trial_legacy_grading_bundle` (6cf32c0) and the occurrence orchestration (8192157) into `trial_grading_custody.join_results` | **Implemented synthetically**. Actual returned grades are still missing |
 | `trial_run_report` input | receipt `report_input.agent` to `trial_run_report.py render --agent --join` | **Agent half implemented** (document checked with the report's own `_agent` reader, arms `CURRENT`/`CAND`). The `--join` half depends on the grading join above |
 | Two-week completion | two consecutive `complete` receipts, reports and notes | **Not started**. Requires every join above plus two live slots |
+| Live campaign | an actual 21-case / 126-attempt / 1900-distractor weekly run | **Unproven**. No live run, provider call or actual grade exists; every result above is source and synthetic evidence only |
 
 ## Tests
 
@@ -512,8 +550,9 @@ Limits and account selection:
 
 - Evidence for the dedicated-account declaration, and real single-account
   capacity evidence for the selected `account_id`.
-- Blocker 3: snapshot integrity, plus the artifact, action and evaluator
-  channels (agent-504).
+- The artifact and evaluator channels (actor-final capture before grading).
+- The hook selector model and binary for an ambient arm with
+  `semantic_fallback` (`semantic_fallback_selector`).
 - Real capacity-adapter input for the bound account, and a root-issued live
   selection for one concrete slot.
 - Real conversion materials, a grader release authority, delivery, the

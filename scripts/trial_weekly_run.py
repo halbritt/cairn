@@ -35,6 +35,7 @@ import trial_account_selection as selection
 import trial_attempt_custody as custody
 import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
+import trial_embedding_launch as embedding_launch
 import trial_legacy_limits as limits
 import trial_original_execution as original
 import trial_paired_request as paired
@@ -119,7 +120,7 @@ def legacy_argv(spec, output):
                    '--first-seed', str(seeds[0]), '--embedding-worker', spec['embedding']['worker']['path'],
                    '--harness', 'claude', '--model', spec['actor_model'],
                    '--max-turns', '40', '--timeout', '900', '--parallel', '3',
-                   *original.harness_flags(spec['original_execution'])]
+                   *original.harness_flags(spec['original_execution'], spec['original_arms'])]
 
 
 def legacy_environment(spec, base=None):
@@ -444,10 +445,28 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
         # cwd is the reviewed case's attempt identity field for its retained baseline.
         tasks[case['id']] = dict(prompt_sha256=hashlib.sha256(prompt.encode('utf-8')).hexdigest(),
                                  input_bytes=limits.input_charge(prompt, te.MEMORY_INSTRUCTION), cwd=case['cwd'])
+    fragment = claim['original_execution']
+    recall = {name: _recall_blobs(repo, fragment['arms'][name], slot / 'arms' / name / 'recall') for name in ARMS}
+    for name in ARMS:
+        # The harness mounts the raw recall blobs, not the arm export's working-tree copy.
+        arms[name] = dict(arms[name], hook=recall[name]['hook'], bridge=recall[name]['bridge'])
+    controls = original.arm_controls(fragment, recall)
+    paired.write_selected(slot / 'original-arms.json', controls)
+    controls_pin = _pin_file(slot / 'original-arms.json')
+    embedding = dict(fragment['embedding'])
+    try:
+        launch = embedding_launch.prepare(embedding['config'], dict(CURRENT=embedding['worker'], CAND=embedding['worker']),
+                                          slot / 'embedding')
+    except paired.Refusal as error:
+        raise paired.Refusal('original_execution_embedding_' + str(error)) from None
     spec = dict(schema=SPEC_SCHEMA, slot_id=claim['slot_id'], arms=arms,
                 harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
-                embedding=profile['embedding'], postgres=profile['postgres'],
+                # The retained launcher runs; the declared worker and config stay separate fields.
+                embedding=dict(worker=dict(launch['launcher']), declared_worker=dict(launch['declared_worker']),
+                               config=dict(launch['config']), selected_config=dict(launch['selected_config']),
+                               model_identity=dict(embedding['model_identity']), preparation=launch),
+                original_arms=controls_pin, postgres=profile['postgres'],
                 actor_model=claim['original_execution']['model'], original_execution=claim['original_execution'],
                 cases=WEEKLY_CASES, arm_count=WEEKLY_ARMS, seeds=list(plan['seeds']),
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
@@ -455,6 +474,42 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 tasks=tasks, account=profile['account'])
     paired.write_selected(slot / 'spec.json', spec)
     return spec
+
+
+def _pin_file(path):
+    return dict(path=str(path), sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest())
+
+
+RECALL_SOURCES = (('hook', 'memory.py'), ('bridge', 'inbox_recall.py'))
+
+
+def _recall_blobs(repo, arm, directory):
+    """Retain the raw memory.py and inbox_recall.py blobs at the declared recall revision.
+
+    Git replacement objects are disabled. Each blob must equal the declared hook or
+    bridge pin; it is never taken from an export, worktree or a self-reported label.
+    """
+    env = dict(os.environ, GIT_NO_REPLACE_OBJECTS='1')
+    try:
+        commit = subprocess.run(['git', '--no-replace-objects', '-C', str(repo), 'rev-parse', '--verify', '--quiet',
+                                 '--end-of-options', arm['recall_revision'] + '^{commit}'], env=env, check=True,
+                                capture_output=True, timeout=candidate.GIT_TIMEOUT).stdout.decode().strip()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, UnicodeDecodeError):
+        raise paired.Refusal('original_execution_recall_unresolved') from None
+    need(commit == arm['recall_revision'], 'original_execution_recall_unresolved')
+    directory.mkdir(mode=0o700, parents=True)
+    pins = {}
+    for role, name in RECALL_SOURCES:
+        try:
+            blob = subprocess.run(['git', '--no-replace-objects', '-C', str(repo), 'cat-file', 'blob',
+                                   f'{commit}:integrations/lifecycle/{name}'], env=env, check=True,
+                                  capture_output=True, timeout=candidate.GIT_TIMEOUT).stdout
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            raise paired.Refusal('original_execution_recall_unresolved') from None
+        need(hashlib.sha256(blob).hexdigest() == arm[role]['sha256'], 'original_execution_recall_mismatch')
+        paired.write_selected_bytes(directory / name, blob)
+        pins[role] = _pin_file(directory / name)
+    return pins
 
 
 def _read_limited(path):
