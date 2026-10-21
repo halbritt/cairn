@@ -329,6 +329,16 @@ Add `--check-only` to validate without changing state or contacting the store. T
 - an initialized bridge ledger with no grant, no joined prompt, no observed tools and no command
   journal progress beyond the claim.
 
+Bridges now write their empty ledger and marker under the session lock before the required lookup,
+so a later refusal leaves an initialized ledger naming no grant. An attempt refused by an earlier
+bridge at that lookup has neither file. This explicit recovery, and not the watcher's automatic
+settlement, treats that case as absent only when the recorded diagnostic shows `recall_phase`
+`required_search` with grant `not_checked`, neither file exists under the bridge's lock, and the
+same directory's Codex turn ledger records the bridge's activation for this native turn without a
+turn grant. One file without the other, any other phase or a missing activation record still
+refuses. The result records `grant_evidence: pre_grant_refusal_without_ledger`; recovery never
+creates either file.
+
 Only those bounded native records are read; their bodies are not retained in coordination state.
 Unknown record shapes, changed files or identities, and missing evidence refuse recovery before any
 write. A successful recovery reconciles `turn_ended`; the delivery is failed, never acknowledged as

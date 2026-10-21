@@ -63,6 +63,13 @@ class CodexBase(Base):
             self.locators.append(dict(offset=offset, length=len(row), sha256=hashlib.sha256(row).hexdigest()))
             offset += len(row)
 
+    def assert_refused_unchanged(self):
+        before = self.path.read_bytes()
+        with self.assertRaises((coord.CoordinationError, ValueError, OSError)):
+            self.recover()
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.ops, [])
+
     def recover(self, check_only=False):
         with self.patched(), patch.object(coord, 'process_alive', return_value=True):
             return coord.recover_codex_refused_wake(self.cc, SESSION, ATTEMPT, self.locators,
@@ -111,13 +118,6 @@ class CodexRecoveryTests(CodexBase):
             coord.watch_inbox(self.cc, self.load(), self.path)
         self.assertNotIn('event-renew', [op for op, _ in self.ops])
         self.assertNotIn('inbox_attempt', self.load())
-
-    def assert_refused_unchanged(self):
-        before = self.path.read_bytes()
-        with self.assertRaises((coord.CoordinationError, ValueError, OSError)):
-            self.recover()
-        self.assertEqual(self.path.read_bytes(), before)
-        self.assertEqual(self.ops, [])
 
     def test_present_or_unknown_grant_refuses(self):
         self.write_grant(attempt_id=ATTEMPT)
@@ -245,6 +245,85 @@ class CodexRecoveryTests(CodexBase):
         self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'held')
         self.assertIn('event-renew', [op for op, _ in self.ops])
         self.assertIn('inbox_attempt', self.load())
+
+
+class LegacyPreGrantLedgerTests(CodexBase):
+    """A refusal recorded before the bridge wrote any ledger, from a bridge that predates
+    initializing it before the required lookup. Recovery is explicit and narrow."""
+
+    def setUp(self):
+        super().setUp()
+        self.ledger.unlink()
+        self.marker = self.ledger.with_suffix('.initialized')
+        self.marker.unlink()
+        self.state['wake_refusal_diagnostic'].update(
+            recall_phase='required_search', recall_operation='search', recall_attempts=2,
+            recall_max_attempts=2, cause_code='TIMEOUT')
+        self.save()
+        self.budget = self.memory_dir / (SESSION + '.memory-budget.json')
+        self.write_budget()
+
+    def write_budget(self, activation=True, turns=None):
+        ledger = dict(schema='cairn.codex-memory-grants/1', session_id=SESSION, active_turn_id=None,
+                      turns=turns or {}, pending=dict(limit_bytes=9500, emitted_hook_bytes=0,
+                                                      reserved_native_bytes=0, granted=False))
+        if activation is not None:
+            ledger['inbox_activation'] = {PROMPT: activation}
+        self.budget.write_text(json.dumps(ledger))
+        self.budget.chmod(0o600)
+
+    def test_explicit_recovery_settles_required_search_refusal_without_any_ledger(self):
+        checked = self.recover(check_only=True)
+        self.assertEqual((checked['status'], checked['grant']), ('eligible', 'absent'))
+        self.assertEqual(checked['grant_evidence'], 'pre_grant_refusal_without_ledger')
+        self.assertEqual(self.ops, [])
+        result = self.recover()
+        self.assertEqual((result['settlement'], result['grant']), ('turn_ended', 'absent'))
+        self.assertEqual(result['grant_evidence'], 'pre_grant_refusal_without_ledger')
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertNotIn('inbox_attempt', self.load())
+        # Recovery reads; it never fabricates the bridge's ledger or marker.
+        self.assertFalse(self.ledger.exists())
+        self.assertFalse(self.marker.exists())
+
+    def test_any_other_recorded_phase_or_grant_check_still_refuses(self):
+        for change in (dict(recall_phase='task_source'), dict(recall_phase='optional_search'),
+                       dict(recall_phase=None), dict(grant='unknown'), dict(grant='absent')):
+            with self.subTest(change=change):
+                diagnostic = self.load()['wake_refusal_diagnostic']
+                original = dict(diagnostic)
+                diagnostic.update(change)
+                self.state['wake_refusal_diagnostic'] = {k: v for k, v in diagnostic.items() if v is not None}
+                self.save()
+                self.assert_refused_unchanged()
+                self.state['wake_refusal_diagnostic'] = original
+                self.save()
+
+    def test_one_file_without_the_other_still_refuses(self):
+        self.marker.write_text(json.dumps(dict(schema='cairn.inbox-recall-initialized/1', session=SESSION)))
+        self.assert_refused_unchanged()
+        self.marker.unlink()
+        self.ledger.write_text(json.dumps(dict(schema='cairn.inbox-recall-grants/1', session=SESSION, grants={})))
+        self.assert_refused_unchanged()
+
+    def test_bridge_directory_must_record_this_turn_without_a_turn_grant(self):
+        for activation, turns in ((None, None), (False, None),
+                                  (True, {PROMPT: dict(limit_bytes=9500, emitted_hook_bytes=0,
+                                                       reserved_native_bytes=0, granted=True)})):
+            with self.subTest(activation=activation, turns=bool(turns)):
+                self.write_budget(activation, turns)
+                self.assert_refused_unchanged()
+        self.budget.unlink()
+        self.assert_refused_unchanged()
+
+    def test_automatic_settlement_still_holds_without_ledger(self):
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        saved = self.load()
+        self.assertEqual(saved['wake_refusal_diagnostic']['settlement'], 'held')
+        self.assertIn('inbox_attempt', saved)
+        self.assertIn('event-renew', [op for op, _ in self.ops])
+        self.assertNotIn('turn_ended', [r['reason'] for r in self.reconciles()])
 
 
 class CodexNativeHealthTests(CodexBase):

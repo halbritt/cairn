@@ -160,6 +160,12 @@ an output but cannot renew its allowance. Missing/corrupt initialized state or a
 repeat of the same delivery refuses; clearing an ordinary capture state does not
 clear these grants.
 
+Before the required lookup, the bridge writes an empty ledger and then its marker
+when either is missing. A refusal at any later phase therefore leaves positive,
+lock-read evidence that the session holds no grant. The first grant withdraws that
+untouched empty ledger before writing its own, so a failed first grant write still
+leaves the marker without a ledger and every later delivery refuses, as before.
+
 The existing Codex native-turn ledger also records the grant. A matching
 `serialized_hook_bytes` counter stamp identifies already encoded bytes. Missing or
 stale stamps trigger conservative conversion of legacy/mixed raw counters; a stale

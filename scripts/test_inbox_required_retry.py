@@ -62,7 +62,7 @@ class RequiredLookupRetryTests(unittest.TestCase):
                 result = case.invoke(main=True)
                 self.assertEqual((result['code'], result['stdout']), (2, ''))
                 self.assertEqual([c['op'] for c in case.calls()], ['search'] * count)
-                self.assertFalse((case.root/'memory'/f'{fixtures.SESSION}.inbox-recall.json').exists())
+                case.assert_no_grant()
                 if count == 2:
                     self.assertEqual(case.calls()[0]['args'], case.calls()[1]['args'])
 
@@ -187,7 +187,7 @@ class RequiredLookupBudgetTests(unittest.TestCase):
         self.assertEqual(case.calls()[0]['args'], case.calls()[1]['args'])
         # The unchanged five-second recall cap still bounds the refusal.
         self.assertLess(elapsed, 7)
-        self.assertFalse((case.root/'memory'/f'{fixtures.SESSION}.inbox-recall.json').exists())
+        case.assert_no_grant()
 
     def test_hung_first_lookup_leaves_its_reserve_for_one_retry(self):
         case = self.case()

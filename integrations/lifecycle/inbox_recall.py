@@ -544,6 +544,17 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 or (config['harness'] == 'claude' and g['identity'].get('native_owner') == native)
                 for g in ledger['grants'].values()):
             raise ValueError('inbox source/memory grant already consumed; no repeated read or new optional allowance')
+        # Persist the empty ledger and its marker before any lookup can refuse.
+        # A refusal at any later phase then leaves positive, lock-read evidence
+        # that this session holds no grant, instead of missing files that a
+        # recovery must treat as doubt. The ledger is written before the marker:
+        # an interrupted pair is a ledger without marker, which load_grants
+        # accepts and the next delivery completes, never a marker that refuses.
+        pristine = dict(schema='cairn.inbox-recall-grants/1', session=session, grants={})
+        if not path.exists():
+            engine.save_codex_budget(path, ledger)
+        if not marker.exists():
+            engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))
         started = time.monotonic()
         deadline = min(started + 5, outer_deadline)
         memory = engine.Memory(memory_config, session)
@@ -737,6 +748,14 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             engine.save_codex_budget(codex_path, codex_ledger)
         if config['harness'] == 'claude':
             engine.codex_required_selection(grant, selected)
+        if ledger == pristine and path.exists():
+            # The pre-lookup ledger stands for "no ledger yet". Withdraw it before
+            # the first grant so a failed grant write leaves the marker without a
+            # ledger, which refuses every later delivery as it always has.
+            path.unlink()
+            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try: os.fsync(fd)
+            finally: os.close(fd)
         ledger['grants'][key] = grant
         ledger['active'] = key
         ledger['pending_bytes'] = 0

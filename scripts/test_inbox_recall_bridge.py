@@ -199,6 +199,14 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertEqual(view['candidate_bodies'][0]['response'],self.fixture['pull'])
         self.assertEqual(self.event['prompt'],coord.wake_message(dict(session=dict(agent_id=AGENT,execution_id=EXEC),delivery_id=DELIVERY)))
 
+    def assert_no_grant(self):
+        """A refusal after the lock leaves an initialized ledger naming no grant."""
+        ledger=self.root/'memory'/f'{SESSION}.inbox-recall.json'
+        self.assertEqual(json.loads(ledger.with_suffix('.initialized').read_text()),
+                         dict(schema='cairn.inbox-recall-initialized/1',session=SESSION))
+        self.assertEqual(json.loads(ledger.read_text()),
+                         dict(schema='cairn.inbox-recall-grants/1',session=SESSION,grants={}))
+
     def test_repeat_does_not_read_sources_or_renew_grant(self):
         self.invoke(); first=len(self.calls())
         output=self.invoke(main=True)
@@ -212,7 +220,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.state['inbox_attempt'].pop('lease_lapsed',None)
         self.fixture['fail_history']='NOT_FOUND'; self.freeze()
         with self.assertRaises(Exception): self.invoke()
-        self.assertFalse((self.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+        self.assert_no_grant()
 
 
     def test_unbound_claude_required_recall_is_unchanged(self):
@@ -294,7 +302,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.fixture['history']['versions'][0]['version']=2
         self.fixture['search']['selected']=[dict(mandatory=True,record=dict(body='日' * 4000))]; self.freeze()
         with self.assertRaises(coord.NativePromptRefused): self.invoke()
-        self.assertFalse((self.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+        self.assert_no_grant()
 
     def test_oversize_source_keeps_original_workflow_without_optional_lookup(self):
         self.body='large complete assignment ' * 600
@@ -375,7 +383,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
     def test_second_search_policy_failure_is_native_refusal(self):
         self.fixture['fail_task_search']='OPEN_CONFLICT'; self.freeze()
         self.assertEqual(self.invoke(main=True)['code'],2)
-        self.assertFalse((self.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+        self.assert_no_grant()
 
     def test_history_transport_fallback_keeps_exact_source_workflow(self):
         self.fixture['fail_history']='API_CONNECTION_FAILED'; self.freeze()
@@ -440,7 +448,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
                     self.assertEqual([x['op'] for x in case.calls()], operations)
                     if stage == 'required':
                         self.assertEqual((result['code'], result['stdout']), (2, ''))
-                        self.assertFalse((case.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+                        case.assert_no_grant()
                     else:
                         self.assertEqual(result['code'], 0, result)
                         text = json.loads(result['stdout'])['hookSpecificOutput']['additionalContext']
@@ -467,16 +475,31 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertTrue(all(x['op']=='search' for x in self.calls()))
 
     def test_write_failure_after_marker_never_regrants(self):
+        # Only the grant write fails; the empty pre-lookup initialization succeeds.
+        actual_replace=os.replace
+        def replace(src,dst):
+            if str(dst).endswith('.inbox-recall.json') and json.loads(Path(src).read_text())['grants']:
+                raise OSError('fixture journal save failure')
+            return actual_replace(src,dst)
+        with patch.object(os,'replace',side_effect=replace):
+            result=self.invoke(main=True)
+        self.assertEqual((result['code'],result['stdout']),(2,''))
+        self.assertTrue((self.root/'memory'/f'{SESSION}.inbox-recall.initialized').exists())
+        before=len(self.calls())
+        self.assertEqual(self.invoke(main=True)['code'],2)
+        self.assertEqual(len(self.calls()),before)
+
+    def test_initialization_write_failure_refuses_before_any_lookup(self):
         actual_replace=os.replace
         def replace(src,dst):
             if str(dst).endswith('.inbox-recall.json'): raise OSError('fixture journal save failure')
             return actual_replace(src,dst)
         with patch.object(os,'replace',side_effect=replace):
+            result=self.invoke(main=True)
+            self.assertEqual((result['code'],result['stdout']),(2,''))
+            self.assertEqual(self.calls(),[])
             self.assertEqual(self.invoke(main=True)['code'],2)
-        self.assertTrue((self.root/'memory'/f'{SESSION}.inbox-recall.initialized').exists())
-        before=len(self.calls())
-        self.assertEqual(self.invoke(main=True)['code'],2)
-        self.assertEqual(len(self.calls()),before)
+        self.assertEqual(self.calls(),[])
 
     def test_malformed_grant_is_refused_without_more_reads(self):
         self.invoke()

@@ -2624,6 +2624,53 @@ def recall_grant_evidence(config, state, attempt=None, native_owner=None, *, req
         return 'unknown', 'unknown'
 
 
+def codex_pre_grant_ledger_absent(config, state, attempt, recorded):
+    """Explicit-recovery proof that a recorded required-lookup refusal left no grant.
+
+    Bridges before the pre-lookup initialization wrote their ledger and marker
+    only after the required lookup succeeded, and the lookup's own raise sites
+    are the only source of recall_phase 'required_search'. For a Codex binding
+    no other writer touches these files, so both missing is the state that
+    refusal leaves. It counts as absence only when, under the bridge's session
+    lock, neither file exists and the same directory's Codex turn ledger shows
+    the bridge was activated for this native turn without recording a turn
+    grant, which ties the directory to that turn. The automatic watcher never
+    calls this; any doubt is False and the existing hold stands.
+    """
+    turn = attempt.get('native_turn_id')
+    if (config.get('harness') != 'codex' or recorded.get('recall_phase') != 'required_search'
+            or recorded.get('grant') != 'not_checked' or not isinstance(turn, str)):
+        return False
+    try:
+        bridge = load_inbox_recall(config, validate=False)
+        _, memory = bridge.binding(config)
+        directory = Path(memory['state_dir'])
+        native = state['agent']['native_session_id']
+        info = directory.stat()
+        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            return False
+        with (directory / (native + '.lock')).open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return False
+            ledger_path = directory / (native + '.inbox-recall.json')
+            if any(os.path.lexists(p) for p in (ledger_path, ledger_path.with_suffix('.initialized'))):
+                return False
+            budget_path = directory / (native + '.memory-budget.json')
+            info = os.lstat(budget_path)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                return False
+            budget = json.loads(budget_path.read_text())
+            return bool(isinstance(budget, dict) and budget.get('schema') == 'cairn.codex-memory-grants/1'
+                        and budget.get('session_id') == native
+                        and isinstance(budget.get('inbox_activation'), dict)
+                        and budget['inbox_activation'].get(turn) is True
+                        and isinstance(budget.get('turns'), dict) and turn not in budget['turns'])
+    except Exception:  # Any doubt keeps the conservative hold.
+        return False
+
+
 def recall_grant_state(config, state, attempt):
     """What the bound bridge's own ledger says about this claimed attempt.
 
@@ -2998,13 +3045,17 @@ def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, 
                 or recorded.get('delivery_id') != attempt.get('delivery', {}).get('delivery_id')
                 or not refused_wake_unprocessed(config, state, turn)):
             raise CoordinationError('INVALID_REQUEST', 'held state is not this unprocessed Codex hook refusal')
-        if recall_grant_state(config, state, attempt) != 'absent':
+        grant_evidence = {}
+        grant = recall_grant_state(config, state, attempt)
+        if grant == 'unknown' and codex_pre_grant_ledger_absent(config, state, attempt, recorded):
+            grant, grant_evidence = 'absent', dict(grant_evidence='pre_grant_refusal_without_ledger')
+        if grant != 'absent':
             raise CoordinationError('INVALID_REQUEST', 'Codex attempt has a present or unknown memory grant')
         proof = codex_refusal_proof(config, state, attempt, recorded, locators)
         if check_only:
-            return dict(status='eligible', attempt_id=attempt_id, grant='absent', native_record=proof)
+            return dict(status='eligible', attempt_id=attempt_id, grant='absent', native_record=proof, **grant_evidence)
         state['wake_refusal_diagnostic'] = dict(recorded, settlement='turn_ended', grant='absent',
-            recovery_origin='codex_native_records', native_record=proof)
+            recovery_origin='codex_native_records', native_record=proof, **grant_evidence)
         state['inbox_turn_ended'] = True
         state['delivered_since_idle'] = False
         write_state(path, state)
