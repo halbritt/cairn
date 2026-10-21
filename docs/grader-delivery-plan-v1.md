@@ -19,8 +19,11 @@ receipt = build_plan(selection_pin, absent_output, now=utc_datetime)
 ```
 
 Only this source API prepares files. `deliver(*args, **kwargs)` raises
-`grader_delivery_unavailable`; `main(argv)` and the module CLI print that fixed
-refusal and return 2 without inspecting arguments or reading private inputs.
+`grader_delivery_unavailable` unless `fabric`, `config` and `authority` keyword
+arguments are all supplied; it then forwards to the event-fabric adapter in
+[grader delivery v1](grader-delivery-v1.md). `main(argv)` and the module CLI
+print that fixed refusal and return 2 without inspecting arguments or reading
+private inputs.
 There is no renderer, transport, adapter factory, credential access, native call,
 model call, account admission, or implicit session creation.
 

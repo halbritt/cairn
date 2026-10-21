@@ -359,7 +359,11 @@ def build_plan(selection_pin, absent_output, *, now):
 
 
 def deliver(*args, **kwargs):
-    raise paired.Refusal('grader_delivery_unavailable')
+    """Refuse unless a fabric, delivery config and separately held authority are all supplied."""
+    if any(kwargs.get(name) is None for name in ('fabric', 'config', 'authority')):
+        raise paired.Refusal('grader_delivery_unavailable')
+    import trial_grader_delivery
+    return trial_grader_delivery.dispatch(*args, **kwargs)
 
 
 def main(argv=None):
