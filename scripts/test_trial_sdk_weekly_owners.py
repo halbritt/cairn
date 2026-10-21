@@ -181,6 +181,75 @@ class OwnerTests(unittest.TestCase):
                 self.assertIsNotNone(owner.after)
             self.assertIs(run._weekly_workspace,w)
 
+    def test_publication_retains_store_lifetime_integrity(self):
+        self.assert_corpus_publication(changed=False)
+
+    def test_publication_retains_changed_corpus(self):
+        self.assert_corpus_publication(changed=True)
+
+    def assert_corpus_publication(self, *, changed):
+        _, selected, _, _, boundary = self.fixture()
+        with boundary.active():
+            env = self.environment(selected)
+            selected.prepare_workspace(0, str(self.root/'workspace'))
+            run = self.actual_binding(selected)
+            owner = env.stores[run._paired_join['arm']]
+            if changed:
+                database = boundary.databases[owner.store.database]
+                next(iter(database.values()))['body'] = 'changed after import'
+            run.cleanup_step()
+            self.assertTrue(env.close())
+            run.publish_evidence(str(self.root/'corpus-evidence'))
+            receipt = json.loads((self.root/'corpus-evidence/evidence.json').read_bytes())
+            observation = receipt['store_corpus_observation']
+            self.assertEqual(observation['scope'], 'store_lifetime')
+            self.assertEqual(observation['arm'], run._paired_join['arm'])
+            self.assertEqual(observation['state'], 'observed')
+            self.assertEqual(observation['unchanged'], not changed)
+            self.assertEqual(observation['before'], owner.before)
+            self.assertEqual(observation['after'], owner.after)
+            self.assertIsNone(receipt['observed_corpus_sha256'])
+            self.assertEqual(receipt['grade'], 'ungraded')
+            borrowed = env.corpus_observation(run)
+            borrowed['before']['corpus'].clear()
+            self.assertTrue(owner.before['corpus'])
+
+
+    def test_publication_keeps_missing_final_observation_unknown(self):
+        _, selected, _, _, boundary = self.fixture()
+        with boundary.active():
+            env = self.environment(selected)
+            selected.prepare_workspace(0, str(self.root/'workspace'))
+            run = self.actual_binding(selected)
+            run.cleanup_step()
+            run.publish_evidence(str(self.root/'pending-evidence'))
+            receipt = json.loads((self.root/'pending-evidence/evidence.json').read_bytes())
+            observation = receipt['store_corpus_observation']
+            self.assertEqual(observation['state'], 'unknown')
+            self.assertIsNone(observation['unchanged'])
+            self.assertIsNone(observation['after'])
+            self.assertIsNotNone(observation['before'])
+            self.assertTrue(env.close())
+
+    def test_failed_final_stamp_is_retained_as_unknown_without_requery(self):
+        _, selected, _, _, boundary = self.fixture()
+        with boundary.active():
+            env = self.environment(selected)
+            selected.prepare_workspace(0, str(self.root/'workspace'))
+            run = self.actual_binding(selected)
+            run.cleanup_step()
+            boundary.fail = lambda cmd: Path(cmd[0]).name == 'psql'
+            with self.assertRaises(KeyboardInterrupt):env.close()
+            before = len(boundary.calls)
+            run.publish_evidence(str(self.root/'failed-stamp-evidence'))
+            receipt = json.loads((self.root/'failed-stamp-evidence/evidence.json').read_bytes())
+            self.assertEqual(len(boundary.calls), before)
+            observation = receipt['store_corpus_observation']
+            self.assertEqual(observation['state'], 'unknown')
+            self.assertIsNone(observation['unchanged'])
+            self.assertIsNone(observation['after'])
+            boundary.fail = None
+
     def test_entity_mismatch_consumes_load_keeps_partial_map_and_cleanup(self):
         _,selected,_,_,boundary=self.fixture();boundary.entities_wrong=True
         with boundary.active():

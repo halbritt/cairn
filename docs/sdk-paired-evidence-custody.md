@@ -87,6 +87,31 @@ invocation, native launch, workspace inspection or oracle read here.
 
 ## Bounds and validation scope
 
+### Store corpus observations
+
+For a run bound through `bind_loaded_run`, private publication now includes
+`store_corpus_observation` from that run's original `WeeklyEnvironmentOwner`.
+The receipt copies the retained before/after database fingerprints and compares
+them with `same_corpus` only after all linked runs have closed and the final
+stamp action completed. Missing or failed final observations report `unknown`
+and `unchanged: null`; publication never starts a query or retries a failed one.
+Runs without a loaded environment retain a null observation.
+
+The scope is the arm's **store lifetime**, potentially covering multiple attempts.
+It is not per-attempt attribution or proof of selected-input/import equivalence.
+The existing `observed_corpus_sha256` stays null because neither a database stamp
+nor its digest identifies the selected overlay bytes. Changed corpus data is
+reported as `unchanged: false`, separately from cleanup state. This addition
+does not turn private failure evidence into a successful evaluation or grade.
+To publish final stamps, close the environment after run cleanup but before
+closing the occurrence's selection snapshot, then publish each run's evidence.
+
+The observations are copied into the existing metadata export and remain under
+its 65536-byte encoded limit and original preparation allocation. The copy is
+not proof of complete physical memory sufficiency. Synthetic tests exercise
+unchanged and changed store data, missing/failed final stamps, and actual private
+file publication; they do not run PostgreSQL, a model, or original private cases.
+
 The original tickets/caps/quotes are unchanged. The original first-hook raw
 reservation remains 136353 and command phase 153325 against 131072; complete
 standing admission continues to refuse. The table includes 56 phases and 21

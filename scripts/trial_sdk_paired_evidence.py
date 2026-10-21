@@ -355,12 +355,20 @@ class EvidencePublication:
                 waits.append(dict(launch_attempted=state['launch_attempted'],wait=state['wait'],
                     release=release))
             # Use complete stream receipt; do not infer zero calls or grading from
-            # missing/failed bytes. The observed service corpus remains unknown.
+            # missing/failed bytes. Store observations are separate from the
+            # selected-input digest and from task acceptance.
             streams = retention.snapshot()
             streams['close_faults'] = list(streams['close_faults'])
+            environment = getattr(run, '_weekly_environment', None)
+            if environment is not None:
+                from trial_sdk_weekly_owners import WeeklyEnvironmentOwner
+                need(type(environment) is WeeklyEnvironmentOwner, 'weekly_corpus_owner')
+            corpus_observation = (environment.corpus_observation(run)
+                                  if environment is not None else None)
             self.receipt = dict(schema='cairn.sdk-private-evidence/1',join=run._paired_join,
                 selected_overlay=paired.overlay, selected_resolved_corpus=paired.resolved_corpus,
                 observed_corpus_sha256=None,
+                store_corpus_observation=corpus_observation,
                 streams=streams,native_owners=waits,
                 terminal_observed=run._terminal_metadata is not None,
                 failure=run._failed,cleanup_faults=sorted(run._faults),

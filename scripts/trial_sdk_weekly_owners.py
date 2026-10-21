@@ -4,6 +4,7 @@ No native admission, provider launch, containment certificate or grading. The
 original preparation allocation pays retained graphs and failure frames; its
 physical sufficiency is not proved by this source composition.
 """
+import copy
 import json
 import os
 from pathlib import Path
@@ -344,6 +345,28 @@ class WeeklyEnvironmentOwner:
                 if not release or not release['released'] or not release['handles_detached'] or release['cleanup']:
                     return False
         return True
+
+    def corpus_observation(self, run):
+        """Copy this arm's store-lifetime observations without running a query.
+
+        Stamps compare the same database, not selected input with an imported
+        database, and not an individual attempt's effects.
+        """
+        from trial_corpus_fingerprint import same_corpus
+        need(self.selected._environment is self and
+             getattr(run, '_weekly_environment', None) is self and
+             run._paired is self.selected and any(item is run for item in self.runs),
+             'weekly_corpus_owner')
+        self.selected.verify_run(run)
+        owner = self.stores[run._paired_join['arm']]
+        complete = (self.runs_closed() and owner.close_states.get('stamp') == 'closed'
+                    and owner.before is not None and owner.after is not None)
+        unchanged = same_corpus(owner.before, owner.after) if complete else None
+        return dict(schema='cairn.weekly-store-corpus-observation/1',
+                    scope='store_lifetime', arm=owner.arm,
+                    state='observed' if complete else 'unknown', unchanged=unchanged,
+                    before=copy.deepcopy(owner.before), after=copy.deepcopy(owner.after),
+                    cleanup_state=owner.state)
 
     def close(self):
         primary=None
