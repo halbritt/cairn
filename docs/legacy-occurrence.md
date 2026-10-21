@@ -138,6 +138,39 @@ requires disagreements to be routed to the owner, not resolved. A routed
 dispute leaves this report incomplete. Whether the campaign is accepted is
 decided outside this module.
 
+## Persisted state snapshots
+
+Every run also writes its exact returned state to an immutable,
+content-addressed snapshot. `run_occurrence` still returns the same state,
+and the CLI's stdout and exit codes are unchanged.
+`run_occurrence_snapshot(...)` returns `(state, snapshot_pin)`. The CLI writes
+that pin to a new file when given `--snapshot-pin-out FILE`.
+
+```text
+<out>/states/<first 20 hex of sha256(C(snapshot))>.json   cairn.legacy-occurrence-state-snapshot/1
+<out>/collections/<...>.json                               C(trial_grader_delivery.collect result)
+<out>/routings/<...>.json                                  C(trial_grader_delivery.route_disagreements receipt)
+```
+
+The snapshot is closed: `{schema, input, state, report, join, collection,
+routing}`.
+
+- `input` is `{bytes, sha256}` of the exact occurrence input. It has no path,
+  because a rerun may pin the same content at another path.
+- `report` and `join` are the recorded `report/<snapshot>/` output pins of
+  this run.
+- `collection` and `routing` pin the documents this run's grading status was
+  derived from.
+
+Each of these four pins is null only when its phase did not run.
+
+Each file is written once under its own hash. An identical rerun writes
+nothing new. A changed state or binding is a new snapshot, and earlier
+snapshots are kept. A snapshot records what this run observed. It is not
+custody of the grades and does not change any report status.
+`scripts/trial_campaign_completion.py` consumes these snapshots; see
+[campaign completion](campaign-completion.md).
+
 ## Interface needed from elsewhere
 
 None for this module. It consumes the runner's existing outputs through the

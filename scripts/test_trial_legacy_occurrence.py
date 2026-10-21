@@ -459,6 +459,94 @@ class ChangedInputTests(Case):
         self.assertFalse((o.out/'conversion').exists())
 
 
+class StateSnapshotTests(Case):
+    """Each run persists its exact state, immutably, bound to the input and the
+    report, join, collection and routing documents it was derived from."""
+
+    def snapshot(self, o, **kwargs):
+        reference = o.pin_input()
+        fabric = kwargs.pop('fabric', True)
+        state, pinned = occurrence.run_occurrence_snapshot(
+            reference, o.out, fabric=o.fabric if fabric else None, config=config() if fabric else None,
+            publisher=o.notes.publisher, now=NOW)
+        content = Path(pinned['path']).read_bytes()
+        self.assertEqual(dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest()),
+                         {k: pinned[k] for k in ('bytes', 'sha256')})
+        return reference, state, pinned, json.loads(content)
+
+    def pinned_bytes(self, reference):
+        content = Path(reference['path']).read_bytes()
+        self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (reference['bytes'], reference['sha256']))
+        return json.loads(content)
+
+    def test_zero_changed_snapshot_binds_the_input_report_and_join_and_is_written_once(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        reference, state, pinned, document = self.snapshot(o, fabric=False)
+        self.assertEqual(state['status'], 'finished')
+        self.assertEqual(document['schema'], occurrence.SNAPSHOT_SCHEMA)
+        self.assertEqual(document['state'], state)
+        self.assertEqual(document['input'], {k: reference[k] for k in ('bytes', 'sha256')})
+        recorded = json.loads((o.out/'phases'/('report-' + state['snapshot'] + '.json')).read_bytes())['outputs']
+        self.assertEqual((document['report'], document['join']), (recorded['report'], recorded['join']))
+        self.assertEqual(self.pinned_bytes(document['report'])['status'], 'declared_complete')
+        self.assertEqual((document['collection'], document['routing']), (None, None))
+        files = {p: p.read_bytes() for p in o.out.rglob('*') if p.is_file()}
+        # An identical rerun (the same input content at a new path) writes nothing new.
+        _, again, repinned, _ = self.snapshot(o, fabric=False)
+        self.assertEqual((again, repinned), (state, pinned))
+        self.assertEqual(files, {p: p.read_bytes() for p in o.out.rglob('*') if p.is_file()})
+
+    def test_run_occurrence_still_returns_the_same_state(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        _, state, _, _ = self.snapshot(o, fabric=False)
+        self.assertEqual(o.run(fabric=False), state)
+
+    def test_snapshots_are_versioned_and_bind_collection_and_owner_routing(self):
+        o = Occurrence(self.root, lambda i, s: CHANGED.get((i, s), UNCHANGED))
+        o.prepared()
+        o.answer(lambda pair, slot: ['pass', 'fail'] if slot == 'primary' else None)
+        _, partial, partial_pin, partial_doc = self.snapshot(o)
+        self.assertEqual(partial['pending'], 'awaiting_grades')
+        self.assertEqual(self.pinned_bytes(partial_doc['collection'])['schema'], 'cairn.grader-delivery-collection/1')
+        self.assertIsNone(partial_doc['routing'])
+        first = None
+
+        def choose(pair, slot):
+            nonlocal first
+            first = first or pair
+            return ['pass', 'fail'] if pair == first else ['fail', 'pass']
+        o.answer(lambda pair, slot: choose(pair, slot) if slot == 'secondary' else None)
+        _, state, pinned, document = self.snapshot(o)
+        self.assertEqual(state['grading']['resolution'], 'owner_pending')
+        routing = self.pinned_bytes(document['routing'])
+        self.assertEqual(routing['schema'], 'cairn.grader-dispute-routing/1')
+        self.assertEqual(routing['disputes'], state['grading']['routing']['disputes'])
+        self.assertEqual(self.pinned_bytes(document['collection'])['schema'], 'cairn.grader-delivery-collection/1')
+        self.assertNotEqual(pinned['path'], partial_pin['path'])
+        # The earlier snapshot is kept unchanged.
+        self.assertEqual(self.pinned_bytes(partial_pin)['state'], partial)
+
+    def test_pending_before_a_bundle_has_no_report_pins(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        o.input['grading_policy'] = None
+        _, state, _, document = self.snapshot(o, fabric=False)
+        self.assertEqual(state['pending'], 'grading_policy_missing')
+        self.assertEqual([document[k] for k in ('report', 'join', 'collection', 'routing')], [None] * 4)
+
+    def test_cli_writes_the_snapshot_pin_beside_unchanged_stdout(self):
+        o = Occurrence(self.root, lambda i, s: UNCHANGED)
+        reference = o.pin_input()
+        argv = ['--input', reference['path'], '--input-sha256', reference['sha256'], '--out', str(o.out),
+                '--now', '2026-10-15T12:00:00Z']
+        with redirect_stdout(io.StringIO()) as plain:
+            occurrence.main(argv)
+        with redirect_stdout(io.StringIO()) as printed:
+            occurrence.main(argv + ['--snapshot-pin-out', str(self.root/'pin.json')])
+        self.assertEqual(printed.getvalue(), plain.getvalue())
+        written = json.loads((self.root/'pin.json').read_bytes())
+        self.assertEqual(self.pinned_bytes(written)['state'], json.loads(plain.getvalue()))
+
+
 class CliTests(Case):
     def test_cli_without_delivery_config_runs_offline_phases_only(self):
         for name, state_of, code, status in (('zero', lambda i, s: UNCHANGED, 3, 'pending'),

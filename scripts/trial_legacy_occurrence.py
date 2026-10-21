@@ -20,7 +20,9 @@ refuses occurrence_<phase>_output_changed, so nothing downstream is silently
 reused. Dispatch and dispute routing reuse the delivery journal and its
 derived request IDs, so a retry never publishes twice. Missing prerequisites
 are reported as pending states, never fabricated. No actor is run, nothing is
-admitted, and every declared value stays declared. See
+admitted, and every declared value stays declared. Every run also persists its
+exact state as an immutable, content-addressed snapshot under <out>/states/,
+bound to the input and the report, join, collection and routing documents. See
 docs/legacy-occurrence.md.
 """
 import argparse
@@ -43,6 +45,7 @@ import trial_run_report as report
 INPUT_SCHEMA = 'cairn.legacy-occurrence-input/1'
 PHASE_SCHEMA = 'cairn.legacy-occurrence-phase/1'
 STATE_SCHEMA = 'cairn.legacy-occurrence-state/1'
+SNAPSHOT_SCHEMA = 'cairn.legacy-occurrence-state-snapshot/1'
 INPUT_FIELDS = 'schema conversion_request grading_policy draft_approval grader_sessions release_authority run_date'
 OPTIONAL = ('grading_policy', 'draft_approval', 'grader_sessions', 'release_authority')
 
@@ -296,7 +299,7 @@ def _report(phases, receipt, bundle_pin, bundle, result, collection, run_date):
         phases.complete(phase, inputs, outputs)
     phases.note('report', 'snapshot_written', snapshot=snapshot, basis=basis, report_status=built['status'],
                 report_sha256=built['report_sha256'])
-    return snapshot, built, join
+    return snapshot, built, join, outputs
 
 
 def _publish(phases, snapshot, built, publisher):
@@ -388,6 +391,7 @@ def _run(input_pin, out, fabric, config, publisher, now):
     out.mkdir(mode=0o700, exist_ok=True)
     phases = _Phases(out)
     pending, snapshot, built, published, grading, routing = None, None, None, False, None, None
+    collection, outputs = None, None
     try:
         receipt_pin, receipt = _conversion(phases, request)
         draft = _draft(phases, receipt_pin, receipt, pins['draft_approval'], now)
@@ -396,7 +400,6 @@ def _run(input_pin, out, fabric, config, publisher, now):
         pending = str(missing)
         phases.note('next', 'pending', code=pending)
     else:
-        collection = None
         if result['status'] == 'awaiting_grades':
             try:
                 plan_receipt = _plan(phases, receipt, draft, pins['draft_approval'], bundle_pin, result,
@@ -410,7 +413,8 @@ def _run(input_pin, out, fabric, config, publisher, now):
             for phase in ('plan', 'dispatch', 'collect'):
                 phases.note(phase, 'not_required')
         # Report evidence is kept for every occurrence that reached a bundle.
-        snapshot, built, join = _report(phases, receipt, bundle_pin, bundle, result, collection, document['run_date'])
+        snapshot, built, join, outputs = _report(phases, receipt, bundle_pin, bundle, result, collection,
+                                                 document['run_date'])
         grading = _grading(join, collection, routing)
         if pending is None:
             # Only a terminal occurrence is published; an advancing one keeps its snapshot unpublished.
@@ -418,11 +422,35 @@ def _run(input_pin, out, fabric, config, publisher, now):
             published = record is not None
         else:
             phases.note('publication', 'not_terminal', snapshot=snapshot)
-    return dict(schema=STATE_SCHEMA, status='pending' if pending else 'finished', pending=pending,
-                phases=phases.states, snapshot=snapshot, snapshots=_snapshots(out),
-                report_status=built and built['status'], grading=grading, note_published=published,
-                complete=bool(not pending and published and built and built['status'] == 'declared_complete'),
-                runtime_admitted=False, grades_created=False, custody='declared_only')
+    state = dict(schema=STATE_SCHEMA, status='pending' if pending else 'finished', pending=pending,
+                 phases=phases.states, snapshot=snapshot, snapshots=_snapshots(out),
+                 report_status=built and built['status'], grading=grading, note_published=published,
+                 complete=bool(not pending and published and built and built['status'] == 'declared_complete'),
+                 runtime_admitted=False, grades_created=False, custody='declared_only')
+    return state, _persist_state(out, input_pin, state, outputs, collection, routing)
+
+
+def _addressed(out, directory, document):
+    """Write a document once under its own content hash; an identical rerun is a no-op."""
+    content = C(document)
+    folder = out/directory
+    folder.mkdir(mode=0o700, exist_ok=True)
+    return _write_once(folder/(hashlib.sha256(content).hexdigest()[:20] + '.json'), content,
+                       'occurrence_state_snapshot_changed')
+
+
+def _persist_state(out, input_pin, state, outputs, collection, routing):
+    """Persist this exact state, bound to the input and the documents it was derived from.
+
+    Snapshots are content-addressed and immutable; a different state or binding
+    is a new snapshot and earlier ones are kept. The input is bound by content
+    (bytes, sha256), since a rerun may pin the same input at another path.
+    """
+    snapshot = dict(schema=SNAPSHOT_SCHEMA, input=dict(bytes=input_pin['bytes'], sha256=input_pin['sha256']),
+                    state=state, report=outputs and outputs['report'], join=outputs and outputs['join'],
+                    collection=None if collection is None else _addressed(out, 'collections', collection),
+                    routing=None if routing is None else _addressed(out, 'routings', routing))
+    return _addressed(out, 'states', snapshot)
 
 
 def run_occurrence(input_pin, out, *, fabric=None, config=None, publisher=None, now):
@@ -432,6 +460,12 @@ def run_occurrence(input_pin, out, *, fabric=None, config=None, publisher=None, 
     trial_run_report.publish_note. Without one, a terminal occurrence stays
     pending note_publication_unconfigured.
     """
+    return run_occurrence_snapshot(input_pin, out, fabric=fabric, config=config, publisher=publisher, now=now)[0]
+
+
+def run_occurrence_snapshot(input_pin, out, *, fabric=None, config=None, publisher=None, now):
+    """As run_occurrence, and also return the pin of the persisted state snapshot
+    (cairn.legacy-occurrence-state-snapshot/1 under <out>/states/)."""
     try:
         return _run(input_pin, out, fabric, config, publisher, now)
     except paired.Refusal:
@@ -448,6 +482,7 @@ def main(argv=None):
     parser.add_argument('--now', required=True, help='UTC YYYY-MM-DDTHH:MM:SSZ')
     parser.add_argument('--delivery-config', help='trial_grader_delivery config file ({"delivery", "cli"})')
     parser.add_argument('--note-config', help='note publication config file ({"binary", "token_file", "repo"})')
+    parser.add_argument('--snapshot-pin-out', help='write the persisted state snapshot pin to this new file')
     args = parser.parse_args(argv)
     try:
         content = legacy._read_path(args.input)
@@ -463,8 +498,10 @@ def main(argv=None):
             note = paired.read_json(args.note_config)
             paired.shape(note, 'binary token_file repo', 'occurrence_note_config')
             publisher = lambda built: report.publish_note(built, **note)  # noqa: E731
-        state = run_occurrence(pin, Path(args.out), fabric=fabric, config=config, publisher=publisher,
-                               now=paired.utc(args.now))
+        state, snapshot = run_occurrence_snapshot(pin, Path(args.out), fabric=fabric, config=config,
+                                                  publisher=publisher, now=paired.utc(args.now))
+        if args.snapshot_pin_out:
+            paired.write_selected(paired.plain_path(args.snapshot_pin_out), snapshot)
     except paired.Refusal as refusal:
         print(json.dumps(dict(status='refused', code=str(refusal))))
         return 2
