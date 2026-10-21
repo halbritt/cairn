@@ -44,7 +44,9 @@ are fixed codes. They contain no paths, payloads or exception text.
 `owner_destination` (the owner's exact principal), and
 `publisher: {agent_id, execution_id}` (UUIDs of the coordinator's registered
 session). The publisher must not be a grader. The owner destination must not
-be a grader inbox.
+be a grader inbox, the publisher's inbox, or the inbox of any excluded
+engineer, reviewer, coordinator or earlier-exposed agent. Disputes go to the
+owner only.
 
 ## Release authority (held separately)
 

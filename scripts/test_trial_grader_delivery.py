@@ -218,6 +218,18 @@ class UnconfiguredTests(Case):
                 self.dispatch(FakeFabric(), cfg=bad)
         self.assertFalse((self.root/'run').exists())
 
+    def test_disputes_cannot_be_routed_to_the_coordinator_or_an_excluded_identity(self):
+        # CAIRN-107: disagreements go to the owner only. The publishing
+        # coordinator's inbox or an excluded actor's inbox is not the owner.
+        self.plan()
+        for destination in ('agent/'+PUBLISHER['agent_id'], 'agent/coordinator', 'agent/engineer'):
+            with self.subTest(destination=destination):
+                fabric = FakeFabric()
+                with self.assertRaisesRegex(paired.Refusal, 'grader_config_invalid'):
+                    self.dispatch(fabric, cfg=config(owner_destination=destination))
+                self.assertEqual(fabric.calls, [])
+                self.assertFalse((self.root/'run').exists())
+
     def test_unaddressable_slot_identity_refuses_before_publication(self):
         self.plan(uuids=False); fabric = FakeFabric()
         with self.assertRaisesRegex(paired.Refusal, 'grader_slot_not_addressable'):
@@ -299,7 +311,7 @@ class DispatchTests(Case):
     def test_existing_run_for_another_plan_or_config_refuses(self):
         self.plan(); fabric = FakeFabric(); self.dispatch(fabric)
         with self.assertRaisesRegex(paired.Refusal, 'grader_run_mismatch'):
-            self.dispatch(fabric, cfg=config(owner_destination='agent/'+PUBLISHER['agent_id']))
+            self.dispatch(fabric, cfg=config(owner_destination='agent/66666666-6666-4666-8666-666666666666'))
 
     def test_full_occurrence_dispatches_126_requests(self):
         self.plan(full=True); fabric = FakeFabric()

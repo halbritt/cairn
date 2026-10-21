@@ -70,9 +70,29 @@ class TestDualGraderAgreement(unittest.TestCase):
         self.assertEqual(len(report["dispute_queue"]), 1)
         dispute = report["dispute_queue"][0]
         self.assertEqual(dispute["pair_id"], "pair-hermes-sigterm-s0")
-        self.assertEqual(dispute["dispute_owner"], "coordinator-adjudicator")
+        self.assertEqual(dispute["dispute_owner"], "owner")
         self.assertTrue(dispute["blinding_preserved"])
         self.assertIn("task_completion", dispute["disagreed_criteria"])
+
+    def test_disputes_default_to_owner_without_declared_destination(self) -> None:
+        # CAIRN-107: "Disagreements go to the owner, never to a script."
+        cohort = copy.deepcopy(wpe.default_dual_grader_cohort())
+        for pair in cohort:
+            pair.pop("dispute_owner", None)
+        report = wpe.evaluate_dual_grader_agreement(cohort)
+        self.assertEqual([d["dispute_owner"] for d in report["dispute_queue"]], ["owner"])
+        routed = [p for p in report["pairs"] if p["dispute_routed"]]
+        self.assertEqual([p["dispute_owner"] for p in routed], ["owner"])
+
+    def test_dispute_destination_other_than_owner_is_refused(self) -> None:
+        for destination in ("coordinator-adjudicator", "script", ""):
+            cohort = copy.deepcopy(wpe.default_dual_grader_cohort())
+            cohort[1]["dispute_owner"] = destination
+            with self.assertRaisesRegex(ValueError, "disputes go to the owner"):
+                wpe.evaluate_dual_grader_agreement(cohort)
+        with self.assertRaisesRegex(ValueError, "disputes go to the owner"):
+            wpe.evaluate_dual_grader_agreement(wpe.default_dual_grader_cohort(),
+                                               default_dispute_owner="coordinator-adjudicator")
 
     def test_dual_grader_refuses_unblinded_arm_label(self) -> None:
         cohort = copy.deepcopy(wpe.default_dual_grader_cohort())

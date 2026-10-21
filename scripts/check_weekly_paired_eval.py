@@ -34,6 +34,9 @@ PRECHECK_INVALID_COHORT = "PRECHECK_INVALID_COHORT"
 REQUIRED_ROLES = ("primary_actor", "secondary_actor", "primary_grader", "secondary_grader")
 SUPPORTED_HARNESSES = ("Codex", "Claude Code", "OpenCode", "Agy", "Hermes")
 BLIND_FORBIDDEN_KEYS = frozenset({"arm", "arm_map", "unblinded_arm", "CURRENT", "CAND"})
+# CAIRN-107: "Disagreements go to the owner, never to a script." No other
+# destination (coordinator, adjudicator script) may receive a dispute.
+DISPUTE_OWNER = "owner"
 
 
 def canonical_sha256(payload: Any) -> str:
@@ -192,11 +195,16 @@ def _contains_unblinded_token(obj: Any) -> bool:
 def evaluate_dual_grader_agreement(
     pairs: Sequence[Mapping[str, Any]],
     *,
-    default_dispute_owner: str = "coordinator-adjudicator",
+    default_dispute_owner: str = DISPUTE_OWNER,
 ) -> dict[str, Any]:
-    """Join primary and independent secondary blind-grader judgments over paired attempts."""
+    """Join primary and independent secondary blind-grader judgments over paired attempts.
+
+    Disputes are routed only to the owner; any other declared destination is refused.
+    """
     if not pairs:
         raise ValueError("pairs must be non-empty")
+    if default_dispute_owner != DISPUTE_OWNER:
+        raise ValueError("disputes go to the owner only")
 
     criterion_matches: dict[str, list[bool]] = {}
     primary_sample_verdicts: list[str] = []
@@ -220,7 +228,9 @@ def evaluate_dual_grader_agreement(
         is_changed = bool(pair.get("changed", True))
         if is_changed:
             changed_pair_count += 1
-        dispute_owner = str(pair.get("dispute_owner", default_dispute_owner))
+        dispute_owner = pair.get("dispute_owner", default_dispute_owner)
+        if dispute_owner != DISPUTE_OWNER:
+            raise ValueError(f"Pair {pair_id}: disputes go to the owner only")
         primary = pair["primary"]
         secondary = pair["secondary"]
         if primary.get("agent_id") == secondary.get("agent_id") or primary.get("session_id") == secondary.get("session_id"):
@@ -462,7 +472,6 @@ def default_dual_grader_cohort() -> list[dict[str, Any]]:
             "seed": 0,
             "samples": ["sample-a1", "sample-b1"],
             "changed": True,
-            "dispute_owner": "coordinator-adjudicator",
             "primary": {
                 "agent_id": "grader-primary-1",
                 "session_id": "sess-gp-1",
@@ -484,7 +493,6 @@ def default_dual_grader_cohort() -> list[dict[str, Any]]:
             "seed": 0,
             "samples": ["sample-a2", "sample-b2"],
             "changed": True,
-            "dispute_owner": "coordinator-adjudicator",
             "primary": {
                 "agent_id": "grader-primary-1",
                 "session_id": "sess-gp-1",
@@ -506,7 +514,6 @@ def default_dual_grader_cohort() -> list[dict[str, Any]]:
             "seed": 1,
             "samples": ["sample-a3", "sample-b3"],
             "changed": True,
-            "dispute_owner": "coordinator-adjudicator",
             "primary": {
                 "agent_id": "grader-primary-1",
                 "session_id": "sess-gp-1",

@@ -103,6 +103,10 @@ def _load_plan(plan_dir, config, now):
     paired.need(len(set(destinations.values())) == 2 and
                 config['publisher']['agent_id'] not in {s['agent_id'] for s in sessions['slots']} and
                 config['owner_destination'] not in destinations.values(), 'grader_config_invalid')
+    # Disputes go to the owner only: never the publishing coordinator's inbox
+    # or the inbox of any excluded engineer, reviewer or coordinator identity.
+    paired.need(config['owner_destination'] not in
+                {'agent/'+a for a in excluded['agent_id'] | {config['publisher']['agent_id']}}, 'grader_config_invalid')
     rows = []
     for pair in plan['pairs']:
         for delivery in pair['deliveries']:
