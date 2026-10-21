@@ -66,9 +66,11 @@ embedding readiness before warm timing. It retains service load results
 and relates selected inputs to those IDs and same-store pre/post observations.
 corpus-fingerprint/2 contains generated IDs/times and compares a DB to itself;
 it is neither a selected-overlay digest nor a cross-import equivalence proof.
-At this review's baseline, TrialStore.stop kills on timeout without waiting
-again; agent501 owns that legacy cleanup correction. The SDK weekly store owner
-already performs a second wait itself and retains unknown cleanup.
+The historical baseline killed TrialStore on timeout without waiting again.
+Current `TrialStore.stop` waits after kill; if that second wait also times out,
+it raises and retains the server handle and socket for recovery. The SDK weekly
+store owner also performs a second wait and retains unknown cleanup. These
+checks observe the selected service process, not complete descendant closure.
 `WeeklyEnvironmentOwner` owns cluster/store loading and joins its actual store
 policy into the fixed run. These source mechanisms and synthetic observations
 do not establish actual original corpus import or containment release.
