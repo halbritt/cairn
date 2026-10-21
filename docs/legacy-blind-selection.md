@@ -8,6 +8,11 @@ draft output then feeds the [delivery plan](grader-delivery-plan-v1.md) and
 [grader delivery](grader-delivery-v1.md) unchanged. CAIRN-107, assigned by
 agent-341.
 
+The explicit request `/2` extension supports selected `action_trace` from the
+same verified retained stream and pinned existing parsers; see
+[selected legacy action traces](legacy-action-selection.md). Request `/1` keeps
+its original three-channel contract. Artifact/evaluator channels remain refused.
+
 The tests use synthetic legacy output only. Passing them shows that the
 converter matches this contract and composes with the unchanged draft. It is
 not evidence that a real campaign was converted, delivered or graded.
@@ -111,16 +116,18 @@ legacy defects. Their effect on this converter, checked against current
   checks optional `workspace_commit`, tags `eval-base`, and records the initial
   file snapshot. These checks do not bind a stopped attempt's final workspace,
   index/refs or grader execution to this converter. It therefore emits no
-  `artifact_bundle`, `action_trace` or `evaluator_observation`. A contract
-  that requires any of them refuses `legacy_channel_unbound`. The
-  deterministic outcome comes from the harness's evaluator testimony, not an
+  `artifact_bundle` or `evaluator_observation`. A contract
+  that requires either refuses `legacy_channel_unbound`. Request `/1` also
+  refuses `action_trace`; `/2` explicitly supports its retained-stream projection.
+  The deterministic outcome comes from the harness's evaluator testimony, not an
   independently bound captured workspace. The SDK weekly path separately has
   a selected-root setup owner; it is not wired into legacy conversion. See
   [the current source review and integration design](original-attempt-custody.md).
   New attempts also retain `baseline_custody` outside the actor bind for the
   built-in `unchanged`, `added` and `commit_files` checks. Regrade refuses missing
   or altered baseline custody. This closes baseline substitution, not the
-  final-artifact/action/evaluator release channels or independent provenance.
+  final-artifact/evaluator release channels or independent provenance. `/2`'s
+  action projection is still harness-recorded correspondence, not independent custody.
 - **Run ID map.** `run_id` is `case.arm.sSEED` (`trial_task_eval.py:1048`).
   This map is not injective when a case or arm contains a dot, so dotted
   names refuse `legacy_attempt_identity_ambiguous`. So do a `run_id` that
@@ -209,6 +216,9 @@ a list of `{case, contract, task_statement, grading_instructions}` pins.
 The output directory holds `selection.json`, `answers/<sample_id>.txt` and a
 private `receipt.json`. The receipt's `selection` pin is the draft's
 `selection_pin`.
+Request `/2` adds the required closed `action_parser` descriptor and can retain
+selected actions plus private subjects/observations. Answer files are emitted
+only when the ordered contract includes `final_answer`.
 
 The converter checks each written selection with the unchanged
 `trial_blind_packet_draft.approval_subject`. If that check refuses, the
@@ -230,8 +240,10 @@ Remaining work:
 - a reviewed issuer for the pair binding (the weekly runner lane), which
   ties request identity and arm roles to the commits that were actually run
 - the owner-held release authority and grader choice for delivery
-- artifact, trace and evaluator-observation channels, whose original per-case
+- artifact and evaluator-observation channels, whose original per-case
   requirements are not established by the public schema alone; they need the
   selected contract and completed-attempt capture/evaluator joins described in
   [the custody design](original-attempt-custody.md)
+- selected original per-case action contracts/materials; `/2` implements the
+  projection and pin joins, not their selection or release authority
 - conversion of a real run, then delivery, grading and the agreement report

@@ -22,7 +22,7 @@ Indeterminate pairs are listed and block changed-pair completion. A run with
 no changed pair gets a receipt only (no selection or packet); it reports
 no_grading_needed only when every pair is determinate and unchanged.
 
-The converter reads only the selected answer, the attempt identity and the
+The converter reads the selected answer/actions, the attempt identity and the
 deterministic outcome of each legacy record. It never copies check verdicts,
 check logs, memory evidence or any other record field. Task statements,
 grading instructions and case contracts are supplied by the caller as pins.
@@ -37,16 +37,17 @@ import stat
 import trial_blind_packet_draft as packet
 import trial_paired_request as paired
 import trial_task_eval as task_eval
+import trial_task_permissions as permissions
 
 REQUEST_SCHEMA = 'cairn.legacy-blind-conversion/1'
+ACTION_REQUEST_SCHEMA = 'cairn.legacy-blind-conversion/2'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 RECEIPT_SCHEMA = 'cairn.legacy-blind-conversion-receipt/1'
 AGENT_SCHEMA = 'cairn.task-eval.agent/1'
 DETERMINISTIC = frozenset(('correct', 'mistake', 'incomplete'))
 GRADED = DETERMINISTIC | {'undetermined', 'needs_review'}
-# Channels legacy output can bind exactly. Artifact bundles would need the
-# workspace base that legacy prepare_workspace does not verify, and traces or
-# evaluator observations need an evaluator-observation contract.
+# The protected initial baseline is not final artifact/evaluator custody.
+# Only /2 explicitly selects the retained-stream action projection.
 BOUND_CHANNELS = ('task_statement', 'grading_instructions', 'final_answer')
 INPUT_LIMIT = 64 * 1024 * 1024
 need = paired.need
@@ -164,7 +165,8 @@ def _materials(request, changed):
         contract = _json(_read(entry['contract']))
         need(isinstance(contract, dict) and contract.get('case_key') == case, 'legacy_case_mismatch')
         channels = contract.get('required_channels')
-        need(isinstance(channels, list) and set(channels) <= set(BOUND_CHANNELS), 'legacy_channel_unbound')
+        supported = (*BOUND_CHANNELS, 'action_trace') if request['schema'] == ACTION_REQUEST_SCHEMA else BOUND_CHANNELS
+        need(isinstance(channels, list) and set(channels) <= set(supported), 'legacy_channel_unbound')
         task = _read(entry['task_statement']); _read(entry['grading_instructions'])
         selected[case] = dict(entry, channels=channels, task_bytes=len(task),
                               task_sha256=hashlib.sha256(task).hexdigest())
@@ -182,28 +184,58 @@ def _provenance(records):
              'original_attempt_provenance_unavailable')
 
 
-def _answer(run_dir, record):
-    """The selected final answer, parsed by the harness's own stream parser,
-    from the exact stream bytes the harness recorded for this attempt."""
+def _stream(run_dir, record):
+    """Hash the retained UTF-8 representation, not claimed original pipe bytes."""
     content = _read_path(run_dir/'runs'/record['run_id']/'stream.jsonl')
     need(hashlib.sha256(content).hexdigest() == record['stream_sha256'], 'legacy_attempt_content_mismatch')
-    answer = task_eval.parse_stream(content.decode('utf-8', errors='replace'), record.get('harness', 'claude'))['answer']
-    answer = answer or ''
-    need(len(answer) == record.get('answer_chars'), 'legacy_answer_mismatch')
-    return answer.encode('utf-8'), _digest(content)['sha256']
+    return content
+
+
+def _action_parser(request, plan):
+    if request['schema'] != ACTION_REQUEST_SCHEMA:
+        return None
+    selected = request['action_parser']
+    paired.shape(selected, 'schema task_eval task_permissions', 'legacy_action_parser_shape')
+    need(selected['schema'] == 'cairn.legacy-action-parser/1', 'legacy_action_parser_shape')
+    for name, module in (('task_eval', task_eval), ('task_permissions', permissions)):
+        # Do not execute caller-selected source. The existing imported parser
+        # and its permission helpers must have these exact quiescent source bytes.
+        need(_read(selected[name]) == _read_path(module.__file__), 'legacy_action_parser_mismatch')
+    need(plan.get('evaluator_sha256') == selected['task_eval']['sha256'], 'legacy_action_parser_mismatch')
+    return selected
+
+
+def _action_projection(trace, text, harness):
+    commands = trace['commands']
+    outputs = task_eval.parse_tool_outputs(text, harness, require_completed=False)
+    need(all(type(c) is str for c in commands) and all(
+        type(row['command']) is str and type(row['output']) is str and type(row['is_error']) is bool
+        for row in outputs), 'legacy_action_shape')
+    content = packet.canonical_bytes(dict(schema='cairn.legacy-action-trace/1',
+                                          commands=commands, tool_outputs=outputs))
+    need(len(content) <= paired.ORIGINAL_LIMITS['tool_room_bytes'], 'legacy_action_bound')
+    return content
+
+
+def _retain(files, output, name, content):
+    files[name] = content
+    return dict(path=str(output/name), **_digest(content))
 
 
 def _entry(name, reference):
-    return dict(name=name, kind='content', representation='bytes', media_type='text/plain',
+    return dict(name=name, kind='content', representation='bytes',
+                media_type='application/json' if name == 'action_trace' else 'text/plain',
                 input=dict(reference), transform=dict(kind='exact_copy'),
                 output={'bytes': reference['bytes'], 'sha256': reference['sha256']})
 
 
 def _plan(request_pin, output):
     request = _json(_read(request_pin))
-    paired.shape(request, 'schema agent plan binding namespace policy policy_ref review_measurement cases',
+    need(isinstance(request, dict) and request.get('schema') in (REQUEST_SCHEMA, ACTION_REQUEST_SCHEMA),
+         'legacy_request_shape')
+    extension = ' action_parser' if request['schema'] == ACTION_REQUEST_SCHEMA else ''
+    paired.shape(request, 'schema agent plan binding namespace policy policy_ref review_measurement cases'+extension,
                  'legacy_request_shape')
-    need(request['schema'] == REQUEST_SCHEMA, 'legacy_request_shape')
     need(request['binding'] is not None, 'legacy_pair_identity_unbound')
     agent = _json(_read(request['agent']))
     need(isinstance(agent, dict) and agent.get('schema') == AGENT_SCHEMA and isinstance(agent.get('records'), list),
@@ -214,6 +246,7 @@ def _plan(request_pin, output):
     run_dir = Path(request['agent']['path']).parent
     need(request['plan']['path'] == str(run_dir/'plan.json'), 'legacy_plan_mismatch')
     plan = _json(_read(request['plan']))
+    parser = _action_parser(request, plan)
     binding = _json(_read(request['binding']))
     paired.shape(binding, 'schema agent_sha256 plan_sha256 request_id request_sha256 campaign_id occurrence_id '
                  'schedule_sha256 arm_roles', 'legacy_binding_mismatch')
@@ -228,10 +261,14 @@ def _plan(request_pin, output):
     pairs = _coverage(plan, agent, records)
     need(all(r.get('outcome') in GRADED for r in records), 'legacy_attempt_not_graded')
     _provenance(records)
+    record_pins = {}
     for run_id, record in by_run.items():
-        retained = _json(_read_path(run_dir/'runs'/run_id/'result.json'))
+        path = run_dir/'runs'/run_id/'result.json'
+        raw = _read_path(path)
+        retained = _json(raw)
         # Legacy records carry floats, so compare exact sorted JSON, not blind canonical bytes.
         need(_exact(retained) == _exact(record), 'legacy_attempt_mismatch')
+        record_pins[run_id] = dict(path=str(path), **_digest(raw))
 
     classes = {key: _classify(cell) for key, cell in pairs.items()}
     changed = sorted(key for key, value in classes.items() if value == 'changed')
@@ -253,18 +290,43 @@ def _plan(request_pin, output):
             record = pairs[(case, seed)][arm]
             need(record['prompt_sha256'] == chosen['task_sha256'] and record.get('prompt_bytes') == chosen['task_bytes'],
                  'legacy_task_statement_mismatch')
-            answer, stream_sha = _answer(run_dir, record)
+            content = _stream(run_dir, record)
+            text = content.decode('utf-8', errors='replace')
+            harness = record.get('harness', 'claude')
+            trace = task_eval.parse_stream(text, harness)
+            stream_sha = record['stream_sha256']
             sample_id = 'sample-' + hashlib.sha256(packet.canonical_bytes(
                 [namespace, pair_key, record['run_id']])).hexdigest()[:32]
-            name = 'answers/' + sample_id + '.txt'
-            files[name] = answer
-            answer_pin = dict(path=str(output/name), **_digest(answer))
-            sources = dict(task_statement=chosen['task_statement'], grading_instructions=chosen['grading_instructions'],
-                           final_answer=answer_pin)
+            source = dict(schema='cairn.blind-source/2', **pair_key, arm=roles[arm], run_id=record['run_id'])
+            sources = dict(task_statement=chosen['task_statement'], grading_instructions=chosen['grading_instructions'])
+            observations, observed = {}, dict(stream_sha256=stream_sha)
+            if 'final_answer' in chosen['channels']:
+                answer = trace['answer'] or ''
+                need(len(answer) == record.get('answer_chars'), 'legacy_answer_mismatch')
+                answer = answer.encode('utf-8')
+                sources['final_answer'] = _retain(files, output, 'answers/'+sample_id+'.txt', answer)
+                observed['final_answer'] = _digest(answer)
+            if 'action_trace' in chosen['channels']:
+                sources['action_trace'] = _retain(files, output, 'actions/'+sample_id+'.json',
+                                                   _action_projection(trace, text, harness))
+                subject = dict(schema='cairn.legacy-action-subject/1', source=source, parser=parser,
+                    agent=request['agent'], plan=request['plan'], binding=request['binding'],
+                    attempt=record_pins[record['run_id']], harness=harness,
+                    stream=dict(path=str(run_dir/'runs'/record['run_id']/'stream.jsonl'), **_digest(content)),
+                    prompt=dict(bytes=record['prompt_bytes'], sha256=record['prompt_sha256']),
+                    stream_representation='legacy-retained-utf8/1', custody='harness_recorded_hash')
+                subject_pin = _retain(files, output, 'subjects/'+sample_id+'.json', packet.canonical_bytes(subject))
+                observation = dict(schema='cairn.blind-evaluator-observation/2', source=source,
+                    channel='action_trace', evidence=[sources['action_trace']],
+                    role='evaluator_observation', subject=subject_pin)
+                observations['action_trace'] = _retain(files, output, 'observations/'+sample_id+'.json',
+                                                       packet.canonical_bytes(observation))
+                observed['action_trace'] = dict(projection=sources['action_trace'], subject=subject_pin,
+                                                observation=observations['action_trace'])
             samples.append(dict(
-                source=dict(schema='cairn.blind-source/2', **pair_key, arm=roles[arm], run_id=record['run_id']),
+                source=source,
                 sample_id=sample_id, case_contract_sha256=chosen['contract']['sha256'],
-                channels=[dict(name=channel, entries=[_entry(channel, sources[channel])], observation=None)
+                channels=[dict(name=channel, entries=[_entry(channel, sources[channel])], observation=observations.get(channel))
                           for channel in chosen['channels']]))
             # Declared: hashes the legacy harness wrote into its own record (same
             # process, pinned only through the binding's agent.json hash).
@@ -272,7 +334,7 @@ def _plan(request_pin, output):
             attempts.append(dict(run_id=record['run_id'], sample_id=sample_id,
                                  declared_by_harness=dict(stream_sha256=record['stream_sha256'],
                                                           prompt_sha256=record['prompt_sha256']),
-                                 observed_now=dict(stream_sha256=stream_sha, final_answer=_digest(answer))))
+                                 observed_now=observed))
             ids.append(sample_id)
         comparisons.append(dict(
             comparison_id='pair-' + hashlib.sha256(packet.canonical_bytes([namespace, pair_key])).hexdigest()[:32],
@@ -329,7 +391,8 @@ def _convert(request_pin, output):
     output.mkdir(mode=0o700)
     try:
         if receipt['selection'] is not None:
-            (output/'answers').mkdir(mode=0o700)
+            for directory in sorted({Path(name).parent for name in files if Path(name).parent != Path('.')}):
+                (output/directory).mkdir(mode=0o700)
             for name in sorted(files):
                 if name != 'receipt.json':
                     paired.write_selected_bytes(output/name, files[name])
