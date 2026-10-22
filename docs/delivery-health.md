@@ -155,6 +155,67 @@ Use separate cache paths for different repositories, database connections,
 filters or age thresholds; a scope mismatch is refused. Keep normal request
 handling and recovery separate from clearing this presentation cache.
 
+## Starved online sessions
+
+Online sessions can also starve their own inbox. A coordinator that stays busy
+for hours never reaches the idle boundary its wake waits for, and a held native
+attempt with no open tool can sit for hours. Existing attention groups stay
+quiet for busy recipients, so `attention.starved_sessions` reports these
+separately. It is a current snapshot of the same page, outside the
+`changed`/`cleared` cache, and does not alter the groups or their suppression.
+Because review pages run oldest first, an early page is often all stopped-session
+backlog; filter by `consumer` or run `cairn delivery-alerts` without
+`plane_project` for a bounded report-only scan across pages.
+
+| Condition | Reported when |
+| --- | --- |
+| `pending_starved` | An online session has pending work (including an expired lease the store reports as waiting) older than 30 minutes while busy (or in any reported state other than idle), or 10 minutes while idle, and no delivery to that inbox was handled within the same threshold. |
+| `hold_stalled` | An online session has a leased or held delivery older than one hour with no open tool call on its latest native attempt. Recent handling of other deliveries does not suppress it. |
+
+Each item names the inbox, agent and execution, display name when the sessions
+page includes it, count by kind, oldest age and delivery, the age basis, the
+threshold, `last_handled_at` (null when no handled delivery is recorded), the
+current applicable host condition (else `unknown`) and a diagnosis. Hold age
+is measured from the latest native attempt, else the latest wake attempt, else
+`available_at`, which is only an upper bound. Failed and ignored deliveries do
+not count as handling. Offline, stopped and replaced sessions are excluded;
+they belong to the stopped-session backlog. Override thresholds with
+`"attention":{"starvation":{"busy_after_seconds":1800,"idle_after_seconds":600,"hold_after_seconds":3600}}`
+(1 through 604800 seconds each).
+
+### Owner alerts
+
+`cairn delivery-alerts` scans up to `max_pages` (default 10) pages of pending,
+leased and held deliveries for one repository and applies the same detector:
+
+```sh
+cairn delivery-alerts <<'JSON'
+{"repo":"/home/halbritt/git/cairn",
+ "state_file":"/home/halbritt/.local/state/cairn/delivery-alerts.json",
+ "plane_project":"CAIRN"}
+JSON
+```
+
+Without `plane_project` it only reports (`new[].status: report_only`) and
+writes nothing. With it, each new condition (inbox, execution, condition)
+creates one high-priority Plane work item through the installed `plane` CLI,
+at most `max_new` (default 5) per run; the rest are `deferred` to the next
+run. The state file records alerted conditions, so a continuing condition stays
+quiet however many deliveries it gains. A complete scan that no longer sees a
+condition clears it, and a later recurrence alerts again; a partial scan
+cannot clear. Each work item carries an `external_id` naming the episode, so a
+retry after a lost state write finds the existing item instead of creating a
+duplicate. A failed notification is not recorded and the command exits with an
+error so the unit shows as failed; the next run retries it.
+
+The command takes no recovery action: it does not claim, release, reissue or
+notify the starving session. Use `coordination-review` and the recovery
+commands in [event recovery](event-recovery.md) to decide what to do.
+
+`deploy/cairn-delivery-alerts.service` and `.timer` run it every ten minutes.
+They are installed but not enabled; enable with
+`systemctl --user enable --now cairn-delivery-alerts.timer`.
+
 ## What to measure
 
 The OpenRig comparison found pending requests whose refusal conditions were

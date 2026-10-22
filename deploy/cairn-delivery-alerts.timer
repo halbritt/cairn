@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Cairn deliveries for starved online sessions every ten minutes
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+RandomizedDelaySec=60
+Unit=cairn-delivery-alerts.service
+
+[Install]
+WantedBy=timers.target

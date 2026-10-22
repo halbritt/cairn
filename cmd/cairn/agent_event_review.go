@@ -79,6 +79,20 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 		if err != nil {
 			return nil, err
 		}
+		// Starvation is a current snapshot of this page, outside the change cache.
+		result.StarvedSessions, err = detectStarvation(rows, req.Attention.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
+			return store.LastHandledDeliveries(ctx, req.Repo, consumers)
+		})
+		if err != nil {
+			return nil, err
+		}
+		for i, starved := range result.StarvedSessions {
+			for _, a := range sessions.Agents {
+				if a.Inbox == starved.Recipient && a.ExecutionID == starved.ExecutionID {
+					result.StarvedSessions[i].DisplayName = a.DisplayName
+				}
+			}
+		}
 		attention = &result
 	}
 	return struct {

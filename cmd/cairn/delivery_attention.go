@@ -23,6 +23,8 @@ type attentionOptions struct {
 	StateFile        string `json:"state_file,omitempty"`
 	OlderThanSeconds int64  `json:"older_than_seconds,omitempty"`
 	NotifyPublishers bool   `json:"notify_publishers,omitempty"`
+	// Starvation thresholds; zero values use the documented defaults.
+	Starvation starvationOptions `json:"starvation,omitempty"`
 }
 
 type attentionDelivery struct {
@@ -43,7 +45,17 @@ type attentionDelivery struct {
 			Version  int    `json:"version"`
 		} `json:"ref"`
 	} `json:"event"`
-	Diagnosis *attentionDiagnosis `json:"diagnosis"`
+	LatestWake   *attentionAttempt   `json:"latest_wake"`
+	LatestNative *attentionAttempt   `json:"latest_native"`
+	Diagnosis    *attentionDiagnosis `json:"diagnosis"`
+}
+
+// attentionAttempt projects the review's latest wake or native attempt.
+// OpenTools is absent for wake attempts and older review rows.
+type attentionAttempt struct {
+	State     string    `json:"state"`
+	CreatedAt time.Time `json:"created_at"`
+	OpenTools *int      `json:"open_tools"`
 }
 
 type attentionDiagnosis struct {
@@ -157,6 +169,7 @@ type attentionResult struct {
 	Changed                []attentionGroup            `json:"changed"`
 	Cleared                []string                    `json:"cleared"`
 	StoppedSessions        []stoppedSessionBacklog     `json:"stopped_sessions,omitempty"`
+	StarvedSessions        []starvedSession            `json:"starved_sessions"`
 	PublisherNotifications *publisherNotificationBatch `json:"publisher_notifications,omitempty"`
 	Coverage               string                      `json:"coverage"`
 }
@@ -232,28 +245,7 @@ func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (atten
 	if g.Condition == "none" || g.Condition == "" {
 		g.Condition = "unknown"
 	}
-	switch g.Condition {
-	case "automatic_available":
-		g.NextCheck = "A route was observed available, but no claim followed; inspect the native wake and claim path."
-	case "wake_retained", "native_admission_retained":
-		g.NextCheck = "Inspect this delivery's retained wake and native handling; no new claim observed."
-	case "owner_turn_required":
-		g.NextCheck = "This recipient needs an owner turn for native delivery."
-	case "terminal_target_missing":
-		g.NextCheck = "No Herdr pane identifies this session; check that the session still runs in its own pane. Waiting is not acknowledgement."
-	case "terminal_target_not_idle":
-		g.NextCheck = "This session's Herdr pane is not idle; the wake waits for an idle boundary. Waiting is not acknowledgement."
-	case "terminal_target_focused":
-		g.NextCheck = "This session's idle Herdr pane is focused; terminal wake defers to the owner. Waiting is not acknowledgement."
-	case "terminal_target_ambiguous":
-		g.NextCheck = "Several eligible Herdr panes match this session; no pane is chosen. Waiting is not acknowledgement."
-	case "terminal_host_unavailable":
-		g.NextCheck = "The session's process has no Herdr host environment; no terminal wake is available. Waiting is not acknowledgement."
-	case "unknown":
-		g.NextCheck = "Check current recipient and host observations; the cause of delay is unknown."
-	default:
-		g.NextCheck = "Inspect the recipient's native delivery configuration and watcher diagnostics."
-	}
+	g.NextCheck = hostConditionHint(g.Condition)
 	switch d.Event.Kind {
 	case "request":
 		g.Requests = 1
@@ -265,6 +257,31 @@ func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (atten
 		return attentionGroup{}, false
 	}
 	return g, true
+}
+
+func hostConditionHint(condition string) string {
+	switch condition {
+	case "automatic_available":
+		return "A route was observed available, but no claim followed; inspect the native wake and claim path."
+	case "wake_retained", "native_admission_retained":
+		return "Inspect this delivery's retained wake and native handling; no new claim observed."
+	case "owner_turn_required":
+		return "This recipient needs an owner turn for native delivery."
+	case "terminal_target_missing":
+		return "No Herdr pane identifies this session; check that the session still runs in its own pane. Waiting is not acknowledgement."
+	case "terminal_target_not_idle":
+		return "This session's Herdr pane is not idle; the wake waits for an idle boundary. Waiting is not acknowledgement."
+	case "terminal_target_focused":
+		return "This session's idle Herdr pane is focused; terminal wake defers to the owner. Waiting is not acknowledgement."
+	case "terminal_target_ambiguous":
+		return "Several eligible Herdr panes match this session; no pane is chosen. Waiting is not acknowledgement."
+	case "terminal_host_unavailable":
+		return "The session's process has no Herdr host environment; no terminal wake is available. Waiting is not acknowledgement."
+	case "unknown":
+		return "Check current recipient and host observations; the cause of delay is unknown."
+	default:
+		return "Inspect the recipient's native delivery configuration and watcher diagnostics."
+	}
 }
 
 func summarizeAttention(deliveries []attentionDelivery, complete bool, options attentionOptions, previous attentionCache, now time.Time) (attentionResult, attentionCache, error) {

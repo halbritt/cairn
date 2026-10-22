@@ -1,0 +1,18 @@
+[Unit]
+Description=Cairn delivery starvation alerts (one Plane work item per new condition)
+Documentation=file://%h/git/cairn/docs/delivery-health.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Read-only detection plus alert bookkeeping in the state directory. It never
+# claims, releases or reissues a delivery. Plane credentials come from the
+# installed plane CLI configuration.
+StateDirectory=cairn
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+StandardInput=data
+StandardInputText={"repo":"%h/git/cairn","state_file":"%S/cairn/delivery-alerts.json","plane_project":"CAIRN"}
+ExecStart=%h/.local/bin/cairn delivery-alerts
+TimeoutStartSec=5min
+UMask=0077
+NoNewPrivileges=yes
