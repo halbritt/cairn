@@ -437,6 +437,169 @@ def probe_codex_native_health(config, state, now=None, force=False):
     return health
 
 
+# CAIRN-188: a provider error can leave a Codex thread in systemError. Errors that do not clear by
+# themselves keep the CAIRN-179 suppression; capacity and 5xx-class errors allow a normal idle wake
+# after a bounded, exponential backoff.
+CODEX_TRANSIENT_ERRORS = frozenset(('server_overloaded', 'internal_server_error', 'http_connection_failed',
+                                    'response_stream_connection_failed', 'response_stream_disconnected',
+                                    'response_too_many_failed_attempts'))
+CODEX_ERROR_WAKE_MIN_DELAY = 300
+CODEX_ERROR_WAKE_MAX_DELAY = 3600
+CODEX_ERROR_SCAN_LIMIT = 8 * 1024 * 1024
+
+
+def codex_error_class(info):
+    """Return ('transient' | 'persistent', kind) for a task_complete codex_error_info.
+
+    Only allowlisted capacity, stream and 5xx kinds are transient. Usage limits, auth,
+    request errors, HTTP 4xx (including 429) and unknown kinds are persistent.
+    """
+    detail = None
+    if isinstance(info, dict) and len(info) == 1:
+        (info, detail), = info.items()
+    if not isinstance(info, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,63}', info):
+        return 'persistent', 'unrecognized'
+    if info not in CODEX_TRANSIENT_ERRORS:
+        return 'persistent', info
+    if info == 'http_connection_failed' and detail is not None:
+        status = detail.get('http_status_code') if isinstance(detail, dict) else detail
+        if status is not None and not (type(status) is int and 500 <= status <= 599):
+            return 'persistent', f'{info}_{status}' if type(status) is int else info
+    return 'transient', info
+
+
+def latest_codex_turn_end(config, state):
+    """Pin the latest turn record in the live owner's open rollout.
+
+    Returns (record, locator) for the last task_complete when no task_started follows it
+    within the bounded tail, or None. The found line is re-read through its pin.
+    """
+    path = codex_rollout_path(config, state)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        size = os.fstat(fd).st_size
+        base = max(0, size - CODEX_ERROR_SCAN_LIMIT)
+        tail = os.pread(fd, size - base, base)
+    finally:
+        os.close(fd)
+    end = tail.rfind(b'\n') + 1
+    start = 0 if base == 0 else tail.find(b'\n') + 1
+    position = end
+    while position > start:
+        line_start = tail.rfind(b'\n', start, position - 1) + 1
+        line_start = max(line_start, start)
+        line = tail[line_start:position]
+        position = line_start
+        if b'"task_started"' not in line and b'"task_complete"' not in line:
+            continue
+        try:
+            record = strict_native_line(line)
+        except CoordinationError:
+            continue
+        payload = record.get('payload')
+        if record.get('type') != 'event_msg' or not isinstance(payload, dict):
+            continue
+        if payload.get('type') == 'task_started':
+            return None
+        if payload.get('type') != 'task_complete':
+            continue
+        if len(line) > NATIVE_RECORD_LIMIT:
+            raise CoordinationError('INVALID_REQUEST', 'Codex turn end record exceeds its read limit')
+        locator = dict(offset=base + line_start, length=len(line), sha256=hashlib.sha256(line).hexdigest())
+        if read_native_record(path, locator) != record:
+            raise CoordinationError('INVALID_REQUEST', 'Codex turn end record changed while reading')
+        return record, locator
+    return None
+
+
+def codex_error_wake(config, state, now):
+    """Decide whether a Codex thread in systemError may get a normal idle wake (CAIRN-188).
+
+    Records the decision and its reason in ``state['codex_error_wake']``. Decisions:
+    held (local or native work is held; nothing is replayed), unverified (no pinned
+    provider-error end for the latest turn), persistent (CAIRN-179 suppression),
+    backoff, or wake_allowed. Never claims, restarts or replays.
+    """
+    agent = state['agent']
+    prior = state.get('codex_error_wake') if isinstance(state.get('codex_error_wake'), dict) else {}
+    if prior.get('session') not in (None, session_ref(agent)):
+        prior = {}
+    record = dict(schema='cairn.codex-error-wake/1', session=session_ref(agent), decided_at=utc_timestamp(now))
+    for key in ('wakes', 'last_wake_at', 'delivery_id'):
+        if key in prior:
+            record[key] = prior[key]
+    health = state.get('native_health') or {}
+
+    def decide(decision, reason):
+        record.update(decision=decision, reason=reason)
+        if (prior.get('decision'), (prior.get('error') or {}).get('record')) != (decision, (record.get('error') or {}).get('record')):
+            print(f"Cairn presence {config['binding']}: Codex systemError wake decision for "
+                  f"{agent.get('display_name') or agent['agent_id']} (native {agent.get('native_session_id')}): "
+                  f"{decision}; {reason}", file=sys.stderr)
+        state['codex_error_wake'] = record
+        return record
+
+    if any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_turn_ended')):
+        return decide('held', 'a held inbox attempt remains; it is never replayed and needs its own settlement')
+    if health.get('queue_count') or health.get('queued_present'):
+        return decide('held', 'the native Codex queue still holds items')
+    try:
+        found = latest_codex_turn_end(config, state)
+    except (CoordinationError, OSError, ValueError) as exc:
+        return decide('unverified', f'rollout unavailable ({getattr(exc, "code", type(exc).__name__)})')
+    if found is None:
+        return decide('unverified', 'no task_complete after the latest turn start in the bounded rollout tail')
+    end, locator = found
+    payload = end['payload']
+    error = payload.get('error')
+    if payload.get('last_agent_message') is not None or not isinstance(error, dict):
+        return decide('unverified', 'the latest turn did not end on a provider error')
+    try:
+        ended = native_time(end.get('timestamp')).timestamp()
+    except CoordinationError:
+        return decide('unverified', 'the turn end record timestamp shape is unknown')
+    kind_class, kind = codex_error_class(error.get('codex_error_info'))
+    record['error'] = dict(kind=kind, turn_id=payload.get('turn_id'), ended_at=end['timestamp'], record=locator)
+    if kind_class != 'transient':
+        return decide('persistent', f'{kind} does not clear by itself; review the pending request source '
+                                    'before owner-authorized recovery')
+    wakes, last = record.get('wakes', 0), record.get('last_wake_at')
+    same_error = (prior.get('error') or {}).get('record') == locator
+    if not same_error:
+        # A woken turn that failed again keeps its chain; an unrelated later error starts over.
+        if not (isinstance(last, (int, float)) and last <= ended <= last + CODEX_ERROR_WAKE_MAX_DELAY):
+            wakes, last = 0, None
+            record.pop('last_wake_at', None)
+            record.pop('delivery_id', None)
+    if type(wakes) is not int or wakes < 0:
+        wakes = 0
+    record['wakes'] = wakes
+    due = ended + CODEX_ERROR_WAKE_MIN_DELAY
+    if wakes and isinstance(last, (int, float)):
+        due = max(due, last + min(CODEX_ERROR_WAKE_MIN_DELAY * 2 ** min(wakes, 16), CODEX_ERROR_WAKE_MAX_DELAY))
+    record.update(next_eligible_epoch=due, next_eligible_at=utc_timestamp(due))
+    if now < due:
+        return decide('backoff', f'transient {kind} at {end["timestamp"]}; '
+                                 f'next normal wake after {utc_timestamp(due)} ({wakes} earlier)')
+    return decide('wake_allowed', f'transient {kind} at {end["timestamp"]}; backoff elapsed, '
+                                  'normal idle wake allowed')
+
+
+def codex_error_wake_allowed(config, state):
+    record = state.get('codex_error_wake')
+    return (config.get('harness') == 'codex' and isinstance(record, dict) and
+            record.get('session') == session_ref(state['agent']) and record.get('decision') == 'wake_allowed')
+
+
+def note_codex_error_wake(config, state, delivery):
+    """Count a normal wake issued for a transient systemError; it feeds the backoff."""
+    if codex_error_wake_allowed(config, state):
+        now = time.time()
+        state['codex_error_wake'].update(decision='woken', wakes=state['codex_error_wake'].get('wakes', 0) + 1,
+                                         last_wake_at=now, delivery_id=delivery, decided_at=utc_timestamp(now),
+                                         reason=state['codex_error_wake']['reason'] + '; normal wake issued')
+
+
 def delivery_observation(config, state, prepared, cycle=None):
     """Describe only this host's current session and ready-head observation.
 
@@ -454,7 +617,8 @@ def delivery_observation(config, state, prepared, cycle=None):
     wake = None
     health = state.get('native_health') if config.get('harness') == 'codex' else None
     health_errored = (isinstance(health, dict) and health.get('session') == session_ref(agent) and
-                      health.get('status_type') == 'systemError')
+                      health.get('status_type') == 'systemError' and
+                      (state.get('codex_error_wake') or {}).get('decision') not in ('wake_allowed', 'woken'))
     if not config.get('native_delivery') or state.get('inbox_intent') or state.get('ending') or state.get('retired'):
         condition = 'unknown'
     elif agent['metadata'].get('state') == 'busy' and not health_errored:
@@ -563,6 +727,20 @@ def prepare_idle_wake(config, state, path, cycle=None):
             if health is not None:
                 write_state(path, state)
             if health and health.get('status_type') == 'systemError':
+                if (health.get('session') == session_ref(agent) and
+                        codex_error_wake(config, state, time.time())['decision'] == 'wake_allowed'):
+                    # The native turn has ended (pinned task_complete) and nothing is held:
+                    # busy presence is stale. Correct it so the normal idle wake can run.
+                    current = state['agent']
+                    state['agent'] = agent = call(config, 'agent-context', dict(
+                        request_id=str(uuid.uuid4()), session=session_ref(current),
+                        expected_revision=current['context_revision'],
+                        metadata=dict(current['metadata'], state='idle')))
+                    state['codex_error_wake']['presence'] = 'busy_corrected_to_idle'
+                    write_state(path, state)
+                else:
+                    write_state(path, state)
+            if health and health.get('status_type') == 'systemError' and agent['metadata']['state'] != 'idle':
                 ready = call(config, 'session-inbox-ready', session_ref(agent))
                 delivery = ready.get('delivery_id')
                 if cycle is not None:
@@ -574,11 +752,15 @@ def prepare_idle_wake(config, state, path, cycle=None):
                     'native Codex thread reports systemError behind busy metadata; '
                     'review the pending request source before owner-authorized recovery',
                     'native_transport_unavailable', cycle)
-        return None
+        if agent['metadata']['state'] != 'idle':
+            return None
     if (config.get('harness') == 'codex' and
             isinstance(state.get('native_health'), dict) and
             state['native_health'].get('status_type') == 'systemError'):
-        probe_codex_native_health(config, state)
+        health = probe_codex_native_health(config, state)
+        if (health and health.get('status_type') == 'systemError' and health.get('session') == session_ref(agent)
+                and not codex_error_wake_allowed(config, state)):
+            codex_error_wake(config, state, time.time())
     if state.get('wake_rejection') and state.get('idle_wake'):
         reconcile_rejected_wake(config, state, path)
     ready = call(config, 'session-inbox-ready', session_ref(agent))
@@ -596,7 +778,8 @@ def prepare_idle_wake(config, state, path, cycle=None):
     if (config.get('harness') == 'codex' and
             isinstance(state.get('native_health'), dict) and
             state['native_health'].get('session') == session_ref(agent) and
-            state['native_health'].get('status_type') == 'systemError'):
+            state['native_health'].get('status_type') == 'systemError' and
+            not codex_error_wake_allowed(config, state)):
         return note_wake_refusal(config, state, delivery,
             'native Codex thread reports systemError; review the pending request source before owner-authorized recovery',
             'native_transport_unavailable', cycle)
@@ -626,6 +809,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
     request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
         state.pop('wake_refusal', None)
+        note_codex_error_wake(config, state, delivery)
         state['idle_wake'] = dict(delivery_id=delivery, client_id=delivery, request_id=request_id,
             session=session_ref(agent), transport='codex-queue', endpoint=endpoint['endpoint'],
             owner=endpoint['owner'], native_id=agent['native_session_id'],

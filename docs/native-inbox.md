@@ -458,6 +458,22 @@ is kept as `codex_ended_turn` in host state. Nothing is replayed or reissued, an
 leaves `inbox_turn_ended` for the watcher's existing retry.
 
 
+A provider error can also end an ordinary Codex turn and leave the thread in `systemError` with busy
+presence and no held attempt. The watcher reads the latest `task_complete` of the live owner's open
+rollout (bounded tail, pinned by offset, length and SHA-256) and records its decision in host state as
+`codex_error_wake` (CAIRN-188):
+
+- `persistent`: `usage_limit_exceeded`, auth, request, HTTP 4xx (including 429) and unknown kinds keep
+  the suppression above;
+- `transient`: `server_overloaded`, `internal_server_error`, HTTP 5xx and stream-connection kinds allow
+  one normal idle wake at least 5 minutes after the error, then 10, 20 and 40 minutes after each later
+  wake, capped at 60 minutes; a woken turn that fails again keeps its place in that backoff;
+- `held` or `unverified`: a held attempt, queued native items, a later `task_started`, or a missing or
+  unpinnable record keep the suppression. Held work is never replayed.
+
+When a wake is allowed behind busy presence, the watcher first corrects presence to idle, because the
+pinned record shows the native turn has ended. It then issues the normal wake.
+
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a
 confirmed end. It cannot use that attempt to finish a newer execution. A new
