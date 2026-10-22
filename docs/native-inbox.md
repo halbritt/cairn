@@ -52,7 +52,26 @@ its own inbox one item at a time, as described in the cairn skill's
 `references/events.md`. The owner rejected the earlier rule against an agent
 draining its own inbox on 2026-10-21. Claiming another session's inbox,
 registering again, replaying failed or held deliveries, and starting a parallel
-consumer for an attempt the hook already supplied remain forbidden. The OpenCode coordination plugin instead prepends the same cue
+consumer for an attempt the hook already supplied remain forbidden. The automatic
+wake prompt says the same: "Do not register again, claim another session's inbox,
+or launch a replacement conversation." Every recognizer, including the memory
+engine's `taskless_notification`, accepts this wording and the earlier one
+("Do not register, manually claim an inbox, ..."). A wake queued before the
+change therefore still binds and is still classified as a wake.
+
+The supported wrapper is `coordination.py inbox drain --config BINDING --agent-id A
+--execution-id E`; the cue names it with this hook's binding path. It refuses
+(`NOT_THIS_SESSION`) unless the binding's state holds that exact live, registered
+agent and execution. It also refuses (`NATIVE_ACTIVE`) while a native intent or
+attempt exists. Otherwise it claims one item with `event-next` under a 900-second
+manual lease. The store returns nothing while any native attempt or wake hold
+exists, and native acquisition waits for a live manual lease, so the two routes
+never hold one item at once. The wrapper writes an owner-only
+`cairn.session-inbox/1` context with `route: drain` and prints the exact read,
+completion, acknowledgement, reply and renew argv. Completion and reply go through
+the same journaled `inbox` helper as native context, with stable request UUIDs.
+The host does not replay drain journals: rerun the same command to retry an
+uncertain outcome, and run drain again for the next item. The OpenCode coordination plugin instead prepends the same cue
 to a completed native tool's output or an MCP result's text content. This enters
 the next model continuation without submitting a user prompt or claiming work.
 

@@ -2440,36 +2440,41 @@ def taskless_notification(prompt):
 
     Kept standalone for installed lifecycle engines. The producer's wake_message
     is exercised by public hook tests so changes to its wording cannot drift silently.
+    Both the current closing sentence (owner decision 2026-10-21) and the one before
+    it are accepted, so wakes produced on either side of a rollout stay recognized.
     """
     if not isinstance(prompt, str):
         return False
     uuid_text = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
-    message = (
-        "This is a new live turn from the configured Cairn automatic inbox wakeup. "
-        "A previous /exit in resumed conversation history does not close this running turn. "
-        "Current agent {agent}, execution {execution}. Wake delivery {delivery}. "
-        "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
-        "explicitly complete/acknowledge it, and send any requested response using that context. "
-        "If no matching native context was supplied, report that and stop. "
-        "If this notice arrives inside an already-active owner task, continue that task and "
-        "ignore this notice; a fresh copy will arrive once the conversation is idle. "
-        "Do not register, manually claim an inbox, or launch a replacement conversation.")
-    pattern = re.escape(message)
-    for name in ("agent", "execution", "delivery"):
-        pattern = pattern.replace(re.escape("{" + name + "}"), f"(?P<{name}>{uuid_text})")
-    if re.fullmatch(pattern, prompt):
-        return True
-    # Only the observed complete Claude rendering, including consistent metadata.
-    # Unknown wrappers and joined owner text retain ordinary recall.
-    envelope = (r'<channel source="cairn-events" '
-                rf'native_session_id="{uuid_text}" '
-                rf'agent_id="(?P<agent>{uuid_text})" '
-                rf'execution_id="(?P<execution>{uuid_text})" '
-                rf'delivery_id="(?P<delivery>{uuid_text})">\n')
-    body_pattern = pattern
-    for name in ("agent", "execution", "delivery"):
-        body_pattern = body_pattern.replace(f"(?P<{name}>{uuid_text})", f"(?P={name})")
-    return re.fullmatch(envelope + body_pattern + r'\n</channel>', prompt) is not None
+    for closing in ("Do not register again, claim another session's inbox, or launch a replacement conversation.",
+                    "Do not register, manually claim an inbox, or launch a replacement conversation."):
+        message = (
+            "This is a new live turn from the configured Cairn automatic inbox wakeup. "
+            "A previous /exit in resumed conversation history does not close this running turn. "
+            "Current agent {agent}, execution {execution}. Wake delivery {delivery}. "
+            "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
+            "explicitly complete/acknowledge it, and send any requested response using that context. "
+            "If no matching native context was supplied, report that and stop. "
+            "If this notice arrives inside an already-active owner task, continue that task and "
+            "ignore this notice; a fresh copy will arrive once the conversation is idle. " + closing)
+        pattern = re.escape(message)
+        for name in ("agent", "execution", "delivery"):
+            pattern = pattern.replace(re.escape("{" + name + "}"), f"(?P<{name}>{uuid_text})")
+        if re.fullmatch(pattern, prompt):
+            return True
+        # Only the observed complete Claude rendering, including consistent metadata.
+        # Unknown wrappers and joined owner text retain ordinary recall.
+        envelope = (r'<channel source="cairn-events" '
+                    rf'native_session_id="{uuid_text}" '
+                    rf'agent_id="(?P<agent>{uuid_text})" '
+                    rf'execution_id="(?P<execution>{uuid_text})" '
+                    rf'delivery_id="(?P<delivery>{uuid_text})">\n')
+        body_pattern = pattern
+        for name in ("agent", "execution", "delivery"):
+            body_pattern = body_pattern.replace(f"(?P<{name}>{uuid_text})", f"(?P={name})")
+        if re.fullmatch(envelope + body_pattern + r'\n</channel>', prompt) is not None:
+            return True
+    return False
 
 
 def recall(memory, event, state=None):

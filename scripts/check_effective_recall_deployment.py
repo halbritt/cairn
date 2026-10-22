@@ -288,7 +288,7 @@ def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind,
         "If no matching native context was supplied, report that and stop. "
         "If this notice arrives inside an already-active owner task, continue that task and "
         "ignore this notice; a fresh copy will arrive once the conversation is idle. "
-        "Do not register, manually claim an inbox, or launch a replacement conversation."
+        "Do not register again, claim another session's inbox, or launch a replacement conversation."
     )
     if harness == "claude":
         native = "claude-channel:fixture-prompt"

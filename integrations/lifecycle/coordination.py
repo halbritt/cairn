@@ -846,7 +846,19 @@ def codex_queue_endpoint(config, process):
     return None
 
 
-def wake_message(wake):
+WAKE_CLOSING = ("Do not register again, claim another session's inbox, "
+                "or launch a replacement conversation.")
+# The wording before 2026-10-21. Recognizers keep accepting it so a wake already
+# submitted or queued, and pinned engines not yet re-pinned, still match.
+LEGACY_WAKE_CLOSING = "Do not register, manually claim an inbox, or launch a replacement conversation."
+
+
+def wake_messages(wake):
+    """Every wording a recognizer accepts for this wake: current first, then legacy."""
+    return (wake_message(wake), wake_message(wake, LEGACY_WAKE_CLOSING))
+
+
+def wake_message(wake, closing=WAKE_CLOSING):
     return ("This is a new live turn from the configured Cairn automatic inbox wakeup. "
             "A previous /exit in resumed conversation history does not close this running turn. "
             f"Current agent {wake['session']['agent_id']}, "
@@ -857,7 +869,7 @@ def wake_message(wake):
             "If no matching native context was supplied, report that and stop. "
             "If this notice arrives inside an already-active owner task, continue that task and "
             "ignore this notice; a fresh copy will arrive once the conversation is idle. "
-            "Do not register, manually claim an inbox, or launch a replacement conversation.")
+            + closing)
 
 
 def queued_wake_binding(state, event):
@@ -866,7 +878,7 @@ def queued_wake_binding(state, event):
     if (wake.get('transport') != 'codex-queue' or wake.get('session') != session_ref(state['agent']) or
             event.get('hook_event_name') != 'UserPromptSubmit' or not isinstance(turn, str) or
             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
-            event.get('prompt') != wake_message(wake)):
+            event.get('prompt') not in wake_messages(wake)):
         return {}
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
@@ -887,7 +899,7 @@ def channel_wake_binding(state, event, joined=False):
     if (wake.get('transport') != 'claude-channel' or wake.get('session') != session_ref(state['agent']) or
             event.get('hook_event_name') != 'UserPromptSubmit' or joined or
             not isinstance(prompt, str) or
-            not prompt.startswith('<channel') or wake_message(wake) not in prompt or
+            not prompt.startswith('<channel') or not any(text in prompt for text in wake_messages(wake)) or
             not isinstance(prompt_id, str) or not prompt_id.strip() or
             len(prompt_id.encode()) > 256 or '\0' in prompt_id):
         return {}
@@ -932,7 +944,7 @@ def claude_prompt_admission(state, observation, event):
                     wake.get('session') == session_ref(state['agent']) and
                     isinstance(event.get('prompt'), str) and
                     event['prompt'].startswith('<channel') and
-                    wake_message(wake) in event['prompt']):
+                    any(text in event['prompt'] for text in wake_messages(wake))):
                 state.pop('idle_wake', None)
                 refusal = wake['delivery_id']
             shared = dict(active, joined=True)
@@ -986,7 +998,7 @@ def hermes_wake_binding(state, event):
     if (wake.get('transport') != 'hermes-queue' or wake.get('session') != session_ref(state['agent']) or
             event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
-            event.get('prompt') != wake_message(wake)):
+            event.get('prompt') not in wake_messages(wake)):
         return {}
     if session_id is not None:
         if not isinstance(session_id, str) or not session_id.strip():
@@ -2350,6 +2362,9 @@ def refresh_inbox_pending(config, state):
     state['inbox_pending'] = record
 
 
+HOOK_CONFIG_PATH = None  # The binding file this hook process loaded; named in the drain cue.
+
+
 def inbox_cue_text(pending, config, agent):
     parts = []
     for key, word in (('requests', 'request'), ('notices', 'notice'), ('responses', 'response')):
@@ -2360,8 +2375,12 @@ def inbox_cue_text(pending, config, agent):
             "a turn boundary, one per turn. When the current step reaches a safe stopping point, end your turn so "
             "they can arrive. If native delivery has not delivered for ~10 minutes, drain your own inbox "
             f"with `cairn inbox next --token-file {shlex.quote(config['token_file'])} --agent-id {agent['agent_id']} "
-            f"--execution-id {agent['execution_id']}` (see the cairn skill references/events.md). "
-            "Never claim another session's inbox. This notice repeats only when new items arrive.")
+            f"--execution-id {agent['execution_id']}` (see the cairn skill references/events.md)"
+            + (f", or run `{shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))} inbox drain "
+               f"--config {shlex.quote(HOOK_CONFIG_PATH)} --agent-id {agent['agent_id']} "
+               f"--execution-id {agent['execution_id']}`, which claims one item and prints its exact read, "
+               "completion and reply commands" if HOOK_CONFIG_PATH else '')
+            + ". Never claim another session's inbox. This notice repeats only when new items arrive.")
 
 
 def cue_session(path, process):
@@ -2490,12 +2509,13 @@ def inbox_recall_wake(event):
     ids = re.search(rf'Current agent ({value}), execution ({value})\. Wake delivery ({value})\.', prompt)
     if not ids:
         return False
-    body = wake_message(dict(session=dict(agent_id=ids[1], execution_id=ids[2]), delivery_id=ids[3]))
-    if prompt == body:
-        return True
-    return re.fullmatch(rf'<channel source="cairn-events" native_session_id="{value}" '
-                        + re.escape(f'agent_id="{ids[1]}" execution_id="{ids[2]}" delivery_id="{ids[3]}">\n' + body + '\n</channel>'),
-                        prompt) is not None
+    for body in wake_messages(dict(session=dict(agent_id=ids[1], execution_id=ids[2]), delivery_id=ids[3])):
+        if prompt == body or re.fullmatch(
+                rf'<channel source="cairn-events" native_session_id="{value}" '
+                + re.escape(f'agent_id="{ids[1]}" execution_id="{ids[2]}" delivery_id="{ids[3]}">\n' + body + '\n</channel>'),
+                prompt) is not None:
+            return True
+    return False
 
 
 def refusal_error_class(exc):
@@ -2891,12 +2911,13 @@ def native_refusal_proof(config, config_path, state, attempt, locators):
     path = claude_transcript_path(config, state)
     records = [read_native_record(path, item) for item in locators]
     native, agent, delivery = state['agent']['native_session_id'], state['agent'], attempt['delivery']
-    channel = (f'<channel source="cairn-events" native_session_id="{native}" agent_id="{agent["agent_id"]}" '
-               f'execution_id="{agent["execution_id"]}" delivery_id="{delivery["delivery_id"]}">\n'
-               + wake_message(dict(session=session_ref(agent), delivery_id=delivery['delivery_id'])) + '\n</channel>')
+    channels = [(f'<channel source="cairn-events" native_session_id="{native}" agent_id="{agent["agent_id"]}" '
+                 f'execution_id="{agent["execution_id"]}" delivery_id="{delivery["delivery_id"]}">\n' + text + '\n</channel>')
+                for text in wake_messages(dict(session=session_ref(agent), delivery_id=delivery['delivery_id']))]
     first, second, third = records
+    channel = first.get('content') if first.get('content') in channels else None
     if (set(first) != {'type', 'operation', 'timestamp', 'sessionId', 'content'} or first['type'] != 'queue-operation'
-            or first['operation'] != 'enqueue' or first['sessionId'] != native or first['content'] != channel):
+            or first['operation'] != 'enqueue' or first['sessionId'] != native or channel is None):
         raise CoordinationError('INVALID_REQUEST', 'native enqueue record is not this exact channel wake')
     if (set(second) != {'type', 'operation', 'timestamp', 'sessionId'} or second['type'] != 'queue-operation'
             or second['operation'] != 'dequeue' or second['sessionId'] != native):
@@ -3141,7 +3162,7 @@ def codex_queue_rollout_proof(config, state, wake, locators):
         return dict(schema='cairn.codex-queue-rollout/1', outcome='admitted_active',
                     native_session_id=native_id, native_turn_id=first_payload.get('turn_id'), records=locators)
     serialized = json.dumps(records)
-    markers = [m for m in (wake.get('delivery_id'), wake.get('queued_submission_id'), wake_message(wake)) if m]
+    markers = [m for m in (wake.get('delivery_id'), wake.get('queued_submission_id'), *wake_messages(wake)) if m]
     queue_turns = [r for r in records if r['payload'].get('type') == 'task_started' and
                    isinstance(r['payload'].get('turn_attribution'), dict) and
                    r['payload']['turn_attribution'].get('turn_trigger') == 'queue' and
@@ -3626,10 +3647,10 @@ def record_activation_refusal(config, event, exc):
                 or not same_process(process, wake.get('parent', {})) or not process_alive(process)
                 or state.get('ending') or state.get('retired')):
             return
-        expected = (f'<channel source="cairn-events" native_session_id="{native}" '
+        expected = [(f'<channel source="cairn-events" native_session_id="{native}" '
             f'agent_id="{session["agent_id"]}" execution_id="{session["execution_id"]}" '
-            f'delivery_id="{wake["delivery_id"]}">\n' + wake_message(wake) + '\n</channel>')
-        if event.get('prompt') != expected:
+            f'delivery_id="{wake["delivery_id"]}">\n' + text + '\n</channel>') for text in wake_messages(wake)]
+        if event.get('prompt') not in expected:
             return
         receipt = dict(schema='cairn.preadmission-wake-refusal/1', phase='activation',
             error_class=refusal_error_class(exc), wake=wake, process={k: process[k] for k in ('pid', 'start', 'boot')},
@@ -4091,6 +4112,95 @@ def validate_config(config):
     return config
 
 
+DRAIN_LEASE_SECONDS = 900
+
+
+def drain_command(argv):
+    """Claim one item from this conversation's OWN inbox outside native delivery.
+
+    Owner decision 2026-10-21: an agent may drain its own inbox when native
+    delivery has stalled. The binding's state must hold this exact live,
+    registered agent and execution; another session's inbox is never claimed.
+    The store refuses (returns no delivery) while any native attempt or wake
+    hold exists, and native acquisition waits for this live manual lease, so the
+    two routes never hold one item at once. One item per call. The completion,
+    acknowledgement and reply run through the same journaled helper as native
+    context. This host does not replay them; rerun the same command to retry.
+    """
+    parser = argparse.ArgumentParser(prog='coordination.py inbox drain')
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--agent-id', required=True)
+    parser.add_argument('--execution-id', required=True)
+    parser.add_argument('--lease-seconds', type=int, default=DRAIN_LEASE_SECONDS)
+    args = parser.parse_args(argv)
+    if not 60 <= args.lease_seconds <= 3600:
+        raise CoordinationError('INVALID_REQUEST', '--lease-seconds must be 60-3600')
+    config = load_config(args.config)
+    session = dict(agent_id=args.agent_id, execution_id=args.execution_id)
+    owner = None
+    for candidate in sorted(Path(config['state_dir']).glob('*.json')):
+        try:
+            state = json.loads(candidate.read_text())
+        except (OSError, ValueError):
+            continue
+        if (isinstance(state, dict) and isinstance(state.get('agent'), dict)
+                and session_ref(state['agent']) == session and not state.get('retired')
+                and not state.get('ending') and process_alive(state.get('process'))):
+            owner = state
+            break
+    if owner is None:
+        raise CoordinationError('NOT_THIS_SESSION', 'no live registered session of this binding has this agent and '
+                                'execution; drain only your own current session inbox')
+    if owner.get('inbox_intent') or owner.get('inbox_attempt'):
+        raise CoordinationError('NATIVE_ACTIVE', 'a native attempt holds this inbox; handle the supplied native '
+                                'context instead of draining')
+    claimed = call(config, 'event-next', dict(repo=config['repo'], lease_seconds=args.lease_seconds), session=session)
+    delivery = claimed.get('delivery') if isinstance(claimed, dict) else None
+    if not delivery:
+        print(json.dumps(dict(schema='cairn.inbox-drain/1', delivery_id=None,
+                              message='nothing claimable: the inbox is empty, or a native attempt or wake hold owns it')))
+        return 0
+    event = delivery['event']
+    attempt_id = 'drain-' + delivery['lease_id']
+    common = ['--socket', config['socket'], '--token-file', config['token_file'],
+              '--agent-id', session['agent_id'], '--execution-id', session['execution_id']]
+    request_ids = dict(completion=str(uuid.uuid4()), response=str(uuid.uuid4()))
+    leased = [*common, '--request-id', request_ids['completion'], '--lease', delivery['lease_id']]
+    commands = dict(complete=[config['cairn'], 'complete', *leased, '--shareable', '--stdin', delivery['delivery_id']],
+                    ack=[config['cairn'], 'ack', *leased, delivery['delivery_id']])
+    if event['kind'] == 'request':
+        commands['respond'] = [config['cairn'], 'publish', *common, '--request-id', request_ids['response'],
+                               '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
+        if event.get('correlation_id'):
+            commands['respond'] += ['--correlation-id', event['correlation_id']]
+    target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
+    read = [config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history']
+    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
+    context = dict(schema='cairn.session-inbox/1', **session, attempt_id=attempt_id, route='drain',
+                   event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
+                   delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'], read=read,
+                   read_input=event['ref'], completion=[*journaled, 'complete'],
+                   acknowledgement=[*journaled, 'ack'], state_dir=config['state_dir'],
+                   commands=commands, request_ids=request_ids)
+    if event['kind'] == 'request':
+        context['response'] = [*journaled, 'respond']
+    write_state(target, context)  # Owner-only, before anything is printed.
+    result = dict(schema='cairn.inbox-drain/1', delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
+                  event_id=event['event_id'], kind=event['kind'], sender=event['from'], context=str(target),
+                  read=read, read_input=event['ref'], completion=context['completion'],
+                  acknowledgement=context['acknowledgement'],
+                  renew=[config['cairn'], 'renew', *common, '--lease', delivery['lease_id'],
+                         '--lease-seconds', str(args.lease_seconds), delivery['delivery_id']],
+                  instructions=('Read the source with read and read_input. For a request, run completion with a '
+                                'concise selected result on stdin, then response with --version RESULT_VERSION '
+                                'RESULT_RECORD_UUID from its result. For a response or notice, run acknowledgement. '
+                                'Rerun the same command to retry an uncertain outcome. Run drain again for the next item.'))
+    if 'response' in context:
+        result['response'] = context['response']
+    print(json.dumps(result))
+    return 0
+
+
 def load_config(path):
     return validate_config(json.loads(path.read_text()))
 
@@ -4098,6 +4208,8 @@ def load_config(path):
 def main():
     if sys.argv[1:2] == ['inbox']:
         try:
+            if sys.argv[2:3] == ['drain']:
+                return drain_command(sys.argv[3:])
             return inbox_command(sys.argv[2:])
         except CoordinationError as exc:
             print(json.dumps(dict(schema='cairn.response/1', ok=False, status=exc.code, message=str(exc))))
@@ -4181,6 +4293,8 @@ def main():
             if len(raw) > 1024 * 1024:
                 raise CoordinationError("INVALID_HOST", "hook input exceeds limit")
             config, event = load_config(args.config), json.loads(raw)
+            global HOOK_CONFIG_PATH
+            HOOK_CONFIG_PATH = str(args.config.resolve())
             try:
                 config = effective_inbox_config(config, event)
             except (ValueError, KeyError, TypeError, OSError) as exc:
