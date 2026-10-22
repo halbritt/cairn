@@ -112,6 +112,10 @@ class TransientErrorWakeTests(TransientErrorWakeBase):
         self.assertIn('transient', record['reason'])
         self.assertEqual(obs['condition'], 'automatic_available')
         self.assertNotIn('wake_refusal', self.state)
+        # The errored turn ran no Stop, so its per-turn delivery latch is stale too; left set,
+        # the woken turn's hook would admit no work.
+        self.assertIs(self.state['delivered_since_idle'], False)
+        self.assertEqual(record['latch'], 'cleared')
         self.assertEqual(json.loads(self.path.read_text())['codex_error_wake']['decision'], 'woken')
         self.assert_never_claims()
 
@@ -132,6 +136,7 @@ class TransientErrorWakeTests(TransientErrorWakeBase):
         record = self.state['codex_error_wake']
         self.assertEqual(record['decision'], 'backoff')
         self.assertEqual(record['next_eligible_epoch'], ENDED + 300)
+        self.assertIs(self.state['delivered_since_idle'], True)
         self.assertIn('server_overloaded', record['reason'])
         self.assertNotIn('idle_wake', self.state)
         self.assert_never_claims()
@@ -144,6 +149,7 @@ class TransientErrorWakeTests(TransientErrorWakeBase):
         self.assertIsNone(prepared)
         self.assertNotIn('agent-context', self.op_names())
         self.assertEqual(self.state['codex_error_wake']['decision'], 'persistent')
+        self.assertIs(self.state['delivered_since_idle'], True)
         self.assertEqual(self.state['wake_refusal']['condition'], 'native_transport_unavailable')
         self.assertEqual(obs['condition'], 'native_transport_unavailable')
         self.assertNotIn('idle_wake', self.state)

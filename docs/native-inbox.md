@@ -472,7 +472,9 @@ rollout (bounded tail, pinned by offset, length and SHA-256) and records its dec
   unpinnable record keep the suppression. Held work is never replayed.
 
 When a wake is allowed behind busy presence, the watcher first corrects presence to idle, because the
-pinned record shows the native turn has ended. It then issues the normal wake.
+pinned record shows the native turn has ended. It also clears the errored turn's per-turn delivery
+latch, which only `Stop` would have cleared; otherwise the woken turn's hook admits no work. It then
+issues the normal wake.
 
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a

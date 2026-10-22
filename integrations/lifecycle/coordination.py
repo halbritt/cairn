@@ -592,8 +592,16 @@ def codex_error_wake_allowed(config, state):
 
 
 def note_codex_error_wake(config, state, delivery):
-    """Count a normal wake issued for a transient systemError; it feeds the backoff."""
+    """Count a normal wake issued for a transient systemError; it feeds the backoff.
+
+    The errored turn ran no Stop, so its per-turn delivery latch is as stale as its busy
+    presence. Nothing is held (the decision requires it), so clearing the latch lets the
+    woken turn's hook claim the head delivery normally; nothing is replayed.
+    """
     if codex_error_wake_allowed(config, state):
+        if state.get('delivered_since_idle'):
+            state['delivered_since_idle'] = False
+            state['codex_error_wake']['latch'] = 'cleared'
         now = time.time()
         state['codex_error_wake'].update(decision='woken', wakes=state['codex_error_wake'].get('wakes', 0) + 1,
                                          last_wake_at=now, delivery_id=delivery, decided_at=utc_timestamp(now),
