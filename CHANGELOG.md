@@ -16,6 +16,16 @@ and MCP processes.
 
 ## 2026-10-21
 
+- `coordination-review` attention now reports `starved_sessions`: online
+  sessions whose pending work is older than 30 minutes while busy or 10
+  minutes while idle with no recent handled delivery, and leased or held
+  deliveries older than an hour with no open tool call. Each item gives the
+  session, count, oldest age, last handled time and a diagnosis. Existing
+  attention groups and suppression are unchanged. The new
+  `cairn delivery-alerts` command applies the same detector across bounded
+  pages and, with `plane_project`, creates one deduplicated Plane work item per
+  new condition; it takes no recovery action. A ten-minute user timer ships in
+  `deploy/` and is not enabled.
 - Operators can review and expire deliveries stranded on explicitly stopped
   sessions with `cairn stopped-inbox-expire`. A dry run classifies every
   unresolved delivery by consumer and lists what would fail. Applying it to
