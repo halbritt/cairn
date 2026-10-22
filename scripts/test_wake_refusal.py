@@ -224,6 +224,75 @@ class WakeRefusalTests(unittest.TestCase):
             coord.reconcile_rejected_wake(self.cc, state, self.path)
         self.assertEqual(json.loads(self.path.read_text()), state)
 
+    def write_journal(self, attempt_id, **slots):
+        directory = self.path.parent/'intents'; directory.mkdir(exist_ok=True)
+        journal = dict(attempt_id=attempt_id, session=dict(agent_id=AGENT, execution_id=EXEC), kind='request')
+        for name, status in slots.items():
+            journal[name] = dict(kind=name, status=status, argv=['cairn'], stdin='', request_id=EXEC)
+        coord.write_state(directory/(attempt_id + '.json'), journal)
+
+    def test_settled_or_unused_earlier_journals_do_not_retain_refused_wake(self):
+        # Live 2026-10-21 (agent-449): earlier attempts the agent never journaled a
+        # command for stay listed as 'unused' indefinitely. They cannot hold the
+        # refused delivery, which the store proves pending with zero attempts, so
+        # they must not keep the vetoed wake marker submitted forever.
+        self.write_journal('settled-attempt', completion='committed', response='committed')
+        self.write_journal('reply-open', completion='committed')
+        self.write_journal('refused-attempt', completion='refused')
+        self.state['inbox_journals'] = ['never-used-1', 'never-used-2', 'settled-attempt', 'reply-open', 'refused-attempt']
+        coord.write_state(self.path, self.state)
+        result = self.main_refused()
+        self.assertEqual(result[0:2], (2, ''))
+        state = json.loads(self.path.read_text())
+        self.assertNotIn('idle_wake', state)
+        self.assertEqual(state['inbox_journals'], self.state['inbox_journals'])
+        self.assertEqual([c.args[1] for c in result[3]], ['event-inspect', 'session-inbox-ready'])
+
+    def test_idle_cycle_after_vetoed_wake_with_unused_journals_sends_one_fresh_wake(self):
+        with patch.object(coord, 'reconcile_rejected_wake', return_value=False):
+            self.main_refused()  # The veto leaves its receipt; reconciliation has not run yet.
+        state = json.loads(self.path.read_text())
+        self.assertEqual(state['idle_wake'], self.wake)
+        state['inbox_journals'] = ['never-used-1', 'never-used-2']
+        self.cc['idle_wakeup'] = 'fixture'
+        self.freeze_base()  # Re-pin the bound configuration with the idle-wakeup opt-in.
+        coord.write_state(self.path, state)
+        channel = dict(socket='fixture.sock', process=self.process, parent=self.process)
+        cycle = {}
+        with coord.session_lock(self.path), \
+             patch.object(coord, 'claude_channel_admission', side_effect=lambda c, n, p: (c, None)), \
+             patch.object(coord, 'call', side_effect=self.api), \
+             patch.object(coord, 'codex_queue_endpoint', return_value=None), \
+             patch.object(coord, 'claude_channel_endpoint', return_value=channel):
+            prepared = coord.prepare_idle_wake(self.cc, state, self.path, cycle)
+        self.assertIsNotNone(prepared)
+        self.assertEqual(prepared['wake']['delivery_id'], DELIVERY)
+        self.assertEqual(prepared['wake']['status'], 'uncertain')  # A new submission, not the retained one.
+        self.assertNotIn('wake_refusal', state)
+        self.assertEqual(json.loads(self.path.read_text())['idle_wake'], prepared['wake'])
+
+    def test_uncertain_or_unreadable_listed_journal_keeps_refused_wake(self):
+        for case in ('pending_completion', 'pending_response', 'corrupt', 'not_a_list'):
+            with self.subTest(case=case):
+                directory = self.path.parent/'intents'; directory.mkdir(exist_ok=True)
+                for item in directory.glob('*.json'):
+                    item.unlink()
+                self.state['inbox_journals'] = ['never-used', 'doubt']
+                if case == 'pending_completion':
+                    self.write_journal('doubt', completion='pending')
+                elif case == 'pending_response':
+                    self.write_journal('doubt', completion='committed', response='pending')
+                elif case == 'corrupt':
+                    (directory/'doubt.json').write_text('{not json')
+                else:
+                    self.state['inbox_journals'] = {'pending': True}
+                coord.write_state(self.path, self.state)
+                result = self.main_refused()
+                current = json.loads(self.path.read_text())
+                self.assertEqual(current['idle_wake'], self.wake)
+                self.assertEqual(result[3], [])
+        self.state.pop('inbox_journals')
+
     def test_future_wake_records_only_valid_authenticated_event_identity(self):
         self.cc['idle_wakeup'] = 'fixture'
         channel = dict(socket='fixture.sock', process=self.process, parent=self.process)

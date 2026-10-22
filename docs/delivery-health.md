@@ -77,7 +77,9 @@ Only a native claim and explicit handling record progress.
 A missing transport suggests inspecting the recipient's configured native
 delivery route. A retained submitted or uncertain wake suggests inspecting that
 exact wake and native handling. Neither observation authorizes a new wake,
-replacement request, manual claim, or deletion of a retained marker.
+replacement request, a claim of another session's inbox, or deletion of a
+retained marker. The recipient session itself may drain its own inbox when
+native delivery has stalled; see [the waiting-work cue](native-inbox.md#waiting-work-cue-during-long-turns).
 
 ### Missing retained Codex queue item
 

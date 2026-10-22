@@ -70,7 +70,13 @@ class InboxCue(unittest.TestCase):
         self.write(counts(requests=1, notices=6, latest_position=1500))
         text = self.text(self.cue(counts(requests=1, notices=6, responses=0, latest_position=1500)))
         self.assertIn('1 request, 6 notices waiting', text)
-        self.assertIn('do not claim the inbox manually', text)
+        self.assertNotIn('do not claim the inbox manually', text)
+        # Owner decision 2026-10-21: a stalled session may drain its OWN inbox.
+        self.assertIn('safe stopping point, end your turn so they can arrive', text)
+        self.assertIn('If native delivery has not delivered for ~10 minutes, drain your own inbox with '
+                      "`cairn inbox next --token-file /absent/token --agent-id 11111111-1111-4111-8111-111111111111 "
+                      "--execution-id 22222222-2222-4222-8222-222222222222`", text)
+        self.assertIn('references/events.md', text)
         self.assertEqual(self.cue(), {}, 'an unchanged backlog must not repeat after every tool')
         self.write(counts(requests=1, notices=6, latest_position=1501))
         self.assertIn('1 request, 6 notices', self.text(self.cue(counts(requests=1, notices=6, responses=0, latest_position=1501))))

@@ -2281,7 +2281,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         "then use the response argv with --version RESULT_VERSION RESULT_RECORD_UUID from completion's result reference. "
         "That command preserves this conversation's UUID, sender and causation; do not substitute the shared profile name. "
         "For a response or notice, read it and run acknowledgement; do not start a request worker or recursively reply. "
-        "The host renews this lease while the turn is active. Do not start a second inbox consumer. "
+        "The host renews this lease while the turn is active. Do not start a parallel consumer for this attempt; "
+        "draining your own inbox remains allowed when native delivery has stalled. "
         "An ended turn without explicit completion is recorded as failed, not replayed automatically. "
         f"Completion command: {shlex.join(context['completion'])}")
 
@@ -2349,7 +2350,7 @@ def refresh_inbox_pending(config, state):
     state['inbox_pending'] = record
 
 
-def inbox_cue_text(pending):
+def inbox_cue_text(pending, config, agent):
     parts = []
     for key, word in (('requests', 'request'), ('notices', 'notice'), ('responses', 'response')):
         count = pending[key]
@@ -2357,7 +2358,10 @@ def inbox_cue_text(pending):
             parts.append(f"{count}{'+' if pending.get('truncated') else ''} {word}{'s' if count != 1 else ''}")
     return ("Cairn inbox: " + ", ".join(parts) + " waiting for this session. Native delivery hands them over only at "
             "a turn boundary, one per turn. When the current step reaches a safe stopping point, end your turn so "
-            "they can arrive; do not claim the inbox manually. This notice repeats only when new items arrive.")
+            "they can arrive. If native delivery has not delivered for ~10 minutes, drain your own inbox "
+            f"with `cairn inbox next --token-file {shlex.quote(config['token_file'])} --agent-id {agent['agent_id']} "
+            f"--execution-id {agent['execution_id']}` (see the cairn skill references/events.md). "
+            "Never claim another session's inbox. This notice repeats only when new items arrive.")
 
 
 def cue_session(path, process):
@@ -2466,7 +2470,7 @@ def tool_cue(config, event):
                     return {}  # Without a marker the cue would repeat after every tool.
             if not arrival:
                 return {}
-            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": inbox_cue_text(pending)}}
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": inbox_cue_text(pending, config, current_agent)}}
     except (CoordinationError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         return {}
 
@@ -3493,6 +3497,37 @@ def inspect_held_refusal(config, native_session_id, attempt_id=None):
         return obs
 
 
+def settled_journal_index(config, state):
+    """Read-only: True when no indexed journal of this conversation is uncertain.
+
+    The index keeps an earlier attempt's entry while its agent could still
+    journal a command ('unused': no intent file) or a reply ('reply_possible').
+    Such entries can last indefinitely and hold no delivery, so they do not
+    count as inbox work in progress. A pending slot or an unreadable journal
+    does. No command is replayed, and nothing is removed from the index.
+    """
+    journals = state.get('inbox_journals', [])
+    if not isinstance(journals, list):
+        return False
+    for attempt_id in journals:
+        if not isinstance(attempt_id, str):
+            return False
+        target = intent_path(config['state_dir'], attempt_id)
+        if not target.exists():
+            continue
+        try:
+            journal = json.loads(target.read_text())
+        except (OSError, ValueError):
+            return False
+        if not isinstance(journal, dict):
+            return False
+        for name in ('completion', 'response'):
+            slot = journal.get(name)
+            if slot and (not isinstance(slot, dict) or slot.get('status') not in ('committed', 'refused')):
+                return False
+    return True
+
+
 def reconcile_rejected_wake(config, state, path):
     """Caller owns the coordination lock. A receipt never acknowledges work."""
     key = state.get('wake_rejection')
@@ -3519,7 +3554,8 @@ def reconcile_rejected_wake(config, state, path):
             or not same_process(state['process'], receipt['process'])
             or not process_alive(state['process']) or state.get('ending') or state.get('retired')
             or any(state.get(k) for k in ('inbox_intent', 'inbox_attempt', 'inbox_result_policy',
-                                          'inbox_journals', 'inbox_close', 'active_prompt'))):
+                                          'inbox_close', 'active_prompt'))
+            or not settled_journal_index(config, state)):
         return False
     # Older states have no journal index. Inspect their retained journals on a
     # copy; neither recovery nor command replay belongs in this read check.

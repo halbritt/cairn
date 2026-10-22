@@ -44,8 +44,15 @@ A busy conversation cannot see its inbox until its turn ends, so requests could
 wait silently behind one long turn. Claude and Codex bindings therefore also
 install a `PostToolUse` hook that adds one short line of context when work is
 waiting, for example "Cairn inbox: 1 request, 6 notices waiting for this
-session", with a reminder to end the turn at a safe point rather than claim the
-inbox manually. The OpenCode coordination plugin instead prepends the same cue
+session", with a reminder to end the turn at a safe point so the items can
+arrive. The cue also names this session's exact self-drain command (`cairn inbox
+next` with the profile token path and this session's agent and execution UUIDs):
+if native delivery has not delivered for about 10 minutes, the agent may drain
+its own inbox one item at a time, as described in the cairn skill's
+`references/events.md`. The owner rejected the earlier rule against an agent
+draining its own inbox on 2026-10-21. Claiming another session's inbox,
+registering again, replaying failed or held deliveries, and starting a parallel
+consumer for an attempt the hook already supplied remain forbidden. The OpenCode coordination plugin instead prepends the same cue
 to a completed native tool's output or an MCP result's text content. This enters
 the next model continuation without submitting a user prompt or claiming work.
 
@@ -288,6 +295,28 @@ ledger is left to the bridge's own refusal. In both cases the wake marker is cle
 stays pending for a later idle cycle on a fresh prompt. Nothing is claimed, read, charged or deleted;
 the hook records `wake_preclaim_refusal` (phase `before_claim`, reason `seen_prompt` or `ledger_grant`,
 grant state and kind, delivery and prompt), which is not inbox delivery evidence.
+
+A bound Claude channel wake can also be vetoed before `handle` runs, when the inbox activation
+decision is unavailable (for example a busy bridge lock, `BlockingIOError`). Only the exact channel
+rendering of this session's submitted or uncertain wake writes an owner-only
+`cairn.preadmission-wake-refusal/1` receipt under `wake-refusals/`. The receipt names the wake, the
+owner process and the native prompt. Nothing is claimed. The watcher's next idle cycle reconciles the
+receipt and clears the retained wake marker, so a fresh wake can follow. It does this only when all of
+these are true:
+
+- the store shows the delivery `pending` with zero attempts;
+- readiness still selects it;
+- the bridge ledger, read under its lock, has no grant for the delivery or the prompt;
+- the conversation has no inbox intent, attempt, result policy, close or active prompt.
+
+The conversation's journal index must also hold no uncertain journal: a `pending` completion or
+response slot, an unreadable journal, or a malformed index keeps the marker. Earlier attempts whose
+agent never ran a journaled command (no intent file), or whose commands all settled (`committed` or
+`refused`), do not. Such entries can stay indexed indefinitely while a later command or reply is still
+possible, and they hold no delivery. Before 2026-10-21 any indexed entry kept the marker. A session
+that once ended a turn without completion therefore never received another channel wake, however often
+it went idle (agent-449, 28 deliveries). The reconciliation reads journals only. It does not replay or
+remove them.
 
 Unrelated attempts' journal entries do not establish progress on this refused attempt.
 Recovery checks this attempt's own command journal; it does not discard unrelated unused entries,
