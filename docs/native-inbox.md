@@ -394,6 +394,30 @@ handled or automatically replayed. Store failure retains the ended-turn proof fo
 reconciliation retry. This command is explicit recovery, not an automatic Codex refusal detector.
 Post-claim diagnostics retain allowlisted cause codes and reasons when available, never raw error text.
 
+A Codex queue turn can also end on a provider error after it received inbox context. For example,
+`task_complete` can carry `error.codex_error_info: usage_limit_exceeded` with no last agent message.
+Such a turn runs no `Stop` hook. The process stays alive and the watcher keeps renewing the lease, so
+the hold never settles, and later owner turns meet `NATIVE_TURN_MISMATCH` (CAIRN-179). Settle it
+explicitly with `coordination.py recover-codex-ended-turn --config BINDING --native-session-id S
+--attempt-id A --start-record OFF:LEN:SHA --end-record OFF:LEN:SHA`. Add `--check-only` first; it
+changes nothing. The command requires all of the following:
+
+- the held attempt and intent name this native turn, with no close, cancellation or recorded turn end;
+- a live owner holding exactly one rollout under its configured `sessions` directory;
+- a forced `thread/read` reporting `systemError` or `idle`, not `active`;
+- pinned records: a queue-triggered `task_started` for the turn, and a `task_complete` for it with no
+  last agent message and an allowlisted-shape `codex_error_info`;
+- a contiguous span between those records holding only bookkeeping and input: turn context, world
+  state, user and developer messages, the user-message item and token counts. Any tool call,
+  assistant output or unknown record refuses;
+- no later rollout record naming the turn;
+- chronology that brackets the claim.
+
+Settlement then follows the `Stop` path: it replays the attempt's journal and reconciles
+`delivery_completed` if a completion committed, otherwise `turn_ended` (`processing_failed`). The proof
+is kept as `codex_ended_turn` in host state. Nothing is replayed or reissued, and a store failure
+leaves `inbox_turn_ended` for the watcher's existing retry.
+
 
 Restore invalidates old executions and leases while retaining native holds.
 The base profile can reconcile an obsolete execution's own attempt after a

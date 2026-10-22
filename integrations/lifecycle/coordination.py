@@ -3095,6 +3095,144 @@ def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, 
         return state['wake_refusal_diagnostic']
 
 
+CODEX_ENDED_TURN_REGION_LIMIT = 8 * 1024 * 1024
+CODEX_ENDED_TURN_TAIL_LIMIT = 64 * 1024 * 1024
+UUID_TEXT = r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}'
+
+
+def strict_native_line(raw):
+    def pairs(items):
+        keys = [k for k, _ in items]
+        if len(keys) != len(set(keys)):
+            raise ValueError('duplicate key')
+        return dict(items)
+    try:
+        value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise CoordinationError('INVALID_REQUEST', 'native record is not strict JSON') from exc
+    if not isinstance(value, dict):
+        raise CoordinationError('INVALID_REQUEST', 'native record is not an object')
+    return value
+
+
+def codex_ended_turn_proof(config, state, attempt, locators):
+    """Prove from the live owner's open rollout that this attempt's queue turn ended on a provider error.
+
+    The pinned start and end records bracket one contiguous span. Every record in
+    it must be bookkeeping or input (task start/end, turn context, world state,
+    user/developer messages, the user-message item, token counts). Any tool call,
+    assistant output or unknown record refuses. Nothing after the end may name
+    the turn again. Only bounded byte ranges are read; nothing is retained.
+    """
+    start, end = locators
+    if end['offset'] < start['offset'] + start['length']:
+        raise CoordinationError('INVALID_REQUEST', 'Codex end record does not follow its start record')
+    path = codex_rollout_path(config, state)
+    inode = (path.stat().st_dev, path.stat().st_ino)
+    first, last = read_native_record(path, start), read_native_record(path, end)
+    turn = attempt['native_turn_id']
+    begin, stop = start['offset'], end['offset'] + end['length']
+    if stop - begin > CODEX_ENDED_TURN_REGION_LIMIT:
+        raise CoordinationError('INVALID_REQUEST', 'Codex ended turn span exceeds its read limit')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        size = os.fstat(fd).st_size
+        region = os.pread(fd, stop - begin, begin)
+        if size - stop > CODEX_ENDED_TURN_TAIL_LIMIT:
+            raise CoordinationError('INVALID_REQUEST', 'Codex rollout tail exceeds its read limit')
+        tail = os.pread(fd, size - stop, stop)
+    finally:
+        os.close(fd)
+    if len(region) != stop - begin or not region.endswith(b'\n'):
+        raise CoordinationError('INVALID_REQUEST', 'Codex ended turn span changed while reading')
+    records = [strict_native_line(line + b'\n') for line in region[:-1].split(b'\n')]
+    if records[0] != first or records[-1] != last or len(records) < 2:
+        raise CoordinationError('INVALID_REQUEST', 'Codex ended turn span does not start and end at its pins')
+    ordinal = first.get('ordinal')
+    for index, record in enumerate(records):
+        payload = record.get('payload')
+        if (set(record) - {'metadata'} != {'timestamp', 'ordinal', 'type', 'payload'}
+                or type(record['ordinal']) is not int or type(ordinal) is not int or record['ordinal'] != ordinal + index
+                or not isinstance(payload, dict) or payload.get('turn_id', turn) != turn):
+            raise CoordinationError('INVALID_REQUEST', 'Codex ended turn span is not one contiguous turn')
+        kind, inner = record['type'], payload.get('type')
+        edge = index in (0, len(records) - 1)
+        allowed = ((kind == 'event_msg' and edge and inner in ('task_started', 'task_complete'))
+                   or (kind == 'event_msg' and not edge and inner == 'token_count')
+                   or (kind == 'event_msg' and not edge and inner == 'item_completed'
+                       and isinstance(payload.get('item'), dict) and payload['item'].get('type') == 'UserMessage')
+                   or (kind in ('turn_context', 'world_state') and not edge)
+                   or (kind == 'response_item' and not edge and inner == 'message'
+                       and payload.get('role') in ('user', 'developer')))
+        if not allowed:
+            raise CoordinationError('INVALID_REQUEST', 'Codex turn shows tool, assistant or unknown activity')
+    started, finished = first['payload'], last['payload']
+    attribution = started.get('turn_attribution')
+    error = finished.get('error')
+    if (first['type'] != 'event_msg' or started.get('type') != 'task_started'
+            or started.get('turn_id') != turn or started.get('root_turn_id') != turn
+            or not isinstance(attribution, dict) or attribution.get('turn_id') != turn
+            or attribution.get('turn_trigger') != 'queue'
+            or last['type'] != 'event_msg' or finished.get('type') != 'task_complete'
+            or finished.get('turn_id') != turn or finished.get('root_turn_id') != turn
+            or finished.get('last_agent_message') is not None or not isinstance(error, dict)
+            or not isinstance(error.get('codex_error_info'), str)
+            or not re.fullmatch(r'[a-z][a-z0-9_]{0,63}', error['codex_error_info'])):
+        raise CoordinationError('INVALID_REQUEST', 'Codex records do not prove a queue turn ended on a provider error')
+    if turn.encode() in tail:
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout records this turn again after its end')
+    claimed = datetime.fromisoformat(attempt['created_at'].replace('Z', '+00:00')).timestamp()
+    if not native_time(first['timestamp']).timestamp() <= claimed <= native_time(last['timestamp']).timestamp():
+        raise CoordinationError('INVALID_REQUEST', 'Codex turn chronology does not bracket this claim')
+    if codex_rollout_path(config, state) != path or (path.stat().st_dev, path.stat().st_ino) != inode:
+        raise CoordinationError('INVALID_REQUEST', 'Codex rollout owner changed during verification')
+    return dict(schema='cairn.codex-ended-turn/1', records=locators, native_session_id=state['agent']['native_session_id'],
+                native_turn_id=turn, codex_error_info=error['codex_error_info'], ended_at=last['timestamp'])
+
+
+def recover_codex_ended_turn(config, native_session_id, attempt_id, locators, *, check_only=False):
+    """Explicitly settle a held Codex attempt whose queue turn ended on a provider error (CAIRN-179).
+
+    Such a turn runs no Stop hook, so the live process keeps the hold and the
+    lease renewed indefinitely. The settlement is the Stop path's: replay the
+    attempt's own journal, then reconcile delivery_completed if a completion
+    committed, otherwise turn_ended (processing_failed). Never replays or reissues.
+    """
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
+        turn = attempt.get('native_turn_id')
+        if (config.get('harness') != 'codex' or state.get('agent', {}).get('native_session_id') != native_session_id
+                or state.get('ending') or state.get('retired') or not process_alive(state['process'])
+                or attempt.get('attempt_id') != attempt_id or not isinstance(turn, str)
+                or not re.fullmatch(UUID_TEXT, turn) or intent.get('request_id') != attempt_id
+                or intent.get('native_turn_id') != turn or attempt.get('session') != session_ref(state['agent'])
+                or attempt.get('finished_at') or attempt.get('cancel')
+                or any(state.get(k) for k in ('inbox_close', 'inbox_turn_ended'))):
+            raise CoordinationError('INVALID_REQUEST', 'held state is not this unsettled Codex attempt')
+        health = probe_codex_native_health(config, state, force=True) or {}
+        if health.get('status_type') not in ('systemError', 'idle'):
+            raise CoordinationError('INVALID_REQUEST', 'native Codex thread is not proven inactive '
+                                    f"({health.get('status_type') or 'unavailable'})")
+        proof = codex_ended_turn_proof(config, state, attempt, locators)
+        proof['thread_status'] = health['status_type']
+        if check_only:
+            return dict(status='eligible', attempt_id=attempt_id, native_record=proof)
+        state['codex_ended_turn'] = dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending')
+        state['inbox_turn_ended'] = True
+        state['delivered_since_idle'] = False
+        write_state(path, state)
+        try:
+            settled = flush_inbox_intents(config, state) and end_turn_inbox(config, state, path)
+        except (CoordinationError, OSError, ValueError, KeyError, TypeError):
+            settled = False
+        record = state['codex_ended_turn']
+        record['settlement'] = (state.get('inbox_close') or {}).get('reason', 'turn_ended') if settled else 'turn_ended_pending'
+        write_state(path, state)
+        return dict(record, recovery_origin='codex_ended_turn')
+
+
 def check_codex_native_health(config, native_session_id):
     """Read-only operator probe of a Codex conversation's native health and metadata freshness."""
     path = state_path(config, native_session_id)
@@ -4220,7 +4358,7 @@ def main():
             return 7
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
-                                         "recover-codex-refused-wake", "check-codex-native-health",
+                                         "recover-codex-refused-wake", "recover-codex-ended-turn", "check-codex-native-health",
                                          "reconcile-codex-queue-wake", "inspect-held-refusal"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
@@ -4262,6 +4400,15 @@ def main():
             if None in (args.config, args.native_session_id):
                 parser.error("inspect-held-refusal requires --config and --native-session-id")
             result = inspect_held_refusal(load_config(args.config), args.native_session_id, args.attempt_id)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.mode == "recover-codex-ended-turn":
+            if None in (args.config, args.native_session_id, args.attempt_id, args.start_record, args.end_record):
+                parser.error("recover-codex-ended-turn requires --config, --native-session-id, --attempt-id, "
+                             "--start-record and --end-record")
+            locators = [native_locator(args.start_record), native_locator(args.end_record)]
+            result = recover_codex_ended_turn(load_config(args.config), args.native_session_id, args.attempt_id,
+                                              locators, check_only=args.check_only)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.mode == "recover-codex-refused-wake":
