@@ -1231,8 +1231,21 @@ def claude_exe_dirs(config):
 
 
 def supervisor_role(view):
+    """'daemon', 'bg-pty-host' or 'bg-spare' for a Claude supervisor, else None.
+
+    Claude Code 2.1.308 retitles its pty hosts and spares: argv[0] becomes
+    "claude bg-pty-host" and argv[1] "--bg-pty-host". The plain subcommand
+    form is accepted too.
+    """
     argv = view.get('argv') or []
-    return argv[1] if len(argv) > 1 and argv[1] in CLAUDE_SUPERVISOR_ROLES else None
+    if not argv:
+        return None
+    if len(argv) > 1 and argv[1] == 'daemon':
+        return 'daemon'
+    for role in ('bg-pty-host', 'bg-spare'):
+        if argv[0].split(' ')[-1] == role or (len(argv) > 1 and argv[1] in (role, '--' + role)):
+            return role
+    return None
 
 
 def owner_process(config, event):

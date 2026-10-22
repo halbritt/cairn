@@ -33,8 +33,9 @@ def daemon_tree(transcript='/x/' + NATIVE + '.jsonl'):
     exe = VERSIONS + '/2.1.308'
     return {
         10: proc(10, 1, 'claude', exe, ['/home/u/.local/bin/claude', 'daemon', 'run', '--json-path', 'd.json']),
-        20: proc(20, 10, '2.1.308', exe, ['claude', 'bg-pty-host', '--bg-pty-host', 's.sock', '--', exe, '--resume', transcript]),
-        21: proc(21, 10, '2.1.308', exe, ['claude', 'bg-spare', '--bg-spare', 'c.sock']),
+        # Observed on Claude Code 2.1.308: the supervisor retitles argv[0] ("claude bg-pty-host").
+        20: proc(20, 10, '2.1.308', exe, ['claude bg-pty-host', '--bg-pty-host', 's.sock', '--', exe, '--resume', transcript]),
+        21: proc(21, 10, '2.1.308', exe, ['claude bg-spare', '--bg-spare', 'c.sock']),
         30: proc(30, 20, '2.1.308', exe, [exe, '--resume', transcript, '--model', 'fable']),
         40: proc(40, 30, 'sh', '/usr/bin/dash', ['/bin/sh', '-c', 'hook']),
     }
@@ -80,6 +81,16 @@ class OwnerResolution(unittest.TestCase):
         tree[30] = dict(tree[30], exe='/usr/bin/other', comm='other')
         with Tree(tree, 40), self.assertRaises(coord.CoordinationError):
             coord.owner_process(CONFIG, {})
+
+    def test_supervisor_roles_in_either_argv_shape(self):
+        for argv, role in ((['claude bg-pty-host', '--bg-pty-host', 'x'], 'bg-pty-host'),
+                           (['claude', 'bg-pty-host', '--bg-pty-host', 'x'], 'bg-pty-host'),
+                           (['claude bg-spare', '--bg-spare', 'x'], 'bg-spare'),
+                           (['/home/u/.local/bin/claude', 'daemon', 'run'], 'daemon'),
+                           (['/v/2.1.308', '--resume', 'x.jsonl'], None),
+                           (['claude', '--channels=server:cairn-events'], None)):
+            with self.subTest(argv=argv):
+                self.assertEqual(coord.supervisor_role(dict(argv=argv)), role)
 
     def test_worker_is_recognized_only_under_its_exact_daemon(self):
         tree = daemon_tree()
