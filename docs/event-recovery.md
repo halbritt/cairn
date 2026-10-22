@@ -140,6 +140,70 @@ review, as described in [native inbox](native-inbox.md). Reissue the failed
 delivery afterwards as above if the work should run again. Reuse the exact
 request UUID and JSON after a lost response.
 
+## Expire deliveries stranded on a stopped session
+
+A session that explicitly left (`stopped`) keeps its unresolved inbox
+deliveries. Unless the same conversation resumes, nothing will claim them. After
+review, the operator can fail them with code `consumer_retired`. The command never
+runs automatically, and a dry run is the default first step:
+
+```sh
+cairn stopped-inbox-expire <<'JSON'
+{"repo":"/home/halbritt/git/cairn","dry_run":true}
+JSON
+```
+
+The dry run lists each eligible stopped session with its deliveries and their
+kinds, and `classification` counts every pending or leased delivery in the
+repository by consumer class:
+
+| Class | Meaning | Selected |
+| --- | --- | --- |
+| `session_stopped` | Explicit stop at least `stopped_for_seconds` ago (default 86400, minimum 3600). | Yes |
+| `session_stopped_recently` | Explicit stop within that window. | No |
+| `session_offline` | Presence expired without an explicit stop. | No |
+| `session_live` | Present now. | No |
+| `session_replaced` | Session record from an earlier database generation. | No |
+| `legacy_inbox` | Profile or manual inbox that is not a registered session, such as `local-uid:1000` or `agent/codex`. | No |
+| `topic_subscriber` | Delivery made through a topic subscription. | No |
+| `worker_pool` | Pool request delivery. | No |
+
+Offline presence does not prove that an agent stopped, so only an explicit stop
+qualifies. Topic subscriptions, pools and non-session inboxes are never selected.
+Within an eligible session, a delivery is retained and counted under `retained`
+when a wake or native attempt still holds it (`held`), when it is leased
+(`leased`), or when a live operator grant gives a successor access to its event
+(`successor_grant`). Each listed delivery reports `execution`: `never_launched`
+or `may_have_executed`, as in the review.
+
+To apply, pass the reviewed session UUIDs, a reason and a new request UUID:
+
+```sh
+cairn stopped-inbox-expire <<'JSON'
+{
+  "request_id":"NEW_UUID",
+  "repo":"/home/halbritt/git/cairn",
+  "agent_ids":["STOPPED_AGENT_UUID"],
+  "reason":"Reviewed dry run; these sessions ended and will not resume"
+}
+JSON
+```
+
+At most 100 sessions are accepted per request. Each session row is locked and
+rechecked: a session that has resumed reports `not_stopped`, a stop inside the
+window reports `stopped_recently`, and an unknown or foreign UUID reports
+`not_found`. Their deliveries are left alone. Delivery rows are locked before
+holds are read, so a hold recorded meanwhile is retained. Selected pending
+deliveries become `failed` with code `consumer_retired` and the operator's
+control time, identity and reason. Reuse the exact request UUID and JSON after
+a lost response.
+
+The publisher sees the failure and its code through `event-status`. Nothing is
+replayed. To repeat a request, reissue it as above or publish new intent to a
+live recipient. Reissue goes back to the same, now stopped, inbox. A resumed
+conversation keeps its identity; its failed deliveries stay failed, and new
+deliveries reach it normally.
+
 ## Controlled requests
 
 [Request controls](request-controls.md) add expiry and cancellation decisions to

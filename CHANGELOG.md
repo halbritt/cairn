@@ -16,6 +16,15 @@ and MCP processes.
 
 ## 2026-10-21
 
+- Operators can review and expire deliveries stranded on explicitly stopped
+  sessions with `cairn stopped-inbox-expire`. A dry run classifies every
+  unresolved delivery by consumer and lists what would fail. Applying it to
+  reviewed session UUIDs fails their pending deliveries with code
+  `consumer_retired`. Offline, recently stopped, live and replaced sessions,
+  topic subscriptions, pools and profile inboxes are never selected. Held,
+  leased and successor-granted deliveries are retained. Migration 063 permits
+  the new control code. Nothing is replayed; publishers see the code and can
+  reissue.
 - Bound inbox recall no longer caps each required-memory lookup attempt at two
   seconds. An attempt may use the remaining five-second recall time except a
   one-second reserve, so a slow lookup under host load can complete instead of

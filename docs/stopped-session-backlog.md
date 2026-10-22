@@ -143,3 +143,10 @@ the following invariants:
 - **Non-mutation of original work**: Publishing a notification never claims,
   acknowledges, fails, reissues, releases holds on, forwards, or clears the
   original delivery, and never restarts or switches the stopped session.
+
+## Explicit expiry
+
+Notification leaves the backlog in place. After review, an operator can fail the
+backlog of sessions that stopped at least a day earlier with
+`cairn stopped-inbox-expire`, which records code `consumer_retired`. See
+[event recovery](event-recovery.md#expire-deliveries-stranded-on-a-stopped-session).

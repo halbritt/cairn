@@ -180,6 +180,13 @@ def check(binary, directory):
         assert fresh["destination"] == dict(type="agent", name="agent/carol")
         retained = operator("coordination-review", dict(repo=repo, delivery_id=d["delivery_id"]))["deliveries"]["deliveries"][0]
         assert retained["state"] == "failed" and retained["reissued_as"]["event_id"] == fresh["event_id"]
+        # Stopped-inbox expiry is reviewable through the same operator channel;
+        # profile inboxes such as agent/carol are legacy, never candidates.
+        plan = operator("stopped-inbox-expire", dict(repo=repo, dry_run=True))
+        assert plan["dry_run"] and plan["expired"] == 0 and plan["sessions"] == []
+        assert all(c["class"] != "session_stopped" for c in plan["classification"]), plan
+        operator("stopped-inbox-expire", dict(request_id=str(uuid.uuid4()), repo=repo,
+                 reason="Applying requires reviewed sessions"), expected="INVALID_REQUEST")
         successor = call("carol", "inbox")["delivery"]
         assert successor["event"]["event_id"] == fresh["event_id"] and successor["attempts"] == 1
         call("carol", "ack", "--request-id", str(uuid.uuid4()), "--lease", successor["lease_id"], successor["delivery_id"])

@@ -74,6 +74,7 @@ does not withdraw the published event or change response-group collection.
 ## Stop decisions and process cleanup
 
 The database records `admission_expired`, `task_deadline` or `operator_cancelled`
+(and, for other recovery commands, `operator_released` or `consumer_retired`)
 as a failed delivery with control time and store-owned caller attribution.
 Operator-selected reasons are available only in local control/review output;
 ordinary agent status omits the reason. An unassigned pool request records the
