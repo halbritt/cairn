@@ -253,5 +253,28 @@ class TransientErrorWakeTests(TransientErrorWakeBase):
         self.assertNotIn('agent-context', self.op_names())
 
 
+
+class StoreDeliveryLookupTests(TransientErrorWakeBase):
+    def test_store_lookup_sends_only_fields_the_api_accepts(self):
+        """event-inspect decodes strictly (EventStatusRequest: event_id, after, limit). An extra
+        delivery_id made every reconcile-codex-queue-wake store lookup fail as INVALID_REQUEST."""
+        sent = []
+
+        def strict(config, op, request, **kwargs):
+            if op == 'session-inbox-ready':
+                return {}
+            sent.append(request)
+            if set(request) - {'event_id', 'after', 'limit'}:
+                raise coord.CoordinationError('INVALID_REQUEST', 'Cairn refused the lifecycle operation')
+            return dict(event=dict(event_id=RECORD, repo=self.cc['repo']), deliveries=[dict(
+                delivery_id=DELIVERY, state='handled', consumer=self.state['agent']['inbox'], attempts=1)])
+        with patch.object(coord, 'call', side_effect=strict):
+            found, _ = coord._codex_store_delivery(self.cc, self.state, DELIVERY, RECORD)
+            missing, _ = coord._codex_store_delivery(self.cc, self.state, DELIVERY, None)
+        self.assertEqual(found['state'], 'handled')
+        self.assertEqual(sent, [dict(event_id=RECORD, limit=100)])
+        self.assertIsNone(missing)
+
+
 if __name__ == '__main__':
     unittest.main()

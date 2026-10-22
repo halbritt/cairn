@@ -3749,9 +3749,10 @@ def _codex_store_delivery(config, state, delivery_id, event_id=None):
                 event_id = ready['event_id']
     except CoordinationError:
         ready_id = None
-    request = dict(delivery_id=delivery_id, limit=100)
-    if isinstance(event_id, str) and event_id:
-        request['event_id'] = event_id
+    if not isinstance(event_id, str) or not event_id:
+        return None, ready_id  # event-inspect is keyed by event; the delivery is matched below.
+    # The API decodes EventStatusRequest strictly, so send only its fields (CAIRN-188).
+    request = dict(event_id=event_id, limit=100)
     try:
         inspected = call(config, 'event-inspect', request, timeout=1, session=session_ref(agent))
     except CoordinationError:
