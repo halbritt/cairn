@@ -342,6 +342,37 @@ Recovery checks this attempt's own command journal; it does not discard unrelate
 pending commands, or late-response obligations. The existing journal flush still processes those
 obligations independently.
 
+### Claude daemon-managed background sessions
+
+Claude Code's background daemon (`claude daemon run`) supervises `bg-pty-host` and
+`bg-spare` processes and re-execs each conversation worker directly from
+`~/.local/share/claude/versions/<version>`. Its short name is therefore a version
+number, not `claude`. Hooks resolve their owner as the nearest ancestor that is
+named in `process_names`, or whose executable lies in a native Claude versions
+directory (`process_exe_dirs`, defaulting to `~/.local/share/claude/versions` for
+Claude), and that is not a daemon, pty host or spare. A hook that finds only
+supervisors refuses rather than binding the daemon (CAIRN-178). A conversation
+that an earlier engine bound to its daemon is rebound to its worker on the
+worker's next hook; existing holds are kept.
+
+A daemon-managed worker claims nothing at `SessionStart`: a resumed background
+session has no turn or `Stop` to own the claim. Its next real prompt is the
+delivery boundary. The watcher records "daemon-managed background Claude session
+has no wake transport" (`native_transport_unavailable`) instead of attempting a
+wake. A start claim already stranded on the daemon can be settled with
+`coordination.py recover-daemon-start-claim --config BINDING --native-session-id S
+--attempt-id A`. Add `--check-only` first. The command requires all of the
+following:
+
+- the state is bound to the live daemon;
+- the attempt is untouched: no native turn, tools, journal, close or active prompt;
+- exactly one live worker resumes this conversation's transcript under that daemon;
+- the transcript records no turn at or after the claim, only known metadata
+  records after its last timestamped record.
+
+It settles `turn_ended` (`processing_failed`, no replay) and rebinds the session to
+the worker.
+
 A refusal held that way can be settled later only from that host-written record:
 `coordination.py recover-refused-wake --config BINDING --native-session-id S --attempt-id A
 --native-turn-id T`. It repeats every check, decides before writing, and sends nothing to the native

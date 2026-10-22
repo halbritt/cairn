@@ -589,6 +589,10 @@ def prepare_idle_wake(config, state, path, cycle=None):
         state.pop('wake_refusal', None)
         state.pop('opencode_replay', None)
         return None
+    if config.get('harness') == 'claude' and claude_daemon_managed(state['process']):
+        return note_wake_refusal(config, state, delivery,
+            'daemon-managed background Claude session has no wake transport; delivery waits for its next prompt',
+            'native_transport_unavailable', cycle)
     if (config.get('harness') == 'codex' and
             isinstance(state.get('native_health'), dict) and
             state['native_health'].get('session') == session_ref(agent) and
@@ -1192,21 +1196,87 @@ def same_process(a, b):
     return all(a[k] == b[k] for k in ("pid", "start", "boot"))
 
 
+def proc_view(pid):
+    """One process's identity, short name, executable and argv; raises if it is gone."""
+    ref = process_reference(pid)
+    comm = Path(f"/proc/{pid}/comm").read_text().strip()
+    try:
+        exe = os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        exe = None
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()[:65536]
+        argv = [part.decode('utf-8', 'replace') for part in raw.split(b'\0') if part]
+    except OSError:
+        argv = []
+    return dict(ref=ref, comm=comm, exe=exe, argv=argv)
+
+
+def proc_pids():
+    return sorted(int(entry.name) for entry in Path('/proc').iterdir() if entry.name.isdigit())
+
+
+CLAUDE_SUPERVISOR_ROLES = ('daemon', 'bg-pty-host', 'bg-spare')
+
+
+def claude_exe_dirs(config):
+    """Directories whose executables are native Claude processes, whatever their short name.
+
+    Claude's background daemon re-execs conversation workers directly from its
+    versions directory, so their comm is a version number, not ``claude``.
+    """
+    if 'process_exe_dirs' in config:
+        return [Path(item) for item in config['process_exe_dirs']]
+    return [Path.home() / '.local/share/claude/versions'] if config.get('harness') == 'claude' else []
+
+
+def supervisor_role(view):
+    argv = view.get('argv') or []
+    return argv[1] if len(argv) > 1 and argv[1] in CLAUDE_SUPERVISOR_ROLES else None
+
+
 def owner_process(config, event):
-    """Plugins supply their own PID; command hooks find a named native ancestor."""
+    """Plugins supply their own PID; command hooks find a named native ancestor.
+
+    A Claude daemon, its pty hosts and its spare workers are supervisors, never
+    the conversation's owner (CAIRN-178): the nearest conversation process is.
+    """
     declared = event.get("host_pid")
     if declared is not None and (type(declared) is not int or declared < 2):
         raise CoordinationError("INVALID_HOST", "invalid native process ID")
+    exe_dirs = claude_exe_dirs(config)
     pid = os.getppid()
     for _ in range(128):
         if pid < 2:
             break
-        ref = process_reference(pid)
-        name = Path(f"/proc/{pid}/comm").read_text().strip()
-        if pid == declared or (declared is None and name in config.get("process_names", [])):
-            return ref
-        pid = ref["parent"]
+        view = proc_view(pid)
+        if pid == declared:
+            return view['ref']
+        if declared is None and supervisor_role(view) is None and (
+                view['comm'] in config.get("process_names", []) or
+                (view['exe'] and any(Path(view['exe']).parent == d for d in exe_dirs))):
+            return view['ref']
+        pid = view['ref']["parent"]
     raise CoordinationError("INVALID_HOST", "native process is not an observed ancestor")
+
+
+def claude_daemon_managed(process):
+    """True for a conversation worker run under a Claude daemon's bg-pty-host."""
+    try:
+        return supervisor_role(proc_view(process['parent'])) == 'bg-pty-host'
+    except (OSError, KeyError, TypeError, ValueError, IndexError):
+        return False
+
+
+def daemon_worker_of(worker, daemon):
+    """True when ``worker`` runs under a bg-pty-host whose parent is exactly this live Claude daemon."""
+    try:
+        host = proc_view(worker['parent'])
+        supervisor = proc_view(host['ref']['parent'])
+    except (OSError, KeyError, TypeError, ValueError, IndexError):
+        return False
+    return (supervisor_role(host) == 'bg-pty-host' and supervisor_role(supervisor) == 'daemon'
+            and same_process(supervisor['ref'], daemon))
 
 
 def valid_native_session_id(value):
@@ -2129,6 +2199,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
         return ''
+    if (config.get('harness') == 'claude' and observation['event'] == 'SessionStart'
+            and claude_daemon_managed(state.get('process'))):
+        return ''  # A background worker's start has no turn to own the claim (CAIRN-178).
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
     if owner_turn and owner_turn != observation.get('native_turn_id'):
         if config.get('harness') == 'opencode' and observation['event'] == 'TurnStart':
@@ -2797,6 +2870,116 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
         state['wake_refusal_diagnostic'] = dict(state['wake_refusal_diagnostic'], settlement='turn_ended_pending')
         write_state(path, state)
     return state['wake_refusal_diagnostic']
+
+
+CLAUDE_NON_TURN_RECORDS = ('last-prompt', 'cost-state', 'ai-title', 'agent-name', 'custom-title', 'summary',
+                           'artifact-comment-monitor', 'artifact-autoreact-ledger')
+CLAUDE_TRANSCRIPT_LIMIT = 256 * 1024 * 1024
+
+
+def find_daemon_worker(config, state):
+    """The one live worker that resumed this conversation under the state's bound daemon."""
+    transcript = str(claude_transcript_path(config, state))
+    exe_dirs = claude_exe_dirs(config)
+    found = []
+    for pid in proc_pids():
+        try:
+            view = proc_view(pid)
+        except (OSError, ValueError, IndexError):
+            continue
+        argv = view['argv']
+        if (view['exe'] and any(Path(view['exe']).parent == d for d in exe_dirs) and len(argv) > 2
+                and argv[1] == '--resume' and argv[2] == transcript
+                and daemon_worker_of(view['ref'], state['process'])):
+            found.append(view['ref'])
+    if len(found) != 1:
+        raise CoordinationError('INVALID_REQUEST', f'expected exactly one daemon worker for this conversation, found {len(found)}')
+    return found[0]
+
+
+def daemon_start_claim_evidence(config, state, attempt):
+    """The transcript records no turn at or after the claim: only non-turn metadata follows the last turn."""
+    path = claude_transcript_path(config, state)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > CLAUDE_TRANSCRIPT_LIMIT:
+            raise CoordinationError('INVALID_REQUEST', 'native transcript is not a readable bounded owner file')
+        raw = os.pread(fd, info.st_size, 0)
+    finally:
+        os.close(fd)
+    claimed = datetime.fromisoformat(attempt['created_at'].replace('Z', '+00:00'))
+    records = []
+    for line in raw.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError as exc:
+            raise CoordinationError('INVALID_REQUEST', 'native transcript has an unreadable record') from exc
+        if not isinstance(record, dict):
+            raise CoordinationError('INVALID_REQUEST', 'native transcript has a non-object record')
+        records.append(record)
+    stamped = [i for i, r in enumerate(records) if isinstance(r.get('timestamp'), str)]
+    if not stamped:
+        raise CoordinationError('INVALID_REQUEST', 'native transcript has no timestamped turn record')
+    last = stamped[-1]
+    if native_time(records[last]['timestamp']) >= claimed:
+        raise CoordinationError('INVALID_REQUEST', 'native transcript records activity at or after the claim')
+    for record in records[last + 1:]:
+        if record.get('type') not in CLAUDE_NON_TURN_RECORDS or 'timestamp' in record:
+            raise CoordinationError('INVALID_REQUEST', 'native transcript records a turn or unknown record after the claim')
+    return dict(last_turn_record_at=records[last]['timestamp'], records_after=len(records) - last - 1,
+                transcript_bytes=len(raw))
+
+
+def recover_daemon_start_claim(config, native_session_id, attempt_id, *, check_only=False):
+    """Settle a start claim stranded on a Claude daemon-managed worker that never ran a turn (CAIRN-178).
+
+    Before CAIRN-178 the host bound such a conversation to its daemon and claimed
+    at the resumed worker's SessionStart. No turn or Stop follows for a
+    background session, so the hold never settles. Requires: state bound to the
+    live daemon; an untouched turn-less attempt; exactly one live worker resuming
+    this transcript under that daemon; and a transcript with no turn at or after
+    the claim. Settles turn_ended (processing_failed, no replay) and rebinds the
+    session to the worker.
+    """
+    path = state_path(config, native_session_id)
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
+        if (config.get('harness') != 'claude' or state.get('agent', {}).get('native_session_id') != native_session_id
+                or state.get('ending') or state.get('retired') or attempt.get('attempt_id') != attempt_id
+                or intent.get('request_id') != attempt_id or attempt.get('native_turn_id') or intent.get('native_turn_id')
+                or attempt.get('session') != session_ref(state['agent']) or attempt.get('finished_at')
+                or attempt.get('cancel') or attempt.get('tools') or state.get('tool_calls') or state.get('active_prompt')
+                or any(state.get(k) for k in ('inbox_close', 'inbox_turn_ended'))
+                or not attempt_commands_absent(config, attempt)):
+            raise CoordinationError('INVALID_REQUEST', 'held state is not an untouched turn-less start claim')
+        try:
+            daemon = proc_view(state['process']['pid'])
+        except (OSError, ValueError, IndexError) as exc:
+            raise CoordinationError('INVALID_REQUEST', 'bound process is not a live Claude daemon') from exc
+        if not process_alive(state['process']) or supervisor_role(daemon) != 'daemon' \
+                or not same_process(daemon['ref'], state['process']):
+            raise CoordinationError('INVALID_REQUEST', 'bound process is not a live Claude daemon')
+        worker = find_daemon_worker(config, state)
+        evidence = daemon_start_claim_evidence(config, state, attempt)
+        proof = dict(schema='cairn.daemon-start-claim/1', daemon={k: state['process'][k] for k in ('pid', 'start', 'boot')},
+                     worker={k: worker[k] for k in ('pid', 'start', 'boot')}, **evidence)
+        if check_only:
+            return dict(status='eligible', attempt_id=attempt_id, worker=proof['worker'], native_record=proof)
+        state['daemon_start_claim'] = dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending')
+        state['inbox_turn_ended'] = True
+        state['delivered_since_idle'] = False
+        state['process'] = worker
+        write_state(path, state)
+        try:
+            settled = flush_inbox_intents(config, state) and end_turn_inbox(config, state, path)
+        except (CoordinationError, OSError, ValueError, KeyError, TypeError):
+            settled = False
+        record = state['daemon_start_claim']
+        record['settlement'] = (state.get('inbox_close') or {}).get('reason', 'turn_ended') if settled else 'turn_ended_pending'
+        write_state(path, state)
+        return dict(record)
 
 
 def recover_refused_wake(config, native_session_id, attempt_id, native_turn_id):
@@ -3922,6 +4105,13 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
             finish_presence(config, state, path)
         if state and not same_process(process, state['process']) and not process_alive(state['process']) and not state.get('retired'):
             finish_presence(config, state, path)
+        if (state and config['harness'] == 'claude' and not state.get('retired') and state.get('process')
+                and not same_process(process, state['process']) and process_alive(state['process'])
+                and daemon_worker_of(process, state['process'])):
+            # Bound to its Claude daemon by an earlier engine (CAIRN-178): the
+            # conversation worker is the real owner. Existing holds are kept.
+            state['process'] = process
+            write_state(path, state)
         if state and not same_process(process, state["process"]) and process_alive(state["process"]) and not state.get("retired"):
             raise CoordinationError("SESSION_BUSY", "this conversation is associated with another live process")
         if observation["phase"] == "leave":
@@ -4358,7 +4548,8 @@ def main():
             return 7
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("hook", "watch", "recover-refused-wake", "recover-native-refused-wake",
-                                         "recover-codex-refused-wake", "recover-codex-ended-turn", "check-codex-native-health",
+                                         "recover-codex-refused-wake", "recover-codex-ended-turn", "recover-daemon-start-claim",
+                                         "check-codex-native-health",
                                          "reconcile-codex-queue-wake", "inspect-held-refusal"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--event")
@@ -4400,6 +4591,13 @@ def main():
             if None in (args.config, args.native_session_id):
                 parser.error("inspect-held-refusal requires --config and --native-session-id")
             result = inspect_held_refusal(load_config(args.config), args.native_session_id, args.attempt_id)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.mode == "recover-daemon-start-claim":
+            if None in (args.config, args.native_session_id, args.attempt_id):
+                parser.error("recover-daemon-start-claim requires --config, --native-session-id and --attempt-id")
+            result = recover_daemon_start_claim(load_config(args.config), args.native_session_id, args.attempt_id,
+                                                check_only=args.check_only)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.mode == "recover-codex-ended-turn":
