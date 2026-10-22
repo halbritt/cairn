@@ -697,6 +697,12 @@ def prepare_idle_wake(config, state, path, cycle=None):
     identified = [h for h in candidates if host_identifies_session(config, state, h, environment)]
     matches = [h for h in identified if host_eligible(h)]
     if len(matches) != 1:
+        parent = agy_subagent_parent(config, state, path, candidates, environment) if not identified else None
+        if parent:
+            return note_wake_refusal(config, state, delivery,
+                f"Agy subagent conversation inside {parent['display_name']}'s process (native "
+                f"{parent['native_session_id']}); it runs only when its parent messages it, so it has no wake "
+                "transport", 'native_transport_unavailable', cycle)
         reason, condition = terminal_target_diagnosis(identified, matches)
         return note_wake_refusal(config, state, delivery, reason, condition, cycle)
     host = matches[0]
@@ -713,6 +719,32 @@ def prepare_idle_wake(config, state, path, cycle=None):
         target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
     write_state(path, state)
     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
+
+
+def agy_subagent_parent(config, state, path, candidates, environment):
+    """The registered Agy conversation that owns this conversation's process and pane, if any.
+
+    Agy runs subagents as further conversations inside the parent's process. Herdr
+    reports only the parent's session for the pane, so a subagent can never be a
+    terminal target. Read-only: other states are read without their locks.
+    """
+    if config.get('harness') != 'agy':
+        return None
+    for other in Path(config['state_dir']).glob('*.json'):
+        if other == path:
+            continue
+        try:
+            value = json.loads(other.read_text())
+        except (OSError, ValueError):
+            continue
+        agent = value.get('agent') if isinstance(value, dict) else None
+        if (not isinstance(agent, dict) or value.get('retired') or value.get('ending')
+                or not isinstance(value.get('process'), dict) or not same_process(value['process'], state['process'])
+                or agent.get('native_session_id') == state['agent']['native_session_id']):
+            continue
+        if any(host_identifies_session(config, value, host, environment) for host in candidates):
+            return agent
+    return None
 
 
 def terminal_target_diagnosis(identified, matches):

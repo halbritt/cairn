@@ -17,7 +17,15 @@ home keeps its own binding; agents keep their conversation UUIDs across resume.
 - Codex and Claude receive context at their start/prompt hooks. A request arriving
   while busy can trigger one Stop continuation.
 - Agy receives context at PreInvocation. A fully idle Stop can continue once to
-  handle a queued message. It does not interrupt background work.
+  handle a queued message. It does not interrupt background work. A top-level
+  Agy conversation is woken through its Herdr pane when idle. An Agy subagent
+  runs as a further conversation inside its parent's process. It registers as
+  its own session, but it runs only when its parent messages it, and Herdr
+  identifies the pane only with the parent. The watcher therefore reports
+  "Agy subagent conversation inside <parent>'s process" with
+  `native_transport_unavailable` instead of `terminal_target_missing`, and never
+  wakes it. Its deliveries wait for its next parent-initiated turn. Its own
+  self-drain also needs such a turn.
 - OpenCode receives context in its next main request transformation. Hermes
   receives it before its next turn. Their idle/post-turn callbacks reconcile
   existing handling; they do not start another turn themselves.
