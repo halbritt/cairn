@@ -14,6 +14,18 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-22
+
+- A bound inbox wake no longer refuses when the host is loaded and the
+  required-memory lookup takes longer than about four seconds (CAIRN-187). The
+  required lookup and its one retry now have an eight-second window inside the
+  12-second bridge deadline, ending at least three seconds before it so lease
+  renewal and the grant writes still fit, instead of the five-second recall cap.
+  After a slow lookup the task-source read and optional recall get up to two
+  more seconds within that window and otherwise degrade as before. The lookup
+  stays required: when it cannot finish, the wake is refused with the same
+  diagnostics, and no grant is written.
+
 ## 2026-10-21
 
 - `coordination-review` attention now reports `starved_sessions`: online

@@ -185,8 +185,8 @@ class RequiredLookupBudgetTests(unittest.TestCase):
         self.assertLess(meta['deadline_remaining_ms'], 500)
         self.assertEqual([c['op'] for c in case.calls()], ['search', 'search'])
         self.assertEqual(case.calls()[0]['args'], case.calls()[1]['args'])
-        # The unchanged five-second recall cap still bounds the refusal.
-        self.assertLess(elapsed, 7)
+        # The required-lookup window (eight seconds, inside the bridge deadline) bounds the refusal.
+        self.assertLess(elapsed, 10)
         case.assert_no_grant()
 
     def test_hung_first_lookup_leaves_its_reserve_for_one_retry(self):
@@ -201,8 +201,8 @@ class RequiredLookupBudgetTests(unittest.TestCase):
         self.assertEqual(len(searches), 2)
         self.assertEqual(searches[0]['args'], searches[1]['args'])
         first, retry = [t for op, t, _ in seen[:2]]
-        self.assertGreater(first, 3.5)
-        self.assertLessEqual(first, 4.0)
+        self.assertGreater(first, 6.5)
+        self.assertLessEqual(first, 7.0)
         self.assertGreater(retry, 0.5)
 
     def test_slow_successful_required_lookup_leaves_later_phases_their_reserve(self):
@@ -216,10 +216,63 @@ class RequiredLookupBudgetTests(unittest.TestCase):
         operations = [op for op, _, _ in seen]
         self.assertEqual(operations[:2], ['search', 'history'])
         first = seen[0][1]
-        self.assertLessEqual(first, 4.0)
+        self.assertLessEqual(first, 7.0)
         history = seen[1][1]
         self.assertGreater(history, 0.8)
         self.assertLessEqual(history, 2)
+
+
+    def test_required_lookup_beyond_five_second_recall_cap_still_delivers(self):
+        # CAIRN-187: under host load (load average ~50 on 12 CPUs) one required
+        # lookup took over four seconds; the five-second recall cap left a
+        # one-second retry that could not finish, refusing agent-510's wake.
+        case = self.case()
+        case.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body='Required whole instruction.'))]
+        slow_required_search(case, [5.5])
+        case.freeze()
+        seen = []
+        with record_timeouts(case, seen):
+            result = case.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn('Required whole instruction.', text)
+        # The exact task-source read still gets its own bounded time after the
+        # slow lookup, within the required window's post-lookup reserve.
+        self.assertIn(case.body, text)
+        self.assertEqual(sum('--kind' in c['args'] for c in case.calls()), 1)
+        self.assertEqual([op for op, _, _ in seen][:2], ['search', 'history'])
+        self.assertGreater(seen[1][1], 1.5)
+        self.assertLessEqual(seen[1][1], 2)
+        ledger = json.loads((case.root/'memory'/f'{fixtures.SESSION}.inbox-recall.json').read_text())
+        self.assertEqual(len(ledger['grants']), 1)
+
+
+class RequiredLookupWindowTests(unittest.TestCase):
+    """The required window reallocates unused bridge time but never its post-lookup reserve."""
+
+    def bridge(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'integrations' / 'lifecycle'))
+        import inbox_recall
+        return inbox_recall
+
+    def test_window_is_eight_seconds_when_the_bridge_has_time(self):
+        bridge = self.bridge()
+        self.assertEqual(bridge.required_search_deadline(100.0, 112.0), 108.0)
+
+    def test_window_keeps_the_post_lookup_reserve_before_the_bridge_deadline(self):
+        bridge = self.bridge()
+        # A late start (slow claim, or the CAIRN-184 1.5 s lock wait) shortens
+        # the required window instead of the lease renewal and ledger writes.
+        self.assertEqual(bridge.required_search_deadline(102.5, 112.0), 109.0)
+        for started in (100.0, 101.5, 104.0, 108.0, 111.0, 113.0):
+            self.assertLessEqual(bridge.required_search_deadline(started, 112.0),
+                                 112.0 - bridge.REQUIRED_SEARCH_OUTER_RESERVE_SECONDS)
+
+    def test_window_never_shorter_than_the_former_recall_cap_when_time_allows(self):
+        bridge = self.bridge()
+        for started in (100.0, 100.5, 101.0, 101.5, 102.0):
+            self.assertGreaterEqual(bridge.required_search_deadline(started, 112.0), min(started + 5, 112.0))
 
 
 if __name__ == '__main__':

@@ -21,6 +21,22 @@ RECALL_OBSERVATION_VERSION = 1
 # recomputes the search before matching the request ID to a stored receipt.
 REQUIRED_SEARCH_RESERVE_SECONDS = 1.0
 REQUIRED_SEARCH_MIN_SECONDS = 2
+# The required lookup has its own window instead of the five-second recall cap
+# (CAIRN-187). Under host load one lookup took over four seconds, so the cap left
+# a one-second retry that could not finish and refused the wake while about six
+# seconds of the bridge deadline went unused. The window ends early enough that
+# the final lease renewal (at most two seconds) and the grant writes still fit
+# the bridge deadline; a late start shortens the lookup, never that reserve.
+# The task-source read and optional recall keep the five-second deadline, but a
+# slow required lookup extends it to give them up to two more seconds, never past
+# the required window; they degrade on their own when that time runs out.
+REQUIRED_SEARCH_WINDOW_SECONDS = 8
+REQUIRED_SEARCH_OUTER_RESERVE_SECONDS = 3.0
+
+
+def required_search_deadline(started, outer_deadline):
+    """Monotonic time by which the required lookup, with its retry, must finish."""
+    return min(started + REQUIRED_SEARCH_WINDOW_SECONDS, outer_deadline - REQUIRED_SEARCH_OUTER_RESERVE_SECONDS)
 
 
 def required_search_timeout(engine, deadline):
@@ -576,6 +592,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))
         started = time.monotonic()
         deadline = min(started + 5, outer_deadline)
+        required_deadline = required_search_deadline(started, outer_deadline)
         memory = engine.Memory(memory_config, session)
         if (memory_config.get('inbox_recall_trace') is True
                 and getattr(engine, 'INBOX_ROUTE_TRACE_VERSION', None) == 1):
@@ -591,7 +608,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             try:
                 required = memory.search(required_query, room=engine.RECALL_SEARCH_ROOM,
                                          kinds=('decision', 'preference'),
-                                         timeout=required_search_timeout(engine, deadline), **search_options)
+                                         timeout=required_search_timeout(engine, required_deadline), **search_options)
                 break
             except engine.HookError as exc:
                 # Retry the same read intent once, never the inbox claim or task.
@@ -600,19 +617,20 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                         exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED')):
                     failure_meta = dict(recall_phase='required_search', recall_operation='search',
                                         recall_attempts=search_attempt + 1, recall_max_attempts=max_search_attempts,
-                                        deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+                                        deadline_remaining_ms=int(max(0, round((required_deadline - time.monotonic()) * 1000))))
                     exc.cairn_recall_failure = failure_meta
                     if getattr(exc, 'reason', None) != 'NOT_HOSTED' and getattr(memory, 'inbox_trace', None) is not None:
                         memory.inbox_trace.data['failure_meta'] = dict(failure_meta)
                         if metrics is not None:
                             metrics['trace'] = memory.inbox_trace
                     raise
+        deadline = max(deadline, min(time.monotonic() + 2, required_deadline))
         try:
             hosted(required)
         except ValueError as exc:
             exc.cairn_recall_failure = dict(recall_phase='required_search', recall_operation='hosted',
                                             recall_attempts=search_attempt + 1, recall_max_attempts=max_search_attempts,
-                                            deadline_remaining_ms=int(max(0, round((deadline - time.monotonic()) * 1000))))
+                                            deadline_remaining_ms=int(max(0, round((required_deadline - time.monotonic()) * 1000))))
             raise
         if metrics is not None:
             metrics['memory'] = memory

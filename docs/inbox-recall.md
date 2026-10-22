@@ -139,10 +139,16 @@ The runtime distinguishes a bounded current-context delivery from optional-read
 permission; neither measures the model's actual free context.
 
 Recall I/O shares a five-second deadline; each source/pull operation is bounded by
-two seconds. A required-memory lookup attempt instead waits for the remaining
-recall time minus a one-second reserve, but at least two seconds while that much
-remains. A hung first attempt therefore leaves one retry window, and a slow
-successful lookup leaves time for the task-source read and optional recall. Coordination admission and final lease renewal use the enclosing
+two seconds. The required-memory lookup instead has its own eight-second window,
+which ends at least three seconds before the enclosing bridge deadline so that the
+final lease renewal and grant writes still fit (a late start, such as a session-lock
+wait, shortens the lookup, not that reserve). Each attempt waits for the remaining
+window minus a one-second reserve, but at least two seconds while that much
+remains. A hung first attempt therefore leaves one retry window. After a slow
+successful lookup, the task-source read and optional recall get up to two more
+seconds within the window, and degrade on their own when that runs out
+(CAIRN-187: under host load one lookup exceeded four seconds and the former
+five-second cap refused the wake). Coordination admission and final lease renewal use the enclosing
 hook deadline. This is not a measured five-second end-to-end latency guarantee.
 The normal coordination hook must have enough timeout for admission and cleanup.
 
