@@ -264,6 +264,34 @@ def claude_owner(event):
     return 'claude-channel:' + prompt
 
 
+# Claude and Codex run a prompt's coordination and memory hooks in parallel, and
+# both take this session lock: each records or reads the activation decision, and
+# coordination then locks the same grant ledger for delivery. The holder rewrites
+# a ledger that grows with the session (hundreds of KB, two fsyncs), which under
+# I/O load outlasts a fraction of a second. Waiting stays bounded so that this,
+# the 12 s bridge deadline and interpreter startup fit the 15 s coordination hook.
+LOCK_WAIT_SECONDS = 1.5
+
+
+def acquire_session_lock(lock, deadline=None):
+    """Exclusive session lock, waiting at most LOCK_WAIT_SECONDS (and never past deadline).
+
+    Persistent contention re-raises BlockingIOError; other errors are not retried.
+    """
+    limit = time.monotonic() + LOCK_WAIT_SECONDS
+    if deadline is not None:
+        limit = min(limit, deadline)
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = limit - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(0.01, remaining))
+
+
 def activation_decision(config, event, enabled):
     """One decision for both reserved-wake hooks; no grant or active turn changes."""
     if config.get('harness') not in ('codex', 'claude') or event.get('hook_event_name') != 'UserPromptSubmit':
@@ -296,18 +324,9 @@ def activation_decision(config, event, enabled):
     if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o022:
         raise ValueError('activation ledger directory is not owner-controlled')
     with (directory / (session + '.lock')).open('a') as lock:
-        # The two reserved-wake hooks can overlap while persisting this same
-        # decision. Wait briefly for that writer, never bypass its accounting.
-        deadline = time.monotonic() + 0.25
-        while True:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise
-                time.sleep(min(0.01, remaining))
+        # The two reserved-wake hooks run in parallel and can overlap while
+        # persisting this same decision. Wait for that writer, never bypass its accounting.
+        acquire_session_lock(lock)
         if config['harness'] == 'claude':
             path = directory / (session + '.inbox-recall.json')
             marker = path.with_suffix('.initialized')
@@ -534,7 +553,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
     directory = Path(memory_config['state_dir'])
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (directory / (session + '.lock')).open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire_session_lock(lock, outer_deadline)
         path = directory / (session + '.inbox-recall.json')
         marker = path.with_suffix('.initialized')
         ledger = load_grants(path, session)

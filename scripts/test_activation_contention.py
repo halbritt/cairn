@@ -93,6 +93,67 @@ class ActivationContentionTests(unittest.TestCase):
                 self.assertEqual(case.calls(), calls)
                 self.assertEqual(case.ledger(), ledger)
 
+    def test_slow_concurrent_activation_writer_does_not_veto_wake(self):
+        """CAIRN-184: the parallel memory hook holds the shared bridge lock across a slow
+        ledger rewrite (an 835 KB grant ledger and two fsyncs under I/O load). The
+        coordination hook must wait for that writer, not refuse the wake at activation."""
+        case = claude.ClaudeInboxRecallTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        (case.root / 'event.json').write_text(json.dumps(case.event))
+        child = subprocess.Popen([sys.executable, '-c', CHILD, str(case.root), 'memory', str(fixture.ROOT)],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        def cleanup():
+            if child.poll() is None:
+                child.kill()
+            child.communicate()
+        self.addCleanup(cleanup)
+        self.assertTrue(select.select([child.stdout], [], [], 5)[0], 'memory activation did not reach fsync')
+        self.assertEqual(child.stdout.readline(), b'locked\n')
+        hold = 0.6  # Longer than the old 250 ms wait, well inside the new bound.
+        def release():
+            child.stdin.write(b'x')
+            child.stdin.flush()
+        timer = threading.Timer(hold, release)
+        started = time.monotonic()
+        timer.start()
+        try:
+            out = case.invoke(main=True)
+        finally:
+            timer.join()
+        elapsed = time.monotonic() - started
+        stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0, stderr)
+        self.assertEqual(json.loads(stdout), {'enabled': True})
+        self.assertEqual(out['code'], 0, out)
+        self.assertNotIn('activation', out['stderr'])
+        self.assertGreaterEqual(elapsed, hold - 0.05)
+        self.assertFalse((case.root / 'coordination' / 'wake-refusals').exists())
+        ledger = case.ledger()
+        self.assertEqual(ledger['inbox_activation'], {case.native: True})
+        self.assertEqual(len(ledger['grants']), 1)
+
+    def test_delivery_waits_for_concurrent_activation_holder(self):
+        """CAIRN-184: after coordination records the decision, the memory hook can still
+        hold the bridge lock reading it when coordination's delivery locks the ledger."""
+        case = claude.ClaudeInboxRecallTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        bridge = fixture.coord.load_inbox_recall(case.cc)
+        self.assertTrue(bridge.activation_decision(case.cc, case.event, True))
+        with (case.root / 'memory' / (fixture.SESSION + '.lock')).open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            timer = threading.Timer(0.3, lambda: fcntl.flock(lock, fcntl.LOCK_UN))
+            timer.start()
+            try:
+                with patch.object(fixture.coord, 'effective_inbox_config', side_effect=lambda c, e=None: c):
+                    result = case.invoke()
+            finally:
+                timer.join()
+        self.assertIn(case.body, result['hookSpecificOutput']['additionalContext'])
+        ledger = case.ledger()
+        self.assertEqual(len(ledger['grants']), 1)
+
     def test_persistent_contention_refuses_without_reads_or_accounting_changes(self):
         case = claude.ClaudeInboxRecallTests()
         case.setUp()
@@ -108,8 +169,9 @@ class ActivationContentionTests(unittest.TestCase):
             elapsed = time.monotonic() - started
             self.assertEqual(out['code'], 2, out)
             self.assertIn('inbox activation decision unavailable', out['stderr'])
-            self.assertGreaterEqual(elapsed, 0.24)
-            self.assertLess(elapsed, 1.5)
+            wait = fixture.coord.load_inbox_recall(case.cc).LOCK_WAIT_SECONDS
+            self.assertGreaterEqual(elapsed, wait - 0.01)
+            self.assertLess(elapsed, wait + 1.25)
             self.assertEqual(case.calls(), [])
             self.assertEqual({p.name: p.read_bytes() for p in directory.iterdir()}, before)
             # Privacy exclusion never waits for or changes an activation ledger.
