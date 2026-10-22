@@ -283,7 +283,7 @@ def claude_owner(event):
 # Claude and Codex run a prompt's coordination and memory hooks in parallel, and
 # both take this session lock: each records or reads the activation decision, and
 # coordination then locks the same grant ledger for delivery. The holder rewrites
-# a ledger that grows with the session (hundreds of KB, two fsyncs), which under
+# a grant ledger (up to hundreds of KB before CAIRN-186 compaction; two fsyncs), which under
 # I/O load outlasts a fraction of a second. Waiting stays bounded so that this,
 # the 12 s bridge deadline and interpreter startup fit the 15 s coordination hook.
 LOCK_WAIT_SECONDS = 1.5
@@ -417,6 +417,87 @@ def coordinates_wake(config, event):
     return True
 
 
+# Grant ledger retention (CAIRN-186). Every wake rewrites the session ledger
+# with two fsyncs under the shared session lock, so its size is lock-hold time;
+# one long-lived session reached 835 KB (1880 grants). Readers ask about current
+# things only: the bridge refuses a second grant for the same key, wake text or
+# Claude prompt; the pinned engine looks up the current prompt or launcher task;
+# coordination recovery looks up the session's single held attempt, its delivery
+# and prompt. A new admitted delivery means coordination has moved that single
+# slot to it, so older attempts can no longer be recovered. Compaction therefore
+# runs only when an admitted delivery writes its grant. It keeps the newest
+# grants whole, plus the active grant, launcher-task grants, grants with pending
+# required context and any grant naming the live attempt, delivery or prompt. Each
+# other grant folds into short digests of the three values the bridge's own repeat
+# check matches (grant key, wake hash, native owner), so that check keeps refusing
+# a repeat; a digest collision can only refuse, never admit. The oldest digests
+# beyond the cap expire first; they name fresh attempt UUIDs, unique prompt IDs
+# and terminal deliveries. Counters of folded grants are dropped: no reader uses
+# them. Activation decisions keep the newest window and the current turn.
+LEDGER_RECENT_GRANTS = 64
+LEDGER_RECENT_DECISIONS = 64
+LEDGER_FOLDED_TOKENS = 4096
+FOLD_DOMAIN = 'cairn.inbox-recall-fold/1'
+
+
+def folded_token(kind, value):
+    return hashlib.sha256('\0'.join((FOLD_DOMAIN, kind, value)).encode()).hexdigest()[:16]
+
+
+def folded_conflict(ledger, *, key, wake_sha256, owner):
+    """True when a folded grant matched this key, wake hash or (Claude) native owner."""
+    tokens = set((ledger.get('folded') or {}).get('tokens', ()))
+    if not tokens:
+        return False
+    probes = [folded_token('key', key)]
+    if isinstance(wake_sha256, str):
+        probes.append(folded_token('wake', wake_sha256))
+    if isinstance(owner, str):
+        probes.append(folded_token('owner', owner))
+    return any(p in tokens for p in probes)
+
+
+def compact_grants(ledger, *, owners=(), deliveries=(), attempts=(), turns=()):
+    """Fold grants outside the retained set into digests; returns how many were folded.
+
+    Call only under the session lock, as part of the write that records an
+    admitted delivery's grant. A ledger within the windows is left unchanged.
+    """
+    grants = ledger['grants']
+    recent = set(list(grants)[-LEDGER_RECENT_GRANTS:])
+    retained, fresh = {}, []
+    for key, grant in grants.items():
+        identity = grant['identity']
+        if (key in recent or key == ledger.get('active') or identity.get('recall_task_key')
+                or (grant.get('required') or {}).get('pending')
+                or identity.get('native_owner') in owners or identity.get('delivery_id') in deliveries
+                or identity.get('attempt_id') in attempts):
+            retained[key] = grant
+            continue
+        fresh.append(folded_token('key', key))
+        if isinstance(grant.get('wake_sha256'), str):
+            fresh.append(folded_token('wake', grant['wake_sha256']))
+        if isinstance(identity.get('native_owner'), str):
+            fresh.append(folded_token('owner', identity['native_owner']))
+    folded = len(grants) - len(retained)
+    if folded:
+        prior = ledger.get('folded') or dict(count=0, tokens=[])
+        seen = set(prior['tokens'])
+        tokens = list(prior['tokens'])
+        for token in fresh:
+            if token not in seen:
+                seen.add(token)
+                tokens.append(token)
+        ledger['grants'] = retained
+        ledger['folded'] = dict(count=prior['count'] + folded, tokens=tokens[-LEDGER_FOLDED_TOKENS:])
+    decisions = ledger.get('inbox_activation')
+    if isinstance(decisions, dict) and len(decisions) > LEDGER_RECENT_DECISIONS:
+        names = list(decisions)
+        keep = set(names[-LEDGER_RECENT_DECISIONS:]) | (set(turns) & set(names))
+        ledger['inbox_activation'] = {name: decisions[name] for name in names if name in keep}
+    return folded
+
+
 def load_grants(path, session):
     marker = path.with_suffix('.initialized')
     if marker.exists() and json.loads(marker.read_text()) != dict(schema='cairn.inbox-recall-initialized/1', session=session):
@@ -446,6 +527,11 @@ def load_grants(path, session):
         raise ValueError('inbox recall pending charge corrupt')
     if ledger.get('active') is not None and ledger['active'] not in ledger['grants']:
         raise ValueError('inbox recall active grant missing')
+    folded = ledger.get('folded')
+    if folded is not None and (not isinstance(folded, dict) or set(folded) != {'count', 'tokens'}
+            or type(folded['count']) is not int or folded['count'] < 0 or not isinstance(folded['tokens'], list)
+            or any(not isinstance(t, str) or not re.fullmatch('[0-9a-f]{16}', t) for t in folded['tokens'])):
+        raise ValueError('inbox recall folded grants corrupt')
     return ledger
 
 
@@ -577,7 +663,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             raise ValueError('inbox recall delivery identity changed')
         if key in ledger['grants'] or any(g.get('wake_sha256') == wake_hash
                 or (config['harness'] == 'claude' and g['identity'].get('native_owner') == native)
-                for g in ledger['grants'].values()):
+                for g in ledger['grants'].values()) or folded_conflict(
+                    ledger, key=key, wake_sha256=wake_hash, owner=native if config['harness'] == 'claude' else None):
             raise ValueError('inbox source/memory grant already consumed; no repeated read or new optional allowance')
         # Persist the empty ledger and its marker before any lookup can refuse.
         # A refusal at any later phase then leaves positive, lock-read evidence
@@ -796,6 +883,13 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         ledger['grants'][key] = grant
         ledger['active'] = key
         ledger['pending_bytes'] = 0
+        if admitted:
+            # Coordination holds one attempt per session and it is this one, so no
+            # older attempt can still be recovered. See LEDGER_RECENT_GRANTS.
+            wake_delivery = (state.get('idle_wake') or {}).get('delivery_id')
+            compact_grants(ledger, owners={native}, attempts={identity['attempt_id']},
+                           deliveries={identity['delivery_id'], *([wake_delivery] if isinstance(wake_delivery, str) else [])},
+                           turns={native})
         if not marker.exists():
             engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))
         engine.save_codex_budget(path, ledger)

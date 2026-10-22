@@ -56,7 +56,7 @@ callback records an enabled/disabled decision for the actual session and native
 turn in the existing memory-budget ledger, or Claude prompt owner in the inbox
 grant ledger, under its session lock. The other
 callback keeps that decision in either order. The host runs both callbacks in
-parallel, and the holder rewrites a grant ledger that grows with the session, so
+parallel, and the holder rewrites the grant ledger (bounded by compaction, below), so
 activation waits at most 1.5 s for a busy session lock, then refuses if it remains
 unavailable (250 ms vetoed a live wake under I/O load, CAIRN-184). Delivery takes
 the same lock with the same bounded wait, capped by the bridge deadline. The
@@ -174,6 +174,25 @@ when either is missing. A refusal at any later phase therefore leaves positive,
 lock-read evidence that the session holds no grant. The first grant withdraws that
 untouched empty ledger before writing its own, so a failed first grant write still
 leaves the marker without a ledger and every later delivery refuses, as before.
+
+When an admitted delivery writes its grant, the bridge also compacts that ledger
+(CAIRN-186), in the same write. Coordination holds one attempt per session and
+it is now this one, so no older attempt can still be recovered; every other
+reader asks only about the current prompt, launcher task or held attempt. The
+newest 64 grants stay whole, as do the active grant, launcher-task grants,
+grants with pending required context and any grant naming the live attempt,
+its delivery, its prompt or the current wake's delivery. Each other grant folds
+into 16-hex digests of its grant key, wake hash and native owner, the values the
+bridge's own repeat check matches, so a repeated delivery, wake or Claude prompt
+is still refused; a digest collision can only refuse. At most 4096 digests are
+kept and the oldest expire first: they name fresh attempt UUIDs, unique prompt
+IDs and terminal deliveries. Counters of folded grants are dropped because no
+reader uses them. Activation decisions keep the newest 64 and the current turn.
+An unadmitted wake, the activation decision and the engine's own prompt grants
+never compact; the engine's save keeps the folded section unchanged. A
+corrupt folded section refuses like any other corrupt ledger. A bridge from
+before this change ignores the folded section, so a rollback loses only the
+repeat check for folded grants.
 
 The existing Codex native-turn ledger also records the grant. A matching
 `serialized_hook_bytes` counter stamp identifies already encoded bytes. Missing or

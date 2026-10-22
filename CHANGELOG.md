@@ -16,6 +16,15 @@ and MCP processes.
 
 ## 2026-10-22
 
+- The bound inbox bridge now compacts each session's grant ledger when an
+  admitted delivery writes its grant (CAIRN-186). One long-lived session's
+  ledger had reached 835 KB, and every wake rewrote it with two fsyncs while
+  holding the shared session lock. The newest 64 grants, the active and
+  launcher-task grants, grants with pending required context and grants naming
+  the live attempt stay whole; older grants fold into short digests that keep
+  the bridge's repeat-delivery check, capped at 4096 digests. Activation
+  decisions keep the newest 64. Recovery evidence for the held attempt is
+  unchanged. Existing ledgers shrink on their next admitted delivery.
 - A bound inbox wake no longer refuses when the host is loaded and the
   required-memory lookup takes longer than about four seconds (CAIRN-187). The
   required lookup and its one retry now have an eight-second window inside the
