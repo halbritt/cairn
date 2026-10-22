@@ -939,6 +939,102 @@ def agy_subagent_parent(config, state, path, candidates, environment):
     return None
 
 
+# A live Agy subagent is idle between parent messages. It counts as finished only
+# after its last turn ended at least this long ago (CAIRN-180).
+AGY_SUBAGENT_QUIET_SECONDS = 3600
+AGY_SUBAGENT_STATES = ('SUBAGENT_STATE_ALIVE', 'SUBAGENT_STATE_KILLED')
+
+
+def agy_home(config):
+    return Path(config.get('agy_home') or Path.home() / '.gemini' / 'antigravity-cli')
+
+
+def read_json_object(path):
+    try:
+        value = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def last_jsonl_record(path, window=65536):
+    """The last complete JSON object of a JSON-lines file, or None."""
+    try:
+        with open(path, 'rb') as file:
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            file.seek(max(0, size - window))
+            tail = file.read()
+    except OSError:
+        return None
+    lines = [line for line in tail.split(b'\n') if line.strip()]
+    if not lines or (size > window and len(lines) == 1):
+        return None
+    try:
+        value = json.loads(lines[-1])
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def agy_subagent_finished(config, state, path, now=None):
+    """Agy's own evidence that this live conversation is a finished subagent, or None.
+
+    Agy runs a subagent as a further conversation inside its parent's process, so
+    the shared process keeps it present after it finishes. Evidence requires the
+    parent's subagent registry (brain/<parent>/.system_generated/subagents/<id>.json)
+    to name this conversation, with the parent a registered conversation of this
+    binding in the same process. The parent killed it (SUBAGENT_STATE_KILLED), or it
+    is still alive but idle: Agy's last hook was a fully idle Stop, its transcript
+    ends with a completed model response at least AGY_SUBAGENT_QUIET_SECONDS old,
+    and no message waits undelivered for it. A conversation with an inbox attempt
+    or journal is never finished here. Read-only: other states are read unlocked.
+    """
+    agent = state.get('agent')
+    native = agent.get('native_session_id') if isinstance(agent, dict) else None
+    if (config.get('harness') != 'agy' or not native or state.get('ending') or state.get('retired')
+            or state.get('inbox_intent') or state.get('inbox_attempt') or state.get('inbox_journals')
+            or not isinstance(state.get('process'), dict) or '/' in native or native in ('.', '..')):
+        return None
+    now = time.time() if now is None else now
+    home = agy_home(config)
+    for other in sorted(Path(config['state_dir']).glob('*.json')):
+        if other == path:
+            continue
+        value = read_json_object(other)
+        parent = value.get('agent') if value else None
+        parent_native = parent.get('native_session_id') if isinstance(parent, dict) else None
+        if (not isinstance(parent_native, str) or parent_native == native or '/' in parent_native
+                or parent_native in ('', '.', '..') or value.get('retired') or value.get('ending')
+                or not isinstance(value.get('process'), dict) or not same_process(value['process'], state['process'])):
+            continue
+        record = read_json_object(home / 'brain' / parent_native / '.system_generated' / 'subagents' / f'{native}.json')
+        if not record or record.get('conversationId') != native or record.get('state') not in AGY_SUBAGENT_STATES:
+            continue
+        evidence = dict(parent=parent, parent_native_session_id=parent_native, registry_state=record['state'])
+        if record['state'] == 'SUBAGENT_STATE_KILLED':
+            return evidence
+        if (agent.get('metadata') or {}).get('state') != 'idle':
+            return None
+        own = home / 'brain' / native / '.system_generated'
+        transcript = own / 'logs' / 'transcript.jsonl'
+        last = last_jsonl_record(transcript)
+        if not last or (last.get('source'), last.get('type'), last.get('status')) != ('MODEL', 'PLANNER_RESPONSE', 'DONE'):
+            return None
+        try:
+            ended = datetime.fromisoformat(str(last.get('created_at')).replace('Z', '+00:00')).timestamp()
+            modified = transcript.stat().st_mtime
+            undelivered = any((own / 'messages' / 'undelivered').iterdir()) \
+                if (own / 'messages' / 'undelivered').exists() else False
+        except (OSError, ValueError, TypeError):
+            return None
+        if undelivered or now - max(ended, modified) < AGY_SUBAGENT_QUIET_SECONDS:
+            return None
+        evidence.update(last_turn_ended_at=last['created_at'])
+        return evidence
+    return None
+
+
 def terminal_target_diagnosis(identified, matches):
     """Bounded refusal for anything other than exactly one eligible target.
 
@@ -4511,8 +4607,15 @@ def watch_once(config):
                 if state.get('ending'):
                     finish_presence(config, state, path)
                 elif process_alive(state["process"]):
+                    finished = agy_subagent_finished(config, state, path) if state.get('agent') else None
                     if not state.get("agent"):
                         state["agent"] = call(config, "agent-register", state["registration"])
+                    elif finished:
+                        # Its parent's process stays alive; the conversation itself is
+                        # done. Its next parent-initiated turn registers it again.
+                        parent = finished.pop('parent')
+                        state['ending_evidence'] = dict(finished, parent_display_name=parent.get('display_name'))
+                        finish_presence(config, state, path, reason='agy_subagent_finished')
                     else:
                         state["agent"] = heartbeat(config, state)
                         cancel_prepared = watch_inbox(config, state, path)

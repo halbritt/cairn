@@ -26,6 +26,20 @@ home keeps its own binding; agents keep their conversation UUIDs across resume.
   `native_transport_unavailable` instead of `terminal_target_missing`, and never
   wakes it. Its deliveries wait for its next parent-initiated turn. Its own
   self-drain also needs such a turn.
+- A finished Agy subagent leaves presence. The shared process would otherwise keep
+  it online as an inbox target. The watcher reads Agy's own state: the parent's
+  registry `brain/<parent>/.system_generated/subagents/<id>.json` must name the
+  conversation, and the parent must be a registered conversation in the same
+  process. The subagent is finished when that record is `SUBAGENT_STATE_KILLED`,
+  or when it is `SUBAGENT_STATE_ALIVE`, Agy's last hook was a fully idle Stop, its
+  `transcript.jsonl` ends with a completed `PLANNER_RESPONSE` at least one hour
+  old, and no message waits in its `messages/undelivered`. A conversation with an
+  inbox attempt or journal stays. The watcher then leaves through `agent-leave`
+  with `ending_reason` `agy_subagent_finished` and records the evidence as
+  `ending_evidence`. Running subagents are never stopped. A later
+  parent-initiated turn registers the conversation again. Deliveries already
+  pending for it stay pending; an operator can fail them with
+  `cairn stopped-inbox-expire`.
 - OpenCode receives context in its next main request transformation. Hermes
   receives it before its next turn. Their idle/post-turn callbacks reconcile
   existing handling; they do not start another turn themselves.
