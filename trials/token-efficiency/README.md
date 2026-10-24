@@ -64,6 +64,19 @@ request; its symbolic causation label must resolve to that native event ID.
 task with saved source state; it does not invent a native handoff event kind.
 The required-source conflict may correctly refuse before delivering either
 body, so its acceptance check allows that bounded refusal.
+`busy_owner_task` declares a small parser review in `setup.active_task`. The
+controller export freezes the exact source body, task target, and pause
+boundary. The actor export contains only the review instruction; a future
+runner must stage `parser_review.md` in an isolated actor workspace without
+the controller manifest or hidden `acceptance_check`. The sample has a
+duplicate field, and the hidden check grades the review's conclusion as well
+as its order relative to the routine notice. The preflight rejects a copied
+grading clause in the actor instruction or source, but cannot detect every
+paraphrase. The proposed pause is before the first source-read reply: a runner
+must own that reply, observe the native turn, publish the notice while the
+review is active, verify pending state and absent readiness, then release the
+source and observe the review conclusion before notice handling. This runner
+and pause are not implemented by the preflight or Store probe.
 
 Two Go integration tests exercise source and event setup for six cases under
 `make test-integration`'s disposable PostgreSQL cluster.
@@ -104,7 +117,7 @@ not proof that a recipient process crashed.
 busy session has no ready routine notice until it reports idle, and that two
 notices keep their durable state across fresh client views for
 `busy_owner_task` and `compaction_before_after_settlement`. The busy check does
-not run the owner's parser task, and fresh views do not invoke a harness
+not run the synthetic parser review, and fresh views do not invoke a harness
 compaction hook. `core/token_efficiency_panel_memory_followup_test.go` stores
 and whole-pulls the historical and current relay sources with a pending
 request for `long_source`, and the exact saved source for

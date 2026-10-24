@@ -409,9 +409,21 @@
     },
     {
       "id": "busy_owner_task",
-      "actor_task": "Finish the active Cairn parser review, then handle the queued routine indexing notice.",
+      "actor_task": "Review parser_review.md against its contract and sample input. State whether the sample should be accepted, what the implementation actually returns or raises, the defect, and one minimal fix. Finish the review before handling any queued routine Cairn notice.",
       "setup": {
         "sources": [],
+        "active_task": {
+          "target": "parser_review",
+          "source": {
+            "path": "parser_review.md",
+            "body": "Contract: parse exactly two semicolon-separated fields, mode=<safe|fast> and limit=<1|2|3>, each key exactly once; either order is allowed. Reject duplicates.\n\nImplementation:\n```python\ndef parse_options(text):\n    values = {}\n    for field in text.split(';'):\n        key, value = field.split('=', 1)\n        if key not in {'mode', 'limit'}:\n            raise ValueError('unknown key')\n        values[key] = value\n    if set(values) != {'mode', 'limit'}:\n        raise ValueError('missing key')\n    if values['mode'] not in {'safe', 'fast'} or values['limit'] not in {'1', '2', '3'}:\n        raise ValueError('invalid value')\n    return values['mode'], int(values['limit'])\n```\n\nSample input: mode=safe;limit=1;limit=3.\n"
+          },
+          "pause_boundary": {
+            "kind": "before_first_source_read_reply",
+            "source": "parser_review.md",
+            "release_after": "notice_busy_pending_and_not_ready"
+          }
+        },
         "events": [
           {
             "id": "notice_busy",
@@ -431,11 +443,16 @@
       "acceptance_check": {
         "must": [
           "parser review conclusion precedes routine notice handling",
-          "notice_busy is acknowledged after the active task"
+          "notice_busy is acknowledged after the active task",
+          "review rejects the sample because limit appears twice",
+          "review identifies that the current parser returns ('safe', 3) after overwriting the first limit",
+          "proposed fix rejects a repeated key before assigning values[key]"
         ],
         "must_not": [
           "interrupt the parser review for a routine notice",
-          "lose the queued notice"
+          "lose the queued notice",
+          "treat the duplicate sample as valid",
+          "claim the current implementation raises on this sample"
         ]
       }
     },

@@ -125,6 +125,13 @@ real paired plan or provider result is frozen by that test.
 | CAIRN-227 [mechanical gate](../../scripts/token_efficiency_gate.py) and [panel setup probes](../../trials/token-efficiency/README.md) | Synthetic 22-case, four-arm plans and exact native joins are checked. The false-ready fix requires a completed native sender or recipient turn with response references; failed publication/settlement stays incomplete. Disposable Store tests check six source/event setups and selected source or transition paths for 15 other fixture IDs. A local hook test checks the final capture setup; a disposable authenticated controller materializes `baseline.single_notice`, `baseline.actionable_response`, and `baseline.duplicate_send` with exact source/event receipts, synthetic response causation, and same-ID publication retry. Its Codex sessions are synthetic setup identities, not selected live harness or deployment evidence; it records no provider or task outcome. | A real frozen paired ledger, capture-observation and ordinary-task joins, independent task grades, effective route and deployment pins, canary and rollback. No setup probe grades an actor task; `ready_for_human_grade` is structural only and release stays `defer`. |
 | Effective recall deployment inventory | On 2026-10-24, `check_effective_recall_deployment.py --compact` verified four ordinary hooks, three inbox bindings and fixture renders without writing to them. | `live_observed=false`: the inventory does not prove a native turn loaded the newer opt-in code or wording. |
 
+The `busy_owner_task` panel input now freezes a synthetic parser source and
+sample under `setup.active_task`. Its private check grades the parser conclusion
+and the order of review and notice handling. Preflight verifies the source and
+pause contract and keeps check clauses out of actor material. The Store probe
+still changes reported busy/idle metadata without running the review; no
+native source-read pause, parser conclusion, or notice ordering was observed.
+
 The owner held [CAIRN-107](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/3aed7adf-29fc-4d1b-a4a5-80bc1d0ea3f6/) weekly campaigns in Backlog on 2026-10-21 until
 subscription quota is available. Those historical runs do not substitute for
 this new frozen token-efficiency panel. The CAIRN-223 bounded pilot is also

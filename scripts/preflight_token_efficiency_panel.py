@@ -180,11 +180,35 @@ def validate(data):
         require(isinstance(task, str) and 30 <= len(task) <= 500, f"{case}: actor task")
         setup = row["setup"]
         exact_keys(setup, ("sources", "events", "transitions"), f"{case}: setup",
-                   ("capture",))
+                   ("capture", "active_task"))
         source_ids = setup["sources"]
         require(isinstance(source_ids, list) and len(source_ids) == len(set(source_ids))
                 and all(isinstance(name, str) and name in sources for name in source_ids),
                 f"{case}: source order")
+        active_task = setup.get("active_task")
+        if case == "busy_owner_task":
+            exact_keys(active_task, ("target", "source", "pause_boundary"),
+                       f"{case}: active task")
+            require(active_task["target"] == "parser_review", f"{case}: active task target")
+            active_source = active_task["source"]
+            exact_keys(active_source, ("path", "body"), f"{case}: active source")
+            require(active_source["path"] == "parser_review.md"
+                    and isinstance(active_source["body"], str)
+                    and 100 <= len(active_source["body"].encode()) <= 2000
+                    and "Contract:" in active_source["body"]
+                    and "Implementation:" in active_source["body"]
+                    and "Sample input:" in active_source["body"]
+                    and active_source["path"] in task,
+                    f"{case}: bounded actor source")
+            exact_keys(active_task["pause_boundary"],
+                       ("kind", "source", "release_after"), f"{case}: pause boundary")
+            require(active_task["pause_boundary"] == {
+                "kind": "before_first_source_read_reply",
+                "source": active_source["path"],
+                "release_after": "notice_busy_pending_and_not_ready",
+            }, f"{case}: native pause boundary")
+        else:
+            require(active_task is None, f"{case}: unexpected active task")
         events = setup["events"]
         require(isinstance(events, list), f"{case}: events")
         ids = set()
@@ -253,7 +277,9 @@ def validate(data):
             require(all(isinstance(transition[key], str) and transition[key]
                         for key in ("phase", "action", "target")), f"{case}: transition text")
             require(transition["action"] in ACTIONS, f"{case}: transition action")
-            targets = ids | set(source_ids) | {"parser_review"}
+            targets = ids | set(source_ids)
+            if active_task is not None:
+                targets.add(active_task["target"])
             if capture is not None:
                 targets.add(capture["target"])
             require(transition["target"] in targets,
@@ -267,6 +293,11 @@ def validate(data):
             require(expected_kind in {event["kind"] for event in events}, f"{case}: event kind")
         require(tuple(item["action"] for item in transitions) == actions,
                 f"{case}: transition sequence")
+        if active_task is not None:
+            require([(item["phase"], item["action"], item["target"])
+                     for item in transitions] == [
+                         ("before_delivery", "start_task", active_task["target"])],
+                    f"{case}: active task transition")
         if case == "unchanged_capture":
             require([(item["phase"], item["action"], item["target"])
                      for item in transitions] == [
@@ -279,6 +310,11 @@ def validate(data):
             require(isinstance(check[key], list) and len(check[key]) >= 2
                     and all(isinstance(item, str) and 12 <= len(item) <= 300 for item in check[key]),
                     f"{case}: {key}")
+        if active_task is not None:
+            actor_material = task + "\n" + active_source["body"]
+            require(all(clause.casefold() not in actor_material.casefold()
+                        for key in ("must", "must_not") for clause in check[key]),
+                    f"{case}: hidden check in actor material")
     require([event.get("idempotency_key") for event in rows[7]["setup"]["events"]]
             == ["ck8"], "duplicate-send identity")
     require(rows[6]["setup"]["events"][0]["recipient"] == "worker_a"

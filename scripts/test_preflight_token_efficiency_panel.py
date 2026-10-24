@@ -91,6 +91,52 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(base["setup_sha256"], revised_task["setup_sha256"])
         self.assertEqual(base["acceptance_check_sha256"], revised_task["acceptance_check_sha256"])
 
+    def test_busy_review_has_frozen_actor_source_and_private_conclusion(self):
+        row = next(row for row in self.data["cases"] if row["id"] == "busy_owner_task")
+        active = row["setup"]["active_task"]
+        source = active["source"]["body"]
+        self.assertEqual(active["target"], row["setup"]["transitions"][0]["target"])
+        self.assertEqual(active["pause_boundary"]["source"], active["source"]["path"])
+        self.assertIn("Reject duplicates.", source)
+        self.assertIn("mode=safe;limit=1;limit=3", source)
+        code = source.split("```python\n", 1)[1].split("\n```", 1)[0]
+        namespace = {}
+        exec(compile(code, active["source"]["path"], "exec"), namespace)
+        self.assertEqual(namespace["parse_options"]("mode=safe;limit=1;limit=3"), ("safe", 3))
+        self.assertNotIn("('safe', 3)", row["actor_task"] + source)
+        self.assertTrue(all(clause.casefold() not in (row["actor_task"] + source).casefold()
+                            for clauses in row["acceptance_check"].values() for clause in clauses))
+        base = next(case for case in panel.manifest(self.data, self.fixture_hash)["cases"]
+                    if case["id"] == row["id"])
+        changed = copy.deepcopy(self.data)
+        changed_row = next(case for case in changed["cases"] if case["id"] == row["id"])
+        changed_row["setup"]["active_task"]["source"]["body"] += "\nReview this input.\n"
+        panel.validate(changed)
+        revised = next(case for case in panel.manifest(changed, "changed-fixture")["cases"]
+                       if case["id"] == row["id"])
+        self.assertNotEqual(base["setup_sha256"], revised["setup_sha256"])
+        self.assertEqual(base["actor_sha256"], revised["actor_sha256"])
+        self.assertEqual(base["acceptance_check_sha256"], revised["acceptance_check_sha256"])
+
+    def test_busy_review_rejects_missing_source_unowned_boundary_and_check_leak(self):
+        for mutation in (
+            lambda row: row["setup"].pop("active_task"),
+            lambda row: row["setup"]["active_task"]["source"].update(path="../controller.json"),
+            lambda row: row["setup"]["active_task"]["pause_boundary"].update(
+                kind="after_source_read_reply"),
+            lambda row: row["setup"]["active_task"]["source"].update(
+                body=row["setup"]["active_task"]["source"]["body"] +
+                row["acceptance_check"]["must"][3]),
+            lambda row: row.update(actor_task=row["actor_task"] +
+                                   row["acceptance_check"]["must"][3]),
+        ):
+            with self.subTest(mutation=mutation):
+                changed = copy.deepcopy(self.data)
+                row = next(case for case in changed["cases"] if case["id"] == "busy_owner_task")
+                mutation(row)
+                with self.assertRaises(ValueError):
+                    panel.validate(changed)
+
     def test_capture_binding_keeps_codex_hook_harness_and_claude_selector_model_separate(self):
         row = next(row for row in self.data["cases"] if row["id"] == "unchanged_capture")
         capture = row["setup"]["capture"]
@@ -270,6 +316,14 @@ class PanelTests(unittest.TestCase):
                 selected_body = self.data["cases"][19]["setup"]["capture"]["seed_selection"]["memories"][0]["body"]
                 self.assertIn(selected_body, controller.read_text())
                 self.assertNotIn(selected_body, (output / "actor/unchanged_capture.json").read_text())
+                busy = next(row for row in self.data["cases"] if row["id"] == "busy_owner_task")
+                actor = (output / "actor/busy_owner_task.json").read_text()
+                self.assertNotIn(busy["setup"]["active_task"]["source"]["body"], actor)
+                self.assertNotIn(busy["acceptance_check"]["must"][3], actor)
+                controlled_busy = next(case for case in json.loads(controller.read_text())["cases"]
+                                       if case["id"] == "busy_owner_task")
+                self.assertEqual(controlled_busy["setup"]["active_task"],
+                                 busy["setup"]["active_task"])
                 with self.assertRaises(FileExistsError):
                     panel.export(self.data, self.fixture_hash, output)
                 with self.assertRaises(ValueError):
