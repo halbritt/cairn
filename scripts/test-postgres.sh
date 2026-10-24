@@ -119,6 +119,11 @@ resume_dsn="host=$test_root/socket dbname=cairn_inbox_resume_disposable sslmode=
 CAIRN_DATABASE_URL="$resume_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$resume_dsn" CAIRN_DATABASE_URL="$resume_dsn" \
     python3 scripts/check_inbox_resume_disposable.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_compaction_settlement
+compaction_dsn="host=$test_root/socket dbname=cairn_panel_compaction_settlement sslmode=disable"
+CAIRN_DATABASE_URL="$compaction_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$compaction_dsn" CAIRN_DATABASE_URL="$compaction_dsn" \
+    python3 -B scripts/check_panel_compaction_settlement.py "$test_root/cairn"
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine

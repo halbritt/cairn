@@ -135,6 +135,12 @@ request for `long_source`, and the exact saved source for
 `unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
 remain unrun.
 
+The [two-notice disposable probe](../../docs/verification/panel-compaction-settlement-2026-10-24.md)
+uses the actual bound hooks and compact helper around two synthetic compact
+callbacks. It checks a leased first notice through compaction, commits its
+settlement once, then restores and settles a different notice without replaying
+the first. Host queue admission, model compaction and task outcome remain unrun.
+
 `unchanged_capture` has a separate controller-only synthetic dialogue and
 first selection in `setup.capture`. The Python preflight test runs the real
 local capture decision twice with a stubbed first selector and local create
