@@ -50,6 +50,15 @@ class PanelTests(unittest.TestCase):
                                       for row in self.data["cases"]}}
         gate.verify_fixture(plan, panel.FIXTURE)
 
+    def test_lease_expiry_oracle_follows_native_hold_contract(self):
+        case = next(row for row in self.data["cases"] if row["id"] == "lease_expiry")
+        checks = case["acceptance_check"]
+        self.assertIn("same current hold", case["actor_task"])
+        self.assertIn("STALE_LEASE", " ".join(checks["must"]))
+        self.assertIn("late=true", " ".join(checks["must"]))
+        self.assertIn("HOLD_RELEASED", " ".join(checks["must_not"]))
+        self.assertNotIn("expired claim cannot settle", str(checks))
+
     def test_mutations_fail_closed(self):
         changes = []
         changed = copy.deepcopy(self.data)

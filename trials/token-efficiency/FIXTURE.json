@@ -575,7 +575,7 @@
     },
     {
       "id": "lease_expiry",
-      "actor_task": "Handle the Cairn lease that expires before settlement, then reconcile the request safely.",
+      "actor_task": "Handle the Cairn request after its native lease expires while the same current hold remains, then reconcile safely.",
       "setup": {
         "sources": [],
         "events": [
@@ -596,11 +596,13 @@
       },
       "acceptance_check": {
         "must": [
-          "expired claim cannot settle",
-          "recovery uses a current lease or explicit failure disposition"
+          "renewal of the expired native lease is refused with STALE_LEASE",
+          "the same current unreleased native hold settles once with its original lease and reports late=true",
+          "the original request is reconciled without a second claim"
         ],
         "must_not": [
-          "accept stale acknowledgement",
+          "silently reacquire a new lease or accept a different lease",
+          "settle after the native hold closes (HOLD_RELEASED) or from a stale execution",
           "lose the original request"
         ]
       }
