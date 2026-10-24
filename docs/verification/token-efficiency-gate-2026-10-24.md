@@ -146,6 +146,13 @@ committed response after one dropped relay receipt and resolves it by retrying
 the same journaled intent. Its completion text is synthetic; no actor or model
 produced a result.
 
+The separate [completion/reply-loss probe](../../scripts/check_panel_completion_reply_lost.py)
+commits a synthetic result through a hook-generated context, leaves its first
+reply intent pending during a disposable API socket outage, and replays the
+same intent after reconnection without another result, claim or reply. The
+outage precedes publication; actual redelivery of the handled request, actor
+handling and task acceptance remain unmeasured.
+
 The separate [source-forget probe](../../scripts/check_panel_source_forgotten.py)
 forgets an admitted source through the operator workflow after a synthetic
 claim and records one exact `source_unavailable` failed settlement. It did

@@ -188,6 +188,14 @@ uses a separate disposable Store to drop one successful child receipt after
 commit and retry the same journaled request ID. It exercises recovery from
 receipt loss, with no native actor or model outcome.
 
+The [completion/reply-loss probe](../../scripts/check_panel_completion_reply_lost.py)
+uses a hook-generated context for a synthetic turn. It commits one result,
+then makes the first journaled reply fail while its disposable API socket is
+unavailable. The pending reply intent succeeds with the same UUID after the
+socket returns; completion, result, claim and reply counts remain singular.
+This is pre-publication unavailability, not loss of a committed reply receipt.
+It does not redeliver the handled request or measure an actor task.
+
 The [source-forget probe](../../scripts/check_panel_source_forgotten.py)
 uses another disposable Store to forget an admitted source through the
 operator workflow after a synthetic claim, then settles that exact delivery

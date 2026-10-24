@@ -74,6 +74,11 @@ uncertain_dsn="host=$test_root/socket dbname=cairn_panel_relay_uncertain_respons
 CAIRN_DATABASE_URL="$uncertain_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$uncertain_dsn" CAIRN_DATABASE_URL="$uncertain_dsn" \
     python3 scripts/check_panel_relay_uncertain_response.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_completion_reply_lost
+reply_lost_dsn="host=$test_root/socket dbname=cairn_panel_completion_reply_lost sslmode=disable"
+CAIRN_DATABASE_URL="$reply_lost_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$reply_lost_dsn" CAIRN_DATABASE_URL="$reply_lost_dsn" \
+    python3 scripts/check_panel_completion_reply_lost.py "$test_root/cairn"
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
