@@ -266,6 +266,51 @@ the paired panel. Its status remains `full_panel_status=incomplete` and release
 remains `defer`; it refuses capture, concurrency, and every unsupported case or
 arm.
 
+## Independent task-grade preparation
+
+`scripts/token_efficiency_grades.py` adds a separate provider-free grading
+contract. After freezing the mechanical plan and exporting the controller
+manifest, `freeze` verifies the same fixture hash, all 88 planned workflow IDs,
+case/arm assignments, and each exact acceptance-check hash. It writes an
+owner-only grade plan outside the repository. This freezes the evaluation
+denominator and prevents replacing a case rubric after outcomes are observed.
+
+After runs, an evaluator can submit a private
+`cairn.token-efficiency-grade-ledger/1` with one row for every workflow. Each
+row carries `workflow_id`, `case`, `arm`, `acceptance_check_sha256`, a verdict
+(`accepted`, `failed`, `unknown`, or `unrun`), a reviewer reference, an explicit
+`independence_assertion: true`, a rationale, and zero or more artifact
+references (`path`, `sha256`). Accepted and failed grades require at least one
+hashed evidence artifact. Missing workflows, changed rubrics, evidence hash
+mismatches, or unstated independence refuse the report. Unknown and unrun
+remain visible in the denominator.
+
+The utility checks structure, evidence-file identity, and owner-only file
+permissions. Reviewer identity, independence, rubric application, and task
+correctness remain external claims; distinct reviewer labels do not prove
+independence. The report therefore says
+`independent_task_acceptance=externally_asserted_unverified` and
+`release_decision=defer` for every ledger, even a complete one. It does not
+change the mechanical gate's `unassessed` result or substitute for joined usage,
+capacity admission, deployment pins, the canary, or rollback. It is
+account-agnostic; the existing mechanical plan remains responsible for exact
+per-stage model/account/pin joins and does not infer one account for the panel.
+
+```sh
+python3 -B scripts/token_efficiency_grades.py freeze \
+  --frozen private-frozen.json --fixture private-fixture.json \
+  --controller private-controller.json --output "$HOME/.cache/cairn-token-efficiency-panels/grade-plan.json"
+python3 -B scripts/token_efficiency_grades.py report \
+  --plan "$HOME/.cache/cairn-token-efficiency-panels/grade-plan.json" \
+  --ledger "$HOME/.cache/cairn-token-efficiency-panels/grade-ledger.json" \
+  --evidence-root "$HOME/.cache/cairn-token-efficiency-panels/evidence" \
+  --output "$HOME/.cache/cairn-token-efficiency-panels/grade-report.json"
+```
+
+`python3 -B -m unittest discover -s scripts -p 'test_token_efficiency_grades.py'`
+checks synthetic coverage and refusal paths. It does not create provider results
+or task grades.
+
 ## Release decision
 
 **Defer combined rollout.** Current data supports continued local development
