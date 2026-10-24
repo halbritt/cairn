@@ -96,13 +96,17 @@ def save_codex_budget(path, value):
                     sha256=hashlib.sha256(span_body.encode()).hexdigest(), source_sha256=entry['body_sha256'])
         case.fixture['pull'] = dict(selection=dict(record=dict(record_id=fixtures.AGENT, version=1, body='', **{'class':'A'})),
                                     span=span, credits_remaining=3, bytes_remaining=22000)
+        # The fake CLI's explicit failure switch lives inside the pull branch.
+        # Restrict it to whole pulls so the subsequent span request succeeds.
+        case.fixture['fail_pull'] = 'BUDGET_REFUSED'
         case.mc['context_bytes'] = 9500
         case.freeze()
-        code = case.cli.read_text().replace("elif op=='pull': result=fixture['pull']", """elif op=='pull':
- if 'span' not in json.loads(body):
-  print(json.dumps(dict(ok=False,status='BUDGET_REFUSED')));sys.exit(7)
- result=fixture['pull']""")
-        case.cli.write_text(code)
+        code = case.cli.read_text()
+        failing_pull = "if fixture.get('fail_pull'): print(json.dumps(dict(ok=False,status=fixture['fail_pull'])));sys.exit(7)"
+        self.assertEqual(code.count(failing_pull), 1)
+        case.cli.write_text(code.replace(failing_pull,
+            "if fixture.get('fail_pull') and 'span' not in json.loads(body): "
+            "print(json.dumps(dict(ok=False,status=fixture['fail_pull'])));sys.exit(7)"))
         out = case.invoke(main=True)
         self.assertEqual(out['code'], 0, out)
         trace = json.loads(self.traces(case)[0].read_text())
