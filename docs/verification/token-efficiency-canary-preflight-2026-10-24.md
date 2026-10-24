@@ -73,13 +73,29 @@ The reviewed pin permitted a disposable check on 2026-10-24. The stager created 
 
 ### Capture-only offline profile
 
-The stager also accepts `--profile capture-only`. This profile adds only
-`capture_observations: true`; it does not opt into compact recall, context
-lifecycle, compact inbox, notice batching, compact search, or compact tool
-profiles. It refuses a selected baseline that already contains one of those
-other opt-ins. The default `full` profile preserves the earlier candidate.
-Both profiles remain disabled offline candidates: the staged inbox binding is
-disabled, the candidate binary is absent, and staging makes no provider request.
+The stager accepts `--profile capture-only`, which adds only
+`capture_observations: true`, and `--profile compact-inbox`, which adds that
+observation flag plus `compact_inbox_version: 1` to the selected inbox binding.
+The latter is the narrow CAIRN-215/216 candidate: it leaves recall rendering,
+notice batching, context lifecycle, compact search and compact tool schemas at
+their baseline settings. Both profiles refuse incompatible pre-existing opt-ins.
+The default `full` profile preserves the broader candidate. These are disabled
+offline candidates: the staged inbox binding is disabled, the candidate binary
+is absent, and staging makes no provider request.
+
+For a focused Codex+Claude staging review, build the new private candidate after
+the source revision is committed, then validate both copied bindings against the
+candidate's copied bridge. The full candidate report hashes the selected hook
+settings, separate ordinary and coordination configs, one-binding manifest,
+MCP config/wrapper, and lifecycle pin closure. This is config-isolation and
+source-pin evidence only; it does not load a native session or authorize
+provider calls.
+
+```sh
+python3 -B scripts/stage_token_efficiency_canary.py \
+  --profile compact-inbox \
+  --destination "$HOME/.cache/cairn-token-efficiency-stages/COMPACT_INBOX_CANDIDATE"
+```
 
 For a future Codex-only review, the offline command is:
 

@@ -205,6 +205,27 @@ exec {binary} mcp \\
                             profile="capture-only")
         self.assertFalse(self.stage.exists())
 
+    def test_compact_inbox_profile_pairs_capture_with_only_inbox_opt_in(self):
+        report = stage.stage(self.home, self.stage, self.expected, profile="compact-inbox")
+        self.assertEqual(report["profile"], "compact-inbox")
+        self.assertEqual(report["opt_ins"], ["capture_observations", "compact_inbox_version=1"])
+        for harness in ("codex", "claude"):
+            memory = json.loads((self.stage / harness / "ordinary/config.json").read_text())
+            self.assertIs(memory["capture_observations"], True)
+            self.assertNotIn("recall_view", memory)
+            self.assertNotIn("context_lifecycle", memory)
+            coordination = json.loads((self.stage / harness / "coordination/bindings" /
+                                       f"{harness}-one.json").read_text())
+            self.assertEqual(coordination["compact_inbox_version"], 1)
+            self.assertNotIn("notice_batch_version", coordination)
+        codex_mcp = stage.tomllib.loads((self.stage / "codex/config.toml").read_text())
+        codex_args = codex_mcp["mcp_servers"]["cairn"]["args"]
+        self.assertNotIn("--search-view", codex_args)
+        self.assertNotIn("--tool-profile", codex_args)
+        claude_wrapper = (self.stage / "claude/cairn-canary-mcp").read_text()
+        self.assertNotIn("--search-view", claude_wrapper)
+        self.assertNotIn("--tool-profile", claude_wrapper)
+
     def test_current_codex_config_baseline_preserves_unrelated_toml_and_reports_exact_hooks(self):
         config_path = self.home / ".codex/config.toml"
         original = config_path.read_bytes()

@@ -180,18 +180,29 @@ def stage_account(home, stage, harness, *, profile="full"):
     coordination.update(cairn=str(candidate_binary),
                         state_dir=str(native / "state" / coordination["binding"]),
                         inbox_recall_binding=str(manifest_path))
-    if profile == "full":
-        memory["recall_view"] = "compact/1"
-        if harness == "codex":
-            memory["context_lifecycle"] = "compact/1"
-        coordination.update(compact_inbox_version=1, notice_batch_version=1)
-    else:
+    if profile in ("full", "compact-inbox"):
+        if profile == "compact-inbox":
+            for key in ("recall_view", "context_lifecycle"):
+                if key in memory:
+                    raise ValueError(f"compact-inbox profile requires baseline without {key}")
+            if "notice_batch_version" in coordination:
+                raise ValueError("compact-inbox profile requires baseline without notice_batch_version")
+            memory["capture_observations"] = True
+            coordination["compact_inbox_version"] = 1
+        else:
+            memory["recall_view"] = "compact/1"
+            if harness == "codex":
+                memory["context_lifecycle"] = "compact/1"
+            coordination.update(compact_inbox_version=1, notice_batch_version=1)
+    elif profile == "capture-only":
         for key in ("recall_view", "context_lifecycle"):
             if key in memory:
                 raise ValueError(f"capture-only profile requires baseline without {key}")
         for key in ("compact_inbox_version", "notice_batch_version"):
             if key in coordination:
                 raise ValueError(f"capture-only profile requires baseline without {key}")
+    else:
+        raise ValueError("unsupported candidate profile")
     write_json(memory_path, memory)
     write_json(coordination_path, coordination)
     write_json(manifest_path, {"schema": "cairn.inbox-recall-binding/1", "enabled": False,
@@ -259,14 +270,15 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
     if section.count(old_command_line) != 1 or section.count(old_args_line) != 1:
         raise ValueError("Codex Cairn MCP section differs from reviewed layout")
     new_args = list(old_codex["args"])
+    mcp_opt_in = profile == "full"
     for flag, value in (("--search-view", "compact/1"), ("--tool-profile", "compact/1")):
         positions = [index for index, item in enumerate(new_args) if item == flag]
         if len(positions) > 1 or (positions and (positions[0] + 1 >= len(new_args) or
                                                   new_args[positions[0] + 1] != value)):
             raise ValueError(f"selected Codex MCP has an incompatible {flag} opt-in")
-        if profile == "capture-only" and positions:
-            raise ValueError(f"capture-only profile requires baseline without {flag}")
-        if profile == "full" and not positions:
+        if profile != "full" and positions:
+            raise ValueError(f"{profile} profile requires baseline without {flag}")
+        if mcp_opt_in and not positions:
             new_args.extend((flag, value))
     section = section.replace(old_command_line, "command = " + json.dumps(str(binary)))
     section = section.replace(old_args_line, "args = " + json.dumps(new_args))
@@ -357,8 +369,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
           snapshot_codex_config_baseline=False, profile="full"):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
-    if profile not in ("full", "capture-only"):
-        raise ValueError("profile must be full or capture-only")
+    if profile not in ("full", "capture-only", "compact-inbox"):
+        raise ValueError("profile must be full, capture-only or compact-inbox")
     if snapshot_codex_config_baseline and not codex_only:
         raise ValueError("current Codex config baseline is available only in --codex-only mode")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
@@ -382,6 +394,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
     destination.mkdir(parents=True, mode=0o700)
     if profile == "capture-only":
         opt_ins = ["capture_observations"]
+    elif profile == "compact-inbox":
+        opt_ins = ["capture_observations", "compact_inbox_version=1"]
     else:
         opt_ins = ["capture_observations", "recall_view=compact/1", "compact_inbox_version=1",
                    "notice_batch_version=1", "search_view=compact/1", "tool_profile=compact/1"]
@@ -444,7 +458,7 @@ def main():
                         help="stage only the selected .codex account; do not read or copy Claude configuration")
     parser.add_argument("--snapshot-current-codex-config", action="store_true",
                         help="pin the current selected Codex TOML as a private baseline; allow whole-file drift only there")
-    parser.add_argument("--profile", choices=("full", "capture-only"), default="full",
+    parser.add_argument("--profile", choices=("full", "capture-only", "compact-inbox"), default="full",
                         help="opt-in profile to stage; capture-only enables no other token-efficiency feature")
     args = parser.parse_args()
     report = stage(Path.home(), args.destination, codex_only=args.codex_only,
