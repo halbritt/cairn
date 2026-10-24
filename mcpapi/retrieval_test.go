@@ -175,53 +175,65 @@ func TestReadOnlyRetrievalPreservesRefusalsAndFinalEnvelopeBound(t *testing.T) {
 	}{
 		{"probe-denied", "cairn_search", "AUTHORITY_DENIED: denied; refusal_id=retained", 1},
 		{"pull-denied", "cairn_pull", "AUTHORITY_DENIED: denied; refusal_id=retained", 1},
+		{"stale-pull", "cairn_pull", "STALE_HANDLE", 1},
 		{"transport-detail", "cairn_pull", "Cairn operation failed", 1},
 		{"missing-handle", "cairn_search", "Cairn operation failed", 2},
 		{"oversized-view", "cairn_search", "BUDGET_REFUSED", 2},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var calls atomic.Int32
-			client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				if tc.name == "probe-denied" || tc.name == "pull-denied" {
-					w.WriteHeader(http.StatusForbidden)
-					w.Write([]byte(`{"schema":"cairn.response/1","ok":false,"status":"AUTHORITY_DENIED","message":"denied","refusal_id":"retained"}`))
-					return
-				}
-				if tc.name == "transport-detail" {
-					w.Write([]byte("private-backend-canary"))
-					return
-				}
-				var answer any = map[string]any{}
-				if r.URL.Path == "/v1/index" {
-					index := core.IndexResult{Package: core.Package{ReceiptID: "receipt", Semantic: core.SemanticPackage{Index: []core.IndexEntry{{RecordID: "record", Version: 1, Summary: "source"}}}}}
-					if tc.name == "oversized-view" {
-						index.Handles = []core.IndexHandle{{RecordID: "record", Version: 1, Handle: "handle"}}
-						index.Package.Semantic.Index[0].Summary = strings.Repeat("日本語 \\\"", 1000)
+		for _, profile := range []string{"", "compact/1"} {
+			name := "full"
+			if profile != "" {
+				name = profile
+			}
+			t.Run(tc.name+"/"+name, func(t *testing.T) {
+				var calls atomic.Int32
+				client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					if tc.name == "probe-denied" || tc.name == "pull-denied" {
+						w.WriteHeader(http.StatusForbidden)
+						w.Write([]byte(`{"schema":"cairn.response/1","ok":false,"status":"AUTHORITY_DENIED","message":"denied","refusal_id":"retained"}`))
+						return
 					}
-					answer = index
+					if tc.name == "stale-pull" {
+						w.WriteHeader(http.StatusConflict)
+						w.Write([]byte(`{"schema":"cairn.response/1","ok":false,"status":"STALE_HANDLE","message":"stale source handle"}`))
+						return
+					}
+					if tc.name == "transport-detail" {
+						w.Write([]byte("private-backend-canary"))
+						return
+					}
+					var answer any = map[string]any{}
+					if r.URL.Path == "/v1/index" {
+						index := core.IndexResult{Package: core.Package{ReceiptID: "receipt", Semantic: core.SemanticPackage{Index: []core.IndexEntry{{RecordID: "record", Version: 1, Summary: "source"}}}}}
+						if tc.name == "oversized-view" {
+							index.Handles = []core.IndexHandle{{RecordID: "record", Version: 1, Handle: "handle"}}
+							index.Package.Semantic.Index[0].Summary = strings.Repeat("日本語 \\\"", 1000)
+						}
+						answer = index
+					}
+					if err := json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": answer}); err != nil {
+						t.Error(err)
+					}
+				})
+				server, err := NewReadOnlyServer(localRetrievalBackend{client: client, previewChoice: new(localapi.PreviewCapabilityChoice)}, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 2000, SearchView: profile})
+				if err != nil {
+					t.Fatal(err)
 				}
-				if err := json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": answer}); err != nil {
-					t.Error(err)
+				var args any = searchArgs{Query: "source"}
+				if tc.tool == "cairn_pull" {
+					args = core.ExpandRequest{RequestID: "request", ReceiptID: "receipt", Handle: "handle"}
+				}
+				result, err := connect(t, context.Background(), server).CallTool(context.Background(), &mcp.CallToolParams{Name: tc.tool, Arguments: args})
+				if err != nil || !result.IsError || len(result.Content) != 1 {
+					t.Fatalf("refusal lost: %+v %v", result, err)
+				}
+				message := result.Content[0].(*mcp.TextContent).Text
+				if !strings.Contains(message, tc.want) || strings.Contains(message, "private-backend-canary") || calls.Load() != tc.wantCalls {
+					t.Fatalf("refusal/retry/secret mismatch: %s calls %d", message, calls.Load())
 				}
 			})
-			server, err := NewReadOnlyServer(localRetrievalBackend{client: client, previewChoice: new(localapi.PreviewCapabilityChoice)}, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 2000})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var args any = searchArgs{Query: "source"}
-			if tc.tool == "cairn_pull" {
-				args = core.ExpandRequest{RequestID: "request", ReceiptID: "receipt", Handle: "handle"}
-			}
-			result, err := connect(t, context.Background(), server).CallTool(context.Background(), &mcp.CallToolParams{Name: tc.tool, Arguments: args})
-			if err != nil || !result.IsError || len(result.Content) != 1 {
-				t.Fatalf("refusal lost: %+v %v", result, err)
-			}
-			message := result.Content[0].(*mcp.TextContent).Text
-			if !strings.Contains(message, tc.want) || strings.Contains(message, "private-backend-canary") || calls.Load() != tc.wantCalls {
-				t.Fatalf("refusal/retry/secret mismatch: %s calls %d", message, calls.Load())
-			}
-		})
+		}
 	}
 }
 

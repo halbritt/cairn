@@ -72,7 +72,8 @@ COMPACT_AGENT_TOOLS_CUE = (
     'Search project/files/errors/constraints; assume no answer. For paraphrases use cairn_search semantic:true and check discovery.state. Automatic recall: 2 more searches; 4 total pull/span calls including candidate_inspection.pull_calls (absent=0). Block+results/errors/retries share {budget} UTF-8 bytes; deduct from remaining_memory_bytes.\n'
     'If the task needs more, exceed automatic limits without user approval. State why; start a new search with available_tokens and memory_budget_bytes enough for the whole source/envelopes within free context/tool ceiling. Use inspection_policy:first-fitting-whole/2 when exposed; whole reads use /1 without min_pull_bytes. Older receipts cannot grow. First fit is not relevance. New UUID per intent; count context. Explicit user limits apply; never truncate required context. No secrets, raw sessions or private Council. Save selected findings; hand off unfinished work.\n'
 )
-# Only current API counter names may lose an explicitly observed integer zero.
+# Legacy full recall omits observed integer zeros only for current API counters.
+# Compact recall retains those zeros so they differ from absent diagnostics.
 KNOWN_OMISSION_REASONS = frozenset((
     "CONTEXT_MISSING", "CURRENTNESS_MISMATCH", "OUTSIDE_VALIDITY", "CLASS_NOT_CONSEQUENTIAL",
     "AUTHORITY_INACTIVE", "POLICY_UNENFORCEABLE", "OPEN_CONFLICT", "ATTRIBUTION_UNRECONCILED",
@@ -1240,7 +1241,7 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
         raise HookError('invalid lifecycle recall_view: expected full or compact/1')
     cue = (COMPACT_AGENT_TOOLS_CUE if view_name == 'compact/1' else AGENT_TOOLS_CUE).format(budget=budget)
     omitted = result.get("omitted", {})
-    if isinstance(omitted, dict):
+    if view_name != 'compact/1' and isinstance(omitted, dict):
         omitted = {key: value for key, value in omitted.items()
                    if not (key in KNOWN_OMISSION_REASONS and type(value) is int and value == 0)}
     search = dict(status=result.get("status"), omitted=omitted,

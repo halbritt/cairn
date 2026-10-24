@@ -16,13 +16,19 @@ func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 	receipt, record, handle := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	entry := core.IndexEntry{RecordID: record, Version: 3, Class: "A", Kind: "lesson", Summary: "日本語 source", BodySHA256: strings.Repeat("a", 64), SummarySpan: &core.ByteSpanRequest{Offset: 9, Length: 12}}
 	selection := core.Selection{Mandatory: true, Reason: "required", Record: core.Record{RecordID: uuid.NewString(), Version: 1, Draft: core.Draft{Body: "Whole required source."}}}
+	competing := core.Selection{Mandatory: true, Reason: "competing", Record: core.Record{RecordID: uuid.NewString(), Version: 4, Draft: core.Draft{Body: "Whole competing 日本語 source."}}}
+	group := core.AdvisoryConflict{ID: uuid.NewString(), Version: 1, Members: []core.RecordVersionRef{
+		{RecordID: selection.Record.RecordID, Version: selection.Record.Version},
+		{RecordID: competing.Record.RecordID, Version: competing.Record.Version},
+	}}
+	selection.Conflicts, competing.Conflicts = []core.AdvisoryConflict{group}, []core.AdvisoryConflict{group}
 	result := core.IndexResult{
 		Package: core.Package{ReceiptID: receipt, Seal: "seal", Semantic: core.SemanticPackage{
 			Schema: "cairn.semantic/19", Status: "READY", Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
 			Destination: core.Destination{Name: "hosted"}, Query: "sha256:query", Ranking: "rank/1", Tokenizer: "utf8-byte-upper-bound/1",
 			AdvisoryConflicts: true, Kinds: []string{"lesson"}, Context: &core.ContextPins{TaskPhase: "review"},
-			Selected: []core.Selection{selection}, Index: []core.IndexEntry{entry},
-			Omitted:      map[string]int{"OPTIONAL_BUDGET": 0, "NO_LEXICAL_MATCH": 2},
+			Selected: []core.Selection{selection, competing}, Index: []core.IndexEntry{entry},
+			Omitted:      map[string]int{"OPTIONAL_BUDGET": 0, "NO_LEXICAL_MATCH": 2, "FUTURE_REASON": 0},
 			MemoryBudget: &core.MemoryBudget{Schema: "cairn.memory-budget/3", Bytes: 6000},
 			Page:         &core.BrowsePage{Offset: 0, NextOffset: new(int)},
 		}},
@@ -57,6 +63,7 @@ func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 	}
 	if got.Schema != "cairn.mcp-search-compact/1" || got.Status != "READY" ||
 		!reflect.DeepEqual(got.Selected, result.Package.Semantic.Selected) ||
+		len(got.Selected) != 2 || got.Selected[1].Record.Body != "Whole competing 日本語 source." ||
 		!reflect.DeepEqual(got.Omitted, result.Package.Semantic.Omitted) ||
 		!got.AdvisoryConflicts || !reflect.DeepEqual(got.Kinds, []string{"lesson"}) ||
 		got.Context == nil || got.Context.TaskPhase != "review" ||
@@ -64,6 +71,9 @@ func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 		got.Index[0].PullArguments.ReceiptID != receipt || got.Index[0].PullArguments.Handle != handle ||
 		got.Index[0].SummarySpan.Offset != 9 || got.SourceSeal != "seal" {
 		t.Fatalf("compact view lost context: %+v", got)
+	}
+	if _, present := got.Omitted["TOTAL_BUDGET"]; present {
+		t.Fatal("absent omission reason became a known zero")
 	}
 	if _, err := uuid.Parse(got.Index[0].PullArguments.RequestID); err != nil {
 		t.Fatalf("unusable pull request: %v", err)

@@ -57,6 +57,20 @@ class OptionalSearchViewTests(unittest.TestCase):
             text = hook.render_agent_candidates([], result, 9500, dict(rejected={}))
             self.assertEqual(view(text)['candidate_search']['discovery'], discovery)
 
+    def test_compact_view_distinguishes_known_zero_unknown_and_absent_reasons(self):
+        class Observer:
+            config = {'recall_view': 'compact/1'}
+
+        result = dict(index=[], status='READY', omitted=dict(OPTIONAL_BUDGET=0,
+            FUTURE_REASON=0, NO_LEXICAL_MATCH=3))
+        before = copy.deepcopy(result)
+        text = hook.render_agent_candidates([], result, 9500, dict(rejected={}), observer=Observer())
+        shown = view(text)
+        self.assertEqual(shown['schema'], 'cairn.hook-recall-compact/1')
+        self.assertEqual(shown['candidate_search']['omitted'], result['omitted'])
+        self.assertNotIn('TOTAL_BUDGET', shown['candidate_search']['omitted'])
+        self.assertEqual(result, before)
+
     def test_bound_public_hook_admits_whole_unicode_source_and_later_refusal(self):
         case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
         # Generic synthetic source, deliberately near the automatic half of the 9500-byte envelope.
@@ -101,6 +115,29 @@ class OptionalSearchViewTests(unittest.TestCase):
         self.assertEqual(second['code'], 0, second)
         self.assertNotIn('candidate_bodies', second['stdout'])
         self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 1)
+
+    def test_bound_compact_view_keeps_whole_required_and_optional_without_extra_reads(self):
+        case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
+        case.mc['recall_view'] = 'compact/1'
+        required = [dict(mandatory=True, record=dict(body='Whole mandatory 日本語 source.'))]
+        case.fixture['search']['selected'] = required
+        case.fixture['search']['omitted'] = dict(ZEROS, OPTIONAL_BUDGET=0, NO_LEXICAL_MATCH=2)
+        body = '日本語 "whole"\n' + 'x' * 1400
+        case.fixture['pull']['selection']['record']['body'] = body
+        case.fixture['search']['index'][0]['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        case.fixture['search']['index'].append(dict(record_id='00000000-0000-4000-8000-000000000009', version=1))
+        case.freeze()
+        out = case.memory_main(dict(case.event, prompt='Inspect the fixture source.', prompt_id='compact-bound'))
+        self.assertEqual(out['code'], 0, out)
+        text = json.loads(out['stdout'])['hookSpecificOutput']['additionalContext']
+        shown = view(text)
+        self.assertEqual(shown['schema'], 'cairn.hook-recall-compact/1')
+        self.assertEqual(shown['selected'], required)
+        self.assertEqual(shown['candidate_search']['omitted'], case.fixture['search']['omitted'])
+        self.assertEqual(shown['candidate_bodies'][0]['response'], case.fixture['pull'])
+        self.assertEqual(shown['candidate_inspection']['refusals'], dict(unverifiable_identity=1))
+        self.assertEqual([call['op'] for call in case.calls()], ['search', 'pull'])
+        self.assertLessEqual(len(out['stdout'].encode()) + shown['remaining_memory_bytes'], 9500)
 
 
 if __name__ == '__main__':
