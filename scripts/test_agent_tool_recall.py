@@ -116,6 +116,34 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertLessEqual(remaining, spare)
                 self.assertLessEqual(spare - remaining, len(str(budget)))
 
+    def test_opt_in_compact_view_keeps_whole_required_source_and_pull_route(self):
+        full, _ = self.invoke()
+        full_text = full['hookSpecificOutput']['additionalContext']
+        self.config['recall_view'] = 'compact/1'
+        self.commands.clear()
+        compact, state = self.invoke()
+        compact_text = compact['hookSpecificOutput']['additionalContext']
+        view = json.loads(compact_text[compact_text.index('{"selected":'):])
+        old = json.loads(full_text[full_text.index('{"selected":'):])
+        self.assertEqual(view.pop('schema'), 'cairn.hook-recall-compact/1')
+        self.assertEqual(view['selected'], old['selected'])
+        self.assertEqual(view['index'], old['index'])
+        self.assertEqual(view['candidate_search'], old['candidate_search'])
+        self.assertEqual(len(self.commands), 1)
+        self.assertEqual(state['last_recall']['outcome'], 'delegated')
+        self.assertIn('partial_span omits context', compact_text)
+        self.assertIn('without user approval', compact_text)
+        self.assertIn('Explicit user limits apply', compact_text)
+        self.assertLess(len(compact_text.encode()), len(full_text.encode()))
+        self.assertLessEqual(len(compact_text.encode()) + view['remaining_memory_bytes'],
+                             self.config['context_bytes'])
+
+    def test_invalid_recall_view_refuses_before_retrieval(self):
+        self.config['recall_view'] = 'compact/2'
+        with self.assertRaisesRegex(hook.HookError, 'recall_view'):
+            self.invoke()
+        self.assertEqual(self.commands, [])
+
     def test_candidates_keep_server_order_handles_spans_and_conflicts_with_three_entry_cap(self):
         self.entries = [dict(record_id=str(i), version=2, summary='Preview ' + str(i),
                              summary_span=dict(offset=11, length=14),
