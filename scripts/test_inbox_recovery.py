@@ -200,6 +200,19 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(journal['status'], 'committed')
         self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
 
+    def test_compact_capability_rollback_keeps_issued_handle_settleable(self):
+        context, _ = self.compact_context('notice', 'Process this notice before rollout ends.')
+        self.config.pop('compact_inbox_version')
+        coordination.write_state(self.root / 'bindings' / 'fixture.json', self.config)
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root), CLAUDE_SESSION_ID='native-1')
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle',
+                   context['compact_handle'], 'handled']
+        settled = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
+        self.assertEqual(json.loads(settled.stdout)['status'], 'handled')
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
+        self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
+
     def test_committed_compact_settlement_does_not_reopen_forgotten_source(self):
         context, _ = self.compact_context('notice', 'Source eligible only before forgetting.')
         env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
