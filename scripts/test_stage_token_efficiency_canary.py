@@ -18,11 +18,12 @@ spec.loader.exec_module(stage)
 
 class CanaryStageTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="cairn-stage-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="cairn-stage-test-", dir=Path.home())
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name) / "home"
         self.home.mkdir(mode=0o700)
-        self.stage = Path(self.temp.name) / "candidate with space"
+        (self.home / ".cache").mkdir(mode=0o700)
+        self.stage = self.home / ".cache/cairn-token-efficiency-stages/candidate with space"
         self.expected = {}
         common = {"cairn": str(self.home / ".local/bin/cairn"),
                   "socket": str(self.home / "api.sock"),
@@ -131,9 +132,36 @@ exec {binary} mcp \\
         data["hooks"]["SessionStart"].append(copy.deepcopy(data["hooks"]["SessionStart"][1]))
         self.write(path, data)
         self.expected[".codex/hooks.json"] = stage.sha256(path)
+        root = stage.private_stage_root(self.home)
+        marker = root / "prior-candidate"
+        marker.write_text("retain")
         with self.assertRaisesRegex(ValueError, "expected one selected codex memory hook"):
             stage.stage(self.home, self.stage, self.expected)
         self.assertFalse(self.stage.exists())
+        self.assertEqual(marker.read_text(), "retain")
+
+    def test_rejects_repository_and_shared_parent_destinations(self):
+        repository = self.home / "checkout"
+        repository.mkdir()
+        (repository / ".git").mkdir()
+        with self.assertRaisesRegex(ValueError, "direct child"):
+            stage.stage(self.home, repository / "candidate", self.expected)
+        self.assertFalse((repository / "candidate").exists())
+        root = stage.private_stage_root(self.home)
+        (root / ".git").mkdir()
+        with self.assertRaisesRegex(ValueError, "outside a repository"):
+            stage.stage(self.home, self.stage, self.expected)
+        (root / ".git").rmdir()
+        (self.home / ".cache").chmod(0o775)
+        with self.assertRaisesRegex(ValueError, "unsafe staging ancestor"):
+            stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(self.stage.exists())
+
+    def test_rejects_tmp_destination(self):
+        destination = Path(tempfile.gettempdir()) / "cairn-stage-unsafe-destination"
+        with self.assertRaisesRegex(ValueError, "direct child"):
+            stage.stage(self.home, destination, self.expected)
+        self.assertFalse(destination.exists())
 
 
 if __name__ == "__main__":

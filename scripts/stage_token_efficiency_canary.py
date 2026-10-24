@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import stat
 import tomllib
 
 
@@ -234,24 +235,44 @@ def stage_mcp(home, destination):
                        "account_wrapper": str(candidate_wrapper), "wrapper_sha256": sha256(candidate_wrapper)}}
 
 
+def private_stage_root(home):
+    if not home.is_absolute() or home.is_symlink():
+        raise ValueError("home must be an absolute, non-symlink directory")
+    cache = home / ".cache"
+    if not cache.is_dir() or cache.is_symlink():
+        raise ValueError("private home cache is required")
+    for path in (cache, *cache.parents):
+        info = path.stat()
+        if (path.is_symlink() or info.st_uid not in (os.getuid(), 0) or info.st_mode & 0o022
+                or (path / ".git").exists() or (path / ".git").is_symlink()):
+            raise ValueError(f"unsafe staging ancestor: {path}")
+    info = cache.stat()
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise ValueError("home cache must be private and owner-owned")
+    root = cache / "cairn-token-efficiency-stages"
+    if root.is_symlink():
+        raise ValueError("stage root must not be a symlink")
+    root.mkdir(mode=0o700, exist_ok=True)
+    info = root.stat()
+    if (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700
+            or (root / ".git").exists() or (root / ".git").is_symlink()):
+        raise ValueError("stage root must be private, owner-owned and outside a repository")
+    return root
+
+
 def stage(home, destination, expected=EXPECTED):
-    home = home.resolve()
-    if not destination.is_absolute():
+    if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
-    destination = destination.resolve(strict=False)
-    if destination.exists() or destination.is_symlink():
-        raise ValueError("stage destination must be a new absolute directory")
-    if destination == home or home in destination.parents:
-        # A fresh directory under HOME is permitted, except inside account homes or shared Cairn paths.
-        forbidden = (home / ".codex", home / ".codex-harm", home / ".claude", home / ".claude-harm",
-                     home / ".local/share/cairn", home / ".local/bin")
-        if any(destination == p or p in destination.parents for p in forbidden):
-            raise ValueError("stage destination overlaps an installed account or Cairn path")
     check_snapshot(home, expected)
+    root = private_stage_root(home)
+    if destination.parent != root or destination.resolve(strict=False).parent != root:
+        raise ValueError(f"stage destination must be a direct child of {root}")
     destination.mkdir(parents=True, mode=0o700)
     report = {"schema": "cairn.token-efficiency-canary-stage/1", "activation": "none",
               "accounts": {}}
     try:
+        if stat.S_IMODE(destination.stat().st_mode) != 0o700:
+            raise ValueError("stage destination must be owner-only")
         for harness in ("codex", "claude"):
             report["accounts"][harness] = stage_account(home, destination, harness)
         report["mcp"] = stage_mcp(home, destination)
