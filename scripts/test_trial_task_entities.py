@@ -103,6 +103,7 @@ class EntityShapeTests(unittest.TestCase):
 
     def test_remember_passes_each_association_as_a_cli_flag_and_checks_what_was_stored(self):
         store = object.__new__(te.TrialStore)
+        store.import_results = []
         store.binary, store.env, store.ids, store.names = Path('/fixture/cairn'), {}, {}, {}
         seen = []
 
@@ -130,11 +131,15 @@ class EntityShapeTests(unittest.TestCase):
         for label, kept in {'dropped': [FILE], 'altered': [FILE, dict(SYMBOL, name='core.Other'), dash],
                             'none': [], 'extra': entities + [{'kind': 'file', 'name': 'x.go'}]}.items():
             store.ids.clear()
+            store.names.clear()
+            store.import_results.clear()
             with self.subTest(label), patch.object(te, 'run', side_effect=remember), \
                  patch.object(te, 'cairn_json', return_value={'entities': kept}), \
                  self.assertRaisesRegex(RuntimeError, 'differ from the input'):
                 store.remember(dict(NOTE, entities=entities))
             self.assertEqual(store.ids, {})
+            self.assertEqual(store.names, {})
+            self.assertEqual(store.import_results, [])
 
 
 @unittest.skipUnless(os.environ.get('CAIRN_TASK_EVAL_PG') and os.environ.get('CAIRN_TASK_EVAL_BINARY'),

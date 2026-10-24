@@ -13,9 +13,7 @@ import json
 import math
 from pathlib import Path
 
-import tiktoken
-
-ENC = tiktoken.get_encoding("o200k_base")
+ENC = None
 WAKE = "This is a new live turn from the configured Cairn automatic inbox wakeup."
 MARKERS = ("Cairn session agent-", "Cairn has a ", "Cairn candidates/openings",
            '"schema":"cairn.', '"schema": "cairn.', "Cairn inbox:",
@@ -37,6 +35,12 @@ def response_identity(value):
 
 
 def counts(text):
+    # The recovery/workflow report modules also use this module's parsers. Keep
+    # their pure report paths importable when the optional tokenizer is absent.
+    global ENC
+    if ENC is None:
+        import tiktoken
+        ENC = tiktoken.get_encoding("o200k_base")
     return {"bytes": len(text.encode()), "proxy_tokens": len(ENC.encode(text, disallowed_special=()))}
 
 

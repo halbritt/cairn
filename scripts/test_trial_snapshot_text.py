@@ -72,48 +72,38 @@ class PreparationTextTests(unittest.TestCase):
         mcp += b' ' * (65536 - len(mcp))
         self.rewrite('mcp', mcp)
         actual_read = os.read
-        decoder_code = codecs.BufferedIncrementalDecoder.decode.__code__
         observations = []
+        decode = codecs.utf_8_decode
+
+        def observe_decode(data, errors='strict', final=False):
+            observations.append(len(data))
+            return decode(data, errors, final)
 
         def short_read(fd, count):
             # One-byte prompt/instruction reads exercise all UTF-8 carry widths.
             name = os.readlink('/proc/self/fd/' + str(fd)).rsplit('/', 1)[-1]
             return actual_read(fd, min(count, 1 if name in ('prompt.txt', 'instruction.txt') else 8191))
 
-        def observe(frame, event, arg):
-            if frame.f_code is decoder_code:
-                values = list(frame.f_locals.values())
-                decoder = frame.f_locals.get('self')
-                if decoder is not None:
-                    values.append(decoder.buffer)
-                raw = {id(value): len(value) for value in values if isinstance(value, bytes)}
-                observations.append(sum(raw.values()))
-            return observe
-
-        previous_trace = sys.gettrace()
-        try:
-            sys.settrace(observe)
-            with patch.object(snapshot.os, 'read', new=short_read):
-                for sdk in (False, True):
-                    owner = self.prepare(sdk)
-                    self.assertEqual(owner.launch.argv[-1], instruction)
-                    owner.review_bindings()
-                    if sdk:
-                        self.assertEqual(owner.launch.control.pristine_binding()['instruction_bytes'],
-                                         len(instruction.encode()))
-                        session = owner.consume_for_session()
-                        self.addCleanup(session.close)
-                        session.held_source_bindings()
-        finally:
-            sys.settrace(previous_trace)
-        # Read + carry-concatenation + old carry: local payload only, not a
-        # complete preparation/attempt quote or Python allocation measurement.
-        self.assertGreater(max(observations), 8192)
-        self.assertLessEqual(max(observations), 2 * 8192 + 6)
-        with patch.object(snapshot.os, 'read', new=short_read):
-            legacy = owner._snapshot.read('mcp.json')
-        self.assertIs(type(legacy), bytes)
-        self.assertEqual(legacy, mcp)
+        with patch.object(snapshot.os, 'read', new=short_read), \
+             patch.object(snapshot.codecs, 'utf_8_decode', new=observe_decode):
+            for sdk in (False, True):
+                owner = self.prepare(sdk)
+                self.assertEqual(owner.launch.argv[-1], instruction)
+                owner.review_bindings()
+                if not sdk:
+                    legacy = owner._snapshot.read('mcp.json')
+                    self.assertIs(type(legacy), bytes)
+                    self.assertEqual(legacy, mcp)
+                if sdk:
+                    self.assertEqual(owner.launch.control.pristine_binding()['instruction_bytes'],
+                                     len(instruction.encode()))
+                    session = owner.consume_for_session()
+                    self.addCleanup(session.close)
+                    session.held_source_bindings()
+        # Observe the decoder's actual inputs: borrowed blocks stay bounded and
+        # split scalars are decoded through the small carry path.
+        self.assertTrue(observations)
+        self.assertLessEqual(max(observations), 8191)
 
     def test_invalid_utf8_and_json_refuse_after_short_reads_without_fd_leaks(self):
         actual_read = os.read

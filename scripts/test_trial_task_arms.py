@@ -70,7 +70,8 @@ class ArmContractTest(unittest.TestCase):
                          (root/'hook-config.json','/tmp/trial/hookconfig.json','ro'),
                          (cli,'/tmp/trial/store/cairn','ro'),(work,'/workspace','rw'),
                          (te.ROOT/'scripts/trial_hook_observer.py','/tmp/trial/hook-observer.py','ro'),
-                         (te.ROOT/'scripts/trial_source_delivery.py','/tmp/trial/trial_source_delivery.py','ro')]
+                         (te.ROOT/'scripts/trial_source_delivery.py','/tmp/trial/trial_source_delivery.py','ro'),
+                         (te.ROOT/'scripts/trial_observation_storage.py','/tmp/trial/trial_observation_storage.py','ro')]
             command=te.runtime_sandbox()
             for source,target,mode in bindings:
                 command += ['--ro-bind' if mode=='ro' else '--bind',str(source),str(target)]
