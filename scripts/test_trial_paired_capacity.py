@@ -73,7 +73,78 @@ def bind_workload(root, plan, capacity, workload, routes):
     return save_capacity(root, capacity)
 
 
+def sharded_capacity_fixture(root):
+    """Three-account workload with 21 assigned pairs (42 actor attempts) per account."""
+    cases, seeds = [f'case-{i:02d}' for i in range(21)], [1, 2, 3]
+    account_rows = []
+    for index, account_id in enumerate(('account-A', 'account-B', 'account-C')):
+        home = root/f'codex-{index}'
+        home.mkdir()
+        auth = home/'auth.json'
+        auth.write_text('{}')
+        account_rows.append(dict(account_id=account_id, auth_file=str(auth), config_home=str(home),
+                                 auth_sha256=hashlib.sha256(auth.read_bytes()).hexdigest()))
+    assignment = __import__('trial_weekly_accounts').balanced(cases, seeds, account_rows)
+    assignment_ref = write_pin(root/'account-assignment.json', assignment)
+    plan = dict(instrument='weekly-frozen-cases', cases=cases, arms=['CURRENT', 'CAND'], seeds=seeds,
+                attempts=126, account_assignment=assignment_ref)
+    basis = write_pin(root/'workload-basis.json', {'fixture_only': True})
+    pair_counts = {'account-A': 21, 'account-B': 21, 'account-C': 21}
+    requests = dict(CURRENT=8, CAND=8, primary=1, secondary=2)
+    roles = {}
+    for role, request_count in requests.items():
+        roles[role] = dict(state='included', basis=basis, jobs=[dict(
+            id=f'{role}-{account_id}', model='fixture-model', account_id=account_id, count=count,
+            per_job=dict(provider_requests=request_count, input_tokens=100, output_tokens=20,
+                         cache_read_input_tokens=30, cache_creation_input_tokens=10))
+                           for account_id, count in pair_counts.items()])
+    for role in ('selector', 'control', 'retry', 'dispute', 'auxiliary'):
+        roles[role] = dict(state='not_applicable', basis=basis, jobs=[])
+    workload = dict(schema='cairn.paired-provider-workload/3', roles=roles)
+    plan['workload'] = write_pin(root/'workload-v3.json', workload)
+    plan['sha256'] = paired.canonical_sha(plan)
+    routes = dict(schema='cairn.paired-route-binding/2', plan_sha256=plan['sha256'], state='complete', routes={})
+    for role in requests:
+        for account_id in pair_counts:
+            ident = f'{role}-{account_id}'
+            routes['routes'][ident] = dict(account_id=account_id, model='fixture-model', windows=[
+                dict(pool_id=f'pool-{account_id}', window_id='week',
+                     metrics=['provider_requests', 'total_tokens'])])
+    routes_ref = write_pin(root/'routes-v3.json', routes)
+    resources = []
+    for account_id in pair_counts:
+        resources.extend([
+            dict(pool_id=f'pool-{account_id}', window_id='week', metric='provider_requests',
+                 remaining=399, required=399),
+            dict(pool_id=f'pool-{account_id}', window_id='week', metric='total_tokens',
+                 remaining=13440, required=13440)])
+    accounts = write_pin(root/'account-binding-v3.json', dict(schema='cairn.paired-account-binding/1',
+        accounts=[dict(account_id=account_id, dedicated=True, interactive_use=False)
+                  for account_id in pair_counts]))
+    reservation = dict(schema='cairn.paired-reservation/2', plan_sha256=plan['sha256'],
+        resources_sha256=paired.canonical_sha(resources), state='held', valid_until='2026-10-09T20:05:00Z')
+    capacity = dict(schema='cairn.paired-capacity-evidence/2', plan_sha256=plan['sha256'], state='declared',
+        observed_at='2026-10-09T19:59:00Z', valid_until='2026-10-09T20:05:00Z', account_binding=accounts,
+        route_binding=routes_ref, reservation=write_pin(root/'reservation-v3.json', reservation),
+        resources=resources)
+    return plan, capacity, routes
+
+
 class CapacityTests(unittest.TestCase):
+    def test_assignment_shards_full_actor_and_grader_reserve_across_three_accounts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan, capacity, _ = sharded_capacity_fixture(root)
+            models = dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'fixture-model')
+            reference = save_capacity(root, capacity)
+            paired.capacity_check(reference, plan, NOW, models)
+            # The route binding must preserve the account selected for each role shard.
+            routes = json.loads(Path(capacity['route_binding']['path']).read_text())
+            routes['routes']['CURRENT-account-B']['account_id'] = 'account-A'
+            capacity['route_binding'] = write_pin(root/'routes-v3.json', routes)
+            with self.assertRaisesRegex(paired.Refusal, '^route_assignment_mismatch$'):
+                paired.capacity_check(save_capacity(root, capacity), plan, NOW, models)
+
     def test_eight_request_actor_requires_eight_requests_in_shared_total(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

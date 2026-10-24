@@ -38,6 +38,7 @@ from trial_account_selection import credentials_source
 import trial_codex_account_selection as codex_account_selection
 import trial_legacy_limits as legacy_limits
 import trial_codex_weekly_limits as codex_weekly_limits
+import trial_weekly_accounts as weekly_accounts
 import trial_native_copy as native_copy
 import trial_original_arms as original_arm_controls
 import trial_embedding_identity as identity_declaration
@@ -1139,6 +1140,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
     # Legacy fixtures under the original paired limits (trial_legacy_limits).
     original = bool(getattr(args, "original_limits", False)) and not prospective
     codex_weekly = bool(getattr(args, "codex_weekly_limits", False)) and not prospective
+    assigned_account = (weekly_accounts.account_for(args._codex_account_assignment, case['id'], arm, seed)
+                        if codex_weekly and getattr(args, '_codex_account_assignment', None) is not None else None)
     memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
     corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
     prompt = case["wordings"][args.wording]
@@ -1183,11 +1186,17 @@ def run_agent(case, arm, seed, order, args, stores, out):
     else:
         # Invoke the reviewed npm entry point, not this host's coordination launcher.
         if codex_weekly:
-            codex_account_selection.verify_auth_file(args.codex_auth_file,args.codex_auth_sha256)
+            auth_file = assigned_account['auth_file'] if assigned_account else args.codex_auth_file
+            auth_sha256 = assigned_account['auth_sha256'] if assigned_account else args.codex_auth_sha256
+            expected_account_id = assigned_account['account_id'] if assigned_account else None
+            codex_account_selection.verify_auth_file(auth_file, auth_sha256,
+                                                      expected_account_id=expected_account_id)
         profile = base / "codex-home"
         profile.mkdir(mode=0o700)
         binds += [(profile, home / ".codex", "rw"),
-                  (Path(args.codex_auth_file).resolve(strict=True), home / ".codex/auth.json", "ro")]
+                  (Path(auth_file if codex_weekly else args.codex_auth_file).resolve(strict=True),
+                   home / ".codex/auth.json", "ro")]
+        env['CODEX_HOME'] = str(home / '.codex')
         if getattr(args, "codex_binary", None):
             codex_binary = Path(args.codex_binary).resolve(strict=True)
             if native_copy.file_sha256(str(codex_binary)) != args.codex_binary_sha256:
@@ -1498,6 +1507,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
+    if assigned_account is not None:
+        record['account_id'] = assigned_account['account_id']
+        record['account_auth_sha256'] = assigned_account['auth_sha256']
     record['baseline_custody'] = baseline.pin
     if not prospective:
         record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
@@ -1660,6 +1672,16 @@ def cmd_agent(args):
     cases = [c for c in all_cases if not args.cases or c["id"] in args.cases]
     if not cases or (args.cases and set(args.cases) - {c["id"] for c in all_cases}):
         raise SystemExit("case selection must name existing cases")
+    if getattr(args, 'codex_account_assignment', None) is not None:
+        reference = dict(path=args.codex_account_assignment, sha256=args.codex_account_assignment_sha256)
+        assignment, _, _ = weekly_accounts.validate(reference, dict(
+            cases=[case['id'] for case in all_cases],
+            arms=['CURRENT', 'CAND'],
+            seeds=list(range(args.first_seed, args.first_seed + args.seeds))))
+        for account in assignment['accounts']:
+            codex_account_selection.verify_auth_file(account['auth_file'], account['auth_sha256'],
+                                                      expected_account_id=account['account_id'])
+        args._codex_account_assignment = assignment
     expected_pairs = {(c["id"], seed) for c in cases for seed in range(args.first_seed, args.first_seed + args.seeds)}
     paired_plans, baseline_pairs = [], set()
     for path in args.paired_plan:
@@ -1801,9 +1823,22 @@ def cmd_agent(args):
         if args.semantic_recall:
             execution["selector_version"] = run([args.selector_binary, "--version"]).stdout.decode().strip()
             execution["selector_binary_sha256"] = hashlib.sha256(Path(args.selector_binary).read_bytes()).hexdigest()
+        account_assignment_sha256 = None
+        run_accounts = None
+        if getattr(args, '_codex_account_assignment', None) is not None:
+            account_assignment_sha256 = args.codex_account_assignment_sha256
+            assignment_by_run = {row['run_id']: row['account_id']
+                                 for row in args._codex_account_assignment['assignments']}
+            run_accounts = [dict(run_id=f'{case["id"]}.{arm}.s{seed}',
+                                 account_id=assignment_by_run[f'{case["id"]}.{arm}.s{seed}'])
+                            for seed in range(args.first_seed, args.first_seed + args.seeds)
+                            for case in cases for arm in arms]
+            execution['account_assignment_sha256'] = account_assignment_sha256
         execution["recall"] = recall
         (out / "plan.json").write_text(json.dumps(dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
                                                        distractors=args.distractors, paired_plans=paired_plans,
+                                                       account_assignment_sha256=account_assignment_sha256,
+                                                       run_accounts=run_accounts,
                                                        memory_backends={k: dict(backend=v["store"].backend,
                                                                                 readiness=v["store"].readiness)
                                                                         for k, v in stores.items()},
@@ -2083,6 +2118,8 @@ def main(argv=None):
     a.add_argument("--codex-auth-file", default=str(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"),
                    help="existing account auth only; read-only mount into isolated profile")
     a.add_argument("--codex-auth-sha256", help="expected digest of the selected subscription auth file")
+    a.add_argument("--codex-account-assignment", help="pinned weekly case/seed to ChatGPT account assignment")
+    a.add_argument("--codex-account-assignment-sha256", help="expected digest of the account assignment")
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
     a.add_argument("--semantic-worker")
@@ -2161,6 +2198,10 @@ def main(argv=None):
             parser.error("--codex-weekly-limits requires a pinned --codex-binary")
         if args.codex_weekly_limits and args.codex_auth_sha256 is None:
             parser.error("--codex-weekly-limits requires a pinned --codex-auth-sha256")
+        if (args.codex_account_assignment is None) != (args.codex_account_assignment_sha256 is None):
+            parser.error("--codex-account-assignment and its SHA-256 go together")
+        if args.codex_account_assignment is not None and not args.codex_weekly_limits:
+            parser.error("--codex-account-assignment applies only to Codex weekly execution")
         if args.codex_auth_sha256 is not None and not args.codex_weekly_limits:
             parser.error("--codex-auth-sha256 applies only to Codex weekly execution")
         if args.cold_readiness_timeout <= 0 or args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:

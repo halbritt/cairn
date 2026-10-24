@@ -44,6 +44,7 @@ import trial_original_execution as original
 import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
+import trial_weekly_accounts as weekly_accounts
 from check_weekly_paired_eval import WEEKLY_ARMS, WEEKLY_ATTEMPTS, WEEKLY_CASES, WEEKLY_SEEDS
 
 PROFILE_SCHEMA = 'cairn.weekly-run-profile/1'
@@ -55,7 +56,8 @@ BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
                   'weekly_source embedding postgres capacity executor selection account execution')
 SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
-CODEX_SELECTION_FIELDS = SELECTION_FIELDS+' codex_account_binding_sha256 provider_model provider_binary_sha256'
+CODEX_SELECTION_FIELDS = (SELECTION_FIELDS+' codex_account_binding_sha256 codex_account_assignment_sha256 '
+                          'provider_model provider_binary_sha256')
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
 DISTRACTORS = 1900
@@ -185,9 +187,9 @@ class LegacyHarnessExecutor:
         return dict(agent=output / 'agent.json', exit_code=done.returncode)
 
 
-def default_executors(account=None):
+def default_executors(account=None, account_assignment=None):
     return {LegacyHarnessExecutor.name: LegacyHarnessExecutor(account),
-            CodexWeeklyExecutor.name: CodexWeeklyExecutor(account)}
+            CodexWeeklyExecutor.name: CodexWeeklyExecutor(account, account_assignment)}
 
 
 class CodexWeeklyExecutor:
@@ -198,20 +200,39 @@ class CodexWeeklyExecutor:
                        mcp_tool_room=limits['tool_room_bytes'],task_wire_charged=True,stream_timing=True)
     capabilities=original.LEGACY_CAPABILITIES
 
-    def __init__(self,account=None):
+    def __init__(self,account=None,account_assignment=None):
         self.account=account
-        self.account_ids=() if account is None else (account.get('account_id'),)
+        self.account_assignment=account_assignment
+        self.account_ids=(tuple(item['account_id'] for item in account_assignment['document']['accounts'])
+                          if account_assignment is not None else
+                          (() if account is None else (account.get('account_id'),)))
 
     def check(self,preview):
         blockers=[]
-        if self.account is None: blockers.append('codex_account_unbound')
-        else: codex_account.selected_auth(self.account)
+        if self.account_assignment is not None:
+            for account in self.account_assignment['document']['accounts']:
+                codex_account.verify_auth_file(account['auth_file'], account['auth_sha256'],
+                                                expected_account_id=account['account_id'])
+        elif self.account is None:
+            blockers.append('codex_account_unbound')
+        else:
+            codex_account.selected_auth(self.account)
         fragment=preview.get('original_execution')
         if fragment is None: blockers.append('original_execution_unbound')
         elif fragment.get('harness')!='codex': blockers.append('codex_provider_contract_mismatch')
         if blockers: raise ExecutorBlocked(blockers)
         original.check_supported(fragment,self.capabilities)
         need(fragment['model']=='gpt-6-luna','codex_model_mismatch')
+
+    def subscription_preflight(self, preview, now):
+        if self.account_assignment is None:
+            return []
+        fragment = preview['original_execution']
+        provider = fragment['provider']
+        observed_at = candidate._iso(now)
+        return [dict(weekly_accounts_status=codex_account.subscription_preflight(
+                        account, provider, fragment['model']), observed_at=observed_at)
+                for account in self.account_assignment['document']['accounts']]
 
     def execute(self,spec,run_dir):
         output=Path(run_dir)/'agent'
@@ -222,12 +243,18 @@ class CodexWeeklyExecutor:
         for name in ARMS:
             arm=spec['arms'][name]
             argv += ['--memory',f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
+        auth_account = (self.account_assignment['document']['accounts'][0]
+                        if self.account_assignment is not None else self.account)
+        need(auth_account is not None, 'codex_account_unbound')
         argv += ['--distractors',str(spec['distractors']),'--seeds',str(len(spec['seeds'])),'--first-seed',str(spec['seeds'][0]),
                  '--embedding-worker',spec['embedding']['worker']['path'],'--harness','codex','--model',spec['actor_model'],
                  '--codex-auth-file',
-                 str(codex_account.selected_auth(self.account)),'--codex-auth-sha256',self.account['auth_sha256'],
+                 auth_account['auth_file'],'--codex-auth-sha256',auth_account['auth_sha256'],
                  '--timeout','900','--parallel','1',
                  *original.harness_flags(fragment,spec['original_arms'])]
+        if spec.get('account_assignment') is not None:
+            argv += ['--codex-account-assignment', spec['account_assignment']['path'],
+                     '--codex-account-assignment-sha256', spec['account_assignment']['sha256']]
         env=codex_environment(spec)
         with open(Path(run_dir)/'harness.log','xb') as log:
             os.chmod(log.name,0o600)
@@ -290,6 +317,11 @@ def capacity_gate(capacity, *, now, slot_end, account_ids):
          and isinstance(plan.get('cases'), list) and len(set(plan['cases'])) == WEEKLY_CASES == len(plan['cases'])
          and isinstance(plan.get('seeds'), list) and len(set(plan['seeds'])) == WEEKLY_SEEDS == len(plan['seeds']),
          'capacity_plan_not_original')
+    assignment_reference = plan.get('account_assignment')
+    if assignment_reference is not None:
+        assignment, assignment_reference, _ = weekly_accounts.validate(assignment_reference, plan)
+        need({account['account_id'] for account in assignment['accounts']} == set(account_ids),
+             'capacity_account_mismatch')
     models = capacity['models']
     paired.capacity_check(receipt['capacity'], plan, now, models)
     evidence = paired.read_json_pin(receipt['capacity'])
@@ -299,7 +331,8 @@ def capacity_gate(capacity, *, now, slot_end, account_ids):
     need(models['CURRENT'] == models['CAND'], 'capacity_actor_models_differ')
     return dict(receipt_sha256=capacity['receipt']['sha256'], plan_sha256=plan['sha256'],
                 input_sha256=receipt['sources']['input_sha256'], accounts=sorted(accounts),
-                valid_until=evidence['valid_until'], account_proof=receipt['account_proof']), plan
+                valid_until=evidence['valid_until'], account_proof=receipt['account_proof'],
+                account_assignment=assignment_reference), plan
 
 
 # ---------------------------------------------------------------- live selection
@@ -324,7 +357,11 @@ def selection_gate(profile, preview, executor_name, capacity):
                     capacity_receipt_sha256=capacity['receipt_sha256'])
     if codex:
         fragment=preview['original_execution']
-        expected.update(codex_account_binding_sha256=paired.canonical_sha(profile['account']),
+        assignment = capacity.get('account_assignment')
+        account_binding = (paired.read_json_pin(assignment) if assignment is not None else profile['account'])
+        expected.update(codex_account_binding_sha256=paired.canonical_sha(account_binding),
+                        codex_account_assignment_sha256=(assignment['sha256'] if assignment is not None else
+                                                         paired.canonical_sha(profile['account'])),
                         provider_model=fragment['model'],provider_binary_sha256=fragment['provider']['sha256'])
     need(all(document[key] == value for key, value in expected.items()), 'live_selection_mismatch')
     return dict(sha256=reference['sha256'], selected_by=document['selected_by'], proof='declared_unauthenticated')
@@ -338,8 +375,14 @@ def run(profile, *, now, executors=None, compiler=None):
     Every refusal before the slot claim writes nothing. A repeated call for a
     recorded slot returns the stored receipt without building or executing.
     """
-    executors = default_executors(profile.get('account')) if executors is None else executors
     repo, runs = check_profile(profile)
+    assignment = None
+    if profile['executor'] == CodexWeeklyExecutor.name:
+        capacity_plan = paired.read_json_pin(profile['capacity']['plan'])
+        if capacity_plan.get('account_assignment') is not None:
+            allocation, reference, counts = weekly_accounts.validate(capacity_plan['account_assignment'], capacity_plan)
+            assignment = dict(document=allocation, reference=reference, pair_counts=counts)
+    executors = default_executors(profile.get('account'), assignment) if executors is None else executors
     start, end = current_slot(profile['schedule'], now)
     slot_id = str(uuid.uuid5(NAMESPACE, profile['campaign_id'] + '|' + candidate._iso(start)))
     current = candidate.resolve(repo, profile['current_ref'], 'current_unresolved')
@@ -379,7 +422,11 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
     """Under the runs lock: stored receipt, or every check, retirement and the recorded claim."""
     fragment = None if profile['execution'] is None else original.declared(
         profile, current=current, candidate=cand, models=profile['capacity']['models'])
-    stored, retry = _stored_slot(runs, slot_id, current, cand)
+    requested_plan = paired.read_json_pin(profile['capacity']['plan'])
+    requested_assignment = requested_plan.get('account_assignment')
+    if requested_assignment is not None:
+        weekly_accounts.validate(requested_assignment, requested_plan)
+    stored, retry, previous_claim = _stored_slot(runs, slot_id, current, cand)
     if stored is not None:
         # A replay satisfies only the exact execution contract it recorded. A receipt from
         # before the contract existed, or under another binary, effort or model, never does.
@@ -387,7 +434,15 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
         recorded = stored.get('original_execution')
         need((recorded.get('declared') if isinstance(recorded, dict) else None) == fragment,
              'stored_slot_execution_mismatch')
+        if profile['executor'] == CodexWeeklyExecutor.name:
+            assert_account_slot_binding(stored, requested_plan, requested_assignment,
+                                        executors[profile['executor']].account_ids,
+                                        'stored_slot_account_assignment_mismatch')
         return stored
+    if retry and profile['executor'] == CodexWeeklyExecutor.name:
+        assert_account_slot_binding(previous_claim, requested_plan, requested_assignment,
+                                    executors[profile['executor']].account_ids,
+                                    'retry_account_assignment_mismatch')
     executor = executors.get(profile['executor'])
     need(executor is not None, 'weekly_executor_unknown')
     preview = dict(slot_id=slot_id, scheduled_at=candidate._iso(start), expires_at=candidate._iso(end),
@@ -398,6 +453,9 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
     need(executor.limits == paired.ORIGINAL_LIMITS, 'executor_limits_unenforced')
     capacity, plan = capacity_gate(profile['capacity'], now=now, slot_end=end, account_ids=executor.account_ids)
     selection = selection_gate(profile, preview, executor.name, capacity)
+    account_preflight = []
+    if isinstance(executor, CodexWeeklyExecutor):
+        account_preflight = executor.subscription_preflight(preview, now)
     slot = runs / slot_id
     if retry:
         _retire(runs, slot_id)  # only after every check above has passed
@@ -405,13 +463,21 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
                  scheduled_at=preview['scheduled_at'], expires_at=preview['expires_at'],
                  current=dict(ref=profile['current_ref'], commit=current),
                  candidate=dict(ref=profile['candidate_ref'], commit=cand), harness_commit=harness,
-                 executor=executor.name, capacity=capacity, selection=selection, original_execution=fragment)
+                 executor=executor.name, capacity=capacity, account_preflight=account_preflight,
+                 selection=selection, original_execution=fragment)
     try:
         slot.mkdir(mode=0o700)
     except FileExistsError:
         raise paired.Refusal('weekly_run_in_progress') from None
     paired.write_selected(slot / 'claim.json', claim)
     return dict(slot=slot, claim=claim, plan=plan, executor=executor)
+
+
+def assert_account_slot_binding(claim, plan, assignment_reference, account_ids, code):
+    capacity = (claim or {}).get('capacity') or {}
+    need(capacity.get('account_assignment') == assignment_reference
+         and capacity.get('plan_sha256') == plan.get('sha256')
+         and capacity.get('accounts') == sorted(account_ids), code)
 
 
 def _execute(profile, slot, claim, plan, executor, repo, compiler):
@@ -437,10 +503,10 @@ def _execute(profile, slot, claim, plan, executor, repo, compiler):
 
 
 def _stored_slot(runs, slot_id, current, cand):
-    """Read-only: (stored receipt, None), (None, retryable) or (None, False); refuse otherwise."""
+    """Read-only: stored receipt or retry state and its claim; refuse anything ambiguous."""
     slot = runs / slot_id
     if not slot.exists():
-        return None, False
+        return None, False, None
     try:
         claim = paired.read_json(slot / 'claim.json')
         receipt = paired.read_json(slot / 'receipt.json')
@@ -448,8 +514,8 @@ def _stored_slot(runs, slot_id, current, cand):
         raise paired.Refusal('weekly_run_in_progress') from None
     need((claim['current']['commit'], claim['candidate']['commit']) == (current, cand), 'weekly_slot_other_pair')
     if receipt['status'] != 'failed_before_execution' or (slot / 'execution-started.json').exists():
-        return dict(receipt, replayed=True), False
-    return None, True
+        return dict(receipt, replayed=True), False, claim
+    return None, True, claim
 
 
 def _retire(runs, slot_id):
@@ -492,6 +558,11 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
     if profile['executor']=='codex-weekly':
         need((harness/'scripts/trial_codex_weekly_limits.py').is_file() and '"--codex-weekly-limits"' in harness_source,
              'harness_codex_weekly_limits_unsupported')
+        if claim['capacity'].get('account_assignment') is not None:
+            need((harness/'scripts/trial_weekly_accounts.py').is_file()
+                 and '"--codex-account-assignment"' in harness_source
+                 and 'weekly_accounts.account_for' in harness_source,
+                 'harness_codex_account_assignment_unsupported')
     else:
         need((harness / 'scripts/trial_legacy_limits.py').is_file() and '"--original-limits"' in harness_source,
              'harness_original_limits_unsupported')
@@ -502,6 +573,12 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
     need(all(type(c) is str and c and '.' not in c and '/' not in c for c in case_ids), 'harness_case_identity')
     planned = sorted((dict(run_id=f'{c}.{a}.s{s}', case=c, arm=a, seed=s)
                       for s in plan['seeds'] for c in case_ids for a in ARMS), key=lambda r: r['run_id'])
+    assignment_reference = claim['capacity'].get('account_assignment')
+    if assignment_reference is not None:
+        assignment = paired.read_json_pin(assignment_reference)
+        assigned = {row['run_id']: row['account_id'] for row in assignment['assignments']}
+        for item in planned:
+            item['account_id'] = assigned[item['run_id']]
     need(len(planned) == WEEKLY_ATTEMPTS, 'harness_cases_not_planned')
     # Per-case task identity and selected-input charge; no task text is retained.
     tasks = {}
@@ -538,6 +615,8 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
                 capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned),
                 tasks=tasks, account=profile['account'])
+    if assignment_reference is not None:
+        spec['account_assignment'] = assignment_reference
     paired.write_selected(slot / 'spec.json', spec)
     return spec
 
@@ -626,6 +705,25 @@ def _agent_result(path, spec):
             or sorted(tuple(row[:3]) for row in plan.get('runs') or [] if isinstance(row, list))
             != sorted((r['case'], r['arm'], r['seed']) for r in spec['planned'])):
         return dict(result, status='rejected', code='agent_rows_not_planned')
+    assignment_reference = spec.get('account_assignment')
+    if assignment_reference is not None:
+        try:
+            assignment = paired.read_json_pin(assignment_reference)
+        except paired.Refusal:
+            return dict(result, status='rejected', code='agent_account_assignment_mismatch')
+        auth_by_id = {row['account_id']: row['auth_sha256'] for row in assignment['accounts']}
+        account_by_run = {row['run_id']: row['account_id'] for row in spec['planned']}
+        expected_rows = sorted((dict(run_id=run_id, account_id=account_id)
+                                for run_id, account_id in account_by_run.items()), key=lambda row: row['run_id'])
+        actual_rows = plan.get('run_accounts')
+        actual_rows = (sorted(actual_rows, key=lambda row: row.get('run_id', '') if isinstance(row, dict) else '')
+                       if isinstance(actual_rows, list) else None)
+        if (plan.get('account_assignment_sha256') != assignment_reference['sha256']
+                or actual_rows != expected_rows
+                or any(row.get('account_id') != account_by_run.get(row.get('run_id'))
+                       or row.get('account_auth_sha256') != auth_by_id.get(row.get('account_id'))
+                       for row in records)):
+            return dict(result, status='rejected', code='agent_account_assignment_mismatch')
     # Read from the raw rows: report._agent drops these fields. A runner-exception
     # row without wording is rejected too; it could never be complete.
     selected = dict(model=spec['actor_model'], harness='codex' if spec['harness'].get('kind')=='codex-weekly' else 'claude', wording='task')

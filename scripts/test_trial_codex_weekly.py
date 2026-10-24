@@ -1,5 +1,6 @@
 """Codex weekly selection and executor contracts; synthetic, no provider use."""
 import copy
+import datetime as dt
 import hashlib
 import json
 from pathlib import Path
@@ -12,6 +13,7 @@ import trial_original_execution as original
 import trial_paired_request as paired
 import trial_weekly_input as weekly_input
 import trial_weekly_run as weekly
+import trial_weekly_accounts as weekly_accounts
 from test_trial_weekly_request import Fixture, write_pin
 
 
@@ -121,12 +123,109 @@ class CodexWeeklyContractTests(unittest.TestCase):
                 current=preview['current'],candidate=preview['candidate'],harness_commit=preview['harness'],
                 executor=weekly.CodexWeeklyExecutor.name,capacity_receipt_sha256=capacity['receipt_sha256'],
                 selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107b7a1e07',codex_account_binding_sha256=paired.canonical_sha(account_ref),
+                codex_account_assignment_sha256=paired.canonical_sha(account_ref),
                 provider_model='gpt-6-luna',provider_binary_sha256='b'*64)
             profile['selection']=write_pin(root/'selection.json',document)
             weekly.selection_gate(profile,preview,weekly.CodexWeeklyExecutor.name,capacity)
             profile['account']=dict(account_ref,auth_file=str(root/'another-auth.json'))
             with self.assertRaisesRegex(paired.Refusal,'^live_selection_mismatch$'):
                 weekly.selection_gate(profile,preview,weekly.CodexWeeklyExecutor.name,capacity)
+
+    def test_multi_account_executor_pins_all_auth_files_and_assignment(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'source').mkdir(); fixture=Fixture(root/'source')
+            accounts=[]
+            for index, account_id in enumerate(('codex-A','codex-B','codex-C')):
+                home=root/f'account-{index}';home.mkdir()
+                auth=home/'auth.json';auth.write_text(json.dumps(dict(auth_mode='chatgpt',tokens={'account_id':account_id})))
+                accounts.append(dict(account_id=account_id,auth_file=str(auth),config_home=str(home),
+                                     auth_sha256=hashlib.sha256(auth.read_bytes()).hexdigest()))
+            cases=[f'case-{i:02d}' for i in range(21)];seeds=[1,2,3]
+            allocation=weekly_accounts.balanced(cases,seeds,accounts)
+            allocation_ref=write_pin(root/'account-assignment.json',allocation)
+            loaded,_,counts=weekly_accounts.validate(allocation_ref,
+                dict(cases=cases,arms=['CURRENT','CAND'],seeds=seeds))
+            assignment=dict(document=loaded,reference=allocation_ref,pair_counts=counts)
+            execution=codex_execution(fixture,root)
+            ref=dict(fixture.reference);ref['execution']=write_pin(root/'v2.json',execution)
+            profile=dict(weekly_source={k:ref[k] for k in ('label_version','frozen_sha256')},
+                         execution=ref['execution'],embedding=dict(worker=fixture.component))
+            fragment=original.declared(profile,current='2'*40,candidate='2'*40,
+                models=dict.fromkeys(('CURRENT','CAND'),'gpt-6-luna'))
+            executor=weekly.CodexWeeklyExecutor(account_assignment=assignment)
+            self.assertEqual(set(executor.account_ids),set(account['account_id'] for account in accounts))
+            executor.check(dict(original_execution=fragment))
+            with patch.object(weekly.codex_account,'subscription_preflight',return_value=dict(
+                    ordinary_usage_allowed=True,used_percent=20,absolute_allowance_observed=False)) as read:
+                statuses=executor.subscription_preflight(dict(original_execution=fragment),
+                                                         dt.datetime(2026,10,24,tzinfo=dt.timezone.utc))
+            self.assertEqual(read.call_count,3)
+            self.assertEqual(len(statuses),3)
+            harness=root/'harness';(harness/'scripts').mkdir(parents=True)
+            (harness/'scripts/trial-task-eval.sh').write_text('#!/bin/sh\nexit 0\n')
+            run_dir=root/'run';run_dir.mkdir();controls=root/'controls.json';controls.write_text('{}')
+            spec=dict(harness=dict(root=str(harness)),original_execution=fragment,
+                arms={n:dict(binary=fixture.component,hook=fixture.component) for n in ('CURRENT','CAND')},
+                distractors=1900,seeds=[1,2,3],embedding=dict(worker=fixture.component),actor_model='gpt-6-luna',
+                postgres=dict(bin_dir='/disposable/pg'),original_arms=dict(path=str(controls),sha256='a'*64),
+                account_assignment=allocation_ref)
+            with patch.object(weekly.subprocess,'run') as launched:
+                launched.return_value.returncode=0
+                executor.execute(spec,run_dir)
+            argv=launched.call_args.args[0]
+            self.assertEqual(argv[argv.index('--codex-account-assignment')+1],allocation_ref['path'])
+            self.assertEqual(argv[argv.index('--codex-account-assignment-sha256')+1],allocation_ref['sha256'])
+            self.assertEqual(argv[argv.index('--parallel')+1],'1')
+            with patch.object(weekly.te,'cmd_agent',return_value=0):
+                self.assertEqual(weekly.te.main(argv[1:]),0)
+
+    def test_multi_account_live_selection_binds_assignment_pin_and_members(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); accounts=[]
+            for i, account_id in enumerate(('codex-A','codex-B','codex-C')):
+                home=root/f'home-{i}';home.mkdir();auth=home/'auth.json'
+                auth.write_text(json.dumps(dict(auth_mode='chatgpt',tokens={'account_id':account_id})))
+                accounts.append(dict(account_id=account_id,auth_file=str(auth),config_home=str(home),
+                                     auth_sha256=hashlib.sha256(auth.read_bytes()).hexdigest()))
+            cases=[f'case-{i:02d}' for i in range(21)];seeds=[1,2,3]
+            assignment=weekly_accounts.balanced(cases,seeds,accounts)
+            assignment_ref=write_pin(root/'assignment.json',assignment)
+            execution=dict(harness='codex',provider=dict(sha256='b'*64),model='gpt-6-luna')
+            preview=dict(scheduled_at='2026-10-24T12:00:00Z',current='1'*40,candidate='2'*40,harness='3'*40,
+                         original_execution=execution)
+            profile=dict(campaign_id='campaign',selection=None,account=None)
+            capacity=dict(receipt_sha256='c'*64,account_assignment=assignment_ref)
+            document=dict(schema=weekly.SELECTION_SCHEMA,campaign_id='campaign',scheduled_at=preview['scheduled_at'],
+                current=preview['current'],candidate=preview['candidate'],harness_commit=preview['harness'],
+                executor=weekly.CodexWeeklyExecutor.name,capacity_receipt_sha256=capacity['receipt_sha256'],
+                selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107a7b9a1f',
+                codex_account_binding_sha256=paired.canonical_sha(assignment),
+                codex_account_assignment_sha256=assignment_ref['sha256'],
+                provider_model='gpt-6-luna',provider_binary_sha256='b'*64)
+            profile['selection']=write_pin(root/'selection.json',document)
+            weekly.selection_gate(profile,preview,weekly.CodexWeeklyExecutor.name,capacity)
+            changed=dict(capacity,account_assignment=dict(assignment_ref,sha256='0'*64))
+            with self.assertRaises(paired.Refusal):
+                weekly.selection_gate(profile,preview,weekly.CodexWeeklyExecutor.name,changed)
+
+    def test_same_slot_retry_and_replay_require_the_original_assignment_pin(self):
+        plan=dict(sha256='a'*64)
+        assignment=dict(path='/private/assignment.json',sha256='b'*64)
+        claim=dict(capacity=dict(plan_sha256=plan['sha256'],account_assignment=assignment,
+                                 accounts=['codex-A','codex-B','codex-C']))
+        weekly.assert_account_slot_binding(claim,plan,assignment,('codex-C','codex-A','codex-B'),
+                                           'retry_account_assignment_mismatch')
+        for changed in (
+                dict(capacity=dict(plan_sha256='c'*64,account_assignment=assignment,
+                                   accounts=['codex-A','codex-B','codex-C'])),
+                dict(capacity=dict(plan_sha256=plan['sha256'],account_assignment=dict(assignment,sha256='d'*64),
+                                   accounts=['codex-A','codex-B','codex-C'])),
+                dict(capacity=dict(plan_sha256=plan['sha256'],account_assignment=assignment,
+                                   accounts=['codex-A','codex-B']))):
+            with self.assertRaisesRegex(paired.Refusal,'^retry_account_assignment_mismatch$'):
+                weekly.assert_account_slot_binding(changed,plan,assignment,
+                                                   ('codex-A','codex-B','codex-C'),
+                                                   'retry_account_assignment_mismatch')
 
 
 if __name__=='__main__':

@@ -158,7 +158,17 @@ def provider_workload(plan, models):
     need('workload' in plan, 'workload_required')
     workload = read_json_pin(plan['workload'])
     shape(workload, 'schema roles', 'workload_shape')
-    need(workload['schema'] == 'cairn.paired-provider-workload/2', 'workload_schema')
+    sharded = workload['schema'] == 'cairn.paired-provider-workload/3'
+    need(workload['schema'] in ('cairn.paired-provider-workload/2',
+                                'cairn.paired-provider-workload/3'), 'workload_schema')
+    allocation = None
+    pair_counts = None
+    if sharded:
+        from trial_weekly_accounts import validate as validate_account_assignment
+        need('account_assignment' in plan, 'account_assignment_required')
+        allocation, _, pair_counts = validate_account_assignment(plan['account_assignment'], plan)
+    else:
+        need('account_assignment' not in plan, 'account_assignment_unexpected')
     shape(workload['roles'], ' '.join(CAPACITY_ROLES), 'workload_roles')
     shape(models, 'CURRENT CAND primary secondary', 'workload_models')
     need(capacity_integer(plan['attempts'], 2) and plan['attempts'] % 2 == 0, 'attempt_count')
@@ -172,14 +182,27 @@ def provider_workload(plan, models):
             continue
         need(group['state'] == 'included' and bool(group['jobs']), 'workload_unknown')
         if role in models:
-            need(len(group['jobs']) == 1, 'workload_primary_count')
+            need((len(group['jobs']) == len(pair_counts) if sharded else len(group['jobs']) == 1),
+                 'workload_primary_count')
+        role_accounts = set()
+        role_total = 0
         for job in group['jobs']:
-            shape(job, 'id model count per_job', 'workload_job')
+            shape(job, 'id model count per_job account_id' if sharded else 'id model count per_job',
+                  'workload_job')
             need(capacity_name(job['id']) and job['id'] not in jobs, 'workload_job_identity')
             need(capacity_name(job['model']) and capacity_integer(job['count'], 1), 'workload_job_bound')
             if role in models:
-                need(job['model'] == models[role] and job['count'] == plan['attempts']//2,
-                     'workload_role_mismatch')
+                if sharded:
+                    account_id = job['account_id']
+                    need(account_id in pair_counts and account_id not in role_accounts
+                         and job['count'] == pair_counts[account_id], 'workload_role_mismatch')
+                    role_accounts.add(account_id)
+                    role_total += job['count']
+                else:
+                    need(job['count'] == plan['attempts']//2, 'workload_role_mismatch')
+                need(job['model'] == models[role], 'workload_role_mismatch')
+            elif sharded:
+                need(job['account_id'] in pair_counts, 'workload_job_account')
             shape(job['per_job'], ' '.join(PROVIDER_COUNTERS), 'workload_counters')
             need(all(capacity_integer(value, 1 if name == 'provider_requests' else 0)
                      for name, value in job['per_job'].items()), 'workload_counter_bound')
@@ -188,6 +211,9 @@ def provider_workload(plan, models):
                          ('provider_requests', 'output_tokens')) > 0 and job['per_job']['output_tokens'] > 0,
                      'workload_inference_tokens')
             jobs[job['id']] = job
+        if sharded and role in models:
+            need(role_accounts == set(pair_counts) and role_total == plan['attempts']//2,
+                 'workload_role_mismatch')
     return jobs
 
 
@@ -204,6 +230,8 @@ def provider_demands(reference, plan, jobs, accounts):
         route = routes[ident]
         shape(route, 'account_id model windows', 'route_shape')
         need(capacity_name(route['account_id']) and route['model'] == job['model'], 'route_model_mismatch')
+        if 'account_id' in job:
+            need(route['account_id'] == job['account_id'], 'route_assignment_mismatch')
         need(route['account_id'] in accounts, 'account_route_unknown')
         used_accounts.add(route['account_id'])
         need(isinstance(route['windows'], list) and 0 < len(route['windows']) <= 64, 'route_windows')
@@ -279,6 +307,11 @@ def capacity_check(reference, plan, now, models):
     need(utc(capacity['observed_at']) <= now < utc(capacity['valid_until']), 'capacity_stale')
     jobs = provider_workload(plan, models)
     accounts = capacity_accounts(capacity['account_binding'])
+    if 'account_assignment' in plan:
+        from trial_weekly_accounts import validate as validate_account_assignment
+        assignment, _, _ = validate_account_assignment(plan['account_assignment'], plan)
+        need(accounts == {account['account_id'] for account in assignment['accounts']},
+             'capacity_account_assignment_mismatch')
     totals = provider_demands(capacity['route_binding'], plan, jobs, accounts)
     provider_resources(capacity['resources'], totals)
     reservation = read_json_pin(capacity['reservation'])

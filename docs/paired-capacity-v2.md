@@ -29,6 +29,27 @@ The workload is a closed object with exactly:
 {"schema":"cairn.paired-provider-workload/2","roles":{}}
 ```
 
+The unchanged `/2` form retains its one-job-per-core-role contract. The
+weekly Codex multi-account path uses `cairn.paired-provider-workload/3` and
+adds an `account_assignment` file pin to the canonical plan. That document
+maps each frozen attempt identity `(case, arm, seed)` to one declared account
+and includes all 126 rows. Both arms of a pair stay on the same account. The
+deterministic default rotates paired identities by
+`(case_index + seed_index) % account_count`, producing 21 pairs / 42 actor
+attempts per account for the frozen 21 × 3 cohort. An alternate explicit map
+is accepted only when it covers every pair once and uses every declared
+account; its digest changes the plan hash and the live selection must bind
+that digest.
+
+In workload `/3`, each of CURRENT, CAND, primary and secondary has one job
+per assigned account. Every job has an `account_id`; its count must equal the
+number of assigned case/seed pairs, and the per-role counts must sum to
+`plan.attempts / 2`. Every included auxiliary job also names an account. The
+route binding must route each job to that same account. This lets the existing
+resource arithmetic calculate a separate full assigned-run demand for each
+account, while adding jobs that share an organization pool into the same
+resource. Percentage usage is never converted into absolute capacity.
+
 `roles` must contain exactly CURRENT, CAND, primary, secondary, selector,
 control, retry, dispute and auxiliary. Each group has exactly `state`, `basis`
 and `jobs`. `basis` is a file pin to the selected workload analysis explaining
@@ -42,7 +63,14 @@ are not. There is no default zero-work classification.
   selectors, controls or other auxiliary operations use separate jobs within
   the appropriate group, rather than introducing unknown role names.
 
-Each job has exactly `id`, `model`, `count` and `per_job`. IDs are unique across
+For workload `/3`, CURRENT, CAND, primary and secondary each have one job per
+assigned account. Each job includes `account_id`; its count must equal the
+number of assigned case/seed pairs, and per-role counts must sum to
+`plan.attempts / 2`. Every included auxiliary job also names an account.
+Routes must keep each job on that declared account. The original `/2`
+one-job-per-core-role contract remains unchanged for existing plans.
+
+In `/2`, each job has exactly `id`, `model`, `count` and `per_job`. IDs are unique across
 all groups. Names are 1–256 ASCII characters, start with an alphanumeric
 character and otherwise allow alphanumerics and `._:/-`. Each of the four core
 roles has exactly one job; its count must equal `plan.attempts / 2`, and its

@@ -1076,10 +1076,10 @@ Each join from this runner to an actual 21-case / 126-attempt /
 
 | Join | Anchor | State |
 | --- | --- | --- |
-| Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Real input missing: no absolute-allowance observation and no account binding for the executor's account exist (blocker 2). The absolute unit is the current adapter constraint |
+| Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Workload `/3` now validates a hash-pinned case/seed account assignment, exact per-account actor/grader job counts, and route identity. Real input still missing: no absolute-allowance observation and matching per-account reserve exists. Percentages remain inadmissible as capacity |
 | Live selection to runner | `cairn.weekly-run-selection/1` to `selection_gate` | **Implemented**. No selection issued (root decision) |
 | Runner to Claude harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` plus the original-execution flags | **Implemented**, fake harness only. Carries every declared control except an ambient arm with `semantic_fallback` (`semantic_fallback_selector`). Needs a selected account |
-| Runner to Codex harness | `CodexWeeklyExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --codex-weekly-limits` and Codex provider flags | **Implemented**, fake harness only. Uses the exact pinned ChatGPT auth file, `gpt-6-luna`, explicit `model_provider="openai"` and `--parallel 1`; Codex JSONL observations are checked by the separate Codex reader. No run or quota-headroom claim |
+| Runner to Codex harness | `CodexWeeklyExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --codex-weekly-limits` and Codex provider flags | **Implemented and synthetically checked**. Reads rate-limit and model-catalog status per assigned account through its pinned Codex CLI, checks ChatGPT auth identity/hash per attempt, keeps pair arms on the same assigned account, selects `gpt-6-luna` with explicit `model_provider="openai"` and `--parallel 1`, then verifies the returned account mapping. Catalog presence is not per-account entitlement. No absolute quota or campaign admission claim |
 | Harness content hashes | `trial_task_eval.run_agent` `stream_sha256`/`prompt_sha256` (`:1323-1324`, 04ba225) to `_agent_result` | **Implemented**: required on every row. Present only in runs from a harness commit at or after 04ba225; older runs, including 2026-09-29, can never be complete |
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |
@@ -1092,6 +1092,11 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | `trial_run_report` input | receipt `report_input.agent` to `trial_run_report.py render --agent --join` | **Agent half implemented** (document checked with the report's own `_agent` reader, arms `CURRENT`/`CAND`). The `--join` half depends on the grading join above |
 | Two-week completion | two consecutive `complete` receipts, reports and notes | **Not started**. Requires every join above plus two live slots |
 | Live campaign | an actual 21-case / 126-attempt / 1900-distractor weekly run | **Unproven**. No live run, provider call or actual grade exists; every result above is source and synthetic evidence only |
+
+The Codex multi-account assignment and read-only preflight contract are
+described in the [2026-10-24 source verification](verification/codex-weekly-multi-account-assignment-2026-10-24.md).
+The three observed rate-limit percentages do not provide absolute capacity and
+cannot pass the runtime gate.
 
 ## Tests
 
