@@ -76,7 +76,9 @@ func NewAttemptReadOnlyServer(backend AttemptRetrievalBackend, config Config) (*
 	}
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
-	addRetrievalTools(server, memoryTools{attempt: backend, config: config, facadeBuild: facadeBuild})
+	if err := addRetrievalTools(server, memoryTools{attempt: backend, config: config, facadeBuild: facadeBuild}); err != nil {
+		return nil, err
+	}
 	return server, nil
 }
 

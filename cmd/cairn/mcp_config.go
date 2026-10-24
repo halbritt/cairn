@@ -31,6 +31,9 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 	if o.config.SearchView != "" {
 		command = append(command, "--search-view", o.config.SearchView)
 	}
+	if o.config.ToolProfile != "" {
+		command = append(command, "--tool-profile", o.config.ToolProfile)
+	}
 	for _, pin := range [][2]string{{"--revision", o.pins.Revision}, {"--workspace-sha256", o.pins.WorkspaceSHA256},
 		{"--task-class", o.pins.TaskClass}, {"--task-phase", o.pins.TaskPhase}, {"--binding", o.pins.BindingID}, {"--capability", o.pins.CapabilityID}} {
 		if pin[1] != "" {

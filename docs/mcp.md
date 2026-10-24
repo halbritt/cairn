@@ -121,6 +121,18 @@ The compact projection's final MCP envelope is checked against the configured
 input room, including JSON escaping. It has no accepted task-outcome or
 subscription-cost claim yet.
 
+`--tool-profile compact/1` is a separate opt-in MCP startup flag for shorter
+`cairn_search` and `cairn_pull` descriptions. Their names, argument types,
+required fields, annotations and handlers stay the same. The shortened field
+descriptions retain the action and constraint summary; the full descriptions
+remain the default. `cairn_client_info` reports the active
+`facade.tool_profile` when selected. Configuration generators pass the flag to
+the resulting MCP command. In the local SDK declaration fixture, the search
+tool JSON shrank from 6,464 to 2,777 bytes and pull from 1,681 to 729 bytes.
+These are serialized declarations, not provider tokens or measured task savings.
+The profile is not enabled on existing bindings, and its effect on discovery,
+help calls, task outcomes and cache accounting still needs a paired trial.
+
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
 It requires an explicit memory cap and must be between 1 and the smaller of
