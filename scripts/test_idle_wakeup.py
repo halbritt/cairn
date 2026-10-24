@@ -1416,14 +1416,18 @@ time.sleep(30)
         ]
         for arguments, server, expected in cases:
             with self.subTest(arguments=arguments, server=server):
-                child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', *arguments])
+                child = subprocess.Popen([sys.executable, '-c',
+                    'import time; print("ready", flush=True); time.sleep(60)', *arguments],
+                    stdout=subprocess.PIPE, text=True)
                 try:
+                    self.assertEqual(child.stdout.readline().strip(), 'ready')
                     process = coordination.process_reference(child.pid)
                     config = dict(harness='claude', claude_channel_server=server)
                     self.assertEqual(coordination.claude_channel_enabled(config, process), expected)
                 finally:
                     child.terminate()
                     child.wait(timeout=5)
+                    child.stdout.close()
                 self.assertFalse(coordination.claude_channel_enabled(config, process), 'an exited process counted as enabled')
         stale = dict(coordination.process_reference(os.getpid()), start=1)
         self.assertFalse(coordination.claude_channel_enabled(dict(harness='claude'), stale), 'a reused PID counted as enabled')
