@@ -1084,7 +1084,8 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |
 | Action channel | `trial_legacy_blind_selection` conversion/2 `action_trace` from the retained, hash-verified stream | **Supported** as of agent-504's 7d4333f (accepted candidate 1c4a9e9) |
-| Artifact and evaluator channels | `trial_legacy_blind_selection` refuses `legacy_channel_unbound` | **Unavailable and refused**: `artifact_bundle` and `evaluator_observation` need actor-final capture before grading |
+| Artifact producer | `trial_task_eval.run_agent` after writer release, before `grade`, to `trial_legacy_pregrade.capture` | **Implemented conditionally** (synthetic): requires a released owned leaf and the reviewed `namespace_init_exited` proof. Retains a bounded, private full-workspace/Git index/ref snapshot pinned to attempt, baseline, stream, prompt and repository identity; a changed inventory refuses. It does not claim complete descendant custody. |
+| Artifact and evaluator channels | `trial_legacy_blind_selection` | **Not yet joined end to end**. The converter still refuses until it consumes the exact `final_artifact_custody` pin; evaluator observation remains a separate channel. The weekly Codex executor needs an explicit selected writer-leaf configuration before this producer is reachable from that route. |
 | Baseline custody per attempt | `baseline_custody` (agent-504, `trial_attempt_custody.AttemptBaseline.load`) to `_limit_result` | **Implemented**: required and verified for every attempt before `complete` or a binding (harness custody, not attestation) |
 | Snapshot integrity for outcomes | retained pre-actor baseline (86298af, e83914b) verified by the runner (5b52a0f) | **Implemented** (harness custody, not attestation) |
 | Grader delivery release authority | `trial_grader_delivery._check_authority` (`cairn.grader-release-authority/1`) | **Not implemented here**. Requires an owner- or coordinator-issued authority and fresh eligible grader sessions; none exists |
@@ -1168,7 +1169,8 @@ Limits and account selection:
 
 - Evidence for the dedicated-account declaration, and real single-account
   capacity evidence for the selected `account_id`.
-- The artifact and evaluator channels (actor-final capture before grading).
+- The weekly Codex executor's selected writer-leaf/control pin and CLI binding; the capture producer is implemented but the route does not yet supply it.
+- Converter consumption and contract binding for `final_artifact_custody`; evaluator observation remains separate.
 - The hook selector for an ambient arm with `semantic_fallback`
   (`semantic_fallback_selector`). The seam is in `trial_semantic_selector`.
   Still to do: `/2` dispatch in the owned files, harness and runner wiring,

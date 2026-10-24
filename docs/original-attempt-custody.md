@@ -130,14 +130,47 @@ without this pin cannot acquire baseline custody retrospectively. Direct
 lower-level `evaluate` callers can still supply trusted synthetic contexts
 without an owner; actual `run_agent` and regrade paths supply it.
 
-This correction does not capture final artifact custody, authorize shell checks,
-prove process quiescence or establish physical fit. It uses Git 2.43+'s explicit
+This correction does not authorize shell checks, prove process quiescence or
+establish physical fit. Actor-final custody is a separate producer described
+below. It uses Git 2.43+'s explicit
 `--attr-source`; an older Git refuses rather than falling back to actor attributes.
 The baseline record uses the existing 8 MiB metadata-file ceiling; exceeding it
 refuses before launch. Encoding and Git subprocess output retain the legacy
 executor's physical-bound obligations. Original repository/object directories
 must be inside the prepared work root. Compatibility for every original case
 remains unproved; no original cases were executed for validation.
+
+## Legacy pre-grade producer (conditional source implementation)
+
+`scripts/trial_legacy_pregrade.py` implements a private, bounded
+`cairn.legacy-pregrade-snapshot/1` producer. In the legacy `run_agent` path it
+runs after the owner records writer-leaf release and before `grade`. It accepts
+only a record with `state: released` **and** the reviewed
+`writer_quiescence.state: namespace_init_exited`, tied to the same attempt,
+init pid namespace and sealed executable. `migration_conditions_observed`,
+`observed_clear`, and an empty leaf alone do not pass this gate.
+
+The record binds run/case/arm/seed and workspace, retained pre-actor baseline
+and original repository identities, original stream byte count/hash, prompt
+hash, and a digest of the writer proof. It contains every bounded workspace
+entry's raw path, bytes or symlink target and mode, baseline-relative
+deletions, and raw Git HEAD/index/loose refs/packed refs. A second inventory
+and read checks directory/file identities, metadata and content digests;
+replacement, change, indirection, special files, excess entries or bytes
+refuse before the private pin is published. The store is outside the actor
+workspace in `final-artifacts/<sha256(run_id)>.json`, mode 0600 under a 0700
+directory. The attempt row and writer receipt carry the closed
+`cairn.legacy-pregrade-snapshot-pin/1` `{record_path, bytes, sha256}`.
+
+This is bounded harness custody, not independent attestation or proof of all
+host descendants. The proof covers the reviewed bubblewrap pid namespace
+under its pinned kernel/bubblewrap identity; a capture refusal leaves
+`final_artifact_custody: not_established`. It does not produce evaluator
+observations or authorize/release private checks. The weekly Codex executor
+must receive an explicit selected writer configuration and pass it to this
+same harness boundary before that route can produce snapshots. The 8 MiB
+metadata bound does not establish that its extra backing fits the campaign's
+physical resource plan.
 
 ## Missing evidence and smallest coherent channel integration
 
@@ -152,11 +185,11 @@ Opaque shell checks may require evaluator-authored metadata rather than any
 automatic inference. Such metadata must be chosen before outcomes. Engineers
 need not open private check bodies to receive it.
 
-Until that inventory exists, channel implementation remains this integration
-design and correction of stale claims. A new generic collector would choose
-unestablished retention/privacy semantics; a second workspace constructor would
-duplicate an existing owner. The separable baseline fix does not depend on a
-channel inventory.
+Until that inventory exists, channel **release** remains this integration
+design and correction of stale claims. The generic producer above retains a
+bounded private snapshot but does not choose which artifacts a blind contract
+may release. A second workspace constructor would duplicate an existing owner.
+The separable baseline fix does not depend on a channel inventory.
 
 After the metadata is selected, extend the original-attempt owner in
 `scripts/trial_attempt_custody.py` (currently baseline custody only):

@@ -61,6 +61,41 @@ def _repository(cwd):
     return dict(paths=paths, identities=identities)
 
 
+def _git_common_identity(cwd, repository, *, work_root=None):
+    """Bind Git's common refs directory and any worktree commondir indirection."""
+    git_dir = Path(repository['paths']['git_dir'])
+    commondir = git_dir / 'commondir'
+    commondir_sha256 = None
+    try:
+        info = commondir.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        _need(stat.S_ISREG(info.st_mode), 'original_baseline_repository_changed')
+        fd = os.open(commondir, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            before = os.fstat(source.fileno())
+            _need(stat.S_ISREG(before.st_mode) and before.st_ino == info.st_ino
+                  and before.st_dev == info.st_dev and before.st_size <= 4096,
+                  'original_baseline_repository_changed')
+            raw = source.read(4097)
+            after = os.fstat(source.fileno())
+            _need(len(raw) <= 4096 and (before.st_dev, before.st_ino, before.st_size,
+                  before.st_mtime_ns, before.st_ctime_ns) == (after.st_dev, after.st_ino,
+                  after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                  'original_baseline_repository_changed')
+        _need(raw.endswith(b'\n') and raw.count(b'\n') == 1 and raw[:-1],
+              'original_baseline_repository_changed')
+        commondir_sha256 = hashlib.sha256(raw).hexdigest()
+    common = Path(os.fsdecode(_git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir').rstrip(b'\n')))
+    _need(common.resolve() == common and common.is_dir(), 'original_baseline_repository_changed')
+    if work_root is not None:
+        _need(common.is_relative_to(Path(work_root).resolve()), 'original_baseline_repository_outside_work')
+    identity = common.stat()
+    return dict(path=str(common), identity=[identity.st_dev, identity.st_ino],
+                commondir_sha256=commondir_sha256)
+
+
 @contextmanager
 def _raw_repository(cwd, commit, repository):
     """Private config/index/attributes; existing content-addressed objects only.
@@ -160,6 +195,7 @@ class AttemptBaseline:
         self.snapshot = MappingProxyType(dict(document['snapshot']))
         self.base_commit = document['base_commit']
         self.repository = document['repository']
+        self.git_common = document.get('git_common')
         self.pin = dict(pin)
 
     @classmethod
@@ -173,14 +209,16 @@ class AttemptBaseline:
         repository = _repository(cwd)
         _need(all(Path(path).is_relative_to((base/'work').resolve())
                   for path in repository['paths'].values()), 'original_baseline_repository_outside_work')
+        git_common = _git_common_identity(cwd, repository, work_root=base/'work')
         # Read immediately after trusted setup, before actor admission. The
         # original setup snapshot remains for compatibility but is never read
         # again by this owner, run_agent or regrade.
         snapshot = json.loads((base/'work/.eval-snapshot.json').read_bytes())
         _need(type(snapshot) is dict and all(type(k) is str and type(v) is str
               and re.fullmatch('[0-9a-f]{64}', v) for k,v in snapshot.items()))
-        document = dict(schema='cairn.attempt-baseline/1', identity=identity,
-                        base_commit=commit, snapshot=snapshot, repository=repository)
+        document = dict(schema='cairn.attempt-baseline/2', identity=identity,
+                        base_commit=commit, snapshot=snapshot, repository=repository,
+                        git_common=git_common)
         raw = _encoded(document)
         _need(len(raw) <= FILE_LIMIT, 'original_baseline_record_bound')
         path = _path(base, identity)
@@ -219,14 +257,36 @@ class AttemptBaseline:
             document = json.loads(raw)
         except (OSError, UnicodeError, json.JSONDecodeError):
             raise BaselineError('original_baseline_unavailable') from None
-        _need(set(document) == {'schema','identity','snapshot','base_commit','repository'}
-              and document['schema'] == 'cairn.attempt-baseline/1' and document['identity'] == identity)
+        old_shape = (set(document) == {'schema','identity','snapshot','base_commit','repository'}
+                     and document.get('schema') == 'cairn.attempt-baseline/1')
+        new_shape = (set(document) == {'schema','identity','snapshot','base_commit','repository','git_common'}
+                     and document.get('schema') == 'cairn.attempt-baseline/2')
+        _need((old_shape or new_shape) and document['identity'] == identity)
         _need(type(document['base_commit']) is str and re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', document['base_commit']))
         _need(type(document['snapshot']) is dict and all(type(k) is str and type(v) is str
               and re.fullmatch('[0-9a-f]{64}', v) for k,v in document['snapshot'].items()))
+        if new_shape:
+            cwd = base / 'work' / identity['cwd']
+            try:
+                _need(_git_common_identity(cwd, document['repository'], work_root=base/'work') == document['git_common'],
+                      'original_baseline_repository_changed')
+            except BaselineError:
+                raise
+            except (OSError, ValueError, subprocess.SubprocessError):
+                raise BaselineError('original_baseline_repository_changed') from None
         return cls(document, pin)
 
+    def _check_git_common(self, cwd):
+        if self.git_common is None:
+            return
+        try:
+            current = _git_common_identity(cwd, self.repository)
+        except (BaselineError, OSError, ValueError, subprocess.SubprocessError):
+            raise BaselineError('original_baseline_repository_changed') from None
+        _need(current == self.git_common, 'original_baseline_repository_changed')
+
     def added_lines(self, cwd):
+        self._check_git_common(cwd)
         commit = self.base_commit
         with _raw_repository(cwd, commit, self.repository) as plumbing:
             _raw_index(cwd, commit, plumbing)
@@ -235,6 +295,7 @@ class AttemptBaseline:
         return [line[1:] for line in diff.splitlines() if line.startswith('+') and not line.startswith('+++')]
 
     def commit_files(self, cwd):
+        self._check_git_common(cwd)
         head = _git(cwd, 'rev-parse', '--verify', 'HEAD^{commit}').decode().strip()
         with _raw_repository(cwd, self.base_commit, self.repository) as plumbing:
             return _git(cwd, 'diff', '--no-ext-diff', '--no-textconv', '--name-only',

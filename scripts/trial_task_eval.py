@@ -28,6 +28,7 @@ import re
 import secrets
 import shutil
 import statistics
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,7 @@ import trial_native_copy as native_copy
 import trial_original_arms as original_arm_controls
 import trial_embedding_identity as identity_declaration
 import trial_writer_release as writer_release
+import trial_legacy_pregrade as legacy_pregrade
 from trial_native_observation import capture, measure
 from trial_process_custody import read_custody
 from trial_source_delivery import bind_origins
@@ -60,6 +62,8 @@ OTHER_REPO = "trial:other-collection"
 CLAUDE_CONTEXT_BYTES = 9500  # scripts/install-claude-hooks.py
 CODEX_CONTEXT_BYTES = 12000  # scripts/install-codex-hooks.py
 RANK_DEPTH = 50
+CASE_MATERIALS_SCHEMA = 'cairn.legacy-v12-case-material-manifest/1'
+CASE_MATERIALS_LIMIT = 2 * 1024 * 1024
 MEMORY_INSTRUCTION = """# Shared memory
 
 Use the `cairn` MCP tools. Search for relevant prior decisions, preferences and
@@ -202,6 +206,126 @@ def verify_frozen(version=None, *, root=TRIAL):
     if frozen["labels_sha256"] != current["labels_sha256"]:
         raise SystemExit("labels changed after freezing; record a new labelled version instead of editing silently")
     return frozen
+
+
+def _legacy_case_material_channels(case):
+    """Derive only the v12 public channel families from frozen check types."""
+    check_types = set()
+
+    def visit(value):
+        if isinstance(value, dict):
+            kind = value.get('type')
+            if isinstance(kind, str) and kind in CHECK_TYPES:
+                check_types.add(kind)
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for field in ('correct', 'mistake', 'review_checks', 'descriptive'):
+        visit(case.get(field))
+    channels = ['task_statement', 'grading_instructions', 'final_answer']
+    if check_types & {'exists', 'file', 'added', 'unchanged', 'shell', 'commit_files', 'staged'}:
+        channels.append('artifact_bundle')
+    if 'shell' in check_types:
+        channels.append('evaluator_observation')
+    unavailable = ([dict(name='action_trace', reason='raw_tool_output_unavailable')]
+                   if check_types & {'command', 'tool_output'} else [])
+    return channels, unavailable
+
+
+def case_materials_pin(path, expected_sha256, cases, *, root=TRIAL):
+    """Verify the runner-selected v12 materials manifest; retain its digest only."""
+    if path is None and expected_sha256 is None:
+        return None
+    if (type(path) is not str or not path or type(expected_sha256) is not str
+            or not re.fullmatch(r'[0-9a-f]{64}', expected_sha256)):
+        raise ValueError('case_materials_pin_incomplete')
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                    or not 0 < info.st_size <= CASE_MATERIALS_LIMIT):
+                raise ValueError('case_materials_file_policy')
+            raw = source.read(CASE_MATERIALS_LIMIT + 1)
+            if len(raw) != info.st_size:
+                raise ValueError('case_materials_file_changed')
+            after = os.fstat(source.fileno())
+            if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
+                    info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns):
+                raise ValueError('case_materials_file_changed')
+    except (OSError, UnicodeError):
+        raise ValueError('case_materials_unavailable') from None
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise ValueError('case_materials_digest_mismatch')
+    try:
+        document = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError):
+        raise ValueError('case_materials_invalid_json') from None
+    try:
+        canonical = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(',', ':'),
+                               allow_nan=False).encode('utf-8') + b'\n'
+    except (TypeError, ValueError):
+        raise ValueError('case_materials_not_canonical') from None
+    if raw != canonical:
+        raise ValueError('case_materials_not_canonical')
+    fields = {'schema', 'label_version', 'frozen_sha256', 'labels_sha256', 'cases_sha256',
+              'evaluator_sha256', 'files_sha256', 'evaluator_observation_contract', 'cases'}
+    if type(document) is not dict or set(document) != fields or document['schema'] != CASE_MATERIALS_SCHEMA:
+        raise ValueError('case_materials_schema')
+    root = Path(root)
+    version = 12
+    frozen_bytes = frozen_path(version, root=root).read_bytes()
+    frozen = verify_frozen(version, root=root)
+    actual = dict(label_version=version, frozen_sha256=hashlib.sha256(frozen_bytes).hexdigest(),
+                  labels_sha256=frozen['labels_sha256'],
+                  cases_sha256=hashlib.sha256((root / 'cases.json').read_bytes()).hexdigest(),
+                  evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                  files_sha256=frozen['labels_sha256'])
+    if any(document[key] != value for key, value in actual.items()):
+        raise ValueError('case_materials_source_mismatch')
+    if not isinstance(document['evaluator_observation_contract'], dict):
+        raise ValueError('case_materials_evaluator_contract')
+    case_rows = document['cases']
+    if type(case_rows) is not list or len(case_rows) != len(cases):
+        raise ValueError('case_materials_case_coverage')
+    expected_cases = {case['id']: case for case in cases}
+    ids = []
+    row_fields = {'case', 'channels', 'unavailable_channels', 'contract', 'task_statement',
+                  'grading_instructions', 'source_case_sha256'}
+    for row in case_rows:
+        if type(row) is not dict or set(row) != row_fields:
+            raise ValueError('case_materials_case_shape')
+        cid = row['case']
+        ids.append(cid)
+        if type(cid) is not str or cid not in expected_cases:
+            raise ValueError('case_materials_case_identity')
+        if (type(row['channels']) is not list or not row['channels']
+                or any(type(channel) is not str or not channel for channel in row['channels'])):
+            raise ValueError('case_materials_channels')
+        if type(row['unavailable_channels']) is not list:
+            raise ValueError('case_materials_unavailable_channels')
+        expected_channels, expected_unavailable = _legacy_case_material_channels(expected_cases[cid])
+        if row['channels'] != expected_channels or row['unavailable_channels'] != expected_unavailable:
+            raise ValueError('case_materials_channel_contract_mismatch')
+        for field in ('contract', 'task_statement', 'grading_instructions'):
+            pin = row[field]
+            if (type(pin) is not dict or set(pin) != {'path', 'bytes', 'sha256'}
+                    or type(pin['path']) is not str or not pin['path']
+                    or type(pin['bytes']) is not int or pin['bytes'] <= 0
+                    or type(pin['sha256']) is not str or not re.fullmatch(r'[0-9a-f]{64}', pin['sha256'])):
+                raise ValueError('case_materials_material_pin')
+        if (type(row['source_case_sha256']) is not str
+                or row['source_case_sha256'] != hashlib.sha256(
+                    json.dumps(expected_cases[cid], ensure_ascii=False, sort_keys=True,
+                               separators=(',', ':'), allow_nan=False).encode('utf-8') + b'\n').hexdigest()):
+            raise ValueError('case_materials_case_source_mismatch')
+    if ids != sorted(expected_cases):
+        raise ValueError('case_materials_case_order')
+    return dict(schema=CASE_MATERIALS_SCHEMA, sha256=expected_sha256)
 
 
 # ---------------------------------------------------------------- distractors
@@ -1314,7 +1438,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     else:
         provider += ["--", prompt]
     writer_leaf = writer_record = None
-    if original and getattr(args, "_original_writer", None):
+    if (original or codex_weekly) and getattr(args, "_original_writer", None):
         # Root-selected owned leaf: the actor joins it before exec. Unavailable refuses before launch.
         try:
             writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"],
@@ -1380,13 +1504,11 @@ def run_agent(case, arm, seed, order, args, stores, out):
             (base / "stream.jsonl").write_bytes(stream_bytes)
             (base / "stderr.txt").write_text(stderr[-20000:])
             limit_assessment = None
-            if original:
-                # The capture keeps exit status apart from cleanup custody: exit 0 can still
-                # have unknown cleanup. Anything short of the observed-clear record is a
-                # row failure, and that row is never graded. observed_clear is the capture's
-                # scoped observation only, not proof that every descendant was reaped.
+            if original or codex_weekly:
+                # Retain scoped process observations for both weekly provider routes. They
+                # remain separate from the writer namespace-init proof.
                 process_custody = read_custody(base / "native-process-custody.json")
-                if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
+                if original and (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
                         or process_custody["cleanup"]["status"] != "observed_clear"):
                     custody_failure = "process_custody_unknown"
 
@@ -1430,6 +1552,31 @@ def run_agent(case, arm, seed, order, args, stores, out):
         (base / "writer-release.json").write_text(json.dumps(writer_record, indent=2))
         if writer_record["state"] != "released" and custody_failure is None:
             custody_failure = "writer_release_" + writer_record["state"]
+        if writer_record["state"] == "released":
+            try:
+                final_artifacts = legacy_pregrade.capture(
+                    base=base, case=case, arm=arm, seed=seed, baseline=baseline,
+                    writer_record=writer_record, stream_bytes=stream_bytes,
+                    prompt=prompt)
+            except (legacy_pregrade.PregradeError, OSError) as error:
+                writer_record["final_artifact_capture"] = dict(
+                    state="not_established", reason=str(error) if isinstance(error, legacy_pregrade.PregradeError)
+                    else "legacy_pregrade_storage_failed")
+            else:
+                writer_record["final_artifact_custody"] = final_artifacts
+            # Persist the post-capture custody result before any grading begins.
+            release_path = base / "writer-release.json"
+            temporary = base / ".writer-release.json.tmp"
+            with temporary.open("x") as retained:
+                json.dump(writer_record, retained, indent=2)
+                retained.flush()
+                os.fsync(retained.fileno())
+            os.replace(temporary, release_path)
+            directory = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     trace = parse_stream(stdout, args.harness)
     if prospective:
         # Retain only fixed terminal admission metadata before fallible grading.
@@ -1530,6 +1677,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
             record["process_custody"] = process_custody
         if writer_record is not None:
             record["writer_release"] = writer_record
+            record["final_artifact_custody"] = writer_record.get(
+                "final_artifact_custody", "not_established")
     if prospective:
         record["selected_input"] = selected_input
         record["process_custody"] = process_custody
@@ -1669,6 +1818,11 @@ def cmd_agent(args):
     prospective = load_input(args.prospective_input) if getattr(args, "prospective_input", None) else None
     frozen = prospective["frozen"] if prospective else verify_frozen()
     all_cases = prospective["cases"] if prospective else load_cases()
+    selected_case_materials = case_materials_pin(
+        getattr(args, 'case_materials', None), getattr(args, 'case_materials_sha256', None),
+        all_cases, root=TRIAL) if not prospective else None
+    if prospective and (getattr(args, 'case_materials', None) or getattr(args, 'case_materials_sha256', None)):
+        raise ValueError('case_materials_legacy_only')
     cases = [c for c in all_cases if not args.cases or c["id"] in args.cases]
     if not cases or (args.cases and set(args.cases) - {c["id"] for c in all_cases}):
         raise SystemExit("case selection must name existing cases")
@@ -1749,10 +1903,15 @@ def cmd_agent(args):
         args._original_writer = dict(delegated=args.original_writer_cgroup,
                                      controls=writer_release.check_controls(controls["controls"]),
                                      reviewed=writer_release.check_reviewed(controls.get("reviewed_identity")))
+        if args._original_writer["reviewed"] is None:
+            raise ValueError("original_writer_reviewed_identity_required")
         execution["original_writer"] = dict(delegated=args.original_writer_cgroup,
                                             controls=dict(path=args.original_writer_controls,
                                                           sha256=args.original_writer_controls_sha256),
-                                            policy=args._original_writer["controls"])
+                                            policy=args._original_writer["controls"],
+                                            reviewed_identity=args._original_writer["reviewed"])
+    if selected_case_materials is not None:
+        execution['case_materials'] = selected_case_materials
     if getattr(args, "original_arms", None) and not prospective:
         # Before any store starts: the literal per-arm controls and raw recall blobs.
         execution["original_arms"], args._original_arms = original_arm_controls.load_controls(
@@ -2120,6 +2279,8 @@ def main(argv=None):
     a.add_argument("--codex-auth-sha256", help="expected digest of the selected subscription auth file")
     a.add_argument("--codex-account-assignment", help="pinned weekly case/seed to ChatGPT account assignment")
     a.add_argument("--codex-account-assignment-sha256", help="expected digest of the account assignment")
+    a.add_argument("--case-materials", help="private pinned legacy v12 case-material manifest; never bound into the actor sandbox")
+    a.add_argument("--case-materials-sha256", help="expected SHA-256 of --case-materials")
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
     a.add_argument("--semantic-worker")
@@ -2160,8 +2321,8 @@ def main(argv=None):
                      args.original_writer_controls, args.original_writer_controls_sha256)
         if bool(args.original_writer_cgroup) != bool(args.original_writer_controls):
             parser.error("--original-writer-cgroup and --original-writer-controls go together")
-        if args.original_writer_cgroup and not args.original_limits:
-            parser.error("--original-writer-cgroup requires --original-limits")
+        if args.original_writer_cgroup and not (args.original_limits or args.codex_weekly_limits):
+            parser.error("--original-writer-cgroup requires original or Codex weekly limits")
         if args.prospective_input and any(originals):
             parser.error("original execution is a legacy-fixtures option")
         for path, digest in zip(originals[::2], originals[1::2]):

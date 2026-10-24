@@ -897,7 +897,7 @@ class RunAgentIntegrationTests(Base):
             with self.assertRaisesRegex(RuntimeError, '^original_writer_containment_unavailable'):
                 task.run_agent(self.case, 'CURRENT', 0, 0, self.args, self.stores, self.out)
 
-    def test_cli_requires_the_cgroup_and_its_controls_together_with_original_limits(self):
+    def test_cli_requires_the_cgroup_and_controls_and_accepts_codex_weekly_mode(self):
         import io
         import trial_task_eval as task
         controls = self.root / 'controls.json'
@@ -915,7 +915,7 @@ class RunAgentIntegrationTests(Base):
                        '--harness', 'codex', '--codex-weekly-limits',
                        '--original-writer-cgroup', str(self.delegated),
                        '--original-writer-controls', str(controls), '--original-writer-controls-sha256', digest])
-        self.assertIn('--original-writer-cgroup requires --original-limits', error.getvalue())
+        self.assertIn('--codex-weekly-limits requires a pinned --codex-binary', error.getvalue())
 
 @unittest.skipUnless(delegation(), 'needs an already delegated owned fixture service cgroup')
 class RealDelegatedLeafTests(Base):
