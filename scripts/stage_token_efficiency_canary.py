@@ -3,7 +3,9 @@
 
 This stages candidate files in a new directory and records the selected-account
 hook and MCP edits. By default it stages the existing full candidate and both
-accounts; --profile capture-only stages only the capture observation opt-in.
+accounts; --profile capture-only stages only capture observation, while
+--profile compact-recall stages compact search and recall without inbox,
+batching, context-lifecycle or tool-profile opt-ins.
 --codex-only limits staging to the selected .codex account. It never edits
 installed settings, grants, or the running service.
 """
@@ -180,7 +182,7 @@ def stage_account(home, stage, harness, *, profile="full"):
     coordination.update(cairn=str(candidate_binary),
                         state_dir=str(native / "state" / coordination["binding"]),
                         inbox_recall_binding=str(manifest_path))
-    if profile in ("full", "compact-inbox"):
+    if profile in ("full", "compact-inbox", "compact-recall"):
         if profile == "compact-inbox":
             for key in ("recall_view", "context_lifecycle"):
                 if key in memory:
@@ -189,6 +191,15 @@ def stage_account(home, stage, harness, *, profile="full"):
                 raise ValueError("compact-inbox profile requires baseline without notice_batch_version")
             memory["capture_observations"] = True
             coordination["compact_inbox_version"] = 1
+        elif profile == "compact-recall":
+            for key in ("recall_view", "context_lifecycle"):
+                if key in memory:
+                    raise ValueError(f"compact-recall profile requires baseline without {key}")
+            for key in ("compact_inbox_version", "notice_batch_version"):
+                if key in coordination:
+                    raise ValueError(f"compact-recall profile requires baseline without {key}")
+            memory["capture_observations"] = True
+            memory["recall_view"] = "compact/1"
         else:
             memory["recall_view"] = "compact/1"
             if harness == "codex":
@@ -270,7 +281,8 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
     if section.count(old_command_line) != 1 or section.count(old_args_line) != 1:
         raise ValueError("Codex Cairn MCP section differs from reviewed layout")
     new_args = list(old_codex["args"])
-    mcp_opt_in = profile == "full"
+    mcp_opt_ins = {"--search-view"} if profile == "compact-recall" else (
+        {"--search-view", "--tool-profile"} if profile == "full" else set())
     for flag, value in (("--search-view", "compact/1"), ("--tool-profile", "compact/1")):
         positions = [index for index, item in enumerate(new_args) if item == flag]
         if len(positions) > 1 or (positions and (positions[0] + 1 >= len(new_args) or
@@ -278,7 +290,7 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
             raise ValueError(f"selected Codex MCP has an incompatible {flag} opt-in")
         if profile != "full" and positions:
             raise ValueError(f"{profile} profile requires baseline without {flag}")
-        if mcp_opt_in and not positions:
+        if flag in mcp_opt_ins and not positions:
             new_args.extend((flag, value))
     section = section.replace(old_command_line, "command = " + json.dumps(str(binary)))
     section = section.replace(old_args_line, "args = " + json.dumps(new_args))
@@ -319,6 +331,8 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
     wrapper_tail = old_tail.rstrip("\n")
     if profile == "full":
         wrapper_tail += ' \\\n  --search-view compact/1 --tool-profile compact/1'
+    if profile == "compact-recall":
+        wrapper_tail += " \\\n  --search-view compact/1"
     candidate_wrapper.write_text(wrapper_text.replace(old_exec, f"exec {shlex.quote(str(binary))} mcp \\\n")
                                  .replace(old_tail, wrapper_tail + "\n"), encoding="utf-8")
     candidate_wrapper.chmod(0o700)
@@ -379,8 +393,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
           profile="full"):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
-    if profile not in ("full", "capture-only", "compact-inbox"):
-        raise ValueError("profile must be full, capture-only or compact-inbox")
+    if profile not in ("full", "capture-only", "compact-inbox", "compact-recall"):
+        raise ValueError("profile must be full, capture-only, compact-inbox or compact-recall")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
     claude_config_path = home / ".claude.json"
     if snapshot_codex_config_baseline:
@@ -421,6 +435,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
         opt_ins = ["capture_observations"]
     elif profile == "compact-inbox":
         opt_ins = ["capture_observations", "compact_inbox_version=1"]
+    elif profile == "compact-recall":
+        opt_ins = ["capture_observations", "recall_view=compact/1", "search_view=compact/1"]
     else:
         opt_ins = ["capture_observations", "recall_view=compact/1", "compact_inbox_version=1",
                    "notice_batch_version=1", "search_view=compact/1", "tool_profile=compact/1"]
@@ -488,8 +504,8 @@ def main():
                         help="pin the current selected Codex TOML as a private baseline; allow whole-file drift only there")
     parser.add_argument("--snapshot-current-claude-mcp-config", action="store_true",
                         help="pin the current Claude config hash but stage only its Cairn MCP entry")
-    parser.add_argument("--profile", choices=("full", "capture-only", "compact-inbox"), default="full",
-                        help="opt-in profile to stage; capture-only enables no other token-efficiency feature")
+    parser.add_argument("--profile", choices=("full", "capture-only", "compact-inbox", "compact-recall"), default="full",
+                        help="opt-in profile to stage; compact-recall enables only capture observation and compact recall/search")
     args = parser.parse_args()
     report = stage(Path.home(), args.destination, codex_only=args.codex_only,
                    snapshot_codex_config_baseline=args.snapshot_current_codex_config,

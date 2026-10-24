@@ -226,6 +226,48 @@ exec {binary} mcp \\
         self.assertNotIn("--search-view", claude_wrapper)
         self.assertNotIn("--tool-profile", claude_wrapper)
 
+    def test_compact_recall_profile_stages_only_recall_view_and_search_presentation(self):
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            report = stage.stage(self.home, self.stage, self.expected,
+                                 codex_only=True, profile="compact-recall")
+
+        self.assertEqual(report["profile"], "compact-recall")
+        self.assertEqual(report["opt_ins"], [
+            "capture_observations", "recall_view=compact/1", "search_view=compact/1"])
+        self.assertEqual(set(report["accounts"]), {"codex"})
+        self.assertEqual(report["activation"], "none")
+        self.assertFalse(report["mcp"]["candidate_binary_present"])
+
+        memory = json.loads((self.stage / "codex/ordinary/config.json").read_text())
+        self.assertIs(memory["capture_observations"], True)
+        self.assertEqual(memory["recall_view"], "compact/1")
+        self.assertNotIn("context_lifecycle", memory)
+        coordination = json.loads(
+            (self.stage / "codex/coordination/bindings/codex-one.json").read_text())
+        self.assertNotIn("compact_inbox_version", coordination)
+        self.assertNotIn("notice_batch_version", coordination)
+        candidate_mcp = stage.tomllib.loads((self.stage / "codex/config.toml").read_text())
+        args = candidate_mcp["mcp_servers"]["cairn"]["args"]
+        self.assertEqual(args.count("--search-view"), 1)
+        self.assertEqual(args[args.index("--search-view") + 1], "compact/1")
+        self.assertNotIn("--tool-profile", args)
+        binding = json.loads((self.stage / "codex/binding.json").read_text())
+        self.assertFalse(binding["enabled"])
+        self.assertEqual(len(binding["coordination_configs"]), 1)
+
+    def test_compact_recall_profile_refuses_a_baseline_with_other_opt_ins(self):
+        memory_path = self.home / ".local/share/cairn/codex-hooks/config.json"
+        memory = json.loads(memory_path.read_text())
+        memory["context_lifecycle"] = "compact/1"
+        self.write(memory_path, memory)
+        self.expected[".local/share/cairn/codex-hooks/config.json"] = stage.sha256(memory_path)
+
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            with self.assertRaisesRegex(ValueError, "compact-recall profile requires baseline without context_lifecycle"):
+                stage.stage(self.home, self.stage, self.expected,
+                            codex_only=True, profile="compact-recall")
+        self.assertFalse(self.stage.exists())
+
     def test_two_account_compact_candidate_snapshots_codex_and_sanitizes_claude_config(self):
         config = self.home / ".codex/config.toml"
         original = config.read_bytes()
