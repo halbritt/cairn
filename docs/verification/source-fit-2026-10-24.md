@@ -53,10 +53,15 @@ The required conflict, semantic-unavailable, inaccessible-source and remaining
 export arms have no provider outcome. Native Cairn tool recovery has no
 accepted result: the only attempted search was reported denied by the model.
 The driver now declares only Cairn search/pull as allowed
-tools, but that change has local syntax and guard tests only; it has not been
-provider-verified. Do not infer a production retrieval change or token saving
-from this panel. The partial-source qualification, tool recovery, controls,
-and paired task costs still need an admitted, separately frozen evaluation.
+tools. At the time of this pilot, that change had local syntax and guard tests
+only; it has not been provider-verified. Do not infer a production retrieval
+change or token saving from this panel. The partial-source qualification, tool
+recovery, controls, and paired task costs still need an admitted, separately
+frozen evaluation.
+
+A later [model-free native tool preflight](source-fit-tool-recovery-2026-10-24.md)
+verified local search/pull discovery and execution with these runner flags. It
+did not change this pilot's provider result or complete task acceptance.
 
 The runner retains selected answers, resolved model and usage in a local
 cache directory outside the repository. It does not commit raw model output,

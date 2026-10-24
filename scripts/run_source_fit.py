@@ -123,14 +123,18 @@ def parse_stream(stdout):
                 estimated_api_cost_usd=terminal.get('total_cost_usd'))
 
 
-def native_call(prompt, mcp_config, plan, workdir, env):
-    command = ['claude', '-p', '--model', plan['model_argument'], '--effort', plan['effort_argument'],
+def native_command(mcp_config, plan):
+    return ['claude', '-p', '--model', plan['model_argument'], '--effort', plan['effort_argument'],
                '--output-format', 'stream-json', '--verbose', '--restricted',
                '--setting-sources', '', '--strict-mcp-config', '--mcp-config', str(mcp_config),
                '--no-session-persistence', '--disable-slash-commands', '--tools', '',
                '--allowedTools', 'mcp__cairn__cairn_search,mcp__cairn__cairn_pull',
                '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
                '--max-turns', '6', '--append-system-prompt', SYSTEM]
+
+
+def native_call(prompt, mcp_config, plan, workdir, env):
+    command = native_command(mcp_config, plan)
     start = time.monotonic()
     process = subprocess.Popen(command, cwd=workdir, env=env, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
