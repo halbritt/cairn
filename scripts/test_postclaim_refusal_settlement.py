@@ -345,7 +345,7 @@ class TurnBoundaryTests(Base):
 
 
 class HandleTests(Base):
-    def test_actual_claude_hook_refuses_and_settles_after_a_failed_bridge_search(self):
+    def test_actual_claude_hook_settles_after_required_bridge_search_timeout(self):
         wake = coord.wake_message(dict(session=dict(agent_id=AGENT, execution_id=EXEC), delivery_id=DELIVERY))
         event = dict(hook_event_name='UserPromptSubmit', session_id=SESSION, prompt_id=PROMPT, cwd=str(self.root),
                      prompt=f'<channel source="cairn-events" native_session_id="{SESSION}" agent_id="{AGENT}" '
@@ -354,7 +354,6 @@ class HandleTests(Base):
         self.save()
         with self.patched(), patch.object(coord, 'owner_process', return_value=self.process), \
              patch.object(coord, 'heartbeat', return_value=self.state['agent']), patch.object(coord, 'associate_wake'), \
-             patch.object(coord, 'inbox_context', return_value=''), \
              patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
             with self.assertRaises(coord.NativePromptRefused):
                 coord.handle(self.cc, event, _inbox_resolved=True)
@@ -363,8 +362,22 @@ class HandleTests(Base):
         self.assertEqual(saved['wake_refusal_diagnostic']['cause_class'], 'HookError')
         self.assertEqual(saved['wake_refusal_diagnostic']['cause_code'], 'TIMEOUT')
         self.assertEqual(saved['wake_refusal_diagnostic']['cause_reason'], 'NONZERO_EXIT')
-        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertEqual(saved['wake_refusal_diagnostic']['recall_phase'], 'required_search')
+        self.assertEqual(saved['wake_refusal_diagnostic']['recall_operation'], 'search')
+        self.assertEqual((saved['wake_refusal_diagnostic']['recall_attempts'],
+                          saved['wake_refusal_diagnostic']['recall_max_attempts']), (2, 2))
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()],
+                         [(ATTEMPT, 'delivery_completed'), (ATTEMPT, 'turn_ended')])
+        calls = [json.loads(line)['args'] for line in (self.root / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual(len(calls), 2)  # The bridge retries only the same required search intent.
+        self.assertTrue(all('search' in args for args in calls))
+        self.assertTrue(all('--kind' in args and args[args.index('--kind') + 1] == 'decision' for args in calls))
+        self.assertTrue(all('--' in args for args in calls))
         self.assertFalse(any(k in saved for k in ('inbox_intent', 'active_prompt')))
+        self.assertNotIn('inbox_attempt', saved)
+        self.assertNotIn('inbox_close', saved)
+        self.assertNotIn('inbox_completion', saved)
+        self.assertNotIn('inbox_response', saved)
         self.assertFalse((self.memory_dir / (SESSION + '.inbox-recall.json')).exists() and json.loads(
             (self.memory_dir / (SESSION + '.inbox-recall.json')).read_text())['grants'])
 
