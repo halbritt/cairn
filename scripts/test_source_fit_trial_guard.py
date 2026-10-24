@@ -45,13 +45,65 @@ class SourceFitTrialGuardTests(unittest.TestCase):
         self.assertEqual(parsed['tool_results'], [dict(
             tool='mcp__cairn__cairn_pull', tool_use_id='toolu_pull', is_error=False,
             content_bytes=len(b'PRIVATE SOURCE BODY'),
-            content_sha256=hashlib.sha256(b'PRIVATE SOURCE BODY').hexdigest())])
+            content_sha256=hashlib.sha256(b'PRIVATE SOURCE BODY').hexdigest(),
+            source_delivery=dict(schema='cairn.source-delivery/1', status='unknown', items=[],
+                                 reason='unsupported_or_invalid_payload'))])
         self.assertNotIn('PRIVATE SOURCE BODY', json.dumps(parsed))
         with self.assertRaisesRegex(RuntimeError, 'native_usage_missing'):
             parse_stream('\n'.join(json.dumps(row) for row in
                          (assistant, dict(result, usage={'input_tokens': 1}))))
         with self.assertRaisesRegex(RuntimeError, 'resolved_model_missing_or_multiple'):
             parse_stream(json.dumps(result))
+
+    def test_native_tool_ledger_keeps_verified_source_extent_without_body(self):
+        source = 'Synthetic Cairn qualification. PRIVATE_SOURCE_TEXT'
+        source_hash = hashlib.sha256(source.encode()).hexdigest()
+        selected = dict(record=dict(
+            record_id='12345678-1234-4234-8234-123456789abc', version=3, body=source),
+            mandatory=False)
+        tool_id = 'toolu_pull'
+        assistant = dict(type='assistant', message=dict(model='claude-sonnet-5-5', content=[
+            dict(type='tool_use', id=tool_id, name='mcp__cairn__cairn_pull')]))
+        payload = dict(selection=selected)
+        tool_result = dict(type='user', message=dict(content=[dict(
+            type='tool_result', tool_use_id=tool_id, is_error=False,
+            content=[dict(type='text', text=json.dumps(payload))])]))
+        terminal = dict(type='result', result='Answer', is_error=False, usage=dict(
+            input_tokens=1, cache_read_input_tokens=0,
+            cache_creation_input_tokens=0, output_tokens=1))
+
+        parsed = parse_stream('\n'.join(json.dumps(row)
+                                        for row in (assistant, tool_result, terminal)))
+        delivery = parsed['tool_results'][0]['source_delivery']
+        self.assertEqual(delivery['status'], 'observed')
+        self.assertEqual(delivery['items'], [dict(
+            record_id=selected['record']['record_id'], version=3, historical=False,
+            mandatory=False, extent='full_body', source_sha256=source_hash,
+            delivered_sha256=source_hash, delivered_bytes=len(source.encode()))])
+        self.assertNotIn('PRIVATE_SOURCE_TEXT', json.dumps(parsed))
+
+        part = source[10:19]
+        payload = dict(selection=dict(record=dict(
+            record_id=selected['record']['record_id'], version=3, body=''), mandatory=False),
+            span=dict(offset=10, end=19, total_bytes=len(source.encode()), body=part,
+                      sha256=hashlib.sha256(part.encode()).hexdigest(), source_sha256=source_hash))
+        tool_result['message']['content'][0]['content'] = [dict(
+            type='text', text=json.dumps(payload))]
+        parsed = parse_stream('\n'.join(json.dumps(row)
+                                        for row in (assistant, tool_result, terminal)))
+        delivery = parsed['tool_results'][0]['source_delivery']
+        self.assertEqual(delivery['status'], 'observed')
+        self.assertEqual(delivery['items'][0]['extent'], 'partial_span')
+        self.assertEqual(delivery['items'][0]['span'], dict(
+            offset=10, end=19, total_bytes=len(source.encode())))
+        self.assertNotIn('PRIVATE_SOURCE_TEXT', json.dumps(parsed))
+
+        tool_result['message']['content'][0].update(is_error=True, content='PRIVATE_ERROR')
+        parsed = parse_stream('\n'.join(json.dumps(row)
+                                        for row in (assistant, tool_result, terminal)))
+        self.assertEqual(parsed['tool_results'][0]['source_delivery']['status'], 'error')
+        self.assertEqual(parsed['tool_results'][0]['source_delivery']['items'], [])
+        self.assertNotIn('PRIVATE_ERROR', json.dumps(parsed))
 
     def test_direct_control_omits_local_only_source(self):
         panel = json.loads(PANEL.read_text())

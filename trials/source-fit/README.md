@@ -35,6 +35,9 @@ without a provider call. `run_source_fit.py` is the separate native Claude Code
 subscription driver. It requires the exact frozen SHA and writes selected
 answers, usage, and sanitized tool-result status/size/digests outside the
 repository; it does not retain native streams or tool-result content.
+Supported Cairn search/pull results also retain validated record IDs/versions,
+whole versus partial extent, source/delivered digests, and byte counts.
+Unsupported shapes are marked unknown; failed calls carry no source items.
 Its sanitized child environment removes API, OpenRouter and other provider
 route variables. The driver verifies `claude.ai` subscription authentication,
 records the resolved model ID and usage on every run, and stops on a route,

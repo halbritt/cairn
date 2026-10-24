@@ -66,3 +66,11 @@ did not change this pilot's provider result or complete task acceptance.
 The runner retains selected answers, resolved model and usage in a local
 cache directory outside the repository. It does not commit raw model output,
 private sessions, credentials or operational memory.
+
+The trial driver's sanitized native-tool ledger now also validates supported
+Cairn search/pull payloads and records emitted record ID/version, whole versus
+partial extent, source and delivered digests, and byte counts without retaining
+source bodies. Unsupported or malformed result shapes remain `unknown`; native
+tool failures remain errors with no source items. This improves provenance for
+future admitted runs but does not fill the unrun arms, score task outcomes, or
+establish subscription behavior.

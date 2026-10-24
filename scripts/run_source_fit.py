@@ -17,6 +17,7 @@ import time
 from check_source_fit_panel import source_body
 from preflight_source_fit import run_preflight
 from trial_task_eval import TRIAL_REPO
+from trial_source_delivery import native_delivery
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,7 +132,9 @@ def parse_stream(stdout):
                     tool_use_id=ident,
                     is_error=part.get('is_error') if type(part.get('is_error')) is bool else None,
                     content_bytes=len(encoded_content),
-                    content_sha256=hashlib.sha256(encoded_content).hexdigest()))
+                    content_sha256=hashlib.sha256(encoded_content).hexdigest(),
+                    source_delivery=native_delivery(name, dict(
+                        is_error=part.get('is_error'), content=raw_content))))
         if event.get('type') == 'result':
             terminal = event
     if terminal is None:
