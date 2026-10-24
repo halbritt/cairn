@@ -83,3 +83,30 @@ read a notice, chose a disposition, or produced an accepted result. Sender and
 recipient usage, capture joined to the same workflow, latency, paired task
 outcomes, and the Claude native path remain unmeasured. The live canary is still
 held pending an enforceable per-run capacity policy and fresh status checks.
+
+## Claude private-config attempt
+
+A bounded follow-up used Claude Code 2.1.310 with the staged Claude candidate
+copied into a fresh private `HOME` and `CLAUDE_CONFIG_DIR`. Its settings contained
+only the staged Cairn coordination hooks; the Messages endpoint was a loopback
+stub with a fixture-only API key, and the Cairn API/Store ran on a disposable
+PostgreSQL cluster. No installed account configuration, credentials, or
+external provider was used. The fake provider received one request and returned
+scripted text. The native session was absent from the disposable Store before
+that request, so no inbox item was published, claimed, read, or settled. The
+Claude `SessionEnd` hook then reported
+`INVALID_HOST: native process is not an observed ancestor`.
+
+The isolated binding had `process_names: ["claude"]` and no
+`process_exe_dirs`. In this run the native executable was
+`~/.local/share/claude/versions/2.1.310`; with the temporary `HOME`, the
+coordination engine's default Claude executable-directory lookup pointed inside
+the private home, while the process comm did not match `claude`. Source review
+confirms that `owner_process` accepts either a configured process name or an
+executable under `claude_exe_dirs`, so this attempt stopped at host-process
+admission before compact delivery. It supplies no evidence for Claude compact
+notice/response, exact source handling, or settlement. The attempted private
+fixture code was discarded rather than retaining an unverified integration
+path. A future attempt needs a narrowly pinned `process_exe_dirs` entry in its
+private test binding, then must repeat the disposable native notice/response
+and explicit-settlement checks. CAIRN-216 remains open.
