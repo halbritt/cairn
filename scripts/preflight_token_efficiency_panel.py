@@ -293,6 +293,11 @@ def validate(data):
             require(expected_kind in {event["kind"] for event in events}, f"{case}: event kind")
         require(tuple(item["action"] for item in transitions) == actions,
                 f"{case}: transition sequence")
+        if case == "long_source":
+            require(source_ids == ["relay_history", "relay_current"]
+                    and transitions == [{"phase": "before_read", "action": "repeat_source",
+                                         "target": "relay_history", "count": 120}],
+                    f"{case}: exact historical exposure plan")
         if active_task is not None:
             require([(item["phase"], item["action"], item["target"])
                      for item in transitions] == [

@@ -137,6 +137,20 @@ class PanelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     panel.validate(changed)
 
+    def test_long_source_requires_exact_historical_count_and_source_order(self):
+        for change in ("count", "target", "source_order"):
+            with self.subTest(change=change):
+                changed = copy.deepcopy(self.data)
+                row = next(case for case in changed["cases"] if case["id"] == "long_source")
+                if change == "count":
+                    row["setup"]["transitions"][0]["count"] = 119
+                elif change == "target":
+                    row["setup"]["transitions"][0]["target"] = "relay_current"
+                else:
+                    row["setup"]["sources"].reverse()
+                with self.assertRaisesRegex(ValueError, "exact historical exposure plan"):
+                    panel.validate(changed)
+
     def test_capture_binding_keeps_codex_hook_harness_and_claude_selector_model_separate(self):
         row = next(row for row in self.data["cases"] if row["id"] == "unchanged_capture")
         capture = row["setup"]["capture"]
