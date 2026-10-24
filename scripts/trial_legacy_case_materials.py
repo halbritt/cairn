@@ -70,15 +70,15 @@ def _channels(case):
     kinds = {check.get('type') for check in checks}
     channels = ['task_statement', 'grading_instructions', 'final_answer']
     unavailable = []
+    if kinds & {'file', 'exists', 'added', 'unchanged', 'shell', 'commit_files', 'staged'}:
+        channels.append('artifact_bundle')
+    if 'shell' in kinds:
+        channels.append('evaluator_observation')
     if kinds & {'command', 'tool_output'}:
         if _action_trace_projection(case) is None:
             unavailable.append(dict(name='action_trace', reason='raw_tool_output_unavailable'))
         else:
             channels.append('action_trace')
-    if kinds & {'file', 'exists', 'added', 'unchanged', 'shell', 'commit_files', 'staged'}:
-        channels.append('artifact_bundle')
-    if 'shell' in kinds:
-        channels.append('evaluator_observation')
     return channels, unavailable
 
 

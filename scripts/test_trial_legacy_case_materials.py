@@ -64,6 +64,16 @@ class CaseMaterialsTests(unittest.TestCase):
         self.assertNotIn(b'"mistake"', serialized)
         self.assertEqual(pin['storage'], 'private_owner_only')
 
+    def test_issued_v2_manifest_is_accepted_by_frozen_v12_runner_interface(self):
+        pin = materials.issue(self.output)
+        manifest = materials.read_manifest({key: pin[key] for key in ('schema', 'path', 'bytes', 'sha256')})
+        db_coverage = next(row for row in manifest['cases'] if row['case'] == 'db-coverage')
+        self.assertEqual(db_coverage['channels'], [
+            'task_statement', 'grading_instructions', 'final_answer', 'artifact_bundle', 'action_trace'])
+        accepted = task_eval.case_materials_pin(
+            pin['path'], pin['sha256'], task_eval.load_cases(12))
+        self.assertEqual(accepted, dict(schema=materials.SCHEMA, sha256=pin['sha256']))
+
     def test_tampered_material_refuses_even_when_manifest_pin_is_unchanged(self):
         pin = materials.issue(self.output)
         reference = {key: pin[key] for key in ('schema', 'path', 'bytes', 'sha256')}
