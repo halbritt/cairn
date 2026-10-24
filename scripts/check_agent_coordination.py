@@ -13,11 +13,17 @@ import uuid
 
 
 OWNER = r'''
-import json, subprocess, sys
+import json, os, subprocess, sys
 script, config = sys.argv[1:3]
 for line in sys.stdin:
-    result = subprocess.run([sys.executable, script, 'hook', '--config', config],
-        input=line, text=True, capture_output=True, timeout=15)
+    request = json.loads(line)
+    if '_compact' in request:
+        env = dict(os.environ, CODEX_THREAD_ID=request['session_id'])
+        result = subprocess.run([sys.executable, script, 'inbox', 'compact', *request['_compact']],
+            env=env, text=True, capture_output=True, timeout=15)
+    else:
+        result = subprocess.run([sys.executable, script, 'hook', '--config', config],
+            input=line, text=True, capture_output=True, timeout=15)
     print(json.dumps(dict(code=result.returncode, stdout=result.stdout, stderr=result.stderr)), flush=True)
 '''
 
@@ -25,18 +31,23 @@ for line in sys.stdin:
 def check(binary, root, repo, api_call):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL")
     script = Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py"
-    configs = root / "native-bindings"
+    compact_root = root / "compact-native"
+    compact_root.mkdir(mode=0o700)
+    configs = compact_root / "bindings"
     configs.mkdir(mode=0o700)
     config = configs / "codex-probe.json"
-    state = root / "native-state"
+    state = compact_root / "state" / "codex-probe"
+    state.mkdir(parents=True, mode=0o700)
     config.write_text(json.dumps(dict(cairn=str(Path(binary).resolve()), socket=str(root / "api.sock"),
         token_file=str(root / "bob.token"), repo=repo, harness="codex", binding="codex-probe",
-        model="configured", process_names=["python3"], state_dir=str(state), native_delivery=True)))
+        model="configured", process_names=["python3"], state_dir=str(state), native_delivery=True,
+        compact_inbox_version=1)))
     config.chmod(0o600)
     processes = []
 
     def owner(env=None, native_queue=False):
         args = ['app-server', '--listen', 'unix://'+str(root/'native.sock')] if native_queue else []
+        env = dict(env or os.environ, CAIRN_INBOX_ROOT=str(compact_root))
         p = subprocess.Popen([sys.executable, "-u", "-c", OWNER, str(script), str(config), *args],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         processes.append(p)
@@ -50,6 +61,19 @@ def check(binary, root, repo, api_call):
         result = json.loads(p.stdout.readline())
         assert result["code"] == code, result
         return json.loads(result["stdout"]) if code == 0 else result
+
+    def compact(p, native_session, *args, status='OK'):
+        p.stdin.write(json.dumps(dict(_compact=args, session_id=native_session)) + '\n')
+        p.stdin.flush()
+        ready, _, _ = select.select([p.stdout], [], [], 20)
+        assert ready, 'compact command owner did not respond'
+        result = json.loads(p.stdout.readline())
+        output = json.loads(result['stdout'])
+        if status == 'OK':
+            assert result['code'] == 0 and output['ok'], result
+        else:
+            assert result['code'] != 0 and output['status'] == status, result
+        return output
 
     def watch():
         subprocess.run([sys.executable, str(script), "watch", "--config-dir", str(configs), "--once"],
@@ -210,6 +234,95 @@ def check(binary, root, repo, api_call):
         assert hook(second, dict(event, session_id='native-partition', hook_event_name='Stop')) == {}
         hook(second, dict(event, session_id='native-partition', hook_event_name='SessionEnd'))
         print('Partition across completion: journaled result replayed after the lease lapsed and accepted late under its hold')
+        # The compact notice/response path must cross the same native process
+        # boundary and real history/renew/ack API as the full request path.
+        def compact_delivery(native, kind, body, sender='alice', cause=None):
+            hook(second, dict(event, session_id=native))
+            recipient = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents']
+                             if a['native_session_id'] == native)
+            source = api_call(sender, 'create', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
+                draft=dict(kind='note', body=body, sensitivity='shareable', claim_type='self',
+                           scope=dict(repo=repo, task_id='*', run_id='*')))))
+            args = ['--request-id', str(uuid.uuid4()), '--to', recipient['inbox'],
+                    '--kind', kind, '--version', str(source['version'])]
+            if cause:
+                args += ['--causation-id', cause]
+            notice = api_call(sender, 'publish', *args, source['record_id'])
+            boundary = hook(second, dict(event, session_id=native, hook_event_name='Stop'))
+            assert boundary.get('decision') == 'block', boundary
+            context = next(json.loads(p.read_text()) for p in (state / 'inbox').glob('*.json')
+                           if json.loads(p.read_text())['event_id'] == notice['event_id'])
+            assert context['source'] == notice['ref'] == dict(record_id=source['record_id'], version=source['version'])
+            assert context['kind'] == kind and context['sender'] == notice['from']
+            assert len(context['compact_handle']) == 16
+            return notice, context, boundary
+
+        small = 'Selected notice; keep this exact source and acknowledge explicitly.'
+        notice, compact_context, boundary = compact_delivery('native-compact-notice', 'notice', small)
+        assert small in json.dumps(boundary) and compact_context['compact_handle'] in json.dumps(boundary), boundary
+        handle = compact_context['compact_handle']
+        read = compact(second, 'native-compact-notice', 'read', handle)
+        assert read['body'] == small and read['source'] == notice['ref']
+        assert api_call('alice', 'event-status', notice['event_id'])['deliveries'][0]['state'] == 'leased'
+        compact(second, 'wrong-native-session', 'settle', handle, 'handled', status='NOT_THIS_SESSION')
+        outsider = subprocess.run([sys.executable, str(script), 'inbox', 'compact', 'settle', handle, 'handled'],
+                                 env=dict(os.environ, CAIRN_INBOX_ROOT=str(compact_root), CODEX_THREAD_ID='native-compact-notice'),
+                                 capture_output=True, text=True, timeout=15)
+        assert outsider.returncode and json.loads(outsider.stdout)['status'] == 'NOT_THIS_SESSION', outsider.stdout
+        settled = compact(second, 'native-compact-notice', 'settle', handle, 'handled')
+        assert settled['status'] == 'handled'
+        assert compact(second, 'native-compact-notice', 'settle', handle, 'handled') == settled
+        compact(second, 'native-compact-notice', 'settle', handle, 'ignored', '--code', 'unsupported_kind',
+                status='IDEMPOTENCY_CONFLICT')
+        assert api_call('alice', 'event-status', notice['event_id'])['deliveries'][0]['state'] == 'handled'
+        assert hook(second, dict(event, session_id='native-compact-notice', hook_event_name='Stop')) == {}
+        hook(second, dict(event, session_id='native-compact-notice', hook_event_name='SessionEnd'))
+
+        oversized = 'Exact long source; ' * 300
+        long_notice, long_context, long_boundary = compact_delivery('native-compact-large', 'notice', oversized)
+        assert len(oversized.encode()) > 4096 and oversized not in json.dumps(long_boundary)
+        assert 'read its exact text' in json.dumps(long_boundary)
+        long_handle = long_context['compact_handle']
+        assert compact(second, 'native-compact-large', 'read', long_handle)['body'] == oversized
+        index = state / 'compact' / (long_handle + '.json')
+        issued = json.loads(index.read_text())
+        index.write_text(json.dumps(dict(issued, issued_at=0)))
+        compact(second, 'native-compact-large', 'settle', long_handle, 'failed', '--code', 'processing_failed',
+                status='HANDLE_EXPIRED')
+        index.write_text(json.dumps(issued))
+        failed = compact(second, 'native-compact-large', 'settle', long_handle, 'failed', '--code', 'processing_failed')
+        assert failed['status'] == 'failed'
+        assert api_call('alice', 'event-status', long_notice['event_id'])['deliveries'][0]['state'] == 'failed'
+        hook(second, dict(event, session_id='native-compact-large', hook_event_name='SessionEnd'))
+
+        response_body = 'A selected response to the earlier request.'
+        causal_request = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()),
+            '--to', 'agent/bob', '--kind', 'request', '--version', str(source['version']), source['record_id'])
+        response, response_context, response_boundary = compact_delivery(
+            'native-compact-response', 'response', response_body, sender='bob', cause=causal_request['event_id'])
+        assert response_body in json.dumps(response_boundary)
+        assert response_context['source'] == response['ref']
+        ignored = compact(second, 'native-compact-response', 'settle', response_context['compact_handle'],
+                          'ignored', '--code', 'unsupported_kind')
+        assert ignored['status'] == 'ignored'
+        assert api_call('bob', 'event-status', response['event_id'])['deliveries'][0]['state'] == 'ignored'
+        old_response = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents']
+                            if a['native_session_id'] == 'native-compact-response')
+        hook(second, dict(event, session_id='native-compact-response', hook_event_name='SessionEnd'))
+        replacement = api_call('bob', 'agent-register', raw=True, body=json.dumps(dict(
+            request_id=str(uuid.uuid4()), repo=repo, binding='codex-probe',
+            native_session_id='native-compact-response', metadata=old_response['metadata'])))
+        assert replacement['agent_id'] == old_response['agent_id']
+        assert replacement['execution_id'] != old_response['execution_id']
+        compact(second, 'native-compact-response', 'settle', response_context['compact_handle'],
+                'ignored', '--code', 'unsupported_kind', status='STALE_SESSION')
+        compact(second, 'native-compact-response', 'read', response_context['compact_handle'], status='STALE_SESSION')
+        api_call('bob', 'agent-leave', raw=True, body=json.dumps({k: replacement[k] for k in ('agent_id', 'execution_id')}))
+        causal_delivery = api_call('bob', 'inbox')['delivery']
+        assert causal_delivery['event']['event_id'] == causal_request['event_id']
+        api_call('bob', 'ack', '--request-id', str(uuid.uuid4()), '--lease', causal_delivery['lease_id'],
+                 causal_delivery['delivery_id'])
+        print('Compact native inbox: real notice/response and oversized history, explicit settlements, process/session/expiry refusals')
         from test_idle_wakeup import HOST
         idle_root = root/'idle-host'
         idle_root.mkdir()

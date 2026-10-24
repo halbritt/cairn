@@ -200,6 +200,22 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(journal['status'], 'committed')
         self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
 
+    def test_committed_compact_settlement_does_not_reopen_forgotten_source(self):
+        context, _ = self.compact_context('notice', 'Source eligible only before forgetting.')
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle', context['compact_handle'], 'handled']
+        first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        replies = json.loads((self.root / 'replies.json').read_text())
+        replies['event-renew'] = [dict(ok=False, status='STALE_LEASE')]
+        replies['history'] = [dict(ok=False, status='NOT_FOUND')]
+        self.replies(replies)
+        retry = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(retry.returncode, 0)
+        self.assertEqual(json.loads(retry.stdout)['status'], 'NOT_FOUND')
+        self.assertNotIn('body', json.loads(retry.stdout))
+        self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
+
     def test_compact_handle_refuses_wrong_session_expiry_forgetting_and_restore(self):
         body = 'Notice that must not be settled through a stale handle.'
         context, _ = self.compact_context('notice', body)

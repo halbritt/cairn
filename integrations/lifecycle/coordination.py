@@ -2542,11 +2542,30 @@ def compact_inbox_command(argv):
             print(json.dumps(dict(schema='cairn.compact-inbox-batch/1', ok=True, next=next_text,
                                   batch_index=result['attempt']['batch_index'], batch_limit=3)))
             return 0
-    renewed = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
-                                                lease_seconds=90), session=attempt['session'])
-    if (renewed.get('delivery_id') != delivery['delivery_id'] or renewed.get('lease_id') != delivery['lease_id'] or
-            renewed.get('state') != 'leased' or renewed.get('event') != event):
-        raise CoordinationError('STALE_LEASE', 'compact inbox delivery is no longer leased')
+    try:
+        renewed = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
+                                                    lease_seconds=90), session=attempt['session'])
+    except CoordinationError as exc:
+        # A completed acknowledgement clears its lease. Permit only that
+        # attempt's committed journal to reach the authenticated retry path.
+        journal = {}
+        if args.operation == 'settle' and exc.code == 'STALE_LEASE':
+            try:
+                journal = json.loads(intent_path(config['state_dir'], attempt['attempt_id']).read_text())
+            except (OSError, ValueError):
+                pass
+        slot = journal.get('completion') if isinstance(journal, dict) else None
+        if (not isinstance(slot, dict) or journal.get('schema') != 'cairn.inbox-intent/1' or
+                journal.get('attempt_id') != attempt['attempt_id'] or
+                journal.get('delivery_id') != delivery['delivery_id'] or
+                journal.get('session') != attempt['session'] or slot.get('kind') != 'ack' or
+                slot.get('request_id') != context['request_ids']['completion'] or
+                slot.get('status') != 'committed'):
+            raise
+    else:
+        if (renewed.get('delivery_id') != delivery['delivery_id'] or renewed.get('lease_id') != delivery['lease_id'] or
+                renewed.get('state') != 'leased' or renewed.get('event') != event):
+            raise CoordinationError('STALE_LEASE', 'compact inbox delivery is no longer leased')
     body = None
     if not (args.operation == 'settle' and args.disposition == 'failed' and args.code == 'source_unavailable'):
         body = exact_inbox_source(config, attempt, event['ref'])
