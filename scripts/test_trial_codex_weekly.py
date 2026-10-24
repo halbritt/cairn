@@ -33,6 +33,18 @@ def codex_account(auth):
     return dict(account_id='codex-owner-account',auth_file=str(auth),auth_sha256=hashlib.sha256(raw).hexdigest())
 
 
+def writer_fixture(root):
+    cgroup=root/'writer-cgroup'; cgroup.mkdir(mode=0o700)
+    controls=dict(schema='cairn.writer-controls/1',
+        controls=dict(memory_max=512*1024*1024,memory_swap_max=0,pids_max=32,cpu_max='100000 100000'),
+        reviewed_identity=dict(schema='cairn.writer-reviewed-identity/2',
+            kernel=dict(release='synthetic-kernel',version='synthetic-build'),
+            bwrap=dict(path='/usr/bin/bwrap',sha256='a'*64),
+            source_scope=dict(test='synthetic'),execution='sealed_memfd'))
+    controls_pin=write_pin(root/'writer-controls.json',controls)
+    return dict(cgroup=str(cgroup),controls=controls_pin)
+
+
 class CodexWeeklyContractTests(unittest.TestCase):
     def test_weekly_execution_v2_keeps_codex_actor_distinct_and_validates_pin(self):
         with tempfile.TemporaryDirectory() as d:
@@ -82,10 +94,12 @@ class CodexWeeklyContractTests(unittest.TestCase):
             script=harness/'scripts/trial-task-eval.sh'; script.write_text('#!/bin/sh\nexit 0\n')
             run_dir=root/'run'; run_dir.mkdir()
             controls=root/'controls.json'; controls.write_text('{}')
+            writer=writer_fixture(root)
             spec=dict(harness=dict(root=str(harness)),original_execution=fragment,
                 arms={n:dict(binary=fixture.component,hook=fixture.component) for n in ('CURRENT','CAND')},
                 distractors=1900,seeds=[0,1,2],embedding=dict(worker=fixture.component),actor_model='gpt-6-luna',
-                postgres=dict(bin_dir='/disposable/pg'),original_arms=dict(path=str(controls),sha256='a'*64))
+                postgres=dict(bin_dir='/disposable/pg'),original_arms=dict(path=str(controls),sha256='a'*64),
+                writer=writer)
             with patch.object(weekly.subprocess,'run') as run:
                 run.return_value.returncode=2
                 result=executor.execute(spec,run_dir)
@@ -115,13 +129,14 @@ class CodexWeeklyContractTests(unittest.TestCase):
             root=Path(d); auth=root/'auth.json'; auth.write_text(json.dumps(dict(auth_mode='chatgpt',tokens={'access_token':'synthetic'})))
             account_ref=codex_account(auth) | {'account_id':'codex-account'}
             execution=dict(harness='codex',provider=dict(sha256='b'*64),model='gpt-6-luna')
-            profile=dict(campaign_id='campaign',selection=None,account=account_ref)
+            profile=dict(campaign_id='campaign',selection=None,account=account_ref,writer=writer_fixture(root))
             preview=dict(scheduled_at='2026-10-24T12:00:00Z',current='1'*40,candidate='2'*40,harness='3'*40,
                          original_execution=execution)
             capacity=dict(receipt_sha256='c'*64)
             document=dict(schema=weekly.SELECTION_SCHEMA,campaign_id='campaign',scheduled_at=preview['scheduled_at'],
                 current=preview['current'],candidate=preview['candidate'],harness_commit=preview['harness'],
                 executor=weekly.CodexWeeklyExecutor.name,capacity_receipt_sha256=capacity['receipt_sha256'],
+                writer_sha256=paired.canonical_sha(profile['writer']),
                 selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107b7a1e07',codex_account_binding_sha256=paired.canonical_sha(account_ref),
                 codex_account_assignment_sha256=paired.canonical_sha(account_ref),
                 provider_model='gpt-6-luna',provider_binary_sha256='b'*64)
@@ -164,11 +179,12 @@ class CodexWeeklyContractTests(unittest.TestCase):
             harness=root/'harness';(harness/'scripts').mkdir(parents=True)
             (harness/'scripts/trial-task-eval.sh').write_text('#!/bin/sh\nexit 0\n')
             run_dir=root/'run';run_dir.mkdir();controls=root/'controls.json';controls.write_text('{}')
+            writer=writer_fixture(root)
             spec=dict(harness=dict(root=str(harness)),original_execution=fragment,
                 arms={n:dict(binary=fixture.component,hook=fixture.component) for n in ('CURRENT','CAND')},
                 distractors=1900,seeds=[1,2,3],embedding=dict(worker=fixture.component),actor_model='gpt-6-luna',
                 postgres=dict(bin_dir='/disposable/pg'),original_arms=dict(path=str(controls),sha256='a'*64),
-                account_assignment=allocation_ref)
+                account_assignment=allocation_ref,writer=writer)
             with patch.object(weekly.subprocess,'run') as launched:
                 launched.return_value.returncode=0
                 executor.execute(spec,run_dir)
@@ -193,11 +209,12 @@ class CodexWeeklyContractTests(unittest.TestCase):
             execution=dict(harness='codex',provider=dict(sha256='b'*64),model='gpt-6-luna')
             preview=dict(scheduled_at='2026-10-24T12:00:00Z',current='1'*40,candidate='2'*40,harness='3'*40,
                          original_execution=execution)
-            profile=dict(campaign_id='campaign',selection=None,account=None)
+            profile=dict(campaign_id='campaign',selection=None,account=None,writer=writer_fixture(root))
             capacity=dict(receipt_sha256='c'*64,account_assignment=assignment_ref)
             document=dict(schema=weekly.SELECTION_SCHEMA,campaign_id='campaign',scheduled_at=preview['scheduled_at'],
                 current=preview['current'],candidate=preview['candidate'],harness_commit=preview['harness'],
                 executor=weekly.CodexWeeklyExecutor.name,capacity_receipt_sha256=capacity['receipt_sha256'],
+                writer_sha256=paired.canonical_sha(profile['writer']),
                 selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107a7b9a1f',
                 codex_account_binding_sha256=paired.canonical_sha(assignment),
                 codex_account_assignment_sha256=assignment_ref['sha256'],

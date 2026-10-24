@@ -72,6 +72,15 @@ class BridgeTests(unittest.TestCase):
             quotes=provider.mapping['quotes'])
         adapt(document, evidence/'adapted', now='2026-10-09T20:02:00Z')
         self.runs = self.root/'runs'; self.runs.mkdir(mode=0o700)
+        writer_cgroup = self.root/'writer-cgroup'; writer_cgroup.mkdir(mode=0o700)
+        writer_controls = dict(schema='cairn.writer-controls/1',
+            controls=dict(memory_max=512*1024*1024, memory_swap_max=0, pids_max=32,
+                          cpu_max='100000 100000'),
+            reviewed_identity=dict(schema='cairn.writer-reviewed-identity/2',
+                kernel=dict(release='synthetic-kernel', version='synthetic-build'),
+                bwrap=dict(path='/usr/bin/bwrap', sha256='a'*64),
+                source_scope=dict(test='synthetic'), execution='sealed_memfd'))
+        writer_controls_pin = write_pin(self.root/'writer-controls.json', writer_controls)
         self.profile = dict(schema=weekly.PROFILE_SCHEMA, repo=str(repo), current_ref='main',
             candidate_ref='feature/recall', harness_commit=self.harness, runs_root=str(self.runs),
             campaign_id=self.f.profile['campaign_id'], schedule=self.f.profile['schedule'],
@@ -81,7 +90,8 @@ class BridgeTests(unittest.TestCase):
                 plan=write_pin(evidence/'plan.json', provider.plan),
                 models=dict.fromkeys(('CURRENT','CAND','primary','secondary'), 'fixture-model')),
             executor='fake', selection=None, account=None,
-            execution=paired.read_json(self.entry/'proposal.json')['weekly_input']['execution'])
+            execution=paired.read_json(self.entry/'proposal.json')['weekly_input']['execution'],
+            writer=dict(cgroup=str(writer_cgroup), controls=writer_controls_pin))
         config_home = self.root/'accounts/weekly'
         config_home.mkdir(parents=True, mode=0o700)
         (config_home/'.credentials.json').write_text('{"synthetic": "never read"}')
@@ -91,6 +101,7 @@ class BridgeTests(unittest.TestCase):
             scheduled_at=queued['scheduled_at'], current=self.harness, candidate=self.f.cand,
             harness_commit=self.harness, executor='fake',
             capacity_receipt_sha256=self.profile['capacity']['receipt']['sha256'],
+            writer_sha256=paired.canonical_sha(self.profile['writer']),
             selected_by=self.f.profile['proposal']['reply_recipient_id']))
         self.selection = dict(schema='cairn.candidate-run-bridge/1', entry=pin(self.entry/'entry.json'),
             prepared=pin(self.entry/'prepared.json'),
