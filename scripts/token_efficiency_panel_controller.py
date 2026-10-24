@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Materialize selected frozen panel setups through a disposable Cairn API.
 
-This prepares a pending native inbox delivery. It never launches an actor,
-claims a turn, grades an answer, or emits gate observations.
+This prepares native setup state, including one synthetic Store settlement.
+It never launches an actor, observes a live turn, grades an answer, or emits
+gate observations.
 """
 
 import argparse
@@ -11,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import uuid
@@ -42,6 +44,11 @@ CASE_ADAPTERS = {
                          "target": "duplicate_a"}],
         "publishers": {"duplicate_a": "sender"},
         "sessions": {"worker": "worker"},
+    },
+    "small_request_result_reply": {
+        "events": [{"id": "request_hash", "kind": "request", "recipient": "worker"}],
+        "transitions": [], "publishers": {"request_hash": "sender"},
+        "sessions": {"worker": "worker", "sender": "sender"},
     },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
@@ -172,7 +179,7 @@ def frozen_case(export, fixture, workflow_id):
     expected_intervention = (adapter["interventions"][run["arm"]]
                              if "interventions" in adapter else None)
     require(run["intervention"] == expected_intervention, "unsupported arm intervention")
-    return binding, setup, actual["event_source_defaults"], adapter, expected_intervention
+    return binding, setup, actual["event_source_defaults"], adapter, expected_intervention, actor
 
 
 def database_now(dsn):
@@ -223,6 +230,127 @@ def registered_owner(dsn, agent_id):
     return owner
 
 
+def settle_small_request(binary, socket, tokens, repo, actor, setup, intent, sessions, events):
+    request_spec = setup["events"][0]
+    match = re.fullmatch(r"Return SHA-256 of ([a-z]+)\.", request_spec["body"])
+    require(match is not None and match.group(1) == "cedar"
+            and actor["task"] ==
+            f"Answer the Cairn request with the lowercase hexadecimal SHA-256 of the UTF-8 bytes {match.group(1)}, then settle the request.",
+            "unsupported frozen request/result contract")
+    digest = hashlib.sha256(match.group(1).encode("utf-8")).hexdigest()
+    require(digest == "0c274639936717793d7695ef0373039e397acdabc247d9953d3c9209a95044cd",
+            "exact cedar digest differs")
+    request = events["request_hash"]
+    worker = sessions["worker"]
+    sender = sessions["sender"]
+    worker_ref = {key: worker[key] for key in ("agent_id", "execution_id")}
+    if request["delivery_state"] == "pending":
+        ready = call(binary, socket, tokens["worker"], ("agent", "session-inbox-ready"),
+                     body=json.dumps(worker_ref))
+        require(ready == {"event_id": request["event_id"],
+                          "delivery_id": request["delivery_id"]},
+                "worker readiness differs from exact request")
+    claim_body = {"request_id": intent["settlement_request_ids"]["claim"],
+                  "session": worker_ref, "delivery_id": request["delivery_id"],
+                  "native_turn_id": intent["synthetic_turn_id"], "turn_exclusive": False}
+    claimed = call(binary, socket, tokens["worker"], ("agent", "session-inbox-claim"),
+                   body=json.dumps(claim_body))
+    attempt = claimed.get("attempt") or {}
+    delivered = attempt.get("delivery") or {}
+    lease_id = delivered.get("lease_id")
+    require(attempt.get("attempt_id") == claim_body["request_id"],
+            "synthetic claim attempt ID differs from journal")
+    require(attempt.get("native_turn_id") == claim_body["native_turn_id"]
+            and attempt.get("turn_exclusive", False) is False,
+            "synthetic claim turn boundary differs")
+    require(delivered.get("delivery_id") == request["delivery_id"]
+            and (delivered.get("event") or {}).get("event_id") == request["event_id"],
+            "synthetic claim delivery differs from request")
+    require(isinstance(lease_id, str) and str(uuid.UUID(lease_id)) == lease_id,
+            "synthetic claim lease missing")
+    source_history = call(binary, socket, tokens["worker"], ("agent", "history"),
+                          body=json.dumps(request["source_ref"]), session=worker)
+    source_versions = source_history.get("versions") or []
+    require(len(source_versions) == 1
+            and source_versions[0].get("body") == request_spec["body"]
+            and source_versions[0].get("observed_writer") == request["observed_writer"],
+            "claimed session cannot read exact request source")
+    result_task = "coordination-result/" + request["delivery_id"]
+    done = call(binary, socket, tokens["worker"], ("complete",),
+                ("--request-id", intent["settlement_request_ids"]["completion"],
+                 "--lease", lease_id, "--shareable", "--stdin", "--task", result_task,
+                 "--run", "*", request["delivery_id"]),
+                body=digest, session=worker)
+    result_ref = done.get("result") or {}
+    require(done.get("state") == "handled" and done.get("delivery_id") == request["delivery_id"]
+            and result_ref.get("version") == 1 and done.get("completed_at"),
+            "synthetic completion did not durably create one result")
+    result_history = call(binary, socket, tokens["worker"], ("agent", "history"),
+                          body=json.dumps(result_ref), session=worker)
+    result_versions = result_history.get("versions") or []
+    require(len(result_versions) == 1 and result_versions[0].get("body") == digest
+            and result_versions[0].get("observed_writer") == worker["inbox"]
+            and result_versions[0].get("kind") == "note"
+            and result_versions[0].get("scope") ==
+            {"repo": repo, "task_id": result_task, "run_id": "*"},
+            "Store result differs from exact synthetic digest")
+    request_status = call(binary, socket, tokens["sender"], ("event-status",),
+                          (request["event_id"],))
+    request_deliveries = request_status.get("deliveries") or []
+    require(len(request_deliveries) == 1
+            and request_deliveries[0].get("delivery_id") == request["delivery_id"]
+            and request_deliveries[0].get("state") == "handled"
+            and request_deliveries[0].get("attempts") == 1
+            and request_deliveries[0].get("result") == result_ref,
+            "request completion receipt differs from exact result")
+    response_body = json.dumps({
+        "request_id": intent["settlement_request_ids"]["response_publication"],
+        "repo": repo, "kind": "response", "ref": result_ref,
+        "destination": {"type": "agent", "name": sender["inbox"]},
+        "causation_id": request["event_id"],
+    }, sort_keys=True, separators=(",", ":"))
+    reply = call(binary, socket, tokens["worker"], ("agent", "event-publish"),
+                 body=response_body, session=worker)
+    require(reply.get("kind") == "response" and reply.get("ref") == result_ref
+            and reply.get("from") == worker["inbox"]
+            and reply.get("destination") == {"type": "agent", "name": sender["inbox"]}
+            and reply.get("causation_id") == request["event_id"],
+            "synthetic response differs from exact result or cause")
+    reply_status = call(binary, socket, tokens["worker"], ("event-status",),
+                        (reply["event_id"],), session=worker)
+    reply_deliveries = reply_status.get("deliveries") or []
+    require(reply_status.get("event") == reply and len(reply_deliveries) == 1
+            and reply_deliveries[0].get("consumer") == sender["inbox"]
+            and reply_deliveries[0].get("state") == "pending"
+            and reply_deliveries[0].get("attempts") == 0,
+            "synthetic reply is not one pending sender delivery")
+    sender_history = call(binary, socket, tokens["sender"], ("agent", "history"),
+                          body=json.dumps(result_ref), session=sender)
+    sender_versions = sender_history.get("versions") or []
+    require(len(sender_versions) == 1 and sender_versions[0].get("body") == digest
+            and sender_versions[0].get("observed_writer") == worker["inbox"],
+            "sender session cannot read exact shareable result")
+    request["delivery_state"] = "handled"
+    request["attempts"] = 1
+    return {"schema": "cairn.panel-synthetic-settlement/1",
+            "synthetic_store_settlement": True, "actor_result": "unassessed",
+            "claim_request_id": claim_body["request_id"],
+            "claim_attempt_id": attempt["attempt_id"], "claim_lease_id": lease_id,
+            "synthetic_turn_id": claim_body["native_turn_id"],
+            "turn_exclusive": False, "attempt_reconciled": False,
+            "completion_request_id": intent["settlement_request_ids"]["completion"],
+            "request_event_id": request["event_id"],
+            "request_delivery_id": request["delivery_id"], "request_state": "handled",
+            "request_attempts": 1, "result_ref": result_ref,
+            "result_body_sha256": hashlib.sha256(digest.encode("utf-8")).hexdigest(),
+            "result_observed_writer": worker["inbox"],
+            "response_publication_request_id": intent["settlement_request_ids"]["response_publication"],
+            "response_event_id": reply["event_id"],
+            "response_delivery_id": reply_deliveries[0]["delivery_id"],
+            "response_causation_id": reply["causation_id"],
+            "response_state": "pending", "response_attempts": 0}
+
+
 def materialize(args):
     root, socket, export, run_dir = disposable_inputs(args)
     case = case_name(args.workflow_id)
@@ -230,8 +358,8 @@ def materialize(args):
     worker_token = Path(args.worker_token).read_bytes()
     require(sender_token != worker_token,
             "sender and worker token identities must differ")
-    binding, setup, defaults, adapter, intervention = frozen_case(export, args.fixture,
-                                                                    args.workflow_id)
+    binding, setup, defaults, adapter, intervention, actor = frozen_case(
+        export, args.fixture, args.workflow_id)
     require(defaults == {"kind": "note", "record_class": "A", "operation": "create",
                          "sensitivity": "shareable", "claim_type": "self",
                          "scope": {"repo": "fixture:cairn-token-efficiency", "task_id": "*", "run_id": "*"}},
@@ -252,6 +380,8 @@ def materialize(args):
     event_ids = [event["id"] for event in setup["events"]]
     dynamic_keys = {"run_id", "register_request_ids", "source_request_ids",
                     "publication_request_ids"}
+    if case == "small_request_result_reply":
+        dynamic_keys |= {"settlement_request_ids", "synthetic_turn_id"}
     if intent_path.exists():
         private_file(intent_path)
         intent = read_json(intent_path)
@@ -259,7 +389,10 @@ def materialize(args):
                 and set(intent) == set(immutable) | dynamic_keys
                 and set(intent["register_request_ids"]) == set(adapter["sessions"])
                 and set(intent["source_request_ids"]) == set(event_ids)
-                and set(intent["publication_request_ids"]) == set(event_ids),
+                and set(intent["publication_request_ids"]) == set(event_ids)
+                and (case != "small_request_result_reply" or
+                     set(intent["settlement_request_ids"]) ==
+                     {"claim", "completion", "response_publication"}),
                 "prior intent differs from frozen setup")
     else:
         run_id = str(uuid.uuid4())
@@ -274,11 +407,20 @@ def materialize(args):
             "source_request_ids": {event_id: str(uuid.uuid4()) for event_id in event_ids},
             "publication_request_ids": publication_ids,
         }
+        if case == "small_request_result_reply":
+            intent["settlement_request_ids"] = {
+                name: str(uuid.uuid4()) for name in
+                ("claim", "completion", "response_publication")}
+            intent["synthetic_turn_id"] = f"panel-synthetic/{run_id}"
         write_new(intent_path, intent)
     for value in (intent["run_id"], *intent["register_request_ids"].values(),
                   *intent["source_request_ids"].values(),
-                  *intent["publication_request_ids"].values()):
+                  *intent["publication_request_ids"].values(),
+                  *intent.get("settlement_request_ids", {}).values()):
         require(str(uuid.UUID(value)) == value, "invalid intent UUID")
+    if case == "small_request_result_reply":
+        require(intent["synthetic_turn_id"] == f'panel-synthetic/{intent["run_id"]}',
+                "synthetic turn label differs from journal")
     for event in setup["events"]:
         if "idempotency_key" in event:
             expected_id = str(uuid.uuid5(uuid.UUID(intent["run_id"]),
@@ -389,9 +531,16 @@ def materialize(args):
                       (published["event_id"],), session=publisher_session)
         deliveries = status.get("deliveries") or []
         require(status.get("event") == published and len(deliveries) == 1
-                and deliveries[0].get("state") == "pending" and deliveries[0].get("attempts") == 0
                 and deliveries[0].get("consumer") == recipient_session["inbox"],
-                "pending native delivery differs from publication")
+                "native delivery differs from publication")
+        if case == "small_request_result_reply":
+            require(deliveries[0].get("state") in ("pending", "leased", "handled")
+                    and deliveries[0].get("attempts") in (0, 1),
+                    "request state cannot be recovered from journal")
+        else:
+            require(deliveries[0].get("state") == "pending"
+                    and deliveries[0].get("attempts") == 0,
+                    "pending native delivery differs from publication")
         available_at = deliveries[0].get("available_at")
         if case == "routine_burst_urgent_request":
             require(deliveries[0]["delivery_id"] not in delivery_ids,
@@ -412,7 +561,8 @@ def materialize(args):
                             "causation_id": causation, "recipient": recipient,
                             "recipient_inbox": recipient_session["inbox"],
                             "delivery_id": deliveries[0]["delivery_id"],
-                            "delivery_state": "pending", "attempts": 0}
+                            "delivery_state": deliveries[0]["state"],
+                            "attempts": deliveries[0]["attempts"]}
         if case == "routine_burst_urgent_request":
             events[event_id]["position"] = published["position"]
             events[event_id]["notice_policy"] = published.get("notice_policy")
@@ -473,6 +623,10 @@ def materialize(args):
                     (deadline.isoformat() if deadline else None)
                 and (deadline is None or instant(readiness_snapshot["observed_at"]) < deadline),
                 "stored readiness snapshot differs from durable burst setup")
+    synthetic_settlement = None
+    if case == "small_request_result_reply":
+        synthetic_settlement = settle_small_request(binary, socket, tokens, repo, actor, setup,
+                                                    intent, sessions, events)
     receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
@@ -486,6 +640,8 @@ def materialize(args):
     if readiness_snapshot is not None:
         receipt["readiness_snapshot"] = readiness_snapshot
         receipt["native_batch_transfer"] = "unrun"
+    if synthetic_settlement is not None:
+        receipt["synthetic_store_settlement"] = synthetic_settlement
     output = run_dir / "materialization.json"
     if output.exists():
         private_file(output)

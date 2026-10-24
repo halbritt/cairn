@@ -142,9 +142,10 @@ partial source, scheduling, or recovery checks.
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
 joins native turns, or grades task outcomes. A separate disposable-only
-controller in `scripts/token_efficiency_panel_controller.py` materializes three
-baseline setups (`single_notice`, `actionable_response`, `duplicate_send`) and
-all four `routine_burst_urgent_request` arm setups through the authenticated
+controller in `scripts/token_efficiency_panel_controller.py` materializes four
+baseline setups (`single_notice`, `actionable_response`, `duplicate_send`,
+`small_request_result_reply`) and all four `routine_burst_urgent_request` arm
+setups through the authenticated
 local API, each in a separate disposable database. It registers synthetic Codex
 sessions for setup; these are
 not selected live harness or deployment evidence. It persists an immutable
@@ -156,6 +157,13 @@ observed event ID; no actor handles the request. For `duplicate_send`, it
 repeats the identical publication with one native request UUID and verifies
 one durable event and delivery; no task effect is exercised. Its private
 receipt states that no provider call, native turn join or task outcome occurred.
+For `small_request_result_reply`, the controller uses a synthetic registered
+session claim, completes the exact request with a Store-owned digest result,
+and publishes one causally linked reply to the registered sender inbox. A
+retry uses the same claim, completion and reply UUIDs; changed result bytes
+under the completion UUID are refused. The synthetic claim is not reconciled
+(`attempt_reconciled: false`), and the stored result is not an actor answer or
+evidence of a live native turn.
 For the burst, the sender publishes three routine notices followed by one
 request. The batch and combined arms apply the sender-owned version 1 routine
 policy with a fixed 30-second availability delay; baseline and envelope leave

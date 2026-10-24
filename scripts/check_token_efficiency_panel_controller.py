@@ -23,7 +23,7 @@ def require(value, message):
 
 def check(binary, workflow_id):
     require(workflow_id in ("baseline.single_notice", "baseline.actionable_response",
-                            "baseline.duplicate_send") or workflow_id in tuple(
+                            "baseline.duplicate_send", "baseline.small_request_result_reply") or workflow_id in tuple(
                                 f"{arm}.routine_burst_urgent_request" for arm in
                                 ("baseline", "envelope", "batch", "combined")),
             "unsupported workflow")
@@ -157,7 +157,9 @@ def check(binary, workflow_id):
             require(json.loads((root / f"panel-run-{label}" / "readiness.json").read_text())
                     == snapshot, "readiness receipt persisted")
         expected_sessions = ({"worker_a": "worker", "worker": "sender"}
-                             if case == "actionable_response" else {"worker": "worker"})
+                             if case == "actionable_response" else
+                             {"worker": "worker", "sender": "sender"}
+                             if case == "small_request_result_reply" else {"worker": "worker"})
         require(set(receipt["sessions"]) == set(expected_sessions), "session roles")
         for label, token_role in expected_sessions.items():
             session = receipt["sessions"][label]
@@ -193,8 +195,10 @@ def check(binary, workflow_id):
             require(event["observed_writer"] == principals[publisher], "source writer")
             require(event["source_body_sha256"] == hashlib.sha256(spec["body"].encode()).hexdigest(),
                     "source body hash")
-            require(event["delivery_state"] == "pending" and event["attempts"] == 0,
-                    "pending delivery")
+            expected_state = "handled" if case == "small_request_result_reply" else "pending"
+            expected_attempts = 1 if case == "small_request_result_reply" else 0
+            require(event["delivery_state"] == expected_state
+                    and event["attempts"] == expected_attempts, "delivery state")
             require(event["recipient_inbox"] == receipt["sessions"][spec["recipient"]]["inbox"],
                     "recipient session")
             cause = (receipt["events"][spec["causation"]]["event_id"]
@@ -213,8 +217,8 @@ def check(binary, workflow_id):
             require(status["event"].get("causation_id", "") == cause, "native causation")
             require(len(status["deliveries"]) == 1
                     and status["deliveries"][0]["delivery_id"] == event["delivery_id"]
-                    and status["deliveries"][0]["state"] == "pending"
-                    and status["deliveries"][0]["attempts"] == 0,
+                    and status["deliveries"][0]["state"] == expected_state
+                    and status["deliveries"][0]["attempts"] == expected_attempts,
                     "exact delivery")
             if burst:
                 require(type(event["position"]) is int and event["position"] > last_position,
@@ -237,11 +241,67 @@ def check(binary, workflow_id):
                 require("task_deadline" not in status["event"], "fixture has no task deadline")
         sender_stats = cli("sender", "event-stats")
         expected_events = len(fixture_case["setup"]["events"])
+        if case == "small_request_result_reply":
+            expected_events += 1
         require(sender_stats["published"] == (4 if burst else 1), sender_stats)
         require(sql("SELECT count(*) FROM cairn.agent_event") == str(expected_events),
                 "unexpected event count")
         require(sql("SELECT count(*) FROM cairn.agent_delivery") == str(expected_events),
                 "unexpected delivery count")
+        if case == "small_request_result_reply":
+            settlement = receipt["synthetic_store_settlement"]
+            request = receipt["events"]["request_hash"]
+            worker = receipt["sessions"]["worker"]
+            sender = receipt["sessions"]["sender"]
+            digest = hashlib.sha256(b"cedar").hexdigest()
+            require(digest == "0c274639936717793d7695ef0373039e397acdabc247d9953d3c9209a95044cd",
+                    "fixture digest")
+            require(settlement["schema"] == "cairn.panel-synthetic-settlement/1"
+                    and settlement["synthetic_store_settlement"] is True
+                    and settlement["actor_result"] == "unassessed"
+                    and settlement["turn_exclusive"] is False
+                    and settlement["attempt_reconciled"] is False,
+                    "synthetic Store boundary")
+            require(settlement["claim_attempt_id"] == settlement["claim_request_id"]
+                    and settlement["synthetic_turn_id"] == f'panel-synthetic/{receipt["run_id"]}'
+                    and settlement["request_delivery_id"] == request["delivery_id"]
+                    and settlement["request_event_id"] == request["event_id"],
+                    "stable synthetic claim")
+            require(settlement["result_body_sha256"] == hashlib.sha256(digest.encode()).hexdigest()
+                    and settlement["result_observed_writer"] == worker["inbox"],
+                    "synthetic result identity")
+            require(settlement["response_causation_id"] == request["event_id"]
+                    and settlement["request_state"] == "handled"
+                    and settlement["response_state"] == "pending", "settlement and reply states")
+            reply_status = cli("worker", "event-status", settlement["response_event_id"],
+                               session=worker)
+            require(reply_status["event"]["ref"] == settlement["result_ref"]
+                    and reply_status["event"]["causation_id"] == request["event_id"]
+                    and reply_status["event"]["from"] == worker["inbox"]
+                    and reply_status["event"]["destination"]["name"] == sender["inbox"]
+                    and len(reply_status["deliveries"]) == 1
+                    and reply_status["deliveries"][0]["delivery_id"] ==
+                    settlement["response_delivery_id"], "durable exact reply")
+            require(sql("SELECT count(*) FROM cairn.memory_record") == "2", "duplicate result source")
+            require(sql("SELECT count(*) FROM cairn.agent_session_attempt") == "1", "duplicate session claim")
+            require(sql("SELECT count(*) FROM cairn.agent_session_poll") == "1", "duplicate claim journal")
+            require(sql("SELECT count(*) FROM cairn.agent_delivery WHERE state='handled'") == "1",
+                    "request completion count")
+            changed_result = subprocess.run(
+                [str(binary), "complete", "--socket", str(home / "api.sock"),
+                 "--token-file", str(home / "worker.token"),
+                 "--agent-id", worker["agent_id"], "--execution-id", worker["execution_id"],
+                 "--request-id", settlement["completion_request_id"],
+                 "--lease", settlement["claim_lease_id"], "--shareable", "--stdin",
+                 "--task", "coordination-result/" + request["delivery_id"],
+                 "--run", "*", request["delivery_id"]],
+                input=digest + "\n", text=True, capture_output=True, env=env, timeout=20)
+            changed_envelope = json.loads(changed_result.stdout)
+            require(changed_result.returncode != 0
+                    and changed_envelope["status"] == "IDEMPOTENCY_CONFLICT",
+                    "changed result bytes reused completion identity")
+            require(sql("SELECT count(*) FROM cairn.memory_record") == "2",
+                    "changed result created a second source")
         if case == "duplicate_send":
             require(len(receipt["transitions"]) == 1, "missing duplicate transition")
             transition = receipt["transitions"][0]

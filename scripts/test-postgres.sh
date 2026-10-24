@@ -43,6 +43,7 @@ go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 for panel_workflow in baseline.single_notice baseline.actionable_response baseline.duplicate_send \
+    baseline.small_request_result_reply \
     baseline.routine_burst_urgent_request envelope.routine_burst_urgent_request \
     batch.routine_burst_urgent_request combined.routine_burst_urgent_request; do
     panel_case="${panel_workflow#*.}"
