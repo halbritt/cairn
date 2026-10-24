@@ -322,6 +322,35 @@ def check(binary, root, repo, api_call):
         assert causal_delivery['event']['event_id'] == causal_request['event_id']
         api_call('bob', 'ack', '--request-id', str(uuid.uuid4()), '--lease', causal_delivery['lease_id'],
                  causal_delivery['delivery_id'])
+        # The real-store response fixture above exercises ignored settlement.
+        # Also prove an actionable response can be read and explicitly handled,
+        # with its causal source identity intact across an idempotent retry.
+        handled_body = 'Confirmed the requested result and retained its source.'
+        handled_response, handled_context, handled_boundary = compact_delivery(
+            'native-compact-response-handled', 'response', handled_body,
+            sender='bob', cause=causal_request['event_id'])
+        assert handled_body in json.dumps(handled_boundary)
+        assert handled_response['causation_id'] == causal_request['event_id']
+        assert handled_context['source'] == handled_response['ref']
+        assert handled_context['kind'] == 'response'
+        handled_read = compact(second, 'native-compact-response-handled', 'read',
+                               handled_context['compact_handle'])
+        assert handled_read['body'] == handled_body
+        assert handled_read['source'] == handled_response['ref']
+        assert api_call('bob', 'event-status', handled_response['event_id'])['deliveries'][0]['state'] == 'leased'
+        acknowledged = compact(second, 'native-compact-response-handled', 'settle',
+                               handled_context['compact_handle'], 'handled')
+        assert acknowledged['status'] == 'handled'
+        assert compact(second, 'native-compact-response-handled', 'settle',
+                       handled_context['compact_handle'], 'handled') == acknowledged
+        handled_delivery = api_call('bob', 'event-status', handled_response['event_id'])['deliveries'][0]
+        assert handled_delivery['state'] == 'handled' and handled_delivery['attempts'] == 1
+        handled_journal = json.loads((state / 'intents' / f"{handled_context['attempt_id']}.json").read_text())
+        assert handled_journal['completion']['status'] == 'committed'
+        assert handled_journal['completion']['kind'] == 'ack'
+        assert handled_journal['completion']['request_id'] == handled_context['request_ids']['completion']
+        hook(second, dict(event, session_id='native-compact-response-handled', hook_event_name='SessionEnd'))
+        print('Compact handled response: exact source/version and causation preserved; explicit handled settlement committed once across identical retry')
         print('Compact native inbox: real notice/response and oversized history, explicit settlements, process/session/expiry refusals')
         from test_idle_wakeup import HOST
         idle_root = root/'idle-host'
