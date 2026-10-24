@@ -2078,16 +2078,19 @@ def cmd_agent(args):
                             for case in cases for arm in arms]
             execution['account_assignment_sha256'] = account_assignment_sha256
         execution["recall"] = recall
-        (out / "plan.json").write_text(json.dumps(dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
-                                                       distractors=args.distractors, paired_plans=paired_plans,
-                                                       account_assignment_sha256=account_assignment_sha256,
-                                                       run_accounts=run_accounts,
-                                                       memory_backends={k: dict(backend=v["store"].backend,
-                                                                                readiness=v["store"].readiness)
-                                                                        for k, v in stores.items()},
-                                                       limits=dict(max_turns=args.max_turns, timeout=args.timeout,
-                                                                   parallel=args.parallel),
-                                                       runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
+        plan_document = dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
+                             distractors=args.distractors, paired_plans=paired_plans,
+                             run_accounts=run_accounts,
+                             memory_backends={k: dict(backend=v["store"].backend,
+                                                      readiness=v["store"].readiness)
+                                              for k, v in stores.items()},
+                             limits=dict(max_turns=args.max_turns, timeout=args.timeout,
+                                         parallel=args.parallel),
+                             runs=[(c["id"], a, s, p) for c, a, s, p in plan])
+        # Keep this plan field explicit when no assignment is selected, while
+        # allowing the report's execution metadata to retain its existing shape.
+        plan_document['account_assignment_sha256'] = account_assignment_sha256
+        (out / "plan.json").write_text(json.dumps(plan_document, indent=2))
         before = {label: value["store"].fingerprint() for label, value in stores.items()} if prospective else None
         if prospective:
             (out / "corpus-before.json").write_text(json.dumps(before, indent=2))

@@ -10,10 +10,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trial_task_eval as te  # noqa: E402
+import trial_weekly_accounts as weekly_accounts  # noqa: E402
 
 # Scripted reference behaviour per case: (shell run in the case cwd, final answer).
 # Calibration proves each pre-registered check separates a correct action from the
@@ -984,6 +987,137 @@ class StoreLifecycleTest(unittest.TestCase):
             self.assertFalse(store.token_file.exists())
             self.assertFalse((store.home / "identities.json").exists())
             store.stop.assert_called_once()
+
+
+class CodexAccountAssignmentPlanTests(unittest.TestCase):
+    def test_cmd_agent_writes_three_account_plan_before_stubbed_attempts(self):
+        cases = te.load_cases(12)
+        case_ids = [case['id'] for case in cases]
+        seeds = [1, 2, 3]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            accounts = []
+            for index, account_id in enumerate(('account-A', 'account-B', 'account-C')):
+                home = root / f'codex-{index}'
+                home.mkdir()
+                auth = home / 'auth.json'
+                auth.write_text(json.dumps(dict(auth_mode='chatgpt', tokens=dict(account_id=account_id))))
+                accounts.append(dict(account_id=account_id, auth_file=str(auth),
+                                     auth_sha256=hashlib.sha256(auth.read_bytes()).hexdigest(),
+                                     config_home=str(home)))
+            assignment = weekly_accounts.balanced(case_ids, seeds, accounts)
+            assignment_path = root / 'assignment.json'
+            assignment_path.write_text(json.dumps(assignment, sort_keys=True))
+            assignment_sha256 = hashlib.sha256(assignment_path.read_bytes()).hexdigest()
+            codex = root / 'codex'
+            codex.write_text('test-only executable pin; never launched\n')
+            codex_sha256 = hashlib.sha256(codex.read_bytes()).hexdigest()
+            cairn = root / 'cairn'
+            cairn.write_text('test-only local store pin; never launched\n')
+            hook = root / 'memory.py'
+            hook.write_text('# test-only hook\n')
+            assigned_runs = set()
+
+            class StubStore:
+                instances = 0
+
+                def __init__(self, store_root, binary, label, **_kwargs):
+                    type(self).instances += 1
+                    self.root = Path(store_root)
+                    self.root.mkdir(parents=True)
+                    self.home = self.root / 'home'
+                    self.home.mkdir()
+                    self.token_file = self.root / 'agent.token'
+                    self.ids = {}
+                    self.binary = binary
+                    self.backend = 'stubbed-local-store'
+                    self.readiness = {'state': 'full_eligible_coverage'}
+                    self.env = {}
+                    self.hook = str(hook.resolve())
+                    self.configuration = {}
+
+                def seed_corpus(self, *_args, **_kwargs):
+                    pass
+
+                def grow(self, *_args, **_kwargs):
+                    pass
+
+                def start(self):
+                    pass
+
+                def wait_for_full_coverage(self, **_kwargs):
+                    pass
+
+                def stop(self):
+                    pass
+
+            def execute(with_assignment):
+                out = root / ('assigned' if with_assignment else 'unassigned')
+                stores_before = StubStore.instances
+                first_submission = {}
+                argv = ['agent', '--legacy-fixtures', '--output', str(out), '--harness', 'codex',
+                        '--model', 'gpt-6-luna', '--codex-weekly-limits', '--codex-binary', str(codex),
+                        '--codex-binary-sha256', codex_sha256, '--codex-auth-file', accounts[0]['auth_file'],
+                        '--codex-auth-sha256', accounts[0]['auth_sha256'], '--arms', '--first-seed', '1',
+                        '--seeds', '3', '--parallel', '1', '--distractors', '0',
+                        '--memory', f'CURRENT:{cairn}:{hook}',
+                        '--memory', f'CAND:{cairn}:{hook}']
+                if with_assignment:
+                    argv += ['--codex-account-assignment', str(assignment_path),
+                             '--codex-account-assignment-sha256', assignment_sha256]
+
+                def provider_guard(command, **kwargs):
+                    command = list(command)
+                    if command != [str(codex.resolve()), '--version']:
+                        raise AssertionError('provider command reached in test')
+                    return Mock(stdout=b'codex test version')
+
+                def run_stub(case, arm, seed, order, selected_args, stores, output):
+                    run_id = f'{case["id"]}.{arm}.s{seed}'
+                    if not first_submission:
+                        path = Path(output) / 'plan.json'
+                        first_submission.update(plan_exists=path.is_file(),
+                                                plan=json.loads(path.read_text()) if path.is_file() else None,
+                                                run_id=run_id, stores=sorted(stores))
+                    assigned_runs.add(run_id)
+                    return dict(run_id=run_id, case=case['id'], arm=arm, seed=seed,
+                                outcome='incomplete', codex_weekly_limits=dict(status='within_codex_weekly_limits'),
+                                seconds=0.01)
+
+                with patch.object(te, 'run', side_effect=provider_guard) as provider_calls, \
+                     patch.object(te, 'run_agent', side_effect=run_stub) as run_calls, \
+                     patch.object(te, 'TrialStore', StubStore), \
+                     patch.object(te, 'load_corpus', return_value=[]), \
+                     patch.object(te, 'cairn_json', return_value={'version': 'stubbed'}), \
+                     redirect_stdout(StringIO()):
+                    result = te.main(argv)
+                self.assertEqual(result, 0)
+                self.assertEqual(provider_calls.call_count, 1)
+                self.assertEqual(StubStore.instances - stores_before, 2)
+                self.assertEqual(run_calls.call_count, 126)
+                self.assertTrue(first_submission['plan_exists'])
+                self.assertEqual(first_submission['stores'], ['CAND', 'CURRENT'])
+                plan = json.loads((out / 'plan.json').read_text())
+                self.assertEqual(len(plan['runs']), 126)
+                self.assertEqual(len(assigned_runs), 126)
+                report = json.loads((out / 'agent.json').read_text())
+                if with_assignment:
+                    self.assertEqual(first_submission['plan']['account_assignment_sha256'], assignment_sha256)
+                    self.assertEqual(plan['account_assignment_sha256'], assignment_sha256)
+                    self.assertEqual(len(plan['run_accounts']), 126)
+                    self.assertEqual({row['account_id'] for row in plan['run_accounts']},
+                                     {'account-A', 'account-B', 'account-C'})
+                    self.assertEqual({row['run_id']: row['account_id'] for row in plan['run_accounts']},
+                                     {row['run_id']: row['account_id'] for row in assignment['assignments']})
+                    self.assertEqual(report['account_assignment_sha256'], assignment_sha256)
+                else:
+                    self.assertIsNone(plan['account_assignment_sha256'])
+                    self.assertIsNone(plan['run_accounts'])
+                    self.assertNotIn('account_assignment_sha256', report)
+                assigned_runs.clear()
+
+            execute(True)
+            execute(False)
 
 
 if __name__ == "__main__":
