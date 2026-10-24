@@ -12,6 +12,7 @@ Two kinds of test are kept apart:
   They are not run, and not claimed, in an ordinary agent session.
 """
 import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -589,6 +590,21 @@ class NamespaceInitTests(Base):
                               scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3')))
         self.assertEqual(result['runtime_identity']['bwrap']['path'], os.path.realpath(shutil.which('bwrap')))
         self.assertEqual(result['final_artifact_custody'], 'not_established')
+
+    def test_high_numbered_pidfd_still_observes_init_exit(self):
+        leaf = self.leaf_with_device()
+        self.addCleanup(leaf.close)
+        child = subprocess.Popen(['/usr/bin/sleep', '30'])
+        self.addCleanup(lambda: child.poll() is None and child.kill())
+        pidfd = os.pidfd_open(child.pid)
+        try:
+            leaf.init_pidfd = fcntl.fcntl(pidfd, fcntl.F_DUPFD, 1024)
+        finally:
+            os.close(pidfd)
+        child.terminate()
+        child.wait(timeout=5)
+        self.assertGreaterEqual(leaf.init_pidfd, 1024)
+        self.assertEqual(leaf.init_exit(time.monotonic() + 1), 'exited')
 
     ESCAPES = {
         'double_fork': "if os.fork() == 0:\n    if os.fork() == 0:\n        write()\n    os._exit(0)\n",

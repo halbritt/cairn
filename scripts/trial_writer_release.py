@@ -269,10 +269,17 @@ class WriterLeaf:
             return 'unbound'
         left = max(0.0, deadline - time.monotonic())
         try:
-            ready = select.select([self.init_pidfd], [], [], left)[0]
-        except OSError:
+            # poll(2) accepts pidfds above FD_SETSIZE; select(2) raises
+            # ValueError for those descriptors and would turn a valid exit
+            # observation into exit_unknown on long-lived agent processes.
+            poller = select.poll()
+            poller.register(self.init_pidfd, select.POLLIN)
+            ready = poller.poll(int(left * 1000))
+        except (OSError, ValueError, AttributeError):
             return 'exit_unknown'
-        return 'exited' if ready else 'not_exited'
+        if ready and time.monotonic() <= deadline:
+            return 'exited'
+        return 'not_exited'
 
     def launch_evidence(self):
         """The probe's report, read once after capture; anything else is absent evidence."""
