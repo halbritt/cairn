@@ -79,6 +79,36 @@ class GradeGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "evidence hash mismatch"):
             grades.report(self.plan, ledger, self.root)
 
+    def test_evidence_symlink_ancestor_cannot_escape_root(self):
+        ledger = self.ledger()
+        evidence_root = self.root / "evidence"
+        evidence_root.mkdir(mode=0o700)
+        external = self.root / "external"
+        external.mkdir(mode=0o700)
+        evidence = external / "task-output.txt"
+        evidence.write_text("outside evidence\n")
+        evidence.chmod(0o600)
+        (evidence_root / "linked").symlink_to(external, target_is_directory=True)
+        ledger["grades"][0].update(verdict="failed", artifacts=[{
+            "path": str(evidence_root / "linked" / evidence.name),
+            "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest()}])
+        with self.assertRaisesRegex(ValueError, "artifact must be under the evidence root"):
+            grades.report(self.plan, ledger, evidence_root)
+
+    def test_duplicate_json_keys_refuse(self):
+        path = self.root / "ambiguous.json"
+        path.write_text('{"schema":"first","schema":"second"}\n')
+        path.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "not valid JSON"):
+            grades.read_json(path, "grade ledger")
+
+    def test_non_json_nan_refuses(self):
+        path = self.root / "nan.json"
+        path.write_text('{"value":NaN}\n')
+        path.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "not valid JSON"):
+            grades.read_json(path, "grade ledger")
+
     def test_controller_acceptance_hash_must_match(self):
         controller = copy.deepcopy(self.controller)
         controller["prospective_runs"][0]["acceptance_check_sha256"] = "0" * 64

@@ -49,7 +49,8 @@ def read_private(path, label):
 def read_json(path, label):
     raw = read_private(path, label)
     try:
-        return json.loads(raw), raw
+        return json.loads(raw, object_pairs_hook=gate.unique_pairs,
+                          parse_constant=gate.invalid_constant), raw
     except (ValueError, UnicodeDecodeError):
         raise ValueError(f"{label} is not valid JSON") from None
 
@@ -134,9 +135,12 @@ def report(plan, ledger, evidence_root=None):
             require(path.is_absolute(), f"{workflow_id}: artifact path must be absolute")
             if evidence_root is not None:
                 try:
-                    path.relative_to(Path(evidence_root).resolve(strict=True))
+                    resolved_root = Path(evidence_root).resolve(strict=True)
+                    resolved_path = path.resolve(strict=True)
+                    resolved_path.relative_to(resolved_root)
                 except (ValueError, OSError):
                     raise ValueError(f"{workflow_id}: artifact must be under the evidence root") from None
+                path = resolved_path
             raw = read_private(path, f"{workflow_id} evidence")
             require(digest(raw) == artifact["sha256"], f"{workflow_id}: evidence hash mismatch")
         counts[verdict] += 1
