@@ -103,7 +103,8 @@ class WorkflowReportTests(unittest.TestCase):
         source = self.root / "links.json"
         source.write_text(json.dumps(dict(schema="cairn.workflow-links/1", events=[dict(
             event_id=event, kind="request", publication_state="committed",
-            sender_turn_id="sender-turn", sender_binding="binding", workload="fixture")],
+            sender_turn_id="sender-turn", sender_binding="binding", workload="fixture",
+            owner_input_joined=True, wake_state="started", retry_count=1)],
             assessments=[dict(event_id=event, outcome="unassessed")])))
         events, assessments = self.report.read_links(source)
         sender = self.audit.blank_turn()
@@ -116,6 +117,10 @@ class WorkflowReportTests(unittest.TestCase):
         self.assertEqual(workflow["sender_provider"]["usage"]["tokens"]["input"]["total"], 20)
         self.assertEqual(workflow["deliveries"], [])
         self.assertEqual(workflow["assessment"], "unassessed")
+        self.assertTrue(workflow["owner_input_joined"])
+        self.assertEqual(workflow["wake_state"], "started")
+        self.assertEqual(workflow["retry_count"], 1)
+        self.assertEqual(result["coverage"]["owner_input_known"], 1)
         self.assertNotIn(event, json.dumps(result))
 
     def test_repeated_response_id_across_files_cannot_be_summed(self):

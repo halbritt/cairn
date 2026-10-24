@@ -54,6 +54,15 @@ def read_links(path):
         if kind is not None and kind not in ("notice", "response", "request"):
             raise ValueError("invalid event kind")
         cause = item.get("causation_id")
+        owner_input_joined = item.get("owner_input_joined")
+        if owner_input_joined is not None and type(owner_input_joined) is not bool:
+            raise ValueError("owner_input_joined must be boolean or null")
+        wake_state = item.get("wake_state")
+        if wake_state not in (None, "started", "refused", "failed", "not_started"):
+            raise ValueError("invalid wake state")
+        retry_count = item.get("retry_count")
+        if retry_count is not None and (type(retry_count) is not int or retry_count < 0):
+            raise ValueError("retry_count must be nonnegative or null")
         workload = item.get("workload")
         if workload is not None and (not isinstance(workload, str) or
                                      not re.fullmatch(r"[a-zA-Z0-9_.-]{1,64}", workload)):
@@ -63,7 +72,9 @@ def read_links(path):
                            workload=workload, kind=kind,
                            sender_turn_id=item.get("sender_turn_id"),
                            sender_binding=safe_label(item.get("sender_binding")),
-                           refusal_code=safe_label(item.get("refusal_code")))
+                           refusal_code=safe_label(item.get("refusal_code")),
+                           owner_input_joined=owner_input_joined,
+                           wake_state=wake_state, retry_count=retry_count)
     for item in source.get("assessments", []):
         key = event_uuid(item.get("event_id"))
         if key in assessments:
@@ -260,6 +271,9 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
                               publication_evidence="selected_event_metadata" if metadata.get("publication_state") else "unavailable",
                               sender_provider=sender,
                               refusal_code=metadata.get("refusal_code"),
+                              owner_input_joined=metadata.get("owner_input_joined"),
+                              wake_state=metadata.get("wake_state"),
+                              retry_count=metadata.get("retry_count"),
                               deliveries=deliveries,
                               response_events=[opaque(v) for v in sorted(response_by_cause[event_id])],
                               assessment=assessments.get(event_id, "unknown"),
@@ -275,6 +289,9 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
                     duplicate_provider_response_ids=sum(n > 1 for n in response_ids.values()),
                     assessed_events=sum(k in covered_events for k in assessments),
                     publication_metadata_events=sum(v.get("publication_state") is not None for v in events.values()),
+                    owner_input_known=sum(v.get("owner_input_joined") is not None for v in events.values()),
+                    wake_state_known=sum(v.get("wake_state") is not None for v in events.values()),
+                    retry_count_known=sum(v.get("retry_count") is not None for v in events.values()),
                     shared_turns=sum(v > 1 for v in turn_claims.values()))
     return dict(schema="cairn.workflow-model-report/1", coverage=dict(coverage),
                 context_scope="all retained inbox contexts under the selected state root",

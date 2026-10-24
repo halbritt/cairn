@@ -26,8 +26,10 @@ uv run --with tiktoken==0.12.0 python scripts/workflow_model_report.py \
 
 The optional `--event-metadata` file supplies selected **metadata only** from an
 authorized source. It can add sender publication state, an exact sender native
-turn, response causation, workload label, bounded refusal code, and an explicit
-task assessment. It does not authorize access to another principal's events.
+turn, response causation, workload label, bounded refusal code, joined owner
+input, wake state, retry count, and an explicit task assessment. These optional
+classifications remain unknown when no selected evidence supplies them. This
+file does not authorize access to another principal's events.
 Use `cairn.workflow-links/1` with `events` and `assessments` arrays:
 
 ```json
@@ -40,7 +42,10 @@ Use `cairn.workflow-links/1` with `events` and `assessments` arrays:
       "publication_state": "committed",
       "sender_turn_id": "native-turn-id",
       "sender_binding": "codex-three",
-      "workload": "small_request"
+      "workload": "small_request",
+      "owner_input_joined": false,
+      "wake_state": "started",
+      "retry_count": 0
     },
     {
       "event_id": "22222222-2222-4222-8222-222222222222",
