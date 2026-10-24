@@ -227,11 +227,11 @@ def git_wt_create(
     return dest.resolve()
 
 
-def _active_agent_workspaces() -> tuple[set[str], set[str]]:
+def _active_agent_workspaces() -> tuple[set[str], set[str]] | None:
     token = Path.home() / ".local" / "share" / "cairn" / "hosted-agent.token"
     cairn_bin = shutil.which("cairn")
     if not cairn_bin or not token.is_file():
-        return set(), set()
+        return None
     try:
         res = subprocess.run(
             [cairn_bin, "agent", "--token-file", str(token), "agent-directory"],
@@ -241,21 +241,36 @@ def _active_agent_workspaces() -> tuple[set[str], set[str]]:
             timeout=5,
             check=False,
         )
-        data = json.loads(res.stdout).get("data", {})
+        if res.returncode != 0:
+            return None
+        envelope = json.loads(res.stdout)
+        if not isinstance(envelope, dict) or envelope.get("ok") is not True:
+            return None
+        data = envelope.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("agents"), list):
+            return None
         active = set()
         busy = set()
-        for entry in data.get("agents") or []:
-            if entry.get("online") and not entry.get("stopped"):
+        for entry in data["agents"]:
+            if not isinstance(entry, dict) or not isinstance(entry.get("online"), bool):
+                return None
+            if not isinstance(entry.get("stopped", False), bool):
+                return None
+            if entry["online"] and not entry.get("stopped", False):
                 metadata = entry.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    return None
                 ws = metadata.get("workspace")
                 if isinstance(ws, str) and ws:
+                    if metadata.get("state") not in {"busy", "idle"}:
+                        return None
                     resolved = str(Path(ws).resolve())
                     active.add(resolved)
                     if metadata.get("state") == "busy":
                         busy.add(resolved)
         return active, busy
     except Exception:
-        return set(), set()
+        return None
 
 
 def _active_process_cwds() -> set[Path] | None:
@@ -296,8 +311,11 @@ def git_wt_gc(
     busy_workspaces: set[str] | None = None,
 ) -> dict[str, object]:
     if active_workspaces is None:
-        active, discovered_busy = _active_agent_workspaces()
+        discovery = _active_agent_workspaces()
+        discovery_unavailable = discovery is None
+        active, discovered_busy = discovery if discovery is not None else (set(), set())
     else:
+        discovery_unavailable = False
         active, discovered_busy = active_workspaces, set()
     busy = busy_workspaces if busy_workspaces is not None else discovered_busy
     process_cwds = _active_process_cwds()
@@ -314,7 +332,8 @@ def git_wt_gc(
             Path(workspace) == primary or primary in Path(workspace).parents
             for workspace in busy
         )
-        _run_git(primary, "worktree", "prune", check=False)
+        if not discovery_unavailable:
+            _run_git(primary, "worktree", "prune", check=False)
         trunk = detect_trunk_branch(primary)
         wt_out = _run_git(primary, "worktree", "list", "--porcelain", check=False).stdout
         for block in wt_out.strip().split("\n\n"):
@@ -335,6 +354,9 @@ def git_wt_gc(
                 if status_lines or not is_merged:
                     dirty_orphans.append(str(wt_path))
                 continue
+            if discovery_unavailable:
+                protected_worktrees.append(str(wt_path))
+                continue
             if primary_busy:
                 protected_worktrees.append(str(wt_path))
                 continue
@@ -353,6 +375,8 @@ def git_wt_gc(
                 shutil.rmtree(wt_path, ignore_errors=True)
             removed_worktrees.append(str(wt_path))
 
+        if discovery_unavailable:
+            continue
         _run_git(primary, "worktree", "prune", check=False)
         merged_refs = _run_git(primary, "for-each-ref", "--merged", trunk, "--format=%(refname:short)", "refs/heads/", check=False).stdout.splitlines()
         checked_out = {
@@ -370,6 +394,7 @@ def git_wt_gc(
         "removed_branches": removed_branches,
         "dirty_orphans": dirty_orphans,
         "protected_worktrees": protected_worktrees,
+        "discovery_unavailable": discovery_unavailable,
     }
 
 

@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from git_trunk_tools import (
     git_land,
@@ -163,6 +164,28 @@ class GitTrunkToolsTests(unittest.TestCase):
         )
         self.assertIn(str(idle_wt), idle_result["removed_worktrees"])
         self.assertFalse(idle_wt.exists())
+
+    def test_gc_fails_closed_when_active_session_discovery_is_unavailable(self) -> None:
+        wt = git_wt_create(self.repo, "discovery-outage-wt", base_dir=self.wt_base)
+        old = time.time() - 24 * 60 * 60
+        os.utime(wt, (old, old))
+        _git(self.repo, "branch", "stale-merged")
+
+        with patch("git_trunk_tools.shutil.which", return_value=None):
+            unavailable_result = git_wt_gc([self.repo])
+
+        self.assertTrue(unavailable_result["discovery_unavailable"])
+        self.assertEqual(unavailable_result["removed_worktrees"], [])
+        self.assertEqual(unavailable_result["removed_branches"], [])
+        self.assertIn(str(wt), unavailable_result["protected_worktrees"])
+        self.assertTrue(wt.is_dir())
+        self.assertEqual(_git(self.repo, "show-ref", "--verify", "--quiet", "refs/heads/stale-merged"), "")
+
+        empty_result = git_wt_gc([self.repo], active_workspaces=set(), busy_workspaces=set())
+        self.assertFalse(empty_result["discovery_unavailable"])
+        self.assertIn(str(wt), empty_result["removed_worktrees"])
+        self.assertIn("repo:stale-merged", empty_result["removed_branches"])
+        self.assertFalse(wt.exists())
 
     def test_stop_hygiene_hook_blocks_once_then_circuit_breaks(self) -> None:
         self.assertEqual(
