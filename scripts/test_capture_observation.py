@@ -11,6 +11,17 @@ SOURCE = Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py
 spec = importlib.util.spec_from_file_location("capture_observation_hook", SOURCE)
 hook = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hook)
+coordination_spec = importlib.util.spec_from_file_location(
+    "capture_shadow_coordination", SOURCE.with_name("coordination.py"))
+coordination = importlib.util.module_from_spec(coordination_spec)
+coordination_spec.loader.exec_module(coordination)
+
+
+def wake_message():
+    return coordination.wake_message(dict(
+        session=dict(agent_id="11111111-1111-4111-8111-111111111111",
+                     execution_id="22222222-2222-4222-8222-222222222222"),
+        delivery_id="33333333-3333-4333-8333-333333333333"))
 
 
 class CaptureObservationTests(unittest.TestCase):
@@ -25,6 +36,7 @@ class CaptureObservationTests(unittest.TestCase):
         self.config = dict(cairn="cairn", claude="claude", socket="socket", token_file="token", repo="shared",
                            state_dir=str(self.root / "state"), capture_observations=True)
         self.reports = []
+        self.model_calls = 0
         self.model_result = dict(structured_output=dict(memories=[], workstream=None, checkpoint=None),
                                  modelUsage={"claude-sonnet": {}},
                                  usage=dict(input_tokens=135, output_tokens=20, cache_read_input_tokens=90),
@@ -32,6 +44,7 @@ class CaptureObservationTests(unittest.TestCase):
 
     def transport(self, command, *, body, observation=None, **kwargs):
         if command[0] == "claude":
+            self.model_calls += 1
             if observation is not None:
                 observation.update(elapsed_ms=12, outcome="completed")
             if isinstance(self.model_result, Exception):
@@ -64,6 +77,35 @@ class CaptureObservationTests(unittest.TestCase):
         self.assertNotIn("input_tokens", skip)
         self.assertNotIn("selector_outcome", skip)
         self.assertNotIn("messages", json.dumps(self.reports))
+
+    def test_exact_transport_candidate_is_shadow_only_and_correction_still_saves(self):
+        self.invoke()
+        self.assertEqual(self.model_calls, 1)
+        wake = dict(role="user", text=wake_message())
+        self.assertTrue(hook.taskless_notification(wake["text"]))
+        self.invoke(dict(self.event, messages=self.event["messages"] + [wake]))
+        self.assertEqual(self.model_calls, 2, "shadow candidate suppressed the selector")
+        self.assertEqual(self.reports[-1]["method"], "cairn-lifecycle/capture-meter/2")
+        self.assertEqual(self.reports[-1]["admission_candidate"], "transport_only")
+        correction = dict(role="user", text="Correction: keep the unfinished deployment handoff")
+        self.model_result = dict(structured_output=dict(memories=[], workstream="Deployment",
+                                                        checkpoint="Unfinished deployment; keep the correction"))
+        with patch.object(hook, "save_note", return_value="record"):
+            self.invoke(dict(self.event, messages=self.event["messages"] + [wake, correction]))
+        self.assertEqual(self.model_calls, 3)
+        self.assertEqual(self.reports[-1]["outcome"], "saved")
+        self.assertNotIn("admission_candidate", self.reports[-1])
+
+    def test_unconfirmed_snapshot_cannot_be_a_shadow_candidate(self):
+        self.invoke()
+        state = self.root / "state" / (self.event["session_id"] + ".json")
+        previous = json.loads(state.read_text())
+        previous["captured_digest"] = "0" * 64
+        state.write_text(json.dumps(previous))
+        wake = dict(role="user", text=wake_message())
+        self.invoke(dict(self.event, messages=self.event["messages"] + [wake]))
+        self.assertEqual(self.model_calls, 2)
+        self.assertNotIn("admission_candidate", self.reports[-1])
 
     def test_timeout_and_provider_error_are_not_saved(self):
         for problem, expected in ((hook.HookError("timed out", code="TIMEOUT"), "timeout"),

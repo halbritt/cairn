@@ -51,6 +51,17 @@ export. Disable the opt-in to roll back metering without changing capture.
 Installers retain an existing per-binding opt-in during reinstall; no binding is
 enabled by default.
 
+The same capture observation can carry `admission_candidate: "transport_only"`
+as a shadow measurement. It is set only when the bounded dialogue begins with
+a previously confirmed snapshot and every new message is a user message equal
+to Cairn's complete automatic wake text. The selector and selected writes still
+run normally. A null candidate does not prove a turn had substantive work; for
+example, a clipped dialogue window or a joined owner correction cannot meet
+this narrow predicate. No capture gate is enabled by this measurement.
+Text equality does not authenticate the message producer.
+The shadow field first appears with `cairn-lifecycle/capture-meter/2`;
+older method `/1` observations cannot be counted as negative candidates.
+
 A handled failure replaces an earlier success with `outcome: failed`, zero
 delivered bytes/records and a fixed `error_type` category. Two optional fields
 may follow from the original failure, recorded before any required-context

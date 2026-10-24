@@ -23,6 +23,12 @@ and MCP processes.
   setting is disabled by default and reporting failure cannot change note
   writes or capture markers. Installed bindings need the updated API and hook
   before the setting is enabled.
+- A shadow capture-admission field marks only a confirmed snapshot followed by
+  text equal to complete Cairn automatic wake messages (CAIRN-222). It records
+  a candidate in the opt-in capture history while still running the selector
+  and writes.
+  No new skip policy is enabled; useful-work and total-cost acceptance remains
+  pending metered correction and handoff outcomes.
 
 
 ## 2026-10-22

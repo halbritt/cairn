@@ -1595,6 +1595,12 @@
       },
       "core.CaptureObservation": {
         "properties": {
+          "admission_candidate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -1697,6 +1703,7 @@
           }
         },
         "required": [
+          "admission_candidate",
           "cache_creation_input_tokens",
           "cache_read_input_tokens",
           "cost_usd",
@@ -1721,6 +1728,9 @@
       },
       "core.CaptureObservationRequest": {
         "properties": {
+          "admission_candidate": {
+            "type": "string"
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -1824,6 +1834,12 @@
       "core.CaptureObservationRequest.accepted": {
         "additionalProperties": false,
         "properties": {
+          "admission_candidate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "cache_creation_input_tokens": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -14486,6 +14502,12 @@
                   {
                     "additionalProperties": false,
                     "properties": {
+                      "admission_candidate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "cache_creation_input_tokens": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,

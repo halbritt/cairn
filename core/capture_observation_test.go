@@ -16,9 +16,9 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	input := int64(1500)
 	base := CaptureObservationRequest{
 		RequestID: uuid.NewString(), Repo: "capture-observation-test", Harness: "claude",
-		HookEvent: "PreCompact", Method: "cairn-lifecycle/capture-meter/1",
+		HookEvent: "PreCompact", Method: "cairn-lifecycle/capture-meter/2",
 		SessionSHA256: strings.Repeat("a", 64), SnapshotSHA256: strings.Repeat("b", 64),
-		Outcome: "nothing_selected", SelectorOutcome: "completed", DurationMS: &zero,
+		Outcome: "nothing_selected", AdmissionCandidate: "transport_only", SelectorOutcome: "completed", DurationMS: &zero,
 		InputTokens: &input,
 	}
 	first, err := s.RecordCaptureObservation(ctx, base)
@@ -38,6 +38,7 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	skip.RequestID = uuid.NewString()
 	skip.SnapshotSHA256 = ""
 	skip.Outcome = "unchanged"
+	skip.AdmissionCandidate = ""
 	skip.SelectorOutcome = ""
 	skip.DurationMS = nil
 	skip.InputTokens = nil
@@ -48,14 +49,14 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Rows) != 1 || !report.More || report.NextOffset != 1 || report.Rows[0].InputTokens == nil || *report.Rows[0].InputTokens != input || report.Rows[0].OutputTokens != nil {
+	if len(report.Rows) != 1 || !report.More || report.NextOffset != 1 || report.Rows[0].InputTokens == nil || *report.Rows[0].InputTokens != input || report.Rows[0].OutputTokens != nil || report.Rows[0].AdmissionCandidate == nil || *report.Rows[0].AdmissionCandidate != "transport_only" {
 		t.Fatalf("first page: %+v", report)
 	}
 	last, err := s.CaptureObservations(ctx, CaptureObservationsRequest{Repo: base.Repo, SessionSHA256: base.SessionSHA256, Limit: 1, Offset: report.NextOffset})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(last.Rows) != 1 || last.More || last.Rows[0].Outcome != "unchanged" || last.Rows[0].InputTokens != nil || last.Rows[0].DurationMS != nil {
+	if len(last.Rows) != 1 || last.More || last.Rows[0].Outcome != "unchanged" || last.Rows[0].InputTokens != nil || last.Rows[0].DurationMS != nil || last.Rows[0].AdmissionCandidate != nil {
 		t.Fatalf("second page: %+v", last)
 	}
 	encoded, err := json.Marshal(last)
@@ -73,8 +74,9 @@ func TestCaptureObservationRejectsInvalidAndCrossRepoClaims(t *testing.T) {
 	req := CaptureObservationRequest{RequestID: uuid.NewString(), Repo: "capture-observation-test", Harness: "codex",
 		HookEvent: "Stop", Method: "capture-meter/1", SessionSHA256: strings.Repeat("a", 64), Outcome: "saved"}
 	for name, modify := range map[string]func(*CaptureObservationRequest){
-		"method": func(r *CaptureObservationRequest) { r.Method = "raw private prompt" },
-		"hash":   func(r *CaptureObservationRequest) { r.SessionSHA256 = "session-secret" },
+		"candidate": func(r *CaptureObservationRequest) { r.AdmissionCandidate = "routine" },
+		"method":    func(r *CaptureObservationRequest) { r.Method = "raw private prompt" },
+		"hash":      func(r *CaptureObservationRequest) { r.SessionSHA256 = "session-secret" },
 		"model": func(r *CaptureObservationRequest) {
 			r.SelectorOutcome = "completed"
 			r.ReportedModel = "model with space"

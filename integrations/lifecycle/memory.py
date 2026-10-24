@@ -46,7 +46,7 @@ SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 # Per-prompt recall observations: reported to the API for use-report, never to the model.
 RECALL_METER_METHOD = "cairn-lifecycle/recall-meter/1"
-CAPTURE_METER_METHOD = "cairn-lifecycle/capture-meter/1"
+CAPTURE_METER_METHOD = "cairn-lifecycle/capture-meter/2"
 RECALL_HARNESSES = ("claude", "codex", "opencode", "hermes")
 RECALL_HOOK_SECONDS = 13  # the installed host timeout for SessionStart/UserPromptSubmit
 RECALL_REPORT_SECONDS = 1.0  # most this hook spends reporting its own observation
@@ -786,6 +786,8 @@ def report_capture(memory, event, elapsed):
                     outcome=observed.get("outcome", "error"), duration_ms=whole_ms(elapsed))
         if observed.get("snapshot_sha256"):
             body["snapshot_sha256"] = observed["snapshot_sha256"]
+        if observed.get("admission_candidate") == "transport_only":
+            body["admission_candidate"] = "transport_only"
         if observed.get("selector_outcome"):
             body["selector_outcome"] = observed["selector_outcome"]
             for source, target in (("requested_model", "requested_model"),
@@ -3060,7 +3062,13 @@ def capture(memory, event, state=None):
     previous_count = state.get("captured_messages", 0)
     confirmed_prefix = (0 < previous_count <= len(messages)
                         and fingerprint(messages[:previous_count]) == state.get("captured_digest"))
-    if courtesy_only(messages[previous_count:] if confirmed_prefix else messages):
+    new_messages = messages[previous_count:] if confirmed_prefix else messages
+    if (confirmed_prefix and new_messages
+            and all(message["role"] == "user" and taskless_notification(message["text"])
+                    for message in new_messages)):
+        # Shadow only: the selector still sees the complete bounded dialogue.
+        memory.capture_observation["admission_candidate"] = "transport_only"
+    if courtesy_only(new_messages):
         state.update(captured_digest=digest, captured_messages=len(messages))
         record_capture_status(state, "courtesy")
         return {}

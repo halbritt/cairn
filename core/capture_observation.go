@@ -22,6 +22,7 @@ type CaptureObservationRequest struct {
 	SessionSHA256            string   `json:"session_sha256"`
 	SnapshotSHA256           string   `json:"snapshot_sha256,omitempty"`
 	Outcome                  string   `json:"outcome"`
+	AdmissionCandidate       string   `json:"admission_candidate,omitempty"`
 	SelectorOutcome          string   `json:"selector_outcome,omitempty"`
 	RequestedModel           string   `json:"requested_model,omitempty"`
 	ReportedModel            string   `json:"reported_model,omitempty"`
@@ -56,6 +57,9 @@ func (req CaptureObservationRequest) validate() error {
 	switch req.Outcome {
 	case "empty", "unchanged", "courtesy", "too_little_dialogue", "saved", "nothing_selected", "timeout", "error", "write_error", "state_commit_error":
 	default:
+		return bad()
+	}
+	if req.AdmissionCandidate != "" && req.AdmissionCandidate != "transport_only" {
 		return bad()
 	}
 	switch req.SelectorOutcome {
@@ -94,9 +98,9 @@ func (s *Store) RecordCaptureObservation(ctx context.Context, req CaptureObserva
 	}
 	return mutate(ctx, s, "capture-observation", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		id := uuid.NewString()
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.capture_observation(observation_id,repo,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd)
-VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,$16,$17,$18)`,
-			id, req.Repo, req.Harness, req.HookEvent, req.Method, req.SessionSHA256, req.SnapshotSHA256, req.Outcome, req.SelectorOutcome, req.RequestedModel, req.ReportedModel, req.DurationMS, req.SelectorDurationMS, req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens, req.CostUSD)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.capture_observation(observation_id,repo,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd)
+VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,$15,$16,$17,$18,$19)`,
+			id, req.Repo, req.Harness, req.HookEvent, req.Method, req.SessionSHA256, req.SnapshotSHA256, req.Outcome, req.AdmissionCandidate, req.SelectorOutcome, req.RequestedModel, req.ReportedModel, req.DurationMS, req.SelectorDurationMS, req.InputTokens, req.OutputTokens, req.CacheCreationInputTokens, req.CacheReadInputTokens, req.CostUSD)
 		return Observation{id}, err
 	})
 }
@@ -112,6 +116,7 @@ type CaptureObservation struct {
 	SessionSHA256            string    `json:"session_sha256"`
 	SnapshotSHA256           *string   `json:"snapshot_sha256"`
 	Outcome                  string    `json:"outcome"`
+	AdmissionCandidate       *string   `json:"admission_candidate"`
 	SelectorOutcome          *string   `json:"selector_outcome"`
 	RequestedModel           *string   `json:"requested_model"`
 	ReportedModel            *string   `json:"reported_model"`
@@ -145,7 +150,7 @@ func (s *Store) CaptureObservations(ctx context.Context, req CaptureObservations
 	if err := s.checkRepo(req.Repo); err != nil {
 		return CaptureObservations{}, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT observation_id::text,observed_at,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd
+	rows, err := s.pool.Query(ctx, `SELECT observation_id::text,observed_at,harness,hook_event,method,session_sha256,snapshot_sha256,outcome,admission_candidate,selector_outcome,requested_model,reported_model,duration_ms,selector_duration_ms,input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens,cost_usd
 FROM cairn.capture_observation WHERE repo=$1 AND ($2='' OR session_sha256=$2) ORDER BY sequence LIMIT $3 OFFSET $4`, req.Repo, req.SessionSHA256, req.Limit+1, req.Offset)
 	if err != nil {
 		return CaptureObservations{}, err
@@ -154,7 +159,7 @@ FROM cairn.capture_observation WHERE repo=$1 AND ($2='' OR session_sha256=$2) OR
 	result := CaptureObservations{Rows: []CaptureObservation{}, Interpretation: "Hook testimony only. Missing reports and null metrics are unknown; observed outcomes do not establish task acceptance or provider billing."}
 	for rows.Next() {
 		var row CaptureObservation
-		if err := rows.Scan(&row.ObservationID, &row.ObservedAt, &row.Harness, &row.HookEvent, &row.Method, &row.SessionSHA256, &row.SnapshotSHA256, &row.Outcome, &row.SelectorOutcome, &row.RequestedModel, &row.ReportedModel, &row.DurationMS, &row.SelectorDurationMS, &row.InputTokens, &row.OutputTokens, &row.CacheCreationInputTokens, &row.CacheReadInputTokens, &row.CostUSD); err != nil {
+		if err := rows.Scan(&row.ObservationID, &row.ObservedAt, &row.Harness, &row.HookEvent, &row.Method, &row.SessionSHA256, &row.SnapshotSHA256, &row.Outcome, &row.AdmissionCandidate, &row.SelectorOutcome, &row.RequestedModel, &row.ReportedModel, &row.DurationMS, &row.SelectorDurationMS, &row.InputTokens, &row.OutputTokens, &row.CacheCreationInputTokens, &row.CacheReadInputTokens, &row.CostUSD); err != nil {
 			return CaptureObservations{}, err
 		}
 		result.Rows = append(result.Rows, row)
