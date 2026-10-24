@@ -1,0 +1,1429 @@
+{
+  "schema": "cairn.token-audit/1",
+  "since": "2026-10-21T00:00:00Z",
+  "until": "2026-10-24T00:00:00Z",
+  "per_home": 8,
+  "proxy_tokenizer": "tiktoken 0.12.0 o200k_base; not verified for deployed models",
+  "summary": {
+    "claude:active_notice": {
+      "turns": 3,
+      "native_completed": 3,
+      "models": [
+        "claude-fable-5-1"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 3,
+        "sum": 5517263,
+        "min": 307876,
+        "p50": 2488512,
+        "p95": 2720875,
+        "max": 2720875
+      },
+      "cached": {
+        "n": 3,
+        "sum": 5366529,
+        "min": 304461,
+        "p50": 2383861,
+        "p95": 2678207,
+        "max": 2678207
+      },
+      "write": {
+        "n": 3,
+        "sum": 149724,
+        "min": 3381,
+        "p50": 42398,
+        "p95": 103945,
+        "max": 103945
+      },
+      "output": {
+        "n": 3,
+        "sum": 33718,
+        "min": 1238,
+        "p50": 15990,
+        "p95": 16490,
+        "max": 16490
+      },
+      "reasoning": {
+        "n": 3,
+        "sum": 6373,
+        "min": 80,
+        "p50": 1521,
+        "p95": 4772,
+        "max": 4772
+      },
+      "tools": {
+        "n": 3,
+        "sum": 37,
+        "min": 1,
+        "p50": 14,
+        "p95": 22,
+        "max": 22
+      },
+      "cairn_tools": {
+        "n": 3,
+        "sum": 22,
+        "min": 1,
+        "p50": 4,
+        "p95": 17,
+        "max": 17
+      },
+      "memory_tools": {
+        "n": 3,
+        "sum": 11,
+        "min": 1,
+        "p50": 3,
+        "p95": 7,
+        "max": 7
+      },
+      "model_responses": {
+        "n": 3,
+        "sum": 40,
+        "min": 2,
+        "p50": 15,
+        "p95": 23,
+        "max": 23
+      },
+      "duration_seconds": {
+        "n": 3,
+        "sum": 616.3649997711182,
+        "min": 35.925999879837036,
+        "p50": 252.85599994659424,
+        "p95": 327.5829999446869,
+        "max": 327.5829999446869
+      }
+    },
+    "claude:active_response": {
+      "turns": 5,
+      "native_completed": 4,
+      "models": [
+        "claude-fable-5-1"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 5,
+        "sum": 2078036,
+        "min": 136229,
+        "p50": 419799,
+        "p95": 735681,
+        "max": 735681
+      },
+      "cached": {
+        "n": 5,
+        "sum": 2052138,
+        "min": 132931,
+        "p50": 417457,
+        "p95": 725032,
+        "max": 725032
+      },
+      "write": {
+        "n": 5,
+        "sum": 25664,
+        "min": 2308,
+        "p50": 3296,
+        "p95": 10519,
+        "max": 10519
+      },
+      "output": {
+        "n": 5,
+        "sum": 9382,
+        "min": 429,
+        "p50": 1361,
+        "p95": 3581,
+        "max": 3581
+      },
+      "reasoning": {
+        "n": 5,
+        "sum": 722,
+        "min": 0,
+        "p50": 119,
+        "p95": 414,
+        "max": 414
+      },
+      "tools": {
+        "n": 5,
+        "sum": 8,
+        "min": 0,
+        "p50": 1,
+        "p95": 4,
+        "max": 4
+      },
+      "cairn_tools": {
+        "n": 5,
+        "sum": 8,
+        "min": 0,
+        "p50": 1,
+        "p95": 4,
+        "max": 4
+      },
+      "memory_tools": {
+        "n": 5,
+        "sum": 7,
+        "min": 0,
+        "p50": 1,
+        "p95": 3,
+        "max": 3
+      },
+      "model_responses": {
+        "n": 5,
+        "sum": 12,
+        "min": 1,
+        "p50": 2,
+        "p95": 5,
+        "max": 5
+      },
+      "duration_seconds": {
+        "n": 4,
+        "sum": 182.885999917984,
+        "min": 23.259999990463257,
+        "p50": 33.59500002861023,
+        "p95": 66.79399991035461,
+        "max": 66.79399991035461
+      }
+    },
+    "claude:active_unclassified": {
+      "turns": 399,
+      "native_completed": 337,
+      "models": [
+        "<synthetic>",
+        "claude-fable-5-1",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "compactions": 3,
+      "input": {
+        "n": 394,
+        "sum": 770334514,
+        "min": 77923,
+        "p50": 1264160,
+        "p95": 5537197,
+        "max": 23274877
+      },
+      "cached": {
+        "n": 394,
+        "sum": 761992381,
+        "min": 70917,
+        "p50": 1255090,
+        "p95": 5478578,
+        "max": 22382026
+      },
+      "write": {
+        "n": 394,
+        "sum": 8331677,
+        "min": 275,
+        "p50": 5589,
+        "p95": 95233,
+        "max": 892799
+      },
+      "output": {
+        "n": 394,
+        "sum": 1959270,
+        "min": 15,
+        "p50": 2055,
+        "p95": 22084,
+        "max": 86400
+      },
+      "reasoning": {
+        "n": 394,
+        "sum": 434404,
+        "min": 0,
+        "p50": 62,
+        "p95": 7509,
+        "max": 47145
+      },
+      "tools": {
+        "n": 399,
+        "sum": 2274,
+        "min": 0,
+        "p50": 3,
+        "p95": 21,
+        "max": 101
+      },
+      "cairn_tools": {
+        "n": 399,
+        "sum": 730,
+        "min": 0,
+        "p50": 0,
+        "p95": 7,
+        "max": 24
+      },
+      "memory_tools": {
+        "n": 399,
+        "sum": 413,
+        "min": 0,
+        "p50": 0,
+        "p95": 4,
+        "max": 16
+      },
+      "model_responses": {
+        "n": 399,
+        "sum": 2445,
+        "min": 0,
+        "p50": 3,
+        "p95": 21,
+        "max": 97
+      },
+      "duration_seconds": {
+        "n": 337,
+        "sum": 19579.900000095367,
+        "min": 4.927999973297119,
+        "p50": 31.515000104904175,
+        "p95": 209.5090000629425,
+        "max": 1385.058000087738
+      }
+    },
+    "claude:wake_notice": {
+      "turns": 162,
+      "native_completed": 162,
+      "models": [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "compactions": 4,
+      "input": {
+        "n": 162,
+        "sum": 652126884,
+        "min": 236779,
+        "p50": 1844066,
+        "p95": 5577155,
+        "max": 254977645
+      },
+      "cached": {
+        "n": 162,
+        "sum": 649625094,
+        "min": 223276,
+        "p50": 1840589,
+        "p95": 5538578,
+        "max": 254231803
+      },
+      "write": {
+        "n": 162,
+        "sum": 2498908,
+        "min": 2047,
+        "p50": 5435,
+        "p95": 41222,
+        "max": 744994
+      },
+      "output": {
+        "n": 162,
+        "sum": 1050242,
+        "min": 584,
+        "p50": 2466,
+        "p95": 14290,
+        "max": 388595
+      },
+      "reasoning": {
+        "n": 162,
+        "sum": 192859,
+        "min": 0,
+        "p50": 281,
+        "p95": 3469,
+        "max": 61016
+      },
+      "tools": {
+        "n": 162,
+        "sum": 1308,
+        "min": 1,
+        "p50": 3,
+        "p95": 17,
+        "max": 429
+      },
+      "cairn_tools": {
+        "n": 162,
+        "sum": 645,
+        "min": 0,
+        "p50": 2,
+        "p95": 6,
+        "max": 219
+      },
+      "memory_tools": {
+        "n": 162,
+        "sum": 388,
+        "min": 0,
+        "p50": 2,
+        "p95": 4,
+        "max": 87
+      },
+      "model_responses": {
+        "n": 162,
+        "sum": 1436,
+        "min": 2,
+        "p50": 4,
+        "p95": 17,
+        "max": 424
+      },
+      "duration_seconds": {
+        "n": 162,
+        "sum": 29059.64499926567,
+        "min": 8.517000198364258,
+        "p50": 36.52800011634827,
+        "p95": 252.18700003623962,
+        "max": 18502.96399998665
+      }
+    },
+    "claude:wake_notice+response": {
+      "turns": 1,
+      "native_completed": 1,
+      "models": [
+        "claude-fable-5-1"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 1,
+        "sum": 203498143,
+        "min": 203498143,
+        "p50": 203498143,
+        "p95": 203498143,
+        "max": 203498143
+      },
+      "cached": {
+        "n": 1,
+        "sum": 202640387,
+        "min": 202640387,
+        "p50": 202640387,
+        "p95": 202640387,
+        "max": 202640387
+      },
+      "write": {
+        "n": 1,
+        "sum": 847394,
+        "min": 847394,
+        "p50": 847394,
+        "p95": 847394,
+        "max": 847394
+      },
+      "output": {
+        "n": 1,
+        "sum": 409479,
+        "min": 409479,
+        "p50": 409479,
+        "p95": 409479,
+        "max": 409479
+      },
+      "reasoning": {
+        "n": 1,
+        "sum": 112151,
+        "min": 112151,
+        "p50": 112151,
+        "p95": 112151,
+        "max": 112151
+      },
+      "tools": {
+        "n": 1,
+        "sum": 330,
+        "min": 330,
+        "p50": 330,
+        "p95": 330,
+        "max": 330
+      },
+      "cairn_tools": {
+        "n": 1,
+        "sum": 59,
+        "min": 59,
+        "p50": 59,
+        "p95": 59,
+        "max": 59
+      },
+      "memory_tools": {
+        "n": 1,
+        "sum": 52,
+        "min": 52,
+        "p50": 52,
+        "p95": 52,
+        "max": 52
+      },
+      "model_responses": {
+        "n": 1,
+        "sum": 394,
+        "min": 394,
+        "p50": 394,
+        "p95": 394,
+        "max": 394
+      },
+      "duration_seconds": {
+        "n": 1,
+        "sum": 41792.52500009537,
+        "min": 41792.52500009537,
+        "p50": 41792.52500009537,
+        "p95": 41792.52500009537,
+        "max": 41792.52500009537
+      }
+    },
+    "claude:wake_request": {
+      "turns": 31,
+      "native_completed": 31,
+      "models": [
+        "<synthetic>",
+        "claude-opus-5-5"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 31,
+        "sum": 159686737,
+        "min": 822287,
+        "p50": 4599192,
+        "p95": 11221525,
+        "max": 25054066
+      },
+      "cached": {
+        "n": 31,
+        "sum": 158890488,
+        "min": 816584,
+        "p50": 4586910,
+        "p95": 11182211,
+        "max": 24996948
+      },
+      "write": {
+        "n": 31,
+        "sum": 795631,
+        "min": 3540,
+        "p50": 16444,
+        "p95": 101030,
+        "max": 130598
+      },
+      "output": {
+        "n": 31,
+        "sum": 398560,
+        "min": 1617,
+        "p50": 9672,
+        "p95": 31959,
+        "max": 60320
+      },
+      "reasoning": {
+        "n": 31,
+        "sum": 114240,
+        "min": 46,
+        "p50": 2006,
+        "p95": 12294,
+        "max": 28400
+      },
+      "tools": {
+        "n": 31,
+        "sum": 285,
+        "min": 2,
+        "p50": 7,
+        "p95": 29,
+        "max": 41
+      },
+      "cairn_tools": {
+        "n": 31,
+        "sum": 53,
+        "min": 1,
+        "p50": 2,
+        "p95": 4,
+        "max": 5
+      },
+      "memory_tools": {
+        "n": 31,
+        "sum": 17,
+        "min": 0,
+        "p50": 0,
+        "p95": 2,
+        "max": 2
+      },
+      "model_responses": {
+        "n": 31,
+        "sum": 309,
+        "min": 2,
+        "p50": 7,
+        "p95": 30,
+        "max": 40
+      },
+      "duration_seconds": {
+        "n": 31,
+        "sum": 6357.826000452042,
+        "min": 24.444000005722046,
+        "p50": 121.36900019645691,
+        "p95": 819.4409999847412,
+        "max": 1127.4920001029968
+      }
+    },
+    "claude:wake_response": {
+      "turns": 5,
+      "native_completed": 5,
+      "models": [
+        "claude-opus-5-5"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 5,
+        "sum": 7674632,
+        "min": 870770,
+        "p50": 1019566,
+        "p95": 3281268,
+        "max": 3281268
+      },
+      "cached": {
+        "n": 5,
+        "sum": 7637885,
+        "min": 868296,
+        "p50": 1015438,
+        "p95": 3268730,
+        "max": 3268730
+      },
+      "write": {
+        "n": 5,
+        "sum": 36699,
+        "min": 2468,
+        "p50": 8324,
+        "p95": 12528,
+        "max": 12528
+      },
+      "output": {
+        "n": 5,
+        "sum": 17839,
+        "min": 794,
+        "p50": 4352,
+        "p95": 6095,
+        "max": 6095
+      },
+      "reasoning": {
+        "n": 5,
+        "sum": 1613,
+        "min": 0,
+        "p50": 262,
+        "p95": 814,
+        "max": 814
+      },
+      "tools": {
+        "n": 5,
+        "sum": 21,
+        "min": 2,
+        "p50": 4,
+        "p95": 7,
+        "max": 7
+      },
+      "cairn_tools": {
+        "n": 5,
+        "sum": 16,
+        "min": 1,
+        "p50": 3,
+        "p95": 7,
+        "max": 7
+      },
+      "memory_tools": {
+        "n": 5,
+        "sum": 12,
+        "min": 1,
+        "p50": 3,
+        "p95": 4,
+        "max": 4
+      },
+      "model_responses": {
+        "n": 5,
+        "sum": 24,
+        "min": 3,
+        "p50": 5,
+        "p95": 6,
+        "max": 6
+      },
+      "duration_seconds": {
+        "n": 5,
+        "sum": 204.86600017547607,
+        "min": 14.924999952316284,
+        "p50": 46.45799994468689,
+        "p95": 65.63499999046326,
+        "max": 65.63499999046326
+      }
+    },
+    "codex:active_notice": {
+      "turns": 1,
+      "native_completed": 1,
+      "models": [
+        "gpt-6-astra"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 0
+      },
+      "cached": {
+        "n": 0
+      },
+      "write": {
+        "n": 0
+      },
+      "output": {
+        "n": 0
+      },
+      "reasoning": {
+        "n": 0
+      },
+      "tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "cairn_tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "memory_tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "model_responses": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "duration_seconds": {
+        "n": 1,
+        "sum": 6.5269999504089355,
+        "min": 6.5269999504089355,
+        "p50": 6.5269999504089355,
+        "p95": 6.5269999504089355,
+        "max": 6.5269999504089355
+      }
+    },
+    "codex:active_request": {
+      "turns": 1,
+      "native_completed": 1,
+      "models": [
+        "gpt-6-astra"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 0
+      },
+      "cached": {
+        "n": 0
+      },
+      "write": {
+        "n": 0
+      },
+      "output": {
+        "n": 0
+      },
+      "reasoning": {
+        "n": 0
+      },
+      "tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "cairn_tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "memory_tools": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "model_responses": {
+        "n": 1,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "duration_seconds": {
+        "n": 1,
+        "sum": 4.86899995803833,
+        "min": 4.86899995803833,
+        "p50": 4.86899995803833,
+        "p95": 4.86899995803833,
+        "max": 4.86899995803833
+      }
+    },
+    "codex:active_unclassified": {
+      "turns": 1533,
+      "native_completed": 1520,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6.1-sol"
+      ],
+      "compactions": 141,
+      "input": {
+        "n": 1529,
+        "sum": 2973556290,
+        "min": 20478,
+        "p50": 757647,
+        "p95": 7875686,
+        "max": 65479501
+      },
+      "cached": {
+        "n": 1529,
+        "sum": 2919974144,
+        "min": 0,
+        "p50": 746240,
+        "p95": 7716992,
+        "max": 64302592
+      },
+      "write": {
+        "n": 1529,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "output": {
+        "n": 1529,
+        "sum": 11147799,
+        "min": 41,
+        "p50": 1059,
+        "p95": 37432,
+        "max": 305643
+      },
+      "reasoning": {
+        "n": 1529,
+        "sum": 4378899,
+        "min": 0,
+        "p50": 91,
+        "p95": 12885,
+        "max": 192330
+      },
+      "tools": {
+        "n": 1533,
+        "sum": 16284,
+        "min": 0,
+        "p50": 4,
+        "p95": 45,
+        "max": 282
+      },
+      "cairn_tools": {
+        "n": 1533,
+        "sum": 1851,
+        "min": 0,
+        "p50": 0,
+        "p95": 7,
+        "max": 32
+      },
+      "memory_tools": {
+        "n": 1533,
+        "sum": 1327,
+        "min": 0,
+        "p50": 0,
+        "p95": 5,
+        "max": 22
+      },
+      "model_responses": {
+        "n": 1533,
+        "sum": 18022,
+        "min": 0,
+        "p50": 5,
+        "p95": 48,
+        "max": 287
+      },
+      "duration_seconds": {
+        "n": 1520,
+        "sum": 431582.18699526787,
+        "min": 1.7330000400543213,
+        "p50": 79.00699996948242,
+        "p95": 1328.8629999160767,
+        "max": 9323.78300023079
+      }
+    },
+    "codex:wake_notice": {
+      "turns": 503,
+      "native_completed": 501,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-sol"
+      ],
+      "compactions": 26,
+      "input": {
+        "n": 503,
+        "sum": 456537293,
+        "min": 112215,
+        "p50": 586617,
+        "p95": 2040509,
+        "max": 30641215
+      },
+      "cached": {
+        "n": 503,
+        "sum": 449922176,
+        "min": 109696,
+        "p50": 578688,
+        "p95": 1998080,
+        "max": 30181248
+      },
+      "write": {
+        "n": 503,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "output": {
+        "n": 503,
+        "sum": 1366012,
+        "min": 151,
+        "p50": 407,
+        "p95": 8646,
+        "max": 130857
+      },
+      "reasoning": {
+        "n": 503,
+        "sum": 516110,
+        "min": 0,
+        "p50": 0,
+        "p95": 3093,
+        "max": 89060
+      },
+      "tools": {
+        "n": 503,
+        "sum": 2279,
+        "min": 1,
+        "p50": 3,
+        "p95": 11,
+        "max": 153
+      },
+      "cairn_tools": {
+        "n": 503,
+        "sum": 714,
+        "min": 0,
+        "p50": 1,
+        "p95": 4,
+        "max": 26
+      },
+      "memory_tools": {
+        "n": 503,
+        "sum": 291,
+        "min": 0,
+        "p50": 0,
+        "p95": 3,
+        "max": 14
+      },
+      "model_responses": {
+        "n": 503,
+        "sum": 2813,
+        "min": 1,
+        "p50": 4,
+        "p95": 12,
+        "max": 155
+      },
+      "duration_seconds": {
+        "n": 501,
+        "sum": 48777.4990003109,
+        "min": 10.601999998092651,
+        "p50": 22.013000011444092,
+        "p95": 289.47000002861023,
+        "max": 4260.947999954224
+      }
+    },
+    "codex:wake_request": {
+      "turns": 89,
+      "native_completed": 89,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-sol"
+      ],
+      "compactions": 24,
+      "input": {
+        "n": 88,
+        "sum": 401446181,
+        "min": 251525,
+        "p50": 2594791,
+        "p95": 19394665,
+        "max": 32092670
+      },
+      "cached": {
+        "n": 88,
+        "sum": 393635968,
+        "min": 245376,
+        "p50": 2535424,
+        "p95": 19042176,
+        "max": 31605632
+      },
+      "write": {
+        "n": 88,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "output": {
+        "n": 88,
+        "sum": 1664318,
+        "min": 446,
+        "p50": 10835,
+        "p95": 68656,
+        "max": 112209
+      },
+      "reasoning": {
+        "n": 88,
+        "sum": 590460,
+        "min": 0,
+        "p50": 2438,
+        "p95": 35850,
+        "max": 55465
+      },
+      "tools": {
+        "n": 89,
+        "sum": 2412,
+        "min": 0,
+        "p50": 15,
+        "p95": 81,
+        "max": 273
+      },
+      "cairn_tools": {
+        "n": 89,
+        "sum": 321,
+        "min": 0,
+        "p50": 2,
+        "p95": 11,
+        "max": 13
+      },
+      "memory_tools": {
+        "n": 89,
+        "sum": 166,
+        "min": 0,
+        "p50": 1,
+        "p95": 8,
+        "max": 12
+      },
+      "model_responses": {
+        "n": 89,
+        "sum": 2524,
+        "min": 0,
+        "p50": 16,
+        "p95": 83,
+        "max": 277
+      },
+      "duration_seconds": {
+        "n": 89,
+        "sum": 65186.32299947739,
+        "min": 26.42300009727478,
+        "p50": 375.15500020980835,
+        "p95": 2603.516000032425,
+        "max": 6103.630000114441
+      }
+    },
+    "codex:wake_response": {
+      "turns": 149,
+      "native_completed": 148,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-sol"
+      ],
+      "compactions": 10,
+      "input": {
+        "n": 148,
+        "sum": 87369721,
+        "min": 143698,
+        "p50": 538916,
+        "p95": 1067828,
+        "max": 2374247
+      },
+      "cached": {
+        "n": 148,
+        "sum": 85975424,
+        "min": 138880,
+        "p50": 534400,
+        "p95": 1064576,
+        "max": 2280704
+      },
+      "write": {
+        "n": 148,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "output": {
+        "n": 148,
+        "sum": 178489,
+        "min": 228,
+        "p50": 384,
+        "p95": 6550,
+        "max": 11989
+      },
+      "reasoning": {
+        "n": 148,
+        "sum": 24212,
+        "min": 0,
+        "p50": 0,
+        "p95": 825,
+        "max": 5332
+      },
+      "tools": {
+        "n": 149,
+        "sum": 433,
+        "min": 0,
+        "p50": 3,
+        "p95": 5,
+        "max": 11
+      },
+      "cairn_tools": {
+        "n": 149,
+        "sum": 181,
+        "min": 0,
+        "p50": 1,
+        "p95": 2,
+        "max": 5
+      },
+      "memory_tools": {
+        "n": 149,
+        "sum": 60,
+        "min": 0,
+        "p50": 0,
+        "p95": 1,
+        "max": 5
+      },
+      "model_responses": {
+        "n": 149,
+        "sum": 593,
+        "min": 0,
+        "p50": 4,
+        "p95": 6,
+        "max": 16
+      },
+      "duration_seconds": {
+        "n": 148,
+        "sum": 6590.41700220108,
+        "min": 6.141000032424927,
+        "p50": 20.687000036239624,
+        "p95": 203.83000016212463,
+        "max": 493.82400012016296
+      }
+    },
+    "codex:wake_unclassified": {
+      "turns": 5,
+      "native_completed": 5,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-sol"
+      ],
+      "compactions": 0,
+      "input": {
+        "n": 5,
+        "sum": 1542518,
+        "min": 56198,
+        "p50": 90144,
+        "p95": 1016927,
+        "max": 1016927
+      },
+      "cached": {
+        "n": 5,
+        "sum": 1440128,
+        "min": 0,
+        "p50": 89472,
+        "p95": 988288,
+        "max": 988288
+      },
+      "write": {
+        "n": 5,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "output": {
+        "n": 5,
+        "sum": 2405,
+        "min": 57,
+        "p50": 217,
+        "p95": 1843,
+        "max": 1843
+      },
+      "reasoning": {
+        "n": 5,
+        "sum": 1164,
+        "min": 0,
+        "p50": 29,
+        "p95": 959,
+        "max": 959
+      },
+      "tools": {
+        "n": 5,
+        "sum": 5,
+        "min": 0,
+        "p50": 0,
+        "p95": 4,
+        "max": 4
+      },
+      "cairn_tools": {
+        "n": 5,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "memory_tools": {
+        "n": 5,
+        "sum": 0,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "model_responses": {
+        "n": 5,
+        "sum": 10,
+        "min": 1,
+        "p50": 1,
+        "p95": 5,
+        "max": 5
+      },
+      "duration_seconds": {
+        "n": 5,
+        "sum": 114.00899958610535,
+        "min": 4.436999797821045,
+        "p50": 12.301999807357788,
+        "p95": 76.66400003433228,
+        "max": 76.66400003433228
+      }
+    }
+  },
+  "journal_joins": {
+    "notice": 666,
+    "request": 121,
+    "response": 154
+  },
+  "sample": {
+    "files": 40,
+    "homes": {
+      ".codex": 8,
+      ".codex-harm": 8,
+      ".codex-3": 8,
+      ".claude": 8,
+      ".claude-harm": 8
+    },
+    "manifest_sha256": "5b6c77aa7506ad74feac27fd2cdff1eacdc533d9830d061ebb3b1b74c1087213",
+    "private_artifact_directory": "/home/halbritt/.cache/cairn-token-audit-20261023",
+    "limitations": [
+      "Latest modified top-level retained files per home, then frozen; not randomized or population accounting.",
+      "Native end and committed acknowledgment do not establish task usefulness.",
+      "Provider usage is whole-response; cached input and reasoning are subsets.",
+      "Incomplete Claude request blobs prevent complete attribution; no raw message text is published."
+    ]
+  },
+  "bounded_notice_workflows": {
+    "codex": {
+      "n": 427,
+      "definition": "one joined notice, committed ack, native complete, <=120 s and <=5 tools; useful content not independently graded",
+      "responses": {
+        "n": 427,
+        "sum": 1547,
+        "min": 3,
+        "p50": 4,
+        "p95": 5,
+        "max": 6
+      },
+      "duration": {
+        "n": 427,
+        "sum": 11373.058000326157,
+        "min": 10.601999998092651,
+        "p50": 20.032999992370605,
+        "p95": 62.61900019645691,
+        "max": 109.26199984550476
+      },
+      "tools": {
+        "n": 427,
+        "sum": 1119,
+        "min": 2,
+        "p50": 3,
+        "p95": 4,
+        "max": 5
+      },
+      "input": {
+        "n": 427,
+        "sum": 234631962,
+        "min": 112215,
+        "p50": 551362,
+        "p95": 916727,
+        "max": 1446208
+      },
+      "cached": {
+        "n": 427,
+        "sum": 232053504,
+        "min": 109696,
+        "p50": 547456,
+        "p95": 904192,
+        "max": 1442560
+      },
+      "output": {
+        "n": 427,
+        "sum": 274435,
+        "min": 220,
+        "p50": 376,
+        "p95": 1890,
+        "max": 4088
+      },
+      "reasoning": {
+        "n": 427,
+        "sum": 47550,
+        "min": 0,
+        "p50": 0,
+        "p95": 598,
+        "max": 2102
+      }
+    },
+    "claude": {
+      "n": 118,
+      "definition": "one joined notice, committed ack, native complete, <=120 s and <=5 tools; useful content not independently graded",
+      "responses": {
+        "n": 118,
+        "sum": 448,
+        "min": 2,
+        "p50": 3,
+        "p95": 6,
+        "max": 6
+      },
+      "duration": {
+        "n": 118,
+        "sum": 3521.718999147415,
+        "min": 8.517000198364258,
+        "p50": 26.681999921798706,
+        "p95": 61.78699994087219,
+        "max": 77.46000003814697
+      },
+      "tools": {
+        "n": 118,
+        "sum": 344,
+        "min": 1,
+        "p50": 3,
+        "p95": 5,
+        "max": 5
+      },
+      "input": {
+        "n": 118,
+        "sum": 199756966,
+        "min": 236779,
+        "p50": 1550471,
+        "p95": 3013582,
+        "max": 3573507
+      },
+      "cached": {
+        "n": 118,
+        "sum": 198881794,
+        "min": 223276,
+        "p50": 1538430,
+        "p95": 3007260,
+        "max": 3566632
+      },
+      "output": {
+        "n": 118,
+        "sum": 250776,
+        "min": 584,
+        "p50": 1953,
+        "p95": 5064,
+        "max": 6302
+      },
+      "reasoning": {
+        "n": 118,
+        "sum": 38888,
+        "min": 0,
+        "p50": 147,
+        "p95": 1246,
+        "max": 2195
+      }
+    }
+  },
+  "lifecycle_last_snapshots": [
+    {
+      "binding": "codex-hooks",
+      "last_capture_snapshot_counts": {
+        "saved": 37,
+        "nothing_selected": 1
+      },
+      "selector_calls_in_snapshots": 38,
+      "last_recall_snapshot_counts": {
+        "delegated": 31,
+        "suppressed": 21,
+        "failed": 3
+      },
+      "last_recall_bytes": 132554
+    },
+    {
+      "binding": "claude-hooks",
+      "last_capture_snapshot_counts": {
+        "saved": 3,
+        "nothing_selected": 1
+      },
+      "selector_calls_in_snapshots": 4,
+      "last_recall_snapshot_counts": {
+        "delegated": 10,
+        "empty": 4,
+        "failed": 1
+      },
+      "last_recall_bytes": 41829
+    },
+    {
+      "binding": "claude-harm-hooks",
+      "last_capture_snapshot_counts": {
+        "saved": 6
+      },
+      "selector_calls_in_snapshots": 6,
+      "last_recall_snapshot_counts": {
+        "delegated": 4,
+        "empty": 4,
+        "failed": 1
+      },
+      "last_recall_bytes": 17447
+    },
+    {
+      "binding": "opencode-hooks",
+      "last_capture_snapshot_counts": {},
+      "selector_calls_in_snapshots": 0,
+      "last_recall_snapshot_counts": {},
+      "last_recall_bytes": 0
+    }
+  ],
+  "delivery_files": {
+    "counts": {
+      "codex-three:response": 177,
+      "codex-three:notice": 399,
+      "codex-three:request": 62,
+      "claude-one:request": 142,
+      "claude-one:notice": 501,
+      "claude-one:response": 90,
+      "agy-one:notice": 2,
+      "codex-one:request": 31,
+      "codex-one:notice": 65,
+      "codex-one:response": 2,
+      "claude-two:notice": 670,
+      "claude-two:request": 165,
+      "claude-two:response": 61,
+      "codex-two:response": 65,
+      "codex-two:notice": 195,
+      "codex-two:request": 3
+    },
+    "joins": {
+      "notice": 666,
+      "request": 121,
+      "response": 154
+    },
+    "terminal": {
+      "('ack', 'committed', 'OK')": 818,
+      "('complete', 'committed', 'OK')": 119,
+      "(None, None, None)": 4
+    },
+    "repeated_source_recipient_groups": 2,
+    "extra_deliveries": 2
+  }
+}
