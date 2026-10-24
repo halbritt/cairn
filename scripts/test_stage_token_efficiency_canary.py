@@ -57,6 +57,13 @@ class CanaryStageTests(unittest.TestCase):
         self.write(self.home / ".codex-harm/hooks.json", {"hooks": {"Stop": [{"hooks": [{"command": "unchanged"}]}]}})
         self.write(self.home / ".claude-harm/settings.json", {"hooks": {"Stop": [{"hooks": [{"command": "unchanged"}]}]}})
         self.write(self.home / ".claude-harm/.claude.json", {"mcpServers": {"other": {"command": "/bin/true"}}})
+        self.write(self.home / ".codex-3/hooks.json", {"hooks": {"Stop": [{"hooks": [{"command": "unchanged"}]}]}})
+        self.write_text(self.home / ".codex-3/config.toml", "[mcp_servers.other]\ncommand = \"/bin/true\"\n")
+        for name in ("codex-two", "codex-three"):
+            self.write(self.home / f".local/share/cairn/coordination/bindings/{name}.json",
+                       {"binding": name, "harness": "codex"})
+        self.write(self.home / ".local/share/cairn/deployments/inbox-recall-codex-4b0757a-20260930/binding.json",
+                   {"enabled": True, "coordination_configs": ["codex-one", "codex-two", "codex-three"]})
         self.write_text(self.home / ".codex/config.toml", """[mcp_servers.cairn]
 command = "{binary}"
 args = ["mcp", "--socket", "{socket}", "--token-file", "{token}", "--repo", "{repo}", "--codex-thread"]
@@ -130,6 +137,27 @@ exec {binary} mcp \\
             stage.stage(self.home, self.stage, self.expected)
         self.assertFalse(self.stage.exists())
 
+    def test_codex_only_stages_only_selected_codex_and_reports_unresolved_limits(self):
+        before = {relative: (self.home / relative).read_bytes() for relative in self.expected}
+        # Claude account drift must not gate or enter a Codex-only candidate.
+        self.write(self.home / ".claude.json", {"mcpServers": {"changed": {"command": "/bin/false"}}})
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            report = stage.stage(self.home, self.stage, self.expected, codex_only=True)
+        self.assertEqual(set(report["accounts"]), {"codex"})
+        self.assertFalse((self.stage / "claude").exists())
+        self.assertEqual(report["mcp"]["claude"], {"staged": False})
+        self.assertFalse(report["mcp"]["candidate_binary_present"])
+        self.assertFalse(report["deployment_limits"]["provider_requests_made"])
+        self.assertIn("not verified", report["deployment_limits"]["provider_route"])
+        manifest = json.loads((self.stage / "codex/binding.json").read_text())
+        self.assertFalse(manifest["enabled"])
+        self.assertEqual(len(manifest["coordination_configs"]), 1)
+        self.assertIn(str(self.home / ".codex-3/config.toml"), report["unchanged_account_hashes"])
+        self.assertIn(str(self.home / ".codex-harm/config.toml"), report["unchanged_account_hashes"])
+        self.assertTrue(report["account_selection"]["matches_invocation_home"])
+        before[".claude.json"] = (self.home / ".claude.json").read_bytes()
+        self.assertEqual(before, {relative: (self.home / relative).read_bytes() for relative in self.expected})
+
     def test_claude_cache_timestamp_may_advance_but_mcp_drift_refuses(self):
         path = self.home / ".claude.json"
         data = json.loads(path.read_text())
@@ -157,8 +185,8 @@ exec {binary} mcp \\
         path = self.home / ".claude.json"
         real_check = stage.check_snapshot
 
-        def change_after_check(home, expected):
-            real_check(home, expected)
+        def change_after_check(home, expected, relative_paths=None):
+            real_check(home, expected, relative_paths)
             data = json.loads(path.read_text())
             data["mcpServers"]["cairn"]["args"] = ["other-account"]
             self.write(path, data)
@@ -172,8 +200,8 @@ exec {binary} mcp \\
         path = self.home / ".codex/hooks.json"
         real_stage_mcp = stage.stage_mcp
 
-        def change_after_copy(home, destination, expected):
-            result = real_stage_mcp(home, destination, expected)
+        def change_after_copy(home, destination, expected, *, codex_only=False):
+            result = real_stage_mcp(home, destination, expected, codex_only=codex_only)
             data = json.loads(path.read_text())
             data["hooks"]["Stop"].append({"hooks": [{"command": "new-unreviewed-hook"}]})
             self.write(path, data)

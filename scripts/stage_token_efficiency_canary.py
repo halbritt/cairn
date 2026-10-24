@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Build an offline, disabled, two-account Cairn canary candidate.
+"""Build an offline, disabled Cairn canary candidate.
 
 This stages candidate files in a new directory and records the selected-account
-hook and MCP edits. It never edits account settings, grants, or the running service.
+hook and MCP edits. By default it stages Codex and Claude; --codex-only stages
+only the selected .codex account. It never edits installed settings, grants, or
+the running service.
 """
 import argparse
 import copy
@@ -15,6 +17,7 @@ import re
 import shlex
 import shutil
 import stat
+import subprocess
 import tomllib
 
 
@@ -33,12 +36,27 @@ EXPECTED = {
     ".local/share/cairn/codex-hooks/config.json": "e3d21c2f334bada43918f2d839b1f92e660fb6ac7b419327749fa000acf249d2",
     ".local/share/cairn/claude-hooks/config.json": "62677d97808bfccd8c929318844a7233303d58a28340db54f0b5da4c33823ae4",
     ".local/share/cairn/coordination/bindings/codex-one.json": "1c1e1468bfb8d94d0e219ac8be3560271bbbc324541fbd3a00fba66ab2f907d5",
+    ".local/share/cairn/coordination/bindings/codex-two.json": "ef019c2d40d1994dd08be8d73a617f33e94cbf4b03e3485cf99bfdbd349612a3",
+    ".local/share/cairn/coordination/bindings/codex-three.json": "232d27d2171a078c3d2c34939e1374ad0bb4e0fdbb3f7eff540d190ed3c95a13",
     ".local/share/cairn/coordination/bindings/claude-one.json": "286ba2ecb76a61b762a9f1ddce8e5d6d064baf4a7d51d3e0bcd14ebe827f3579",
     ".local/share/cairn/deployments/inbox-recall-codex-4b0757a-20260930/binding.json": "8b1f0670fb6f71b8fdfefa49595b7f3b2d6bfb0bb63771fd2f8341ee1af8d120",
     ".local/share/cairn/deployments/inbox-recall-claude-one-2306e44-20260930/binding.json": "d40a15f6cc90933f6b36c509b86daa611b74cbef48aa931fdf21779b3070ead1",
 }
 COORD_SIBLINGS = ("codex_queue.py", "claude_channel.py", "opencode_queue.py",
                   "hermes_queue.py", "process_scan.py")
+CODEX_ONLY_SNAPSHOT_PATHS = (
+    ".codex/hooks.json",
+    ".codex-harm/hooks.json",
+    ".codex/config.toml",
+    ".codex-harm/config.toml",
+    ".local/share/cairn/codex-hooks/config.json",
+    ".local/share/cairn/coordination/bindings/codex-one.json",
+    ".local/share/cairn/coordination/bindings/codex-two.json",
+    ".local/share/cairn/coordination/bindings/codex-three.json",
+    ".local/share/cairn/deployments/inbox-recall-codex-4b0757a-20260930/binding.json",
+)
+CODEX_PEER_PATHS = (".codex-harm/hooks.json", ".codex-harm/config.toml",
+                    ".codex-3/hooks.json", ".codex-3/config.toml")
 EVENTS = {
     "codex": {"memory": ("SessionStart", "UserPromptSubmit", "PreCompact", "Stop"),
               "coordination": ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "Interrupt", "PostToolUse")},
@@ -74,8 +92,11 @@ def pinned(path):
     return {"path": str(path), "sha256": sha256(path)}
 
 
-def check_snapshot(home, expected):
-    for relative, digest in expected.items():
+def check_snapshot(home, expected, relative_paths=None):
+    selected = expected if relative_paths is None else {
+        relative: expected[relative] for relative in relative_paths
+    }
+    for relative, digest in selected.items():
         path = home / relative
         info = path.stat()
         if (path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022 or
@@ -192,7 +213,7 @@ def stage_account(home, stage, harness):
             "required_path_prefix": str(launcher.parent)}
 
 
-def stage_mcp(home, destination, expected):
+def stage_mcp(home, destination, expected, *, codex_only=False):
     binary = destination / "bin/cairn"
     codex_path = home / ".codex/config.toml"
     codex_text = codex_path.read_text(encoding="utf-8")
@@ -221,6 +242,12 @@ def stage_mcp(home, destination, expected):
     codex_candidate = destination / "codex/config.toml"
     codex_candidate.write_text(candidate_codex, encoding="utf-8")
     codex_candidate.chmod(0o600)
+
+    if codex_only:
+        return {"candidate_binary": str(binary), "candidate_binary_present": False,
+                "codex": {"account_mcp": str(codex_path), "expected_sha256": sha256(codex_path),
+                          "candidate_mcp": str(codex_candidate), "candidate_sha256": sha256(codex_candidate)},
+                "claude": {"staged": False}}
 
     wrapper = home / ".local/bin/cairn-shared-mcp"
     wrapper_text = wrapper.read_text(encoding="utf-8")
@@ -277,10 +304,15 @@ def private_stage_root(home):
     return root
 
 
-def stage(home, destination, expected=EXPECTED):
+def stage(home, destination, expected=EXPECTED, *, codex_only=False):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
-    check_snapshot(home, expected)
+    snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
+    check_snapshot(home, expected, snapshot_paths)
+    peer_paths = CODEX_PEER_PATHS if codex_only else (
+        ".codex-harm/hooks.json", ".codex-harm/config.toml",
+        ".claude-harm/settings.json", ".claude-harm/.claude.json")
+    peer_hashes_before = {relative: sha256(home / relative) for relative in peer_paths}
     root = private_stage_root(home)
     if destination.parent != root or destination.resolve(strict=False).parent != root:
         raise ValueError(f"stage destination must be a direct child of {root}")
@@ -290,16 +322,41 @@ def stage(home, destination, expected=EXPECTED):
     try:
         if stat.S_IMODE(destination.stat().st_mode) != 0o700:
             raise ValueError("stage destination must be owner-only")
-        for harness in ("codex", "claude"):
+        harnesses = ("codex",) if codex_only else ("codex", "claude")
+        for harness in harnesses:
             report["accounts"][harness] = stage_account(home, destination, harness)
-        report["mcp"] = stage_mcp(home, destination, expected)
+        report["mcp"] = stage_mcp(home, destination, expected, codex_only=codex_only)
         report["source_hashes"] = {name: sha256(ROOT / "integrations/lifecycle" / name)
                                    for name in ("memory.py", "coordination.py", "inbox_recall.py")}
+        report["source_hashes"]["scripts/stage_token_efficiency_canary.py"] = sha256(Path(__file__))
+        report["source_revision"] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True,
+            text=True).stdout.strip()
+        report["source_dirty"] = bool(subprocess.run(
+            ["git", "status", "--porcelain"], cwd=ROOT, check=True, capture_output=True,
+            text=True).stdout.strip())
+        report["deployment_limits"] = {
+            "candidate_binary_present": False,
+            "installed_api_revision": "not queried by offline staging",
+            "provider_route": "not verified; no provider request made",
+            "provider_model": "not verified by offline staging",
+            "provider_requests_made": False,
+            "managed_store_or_service_changed": False,
+        }
+        if codex_only:
+            selected_home = home / ".codex"
+            invocation_home = Path(os.environ.get("CODEX_HOME", str(selected_home))).expanduser()
+            report["account_selection"] = {
+                "selected_codex_home": str(selected_home),
+                "invocation_codex_home": str(invocation_home),
+                "matches_invocation_home": invocation_home.resolve() == selected_home.resolve(),
+            }
+        peer_hashes_after = {relative: sha256(home / relative) for relative in peer_paths}
+        if peer_hashes_after != peer_hashes_before:
+            raise ValueError("other account configuration changed during staging")
         report["unchanged_account_hashes"] = {
-            str(home / relative): sha256(home / relative) for relative in
-            (".codex-harm/hooks.json", ".codex-harm/config.toml",
-             ".claude-harm/settings.json", ".claude-harm/.claude.json")}
-        check_snapshot(home, expected)
+            str(home / relative): digest for relative, digest in peer_hashes_after.items()}
+        check_snapshot(home, expected, snapshot_paths)
         write_json(destination / "stage.json", report)
     except Exception:
         shutil.rmtree(destination)
@@ -311,8 +368,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destination", required=True, type=Path,
                         help="new offline directory, outside installed account and Cairn paths")
+    parser.add_argument("--codex-only", action="store_true",
+                        help="stage only the selected .codex account; do not read or copy Claude configuration")
     args = parser.parse_args()
-    report = stage(Path.home(), args.destination)
+    report = stage(Path.home(), args.destination, codex_only=args.codex_only)
     print(json.dumps(report, indent=2))
 
 
