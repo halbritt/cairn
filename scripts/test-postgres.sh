@@ -42,6 +42,11 @@ export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"
 go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_controller
+panel_controller_dsn="host=$test_root/socket dbname=cairn_panel_controller sslmode=disable"
+CAIRN_DATABASE_URL="$panel_controller_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$panel_controller_dsn" CAIRN_DATABASE_URL="$panel_controller_dsn" \
+    python3 scripts/check_token_efficiency_panel_controller.py "$test_root/cairn"
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
