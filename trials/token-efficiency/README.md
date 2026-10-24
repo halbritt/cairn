@@ -142,9 +142,9 @@ partial source, scheduling, or recovery checks.
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
 joins native turns, or grades task outcomes. A separate disposable-only
-controller in `scripts/token_efficiency_panel_controller.py` materializes four
+controller in `scripts/token_efficiency_panel_controller.py` materializes five
 baseline setups (`single_notice`, `actionable_response`, `duplicate_send`,
-`small_request_result_reply`) and all four `routine_burst_urgent_request` arm
+`small_request_result_reply`, `concurrent_receivers`) and all four `routine_burst_urgent_request` arm
 setups through the authenticated
 local API, each in a separate disposable database. It registers synthetic Codex
 sessions for setup; these are
@@ -164,6 +164,15 @@ retry uses the same claim, completion and reply UUIDs; changed result bytes
 under the completion UUID are refused. The synthetic claim is not reconciled
 (`attempt_reconciled: false`), and the stored result is not an actor answer or
 evidence of a live native turn.
+For `concurrent_receivers`, the sender publishes two requests to separately
+owned synthetic worker sessions. The controller checks each exact native
+readiness hint, verifies that worker A's authenticated profile receives
+`NOT_FOUND` for worker B's exact session, and rechecks B's pending delivery.
+The third profile token is bound into the durable intent; exact retry retains
+the same two events and deliveries, while a changed token is refused. This
+proves pending delivery ownership in the disposable Store, not concurrent
+actor execution, request settlement, or task outcome. The fixture sources are
+shareable and this check does not establish source secrecy.
 For the burst, the sender publishes three routine notices followed by one
 request. The batch and combined arms apply the sender-owned version 1 routine
 policy with a fixed 30-second availability delay; baseline and envelope leave
@@ -173,6 +182,11 @@ after that deadline rechecks durable IDs and availability times without claiming
 that the earlier priority still holds. The receipt labels native batch transfer
 `unrun`; no actor handled the request or acknowledged a notice. All other
 case/arm setups still lack an executable controller path.
+
+The [relay uncertain response probe](../../scripts/check_panel_relay_uncertain_response.py)
+uses a separate disposable Store to drop one successful child receipt after
+commit and retry the same journaled request ID. It exercises recovery from
+receipt loss, with no native actor or model outcome.
 
 The Go probes above write only to disposable integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate
