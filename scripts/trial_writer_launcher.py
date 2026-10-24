@@ -19,6 +19,10 @@ def main(argv):
     try:
         procs, expected, status = int(argv[1]), argv[2], int(argv[3])
         command = argv[4:]
+        executable = None
+        if command[:1] == ['--exec-fd']:
+            executable = int(command[1])
+            command = command[2:]
         if not command or not expected.startswith('/'):
             return REFUSED
         os.write(procs, str(os.getpid()).encode())
@@ -32,6 +36,10 @@ def main(argv):
         os.close(status)
     except (OSError, ValueError, IndexError):
         return REFUSED
+    if executable is not None:
+        # ELF only: close the retained executable descriptor at exec, not in the actor.
+        os.set_inheritable(executable, False)
+        os.execve(executable, command, os.environ)
     os.execvp(command[0], command)
 
 

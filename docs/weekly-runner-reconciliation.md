@@ -975,18 +975,37 @@ host's identities. The claim is never universal. At the start of each
 attempt the owner records:
 - `uname -r` and the `/proc/version` build string;
 - the bwrap executable the launcher will run: its realpath on the owner's
-  PATH, which the launcher then execs by that absolute path, and the
+  PATH, and the
   sha256 of the bytes the owner read.
 
 These must equal the reviewed pins in the pinned controls document
-(`reviewed_identity`, schema `cairn.writer-reviewed-identity/1`). The pins
+(`reviewed_identity`, schema `cairn.writer-reviewed-identity/2`). The pins
 are kernel `release` and `version`, bwrap `path` and `sha256`, and
 `source_scope` naming the reviewed `linux` 6.8.0-146.146 and
 `bubblewrap` 0.9.0-1ubuntu0.3. A missing pin, missing identity or any
-mismatch gives `not_established` / `runtime_identity_unreviewed`.
+mismatch prevents a positive quiescence result. A selected but mismatched
+version 2 pin refuses before launch.
 `bwrap --version` text and dpkg declarations are never used as identity.
 The basis tag is `reviewed_identity_source_zap_before_pidfd_notify`, and the
 result echoes the scope.
+
+**Executable binding.** Version 2 additionally requires `execution: "sealed_memfd"`.
+The owner copies the selected ordinary ELF executable to a memfd, seals writes,
+growth and shrinkage, then hashes the sealed bytes against the reviewed digest.
+The launcher executes that held descriptor with `os.execve`, preserving argv,
+environment and limits and closing the descriptor at exec. Path replacement and
+in-place mutation after sealing cannot change those bytes. A recorded pathname
+hash alone never establishes quiescence. Version 1 pins are refused.
+
+This is an explicit execution mode, not a transparent substitute for every
+installation. Setuid/setgid files, file capabilities, scripts, non-executable
+and noexec sources refuse. Hosts that disallow memfd execution also refuse;
+there is no pathname fallback. The reviewed runtime selection must cover this
+descriptor-execution mode, including any host LSM policy. The dynamically linked
+loader/libraries and host administrator are outside this byte-binding claim.
+The unreviewed path retains ordinary launch behavior but cannot yield a positive
+writer-quiescence result. Real inert sandbox tests exercise descriptor execution;
+they do not authorize a provider or campaign launch.
 
 **Remaining gap between the bwrap bytes and the reviewed source.** On this
 host, `/usr/bin/bwrap` has:

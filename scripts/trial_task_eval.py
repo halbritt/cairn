@@ -2123,6 +2123,8 @@ def main(argv=None):
                      args.original_writer_controls, args.original_writer_controls_sha256)
         if bool(args.original_writer_cgroup) != bool(args.original_writer_controls):
             parser.error("--original-writer-cgroup and --original-writer-controls go together")
+        if args.original_writer_cgroup and not args.original_limits:
+            parser.error("--original-writer-cgroup requires --original-limits")
         if args.prospective_input and any(originals):
             parser.error("original execution is a legacy-fixtures option")
         for path, digest in zip(originals[::2], originals[1::2]):

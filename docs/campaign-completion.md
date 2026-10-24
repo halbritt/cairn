@@ -9,10 +9,11 @@ only outputs that already exist:
 - the occurrence's persisted state snapshot;
 - an optional bridge receipt.
 
-It never grades or regrades, never computes agreement, never resolves a
+It never grades or regrades and never applies an independent agreement rule.
+It validates reports through the existing report projection, never resolves a
 dispute, never promotes an incomplete report, and never claims actual campaign
-success. This is source code with synthetic tests. No live campaign, grade or
-run exists. With the current repository state the verdict is always
+success. These synthetic tests do not establish a live campaign, grade or run.
+With the current repository state the verdict is always
 `not_complete`. CAIRN-107 lane D was assigned by agent-341.
 
 ```python
@@ -40,7 +41,8 @@ Each `PIN` is `{path, bytes, sha256}`. Exactly two weeks are given, in
 order:
 
 - `runner_profile`: the runner's `cairn.weekly-run-profile/1`. Its
-  `campaign_id` and `schedule` are the actual ones, not declared copies.
+  `campaign_id` and `schedule` are read from the pinned profile. The pin
+  establishes byte identity, not the profile's issuance or actual execution.
 - `receipt`: the slot's `cairn.weekly-run-receipt/1`, with exactly the
   runner's receipt fields.
 - `occurrence_snapshot`: `cairn.legacy-occurrence-state-snapshot/1`, written
@@ -70,6 +72,8 @@ These also refuse:
 | The pair binding names this slot, campaign, `uuid5(NAMESPACE, "occurrence\|" + slot_id)` and the agent hash. | `campaign_binding_mismatch` |
 | An occurrence snapshot exists only for a receipt with a pair binding. | `campaign_occurrence_without_binding` |
 | Report and receipt join, as listed below. | `campaign_identity_mismatch` |
+| The report equals the existing projection of its agent and join. | `campaign_report_projection_mismatch` |
+| Collection join/agreement and occurrence grading summary agree with the pinned join. | `campaign_collection_mismatch` / `campaign_grading_mismatch` |
 | The state's routing disputes equal the pinned routing document's. | `campaign_routing_mismatch` |
 | The bridge receipt names exactly this runner receipt, its content, status and slot. | `campaign_bridge_mismatch` |
 
@@ -98,6 +102,9 @@ The verdict is `cairn.campaign-completion-verdict/1`:
  remaining_live_evidence: [...],
  custody: "unknown", actual_campaign_success: false, runtime_admission: false}
 ```
+
+All criteria assess consistency of supplied declarations and observations recorded
+in those documents. They do not authenticate the producer or prove live execution.
 
 Each criterion has a `state` (`met`, `unmet` or `unproved`), its `unmet`
 reasons and per-week evidence. `status` is `complete` only when every
@@ -131,7 +138,8 @@ criterion is `met`.
   invented. A changed-pair week with no defined rate is unmet
   (`agreement_undefined`). Rates are reported per week and never pooled.
 - **disputes_routed**: per week, any disagreement must have the routing
-  receipt with destination `owner_only`, one dispute per disagreement.
+  receipt with destination `owner_only`, exactly one dispute for each disagreeing
+  pair identity. Equal counts for different pairs do not satisfy routing.
   Disputes routed and pending the owner are listed in `pending_owner`. They
   satisfy routing and coverage only. The underlying report keeps `incomplete`
   with `disagreements_pending_owner` in `week_reports`. Missing grades

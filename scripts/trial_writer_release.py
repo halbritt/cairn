@@ -32,6 +32,9 @@ Even ``migration_conditions_observed`` plus ``released`` is not writer quiescenc
 final-artifact custody. ``complete_descendant_custody`` stays ``False``.
 Unavailable containment refuses before launch; nothing is assumed.
 """
+import copy
+import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -70,7 +73,7 @@ def check_controls(controls):
     return dict(controls)
 
 
-REVIEWED_SCHEMA = 'cairn.writer-reviewed-identity/1'
+REVIEWED_SCHEMA = 'cairn.writer-reviewed-identity/2'
 BASIS = 'reviewed_identity_source_zap_before_pidfd_notify'
 
 
@@ -86,11 +89,11 @@ def file_sha256(path):
 
 
 def runtime_identity():
-    """The identities this attempt actually runs on, recorded by the owner at attempt start.
+    """Observe candidate runtime identities at attempt start; this is not execution binding.
 
-    kernel: ``uname -r`` and the /proc/version build string. bwrap: the executable the launcher
-    will exec (resolved on the owner's PATH, then exec'd by that absolute path) and the sha256 of
-    its bytes as read by the owner. Missing values stay None; nothing is inferred from version text.
+    Kernel: ``uname -r`` and the /proc/version build string. bwrap: its realpath on the
+    owner's PATH and a hash of its current bytes. Reviewed execution separately seals
+    and checks a copy before descriptor execution. Missing values stay None.
     """
     identity = dict(kernel=dict(release=None, version=None), bwrap=dict(path=None, sha256=None))
     try:
@@ -113,14 +116,58 @@ def check_reviewed(reviewed):
     reviewed source scope they are bound to. Closed shape; refuses anything else."""
     if reviewed is None:
         return None
-    if not (isinstance(reviewed, dict) and set(reviewed) == {'schema', 'kernel', 'bwrap', 'source_scope'}
-            and reviewed['schema'] == REVIEWED_SCHEMA
+    if not (isinstance(reviewed, dict) and set(reviewed) == {'schema', 'kernel', 'bwrap', 'source_scope', 'execution'}
+            and reviewed['schema'] == REVIEWED_SCHEMA and reviewed['execution'] == 'sealed_memfd'
             and isinstance(reviewed['kernel'], dict) and set(reviewed['kernel']) == {'release', 'version'}
             and isinstance(reviewed['bwrap'], dict) and set(reviewed['bwrap']) == {'path', 'sha256'}
             and all(type(v) is str and v for v in (*reviewed['kernel'].values(), *reviewed['bwrap'].values()))
             and isinstance(reviewed['source_scope'], dict)):
         raise WriterUnavailable('writer_reviewed_identity_invalid')
-    return reviewed
+    return copy.deepcopy(reviewed)
+
+
+def sealed_executable(path, expected_sha256):
+    """Copy an ordinary ELF, seal it, then hash the immutable bytes actually used by exec.
+
+    The reviewed mode explicitly selects descriptor execution. Privilege-bearing files,
+    scripts and noexec sources refuse; there is no pathname-exec fallback.
+    """
+    image = None
+    try:
+        source = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        with os.fdopen(source, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_mode & (stat.S_ISUID | stat.S_ISGID)
+                    or not info.st_mode & 0o111 or not os.access(path, os.X_OK)
+                    or os.fstatvfs(stream.fileno()).f_flag & os.ST_NOEXEC):
+                raise WriterUnavailable('writer_executable_policy')
+            try:
+                os.getxattr(stream.fileno(), 'security.capability')
+            except OSError as error:
+                if error.errno != errno.ENODATA:
+                    raise
+            else:
+                raise WriterUnavailable('writer_executable_policy')
+            if stream.read(4) != b'\x7fELF':
+                raise WriterUnavailable('writer_executable_not_elf')
+            stream.seek(0)
+            image = os.memfd_create('cairn-reviewed-bwrap', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+            with os.fdopen(os.dup(image), 'wb') as target:
+                shutil.copyfileobj(stream, target)
+        os.fchmod(image, 0o500)
+        seals = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+        fcntl.fcntl(image, fcntl.F_ADD_SEALS, seals)
+        os.lseek(image, 0, os.SEEK_SET)
+        digest = hashlib.sha256()
+        while block := os.read(image, 1024 * 1024):
+            digest.update(block)
+        if digest.hexdigest() != expected_sha256:
+            raise WriterUnavailable('writer_executable_mismatch')
+        return image
+    except BaseException:
+        if image is not None:
+            os.close(image)
+        raise
 
 
 class WriterLeaf:
@@ -136,12 +183,19 @@ class WriterLeaf:
         self.init = dict(state='unbound')  # the sandbox pid-namespace init, bound during capture
         self.init_pidfd = None
         self.closed = None
+        self.executable_fd = None
+        self.execution_binding = None
         try:
             self.group = (group_factory or owned.OwnedCgroup)(delegated, controls=self.controls)
         except owned.Unavailable:
             raise WriterUnavailable('writer_containment_unavailable') from None
         # Staged acquisition: anything acquired is released if a later step fails.
         try:
+            if self.reviewed is not None:
+                if not identity_reviewed(self.runtime, self.reviewed):
+                    raise WriterUnavailable('writer_runtime_identity_mismatch')
+                self.executable_fd = sealed_executable(self.runtime['bwrap']['path'],
+                                                       self.reviewed['bwrap']['sha256'])
             self.identity = list(self.group.identity)
             # The owner's own namespaces at launch: the probe must report different ones.
             self.owner_namespaces = {name: os.stat('/proc/self/ns/' + name).st_ino for name in ('pid', 'mnt')}
@@ -158,7 +212,8 @@ class WriterLeaf:
 
     @property
     def pass_fds(self):
-        return (self.group.files['cgroup.procs'], self.status_write, self.evidence_write)
+        return (self.group.files['cgroup.procs'], self.status_write, self.evidence_write) + (
+            () if self.executable_fd is None else (self.executable_fd,))
 
     def probe(self, provider):
         """The in-sandbox launch-evidence probe in front of the unchanged provider argv, and its bind."""
@@ -232,11 +287,17 @@ class WriterLeaf:
         return document if isinstance(document, dict) else None
 
     def wrap(self, argv):
-        if argv and argv[0] == 'bwrap' and self.runtime['bwrap']['path'] is not None:
-            # Exec exactly the executable whose bytes the owner hashed.
+        self.execution_binding = None
+        prefix = []
+        if self.executable_fd is not None:
+            if not argv or argv[0] not in ('bwrap', self.runtime['bwrap']['path']):
+                raise WriterUnavailable('writer_executable_command_mismatch')
+            prefix = ['--exec-fd', str(self.executable_fd)]
+            self.execution_binding = dict(mode='sealed_memfd', sha256=self.runtime['bwrap']['sha256'])
+        elif argv and argv[0] == 'bwrap' and self.runtime['bwrap']['path'] is not None:
             argv = [self.runtime['bwrap']['path'], *argv[1:]]
         return ['/usr/bin/python3', '-B', str(LAUNCHER), str(self.group.files['cgroup.procs']), self.group.relative,
-                str(self.status_write), *argv]
+                str(self.status_write), *prefix, *argv]
 
     def bootstrap(self):
         """Read the launcher's membership report; anything else is not membership."""
@@ -280,7 +341,7 @@ class WriterLeaf:
         if self.closed is not None:
             return self.closed
         errors = []
-        for name in ('status_read', 'status_write', 'evidence_read', 'evidence_write', 'init_pidfd'):
+        for name in ('status_read', 'status_write', 'evidence_read', 'evidence_write', 'init_pidfd', 'executable_fd'):
             fd = getattr(self, name)
             if fd is not None:
                 try:
@@ -300,7 +361,8 @@ class WriterLeaf:
     def finish(self, deadline):
         """Bootstrap, release and close exactly once; never raises, always returns observations."""
         observed = dict(bootstrap=dict(state='unobserved'), release='release_unknown', close_errors=[],
-                        launch_evidence=None, init=dict(self.init), init_exit='unbound')
+                        launch_evidence=None, init=dict(self.init), init_exit='unbound',
+                        execution_binding=self.execution_binding)
         try:
             observed['bootstrap'] = self.bootstrap()
         except Exception:
@@ -402,6 +464,8 @@ def writer_quiescence(observed, evidence, *, runtime=None, reviewed=None):
     """
     if not identity_reviewed(runtime, reviewed):
         return dict(state='not_established', reason='runtime_identity_unreviewed')
+    if observed.get('execution_binding') != dict(mode='sealed_memfd', sha256=runtime['bwrap']['sha256']):
+        return dict(state='not_established', reason='executable_unbound')
     init = observed.get('init') or {}
     if init.get('state') != 'bound':
         return dict(state='not_established', reason='init_' + str(init.get('state', 'unbound')))
@@ -447,6 +511,7 @@ def result(*, run_id, workspace, leaf, observed, custody, attempt_failed=False):
                 complete_descendant_custody=False,
                 init=observed.get('init'), init_exit=observed.get('init_exit'),
                 runtime_identity=leaf.runtime, reviewed_identity=leaf.reviewed,
+                execution_binding=observed.get('execution_binding'),
                 writer_quiescence=writer_quiescence(observed, observed.get('launch_evidence'),
                                                     runtime=leaf.runtime, reviewed=leaf.reviewed),
                 final_artifact_custody='not_established')

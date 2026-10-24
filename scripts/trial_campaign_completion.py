@@ -8,8 +8,8 @@ input, a broken identity join, or a gap, duplicate or reversal between the two
 weekly slots refuses. Honest but incomplete evidence yields a typed
 `not_complete` verdict with precise unmet reasons.
 
-What this never does: grade, regrade or recompute agreement (figures come
-only from the existing report and join), resolve disputes, promote an
+What this never does: grade or regrade (figures come
+only from the existing report projection and join), resolve disputes, promote an
 incomplete report, treat a declaration as an observation, or claim actual
 campaign success. Custody stays `unknown`. "No manual setup" stays `unproved`:
 no existing receipt records automation of ordinary branch requests. See
@@ -120,6 +120,9 @@ class _Week:
         self.receipt = receipt = _json(row['receipt'])
         need(isinstance(receipt, dict) and receipt.get('schema') == weekly.RECEIPT_SCHEMA
              and set(receipt) == RECEIPT_FIELDS, 'campaign_receipt_shape')
+        report._token(receipt['status'])
+        if receipt['code'] is not None:
+            report._token(receipt['code'])
         self.start = _slot(receipt, self.schedule, campaign_id)
         self.slot_id = receipt['slot_id']
         self.occurrence_id = str(uuid.uuid5(weekly.NAMESPACE, 'occurrence|' + self.slot_id))
@@ -152,8 +155,9 @@ class _Week:
         need(snapshot['schema'] == occurrence.SNAPSHOT_SCHEMA, 'campaign_snapshot_shape')
         state = snapshot['state']
         need(isinstance(state, dict) and state.get('schema') == occurrence.STATE_SCHEMA, 'campaign_snapshot_shape')
-        if snapshot['collection'] is not None:
-            _read(snapshot['collection'])
+        if state.get('pending') is not None:
+            report._token(state['pending'])
+        collection = None if snapshot['collection'] is None else _json(snapshot['collection'])
         routing = None if snapshot['routing'] is None else _json(snapshot['routing'])
         self.state, self.routing = state, routing
         if snapshot['report'] is None:
@@ -175,6 +179,16 @@ class _Week:
         recorded = grading.get('routing')
         need((routing is None) == (recorded is None)
              and (routing is None or recorded.get('disputes') == routing.get('disputes')), 'campaign_routing_mismatch')
+        # Validate through the existing report projection; never implement a second grading rule.
+        need(built == report.build_report(self.agent, join, built['run_date']),
+             'campaign_report_projection_mismatch')
+        if collection is not None:
+            need(isinstance(collection, dict)
+                 and collection.get('schema') == 'cairn.grader-delivery-collection/1'
+                 and collection.get('join') == join
+                 and collection.get('agreement') == join['aggregate']['declared_raw_agreement'],
+                 'campaign_collection_mismatch')
+        need(grading == occurrence._grading(join, collection, routing), 'campaign_grading_mismatch')
         self.report, self.join = built, join
 
     def _bridge(self, reference):
@@ -272,9 +286,13 @@ class _Week:
         pending = [dict(case=d['case'], seed=d['seed']) for d in self.report['disagreements_pending_owner']]
         count = g['disagreements']
         need(len(pending) == count, 'campaign_identity_mismatch')
+        expected_pairs = {p['packet']['pair_id'] for p in self.join['pairs']
+                          if p['declared_comparison'] == 'disagreement'}
+        routed_pairs = [] if self.routing is None else [d['pair_id'] for d in self.routing['disputes']]
         routed = (count == 0 or (g['disagreements_routed'] is True and self.routing is not None
                                  and g['routing']['destination'] == 'owner_only'
-                                 and len(self.routing['disputes']) == count))
+                                 and len(routed_pairs) == len(set(routed_pairs)) == count
+                                 and set(routed_pairs) == expected_pairs))
         if not routed:
             unmet.append('disagreements_unrouted')
         evidence = dict(slot_id=self.slot_id, disagreements=count, routed=routed,

@@ -402,15 +402,85 @@ class MigrationEvidenceTests(Base):
 
 
 
+class ExecutableBindingTests(Base):
+    def test_path_replacement_cannot_change_launched_bytes(self):
+        binary = self.root / 'bwrap'
+        shutil.copyfile('/usr/bin/echo', binary)
+        binary.chmod(0o700)
+        with patch.dict(os.environ, PATH=str(self.root)):
+            runtime = writer.runtime_identity()
+            reviewed = dict(schema=writer.REVIEWED_SCHEMA, **runtime,
+                            execution='sealed_memfd', source_scope={'fixture': 'echo'})
+            leaf = writer.WriterLeaf(str(self.root), {}, group_factory=FakeGroup, reviewed=reviewed)
+            self.addCleanup(leaf.close)
+            command = leaf.wrap(['bwrap', 'original'])
+            replacement = self.root / 'replacement'
+            shutil.copyfile('/usr/bin/false', replacement)
+            replacement.chmod(0o700)
+            replacement.replace(binary)
+            done = subprocess.run(command, pass_fds=leaf.pass_fds, capture_output=True, timeout=5)
+            self.assertEqual((done.returncode, done.stdout), (0, b'original\n'))
+
+    def test_in_place_write_and_sealed_descriptor_write_cannot_change_launch(self):
+        binary = self.root / 'bwrap'
+        shutil.copyfile('/usr/bin/echo', binary)
+        binary.chmod(0o700)
+        with patch.dict(os.environ, PATH=str(self.root)):
+            runtime = writer.runtime_identity()
+            reviewed = dict(schema=writer.REVIEWED_SCHEMA, **runtime,
+                            execution='sealed_memfd', source_scope={'fixture': 'echo'})
+            leaf = writer.WriterLeaf(str(self.root), {}, group_factory=FakeGroup, reviewed=reviewed)
+            self.addCleanup(leaf.close)
+            binary.write_bytes(Path('/usr/bin/false').read_bytes())
+            with self.assertRaises(PermissionError):
+                os.pwrite(leaf.executable_fd, b'changed', 0)
+            with self.assertRaises(PermissionError):
+                os.ftruncate(leaf.executable_fd, 0)
+            done = subprocess.run(leaf.wrap(['bwrap', 'original']), pass_fds=leaf.pass_fds,
+                                  capture_output=True, timeout=5)
+            self.assertEqual((done.returncode, done.stdout), (0, b'original\n'))
+
+    def test_changed_bytes_before_sealing_refuse(self):
+        binary = self.root / 'bwrap'
+        shutil.copyfile('/usr/bin/echo', binary)
+        binary.chmod(0o700)
+        digest = writer.file_sha256(binary)
+        binary.write_bytes(Path('/usr/bin/false').read_bytes())
+        with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_mismatch'):
+            writer.sealed_executable(binary, digest)
+
+    def test_privileged_or_script_sources_refuse(self):
+        binary = self.root / 'bwrap'
+        shutil.copyfile('/usr/bin/echo', binary)
+        binary.chmod(0o4700)
+        with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_policy'):
+            writer.sealed_executable(binary, writer.file_sha256(binary))
+        binary.chmod(0o700)
+        with patch.object(writer.os, 'getxattr', return_value=b'capabilities'):
+            with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_policy'):
+                writer.sealed_executable(binary, writer.file_sha256(binary))
+        binary.write_text('#!/bin/sh\nexit 0\n')
+        with self.assertRaisesRegex(writer.WriterUnavailable, 'writer_executable_not_elf'):
+            writer.sealed_executable(binary, writer.file_sha256(binary))
+
+    def test_sealing_failure_closes_descriptors_and_never_falls_back(self):
+        before = set(os.listdir('/proc/self/fd'))
+        with patch.object(writer.fcntl, 'fcntl', side_effect=OSError('seal unavailable')):
+            with self.assertRaisesRegex(OSError, 'seal unavailable'):
+                writer.sealed_executable('/usr/bin/echo', writer.file_sha256('/usr/bin/echo'))
+        self.assertEqual(set(os.listdir('/proc/self/fd')), before)
+
+
 class RuntimeIdentityTests(unittest.TestCase):
     """Quiescence is scoped to the root-reviewed identities; version text and declarations never count."""
 
     def setUp(self):
-        self.pin = dict(schema=writer.REVIEWED_SCHEMA,
+        self.pin = dict(schema=writer.REVIEWED_SCHEMA, execution='sealed_memfd',
                         kernel=dict(release='6.8.0-146-generic', version='Linux version 6.8.0-146-generic (synthetic build)'),
                         bwrap=dict(path='/usr/bin/bwrap', sha256='a' * 64),
                         source_scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3'))
-        self.observed = dict(init=dict(state='bound', pid_namespace=dict(inode=11, dev=3)), init_exit='exited')
+        self.observed = dict(init=dict(state='bound', pid_namespace=dict(inode=11, dev=3)), init_exit='exited',
+                             execution_binding=dict(mode='sealed_memfd', sha256='a' * 64))
         self.evidence = dict(namespaces=dict(pid=11, mnt=12))
 
     def quiescence(self, **changes):
@@ -424,6 +494,10 @@ class RuntimeIdentityTests(unittest.TestCase):
         self.assertEqual(self.quiescence(), dict(state='namespace_init_exited', basis=writer.BASIS,
                                                  scope=self.pin['source_scope']))
 
+    def test_matching_hash_without_descriptor_binding_is_not_quiescence(self):
+        self.observed.pop('execution_binding')
+        self.assertEqual(self.quiescence(), dict(state='not_established', reason='executable_unbound'))
+
     def test_any_mismatch_or_missing_identity_is_unreviewed(self):
         unreviewed = dict(state='not_established', reason='runtime_identity_unreviewed')
         for change in (dict(kernel_release='6.8.0-147-generic'), dict(kernel_version='Linux version other build'),
@@ -436,7 +510,7 @@ class RuntimeIdentityTests(unittest.TestCase):
                                                   runtime=dict(kernel=self.pin['kernel'], bwrap=self.pin['bwrap']),
                                                   reviewed=None), unreviewed)
 
-    def test_recorded_identity_is_the_executed_bwrap_bytes_not_version_text(self):
+    def test_path_identity_is_observed_but_unreviewed_launch_has_no_binding(self):
         import shutil
         runtime = writer.runtime_identity()
         if shutil.which('bwrap') is None:
@@ -445,9 +519,12 @@ class RuntimeIdentityTests(unittest.TestCase):
         self.assertEqual(runtime['bwrap'], dict(path=path, sha256=__import__('hashlib').sha256(Path(path).read_bytes()).hexdigest()))
         self.assertEqual(runtime['kernel']['release'], os.uname().release)
         self.assertEqual(runtime['kernel']['version'], Path('/proc/version').read_text().strip())
-        leaf = writer.WriterLeaf(tempfile.mkdtemp(), {}, group_factory=lambda d, controls: FakeGroup(d, controls))
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        leaf = writer.WriterLeaf(directory.name, {}, group_factory=lambda d, controls: FakeGroup(d, controls))
         try:
-            self.assertEqual(leaf.wrap(['bwrap', '--x'])[6:], [path, '--x'])  # exec'd by the hashed absolute path
+            self.assertEqual(leaf.wrap(['bwrap', '--x'])[6:], [path, '--x'])
+            self.assertIsNone(leaf.execution_binding)
         finally:
             leaf.close()
 
@@ -472,7 +549,7 @@ class NamespaceInitTests(Base):
     def reviewed(**changes):
         """A test pin equal to this host's recorded identities (the matching path); changes make it differ."""
         runtime = writer.runtime_identity()
-        pin = dict(schema=writer.REVIEWED_SCHEMA, kernel=dict(runtime['kernel']), bwrap=dict(runtime['bwrap']),
+        pin = dict(schema=writer.REVIEWED_SCHEMA, execution='sealed_memfd', kernel=dict(runtime['kernel']), bwrap=dict(runtime['bwrap']),
                    source_scope=dict(kernel='linux 6.8.0-146.146', bwrap='bubblewrap 0.9.0-1ubuntu0.3'))
         for key, value in changes.items():
             section, field = key.split('_', 1)
@@ -567,7 +644,9 @@ class NamespaceInitTests(Base):
         evidence = dict(namespaces=dict(pid=11, mnt=12))
         pin = self.reviewed()
         runtime = dict(kernel=dict(pin['kernel']), bwrap=dict(pin['bwrap']))
-        q = lambda observed, evidence: writer.writer_quiescence(observed, evidence, runtime=runtime, reviewed=pin)
+        q = lambda observed, evidence: writer.writer_quiescence(
+            dict(observed, execution_binding=dict(mode='sealed_memfd', sha256=pin['bwrap']['sha256'])),
+            evidence, runtime=runtime, reviewed=pin)
         self.assertEqual(q(dict(init=bound, init_exit='exited'), evidence)['state'], 'namespace_init_exited')
         self.assertEqual(q(dict(init=bound, init_exit='exited'), dict(namespaces=dict(pid=99, mnt=12))),
                          dict(state='not_established', reason='actor_namespace_unbound'))
@@ -792,6 +871,12 @@ class RunAgentIntegrationTests(Base):
             with self.subTest(extra=extra), self.assertRaises(SystemExit), patch('sys.stderr', io.StringIO()):
                 task.main(['agent', '--legacy-fixtures', '--output', str(self.root / 'never'), '--arms', *extra])
         self.assertFalse((self.root / 'never').exists())
+        with patch('sys.stderr', io.StringIO()) as error, self.assertRaises(SystemExit):
+            task.main(['agent', '--legacy-fixtures', '--output', str(self.root / 'never'),
+                       '--harness', 'codex', '--codex-weekly-limits',
+                       '--original-writer-cgroup', str(self.delegated),
+                       '--original-writer-controls', str(controls), '--original-writer-controls-sha256', digest])
+        self.assertIn('--original-writer-cgroup requires --original-limits', error.getvalue())
 
 @unittest.skipUnless(delegation(), 'needs an already delegated owned fixture service cgroup')
 class RealDelegatedLeafTests(Base):

@@ -382,6 +382,9 @@ class PinTests(Case):
             routing['disputes'] = routing_disputes
             snapshot['routing'] = pin(week.root/'forged-routing.json', C(routing))
             snapshot['state']['grading']['routing']['disputes'] = routing_disputes
+            # Keep the summary internally consistent; test the routing identities separately.
+            snapshot['state']['grading']['disagreements_routed'] = (
+                len(routing_disputes) == snapshot['state']['grading']['disagreements'])
         return dict(week.row(), occurrence_snapshot=pin(week.root/'forged-snapshot.json', C(snapshot)))
 
     def test_a_report_for_another_slot_or_agent_breaks_the_identity_join(self):
@@ -394,6 +397,22 @@ class PinTests(Case):
         for name, change in changes.items():
             with self.subTest(name=name):
                 self.refused('campaign_identity_mismatch', [one.row(), self.forged(two, report_change=change)])
+
+    def test_repinned_report_cannot_override_its_source_join(self):
+        one, two = self.complete_weeks()
+        self.refused('campaign_report_projection_mismatch', [
+            one.row(), self.forged(two, report_change=lambda built: built['attempts'].update(finished=0))])
+
+    def test_same_count_routing_for_other_pairs_is_unrouted(self):
+        one = self.week('w1', WEEK_1).unchanged()
+        two = self.week('w2', WEEK_2, CHANGED_STATES).graded(
+            lambda pair, slot: ['pass', 'fail'] if slot == 'primary' else ['fail', 'pass'])
+        snapshot = json.loads(Path(two.snapshot['path']).read_bytes())
+        routing = json.loads(Path(snapshot['routing']['path']).read_bytes())
+        for index, dispute in enumerate(routing['disputes']):
+            dispute['pair_id'] = 'wrong-pair-' + str(index)
+        verdict = self.evaluate([one.row(), self.forged(two, routing_disputes=routing['disputes'])])
+        self.assertEqual(verdict['criteria']['disputes_routed']['state'], 'unmet')
 
     def test_routing_with_fewer_disputes_than_disagreements_is_unrouted(self):
         one = self.week('w1', WEEK_1).unchanged()
