@@ -314,6 +314,22 @@ Optional kind values include update, request, response and notice. Event kind
 strings are bounded to the same topic-name syntax. CLI output follows the
 existing `cairn.response/1` envelope; an empty inbox returns `delivery: null`.
 
+An authenticated publisher may opt a `notice` into a version 1 wake policy with
+`--notice-urgency routine --notice-defer-seconds N` for `N` from 0 through 60.
+`--notice-urgency urgent` has no delay. Absent policy, requests and responses
+remain immediately eligible; unknown explicit policy versions are refused.
+The store stamps the publisher
+as policy owner, retains the version and urgency on the event, and sets each
+routine delivery's `available_at` from the event's fixed creation time. A retry
+with the same publication request UUID cannot extend that deadline. A different
+policy under that UUID is an idempotency conflict. Event status exposes both
+the policy and each delivery's availability time; the native wake host still
+applies its existing busy, lease and admission safeguards. This policy delays
+one notice's wake eligibility. It does not mark the notice handled, suppress it,
+infer task priority from its text, or coalesce similar sources. Disabling the
+policy for new publications leaves earlier deliveries under their durable
+identities and deadlines.
+
 [Automated wakeups](agent-wakeups.md) are a separate host-side layer with a
 durable hold on claimed deliveries; ordinary claims respect those holds and retry
 delays. Structured wake context, [watch](inbox-watch.md),

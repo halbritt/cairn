@@ -13,6 +13,7 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
+	NoticePolicy       *NoticeWakePolicy  `json:"notice_policy,omitempty"`
 	ResponseGroup      *ResponseGroupSpec `json:"response_group,omitempty"`
 	AdmissionExpiresAt *time.Time         `json:"admission_expires_at,omitempty"`
 	TaskDeadline       *time.Time         `json:"task_deadline,omitempty"`
@@ -33,19 +34,34 @@ type EventDestination struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 }
+
+// NoticeWakePolicy records the authenticated publisher's opt-in wake policy.
+// It does not change claim, lease, or settlement authorization.
+type NoticeWakePolicy struct {
+	Version      int    `json:"version"`
+	Urgency      string `json:"urgency"`
+	DeferSeconds int    `json:"defer_seconds"`
+	Owner        string `json:"owner"`
+}
+type NoticeWakePolicyRequest struct {
+	Version      int    `json:"version"`
+	Urgency      string `json:"urgency"`
+	DeferSeconds int    `json:"defer_seconds"`
+}
 type PublishEventRequest struct {
-	ResponseGroup      *ResponseGroupSpec `json:"response_group,omitempty"`
-	AdmissionExpiresAt *time.Time         `json:"admission_expires_at,omitempty"`
-	TaskDeadline       *time.Time         `json:"task_deadline,omitempty"`
-	RequestID          string             `json:"request_id"`
-	Repo               string             `json:"repo,omitempty"`
-	Kind               string             `json:"kind"`
-	Ref                RecordVersionRef   `json:"ref"`
-	Destination        EventDestination   `json:"destination"`
-	CausationID        string             `json:"causation_id,omitempty"`
-	CorrelationID      string             `json:"correlation_id,omitempty"`
-	Resolution         *AgentResolution   `json:"resolution,omitempty"`
-	Pool               *PoolRequirements  `json:"pool,omitempty"`
+	NoticePolicy       *NoticeWakePolicyRequest `json:"notice_policy,omitempty"`
+	ResponseGroup      *ResponseGroupSpec       `json:"response_group,omitempty"`
+	AdmissionExpiresAt *time.Time               `json:"admission_expires_at,omitempty"`
+	TaskDeadline       *time.Time               `json:"task_deadline,omitempty"`
+	RequestID          string                   `json:"request_id"`
+	Repo               string                   `json:"repo,omitempty"`
+	Kind               string                   `json:"kind"`
+	Ref                RecordVersionRef         `json:"ref"`
+	Destination        EventDestination         `json:"destination"`
+	CausationID        string                   `json:"causation_id,omitempty"`
+	CorrelationID      string                   `json:"correlation_id,omitempty"`
+	Resolution         *AgentResolution         `json:"resolution,omitempty"`
+	Pool               *PoolRequirements        `json:"pool,omitempty"`
 }
 type EventQuery struct {
 	Repo  string `json:"repo,omitempty"`
@@ -82,6 +98,7 @@ type AgentDelivery struct {
 	DeliveryID  string            `json:"delivery_id"`
 	Consumer    string            `json:"consumer"`
 	State       string            `json:"state"`
+	AvailableAt *time.Time        `json:"available_at,omitempty"`
 	LeaseID     string            `json:"lease_id,omitempty"`
 	LeaseUntil  *time.Time        `json:"lease_until,omitempty"`
 	Attempts    int               `json:"attempts"`
@@ -179,7 +196,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id)`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -188,7 +205,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
@@ -211,6 +228,14 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 }
 
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
+	if policy := req.NoticePolicy; policy != nil {
+		if req.Kind != "notice" || policy.Version != 1 ||
+			(policy.Urgency != "routine" && policy.Urgency != "urgent") ||
+			policy.DeferSeconds < 0 || policy.DeferSeconds > 60 ||
+			(policy.Urgency == "urgent" && policy.DeferSeconds != 0) {
+			return req, failure("INVALID_REQUEST", "notice policy requires notice kind, version 1, routine or urgent urgency, and at most 60 seconds routine deferral")
+		}
+	}
 	if req.ResponseGroup != nil {
 		if err := req.ResponseGroup.validate(req); err != nil {
 			return req, err
@@ -333,16 +358,33 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if req.ResponseGroup != nil && req.CorrelationID == "" {
 		req.CorrelationID = id
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline)
+	var policy *NoticeWakePolicy
+	delay := 0
+	if req.NoticePolicy != nil {
+		policy = &NoticeWakePolicy{Version: req.NoticePolicy.Version, Urgency: req.NoticePolicy.Urgency,
+			DeferSeconds: req.NoticePolicy.DeferSeconds, Owner: s.channel.Principal}
+		if policy.Urgency == "routine" {
+			delay = policy.DeferSeconds
+		}
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy)
 	if err != nil {
 		return AgentEvent{}, err
 	}
 	if req.Destination.Type == "agent" {
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, uuid.NewString(), id, req.Destination.Name)
+		if delay > 0 {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT $1,$2,$3,created_at+make_interval(secs=>$4) FROM cairn.agent_event WHERE event_id=$2`, uuid.NewString(), id, req.Destination.Name, delay)
+		} else {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, uuid.NewString(), id, req.Destination.Name)
+		}
 	} else if req.Destination.Type == "pool" {
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, id)
 	} else {
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
+		if delay > 0 {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT gen_random_uuid(),$1,s.consumer,e.created_at+make_interval(secs=>$4) FROM cairn.agent_subscription s JOIN cairn.agent_event e ON e.event_id=$1 WHERE s.repo=$2 AND s.topic=$3 AND s.active`, id, req.Repo, req.Destination.Name, delay)
+		} else {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
+		}
 	}
 	if err != nil {
 		return AgentEvent{}, err
@@ -501,13 +543,13 @@ func (s *Store) Events(ctx context.Context, req EventQuery, dest Destination) (E
 }
 
 const deliveryControl = `CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code) END`
-const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl + `,d.completed_after_lease`
+const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,d.available_at,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl + `,d.completed_after_lease`
 
 func scanDelivery(row pgx.Row) (AgentDelivery, error) {
 	var d AgentDelivery
 	var id *string
 	var version *int
-	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control, &d.Late)
+	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.AvailableAt, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control, &d.Late)
 	if id != nil && version != nil {
 		d.Result = &RecordVersionRef{RecordID: *id, Version: *version}
 	}
@@ -526,6 +568,9 @@ func (s *Store) ownedDelivery(ctx context.Context, tx pgx.Tx, id string, dest De
 		return d, err
 	}
 	d.Event, err = s.readEvent(ctx, tx, eventID, dest)
+	if d.Event.NoticePolicy == nil {
+		d.AvailableAt = nil // Do not expand the default delivery envelope.
+	}
 	return d, err
 }
 
@@ -806,6 +851,9 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 			break
 		}
 		d.Event = out.Event
+		if out.Event.NoticePolicy == nil {
+			d.AvailableAt = nil
+		}
 		d.LeaseID = ""
 		d.LeaseUntil = nil
 		out.Deliveries = append(out.Deliveries, d)

@@ -28,6 +28,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--causation-id UUID] [--correlation-id UUID]
     [--admission-expires-at RFC3339] [--task-deadline RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
+    [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
@@ -110,6 +111,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	taskDeadline := f.String("task-deadline", "", "execution deadline instant for running request (RFC3339)")
 	responseDeadline := f.String("response-deadline", "", "response group deadline instant (RFC3339)")
 	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
+	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
+	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
 	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -120,7 +123,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -279,8 +282,21 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			}
 			parsedResponseGroup = &core.ResponseGroupSpec{Deadline: t, PartialPolicy: policy}
 		}
+		var parsedNoticePolicy *core.NoticeWakePolicyRequest
+		if provided["notice-urgency"] || provided["notice-defer-seconds"] {
+			if !provided["notice-urgency"] {
+				return nil, invalid("--notice-defer-seconds requires --notice-urgency")
+			}
+			if *kind != "notice" || (*noticeUrgency != "routine" && *noticeUrgency != "urgent") ||
+				*noticeDeferSeconds < 0 || *noticeDeferSeconds > 60 ||
+				(*noticeUrgency == "urgent" && *noticeDeferSeconds != 0) {
+				return nil, invalid("notice policy requires --kind notice, routine or urgent urgency, and at most 60 seconds routine deferral")
+			}
+			parsedNoticePolicy = &core.NoticeWakePolicyRequest{Version: 1, Urgency: *noticeUrgency,
+				DeferSeconds: *noticeDeferSeconds}
+		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline, ResponseGroup: parsedResponseGroup}
+		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline, ResponseGroup: parsedResponseGroup, NoticePolicy: parsedNoticePolicy}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
