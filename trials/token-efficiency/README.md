@@ -65,13 +65,25 @@ task with saved source state; it does not invent a native handoff event kind.
 The required-source conflict may correctly refuse before delivering either
 body, so its acceptance check allows that bounded refusal.
 
-**Current preflight boundary:** the validator checks the fixture and export
-as data. It does not insert records into a disposable or live native store,
-issue C authority, apply arm interventions, execute transitions, launch a
-provider, measure tokens, join native turns, or grade task outcomes. The
-existing gate requires native workflow evidence for
-observed sender/recipient turns. An ordinary-memory case has no proven native
-join yet; a fabricated inbox event would change what that case measures.
+`core/token_efficiency_panel_materialization_test.go` exercises a bounded
+native store slice under `make test-integration`'s disposable PostgreSQL
+cluster. It reads this fixture and checks A record creation/edit with retained
+history for `corrected_note`, governed C issuance and a required-conflict
+refusal for `required_conflict_group`, and one request source/event with an
+identical publish retry and one delivery for `duplicate_send`. The test uses
+store-owned writer identity, the disposable test operator grant, and the
+fixture's source/event fields. It does not materialize the other 19 situations
+or any four-arm intervention.
+
+**Current preflight boundary:** the Python validator checks the fixture and
+export as data. It never inserts records, issues authority, applies arm
+interventions, executes transitions, launches a provider, measures tokens,
+joins native turns, or grades task outcomes. The three-case Go test above
+inserts only into its disposable integration database and makes no claim about
+full panel execution or accepted outcomes. The existing gate requires native
+workflow evidence for observed sender/recipient turns. An ordinary-memory case
+has no proven native join yet; a fabricated inbox event would change what that
+case measures.
 Future admission must solve the carrier and join, freeze the same account,
 model, effort, route, arm pins, and limits with the gate, then run and review
 all four arms. The subscription route rule remains in force. CAIRN-227 release
