@@ -3373,6 +3373,7 @@ def capture_event(memory, event, path, lock_path, hook_started):
             changes_binding = state.get("binding", [None, ""]) != current.get("binding", [None, ""])
             if (not same_binding or fields(current) != fields(original)
                     or (changes_binding and current != original)):
+                memory.capture_observation["outcome"] = "state_commit_error"
                 raise HookError("capture state changed before commit; selected notes may already be saved")
             workstream_unchanged = current.get("workstream") == original.get("workstream")
             if changes_binding:

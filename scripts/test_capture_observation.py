@@ -127,6 +127,25 @@ class CaptureObservationTests(unittest.TestCase):
         self.assertEqual(self.reports[-1]["outcome"], "state_commit_error")
         self.assertEqual(self.reports[-1]["selector_outcome"], "completed")
 
+    def test_concurrent_state_change_is_not_reported_as_confirmed_capture(self):
+        def concurrent_update(command, *, body, observation=None, **kwargs):
+            if command[0] == "claude":
+                state_path = self.root / "state" / (self.event["session_id"] + ".json")
+                state_path.write_text(json.dumps(dict(last_capture=dict(outcome="concurrent"))))
+                observation.update(elapsed_ms=12, outcome="completed")
+                return self.model_result
+            self.reports.append(json.loads(body))
+            return dict(observation_id="stored")
+
+        with patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "run_json", side_effect=concurrent_update):
+            with self.assertRaisesRegex(hook.HookError, "state changed before commit"):
+                hook.handle(self.config, self.event)
+        self.assertEqual(self.reports[-1]["outcome"], "state_commit_error")
+        self.assertEqual(self.reports[-1]["selector_outcome"], "completed")
+
     def test_prelaunch_selector_validation_is_not_counted_as_model_call(self):
         with self.assertRaises(hook.HookError):
             self.invoke(config=dict(self.config, recall_model="bad model name"))
