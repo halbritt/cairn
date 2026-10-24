@@ -96,6 +96,12 @@ behavior, token usage or subscription quota state. It is not evidence of
 subscription exhaustion. The failure is recorded here so it cannot be mistaken
 for a completed request-shape observation.
 
+A later [corrected local Codex probe](codex-compact-request-shape-2026-10-24.md)
+captured the first request in both full and compact profiles. Neither initial
+request included a Cairn declaration; Codex's local MCP registry did show the
+same ten tools and equal argument contracts. This does not supersede the
+historical failed preflight or establish first-use/provider savings.
+
 Reproduce locally with the existing private manifest:
 
 ```sh
