@@ -5,9 +5,13 @@ checks source mechanics; successful fixture I/O is not native compatibility.
 """
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
+import subprocess
 import time
 import unittest
+from unittest.mock import patch
 
 import test_trial_sdk_bootstrap_review as bf
 import test_trial_sdk_fixed_run as rf
@@ -20,6 +24,11 @@ from trial_sdk_native_process_owner import NativeProcessOwner
 from trial_sdk_session_resources import SDKSessionResources
 from trial_sdk_stream_credit import StreamCredit
 from trial_sdk_fixed_run import FixedRunOwner
+import trial_sdk_fixed_bootstrap as fixed_bootstrap
+from trial_sdk_fixed_source_pins import SOURCE_PINS
+
+FIXED_SOURCE_REVISION = '43c4b6170f1f7784d70d55ca6669d770ab214ed1'
+FIXED_MEMORY_BLOB = 'f1d5638f77b510298d90a4945479dfc2e256d8d9'
 
 NATIVE = r'''#!/usr/bin/python3
 import json, sys, os
@@ -113,7 +122,114 @@ print(json.dumps({'schema':'cairn.response/1','ok':True,'status':'OK','data':dat
 
 
 class NativeRunTests(unittest.TestCase):
-    setUp = bf.SDKReviewTests.setUp
+    def setUp(self):
+        bf.SDKReviewTests.setUp(self)
+        NativeRunTests._stage_pinned_sources(self)
+
+    def _stage_pinned_sources(self):
+        """Give inert native fixtures private, read-only copies of fixed sources.
+
+        Repository checkouts may intentionally be group-writable, and the
+        current memory.py may have advanced beyond this frozen trial's pin.
+        The runtime still refuses such live sources. Tests use the explicitly
+        reviewed historical tree, verify every independent source pin, and
+        copy into a private fixture before exercising the unchanged policy.
+        """
+        staged = self.root / 'fixed-pinned-source'
+        staged.mkdir(mode=0o700)
+        scripts = staged / 'scripts'
+        scripts.mkdir(mode=0o700)
+        integrations = staged / 'integrations'
+        integrations.mkdir(mode=0o700)
+        lifecycle = integrations / 'lifecycle'
+        lifecycle.mkdir(mode=0o700)
+        self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(scripts.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(integrations.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(lifecycle.stat().st_mode), 0o700)
+
+        repo = Path(__file__).resolve().parent.parent
+        original_modes = {}
+        for name, expected in SOURCE_PINS.items():
+            relative = ('integrations/lifecycle/memory.py' if name == 'memory.py'
+                        else 'scripts/' + name)
+            source = repo / relative
+            target = lifecycle / name if name == 'memory.py' else scripts / name
+            original_modes[str(source)] = stat.S_IMODE(source.stat().st_mode)
+            raw = subprocess.check_output(
+                ['git', 'show', f'{FIXED_SOURCE_REVISION}:{relative}'], cwd=repo)
+            self.assertLessEqual(len(raw), 256 * 1024 if name == 'memory.py' else 65536)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), expected,
+                             f'{relative} no longer matches the authored source pin')
+
+            target_fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                                | os.O_NOFOLLOW | os.O_CLOEXEC, 0o400)
+            try:
+                view = memoryview(raw)
+                while view:
+                    written = os.write(target_fd, view)
+                    self.assertGreater(written, 0)
+                    view = view[written:]
+                os.fsync(target_fd)
+                os.fchmod(target_fd, 0o400)
+                sealed_identity = os.fstat(target_fd)
+            finally:
+                os.close(target_fd)
+            target_fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                initial = os.fstat(target_fd)
+                self.assertEqual((initial.st_dev, initial.st_ino, initial.st_mode,
+                                  initial.st_uid, initial.st_gid, initial.st_nlink,
+                                  initial.st_size, initial.st_mtime_ns, initial.st_ctime_ns),
+                                 (sealed_identity.st_dev, sealed_identity.st_ino,
+                                  sealed_identity.st_mode, sealed_identity.st_uid,
+                                  sealed_identity.st_gid, sealed_identity.st_nlink,
+                                  sealed_identity.st_size, sealed_identity.st_mtime_ns,
+                                  sealed_identity.st_ctime_ns))
+                copied = bytearray()
+                while len(copied) <= len(raw):
+                    block = os.read(target_fd, min(8192, len(raw) + 1 - len(copied)))
+                    if not block:
+                        break
+                    copied.extend(block)
+                final = os.fstat(target_fd)
+                self.assertEqual((final.st_dev, final.st_ino, final.st_mode,
+                                  final.st_uid, final.st_gid, final.st_nlink,
+                                  final.st_size, final.st_mtime_ns, final.st_ctime_ns),
+                                 (initial.st_dev, initial.st_ino, initial.st_mode,
+                                  initial.st_uid, initial.st_gid, initial.st_nlink,
+                                  initial.st_size, initial.st_mtime_ns, initial.st_ctime_ns))
+                named = os.stat(target, follow_symlinks=False)
+                self.assertEqual((named.st_dev, named.st_ino, named.st_mode),
+                                 (initial.st_dev, initial.st_ino, initial.st_mode))
+                self.assertEqual(hashlib.sha256(copied).hexdigest(), expected)
+                self.assertEqual(len(copied), len(raw))
+                self.assertEqual(stat.S_IMODE(initial.st_mode), 0o400)
+            finally:
+                os.close(target_fd)
+            raw = None
+
+        self._pinned_source_original_modes = original_modes
+        self._pinned_source_fixture = staged
+        self._fixed_bootstrap_path_patch = patch.object(
+            fixed_bootstrap, '__file__', str(scripts / 'trial_sdk_fixed_bootstrap.py'))
+        self._fixed_bootstrap_path_patch.start()
+        self.addCleanup(self._fixed_bootstrap_path_patch.stop)
+
+    def test_fixed_trial_source_epoch_is_historical_and_unchanged_by_fixture_setup(self):
+        source = Path(__file__).resolve().parent.parent / 'integrations/lifecycle/memory.py'
+        staged = self._pinned_source_fixture / 'integrations/lifecycle/memory.py'
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode),
+                         self._pinned_source_original_modes[str(source)])
+        self.assertEqual(hashlib.sha256(staged.read_bytes()).hexdigest(),
+                         SOURCE_PINS['memory.py'])
+        self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o400)
+        self.assertEqual(stat.S_IMODE(staged.parent.stat().st_mode), 0o700)
+        self.assertEqual(subprocess.check_output(
+            ['git', 'rev-parse', f'{FIXED_SOURCE_REVISION}:integrations/lifecycle/memory.py'],
+            cwd=Path(__file__).resolve().parent.parent).decode().strip(),
+            FIXED_MEMORY_BLOB)
+
     config = rf.RunTests.config
 
     def change(self, role, body):

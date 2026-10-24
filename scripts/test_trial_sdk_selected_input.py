@@ -2,10 +2,14 @@
 import dataclasses
 import hashlib
 import json
+from pathlib import Path
+import stat
 import unittest
 from unittest.mock import patch
 import test_trial_sdk_native_run as native
+import trial_bootstrap_snapshot as custody
 from trial_sdk_selected_input import RAW, WORKING
+from trial_paired_request import Refusal
 
 NATIVE = r'''#!/usr/bin/python3
 import json,sys,os
@@ -62,6 +66,37 @@ class SelectedInputTests(unittest.TestCase):
     cleanup = native.NativeRunTests.cleanup
     until = native.NativeRunTests.until
     native_source = NATIVE
+
+    def test_pinned_fixture_is_private_and_setup_never_changes_source_mode(self):
+        repo = Path(__file__).resolve().parent.parent
+        for name, expected in native.SOURCE_PINS.items():
+            relative = 'integrations/lifecycle/memory.py' if name == 'memory.py' else name
+            source = repo / relative if name == 'memory.py' else repo / 'scripts' / relative
+            staged = (self._pinned_source_fixture / relative if name == 'memory.py'
+                      else self._pinned_source_fixture / 'scripts' / relative)
+            self.assertEqual(stat.S_IMODE(source.stat().st_mode),
+                             self._pinned_source_original_modes[str(source)])
+            self.assertEqual(hashlib.sha256(staged.read_bytes()).hexdigest(), expected)
+            self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o400)
+        self.assertEqual(stat.S_IMODE(self._pinned_source_fixture.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE((self._pinned_source_fixture / 'scripts').stat().st_mode),
+                         0o700)
+        self.assertEqual(stat.S_IMODE((self._pinned_source_fixture / 'integrations').stat().st_mode),
+                         0o700)
+        self.assertEqual(stat.S_IMODE((self._pinned_source_fixture / 'integrations/lifecycle').stat().st_mode),
+                         0o700)
+
+    def test_group_writable_live_checkout_source_still_refuses(self):
+        source = Path(__file__).resolve().parent.parent / 'integrations/lifecycle/memory.py'
+        original_mode = stat.S_IMODE(source.stat().st_mode)
+        if not original_mode & 0o020:
+            self.skipTest('checkout source is not group-writable')
+        owner = custody.Snapshot(str(self.root / 'live-source-policy-probe'))
+        self.addCleanup(owner.close)
+        with self.assertRaisesRegex(Refusal, '^source_file_policy$'):
+            owner.copy('memory.py', {'path': str(source),
+                       'sha256': native.SOURCE_PINS['memory.py']}, 256 * 1024)
+        self.assertEqual(stat.S_IMODE(source.stat().st_mode), original_mode)
 
     def start(self, mode='complete'):
         owner=self.prepare(mode)

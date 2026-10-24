@@ -5,6 +5,19 @@ The `sdk-hosted-memory/1` profile supplies a source-bound launch path in
 input delivery, physical RSS admission, or CAIRN-107 acceptance. The legacy null
 hook-interface declaration still refuses `require_complete`.
 
+The fixed producer's authored source epoch is `43c4b6170f1f7784d70d55ca6669d770ab214ed1`.
+`trial_sdk_fixed_source_pins.py` binds all 23 files to that tree, including
+`memory.py` SHA-256 `53d826f6ed396156de21b23865814f9f7e1db67051600c31ec40e8ef07efe896`.
+Do not regenerate those pins from the current checkout without a reviewed
+source-epoch change. Current `main` has since advanced `memory.py` to SHA-256
+`6209b9b16a4d2317ccfee385f05fff7277d0db8dd6d90ff2ec231005dae390cf`; fixed
+source preparation must therefore refuse that live file (with the current
+0664 mode it refuses `source_file_policy` first, and with a readable mode its
+content pin still fails). The focused inert SDK tests stage the exact pinned
+tree from Git into a private 0700 directory with 0400 files, checking all pin
+hashes and the copied inodes/bytes. They do not change or bless the live
+checkout and do not relax the production file-mode or content checks.
+
 `prepare_native_review` reserves its named preparation storage before opening,
 copying or parsing sources. `SDKNativeLaunch` holds the exact copied executable
 and configuration inodes; it maps only the executable and configuration argument
