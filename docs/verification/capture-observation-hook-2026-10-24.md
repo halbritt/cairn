@@ -126,3 +126,42 @@ establish accepted task usefulness, provider billing, net token savings, or a
 successful provider-backed capture in a native Claude session. A fresh native
 canary needs a reviewed method for retaining a receipt across CLI startup
 failure. The full CAIRN-215 rollout gate remains open.
+
+## Native local Claude SessionEnd capture
+
+A focused follow-up ran a persistence-enabled Claude Code 2.1.310 `--print`
+session with a fresh private `HOME`, `CLAUDE_CONFIG_DIR`, and hook destination.
+The copied lifecycle config enabled only `capture_observations`; its selector
+used the installed CLI with a fixture model name and inherited a fake
+`ANTHROPIC_API_KEY` plus a loopback-only Messages endpoint. The actor and
+selector requests were answered by a scripted local server. The process
+environment was rebuilt from `PATH`, `LANG`, and these fixture settings; no
+installed credentials or settings were read. The only Store was a fresh local
+PostgreSQL cluster and the API used disposable hook/report identities.
+
+The native host invoked the `SessionEnd` hook after the synthetic actor turn.
+The hook read the private session transcript, made one actual Claude selector
+CLI call to the local Messages stub, saved one scripted selected lesson, and
+reported the capture under the SHA-256 of that native session ID. The
+observation row joined to the `last_capture` state by session and snapshot
+hashes. It recorded `outcome=saved`, `selector_outcome=completed`, requested
+model `sonnet`, reported model `claude-sonnet-5-5`, selector duration 298 ms,
+and total hook duration 340 ms. Reported usage was 137 input tokens, 23 output
+tokens, 9 cache-creation input tokens, and 41 cache-read input tokens. The
+Claude CLI also reported cost `$0.0005306` for this scripted response; this is
+only a local CLI estimate and is not provider billing or a charge.
+
+The fixture verified the selected record and `SessionEnd` observation in the
+disposable API, and queried PostgreSQL to confirm the dialogue sentinel was
+absent from capture observations and saved record versions. The state file and
+private transcript/output were removed after the run. Reproduction is
+`python3 -B scripts/check_claude_capture_observation_native_disposable.py`;
+the native case is also gated into `scripts/check_capture_observation.py` by
+`CAIRN_CLAUDE_BINARY`.
+
+This verifies one native local capture and its usage/outcome join. It does not
+show actor usefulness, accepted task outcomes, subscription usage, billing,
+or installed canary behavior. The native case covers the saved selector path;
+unchanged/courtesy/no-selector and opt-out behavior remains covered by the
+separate model-free capture probe and unit tests, not by a second native
+session here. CAIRN-215 remains open.
