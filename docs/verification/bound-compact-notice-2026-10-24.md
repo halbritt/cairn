@@ -110,3 +110,36 @@ fixture code was discarded rather than retaining an unverified integration
 path. A future attempt needs a narrowly pinned `process_exe_dirs` entry in its
 private test binding, then must repeat the disposable native notice/response
 and explicit-settlement checks. CAIRN-216 remains open.
+
+## Claude native compact notice retry
+
+A focused retry copied the binding into a fresh private `HOME` and
+`CLAUDE_CONFIG_DIR`, retained `process_names: ["claude"]`, and added only the
+resolved installed executable's parent directory to the **private copy's**
+`process_exe_dirs`. For Claude Code 2.1.310 that directory was
+`/home/halbritt/.local/share/claude/versions`; the staged candidate and
+installed account configuration were not edited. The fixture used a fresh
+disposable PostgreSQL cluster and Cairn API, a fixture-only API key, and a
+loopback Messages server. It made no subscription or external provider call.
+
+The native Claude SessionStart hook registered the session before the local
+provider exchange. A notice with a 6,748-byte source was published to that
+session. Claude's native Stop path invoked Bash to run the real compact `read`
+command; the fixture verified the returned kind, record identity and exact
+source body, then invoked compact `settle ... handled`. The command confirmed
+the handled result and one attempt, and the sender's event status reported the
+delivery handled. PostgreSQL, API, hook state and fixture output were removed
+after the run. Reproduction is available through
+`scripts/check_claude_compact_native_disposable.py`; the same native fixture is
+gated into `scripts/check_agent_coordination.py` when
+`CAIRN_CLAUDE_BINARY` is supplied.
+
+This run verifies the request shape around the read boundary: the compact
+handle was present, and the exact source was absent, from the outgoing request
+before the read command. After Bash ran the explicit read, the full source
+appeared in the expected `user/tool_result` block and was checked before
+settlement. This establishes native compact notice context and exact source
+read; it does **not** establish a provider usage saving or accepted task work.
+It exercised one notice only; a compact response workflow, paired task
+outcome, provider usage, latency and canary/rollback evidence remain open.
+CAIRN-216 remains open.

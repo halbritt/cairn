@@ -625,6 +625,9 @@ def check(binary, root, repo, api_call):
         if os.environ.get("CAIRN_CLAUDE_BINARY"):
             from check_claude_inbox import check as check_claude_inbox
             check_claude_inbox(os.environ['CAIRN_CLAUDE_BINARY'], root / 'claude-native-inbox', json.loads(config.read_text()), api_call)
+            from check_claude_compact_native import check as check_claude_compact_native
+            check_claude_compact_native(os.environ['CAIRN_CLAUDE_BINARY'], root / 'claude-native-compact',
+                                        json.loads(config.read_text()), api_call)
             installer_spec = importlib.util.spec_from_file_location("claude_coordination_installer", Path(__file__).with_name("install-agent-coordination.py"))
             installer = importlib.util.module_from_spec(installer_spec)
             installer_spec.loader.exec_module(installer)
