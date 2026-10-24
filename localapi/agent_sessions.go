@@ -24,6 +24,10 @@ func (s *Server) serveAgentSessions(w http.ResponseWriter, r *http.Request, c cl
 			}
 			return c.store.ClaimSessionInbox(ctx, req, c.destination)
 		})
+	case "/v1/session-inbox-advance":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxAdvance) (core.SessionInboxAdvanceResult, error) {
+			return c.store.AdvanceSessionInbox(ctx, req, c.destination)
+		})
 	case "/v1/session-inbox-reconcile":
 		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxReconcile) (core.SessionInboxAttempt, error) {
 			if c.remote && (req.Reason == "cancel_confirmed" || req.Reason == "exclusivity_revoked") {

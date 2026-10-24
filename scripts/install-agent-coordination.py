@@ -371,6 +371,7 @@ def main():
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--compact-inbox', action='store_true', help='opt this Codex or Claude binding into compact notice/response delivery')
+    parser.add_argument('--notice-batch', action='store_true', help='opt a compact native binding into bounded already-waiting notice batches')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
@@ -391,6 +392,8 @@ def main():
         parser.error('--opencode-cancel-trial requires --harness opencode --native-delivery --idle-wakeup')
     if args.compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
         parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
+    if args.notice_batch and not args.compact_inbox:
+        parser.error('--notice-batch requires --compact-inbox')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
@@ -398,6 +401,8 @@ def main():
         config['opencode_cancel_enabled'] = True
     if args.compact_inbox:
         config['compact_inbox_version'] = 1
+        if args.notice_batch:
+            config['notice_batch_version'] = 1
         previous = args.root.resolve() / 'bindings' / (args.binding + '.json')
         if previous.exists():
             installed = json.loads(previous.read_text())

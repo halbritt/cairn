@@ -283,6 +283,75 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(json.loads(settled.stdout)['status'], 'ignored')
         self.assertEqual(self.journal()['completion']['status'], 'committed')
 
+    def test_notice_batch_uses_new_handle_and_separate_settlements(self):
+        self.config['notice_batch_version'] = 1
+        self.state['inbox_attempt']['native_turn_id'] = 'native-turn-one'
+        first, rendered = self.compact_context('notice', 'First selected notice.')
+        self.assertIn('advance', rendered)
+        self.assertIn('batch_advance_request_id', first)
+        second_id = first['batch_advance_request_id']
+        second_delivery = dict(delivery_id='d2a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607',
+                               lease_id='e2a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607', state='leased',
+                               event=dict(event_id='f2a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607', kind='notice',
+                                          ref=dict(record_id=RESULT['record_id'], version=1),
+                                          **{'from': 'agent/requester'}))
+        second = dict(attempt_id=second_id, session=dict(agent_id=AGENT, execution_id=EXECUTION),
+                      native_turn_id='native-turn-one', batch_root=ATTEMPT, batch_index=2,
+                      batch_limit=3, delivery=second_delivery)
+        body = 'Second selected notice. ' * 250
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery']),
+                                      dict(ok=True, status='OK', data=second_delivery)],
+                      'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')],
+                      'session-inbox-advance': [dict(ok=True, status='OK', data=dict(attempt=second))],
+                      'history': [dict(ok=True, status='OK', data=history)],
+                      'ack': [dict(ok=True, status='OK', data=dict(state='handled', attempts=1))]})
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact']
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        settled = subprocess.run([*command, 'settle', first['compact_handle'], 'handled'], env=env,
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
+        advanced = subprocess.run([*command, 'advance', first['compact_handle']], env=env,
+                                  capture_output=True, text=True, timeout=30)
+        self.assertEqual(advanced.returncode, 0, advanced.stdout + advanced.stderr)
+        next_text = json.loads(advanced.stdout)['next']
+        self.assertNotIn(body, next_text)
+        self.assertIn('read its exact text', next_text)
+        new_context = json.loads((self.root / 'state' / 'inbox' / (second_id + '.json')).read_text())
+        self.assertNotEqual(first['compact_handle'], new_context['compact_handle'])
+        self.assertEqual(new_context['delivery_id'], second_delivery['delivery_id'])
+        read = subprocess.run([*command, 'read', new_context['compact_handle']], env=env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(read.stdout)['body'], body)
+        second_settled = subprocess.run([*command, 'settle', new_context['compact_handle'], 'handled'], env=env,
+                                        capture_output=True, text=True, timeout=30)
+        self.assertEqual(second_settled.returncode, 0, second_settled.stdout + second_settled.stderr)
+        self.assertEqual([item['operation'] for item in self.log()].count('ack'), 2)
+
+    def test_notice_batch_unavailable_source_can_settle_failed_explicitly(self):
+        self.config.update(compact_inbox_version=1, notice_batch_version=1)
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        self.state['inbox_attempt']['native_turn_id'] = 'native-turn-one'
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        context, rendered = self.context(with_rendered=True, extra_replies={
+            'history': [dict(ok=False, status='SOURCE_UNAVAILABLE')],
+            'ack': [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))]})
+        self.assertIn('failed --code source_unavailable', rendered)
+        self.assertIn('advance', rendered)
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        settled = subprocess.run([sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle',
+                                  context['compact_handle'], 'failed', '--code', 'source_unavailable'],
+                                 env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
+        self.assertEqual(json.loads(settled.stdout)['status'], 'failed')
+        self.assertEqual([entry['operation'] for entry in self.log()].count('history'), 0)
+
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()
         for key in ('completion', 'acknowledgement', 'response', 'finish_reply'):

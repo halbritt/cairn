@@ -1832,6 +1832,8 @@ def heartbeat(config, state):
 
 
 def recover_inbox(config, state, path):
+    if state.get('batch_advance_intent'):
+        advance_batch_intent(config, state, path)
     if state.get('inbox_intent') and not state.get('inbox_attempt'):
         result = call(config, 'session-inbox-claim', state['inbox_intent'])
         if result['attempt']:
@@ -1839,6 +1841,50 @@ def recover_inbox(config, state, path):
         else:
             state.pop('inbox_intent')
         write_state(path, state)
+
+
+def advance_batch_intent(config, state, path):
+    """Replay one saved atomic notice handoff before interpreting local state."""
+    request = state.get('batch_advance_intent')
+    if not isinstance(request, dict) or set(request) != {'request_id', 'session', 'attempt_id', 'version'}:
+        raise CoordinationError('INVALID_HOST', 'native batch advance intent is malformed')
+    old = state.get('inbox_attempt') or {}
+    if (request['attempt_id'] != old.get('attempt_id') or request['session'] != old.get('session')
+            or request['version'] != 1 or not old.get('native_turn_id')):
+        raise CoordinationError('STALE_SESSION', 'native batch advance left its active turn')
+    try:
+        result = call(config, 'session-inbox-advance', request, session=request['session'])
+    except CoordinationError as exc:
+        # A definite refusal transferred no hold. Do not replay it ahead of
+        # later settlement on every hook. Unknown transport results retain
+        # the exact intent for idempotent recovery.
+        if exc.code in ('DELIVERY_ACTIVE', 'INVALID_REQUEST', 'STALE_SESSION',
+                        'NOT_FOUND', 'AUTHORITY_DENIED', 'IDEMPOTENCY_CONFLICT'):
+            state.pop('batch_advance_intent')
+            write_state(path, state)
+        raise
+    if not isinstance(result, dict) or not isinstance(result.get('remainder', ''), str) or 'attempt' not in result:
+        raise CoordinationError('INVALID_HOST', 'native batch advance returned an invalid result')
+    next_attempt = result['attempt']
+    if next_attempt is not None:
+        expected_index = old.get('batch_index') or 1
+        if (not isinstance(next_attempt, dict) or next_attempt.get('attempt_id') != request['request_id'] or
+                next_attempt.get('session') != request['session'] or
+                next_attempt.get('native_turn_id') != old['native_turn_id'] or
+                next_attempt.get('batch_root') != (old.get('batch_root') or old['attempt_id']) or
+                next_attempt.get('batch_index') != expected_index + 1 or
+                next_attempt.get('batch_limit') != 3 or next_attempt.get('finished_at') or
+                (next_attempt.get('delivery') or {}).get('event', {}).get('kind') != 'notice'):
+            raise CoordinationError('INVALID_HOST', 'native batch advance changed item ownership')
+        state['inbox_attempt'] = next_attempt
+        state['inbox_intent'] = dict(request_id=next_attempt['attempt_id'], session=request['session'],
+                                     native_turn_id=next_attempt['native_turn_id'])
+        state['inbox_result_policy'] = dict(claim_request_id=next_attempt['attempt_id'], version=1)
+        for key in ('inbox_close', 'inbox_completion', 'inbox_response', 'inbox_ack_reminded'):
+            state.pop(key, None)
+    state.pop('batch_advance_intent')
+    write_state(path, state)
+    return result
 
 
 def opencode_inbox_control(config, state, path):
@@ -2068,7 +2114,7 @@ def release_inbox(config, state, path, reason, fenced=False):
 
 def clear_inbox(state, path):
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'held_refusal_observation',
+                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'batch_advance_intent', 'held_refusal_observation',
                 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
                 'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
@@ -2393,7 +2439,7 @@ def inbox_command(argv):
 def compact_inbox_command(argv):
     """Resolve a short lookup handle, then use the existing fenced journal path."""
     parser = argparse.ArgumentParser(prog='cairn-inbox')
-    parser.add_argument('operation', choices=('read', 'inspect', 'settle'))
+    parser.add_argument('operation', choices=('read', 'inspect', 'settle', 'advance'))
     parser.add_argument('handle')
     parser.add_argument('disposition', nargs='?', choices=('handled', 'ignored', 'failed'))
     parser.add_argument('--code', choices=('unsupported_kind', 'source_unavailable', 'processing_failed'))
@@ -2468,12 +2514,42 @@ def compact_inbox_command(argv):
             context.get('native_turn_id') != attempt.get('native_turn_id') or
             event['kind'] not in ('notice', 'response')):
         raise CoordinationError('INVALID_HOST', 'compact inbox delivery changed')
+    if args.operation == 'advance':
+        if config.get('notice_batch_version') != 1 or event['kind'] != 'notice' or not attempt.get('native_turn_id'):
+            raise CoordinationError('UNSUPPORTED_CONTROL', 'notice batching is unavailable for this native turn')
+        if not isinstance(context.get('batch_advance_request_id'), str):
+            raise CoordinationError('INVALID_HOST', 'native batch advance identity is absent')
+        with session_lock(state_path):
+            state = json.loads(state_path.read_text())
+            if (state.get('inbox_attempt', {}).get('attempt_id') != attempt['attempt_id'] or
+                    state.get('inbox_intent', {}).get('request_id') != attempt['attempt_id']):
+                raise CoordinationError('STALE_SESSION', 'native batch item changed during advance')
+            request = dict(request_id=context['batch_advance_request_id'], session=attempt['session'],
+                           attempt_id=attempt['attempt_id'], version=1)
+            if state.get('batch_advance_intent') not in (None, request):
+                raise CoordinationError('SESSION_BUSY', 'another notice handoff is unresolved')
+            state['batch_advance_intent'] = request
+            write_state(state_path, state)
+            result = advance_batch_intent(config, state, state_path)
+            if result['attempt'] is None:
+                print(json.dumps(dict(schema='cairn.compact-inbox-batch/1', ok=True,
+                                      next=None, remainder=result['remainder'])))
+                return 0
+            next_text = inbox_context(config, state, state_path, dict(event='PostToolUse', phase='active',
+                native_turn_id=attempt['native_turn_id']))
+            if not next_text:
+                raise CoordinationError('INVALID_HOST', 'advanced notice has no native context')
+            print(json.dumps(dict(schema='cairn.compact-inbox-batch/1', ok=True, next=next_text,
+                                  batch_index=result['attempt']['batch_index'], batch_limit=3)))
+            return 0
     renewed = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
                                                 lease_seconds=90), session=attempt['session'])
     if (renewed.get('delivery_id') != delivery['delivery_id'] or renewed.get('lease_id') != delivery['lease_id'] or
             renewed.get('state') != 'leased' or renewed.get('event') != event):
         raise CoordinationError('STALE_LEASE', 'compact inbox delivery is no longer leased')
-    body = exact_inbox_source(config, attempt, event['ref'])
+    body = None
+    if not (args.operation == 'settle' and args.disposition == 'failed' and args.code == 'source_unavailable'):
+        body = exact_inbox_source(config, attempt, event['ref'])
     if args.operation == 'read':
         print(json.dumps(dict(schema='cairn.compact-inbox/1', ok=True, kind=event['kind'],
                               sender=event['from'], source=event['ref'], body=body)))
@@ -2993,6 +3069,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         context['response'] = [*journaled, 'respond']
         context['finish_reply'] = [*journaled, 'finish-reply']
     if config.get('compact_inbox_version') == 1 and event['kind'] in ('notice', 'response'):
+        if config.get('notice_batch_version') == 1 and event['kind'] == 'notice' and attempt.get('native_turn_id'):
+            context['batch_advance_request_id'] = str(uuid.uuid4())
         handle, issued = compact_inbox_handle(config, state, path, target, context)
         if handle:
             context.update(compact_handle=handle, compact_issued_at=issued)
@@ -3006,13 +3084,28 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     state.pop('idle_wake', None)
     write_state(path, state)
     if 'compact_handle' in context:
-        body = exact_inbox_source(config, attempt, event['ref'])
         source = event['ref']
         header = (f"Cairn {event['kind']} from {event['from']}; exact source "
                   f"{source['record_id']} version {source['version']}. ")
+        try:
+            body = exact_inbox_source(config, attempt, source)
+        except CoordinationError as exc:
+            if 'batch_advance_request_id' not in context or exc.code not in ('SOURCE_UNAVAILABLE', 'PAYLOAD_UNAVAILABLE', 'NOT_FOUND'):
+                raise
+            fallback = (header + f"Source is unavailable ({exc.code}); retry cairn-inbox read {context['compact_handle']} "
+                        f"or explicitly settle this item with cairn-inbox settle {context['compact_handle']} "
+                        f"failed --code source_unavailable. After confirmed settlement, run cairn-inbox advance "
+                        f"{context['compact_handle']}. Its neighbors remain separate and unacknowledged.")
+            context['compact_fallback_control'] = fallback
+            write_state(target, context)
+            return fallback
         settle = (f"Explicitly settle with cairn-inbox settle {context['compact_handle']} handled "
                   "after processing; use failed or ignored only with a reason code. "
                   "Reading or describing this message does not settle it.")
+        if 'batch_advance_request_id' in context:
+            settle += (f" After confirmed settlement, run cairn-inbox advance {context['compact_handle']} "
+                       "to inspect the next already-waiting notice in this turn, up to three total. "
+                       "A request or urgent notice waits for the next turn. Settle each item separately.")
         fallback = (header + settle + f" Source is {len(body.encode())} bytes; "
                     f"read its exact text with cairn-inbox read {context['compact_handle']} before settling.")
         context['compact_fallback_control'] = fallback
@@ -5100,6 +5193,10 @@ def validate_config(config):
             config['compact_inbox_version'] != 1 or
             config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
         raise CoordinationError('INVALID_CONFIG', 'compact_inbox_version 1 requires Codex or Claude native delivery')
+    if 'notice_batch_version' in config and (type(config['notice_batch_version']) is not int or
+            config['notice_batch_version'] != 1 or config.get('compact_inbox_version') != 1 or
+            config['harness'] not in ('codex', 'claude') or not config.get('native_delivery')):
+        raise CoordinationError('INVALID_CONFIG', 'notice_batch_version 1 requires compact Codex or Claude native delivery')
     binding = config['binding']
     if config.get('idle_wakeup') is not None:
         # OpenCode wakes an idle session through its native bridge and never calls

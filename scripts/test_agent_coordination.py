@@ -16,6 +16,54 @@ spec.loader.exec_module(coordination)
 
 
 class CoordinationNormalization(unittest.TestCase):
+    def test_notice_batch_advance_replays_one_fenced_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'state.json'
+            session = dict(agent_id='11111111-1111-4111-8111-111111111111',
+                           execution_id='22222222-2222-4222-8222-222222222222')
+            old_id = '33333333-3333-4333-8333-333333333333'
+            next_id = '44444444-4444-4444-8444-444444444444'
+            old = dict(attempt_id=old_id, session=session, native_turn_id='turn-one')
+            request = dict(request_id=next_id, session=session, attempt_id=old_id, version=1)
+            state = dict(inbox_attempt=old, inbox_intent=dict(request_id=old_id),
+                         inbox_completion='old-completion', inbox_response='old-response',
+                         batch_advance_intent=request)
+            next_attempt = dict(attempt_id=next_id, session=session, native_turn_id='turn-one',
+                                batch_root=old_id, batch_index=2, batch_limit=3,
+                                delivery=dict(event=dict(kind='notice')))
+            result = dict(attempt=next_attempt)
+            with patch.object(coordination, 'call', return_value=result) as called:
+                self.assertEqual(coordination.advance_batch_intent({}, state, path), result)
+            called.assert_called_once_with({}, 'session-inbox-advance', request, session=session)
+            self.assertEqual(state['inbox_attempt'], next_attempt)
+            self.assertEqual(state['inbox_intent']['request_id'], next_id)
+            self.assertNotIn('batch_advance_intent', state)
+            self.assertNotIn('inbox_completion', state)
+            self.assertEqual(json.loads(path.read_text())['inbox_attempt'], next_attempt)
+
+    def test_notice_batch_refusal_does_not_block_later_settlement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'state.json'
+            session = dict(agent_id='11111111-1111-4111-8111-111111111111',
+                           execution_id='22222222-2222-4222-8222-222222222222')
+            attempt_id = '33333333-3333-4333-8333-333333333333'
+            request = dict(request_id='44444444-4444-4444-8444-444444444444',
+                           session=session, attempt_id=attempt_id, version=1)
+            state = dict(inbox_attempt=dict(attempt_id=attempt_id, session=session,
+                                             native_turn_id='turn-one'), batch_advance_intent=request)
+            with patch.object(coordination, 'call', side_effect=coordination.CoordinationError(
+                    'DELIVERY_ACTIVE', 'settle first')):
+                with self.assertRaises(coordination.CoordinationError):
+                    coordination.advance_batch_intent({}, state, path)
+            self.assertNotIn('batch_advance_intent', state)
+            state['batch_advance_intent'] = request
+            coordination.write_state(path, state)
+            with patch.object(coordination, 'call', side_effect=coordination.CoordinationError(
+                    'API_UNAVAILABLE', 'uncertain')):
+                with self.assertRaises(coordination.CoordinationError):
+                    coordination.advance_batch_intent({}, state, path)
+            self.assertEqual(json.loads(path.read_text())['batch_advance_intent'], request)
+
     def test_cli_call_refuses_malformed_and_unavailable_responses(self):
         config = dict(cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token')
         responses = (

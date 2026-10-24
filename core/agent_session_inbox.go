@@ -33,6 +33,9 @@ type SessionInboxAttempt struct {
 	Delivery      AgentDelivery   `json:"delivery"`
 	NativeTurnID  string          `json:"native_turn_id,omitempty"`
 	TurnExclusive bool            `json:"turn_exclusive,omitempty"`
+	BatchRoot     string          `json:"batch_root,omitempty"`
+	BatchIndex    int             `json:"batch_index,omitempty"`
+	BatchLimit    int             `json:"batch_limit,omitempty"`
 	CaptureGap    bool            `json:"capture_gap,omitempty"`
 	TurnStopState string          `json:"turn_stop_state,omitempty"`
 	CaptureState  string          `json:"capture_state,omitempty"`
@@ -53,7 +56,9 @@ const sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n
 
 const sessionInboxOccupied = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE (consumer=$2 OR agent_id=$1) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`
 
-const sessionInboxEligible = ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`
+const sessionInboxEligibleBase = ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))`
+
+const sessionInboxEligible = sessionInboxEligibleBase + ` ORDER BY e.position`
 
 const sessionInboxNext = `SELECT d.delivery_id::text` + sessionInboxEligible
 
@@ -111,7 +116,7 @@ func (s *Store) nativeInboxProfile(ref AgentSessionRef, dest Destination) error 
 func (s *Store) readSessionInboxAttempt(ctx context.Context, tx pgx.Tx, id string, ref AgentSessionRef, dest Destination) (SessionInboxAttempt, error) {
 	var out SessionInboxAttempt
 	var deliveryID, leaseID string
-	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive)
+	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive,COALESCE(batch_root::text,''),batch_index,batch_limit FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive, &out.BatchRoot, &out.BatchIndex, &out.BatchLimit)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, failure("NOT_FOUND", "native inbox attempt not found for this execution")
 	}

@@ -56,3 +56,35 @@ metadata projection is a representation baseline, not measured model-token
 savings. Compare complete sender, recipient and capture workflows with
 CAIRN-214's `scripts/workflow_model_report.py` on frozen paired inputs before
 accepting a rollout claim. No live binding is enabled by this source change.
+
+## Bounded notice batches (CAIRN-221)
+
+Add `--notice-batch` to an installation that also uses `--compact-inbox` to opt
+that Codex or Claude binding into `notice_batch_version: 1`. This requires
+schema 067 and its preceding migrations. Existing bindings continue to admit
+one item per native turn. A new native session must load the changed hooks;
+if inbox recall is enabled, use the manifest repinning procedure above.
+
+After explicitly settling a compact **notice**, run `cairn-inbox advance HANDLE`.
+The helper returns the next notice's compact context, or a reason that the
+batch ended. Read and settle each returned notice with its own handle. The
+store permits at most three items in one native turn. It only takes notices
+published before the first attempt and eligible when the command runs. Any
+waiting request or explicitly urgent notice ends the batch so the next turn
+can handle it; an ordinary notice with
+no policy remains eligible. No advance command acknowledges an item. The
+store requires a confirmed `handled`, `ignored`, or `failed` result for the
+current item and retains its identity, lease, and outcome separately from
+every later item. A remainder ends that turn's batch; later arrivals cannot
+reopen it.
+
+If the exact source is unavailable, the batch cue retains that item's handle.
+Retry `read`, or explicitly settle it as `failed --code source_unavailable`
+before advancing. This disposition does not settle neighboring notices.
+
+An uncertain handoff is saved with one request ID and replayed by the native
+hook. A failed or stale handle must not be treated as a confirmed settlement
+or as permission to retry with a different session. The final notice keeps
+its session hold until the normal turn-end reconciliation. This is an
+implemented opt-in path; paired model and task outcomes remain to be measured
+before accepting the rollout.

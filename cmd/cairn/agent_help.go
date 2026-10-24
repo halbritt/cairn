@@ -27,7 +27,7 @@ Everyday operations:
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
-  session-inbox-ready, session-inbox-claim, session-inbox-reconcile Native host delivery
+  session-inbox-ready, session-inbox-claim, session-inbox-advance, session-inbox-reconcile Native host delivery
   session-inbox-pending Native host busy-session inbox counts (read-only)
   session-delivery-observe Native host delivery diagnosis (host-reported)
   session-inbox-control, session-tool-capture, session-tool-stop Native request cancellation
@@ -83,6 +83,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "session-inbox-claim":
 		detail = "Native host adapter only: claim one event at a supported turn boundary and retain exclusive session ownership beyond lease expiry. Retry the same request UUID. Use the existing base profile and explicit session."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`
+	case "session-inbox-advance":
+		detail = "Native host adapter only: after explicit settlement of one pinned nonexclusive notice, atomically transfer its session hold to the next already-eligible nonurgent notice in the same native turn. At most three notices per batch. A request or urgent notice at the head waits for the next turn. Retry the same request UUID after uncertainty; no item is acknowledged by this operation."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"SETTLED_ATTEMPT_UUID","version":1}`
 	case "session-inbox-reconcile":
 		detail = "Native host adapter only: release its attempt after delivery_completed, process_exited, turn_ended or a confirmed cancel_confirmed cleanup. An unfinished delivery becomes failed after an observed process/turn end; uncertain work is never replayed automatically. An obsolete execution may close only its own attempt."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","reason":"process_exited"}`

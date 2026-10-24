@@ -391,6 +391,19 @@ class BridgeOnlyIdleWakeConfig(unittest.TestCase):
 
 
 class CompactInboxInstaller(unittest.TestCase):
+    def test_notice_batch_requires_compact_native_binding(self):
+        config = dict(cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
+                      state_dir='/fixture/state', repo='fixture', binding='fixture',
+                      harness='codex', native_delivery=True, compact_inbox_version=1,
+                      notice_batch_version=1)
+        self.assertEqual(installer.engine.validate_config(config), config)
+        for override in (dict(notice_batch_version=True), dict(notice_batch_version=2),
+                         dict(compact_inbox_version=0), dict(harness='agy'),
+                         dict(native_delivery=False)):
+            with self.subTest(override=override), self.assertRaises(installer.engine.CoordinationError) as caught:
+                installer.engine.validate_config(dict(config, **override))
+            self.assertEqual(caught.exception.code, 'INVALID_CONFIG')
+
     def test_only_version_one_on_native_codex_or_claude_is_admitted(self):
         config = dict(cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
                       state_dir='/fixture/state', repo='fixture', binding='fixture',
