@@ -165,6 +165,13 @@ history reads both whole versions; authenticated agent index and search return
 refusal carries diagnostic metadata with `selected: null` and no index entry.
 No actor decided the threshold or ran a provider.
 
+The separate [semantic-unavailable probe](../../scripts/check_panel_semantic_unavailable.py)
+uses the frozen RAVEN-42 source and an invoked, failing local semantic worker.
+Authenticated CLI search reports a labelled lexical fallback and whole-pulls
+the exact source; plain lexical search finds that source without another worker
+call. No semantic ranking, mandatory-context preservation, actor answer or task
+outcome is established by this source-only fixture.
+
 The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
 observed the synthetic claim child exit from SIGKILL and then explicitly reported
 `process_exited` reconciliation; it establishes no native actor/model outcome or

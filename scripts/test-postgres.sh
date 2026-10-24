@@ -84,6 +84,11 @@ conflict_dsn="host=$test_root/socket dbname=cairn_panel_required_conflict_group 
 CAIRN_DATABASE_URL="$conflict_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$conflict_dsn" CAIRN_DATABASE_URL="$conflict_dsn" \
     python3 scripts/check_panel_required_conflict_group.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_semantic_unavailable
+semantic_unavailable_dsn="host=$test_root/socket dbname=cairn_panel_semantic_unavailable sslmode=disable"
+CAIRN_DATABASE_URL="$semantic_unavailable_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$semantic_unavailable_dsn" CAIRN_DATABASE_URL="$semantic_unavailable_dsn" \
+    python3 scripts/check_panel_semantic_unavailable.py "$test_root/cairn"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_panel_relay_uncertain_response
 uncertain_dsn="host=$test_root/socket dbname=cairn_panel_relay_uncertain_response sslmode=disable"
 CAIRN_DATABASE_URL="$uncertain_dsn" "$test_root/cairn" migrate

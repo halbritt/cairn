@@ -209,6 +209,15 @@ both complete bodies. An authenticated agent's index and search return coded
 diagnostic metadata with no selected source or index entry. No actor judged
 the evacuation threshold or produced a response.
 
+The [semantic-unavailable probe](../../scripts/check_panel_semantic_unavailable.py)
+creates the exact `lexical_anchor` source in its own disposable database. A
+private local semantic worker exits without a score; authenticated semantic
+search reports `DEGRADED_NO_EMBEDDINGS` with `discovery.state: unavailable` and
+lexical ranking. A whole pull recovers the exact RAVEN-42 source, and ordinary
+lexical search finds the same source without calling the worker. The frozen
+case has no mandatory instruction, so this probe does not measure required
+context preservation or an actor answer.
+
 The Go probes above write only to disposable integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate
 requires native workflow evidence for observed sender/recipient turns. An
