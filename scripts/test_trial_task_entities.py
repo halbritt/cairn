@@ -137,9 +137,12 @@ class EntityShapeTests(unittest.TestCase):
                  patch.object(te, 'cairn_json', return_value={'entities': kept}), \
                  self.assertRaisesRegex(RuntimeError, 'differ from the input'):
                 store.remember(dict(NOTE, entities=entities))
-            self.assertEqual(store.ids, {})
-            self.assertEqual(store.names, {})
-            self.assertEqual(store.import_results, [])
+            # The record already exists in the disposable store. Keep its
+            # cleanup identity even though entity verification rejects it.
+            self.assertEqual(store.ids, {'entity-note': 'r1'})
+            self.assertEqual(store.names, {'r1': 'entity-note'})
+            self.assertEqual(len(store.import_results), 1)
+            self.assertEqual(store.import_results[0]['result']['record_id'], 'r1')
 
 
 @unittest.skipUnless(os.environ.get('CAIRN_TASK_EVAL_PG') and os.environ.get('CAIRN_TASK_EVAL_BINARY'),

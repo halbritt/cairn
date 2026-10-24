@@ -380,11 +380,11 @@ class TrialStore:
         args += [f"--entity-{kind}={name}" for kind, name in entities]
         result = run([self.binary, *args], env=self.env, input=note["body"].encode(), timeout=60)
         record = json.loads(result.stdout)["data"]
-        if entities:
-            self.verify_entities(note["id"], record["record_id"], entities)
         self.import_results.append(dict(input_id=note["id"], result=record))
         self.ids[note["id"]] = record["record_id"]
         self.names[record["record_id"]] = note["id"]
+        if entities:
+            self.verify_entities(note["id"], record["record_id"], entities)
         return record
 
     def verify_entities(self, input_id, record_id, entities):
