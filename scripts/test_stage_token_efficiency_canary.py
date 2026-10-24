@@ -4,10 +4,12 @@ import importlib.util
 import json
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +67,8 @@ command = "/bin/true"
         self.write_text(self.home / ".codex-harm/config.toml", "[mcp_servers.other]\ncommand = \"/bin/true\"\n")
         self.write(self.home / ".claude.json", {"mcpServers": {
             "cairn": {"command": str(self.home / ".local/bin/cairn-shared-mcp"), "args": ["claude"]},
-            "other": {"command": "/bin/true"}}, "unrelated": {"keep": True}})
+            "other": {"command": "/bin/true"}}, "unrelated": {"keep": True},
+            "cachedGrowthBookFeaturesAt": 1700000000000})
         self.write_text(self.home / ".local/bin/cairn-shared-mcp", """#!/bin/bash
 set -euo pipefail
 read -r cairn_session_id < /proc/sys/kernel/random/uuid
@@ -78,7 +81,8 @@ exec {binary} mcp \\
            token=common["token_file"], repo=common["repo"]))
         for path in self.home.rglob("*"):
             if path.is_file():
-                self.expected[str(path.relative_to(self.home))] = stage.sha256(path)
+                relative = str(path.relative_to(self.home))
+                self.expected[relative] = stage.snapshot_sha256(relative, path.read_bytes())
 
     def write(self, path, value):
         self.write_text(path, json.dumps(value))
@@ -124,6 +128,60 @@ exec {binary} mcp \\
         self.expected[".codex-harm/hooks.json"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "snapshot drift"):
             stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(self.stage.exists())
+
+    def test_claude_cache_timestamp_may_advance_but_mcp_drift_refuses(self):
+        path = self.home / ".claude.json"
+        data = json.loads(path.read_text())
+        data["cachedGrowthBookFeaturesAt"] += 1
+        self.write(path, data)
+        stage.check_snapshot(self.home, self.expected)
+        report = stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(report["accounts"]["claude"]["manifest_enabled"])
+        shutil.rmtree(self.stage)
+
+        data["mcpServers"]["cairn"]["args"] = ["other-account"]
+        self.write(path, data)
+        with self.assertRaisesRegex(ValueError, "snapshot drift"):
+            stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(self.stage.exists())
+
+        data["mcpServers"]["cairn"]["args"] = ["claude"]
+        data["cachedGrowthBookFeaturesAt"] = "1700000000002"
+        self.write(path, data)
+        with self.assertRaisesRegex(ValueError, "timestamp layout changed"):
+            stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(self.stage.exists())
+
+    def test_claude_mcp_change_during_staging_refuses_candidate(self):
+        path = self.home / ".claude.json"
+        real_check = stage.check_snapshot
+
+        def change_after_check(home, expected):
+            real_check(home, expected)
+            data = json.loads(path.read_text())
+            data["mcpServers"]["cairn"]["args"] = ["other-account"]
+            self.write(path, data)
+
+        with mock.patch.object(stage, "check_snapshot", side_effect=change_after_check):
+            with self.assertRaisesRegex(ValueError, "snapshot drift"):
+                stage.stage(self.home, self.stage, self.expected)
+        self.assertFalse(self.stage.exists())
+
+    def test_selected_hook_change_during_staging_refuses_candidate(self):
+        path = self.home / ".codex/hooks.json"
+        real_stage_mcp = stage.stage_mcp
+
+        def change_after_copy(home, destination, expected):
+            result = real_stage_mcp(home, destination, expected)
+            data = json.loads(path.read_text())
+            data["hooks"]["Stop"].append({"hooks": [{"command": "new-unreviewed-hook"}]})
+            self.write(path, data)
+            return result
+
+        with mock.patch.object(stage, "stage_mcp", side_effect=change_after_copy):
+            with self.assertRaisesRegex(ValueError, "snapshot drift"):
+                stage.stage(self.home, self.stage, self.expected)
         self.assertFalse(self.stage.exists())
 
     def test_duplicate_selected_hook_is_rejected_without_candidate(self):

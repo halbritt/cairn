@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import stat
@@ -25,8 +26,8 @@ EXPECTED = {
     ".claude-harm/settings.json": "c802af22005f1b1a0f127bfadf7c365c2e9f4c65756a3b2e5d2e8a1fd3d38858",
     ".codex/config.toml": "098ae337713b9052837b834c4a413420fb7ea1042a20128be4ba82505144b6aa",
     ".codex-harm/config.toml": "eac9d873dbe6655bd83d5c6b8014c815e4849a907aa7928fea78295ea5851403",
-    # Reobserved 2026-10-24 after preflight drift; Cairn MCP entry remained unchanged.
-    ".claude.json": "8e3a2a4d4db56f452ec35d73280444cc43cf066f8c2aaaafd4d2df50490cfb7b",
+    # The normalized hash excludes only the 13-digit cache timestamp below.
+    ".claude.json": "4bab09da21387f77027c90c865404843dcf1a0c608692d243845eade0c83b156",
     ".claude-harm/.claude.json": "e8e4a04f4cac39745937facdf9070f7de1658df8f6df1d99d173e0675884805c",
     ".local/bin/cairn-shared-mcp": "21d8d12e13976031be8bc8c7f1c7f14e95ad2f47c6968370d7c484b24d52fe01",
     ".local/share/cairn/codex-hooks/config.json": "e3d21c2f334bada43918f2d839b1f92e660fb6ac7b419327749fa000acf249d2",
@@ -50,6 +51,19 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def snapshot_sha256(relative, raw):
+    if relative == ".claude.json":
+        data = json.loads(raw)
+        stamp = data.get("cachedGrowthBookFeaturesAt")
+        if type(stamp) is not int or len(str(stamp)) != 13:
+            raise ValueError("installed Claude cache timestamp layout changed")
+        raw, count = re.subn(rb'("cachedGrowthBookFeaturesAt"\s*:\s*)[0-9]{13}',
+                             rb'\1<timestamp>', raw)
+        if count != 1:
+            raise ValueError("installed Claude cache timestamp layout changed")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -65,7 +79,7 @@ def check_snapshot(home, expected):
         path = home / relative
         info = path.stat()
         if (path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022 or
-                sha256(path) != digest):
+                snapshot_sha256(relative, path.read_bytes()) != digest):
             raise ValueError(f"installed snapshot drift: {path}")
 
 
@@ -178,7 +192,7 @@ def stage_account(home, stage, harness):
             "required_path_prefix": str(launcher.parent)}
 
 
-def stage_mcp(home, destination):
+def stage_mcp(home, destination, expected):
     binary = destination / "bin/cairn"
     codex_path = home / ".codex/config.toml"
     codex_text = codex_path.read_text(encoding="utf-8")
@@ -220,7 +234,10 @@ def stage_mcp(home, destination):
                                           ' \\\n  --search-view compact/1 --tool-profile compact/1\n'), encoding="utf-8")
     candidate_wrapper.chmod(0o700)
     claude_path = home / ".claude.json"
-    claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
+    claude_raw = claude_path.read_bytes()
+    if snapshot_sha256(".claude.json", claude_raw) != expected[".claude.json"]:
+        raise ValueError(f"installed snapshot drift: {claude_path}")
+    claude_data = json.loads(claude_raw)
     old_claude = claude_data["mcpServers"]["cairn"]
     if old_claude.get("command") != str(wrapper) or old_claude.get("args") != ["claude"]:
         raise ValueError("unexpected selected Claude MCP command")
@@ -230,7 +247,7 @@ def stage_mcp(home, destination):
     return {"candidate_binary": str(binary), "candidate_binary_present": False,
             "codex": {"account_mcp": str(codex_path), "expected_sha256": sha256(codex_path),
                       "candidate_mcp": str(codex_candidate), "candidate_sha256": sha256(codex_candidate)},
-            "claude": {"account_mcp": str(claude_path), "expected_sha256": sha256(claude_path),
+            "claude": {"account_mcp": str(claude_path), "expected_sha256": hashlib.sha256(claude_raw).hexdigest(),
                        "candidate_mcp": str(claude_candidate), "candidate_sha256": sha256(claude_candidate),
                        "account_wrapper": str(candidate_wrapper), "wrapper_sha256": sha256(candidate_wrapper)}}
 
@@ -275,13 +292,14 @@ def stage(home, destination, expected=EXPECTED):
             raise ValueError("stage destination must be owner-only")
         for harness in ("codex", "claude"):
             report["accounts"][harness] = stage_account(home, destination, harness)
-        report["mcp"] = stage_mcp(home, destination)
+        report["mcp"] = stage_mcp(home, destination, expected)
         report["source_hashes"] = {name: sha256(ROOT / "integrations/lifecycle" / name)
                                    for name in ("memory.py", "coordination.py", "inbox_recall.py")}
         report["unchanged_account_hashes"] = {
             str(home / relative): sha256(home / relative) for relative in
             (".codex-harm/hooks.json", ".codex-harm/config.toml",
              ".claude-harm/settings.json", ".claude-harm/.claude.json")}
+        check_snapshot(home, expected)
         write_json(destination / "stage.json", report)
     except Exception:
         shutil.rmtree(destination)
