@@ -79,18 +79,73 @@ routine-notice policy per arm and checks availability. It checks urgent
 readiness in the batch and combined setups, where routine notices are deferred;
 it does not run batch transfer or handling. These tests use store-owned writer
 identity, a disposable test operator grant where needed, and fixture source
-and event fields. The other 16 situations remain unmaterialized.
+and event fields.
+
+Other Go tests check selected Store behavior for fifteen more fixture IDs.
+`core/token_efficiency_panel_reply_test.go` follows native session claims,
+request settlement, and a result response for `small_request_result_reply`;
+its `completion_reply_lost` and `relay_uncertain_response` checks exercise
+idempotent Store operations without inducing transport loss or running journal
+recovery. `core/token_efficiency_panel_ownership_test.go` checks distinct
+recipient ownership for `concurrent_receivers` and a failed source read after
+operator deletion for `source_forgotten_before_read`.
+`core/token_efficiency_panel_memory_cases_test.go` creates and whole-pulls
+exact sources for `semantic_unavailable`, `wrong_project_memory`, and
+`meaningful_owner_correction`. These memory checks use a separate disposable
+database for each case so another case's required C conflict cannot alter
+retrieval under the fixture's shared repository scope.
+
+`core/token_efficiency_panel_recovery_test.go` checks an expired lease under
+its current native hold, an offline presence with operator release and explicit
+reissue, and execution fencing for `lease_expiry`, `process_crash`, and
+`stale_execution`. Expired test presence is an observable offline boundary,
+not proof that a recipient process crashed.
+`core/token_efficiency_panel_session_boundary_test.go` checks that a reported
+busy session has no ready routine notice until it reports idle, and that two
+notices keep their durable state across fresh client views for
+`busy_owner_task` and `compaction_before_after_settlement`. The busy check does
+not run the owner's parser task, and fresh views do not invoke a harness
+compaction hook. `core/token_efficiency_panel_memory_followup_test.go` stores
+and whole-pulls the historical and current relay sources with a pending
+request for `long_source`, and the exact saved source for
+`unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
+remain unrun.
+
+`unchanged_capture` has a separate controller-only synthetic dialogue and
+first selection in `setup.capture`. The Python preflight test runs the real
+local capture decision twice with a stubbed first selector and local create
+response: the first call confirms a saved snapshot and the identical second
+call skips selection and another write. This selection is test setup, not a
+provider response to impose on a future actor. The hook's persisted state,
+actual provider selection, and task outcome remain untested.
+
+The Go tests check setup or selected Store transitions for 21 fixture IDs;
+the Python hook probe covers the remaining capture setup. None grades an
+actor task, completes a paired model arm, or measures provider usage. The
+original six have source/event setup checks; the other fifteen Go checks are
+partial source, scheduling, or recovery checks.
 
 **Current preflight boundary:** the Python validator checks the fixture and
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
-joins native turns, or grades task outcomes. The six-case Go tests above
-insert only into their disposable integration database and make no claim about
-full panel execution or accepted outcomes. The existing gate requires native
-workflow evidence for observed sender/recipient turns. An ordinary-memory case
-has no proven native join yet; a fabricated inbox event would change what that
-case measures.
-Future admission must solve the carrier and join, freeze the same account,
-model, effort, route, arm pins, and limits with the gate, then run and review
-all four arms. The subscription route rule remains in force. CAIRN-227 release
-status remains **Defer**.
+joins native turns, or grades task outcomes. A separate disposable-only
+controller in `scripts/token_efficiency_panel_controller.py` materializes
+`baseline.single_notice` through the authenticated local API. It persists an
+immutable intent before source creation and publication, then verifies exact
+Store-owned source, session, event and pending-delivery identities. Its private
+receipt states that no provider call, native turn join or task outcome occurred.
+The remaining case/arm setups have no executable controller path yet.
+
+The Go probes above write only to disposable integration databases and make
+no claim about full panel execution or accepted outcomes. The existing gate
+requires native workflow evidence for observed sender/recipient turns. An
+ordinary-memory case has no proven native join yet; a fabricated inbox event
+would change what that case measures. The capture gate freezes a separate
+subscription-routed Claude selector and per-arm capture client pin; the hook
+does not configure selector effort, so missing effort remains explicit. Its
+seed stage requires selected provider response evidence, while the repeat
+skip remains incomplete until its selected hook testimony can be verified.
+Future admission must solve the carrier and joins, freeze the selected
+accounts, routes, pins and limits, then run and review all four arms. The
+subscription route rule remains in force. CAIRN-227 release status remains
+**Defer**.

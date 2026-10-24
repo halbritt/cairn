@@ -15,6 +15,14 @@ failed run keeps its place in the denominator. Stop the affected provider
 operation on auth, quota, route/model drift or a failed admission guard; do not
 substitute an API or OpenRouter route.
 
+The capture selector uses Claude CLI even when the task actor uses another
+harness. Freeze its subscription account and model separately from the task
+model, plus its client/config pin in each arm. The hook does not set selector
+effort; record that configuration as unset and report missing observed effort
+as unknown. For `unchanged_capture`, plan a provider-backed seed stage and a
+distinct repeat stage that records an unchanged-snapshot skip without a
+provider response.
+
 For the same frozen tasks, compare baseline, compact envelope only, already
 waiting batch only, and the combined candidate. Record source reads, tool
 discovery/help, sender, recipient, coordinator, capture, compaction and recovery
@@ -82,6 +90,14 @@ missing, unknown and failed work remain in their denominators. A null usage
 field remains unknown even if its provider turn joined. The gate never adds
 shared-turn token fields into an event saving.
 
+The unchanged-capture fixture now supplies a controller-only synthetic first
+selection for a local hook check. It is not a provider result. A real seed
+stage needs selected response evidence under the frozen capture selector; a
+repeat skip is selected hook testimony with no provider response. The present
+gate counts that skip but keeps it incomplete until a verifiable capture
+observation and ordinary actor turn can be joined. No caller-selected zero-call
+field substitutes for that join.
+
 `ready_for_human_grade` means the mechanical panel is complete enough for an
 independent task grader to review. It does **not** mean a task passed. The
 output always states `independent_task_acceptance=unassessed` and
@@ -104,9 +120,9 @@ real paired plan or provider result is frozen by that test.
 | CAIRN-221 native notice batch | Opt-in store handoff caps a turn at three already-waiting routine notices, keeps per-item settlement and stops for an eligible request or urgent notice; disposable PostgreSQL integration and lifecycle fixtures passed. | Paired batch versus compact-only accepted tasks, source access, tokens, p95 latency and an opt-in canary. |
 | [CAIRN-223 pilot](source-fit-2026-10-24.md) and [loopback tool preflight](source-fit-tool-recovery-2026-10-24.md) | Six synthetic source cases; seven completed native task runs. A local scripted Claude CLI session exposed Cairn search/pull, recovered a whole shareable source and excluded a local-only source. | The eighth pilot run exceeded its frozen ceiling and is unscored; seven arms were unrun. Subscription-route permission, model-initiated complete-source recovery, independent task acceptance and paired cost remain unproved. A new provider panel needs a new budget and route guard. |
 | CAIRN-224 compact/resume [failure matrix](../../scripts/test_inbox_recall_bridge.py) | Opt-in local fixtures cover a current unfinished checkpoint, mandatory correction, source refusal, partial settlement and same-ID uncertain reply recovery; full mode remains available. | Paired accepted resume tasks and provider usage, effective canary and rollback across a live resume. |
-| [CAIRN-225 schema audit](schema-exposure-2026-10-24.md) | Read-only Claude declaration exposure and whole-response cache accounting; source compact profile preserves tool schemas. | Observed compact provider requests, Codex/OpenCode comparable request exposure, true retry/resume and accepted-task effects. |
-| [CAIRN-226 recovery diagnostics](recovery-model-2026-10-24.md) | A local report joins selected native/model work by exact attempt and labels missing phase evidence unknown. | Live failure-phase turns, recovery time, correctly settled outcomes and state-aware reminder acceptance. |
-| CAIRN-227 [mechanical gate](../../scripts/token_efficiency_gate.py) | Synthetic 22-case, four-arm plans and exact native joins are checked. The false-ready fix requires a completed native sender or recipient turn with response references; failed publication/settlement stays incomplete. | A real frozen paired ledger, independent task grades, effective route and deployment pins, canary and rollback. `ready_for_human_grade` is structural only; release stays `defer`. |
+| [CAIRN-225 schema audit](schema-exposure-2026-10-24.md) | Read-only Claude declaration exposure and whole-response cache accounting; source compact profile preserves tool schemas. Current OpenCode plugin hooks do not expose the final outgoing per-request tool set. | Observed compact provider requests, Codex/OpenCode comparable request exposure, true retry/resume and accepted-task effects. |
+| [CAIRN-226 recovery diagnostics](recovery-model-2026-10-24.md) | A local report joins selected native/model work by exact attempt and labels missing phase evidence unknown. A metadata-only refusal selector found 13 retained refused settlements with exact delivery/attempt joins in a frozen native sample, but zero provider-turn joins. | Live failure-phase turns, recovery time, correctly settled outcomes and state-aware reminder acceptance. |
+| CAIRN-227 [mechanical gate](../../scripts/token_efficiency_gate.py) and [panel setup probes](../../trials/token-efficiency/README.md) | Synthetic 22-case, four-arm plans and exact native joins are checked. The false-ready fix requires a completed native sender or recipient turn with response references; failed publication/settlement stays incomplete. Disposable Store tests check six source/event setups and selected source or transition paths for 15 other fixture IDs. A local hook test checks the final capture setup; a disposable authenticated controller materializes only `baseline.single_notice` and records no provider or task outcome. | A real frozen paired ledger, capture-observation and ordinary-task joins, independent task grades, effective route and deployment pins, canary and rollback. No setup probe grades an actor task; `ready_for_human_grade` is structural only and release stays `defer`. |
 | Effective recall deployment inventory | On 2026-10-24, `check_effective_recall_deployment.py --compact` verified four ordinary hooks, three inbox bindings and fixture renders without writing to them. | `live_observed=false`: the inventory does not prove a native turn loaded the newer opt-in code or wording. |
 
 The owner held [CAIRN-107](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/3aed7adf-29fc-4d1b-a4a5-80bc1d0ea3f6/) weekly campaigns in Backlog on 2026-10-21 until
