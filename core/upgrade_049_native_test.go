@@ -143,15 +143,17 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 		{plainAttempt, second.AgentID, second.ExecutionID, second.Inbox, ""},
 	} {
 		attempt, agentID, execution, inbox, turn := spec.attempt, spec.agent, spec.execution, spec.inbox, spec.turn
-		event, err := store.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", inbox}}, dest)
-		if err != nil {
-			t.Fatal(err)
+		// Seed the frozen 048 schema directly. Current publication/read shapes
+		// may name columns added after 048, so they cannot build this fixture.
+		eventID, deliveryID := uuid.NewString(), uuid.NewString()
+		if _, err = store.pool.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name) VALUES($1,$2,$3,'request',$4,$5,'shareable','agent',$6)`, eventID, store.channel.Repo, store.channel.Principal, source.RecordID, source.Version, inbox); err != nil {
+			t.Fatalf("fixture event %d: %v", i, err)
 		}
-		// Read the 048-era row directly: current read shapes may name later columns.
-		var delivery AgentDelivery
-		if err = store.pool.QueryRow(ctx, `SELECT delivery_id::text FROM cairn.agent_delivery WHERE event_id=$1`, event.EventID).Scan(&delivery.DeliveryID); err != nil {
+		if _, err = store.pool.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, deliveryID, eventID, inbox); err != nil {
 			t.Fatalf("fixture delivery %d: %v", i, err)
 		}
+		var delivery AgentDelivery
+		delivery.DeliveryID = deliveryID
 		if _, err = store.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, delivery.DeliveryID, uuid.NewString()); err != nil {
 			t.Fatal(err)
 		}
