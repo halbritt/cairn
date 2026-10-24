@@ -79,9 +79,15 @@ def read_evidence(path, max_observations):
 def compile_report(workflow_report, observations):
     if workflow_report.get("schema") != "cairn.workflow-model-report/1":
         raise ValueError("unsupported workflow report schema")
-    events = {row["event"]: row for row in workflow_report["workflows"]}
+    events = {}
+    for workflow in workflow_report["workflows"]:
+        event = workflow["event"]
+        if event in events:
+            raise ValueError("duplicate workflow event")
+        events[event] = workflow
     rows = []
     coverage = collections.Counter()
+    providers_by_turn = {}
     by_phase = collections.defaultdict(lambda: dict(observations=0, joined_delivery=0, joined_attempt=0,
         provider_turns=0, observed_responses=0, missing_provider=0,
         model_work_classes=collections.Counter(), operator_actions=collections.Counter(),
@@ -99,6 +105,14 @@ def compile_report(workflow_report, observations):
         provider = delivery.get("provider") if delivery else None
         turn = delivery.get("turn_ref") if delivery else None
         provider_joined = isinstance(provider, dict) and isinstance(turn, str) and bool(turn)
+        if provider_joined:
+            usage = provider.get("usage")
+            responses = usage.get("observed_responses") if isinstance(usage, dict) else None
+            if type(responses) is not int or responses < 0:
+                raise ValueError("invalid provider response count")
+            previous = providers_by_turn.setdefault(turn, provider)
+            if previous != provider:
+                raise ValueError("conflicting provider projection for native turn")
         attempt_join = ("not_applicable" if observation["delivery"] is None else
                         "matched" if delivery else "missing" if not candidates or
                         observation["attempt"] is None or all(row.get("attempt") is None for row in candidates)

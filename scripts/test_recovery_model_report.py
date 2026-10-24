@@ -132,6 +132,29 @@ class RecoveryModelReportTests(unittest.TestCase):
         result = recovery.compile_report(workflow, self.evidence([self.observation()]))
         self.assertIsNone(result["phases"]["settlement"]["observed_responses"])
 
+    def test_duplicate_workflow_event_cannot_replace_exact_join(self):
+        workflow = self.workflow()
+        workflow["workflows"].append(dict(event=workflow["workflows"][0]["event"], deliveries=[]))
+        with self.assertRaisesRegex(ValueError, "duplicate workflow event"):
+            recovery.compile_report(workflow, self.evidence([self.observation()]))
+
+    def test_one_native_turn_cannot_have_conflicting_response_counts(self):
+        workflow = self.workflow()
+        workflow["workflows"][0]["deliveries"][1]["provider"] = dict(
+            usage=dict(observed_responses=4))
+        with self.assertRaisesRegex(ValueError, "conflicting provider projection"):
+            recovery.compile_report(workflow, self.evidence([
+                self.observation(), self.observation(delivery_id=DELIVERY_TWO)]))
+
+    def test_provider_response_count_must_be_nonnegative_integer(self):
+        for count in (-1, True, "3", None):
+            with self.subTest(count=count):
+                workflow = self.workflow()
+                workflow["workflows"][0]["deliveries"][0]["provider"] = dict(
+                    usage=dict(observed_responses=count))
+                with self.assertRaisesRegex(ValueError, "invalid provider response count"):
+                    recovery.compile_report(workflow, self.evidence([self.observation()]))
+
     def test_malformed_and_unbounded_metadata_refuse(self):
         cases = [dict(phase="guess"), dict(code="secret text"),
                  dict(reminder_emitted="yes"), dict(reminder_emitted=True, state_revision=None),
