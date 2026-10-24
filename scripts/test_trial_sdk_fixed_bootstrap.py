@@ -24,6 +24,7 @@ from trial_sdk_stream_driver import StreamEvent
 from trial_sdk_command_service_runtime import RAW_STORAGE
 from trial_sdk_memory_broker_socket import BrokerListener
 from trial_sdk_command_policy import FixedCommandPolicy
+from test_trial_sdk_pinned_sources import stage_pinned_sources
 
 
 def envelope(callback, config=None):
@@ -109,7 +110,10 @@ class TransportTests(unittest.TestCase):
 
 
 class SourceBindingTests(unittest.TestCase):
-    setUp=coordinator_fixture.CoordinatorTests.setUp
+    def setUp(self):
+        coordinator_fixture.CoordinatorTests.setUp(self)
+        stage_pinned_sources(self)
+
     setup_binding=coordinator_fixture.CoordinatorTests.setup_binding
     setup_coordinator=coordinator_fixture.CoordinatorTests.setup_coordinator
 

@@ -10,6 +10,7 @@ from test_trial_sdk_engine_memory_rpc_parent import OP_QUOTE
 from trial_native_bootstrap import SDKSessionCustody, PreparationRefusal
 from trial_sdk_session_driver import SDKSessionDriver
 from trial_sdk_fixed_run import FixedRunOwner
+from test_trial_sdk_pinned_sources import stage_pinned_sources
 
 class MoveTests(unittest.TestCase):
     setUp=bf.SDKReviewTests.setUp
@@ -62,7 +63,10 @@ class MoveTests(unittest.TestCase):
         self.assertTrue(binding.resources.snapshot()['unknown'])
 
 class RunTests(unittest.TestCase):
-    setUp=bf.SDKReviewTests.setUp
+    def setUp(self):
+        bf.SDKReviewTests.setUp(self)
+        stage_pinned_sources(self)
+
     setup_binding=sf.SessionResourcesTests.setup_binding
     running=sf.SessionResourcesTests.running
 

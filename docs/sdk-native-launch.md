@@ -13,10 +13,12 @@ source-epoch change. Current `main` has since advanced `memory.py` to SHA-256
 `6209b9b16a4d2317ccfee385f05fff7277d0db8dd6d90ff2ec231005dae390cf`; fixed
 source preparation must therefore refuse that live file (with the current
 0664 mode it refuses `source_file_policy` first, and with a readable mode its
-content pin still fails). The focused inert SDK tests stage the exact pinned
-tree from Git into a private 0700 directory with 0400 files, checking all pin
-hashes and the copied inodes/bytes. They do not change or bless the live
-checkout and do not relax the production file-mode or content checks.
+content pin still fails). Inert SDK mechanics tests that need the fixed source
+epoch use `test_trial_sdk_pinned_sources.py` to stage the exact pinned tree from
+Git into a private 0700 directory with 0400 files, checking all pin hashes and
+the copied inodes/bytes. Tests of live-source refusal continue to address the
+checkout path directly. The fixture does not change or bless the live checkout
+and does not relax production file-mode or content checks.
 
 `prepare_native_review` reserves its named preparation storage before opening,
 copying or parsing sources. `SDKNativeLaunch` holds the exact copied executable

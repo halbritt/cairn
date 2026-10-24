@@ -3,6 +3,7 @@ import dataclasses
 import unittest
 from unittest.mock import patch
 import test_trial_sdk_bootstrap_review as bf
+from test_trial_sdk_pinned_sources import stage_pinned_sources
 import test_trial_sdk_session_resources as sf
 import test_trial_sdk_fixed_run as rf
 from trial_sdk_session_driver import SDKSessionDriver
@@ -93,7 +94,10 @@ class VerifierTests(unittest.TestCase):
         self.assertTrue(driver._custody._snapshot.closed)
 
 class ServiceVerifierTests(unittest.TestCase):
-    setUp=bf.SDKReviewTests.setUp
+    def setUp(self):
+        bf.SDKReviewTests.setUp(self)
+        stage_pinned_sources(self)
+
     setup_binding=sf.SessionResourcesTests.setup_binding
     config=rf.RunTests.config
     prepared=rf.RunTests.prepared
