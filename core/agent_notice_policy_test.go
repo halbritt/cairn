@@ -144,3 +144,88 @@ func TestRoutineTopicFanoutSharesOneFixedAvailability(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutineNoticeSurvivesStoreReopenUrgentNoticeAndPublisherFlush(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
+		Binding: "routine-reopen", NativeSessionID: "routine-reopen",
+		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
+			State: "idle", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	publication := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
+		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}
+	routine, err := sender.PublishEvent(ctx, publication, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: routine.EventID}, dest)
+	if err != nil || len(before.Deliveries) != 1 || before.Deliveries[0].AvailableAt == nil {
+		t.Fatalf("deferred notice: %+v %v", before, err)
+	}
+	deadline, deliveryID := *before.Deliveries[0].AvailableAt, before.Deliveries[0].DeliveryID
+	senderPrincipal, receiverPrincipal := sender.channel.Principal, receiver.channel.Principal
+	sender.Close()
+	receiver.Close()
+	sender = testStore(t, Channel{Principal: senderPrincipal, Repo: source.Scope.Repo})
+	receiver = testStore(t, Channel{Principal: receiverPrincipal, Repo: source.Scope.Repo})
+	if ready, err := receiver.SessionInboxReady(ctx, ref, dest); err != nil || ready.DeliveryID != "" {
+		t.Fatalf("reopen woke deferred routine notice early: %+v %v", ready, err)
+	}
+	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+		Ref: publication.Ref, Destination: publication.Destination,
+		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "urgent", DeferSeconds: 0}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.EventID != urgent.EventID {
+		t.Fatalf("urgent notice did not interrupt deferred routine notice: %+v %v", ready, err)
+	}
+	claimed, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref,
+		DeliveryID: ready.DeliveryID, NativeTurnID: "urgent-native-turn", TurnExclusive: true}, dest)
+	if err != nil || claimed.Attempt == nil || claimed.Attempt.Delivery.Event.EventID != urgent.EventID {
+		t.Fatalf("urgent notice not claimable: %+v %v", claimed, err)
+	}
+	view, err := receiver.ForAgentSession(ref, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := view.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(),
+		DeliveryID: claimed.Attempt.Delivery.DeliveryID, LeaseID: claimed.Attempt.Delivery.LeaseID, Disposition: "handled"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(),
+		Session: ref, AttemptID: claimed.Attempt.ID, Reason: "delivery_completed"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := receiver.SessionInboxReady(ctx, ref, dest); err != nil || ready.DeliveryID != "" {
+		t.Fatalf("routine deadline slid after urgent handling: %+v %v", ready, err)
+	}
+	flushed, err := sender.FlushNotice(ctx, NoticeFlushRequest{RequestID: uuid.NewString(), EventID: routine.EventID}, dest)
+	if err != nil || flushed.Released != 1 || flushed.FlushedBy != senderPrincipal {
+		t.Fatalf("reopened publisher flush: %+v %v", flushed, err)
+	}
+	after, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: routine.EventID}, dest)
+	if err != nil || len(after.Deliveries) != 1 || after.Event.Ref != routine.Ref ||
+		after.Event.NoticePolicy == nil || after.Event.NoticePolicy.Owner != senderPrincipal ||
+		after.Event.NoticePolicy.Version != 1 || after.Deliveries[0].DeliveryID != deliveryID ||
+		after.Deliveries[0].AvailableAt == nil || !after.Deliveries[0].AvailableAt.Equal(flushed.FlushedAt) ||
+		!flushed.FlushedAt.Before(deadline) {
+		t.Fatalf("flush changed durable notice identity or deadline: before=%+v after=%+v err=%v", before, after, err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.EventID != routine.EventID || ready.DeliveryID != deliveryID {
+		t.Fatalf("flushed original notice was not ready: %+v %v", ready, err)
+	}
+	claimed, err = receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref,
+		DeliveryID: deliveryID, NativeTurnID: "routine-native-turn", TurnExclusive: true}, dest)
+	if err != nil || claimed.Attempt == nil || claimed.Attempt.Delivery.DeliveryID != deliveryID || claimed.Attempt.Delivery.Attempts != 1 {
+		t.Fatalf("flushed original notice was lost or duplicated: %+v %v", claimed, err)
+	}
+}
