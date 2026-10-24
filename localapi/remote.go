@@ -91,7 +91,7 @@ var remoteOperations = map[string]bool{
 	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true, "recall-observation": true, "capture-observation": true,
 	"agent-register": true, "agent-context": true, "agent-heartbeat": true, "agent-leave": true, "agent-resolve": true, "agent-directory": true,
 	"session-inbox-ready": true, "session-inbox-pending": true, "session-inbox-claim": true, "session-inbox-advance": true, "session-inbox-reconcile": true, "session-inbox-control": true, "session-delivery-observe": true,
-	"event-publish": true, "event-complete": true, "event-renew": true, "event-subscribe": true, "event-subscriptions": true, "event-list": true, "event-watch": true, "event-inspect": true, "event-group": true, "event-groups": true,
+	"event-publish": true, "event-notice-flush": true, "event-complete": true, "event-renew": true, "event-subscribe": true, "event-subscriptions": true, "event-list": true, "event-watch": true, "event-inspect": true, "event-group": true, "event-groups": true,
 	"register-context": false, "event-next": false, "event-retry": false,
 	"worker-register": false, "worker-heartbeat": false, "worker-health": false, "worker-list": false, "pool-list": false,
 	"wake-claim": false, "wake-attempts": false, "wake-control": false, "wake-change": false,

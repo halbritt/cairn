@@ -15,7 +15,7 @@ import (
 
 func TestEventHelpAndInvalidCommandsNeedNoCredentials(t *testing.T) {
 	ctx := context.Background()
-	for _, command := range []string{"publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats"} {
+	for _, command := range []string{"publish", "notice-flush", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats"} {
 		for _, args := range [][]string{{command, "--help"}, {"agent", command, "--help"}} {
 			out, err := run(ctx, args, strings.NewReader(""))
 			if err != nil {
@@ -109,7 +109,7 @@ func TestCompleteScopeValidationBeforeAPI(t *testing.T) {
 }
 
 func TestResultScopeFlagsOnlySupportedByComplete(t *testing.T) {
-	for _, command := range []string{"publish", "inbox", "ack", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups"} {
+	for _, command := range []string{"publish", "notice-flush", "inbox", "ack", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups"} {
 		for _, flag := range []string{"--task", "--run"} {
 			args := []string{command}
 			if command == "inbox" {

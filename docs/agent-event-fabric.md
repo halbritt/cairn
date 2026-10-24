@@ -328,7 +328,17 @@ applies its existing busy, lease and admission safeguards. This policy delays
 one notice's wake eligibility. It does not mark the notice handled, suppress it,
 infer task priority from its text, or coalesce similar sources. Disabling the
 policy for new publications leaves earlier deliveries under their durable
-identities and deadlines.
+identities and deadlines. To roll back an already published deferred routine
+notice, its original publisher can run `cairn notice-flush --request-id UUID
+EVENT_UUID`. This advances only future pending delivery availability to the
+flush time. It does not change leases, terminal dispositions, the event source,
+or the original policy. `event-status` exposes the first flush time, owner,
+request UUID and counts of released, already ready, leased and terminal
+deliveries. Retrying the same request UUID returns its committed result; a
+second request UUID observes the first flush decision. Disable the opt-in for
+new notices before flushing known pending notices during rollback. A flush
+makes an item eligible for the next host check; it does not guarantee that a
+busy host runs it immediately.
 
 [Automated wakeups](agent-wakeups.md) are a separate host-side layer with a
 durable hold on claimed deliveries; ordinary claims respect those holds and retry

@@ -61,6 +61,10 @@ func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 			}
 			return c.store.PublishEvent(ctx, req, c.destination)
 		})
+	case "/v1/event-notice-flush":
+		serveJSON(w, r, func(ctx context.Context, req core.NoticeFlushRequest) (core.NoticeFlushResult, error) {
+			return c.store.FlushNotice(ctx, req, c.destination)
+		})
 	case "/v1/event-next":
 		serveJSON(w, r, func(ctx context.Context, req core.NextEventRequest) (core.NextEventResult, error) {
 			return c.store.NextEvent(ctx, req, c.destination)

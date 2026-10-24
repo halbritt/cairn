@@ -8,6 +8,7 @@ operations use POST with JSON. No request can select its publisher or inbox owne
 | Endpoint under `/v1/` | Request | Result |
 |---|---|---|
 | `event-publish` | request_id, optional repo, kind, ref `{record_id,version}`, destination `{type,name}`, optional causation_id/correlation_id | Durable immutable event |
+| `event-notice-flush` | request_id, event_id | Original publisher's durable flush decision for a deferred routine notice |
 | `event-next` | optional repo/agent/lease_seconds | `{delivery: null}` or a leased delivery |
 | `event-complete` | request_id, delivery_id, lease_id, disposition, optional code/draft | Terminal delivery with optional result reference |
 | `event-retry`, `event-renew` | delivery_id, lease_id, optional lease_seconds for renew | Updated delivery |

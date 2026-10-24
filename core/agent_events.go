@@ -14,6 +14,7 @@ import (
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
 	NoticePolicy       *NoticeWakePolicy  `json:"notice_policy,omitempty"`
+	NoticeFlush        *NoticeFlushResult `json:"notice_flush,omitempty"`
 	ResponseGroup      *ResponseGroupSpec `json:"response_group,omitempty"`
 	AdmissionExpiresAt *time.Time         `json:"admission_expires_at,omitempty"`
 	TaskDeadline       *time.Time         `json:"task_deadline,omitempty"`
@@ -196,7 +197,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id),e.notice_policy,(SELECT jsonb_build_object('event_id',f.event_id,'request_id',f.request_id,'flushed_at',f.flushed_at,'flushed_by',f.flushed_by,'released',f.released,'already_ready',f.already_ready,'leased',f.leased,'terminal',f.terminal) FROM cairn.agent_notice_flush f WHERE f.event_id=e.event_id)`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -205,7 +206,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup, &e.NoticePolicy, &e.NoticeFlush}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))

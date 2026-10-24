@@ -444,6 +444,16 @@
           "kind": {
             "type": "string"
           },
+          "notice_flush": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.NoticeFlushResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "notice_policy": {
             "anyOf": [
               {
@@ -5853,6 +5863,90 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.NoteSpan"
+      },
+      "core.NoticeFlushRequest": {
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "request_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.NoticeFlushRequest"
+      },
+      "core.NoticeFlushRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.NoticeFlushRequest"
+      },
+      "core.NoticeFlushResult": {
+        "properties": {
+          "already_ready": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "flushed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "flushed_by": {
+            "type": "string"
+          },
+          "leased": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "released": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "terminal": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "already_ready",
+          "event_id",
+          "flushed_at",
+          "flushed_by",
+          "leased",
+          "released",
+          "request_id",
+          "terminal"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.NoticeFlushResult"
       },
       "core.NoticeWakePolicy": {
         "properties": {
@@ -17740,6 +17834,134 @@
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "no-key",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_events.go"
+      }
+    },
+    "/v1/event-notice-flush": {
+      "post": {
+        "operationId": "event-notice-flush",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "event_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.NoticeFlushRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.NoticeFlushResult"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.NoticeFlushRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.NoticeFlushRequest",
+          "response": "github.com/halbritt/cairn/core.NoticeFlushResult"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "agent_events.go"
       }

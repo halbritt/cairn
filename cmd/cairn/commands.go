@@ -24,6 +24,7 @@ Everyday commands:
   relay --upstream https://HOST[:PORT] [--socket PATH] (joining host's socket to the central API; use --help)
   wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
+  notice-flush --help (publisher rollback of a deferred routine notice)
   watch --help (read-only inbox arrivals with a saved cursor)
   response-group | response-groups (owned reply collections; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats

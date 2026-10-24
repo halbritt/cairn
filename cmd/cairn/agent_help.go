@@ -15,7 +15,7 @@ Connection flags precede OPERATION. Normal calls use the authenticated Unix API.
 Help needs no credentials, connection, home directory or stdin.
 
 Everyday operations:
-  publish, inbox, ack, complete, retry, renew: durable agent events (use --help)
+  publish, notice-flush, inbox, ack, complete, retry, renew: durable agent events (use --help)
   subscribe, unsubscribe, subscriptions, events, event-status, event-stats
   remember     Save a selected note using text, --stdin or a JSON draft
   send         Journal selected assignment source and explicit publication (--help)

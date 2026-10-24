@@ -20,7 +20,7 @@ Common flags: --profile NAME | --token-file FILE, --socket PATH, --repo COLLECTI
 --profile selects ~/.local/share/cairn/event-profiles/NAME.token (or CAIRN_HOME).
 Inbox identity is the authenticated principal. --agent only asserts that identity.
 For session inboxes add --agent-id UUID --execution-id UUID using the same profile.
-Provide a stable --request-id UUID for publish, subscribe, unsubscribe, ack and complete.
+Provide a stable --request-id UUID for publish, notice-flush, subscribe, unsubscribe, ack and complete.
 Retry an uncertain mutation with identical arguments and the same request UUID.
 
   publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
@@ -29,6 +29,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--admission-expires-at RFC3339] [--task-deadline RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
+  notice-flush --request-id UUID EVENT_UUID (original publisher; releases pending routine deferral)
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
@@ -54,7 +55,7 @@ Ignored/failed dispositions require unsupported_kind, source_unavailable or proc
 
 func isEventCommand(command string) bool {
 	switch command {
-	case "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
+	case "publish", "notice-flush", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
 		return true
 	}
 	return false
@@ -124,6 +125,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	switch command {
 	case "publish":
 		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds "
+	case "notice-flush":
+		allowed += "request-id "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -186,18 +189,21 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	operation := ""
 	expect := 0
 	switch command {
-	case "publish", "ack", "complete", "retry", "renew", "event-status", "response-group":
+	case "publish", "notice-flush", "ack", "complete", "retry", "renew", "event-status", "response-group":
 		expect = 1
 	}
 	if f.NArg() != expect {
 		return nil, invalid("unexpected positional arguments; use --help")
 	}
-	if command == "publish" || command == "subscribe" || command == "unsubscribe" || command == "ack" || command == "complete" {
+	if command == "publish" || command == "notice-flush" || command == "subscribe" || command == "unsubscribe" || command == "ack" || command == "complete" {
 		if *request == "" {
 			return nil, invalid("--request-id UUID is required for retryable mutations")
 		}
 	}
 	switch command {
+	case "notice-flush":
+		operation = "event-notice-flush"
+		req = core.NoticeFlushRequest{RequestID: *request, EventID: strings.TrimPrefix(f.Arg(0), "cairn:")}
 	case "publish":
 		choices := 0
 		for _, value := range []string{*to, *topic, *resolutionFile, *pool} {
