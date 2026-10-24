@@ -3,6 +3,7 @@ package semantic
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,7 +98,8 @@ func TestCommandReapsWorkerGroupAfterWait(t *testing.T) {
 			for {
 				stat, readErr := os.ReadFile("/proc/" + strings.TrimSpace(string(raw)) + "/stat")
 				if readErr != nil {
-					if os.IsNotExist(readErr) {
+					// procfs may report ESRCH when the process exits during this read.
+					if os.IsNotExist(readErr) || errors.Is(readErr, syscall.ESRCH) {
 						break
 					}
 					t.Fatal(readErr)
