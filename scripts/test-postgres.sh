@@ -58,6 +58,11 @@ for panel_workflow in baseline.single_notice baseline.actionable_response baseli
     CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$panel_controller_dsn" CAIRN_DATABASE_URL="$panel_controller_dsn" \
         python3 scripts/check_token_efficiency_panel_controller.py "$test_root/cairn" "$panel_workflow"
 done
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_process_crash_child
+crash_dsn="host=$test_root/socket dbname=cairn_panel_process_crash_child sslmode=disable"
+CAIRN_DATABASE_URL="$crash_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$crash_dsn" CAIRN_DATABASE_URL="$crash_dsn" \
+    python3 scripts/check_panel_process_crash_child.py "$test_root/cairn"
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
