@@ -1853,7 +1853,9 @@ def advance_batch_intent(config, state, path):
             or request['version'] != 1 or not old.get('native_turn_id')):
         raise CoordinationError('STALE_SESSION', 'native batch advance left its active turn')
     try:
-        result = call(config, 'session-inbox-advance', request, session=request['session'])
+        # Native inbox mutations require the base profile; the execution is
+        # fenced by the explicit session in the request body.
+        result = call(config, 'session-inbox-advance', request)
     except CoordinationError as exc:
         # A definite refusal transferred no hold. Do not replay it ahead of
         # later settlement on every hook. Unknown transport results retain

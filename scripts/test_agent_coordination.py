@@ -34,7 +34,7 @@ class CoordinationNormalization(unittest.TestCase):
             result = dict(attempt=next_attempt)
             with patch.object(coordination, 'call', return_value=result) as called:
                 self.assertEqual(coordination.advance_batch_intent({}, state, path), result)
-            called.assert_called_once_with({}, 'session-inbox-advance', request, session=session)
+            called.assert_called_once_with({}, 'session-inbox-advance', request)
             self.assertEqual(state['inbox_attempt'], next_attempt)
             self.assertEqual(state['inbox_intent']['request_id'], next_id)
             self.assertNotIn('batch_advance_intent', state)
