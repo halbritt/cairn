@@ -486,6 +486,12 @@ rollout (bounded tail, pinned by offset, length and SHA-256) and records its dec
 - `held` or `unverified`: a held attempt, queued native items, a later `task_started`, or a missing or
   unpinnable record keep the suppression. Held work is never replayed.
 
+A later quota reset does not clear a persistent native error by itself. Pending deliveries remain in
+that session's inbox and visible in `coordination-review`; the watcher neither claims nor replays them.
+After provider access returns, the owner session can start a new turn or drain its own inbox using the
+existing session token and UUIDs. A tool-boundary waiting-work cue requires another supported tool
+callback, so the errored turn alone cannot emit one after it ends.
+
 When a wake is allowed behind busy presence, the watcher first corrects presence to idle, because the
 pinned record shows the native turn has ended. It also clears the errored turn's per-turn delivery
 latch, which only `Stop` would have cleared; otherwise the woken turn's hook admits no work. It then

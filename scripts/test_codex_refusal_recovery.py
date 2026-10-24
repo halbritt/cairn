@@ -362,7 +362,11 @@ class CodexNativeHealthTests(CodexBase):
         self.assertEqual(self.state['native_health']['task_metadata']['freshness'], 'stale_busy')
         self.assertIn('do not automatically claim, restart, or replay',
                       self.state['native_health']['next_action'])
+        self.assertIn('pending delivery', self.state['native_health']['next_action'])
+        self.assertNotIn('pending request', self.state['native_health']['next_action'])
         self.assertEqual(self.state['wake_refusal']['condition'], 'native_transport_unavailable')
+        self.assertIn('pending delivery', self.state['wake_refusal']['reason'])
+        self.assertNotIn('pending request source', self.state['wake_refusal']['reason'])
         self.assertEqual(obs['condition'], 'native_transport_unavailable')
         self.assertEqual(obs['delivery_id'], DELIVERY)
         self.assertNotIn('idle_wake', self.state)

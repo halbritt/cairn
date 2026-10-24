@@ -149,6 +149,8 @@ class TransientErrorWakeTests(TransientErrorWakeBase):
         self.assertIsNone(prepared)
         self.assertNotIn('agent-context', self.op_names())
         self.assertEqual(self.state['codex_error_wake']['decision'], 'persistent')
+        self.assertIn('pending delivery', self.state['codex_error_wake']['reason'])
+        self.assertNotIn('pending request source', self.state['codex_error_wake']['reason'])
         self.assertIs(self.state['delivered_since_idle'], True)
         self.assertEqual(self.state['wake_refusal']['condition'], 'native_transport_unavailable')
         self.assertEqual(obs['condition'], 'native_transport_unavailable')

@@ -416,7 +416,7 @@ def probe_codex_native_health(config, state, now=None, force=False):
     else:
         freshness = 'unverified'
     actions = {
-        'systemError': ('review the pending request current source and conversation state before '
+        'systemError': ('review the pending delivery and conversation state before '
                         'owner-authorized recovery; do not automatically claim, restart, or replay'),
         'unavailable': ('verify the native process and app-server socket before retrying wake delivery; '
                         'do not automatically claim or replay'),
@@ -578,7 +578,7 @@ def codex_error_wake(config, state, now):
     kind_class, kind = codex_error_class(error.get('codex_error_info'))
     record['error'] = dict(kind=kind, turn_id=payload.get('turn_id'), ended_at=end['timestamp'], record=locator)
     if kind_class != 'transient':
-        return decide('persistent', f'{kind} does not clear by itself; review the pending request source '
+        return decide('persistent', f'{kind} does not clear by itself; review the provider error and pending delivery '
                                     'before owner-authorized recovery')
     wakes, last = record.get('wakes', 0), record.get('last_wake_at')
     same_error = (prior.get('error') or {}).get('record') == locator
@@ -775,7 +775,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
                     return None
                 return note_wake_refusal(config, state, delivery,
                     'native Codex thread reports systemError behind busy metadata; '
-                    'review the pending request source before owner-authorized recovery',
+                    'review the pending delivery and provider state before owner-authorized recovery',
                     'native_transport_unavailable', cycle)
         if agent['metadata']['state'] != 'idle':
             return None
@@ -806,7 +806,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
             state['native_health'].get('status_type') == 'systemError' and
             not codex_error_wake_allowed(config, state)):
         return note_wake_refusal(config, state, delivery,
-            'native Codex thread reports systemError; review the pending request source before owner-authorized recovery',
+            'native Codex thread reports systemError; review the pending delivery and provider state before owner-authorized recovery',
             'native_transport_unavailable', cycle)
     replay = state.get('opencode_replay', {})
     if replay.get('delivery_id') == delivery and replay.get('session') == session_ref(agent):
