@@ -52,4 +52,11 @@ class PhaseTableTests(unittest.TestCase):
             else:table['phases'][0]['transition_allowed']=True
             with self.subTest(mutation=mutation),self.assertRaises(AssertionError):validate(table,self.root)
 
+    def test_missing_or_wrong_source_snapshot_refuses(self):
+        for revision in (None, 'b1e16415a7db46bf57c4200584e3a856d61c4cef'):
+            table=copy.deepcopy(self.table)
+            if revision is None:table.pop('source_snapshot')
+            else:table['source_snapshot']=revision
+            with self.subTest(revision=revision),self.assertRaises(AssertionError):validate(table,self.root)
+
 if __name__=='__main__':unittest.main()

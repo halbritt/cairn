@@ -2,37 +2,51 @@
 import ast
 import hashlib
 import json
-import os
 from pathlib import Path
-import stat
+import re
+import subprocess
+
+
+def _source_blob(root, revision, rel):
+    """Read one regular source file from the table's immutable Git snapshot."""
+    assert isinstance(revision, str) and re.fullmatch(r'[0-9a-f]{40}', revision)
+    resolved = subprocess.run(['git', 'rev-parse', '--verify', revision + '^{commit}'],
+                              cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    assert resolved.returncode == 0 and resolved.stdout.decode().strip() == revision
+    listing = subprocess.run(['git', 'ls-tree', '-z', '--full-tree', revision, '--', rel],
+                             cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    assert listing.returncode == 0
+    entries = listing.stdout.split(b'\0')
+    entries = [entry for entry in entries if entry]
+    assert len(entries) == 1
+    metadata, path = entries[0].split(b'\t', 1)
+    mode, kind, object_id = metadata.decode('ascii').split()
+    assert path.decode('utf-8') == rel and mode in ('100644', '100755') and kind == 'blob'
+    source = subprocess.run(['git', 'cat-file', 'blob', object_id],
+                            cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    assert source.returncode == 0
+    return source.stdout
 
 
 def validate(table, root):
     assert table['schema']=='cairn.owner-phase-table/1'
     assert table['caps']=={'raw':131072,'combined':536870912}
     assert table['decision']=='RETAIN_FULL_STANDING_REFUSAL_NO_TRANSITION'
+    revision = table.get('source_snapshot')
+    assert revision is not None
     for rel,pin in table['sources'].items():
-        p=root/rel
         assert rel.startswith('scripts/') and '..' not in Path(rel).parts
-        for parent in p.parents:assert not parent.is_symlink()
-        fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
-        try:
-            a=os.fstat(fd)
-            assert stat.S_ISREG(a.st_mode) and a.st_uid==os.getuid() and a.st_size<=65536
-            assert (a.st_dev,a.st_ino) not in {(64512,n) for n in (22838820,22946591,22946592,22981266,22981268)}
-            data=os.read(fd,a.st_size+1);assert len(data)==a.st_size and not os.read(fd,1)
-            b=os.fstat(fd)
-            assert (a.st_dev,a.st_ino,a.st_size,a.st_mtime_ns,a.st_ctime_ns)==(b.st_dev,b.st_ino,b.st_size,b.st_mtime_ns,b.st_ctime_ns)
-            assert len(data)==pin['bytes'] and hashlib.sha256(data).hexdigest()==pin['sha256']
-            units={}
-            for node in ast.parse(data).body:
-                if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
-                    units[node.name]=[node.lineno,node.end_lineno]
-                    if isinstance(node,ast.ClassDef):
-                        for method in node.body:
-                            if isinstance(method,ast.FunctionDef):units[node.name+'.'+method.name]=[method.lineno,method.end_lineno]
-            assert all(units.get(name)==span for name,span in pin['units'].items())
-        finally:os.close(fd)
+        data = _source_blob(root, revision, rel)
+        assert len(data)<=65536 and len(data)==pin['bytes']
+        assert hashlib.sha256(data).hexdigest()==pin['sha256']
+        units={}
+        for node in ast.parse(data).body:
+            if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
+                units[node.name]=[node.lineno,node.end_lineno]
+                if isinstance(node,ast.ClassDef):
+                    for method in node.body:
+                        if isinstance(method,ast.FunctionDef):units[node.name+'.'+method.name]=[method.lineno,method.end_lineno]
+        assert all(units.get(name)==span for name,span in pin['units'].items())
     owners=table['ticket_rows'];backings={b['id']:b for b in table['backings']}
     assert len(backings)==len(table['backings'])==21
     for backing in backings.values():

@@ -28,8 +28,14 @@ create a distinct8192-byte UnicodeDecodeError.object alongside the8192-byte inpu
 16384 named live bytes, before other internals. That failure observation is in the
 phase table and prohibits replacing an all-path quote with the healthy envelope.
 
-sdk-owner-phase-table.json is the single source-resolved phase inventory. It pins
-18 authored files and records18 backing groups and50 phase/state rows. Original
+sdk-owner-phase-table.json is the source-resolved phase inventory for the
+historical fixture at source snapshot `b9fb906a8b3e21b37c5b5186cd482a9e8dd858e0`.
+It pins 18 authored files and records18 backing groups and50 phase/state rows.
+The checker reads those exact regular Git blobs, so later working-tree source
+changes do not silently rewrite the evidence. The current native launch profile
+has separate source reservations and is not covered by these 50 phase rows;
+there is no equivalent current owner-phase table. This historical table is not
+the current profile's coverage gate. Original
 ticket paths refer to actual production object relationships; amounts are the
 reviewed full-standing fixture profile, not observed native allocations or a
 complete physical quote. Cumulative command working is parameterized k=0..4;
