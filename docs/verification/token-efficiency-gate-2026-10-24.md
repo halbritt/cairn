@@ -116,7 +116,7 @@ real paired plan or provider result is frozen by that test.
 | [CAIRN-215 capture hook probe](capture-observation-hook-2026-10-24.md) | The real PreCompact hook, authenticated CLI/API and disposable PostgreSQL retain synthetic selector usage and outcomes. A refused observation after a confirmed note write leaves the write and marker committed, with no observation row. | Live subscription usage and cost, task usefulness, and an installed opt-in canary; the synthetic usage is not provider billing. |
 | CAIRN-216 [native inbox probe](../../scripts/check_agent_coordination.py) and [bound compact notice probe](bound-compact-notice-2026-10-24.md) | Disposable CLI/API probes check small notice/response source identity, oversized scoped read, explicit settlements, identical committed retry and stale-handle refusals. The actual bound hook retained mandatory C text and record ID within 3,000 bytes, omitted a 3,675-byte notice body, and supplied an exact scoped read/settle handle; the helper read the whole source and settled once. Host admission and the native turn were synthetic. A [mocked history failure test](../../scripts/test_inbox_recovery.py) makes a handled-settlement retry refuse when source history becomes unavailable. | Paired Codex/Claude notice and response decisions, complete sender/recipient/capture usage, latency, live opt-in and rollback; the bounded probe did not run a queue or model turn, and the unavailable-source test does not exercise store forgetting. |
 | CAIRN-219 compact recall and [CAIRN-222 capture shadow evaluation](capture-admission-evaluation-2026-10-24.md) | Compact/full preservation fixtures and a seven-case shadow admission panel passed locally. The capture gate remains off. | Paired relevant-source and correction/handoff outcomes, net provider work, and selected canaries. Byte differences and shadow decisions are not savings. |
-| CAIRN-220 notice policy and `notice-flush` | An opt-in routine deadline and publisher-authenticated flush preserve the original event and audit the first release decision; disposable PostgreSQL integration passed. | Actual wake reduction, busy/focused/restart behavior, actionability and p50/p95 latency, one-account canary and exercised live rollback. |
+| CAIRN-220 [watcher eligibility probe](notice-watcher-eligibility-2026-10-24.md) and `notice-flush` | An opt-in routine deadline and publisher-authenticated flush preserve the original event. A disposable watcher probe retains a deferred delivery and deadline across an API restart, observes no wake while the synthetic owner reports busy, and names the exact ready delivery after it reports idle. | Actual native wake reduction, focused-host behavior, actionability and p50/p95 latency, one-account canary and exercised live rollback. The probe has no queue endpoint or model turn; its expired deadline is a disposable test mutation. |
 | CAIRN-221 native notice batch | Opt-in store handoff caps a turn at three already-waiting routine notices, keeps per-item settlement and stops for an eligible request or urgent notice; disposable PostgreSQL integration and lifecycle fixtures passed. | Paired batch versus compact-only accepted tasks, source access, tokens, p95 latency and an opt-in canary. |
 | [CAIRN-223 pilot](source-fit-2026-10-24.md) and [loopback tool preflight](source-fit-tool-recovery-2026-10-24.md) | Six synthetic source cases; seven completed native task runs. A local scripted Claude CLI session exposed Cairn search/pull, recovered a whole shareable source and excluded a local-only source. | The eighth pilot run exceeded its frozen ceiling and is unscored; seven arms were unrun. Subscription-route permission, model-initiated complete-source recovery, independent task acceptance and paired cost remain unproved. A new provider panel needs a new budget and route guard. |
 | CAIRN-224 compact/resume [failure matrix](../../scripts/test_inbox_recall_bridge.py) and [disposable hook probe](inbox-resume-disposable-2026-10-24.md) | Opt-in local fixtures cover a current unfinished checkpoint, mandatory correction, source refusal, partial settlement and same-ID uncertain reply recovery. The disposable API probe refreshes the current mandatory source and whole checkpoint across synthetic compact/resume callbacks while one native request attempt remains leased, then replays one journaled settlement. Full mode remains available. | Paired accepted resume tasks and provider usage, an observed Codex compaction/model context, effective canary and rollback across a live resume. |
@@ -171,6 +171,24 @@ Authenticated CLI search reports a labelled lexical fallback and whole-pulls
 the exact source; plain lexical search finds that source without another worker
 call. No semantic ranking, mandatory-context preservation, actor answer or task
 outcome is established by this source-only fixture.
+
+The [memory lifecycle probe](panel-memory-lifecycle-2026-10-24.md) uses the
+frozen wrong-project, corrected-note and owner-correction A sources. It
+whole-pulls both project-labelled sources, ranks Cairn first for the Cairn
+query, and verifies that editing each correction family invalidates its old
+pull handle while retaining exact v1 history and exposing current v2. Project
+labels are source wording, not authenticated scope; self-claimed A notes are
+not owner authority. Actor choices and task acceptance remain unrun.
+
+The [stale-journal probe](panel-stale-journal-2026-10-24.md) carries an old
+pending completion intent through reviewed hold release, explicit reissue and
+execution rotation. The old same-ID helper retry returns `STALE_SESSION` and
+cannot settle the successor, which the current execution settles once with a
+synthetic result. The [two-notice compaction probe](panel-compaction-settlement-2026-10-24.md)
+uses pinned hooks and a disposable Store to retain separate exact sources and
+one settlement per notice across two synthetic compact callbacks; the second
+callback omits the already settled first notice. Neither probe ran a model
+actor or established a paired accepted task.
 
 The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
 observed the synthetic claim child exit from SIGKILL and then explicitly reported
