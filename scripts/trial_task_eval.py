@@ -1255,6 +1255,69 @@ def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None
     return command
 
 
+def writer_launch_preflight(writer, output):
+    """Prove the selected writer leaf can launch the inert sandbox before store setup.
+
+    Weekly actors must join an owned cgroup before exec. This no-provider probe
+    uses the same WriterLeaf, bwrap command builder, process capture and pass-fd
+    path as an attempt, so a controller launched from the wrong source cgroup
+    fails before any trial database is initialized or indexed.
+    """
+    if writer is None:
+        return None
+    try:
+        leaf = writer_release.WriterLeaf(writer['delegated'], writer['controls'],
+                                         reviewed=writer.get('reviewed'))
+    except writer_release.WriterUnavailable:
+        raise RuntimeError('original_writer_preflight_unavailable') from None
+    timing_path = Path(output) / '.writer-preflight-timing.json'
+    code = None
+    capture_failed = False
+    try:
+        command = leaf.wrap(runtime_sandbox() + ['--', '/usr/bin/true'])
+        _, _, code, _ = capture(command, 10, timing_path, pass_fds=leaf.pass_fds,
+                                observer=leaf.observe_init)
+    except Exception:
+        capture_failed = True
+    finally:
+        observed = leaf.finish(time.monotonic() + 5)
+        try:
+            timing_path.unlink()
+        except FileNotFoundError:
+            pass
+    bootstrap = observed.get('bootstrap') if isinstance(observed, dict) else None
+    member = (isinstance(bootstrap, dict) and bootstrap.get('state') == 'member'
+              and bootstrap.get('observed_cgroup') == '0::' + leaf.group.relative)
+    if (capture_failed or code != 0 or not member or observed.get('release') != 'released'
+            or observed.get('close_errors')):
+        raise RuntimeError('original_writer_preflight_failed')
+    return dict(schema='cairn.weekly-writer-launch-preflight/1', state='passed',
+                sandbox_action='true', bootstrap='member', release='released', exit_code=0)
+
+
+def cmd_writer_preflight(args):
+    """Run the same no-provider writer launch check for a paused manual unit gate."""
+    try:
+        controls = paired_json_pin(args.writer_controls, args.writer_controls_sha256)
+        if (not isinstance(controls, dict)
+                or set(controls) != {'schema', 'controls', 'reviewed_identity'}
+                or controls['schema'] != 'cairn.writer-controls/1'):
+            raise ValueError('writer_controls_invalid')
+        writer = dict(delegated=args.writer_parent,
+                      controls=writer_release.check_controls(controls['controls']),
+                      reviewed=writer_release.check_reviewed(controls['reviewed_identity']))
+        if writer['reviewed'] is None:
+            raise ValueError('writer_review_missing')
+        with tempfile.TemporaryDirectory(prefix='cairn-writer-preflight-') as output:
+            result = writer_launch_preflight(writer, output)
+    except (OSError, TypeError, ValueError, KeyError, RuntimeError, writer_release.WriterUnavailable):
+        print(json.dumps(dict(schema='cairn.weekly-writer-launch-preflight/1',
+                              state='refused', code='writer_preflight_failed'), sort_keys=True))
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None, common_runtime=None, runtime_identity=None, credentials_readonly=None):
     """Add the chosen provider and owned trial paths to the runtime filesystem."""
     home = Path.home()
@@ -2016,6 +2079,7 @@ def cmd_agent(args):
                                                           sha256=args.original_writer_controls_sha256),
                                             policy=args._original_writer["controls"],
                                             reviewed_identity=args._original_writer["reviewed"])
+        execution['original_writer_preflight'] = writer_launch_preflight(args._original_writer, out)
     if selected_case_materials is not None:
         execution['case_materials'] = selected_case_materials
     if getattr(args, "original_arms", None) and not prospective:
@@ -2357,6 +2421,10 @@ def cmd_report(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    writer_probe = sub.add_parser("writer-preflight", help="inert bwrap writer-leaf launch check; no provider or store")
+    writer_probe.add_argument("--writer-parent", required=True)
+    writer_probe.add_argument("--writer-controls", required=True)
+    writer_probe.add_argument("--writer-controls-sha256", required=True)
     fresh = sub.add_parser("freeze-input", help="freeze a new explicitly reviewed prospective input")
     fresh.add_argument("--input", required=True)
     sub.add_parser("validate")
@@ -2432,6 +2500,8 @@ def main(argv=None):
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
+    if args.command == "writer-preflight":
+        return cmd_writer_preflight(args)
     if args.command == "freeze-input":
         bundle = load_input(args.input, frozen=False)
         problems = validate(bundle["cases"], bundle["notes"], prospective=True)

@@ -1131,5 +1131,115 @@ class CodexAccountAssignmentPlanTests(unittest.TestCase):
             execute(True, fail_first=True)
 
 
+class WriterLaunchPreflightTests(unittest.TestCase):
+    class Leaf:
+        def __init__(self, bootstrap='member', release='released', close_errors=(), observed_cgroup=None):
+            self.group = Mock(relative='/user.slice/test.service/attempt')
+            self.pass_fds = (71, 72)
+            self.bootstrap = bootstrap
+            self.release = release
+            self.close_errors = list(close_errors)
+            self.observed_cgroup = observed_cgroup
+            self.command = None
+            self.finished = False
+
+        def wrap(self, command):
+            self.command = command
+            return ['/launcher', *command]
+
+        def observe_init(self, _process):
+            return None
+
+        def finish(self, _deadline):
+            self.finished = True
+            return dict(bootstrap=dict(state=self.bootstrap,
+                                       observed_cgroup=(self.observed_cgroup if self.observed_cgroup is not None else
+                                                        '0::' + self.group.relative if self.bootstrap == 'member' else None)),
+                        release=self.release, close_errors=self.close_errors)
+
+    def test_preflight_runs_only_inert_bwrap_and_requires_exact_member_release(self):
+        leaf = self.Leaf()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(te.writer_release, 'WriterLeaf', return_value=leaf), \
+             patch.object(te, 'runtime_sandbox', return_value=['bwrap', '--unshare-pid']), \
+             patch.object(te, 'capture', return_value=(b'', b'', 0, [])) as capture:
+            result = te.writer_launch_preflight(
+                dict(delegated='/writer-parent', controls={}, reviewed={}), directory)
+        self.assertEqual(result, dict(schema='cairn.weekly-writer-launch-preflight/1', state='passed',
+                                      sandbox_action='true', bootstrap='member', release='released', exit_code=0))
+        command = leaf.command
+        self.assertEqual(command, ['bwrap', '--unshare-pid', '--', '/usr/bin/true'])
+        self.assertEqual(capture.call_args.args[0], ['/launcher', *command])
+        self.assertEqual(capture.call_args.kwargs['pass_fds'], leaf.pass_fds)
+        self.assertTrue(leaf.finished)
+
+    def test_preflight_fails_closed_when_membership_is_unobserved(self):
+        leaf = self.Leaf(bootstrap='unobserved')
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(te.writer_release, 'WriterLeaf', return_value=leaf), \
+             patch.object(te, 'runtime_sandbox', return_value=['bwrap']), \
+             patch.object(te, 'capture', return_value=(b'', b'', 0, [])) as capture:
+            with self.assertRaisesRegex(RuntimeError, 'original_writer_preflight_failed'):
+                te.writer_launch_preflight(
+                    dict(delegated='/writer-parent', controls={}, reviewed={}), directory)
+        capture.assert_called_once()
+        self.assertTrue(leaf.finished)
+
+    def test_preflight_fails_closed_when_inert_bwrap_exits_nonzero(self):
+        leaf = self.Leaf()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(te.writer_release, 'WriterLeaf', return_value=leaf), \
+             patch.object(te, 'runtime_sandbox', return_value=['bwrap']), \
+             patch.object(te, 'capture', return_value=(b'', b'', 125, [])):
+            with self.assertRaisesRegex(RuntimeError, 'original_writer_preflight_failed'):
+                te.writer_launch_preflight(
+                    dict(delegated='/writer-parent', controls={}, reviewed={}), directory)
+        self.assertTrue(leaf.finished)
+
+    def test_preflight_fails_closed_on_wrong_member_path(self):
+        leaf = self.Leaf(observed_cgroup='0::/wrong/leaf')
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(te.writer_release, 'WriterLeaf', return_value=leaf), \
+             patch.object(te, 'runtime_sandbox', return_value=['bwrap']), \
+             patch.object(te, 'capture', return_value=(b'', b'', 0, [])):
+            with self.assertRaisesRegex(RuntimeError, 'original_writer_preflight_failed'):
+                te.writer_launch_preflight(
+                    dict(delegated='/writer-parent', controls={}, reviewed={}), directory)
+        self.assertTrue(leaf.finished)
+
+    def test_preflight_fails_closed_on_release_or_close_failure(self):
+        for leaf in (self.Leaf(release='not_released'), self.Leaf(close_errors=['writer_close_unknown'])):
+            with self.subTest(release=leaf.release, close_errors=leaf.close_errors), \
+                 tempfile.TemporaryDirectory() as directory, \
+                 patch.object(te.writer_release, 'WriterLeaf', return_value=leaf), \
+                 patch.object(te, 'runtime_sandbox', return_value=['bwrap']), \
+                 patch.object(te, 'capture', return_value=(b'', b'', 0, [])):
+                with self.assertRaisesRegex(RuntimeError, 'original_writer_preflight_failed'):
+                    te.writer_launch_preflight(
+                        dict(delegated='/writer-parent', controls={}, reviewed={}), directory)
+            self.assertTrue(leaf.finished)
+
+    def test_writer_preflight_command_checks_a_pinned_document_without_provider_or_store(self):
+        controls = dict(schema='cairn.writer-controls/1', controls={}, reviewed_identity={})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pin = root / 'writer-controls.json'
+            pin.write_text(json.dumps(controls))
+            digest = hashlib.sha256(pin.read_bytes()).hexdigest()
+            summary = dict(schema='cairn.weekly-writer-launch-preflight/1', state='passed',
+                           sandbox_action='true', bootstrap='member', release='released', exit_code=0)
+            output = StringIO()
+            with patch.object(te.writer_release, 'check_controls', return_value={}), \
+                 patch.object(te.writer_release, 'check_reviewed', return_value={'reviewed': True}), \
+                 patch.object(te, 'writer_launch_preflight', return_value=summary) as preflight, \
+                 redirect_stdout(output):
+                code = te.main(['writer-preflight', '--writer-parent', '/writer-parent',
+                                '--writer-controls', str(pin), '--writer-controls-sha256', digest])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue()), summary)
+        self.assertEqual(preflight.call_args.args[0],
+                         dict(delegated='/writer-parent', controls={}, reviewed={'reviewed': True}))
+
+
 if __name__ == "__main__":
     unittest.main()
