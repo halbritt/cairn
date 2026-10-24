@@ -346,7 +346,7 @@ def _pregrade_snapshot(run_dir, record, case, stream_bytes):
     git_rows = []
     for row in snapshot['git']['index_refs']:
         need(isinstance(row, dict) and type(row.get('path_b64')) is str and
-             row.get('kind') in ('file', 'absent'), 'legacy_pregrade_git_entry')
+             row.get('kind') in ('file', 'directory', 'absent'), 'legacy_pregrade_git_entry')
         projected = {k: row[k] for k in ('path_b64', 'kind')}
         try:
             git_path = base64.b64decode(row['path_b64'], validate=True)
@@ -361,7 +361,12 @@ def _pregrade_snapshot(run_dir, record, case, stream_bytes):
             projected.update(mode=row['mode'], bytes=len(data), sha256=row['sha256'],
                              content_b64=row['content_b64'])
         else:
-            need(set(row) == {'path_b64', 'kind'}, 'legacy_pregrade_git_entry')
+            if row['kind'] == 'directory':
+                need(set(row) == {'path_b64', 'kind', 'mode'} and type(row['mode']) is int and
+                     0 <= row['mode'] <= 0o777, 'legacy_pregrade_git_entry')
+                projected['mode'] = row['mode']
+            else:
+                need(set(row) == {'path_b64', 'kind'}, 'legacy_pregrade_git_entry')
         git_rows.append(projected)
     blind = dict(schema='cairn.legacy-blind-final-artifacts/1', workspace_entries=entries,
                  deletions=deletions, git_index_refs=git_rows)
