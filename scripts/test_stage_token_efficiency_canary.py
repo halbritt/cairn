@@ -226,6 +226,25 @@ exec {binary} mcp \\
         self.assertNotIn("--search-view", claude_wrapper)
         self.assertNotIn("--tool-profile", claude_wrapper)
 
+    def test_two_account_compact_candidate_accepts_explicit_codex_config_baseline(self):
+        config = self.home / ".codex/config.toml"
+        original = config.read_bytes()
+        config.write_bytes(original + b"\n[unrelated]\nkeep = true\n")
+        baseline = config.read_bytes()
+        report = stage.stage(self.home, self.stage, self.expected,
+                             snapshot_codex_config_baseline=True,
+                             profile="compact-inbox")
+        self.assertEqual(set(report["accounts"]), {"codex", "claude"})
+        codex = report["mcp"]["codex"]
+        self.assertEqual(Path(codex["baseline_snapshot"]).read_bytes(), baseline)
+        candidate_text = Path(codex["candidate_mcp"]).read_text()
+        self.assertIn("[unrelated]\nkeep = true", candidate_text)
+        parsed = stage.tomllib.loads(candidate_text)
+        args = parsed["mcp_servers"]["cairn"]["args"]
+        self.assertNotIn("--search-view", args)
+        self.assertNotIn("--tool-profile", args)
+        self.assertEqual(config.read_bytes(), baseline)
+
     def test_current_codex_config_baseline_preserves_unrelated_toml_and_reports_exact_hooks(self):
         config_path = self.home / ".codex/config.toml"
         original = config_path.read_bytes()

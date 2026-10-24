@@ -371,10 +371,10 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
         raise ValueError("stage destination must be a new absolute directory")
     if profile not in ("full", "capture-only", "compact-inbox"):
         raise ValueError("profile must be full, capture-only or compact-inbox")
-    if snapshot_codex_config_baseline and not codex_only:
-        raise ValueError("current Codex config baseline is available only in --codex-only mode")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
     if snapshot_codex_config_baseline:
+        if snapshot_paths is None:
+            snapshot_paths = tuple(expected)
         snapshot_paths = tuple(path for path in snapshot_paths if path != ".codex/config.toml")
     check_snapshot(home, expected, snapshot_paths)
     codex_config_path = home / ".codex/config.toml"

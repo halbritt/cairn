@@ -71,7 +71,7 @@ The script has nine fixture tests covering disabled one-coordinator bindings, ex
 
 The reviewed pin permitted a disposable check on 2026-10-24. The stager created both disabled candidates under its private root, and `go build` placed a candidate CLI at the staged binary path. On a fresh PostgreSQL 17 cluster with no TCP listener, that CLI applied all 68 checksummed migrations. `scripts/check-local-api.py` then exited 0 against the candidate CLI and disposable Unix API, including authenticated client/server version, MCP, socket ownership and shutdown checks. After the timestamp-specific change, the stager again produced both disabled candidates and left all 15 installed pinned files byte-identical. A separate read-only installed inventory check returned `ok=true`, `installed_verified=true`, four ordinary hooks, three inbox bindings, `issues=[]`, and `live_observed=false`. On the pre-rebase source at `1a380101`, `make test-integration` and `make check` passed. After rebase onto `b3144d69`, eight stager tests, 88 scoped lifecycle tests, compact MCP tests and `make check` passed. The disposable API, cluster and private staged bundle were removed. This proves local candidate CLI/API/schema compatibility in that fixture; it does not establish managed-store migration readiness, installed pins, account activation, native provider turns, task acceptance or rollback.
 
-### Capture-only offline profile
+### Narrow offline profiles
 
 The stager accepts `--profile capture-only`, which adds only
 `capture_observations: true`, and `--profile compact-inbox`, which adds that
@@ -85,14 +85,17 @@ is absent, and staging makes no provider request.
 
 For a focused Codex+Claude staging review, build the new private candidate after
 the source revision is committed, then validate both copied bindings against the
-candidate's copied bridge. The full candidate report hashes the selected hook
-settings, separate ordinary and coordination configs, one-binding manifest,
-MCP config/wrapper, and lifecycle pin closure. This is config-isolation and
-source-pin evidence only; it does not load a native session or authorize
-provider calls.
+candidate's copied bridge. If only the selected Codex TOML has unrelated drift,
+add `--snapshot-current-codex-config`; the stager records its exact owner-only
+baseline and edits only the Cairn MCP entry. The full candidate report hashes
+the selected hook settings, separate ordinary and coordination configs,
+one-binding manifest, MCP config/wrapper, and lifecycle pin closure. This is
+config-isolation and source-pin evidence only; it does not load a native session
+or authorize provider calls.
 
 ```sh
 python3 -B scripts/stage_token_efficiency_canary.py \
+  --snapshot-current-codex-config \
   --profile compact-inbox \
   --destination "$HOME/.cache/cairn-token-efficiency-stages/COMPACT_INBOX_CANDIDATE"
 ```
