@@ -14,7 +14,7 @@ import (
 
 func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 	receipt, record, handle := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	entry := core.IndexEntry{RecordID: record, Version: 3, Class: "A", Kind: "lesson", Summary: "日本語 source", BodySHA256: strings.Repeat("a", 64), SummarySpan: &core.ByteSpanRequest{Offset: 9, Length: 12}}
+	entry := core.IndexEntry{RecordID: record, Version: 3, Class: "A", Kind: "lesson", Summary: `quoted "<>& 日本語 source`, BodySHA256: strings.Repeat("a", 64), SummarySpan: &core.ByteSpanRequest{Offset: 9, Length: 12}}
 	selection := core.Selection{Mandatory: true, Reason: "required", Record: core.Record{RecordID: uuid.NewString(), Version: 1, Draft: core.Draft{Body: "Whole required source."}}}
 	competing := core.Selection{Mandatory: true, Reason: "competing", Record: core.Record{RecordID: uuid.NewString(), Version: 4, Draft: core.Draft{Body: "Whole competing 日本語 source."}}}
 	group := core.AdvisoryConflict{ID: uuid.NewString(), Version: 1, Members: []core.RecordVersionRef{
@@ -90,8 +90,11 @@ func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 	if err != nil || tool == nil {
 		t.Fatal(err)
 	}
+	if exact, exactWire, exactErr := encodeToolResult(compact, len(wire)); exactErr != nil || exact == nil || !reflect.DeepEqual(exactWire, wire) {
+		t.Fatalf("escaped compact envelope failed at its exact serialized budget: %v", exactErr)
+	}
 	if _, _, err = encodeToolResult(compact, len(wire)-1); err == nil || !strings.Contains(err.Error(), "BUDGET_REFUSED") {
-		t.Fatalf("final escaped envelope ignored room: %v", err)
+		t.Fatalf("final escaped/multibyte envelope ignored room: %v", err)
 	}
 	if result.Package.Semantic.Query != "sha256:query" || result.Package.Semantic.Ranking != "rank/1" {
 		t.Fatal("projection mutated sealed source")
