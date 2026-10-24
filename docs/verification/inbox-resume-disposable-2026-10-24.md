@@ -25,6 +25,17 @@ installed canary remain unobserved. Same-ID reply loss after a committed
 publication is covered separately by the
 [relay response probe](../../scripts/check_panel_relay_uncertain_response.py).
 
+A follow-up failure case now commits the native request result, hides the local
+API socket before its reply, and observes `completion=committed` with the exact
+reply request pending. It runs the synthetic compact and resume callbacks while
+that reply remains pending, confirms the completion and reply intent are
+unchanged, then restores the socket and retries the original `finish_reply`
+intent twice. The Store retains one handled delivery, one result, and one
+causally linked response; the delivery attempt count stays one. This adds
+cross-layer source/API/hook evidence for a partial completion/reply failure
+across resume. It does not exercise a real native compaction or establish model
+retention or accepted task outcome.
+
 Validation: a fresh disposable PostgreSQL run of this probe, `make check`,
 and `bash -n scripts/test-postgres.sh` passed locally. The repository-wide
 `make test-integration` suite was not rerun for this test-only addition.

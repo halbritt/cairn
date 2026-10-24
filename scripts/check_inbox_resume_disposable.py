@@ -286,6 +286,39 @@ def check(binary):
                 and compact_view["source_extent"] == "whole",
                 "compact checkpoint was not the exact whole Store source")
 
+        # Commit the result, then lose the reply transport before publication.
+        # The partial journal must survive the compact/resume callbacks below.
+        result_body = "Synthetic resolved fixture result."
+        completion = subprocess.run(context["completion"], input=result_body, text=True,
+                                    capture_output=True, env=env, timeout=30)
+        require(completion.returncode == 0,
+                f"completion before compaction failed: {completion.stdout} {completion.stderr}")
+        completion_data = json.loads(completion.stdout)["data"]
+        result_ref = completion_data["result"]
+        require(completion_data["state"] == "handled" and result_ref is not None,
+                "completion did not commit before compact/resume")
+        lost_reply_argv = [*context["commands"]["respond"], "--version",
+                           str(result_ref["version"]), result_ref["record_id"]]
+        hidden_socket = home / "api.sock.unavailable"
+        os.rename(socket, hidden_socket)
+        try:
+            failed_reply = subprocess.run([*context["finish_reply"]], input=result_body,
+                text=True, capture_output=True, env=env, timeout=30)
+            failure = json.loads(failed_reply.stdout)
+            require(failed_reply.returncode != 0
+                    and failure["status"] == "API_CONNECTION_FAILED",
+                    "reply transport loss did not retain a pending reply")
+        finally:
+            os.rename(hidden_socket, socket)
+        journal_path = coord_state / "intents" / f"{attempt_id}.json"
+        pending = json.loads(journal_path.read_text())
+        require(pending["completion"]["status"] == "committed"
+                and pending["completion"]["result"] == result_ref
+                and pending["response"]["status"] == "pending"
+                and pending["response"]["argv"] == lost_reply_argv
+                and pending["response"]["request_id"] == context["request_ids"]["response"],
+                "compact-boundary partial completion/reply intent changed")
+
         preview = operator("preview-retract", arg=original_rule["record_id"])
         operator("retract", dict(request_id=str(uuid.uuid4()),
             record_id=original_rule["record_id"], expected_version=original_rule["version"],
@@ -326,12 +359,15 @@ def check(binary):
                 and grant["checkpoint_refresh_bytes"] > 0,
                 "refresh bytes were not separately accounted")
         retained = profile("sender", "event-inspect", dict(event_id=event["event_id"]))["deliveries"]
-        require(len(retained) == 1 and retained[0]["state"] == "leased"
+        require(len(retained) == 1 and retained[0]["state"] == "handled"
                 and retained[0]["delivery_id"] == delivery_id
                 and retained[0]["attempts"] == 1
                 and sql("SELECT count(*) FROM cairn.agent_session_attempt") == "1",
-                "synthetic lifecycle callbacks replaced the native attempt")
-        result_body = "Synthetic resolved fixture result."
+                "synthetic lifecycle callbacks replaced the partially settled native attempt")
+        pending_after_resume = json.loads(journal_path.read_text())
+        require(pending_after_resume["completion"] == pending["completion"]
+                and pending_after_resume["response"] == pending["response"],
+                "resume changed the committed result or pending reply intent")
         first = subprocess.run(context["finish_reply"], input=result_body, text=True,
                                capture_output=True, env=env, timeout=30)
         require(first.returncode == 0, f"finish_reply failed: {first.stdout} {first.stderr}")
@@ -343,7 +379,7 @@ def check(binary):
         require(finished["completion_committed"] and finished["reply_committed"]
                 and finished["result"] is not None,
                 "finish/reply journal did not confirm settlement")
-        journal = json.loads((coord_state / "intents" / f"{attempt_id}.json").read_text())
+        journal = json.loads(journal_path.read_text())
         require(journal["completion"]["request_id"] == context["request_ids"]["completion"]
                 and journal["response"]["request_id"] == context["request_ids"]["response"]
                 and journal["completion"]["status"] == "committed"
@@ -372,6 +408,7 @@ def check(binary):
                               checkpoint_version=resume_view["version"],
                               attempt_id=attempt_id,
                               callbacks="synthetic_precompact_compact_resume",
+                              reply_pending_survived_resume=True,
                               actor_task="unrun", provider_called=False,
                               model_retention="unobserved", task_outcome="unassessed"),
                          sort_keys=True))
