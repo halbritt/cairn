@@ -207,6 +207,73 @@ class CodexHookTests(unittest.TestCase):
             out.write(json.dumps(item("user", "Next real request.", kinds=["user.text"])) + "\n")
         self.assertEqual(hook.codex_new_messages(self.event, state), 1)
 
+    def test_stop_ignores_exact_wake_then_captures_later_correction_and_handoff(self):
+        self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)
+        selections, writes = [], []
+        results = [
+            dict(checkpoint=None, workstream=None, memories=[]),
+            dict(checkpoint="The migration is unfinished; resume integration checks.",
+                 checkpoint_state="open", workstream="Migration", memories=[
+                     dict(record_id=None, kind="preference", title="Migration endpoint",
+                          body="Use the corrected endpoint for the migration.")]),
+        ]
+
+        def select(_config, _schema, _prompt, excerpt, **_kwargs):
+            selections.append(excerpt["messages"])
+            return {"structured_output": results[len(selections) - 1]}
+
+        def save(_memory, operation, *args, **kwargs):
+            if operation in ("create", "revise"):
+                writes.append(kwargs["payload"])
+                return {"record_id": f"capture-{len(writes)}"}
+            raise AssertionError(f"unexpected memory operation: {operation}")
+
+        with patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "select_json", side_effect=select), \
+             patch.object(hook.Memory, "call", new=save):
+            hook.handle(self.config, dict(self.event, hook_event_name="PreCompact"))
+            state_path = Path(self.config["state_dir"]) / (SESSION + ".json")
+            before_wake = json.loads(state_path.read_text())
+            self.assertEqual(before_wake["last_capture"]["outcome"], "nothing_selected")
+            self.assertEqual(before_wake["last_capture"]["selector_calls"], 1)
+
+            with self.transcript.open("a") as out:
+                out.write(json.dumps(item("user", wake(), kinds=["user.text"])) + "\n")
+            self.assertEqual(hook.codex_new_messages(self.event, before_wake), 0)
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+            self.assertEqual(len(selections), 1, "a filtered transport wake started another selector")
+            after_wake = json.loads(state_path.read_text())
+            self.assertEqual(after_wake["codex_capture_marker"], before_wake["codex_capture_marker"])
+
+            additions = [
+                item("user", wake() + "\nCorrection: use the new migration endpoint.", kinds=["user.text"]),
+                item("assistant", "I will use the corrected endpoint."),
+                item("user", "The migration is unfinished until integration checks pass.", kinds=["user.text"]),
+                item("assistant", "I will resume the integration checks."),
+                item("user", "Keep the handoff available after compaction.", kinds=["user.text"]),
+                item("assistant", "The recovery handoff is recorded."),
+            ]
+            with self.transcript.open("a") as out:
+                out.writelines(json.dumps(record) + "\n" for record in additions)
+            result = hook.handle(self.config, dict(self.event, hook_event_name="PreCompact"))
+
+        self.assertEqual(len(selections), 2, "new owner dialogue did not reach capture selection")
+        selected_dialogue = json.dumps(selections[-1])
+        self.assertNotIn(dict(role="user", text=wake()), selections[-1],
+                         "a standalone wake was retained as owner dialogue")
+        self.assertIn(dict(role="user", text=wake() + "\nCorrection: use the new migration endpoint."),
+                      selections[-1], "a wake joined to owner correction was filtered out")
+        self.assertIn("Correction: use the new migration endpoint.", selected_dialogue)
+        self.assertIn("The migration is unfinished until integration checks pass.", selected_dialogue)
+        self.assertEqual(len(writes), 2, "correction and unfinished handoff were not both saved")
+        self.assertIn("capture-1", result["systemMessage"])
+        self.assertIn("capture-2", result["systemMessage"])
+        final = json.loads(state_path.read_text())
+        self.assertEqual(final["last_capture"]["outcome"], "saved")
+        self.assertEqual(hook.codex_new_messages(self.event, final), 0)
+
     def test_dialogue_appended_during_capture_is_not_marked_captured(self):
         self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)  # six messages
         def select(config, schema, prompt, excerpt, timeout=35, observation=None):

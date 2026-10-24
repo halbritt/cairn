@@ -42,6 +42,46 @@ append during selection, state-commit races, exclusions, or a real quota error.
 No production gate is justified by these seven cases; the shadow-only path
 remains in place.
 
+## Reachable hook boundary
+
+The exact-wake candidate does not currently identify a safe hook at which to
+skip selection. Codex removes a complete reserved wake while reading its
+transcript. Its Stop gate counts only kept message offsets, so a wake by itself
+does not trigger selection; after a correction or handoff arrives, the changed
+dialogue is eligible for capture. Claude, OpenCode and Hermes retain the exact
+wake in their capture dialogue, but expose capture at PreCompact or SessionEnd,
+where checkpoint recovery must remain available. No candidate-based skip is
+enabled on those boundaries.
+
+`test_stop_ignores_exact_wake_then_captures_later_correction_and_handoff` runs
+the Codex hook handler against a temporary transcript and state directory. A
+stubbed first selection confirms a prior snapshot; a complete wake does not
+advance the Stop marker or start another selector; then a correction and
+unfinished handoff reach the real PreCompact capture path and produce both
+selected writes. This is local preservation evidence only: the selector and
+store are stubbed, and it establishes neither provider savings nor accepted
+owner outcomes. A future gate needs a different reachable, non-recovery
+boundary plus metered outcome evidence before suppression is considered.
+
+For this bounded change, the selected option is to keep runtime admission
+unchanged and add route-level regression coverage. A Stop-only suppression
+would be unreachable for the exact Codex wake because the transcript filter
+already removes it; suppressing the shared candidate at PreCompact or
+SessionEnd would remove a recovery opportunity. No capture call, classifier,
+configuration flag, or production gate was added. CAIRN-222 remains open for
+the metered paired outcome evidence named above.
+
+Decision review: Pincite packet `pkt-57469349dc11364b`, content SHA-256
+`57469349dc11364b3b2fc5f42bbbffe6535a8a760ea904f2f35eb23a85108dcd`, doctrine
+`doctrine-f6bbb5196a3f8bf9`, retriever `retriever-ec995ecdd083b2c8`, release
+`d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`. The question was limited to a
+provider-free admission change on the current hook paths. The evidence supports
+test/documentation work under local execution authority; it does not support
+selecting or accepting production suppression. Retained per-invocation usage
+and paired accepted correction and handoff outcomes remain material to a
+future gate. Revisit only when those are available and a reachable
+non-recovery capture boundary is identified.
+
 To revisit a gate, freeze a representative capture cohort and predeclare the
 subscription route, model, token/elapsed limit, and acceptance criteria before
 any provider call. Pair unchanged capture with the proposed skip across owner
