@@ -401,6 +401,11 @@ node scripts/check_opencode_recent_files.mjs
 node scripts/check_opencode_lifecycle.mjs
 ```
 
+The [local workflow model report](docs/workflow-model-report.md) joins selected
+native provider usage to inbox journals without exporting payloads. Its Python
+checks require `tiktoken==0.12.0`; run them with
+`uv run --with tiktoken==0.12.0 python -m unittest discover -s scripts -p 'test_*model*.py'`.
+
 The integration target starts its own temporary PostgreSQL cluster, gives each Go
 package a separate database, and uses Go's race detector. It stops the cluster on
 exit and removes its files after success. On failure it prints the retained

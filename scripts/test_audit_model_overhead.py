@@ -32,6 +32,7 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(len(result["turns"]["t"]["usage"]), 1)
         self.assertEqual(result["turns"]["t"]["usage"][0], dict(input=100, cached=80, write=0, output=12, reasoning=5))
         self.assertEqual(result["errors"]["duplicate_usage_records"], 1)
+        self.assertEqual(result["turns"]["t"]["responses"], [self.audit.response_identity("r")])
 
     def test_claude_stream_blocks_charge_input_once_and_thinking_is_subset(self):
         messages = [dict(type="user", promptId="p", message=dict(content=self.audit.WAKE))]

@@ -32,6 +32,10 @@ def compact(value):
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
+def response_identity(value):
+    return hashlib.sha256(("provider-response/1\0" + value).encode()).hexdigest()
+
+
 def counts(text):
     return {"bytes": len(text.encode()), "proxy_tokens": len(ENC.encode(text, disallowed_special=()))}
 
@@ -58,7 +62,7 @@ def distribution(values):
 def blank_turn():
     return dict(wake=False, kinds=[], completed=False, usage=[], tools=0,
                 cairn_tools=0, memory_tools=0, compactions=0, contexts=[],
-                start=None, end=None, models=[])
+                start=None, end=None, models=[], efforts=[], responses=[])
 
 
 def tool_kind(name, body):
@@ -109,6 +113,7 @@ def analyze_codex(path, since, until):
             current = p.get("turn_id")
             if current:
                 turns[current]["models"].append(p.get("model", "unknown"))
+                turns[current]["efforts"].append(p.get("effort") or p.get("reasoning_effort"))
         if typ == "event_msg" and p.get("type") == "task_started":
             current = p.get("turn_id")
             if current:
@@ -128,6 +133,7 @@ def analyze_codex(path, since, until):
             usage_ids.add(rid)
             u = p.get("usage", {})
             target = turns[p.get("turn_id") or current]
+            target["responses"].append(response_identity(rid))
             target["usage"].append({"input": u.get("input_tokens"),
                 "cached": u.get("cached_input_tokens"),
                 "write": u.get("cache_write_input_tokens"),
@@ -242,6 +248,10 @@ def analyze_claude(path, since, until):
         if typ == "assistant":
             t["models"].append(p.get("model", "unknown"))
             mid = p.get("id")
+            if mid:
+                response_hash = response_identity(mid)
+                if response_hash not in t["responses"]:
+                    t["responses"].append(response_hash)
             u = p.get("usage")
             if mid and u:
                 # Streaming blocks repeat message id; retain the last usage,
