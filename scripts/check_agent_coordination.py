@@ -3,6 +3,8 @@ import json
 import importlib.util
 import shlex
 import os
+import hashlib
+import shutil
 from pathlib import Path
 import select
 import signal
@@ -713,6 +715,121 @@ def check(binary, root, repo, api_call):
             subprocess.run([sys.executable, str(root / "native-codex-engine/coordination.py"), "watch", "--config-dir", str(root / "native-codex-engine/bindings"), "--once"], check=True, capture_output=True, timeout=15)
             remaining = api_call("bob", "agents", "list", "--harness", "codex")["agents"]
             assert not any(a["native_session_id"] in native_ids for a in remaining), "Exited native Codex stayed live"
+
+            candidate_path = os.environ.get("CAIRN_COMPACT_STAGE")
+            if candidate_path:
+                candidate_root = Path(candidate_path).resolve()
+                source_home = candidate_root / "codex"
+                staged_home = root / "native-compact-codex-home"
+                shutil.copytree(source_home, staged_home)
+                (staged_home / "config.toml").write_text(
+                    'model_provider = "fixture"\n'
+                    '[model_providers.fixture]\n'
+                    'name = "Fixture"\n'
+                    'base_url = "http://127.0.0.1:1/v1"\n'
+                    'wire_api = "responses"\n'
+                    'requires_openai_auth = false\n'
+                    'request_max_retries = 0\n'
+                    'stream_max_retries = 0\n', encoding="utf-8")
+                (staged_home / "config.toml").chmod(0o600)
+
+                def replace_stage_paths(value):
+                    if isinstance(value, str):
+                        return value.replace(str(source_home), str(staged_home))
+                    if isinstance(value, list):
+                        return [replace_stage_paths(item) for item in value]
+                    if isinstance(value, dict):
+                        return {key: replace_stage_paths(item) for key, item in value.items()}
+                    return value
+
+                settings_path = staged_home / "hooks.json"
+                settings = replace_stage_paths(json.loads(settings_path.read_text(encoding="utf-8")))
+                settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+                settings_path.chmod(0o600)
+                memory_path = staged_home / "ordinary/config.json"
+                memory = json.loads(memory_path.read_text(encoding="utf-8"))
+                memory.update(cairn=str(candidate_root / "bin/cairn"),
+                              socket=str(root / "api.sock"),
+                              token_file=str(root / "carol.token"), repo=repo,
+                              state_dir=str(staged_home / "ordinary/state"),
+                              inbox_recall_binding=str(staged_home / "binding.json"))
+                memory_path.write_text(json.dumps(memory, indent=2) + "\n", encoding="utf-8")
+                memory_path.chmod(0o600)
+                coordination_path = staged_home / "coordination/bindings/codex-one.json"
+                coordination = json.loads(coordination_path.read_text(encoding="utf-8"))
+                coordination.update(cairn=str(candidate_root / "bin/cairn"),
+                                    socket=str(root / "api.sock"),
+                                    token_file=str(root / "carol.token"), repo=repo,
+                                    config_home=str(staged_home),
+                                    state_dir=str(staged_home / "coordination/state/codex-one"),
+                                    inbox_recall_binding=str(staged_home / "binding.json"))
+                coordination_path.write_text(json.dumps(coordination, indent=2) + "\n", encoding="utf-8")
+                coordination_path.chmod(0o600)
+                bridge_path = staged_home / "inbox_recall.py"
+                memory_engine = staged_home / "ordinary/memory.py"
+                manifest = json.loads((staged_home / "binding.json").read_text(encoding="utf-8"))
+                manifest.update(enabled=True,
+                    bridge=dict(path=str(bridge_path), sha256=hashlib.sha256(bridge_path.read_bytes()).hexdigest()),
+                    engine=dict(path=str(memory_engine), sha256=hashlib.sha256(memory_engine.read_bytes()).hexdigest()),
+                    memory_config=dict(path=str(memory_path), sha256=hashlib.sha256(memory_path.read_bytes()).hexdigest()),
+                    coordination_configs=[dict(path=str(coordination_path), sha256=hashlib.sha256(coordination_path.read_bytes()).hexdigest())])
+                manifest_path = staged_home / "binding.json"
+                manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+                manifest_path.chmod(0o600)
+                bridge_spec = importlib.util.spec_from_file_location("staged_native_bridge", bridge_path)
+                bridge = importlib.util.module_from_spec(bridge_spec)
+                bridge_spec.loader.exec_module(bridge)
+                bridge.validate_binding(memory, require_enabled=True)
+                bridge.validate_binding(coordination, require_enabled=True)
+
+                command = next(hook["command"] for groups in settings["hooks"].values()
+                               for group in groups for hook in group["hooks"]
+                               if "coordination.py" in hook.get("command", "")
+                               and "--config" in hook.get("command", ""))
+                native_ids = []
+                wake_file, wake_id = prepare_native_wake("codex-staged-compact")
+
+                def staged_native_start(rpc):
+                    started = rpc("thread/start", dict(cwd=str(root), model="gpt-6-astra",
+                        approvalPolicy="never", sandbox="read-only", ephemeral=True))
+                    ident = started["thread"]["id"]
+                    native_ids.append(ident)
+                    rpc("turn/start", dict(threadId=ident,
+                        input=[dict(type="text", text="Reply OK", text_elements=[])]))
+                    deadline = time.monotonic() + 8
+                    while True:
+                        entries = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
+                        linked = raw_slot("wake-attempts", dict(attempt_id=wake_id))["attempts"][0].get("session")
+                        if (any(agent["native_session_id"] == ident for agent in entries)
+                                and linked):
+                            return
+                        assert time.monotonic() < deadline, "Staged compact binding did not register the native Codex first turn"
+                        time.sleep(.1)
+
+                previous_wake = os.environ.get("CAIRN_WAKE_CONTEXT")
+                os.environ["CAIRN_WAKE_CONTEXT"] = str(wake_file)
+                try:
+                    installer.trust_codex_hooks(staged_home, settings_path, command,
+                        verify=staged_native_start, codex_binary=os.environ["CAIRN_CODEX_BINARY"])
+                finally:
+                    if previous_wake is None:
+                        os.environ.pop("CAIRN_WAKE_CONTEXT", None)
+                    else:
+                        os.environ["CAIRN_WAKE_CONTEXT"] = previous_wake
+                attempt = raw_slot("wake-attempts", dict(attempt_id=wake_id))["attempts"][0]
+                agent = next(agent for agent in api_call("carol", "agents", "list", "--harness", "codex", "--include-offline")["agents"]
+                             if agent["native_session_id"] == native_ids[0])
+                assert attempt.get("session", {}).get("agent_id") == agent["agent_id"]
+                assert agent["metadata"]["observed_model"] == "gpt-6-astra"
+                raw_slot("wake-change", dict(request_id=str(uuid.uuid4()), attempt_id=wake_id,
+                                              operation="finish", reason="fixture_process_stopped"))
+                subprocess.run([sys.executable, str(staged_home / "coordination/coordination.py"),
+                    "watch", "--config-dir", str(staged_home / "coordination/bindings"), "--once"],
+                    check=True, capture_output=True, timeout=15)
+                stopped = api_call("carol", "agents", "list", "--agent-id", agent["agent_id"],
+                                   "--include-offline")["agents"]
+                assert stopped and stopped[0]["stopped"]
+                print("Staged compact Codex binding loaded and registered an actual native first turn against the disposable API; fixture provider only")
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")

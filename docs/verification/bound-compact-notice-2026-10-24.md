@@ -62,3 +62,24 @@ turn, freeze fresh account-specific capacity observations and percentage
 ceilings/reserves for each stage; keep absolute allowance unknown where the
 provider does not report it. The present stage is preparation evidence only;
 Plane acceptance remains open.
+
+## Disposable native first-turn check
+
+The opt-in `CAIRN_COMPACT_STAGE` path in
+`scripts/check_agent_coordination.py` copies the staged Codex account into the
+integration test's private temporary home. It points the copied configs at the
+test API socket, token and repository, enables the compact manifest only in that
+copy, validates its exact pins, then starts the installed Codex app-server with
+the test home's `CODEX_HOME` and a refused loopback fixture-provider endpoint.
+The native first turn registered the expected Codex thread and associated the
+fixture wake attempt with it. The actual staged files remained disabled and
+unchanged. The local disposable `check_agent_events.py` run also completed its
+existing CLI/API notice, response, oversized-source and settlement-retry
+checks. PostgreSQL was stopped and the private test root removed afterward.
+
+This closes native first-turn loading for the staged Codex compact binding in a
+fixture environment. It is not a subscription request or a model task: no actor
+read a notice, chose a disposition, or produced an accepted result. Sender and
+recipient usage, capture joined to the same workflow, latency, paired task
+outcomes, and the Claude native path remain unmeasured. The live canary is still
+held pending an enforceable per-run capacity policy and fresh status checks.
