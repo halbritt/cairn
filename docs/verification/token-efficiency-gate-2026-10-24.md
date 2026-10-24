@@ -146,6 +146,11 @@ committed response after one dropped relay receipt and resolves it by retrying
 the same journaled intent. Its completion text is synthetic; no actor or model
 produced a result.
 
+The separate [source-forget probe](../../scripts/check_panel_source_forgotten.py)
+forgets an admitted source through the operator workflow after a synthetic
+claim and records one exact `source_unavailable` failed settlement. It did
+not run an actor task or requester explanation.
+
 The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
 observed the synthetic claim child exit from SIGKILL and then explicitly reported
 `process_exited` reconciliation; it establishes no native actor/model outcome or

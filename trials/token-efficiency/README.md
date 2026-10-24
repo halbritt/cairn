@@ -188,6 +188,11 @@ uses a separate disposable Store to drop one successful child receipt after
 commit and retry the same journaled request ID. It exercises recovery from
 receipt loss, with no native actor or model outcome.
 
+The [source-forget probe](../../scripts/check_panel_source_forgotten.py)
+uses another disposable Store to forget an admitted source through the
+operator workflow after a synthetic claim, then settles that exact delivery
+as `source_unavailable`. A requester explanation and actor task remain unrun.
+
 The Go probes above write only to disposable integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate
 requires native workflow evidence for observed sender/recipient turns. An
