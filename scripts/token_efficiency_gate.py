@@ -6,11 +6,13 @@ stage IDs to selected, opaque native workflow evidence. Caller observations
 can establish coverage for review, but cannot establish independent acceptance.
 """
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import stat
 
 
 CASES = (
@@ -135,7 +137,137 @@ def validate_plan(plan):
     require(len(pairs) == len(set(pairs)), "duplicate case/arm pair")
     require(set(pairs) == {(case, arm) for case in CASES for arm in ARMS}, "missing case/arm pair")
     require(len(stages) == len(set(stages)), "stage IDs must be globally disjoint")
+    validate_capacity_admission(plan)
     return plan
+
+
+def _utc_timestamp(value, label):
+    require(isinstance(value, str), f"{label}: timestamp required")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"{label}: invalid timestamp") from None
+    require(parsed.tzinfo is not None and parsed.utcoffset() is not None,
+            f"{label}: timezone required")
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_capacity_admission(plan):
+    """Require a fresh utilization stop policy for every subscription account."""
+    admission = plan.get("capacity_admission")
+    require(isinstance(admission, dict)
+            and set(admission) == {"max_concurrent_workflows", "accounts"},
+            "capacity admission evidence required")
+    require(type(admission["max_concurrent_workflows"]) is int
+            and admission["max_concurrent_workflows"] == 1,
+            "panel provider admission must be sequential")
+    accounts = admission["accounts"]
+    require(isinstance(accounts, list) and accounts, "capacity admission accounts required")
+
+    expected = [(plan["model"]["harness"], plan["model"]["account"], "task")]
+    selector = plan.get("capture_selector")
+    if selector is not None:
+        expected.append((selector["harness"], selector["account"], "capture"))
+
+    require(len(accounts) == len(expected), "one capacity evidence record per provider account required")
+    seen = set()
+    for row, (harness, account, purpose) in zip(accounts, expected):
+        required = {"harness", "account", "purpose", "ceiling_used_percent",
+                    "reserve_percentage_points", "evidence_path", "evidence_sha256"}
+        require(isinstance(row, dict) and set(row) == required,
+                f"{purpose}: exact capacity evidence shape required")
+        require(row["harness"] == harness and row["account"] == account
+                and row["purpose"] == purpose,
+                f"{purpose}: capacity evidence account mismatch")
+        identity = (harness, account)
+        require(identity not in seen, "duplicate capacity evidence account")
+        seen.add(identity)
+        evidence = load_capacity_evidence(
+            dict(evidence_path=row["evidence_path"], evidence_sha256=row["evidence_sha256"]), purpose=purpose)
+        require(type(row["ceiling_used_percent"]) is int
+                and 1 <= row["ceiling_used_percent"] <= 100,
+                f"{purpose}: utilization ceiling must be from 1 to 100 percent")
+        require(type(row["reserve_percentage_points"]) is int
+                and 1 <= row["reserve_percentage_points"] <= 100,
+                f"{purpose}: positive utilization reserve in percentage points required")
+        validate_utilization_evidence(evidence, harness=harness, account=account, row=row)
+
+
+def load_capacity_evidence(reference, *, purpose):
+    require(isinstance(reference, dict)
+            and set(reference) == {"evidence_path", "evidence_sha256"},
+            f"{purpose}: capacity evidence reference required")
+    path_value, expected_hash = reference["evidence_path"], reference["evidence_sha256"]
+    require(isinstance(path_value, str) and os.path.isabs(path_value),
+            f"{purpose}: absolute private capacity evidence path required")
+    require(isinstance(expected_hash, str) and HEX.fullmatch(expected_hash),
+            f"{purpose}: hash of private provider capacity evidence required")
+    try:
+        descriptor = os.open(path_value, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            evidence_stat = os.fstat(descriptor)
+            evidence_mode = evidence_stat.st_mode
+            require(stat.S_ISREG(evidence_mode) and evidence_stat.st_uid == os.getuid()
+                    and evidence_mode & 0o077 == 0 and evidence_stat.st_size <= 5_000_000,
+                    f"{purpose}: capacity evidence file must be owner-only regular file under 5 MB")
+            content = os.read(descriptor, 5_000_001)
+            require(len(content) <= 5_000_000,
+                    f"{purpose}: capacity evidence file must be owner-only regular file under 5 MB")
+        finally:
+            os.close(descriptor)
+    except OSError:
+        raise ValueError(f"{purpose}: capacity evidence file unavailable") from None
+    require(hashlib.sha256(content).hexdigest() == expected_hash,
+            f"{purpose}: provider capacity evidence hash mismatch")
+    try:
+        return json.loads(content, object_pairs_hook=unique_pairs,
+                          parse_constant=invalid_constant)
+    except (ValueError, json.JSONDecodeError):
+        raise ValueError(f"{purpose}: invalid capacity evidence document") from None
+
+
+def validate_utilization_evidence(evidence, *, harness, account, row, started_at=None,
+                                 workflow_id=None, stage_id=None):
+    """Check one owner-only subscription status sample against its frozen stop policy."""
+    purpose = row["purpose"]
+    evidence_keys = {"schema", "provider", "route", "harness", "account", "source_type", "measurement",
+                     "ordinary_usage_allowed", "used_percent", "observed_at", "valid_until"}
+    if workflow_id is not None or stage_id is not None:
+        require(workflow_id is not None and stage_id is not None,
+                f"{purpose}: complete workflow/stage identity required")
+        evidence_keys |= {"workflow_id", "stage_id"}
+    require(isinstance(evidence, dict) and set(evidence) == evidence_keys,
+            f"{purpose}: exact provider utilization evidence schema required")
+    expected_provider = {"codex": "openai", "claude": "anthropic"}.get(harness)
+    require(evidence.get("schema") == "cairn.provider-capacity-evidence/1"
+            and evidence.get("provider") == expected_provider
+            and evidence.get("route") == "subscription"
+            and evidence.get("harness") == harness
+            and evidence.get("account") == account
+            and evidence.get("source_type") == "caller_recorded"
+            and evidence.get("measurement") == "utilization_status",
+            f"{purpose}: provider utilization evidence identity mismatch")
+    if workflow_id is not None:
+        require(evidence.get("workflow_id") == workflow_id and evidence.get("stage_id") == stage_id,
+                f"{purpose}: capacity sample does not identify this workflow and stage")
+    observed_at = _utc_timestamp(evidence["observed_at"], f"{purpose}: observed_at")
+    valid_until = _utc_timestamp(evidence["valid_until"], f"{purpose}: valid_until")
+    cutoff = started_at or datetime.now(timezone.utc)
+    require(observed_at <= cutoff, f"{purpose}: utilization was not checked before provider turn")
+    require((cutoff - observed_at).total_seconds() <= 60,
+            f"{purpose}: utilization precheck older than 60 seconds")
+    require(valid_until > cutoff and valid_until > observed_at,
+            f"{purpose}: utilization evidence stale at provider turn")
+    require((valid_until - observed_at).total_seconds() <= 60,
+            f"{purpose}: utilization evidence validity window exceeds 60 seconds")
+    require(evidence.get("ordinary_usage_allowed") is True,
+            f"{purpose}: provider ordinary usage admission is false")
+    require(type(evidence.get("used_percent")) is int
+            and 0 <= evidence["used_percent"] <= 100,
+            f"{purpose}: invalid utilization percentage")
+    require(evidence["used_percent"] + row["reserve_percentage_points"]
+            <= row["ceiling_used_percent"],
+            f"{purpose}: utilization stop ceiling or per-run reserve reached")
 
 
 def verify_fixture(plan, fixture):
@@ -230,6 +362,8 @@ def report(frozen, fixture, observations, native):
     rows = []
     seen_events = set()
     seen_attempts = set()
+    seen_capacity_samples = set()
+    provider_intervals = []
     for expected in plan["runs"]:
         workflow_id, arm, case = expected["workflow_id"], expected["arm"], expected["case"]
         actual = by_id.get(workflow_id)
@@ -368,6 +502,31 @@ def report(frozen, fixture, observations, native):
             if not provider_valid:
                 problems.append(f"{stage_id}: provider model/account/effort/pin mismatch or duplicate response")
                 continue
+            account_row = next((item for item in plan["capacity_admission"]["accounts"]
+                                if item["harness"] == stage_model["harness"]
+                                and item["account"] == stage_model["account"]), None)
+            require(account_row is not None, f"{stage_id}: capacity policy for provider account missing")
+            capacity_document = load_capacity_evidence(
+                stage.get("capacity_check"), purpose=account_row["purpose"])
+            capacity_identity = (stage["capacity_check"]["evidence_path"],
+                                 stage["capacity_check"]["evidence_sha256"])
+            require(capacity_identity not in seen_capacity_samples,
+                    f"{stage_id}: capacity sample reused across provider stages")
+            seen_capacity_samples.add(capacity_identity)
+            require(isinstance(provider.get("started_at"), str),
+                    f"{stage_id}: native provider start time required for admission join")
+            started_at = _utc_timestamp(provider["started_at"], f"{stage_id}: provider started_at")
+            if role in ("sender", "recipient"):
+                if not isinstance(provider.get("ended_at"), str):
+                    problems.append(f"{stage_id}: native provider end time missing for sequential admission check")
+                else:
+                    ended_at = _utc_timestamp(provider["ended_at"], f"{stage_id}: provider ended_at")
+                    require(ended_at >= started_at, f"{stage_id}: provider end precedes start")
+                    provider_intervals.append((started_at, ended_at, stage_model["account"], stage_id))
+            validate_utilization_evidence(capacity_document, harness=stage_model["harness"],
+                                          account=stage_model["account"], row=account_row,
+                                          started_at=started_at, workflow_id=workflow_id,
+                                          stage_id=stage_id)
             provider_usage = provider.get("usage") or {}
             if role == "capture":
                 response_refs = provider.get("response_refs")
@@ -411,6 +570,10 @@ def report(frozen, fixture, observations, native):
         if state == "observed" and not native_joined:
             counts["unjoined_observed_runs"] += 1
             problems.append(f"{workflow_id}: observed workflow has no native joined stage")
+    provider_intervals.sort()
+    for previous, current in zip(provider_intervals, provider_intervals[1:]):
+        if previous[2] == current[2] and current[0] < previous[1]:
+            problems.append(f"{current[3]}: provider turn overlaps {previous[3]} under sequential admission")
     if counts["missing_runs"] or counts["missing_stages"]:
         problems.append("planned workflow or stage missing")
     return dict(schema="cairn.token-efficiency-gate-report/1",

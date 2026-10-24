@@ -7,6 +7,7 @@ Unknown usage, sender publication, and task acceptance stay unknown.
 """
 import argparse
 import collections
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -181,6 +182,10 @@ def provider_projection(session, turn, duplicate_ids):
                 activity="idle_wake" if turn["wake"] else "active_or_unclassified",
                 native_completed=turn["completed"], tools=turn["tools"],
                 cairn_tools=turn["cairn_tools"], compactions=turn["compactions"],
+                started_at=(datetime.fromtimestamp(start, timezone.utc).isoformat().replace("+00:00", "Z")
+                            if start is not None else None),
+                ended_at=(datetime.fromtimestamp(end, timezone.utc).isoformat().replace("+00:00", "Z")
+                          if end is not None else None),
                 duration_seconds=end-start if start is not None and end is not None else None,
                 duplicate_response_id=duplicated, usage=usage)
 

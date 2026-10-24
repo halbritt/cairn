@@ -15,6 +15,30 @@ failed run keeps its place in the denominator. Stop the affected provider
 operation on auth, quota, route/model drift or a failed admission guard; do not
 substitute an API or OpenRouter route.
 
+The frozen plan requires one stop policy per provider account: exact
+harness/account/purpose, a hash-pinned owner-only JSON caller-recorded status sample, a maximum
+used-percentage ceiling, a per-workflow percentage-point reserve, and strictly
+sequential provider admission. The sample must report subscription routing,
+`ordinary_usage_allowed: true`, current utilization, and an expiry. The gate
+rejects a sample already at the ceiling after reserve. Every observed native
+provider stage must also carry its own fresh status sample, and the gate checks
+that its observation preceded the joined native turn start and remained below
+the frozen ceiling after reserve. It must be no more than 60 seconds old, have
+a validity window no longer than 60 seconds, and name that exact workflow and
+stage; one sample cannot be reused across stages.
+A selector account has a separate policy. The native workflow report includes
+turn start/end timestamps; overlapping joined actor turns for one account make
+the report incomplete under this sequential plan.
+These checks preserve percentage status without converting it into tokens or
+claiming that the initial snapshot funds all 88 workflows. The hash pins a
+caller-recorded observation; it is not provider attestation. The checks do not
+query or authenticate provider status, force a runner to precheck before launching, or
+enforce a stop in a live process. The selected runner/operator must recheck
+before each launch, run one workflow at a time, and stop before a launch when
+status is stale, ordinary usage is disallowed, auth/quota fails, or the ceiling
+plus reserve would be crossed. A stopped panel retains every remaining workflow
+as unrun.
+
 The capture selector uses Claude CLI even when the task actor uses another
 harness. Freeze its subscription account and model separately from the task
 model, plus its client/config pin in each arm. The hook does not set selector
@@ -22,6 +46,11 @@ effort; record that configuration as unset and report missing observed effort
 as unknown. For `unchanged_capture`, plan a provider-backed seed stage and a
 distinct repeat stage that records an unchanged-snapshot skip without a
 provider response.
+
+The single-account sequential policy cannot establish concurrent actor
+handling for `concurrent_receivers`. Preserve that case as unrun until it has a
+separately budgeted and authorized concurrency route; sequential ownership
+checks do not satisfy the paired concurrency outcome.
 
 For the same frozen tasks, compare baseline, compact envelope only, already
 waiting batch only, and the combined candidate. Record source reads, tool
@@ -70,6 +99,24 @@ python3 -B scripts/token_efficiency_gate.py report \
   --observations private-observations.json \
   --workflow-report private-workflows.json --output private-gate-report.json
 ```
+
+Each `capacity_admission.accounts[]` record has exactly `harness`, `account`,
+`purpose` (`task` or `capture`), `ceiling_used_percent`,
+`reserve_percentage_points`, `evidence_path`, and `evidence_sha256`. The initial
+owner-only document has schema `cairn.provider-capacity-evidence/1` and exactly
+`provider`, `route`, `harness`, `account`, `source_type`, `measurement`,
+`ordinary_usage_allowed`, `used_percent`, `observed_at`, and `valid_until` in
+addition to `schema`; `source_type` is `caller_recorded` and `measurement` is
+`utilization_status`. Each observed stage
+uses a `capacity_check` with `evidence_path` and `evidence_sha256`; its owner-only
+document adds exact `workflow_id` and `stage_id` fields. Task-stage checks join
+the native turn's `started_at`. Reports also require actor turn intervals not
+to overlap on the same account. The reports validate the stated ceiling and
+reserve in percentage points, not token units; they do not establish a
+22-case/4-arm capacity guarantee. Capture stages do not have a native provider
+interval join in the current workflow report; capture concurrency therefore
+remains unverified. Evidence files remain outside the repository, owner-only
+and at most 5 MB.
 
 The observation ledger names every planned workflow and stage. Sender stages
 join by the exact opaque workflow event; recipient stages also join by the
