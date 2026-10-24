@@ -268,6 +268,7 @@ class ClaudeInboxRecallTests(unittest.TestCase):
         observed = []
         def capture(mem, actual, state):
             observed.append(actual)
+            state['last_capture'] = dict(outcome='nothing_selected')
             return {}
         with patch.object(memory, 'capture', side_effect=capture):
             self.assertEqual(memory.handle(self.mc, event), {})
