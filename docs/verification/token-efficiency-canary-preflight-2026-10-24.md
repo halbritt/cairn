@@ -71,6 +71,30 @@ The script has nine fixture tests covering disabled one-coordinator bindings, ex
 
 The reviewed pin permitted a disposable check on 2026-10-24. The stager created both disabled candidates under its private root, and `go build` placed a candidate CLI at the staged binary path. On a fresh PostgreSQL 17 cluster with no TCP listener, that CLI applied all 68 checksummed migrations. `scripts/check-local-api.py` then exited 0 against the candidate CLI and disposable Unix API, including authenticated client/server version, MCP, socket ownership and shutdown checks. After the timestamp-specific change, the stager again produced both disabled candidates and left all 15 installed pinned files byte-identical. A separate read-only installed inventory check returned `ok=true`, `installed_verified=true`, four ordinary hooks, three inbox bindings, `issues=[]`, and `live_observed=false`. On the pre-rebase source at `1a380101`, `make test-integration` and `make check` passed. After rebase onto `b3144d69`, eight stager tests, 88 scoped lifecycle tests, compact MCP tests and `make check` passed. The disposable API, cluster and private staged bundle were removed. This proves local candidate CLI/API/schema compatibility in that fixture; it does not establish managed-store migration readiness, installed pins, account activation, native provider turns, task acceptance or rollback.
 
+### Capture-only offline profile
+
+The stager also accepts `--profile capture-only`. This profile adds only
+`capture_observations: true`; it does not opt into compact recall, context
+lifecycle, compact inbox, notice batching, compact search, or compact tool
+profiles. It refuses a selected baseline that already contains one of those
+other opt-ins. The default `full` profile preserves the earlier candidate.
+Both profiles remain disabled offline candidates: the staged inbox binding is
+disabled, the candidate binary is absent, and staging makes no provider request.
+
+For a future Codex-only review, the offline command is:
+
+```sh
+CODEX_HOME="$HOME/.codex" python3 -B scripts/stage_token_efficiency_canary.py \
+  --codex-only --snapshot-current-codex-config --profile capture-only \
+  --destination "$HOME/.cache/cairn-token-efficiency-stages/CODEX_CAPTURE_ONLY"
+```
+
+Review the generated `stage.json`, candidate ordinary config, MCP args, and
+selected hook diffs. This command only stages files under the private cache;
+it does not approve activation, create a provider admission, or establish a
+CAIRN-215 live usage/usefulness result. The existing account-isolation, exact
+pin, and quota-admission requirements still apply.
+
 ## Staged procedure for a later decision
 
 1. **Freeze and admit.** The selected account for this assignment is Codex `~/.codex` with `gpt-6-luna`; add a Claude account only if a later arm explicitly includes Claude. Freeze fixture/acceptance hashes, baseline and candidate commits, model/effort, an absolute subscription quota reserve, per-run ceiling, source/config pins, rollback window, and the 22 × 4 stage IDs using [the gate](token-efficiency-gate-2026-10-24.md). A missing route or budget stops the provider arm. An authentication or quota failure stops that arm without OpenRouter fallback. A separate local probe confirmed the selected Codex subscription route, but the observed 7% weekly rate-limit usage did not reveal an absolute token allowance or establish a canary reserve.

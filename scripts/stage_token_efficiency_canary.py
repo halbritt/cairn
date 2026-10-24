@@ -2,9 +2,10 @@
 """Build an offline, disabled Cairn canary candidate.
 
 This stages candidate files in a new directory and records the selected-account
-hook and MCP edits. By default it stages Codex and Claude; --codex-only stages
-only the selected .codex account. It never edits installed settings, grants, or
-the running service.
+hook and MCP edits. By default it stages the existing full candidate and both
+accounts; --profile capture-only stages only the capture observation opt-in.
+--codex-only limits staging to the selected .codex account. It never edits
+installed settings, grants, or the running service.
 """
 import argparse
 import copy
@@ -145,7 +146,7 @@ def staged_command(old, script, config):
     return shlex.join(argv)
 
 
-def stage_account(home, stage, harness):
+def stage_account(home, stage, harness, *, profile="full"):
     account = "codex" if harness == "codex" else "claude"
     settings_path = home / (".codex/hooks.json" if harness == "codex" else ".claude/settings.json")
     old_memory_path = home / f".local/share/cairn/{account}-hooks/config.json"
@@ -174,14 +175,23 @@ def stage_account(home, stage, harness):
         destination.chmod(0o600)
 
     candidate_binary = stage / "bin/cairn"
-    memory.update(cairn=str(candidate_binary), state_dir=str(ordinary / "state"), inbox_recall_binding=str(manifest_path),
-                  capture_observations=True, recall_view="compact/1")
-    if harness == "codex":
-        memory["context_lifecycle"] = "compact/1"
+    memory.update(cairn=str(candidate_binary), state_dir=str(ordinary / "state"),
+                  inbox_recall_binding=str(manifest_path), capture_observations=True)
     coordination.update(cairn=str(candidate_binary),
                         state_dir=str(native / "state" / coordination["binding"]),
-                        inbox_recall_binding=str(manifest_path),
-                        compact_inbox_version=1, notice_batch_version=1)
+                        inbox_recall_binding=str(manifest_path))
+    if profile == "full":
+        memory["recall_view"] = "compact/1"
+        if harness == "codex":
+            memory["context_lifecycle"] = "compact/1"
+        coordination.update(compact_inbox_version=1, notice_batch_version=1)
+    else:
+        for key in ("recall_view", "context_lifecycle"):
+            if key in memory:
+                raise ValueError(f"capture-only profile requires baseline without {key}")
+        for key in ("compact_inbox_version", "notice_batch_version"):
+            if key in coordination:
+                raise ValueError(f"capture-only profile requires baseline without {key}")
     write_json(memory_path, memory)
     write_json(coordination_path, coordination)
     write_json(manifest_path, {"schema": "cairn.inbox-recall-binding/1", "enabled": False,
@@ -228,7 +238,8 @@ def stage_account(home, stage, harness):
             "required_path_prefix": str(launcher.parent)}
 
 
-def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
+def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_baseline=None,
+              profile="full"):
     binary = destination / "bin/cairn"
     codex_path = home / ".codex/config.toml"
     codex_raw = codex_path.read_bytes() if codex_config_baseline is None else codex_config_baseline
@@ -253,7 +264,9 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
         if len(positions) > 1 or (positions and (positions[0] + 1 >= len(new_args) or
                                                   new_args[positions[0] + 1] != value)):
             raise ValueError(f"selected Codex MCP has an incompatible {flag} opt-in")
-        if not positions:
+        if profile == "capture-only" and positions:
+            raise ValueError(f"capture-only profile requires baseline without {flag}")
+        if profile == "full" and not positions:
             new_args.extend((flag, value))
     section = section.replace(old_command_line, "command = " + json.dumps(str(binary)))
     section = section.replace(old_args_line, "args = " + json.dumps(new_args))
@@ -291,9 +304,11 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
     if wrapper_text.count(old_exec) != 1 or wrapper_text.count(old_tail) != 1:
         raise ValueError("shared Claude MCP wrapper differs from reviewed layout")
     candidate_wrapper = destination / "claude/cairn-canary-mcp"
+    wrapper_tail = old_tail.rstrip("\n")
+    if profile == "full":
+        wrapper_tail += ' \\\n  --search-view compact/1 --tool-profile compact/1'
     candidate_wrapper.write_text(wrapper_text.replace(old_exec, f"exec {shlex.quote(str(binary))} mcp \\\n")
-                                 .replace(old_tail, old_tail.rstrip("\n") +
-                                          ' \\\n  --search-view compact/1 --tool-profile compact/1\n'), encoding="utf-8")
+                                 .replace(old_tail, wrapper_tail + "\n"), encoding="utf-8")
     candidate_wrapper.chmod(0o700)
     claude_path = home / ".claude.json"
     claude_raw = claude_path.read_bytes()
@@ -339,9 +354,11 @@ def private_stage_root(home):
 
 
 def stage(home, destination, expected=EXPECTED, *, codex_only=False,
-          snapshot_codex_config_baseline=False):
+          snapshot_codex_config_baseline=False, profile="full"):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
+    if profile not in ("full", "capture-only"):
+        raise ValueError("profile must be full or capture-only")
     if snapshot_codex_config_baseline and not codex_only:
         raise ValueError("current Codex config baseline is available only in --codex-only mode")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
@@ -353,7 +370,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
         info = codex_config_path.stat()
         if (codex_config_path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022):
             raise ValueError(f"unsafe selected Codex config baseline: {codex_config_path}")
-    codex_config_baseline = codex_config_path.read_bytes() if snapshot_codex_config_baseline else None
+    codex_config_baseline = (codex_config_path.read_bytes()
+                             if snapshot_codex_config_baseline else None)
     peer_paths = CODEX_PEER_PATHS if codex_only else (
         ".codex-harm/hooks.json", ".codex-harm/config.toml",
         ".claude-harm/settings.json", ".claude-harm/.claude.json")
@@ -362,16 +380,22 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
     if destination.parent != root or destination.resolve(strict=False).parent != root:
         raise ValueError(f"stage destination must be a direct child of {root}")
     destination.mkdir(parents=True, mode=0o700)
+    if profile == "capture-only":
+        opt_ins = ["capture_observations"]
+    else:
+        opt_ins = ["capture_observations", "recall_view=compact/1", "compact_inbox_version=1",
+                   "notice_batch_version=1", "search_view=compact/1", "tool_profile=compact/1"]
+        opt_ins.append("context_lifecycle=compact/1")
     report = {"schema": "cairn.token-efficiency-canary-stage/1", "activation": "none",
-              "accounts": {}}
+              "profile": profile, "opt_ins": opt_ins, "accounts": {}}
     try:
         if stat.S_IMODE(destination.stat().st_mode) != 0o700:
             raise ValueError("stage destination must be owner-only")
         harnesses = ("codex",) if codex_only else ("codex", "claude")
         for harness in harnesses:
-            report["accounts"][harness] = stage_account(home, destination, harness)
+            report["accounts"][harness] = stage_account(home, destination, harness, profile=profile)
         report["mcp"] = stage_mcp(home, destination, expected, codex_only=codex_only,
-                                   codex_config_baseline=codex_config_baseline)
+                                   codex_config_baseline=codex_config_baseline, profile=profile)
         report["source_hashes"] = {name: sha256(ROOT / "integrations/lifecycle" / name)
                                    for name in ("memory.py", "coordination.py", "inbox_recall.py")}
         report["source_hashes"]["scripts/stage_token_efficiency_canary.py"] = sha256(Path(__file__))
@@ -420,9 +444,12 @@ def main():
                         help="stage only the selected .codex account; do not read or copy Claude configuration")
     parser.add_argument("--snapshot-current-codex-config", action="store_true",
                         help="pin the current selected Codex TOML as a private baseline; allow whole-file drift only there")
+    parser.add_argument("--profile", choices=("full", "capture-only"), default="full",
+                        help="opt-in profile to stage; capture-only enables no other token-efficiency feature")
     args = parser.parse_args()
     report = stage(Path.home(), args.destination, codex_only=args.codex_only,
-                   snapshot_codex_config_baseline=args.snapshot_current_codex_config)
+                   snapshot_codex_config_baseline=args.snapshot_current_codex_config,
+                   profile=args.profile)
     print(json.dumps(report, indent=2))
 
 

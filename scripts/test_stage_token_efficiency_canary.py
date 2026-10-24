@@ -158,6 +158,53 @@ exec {binary} mcp \\
         before[".claude.json"] = (self.home / ".claude.json").read_bytes()
         self.assertEqual(before, {relative: (self.home / relative).read_bytes() for relative in self.expected})
 
+    def test_capture_only_profile_opts_in_only_capture_observations(self):
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            report = stage.stage(self.home, self.stage, self.expected, codex_only=True,
+                                 profile="capture-only")
+
+        self.assertEqual(report["profile"], "capture-only")
+        self.assertEqual(report["opt_ins"], ["capture_observations"])
+        self.assertEqual(set(report["accounts"]), {"codex"})
+        self.assertEqual(report["activation"], "none")
+        self.assertFalse(report["deployment_limits"]["provider_requests_made"])
+
+        memory = json.loads((self.stage / "codex/ordinary/config.json").read_text())
+        self.assertIs(memory["capture_observations"], True)
+        self.assertNotIn("recall_view", memory)
+        self.assertNotIn("context_lifecycle", memory)
+        coordination = json.loads((self.stage / "codex/coordination/bindings/codex-one.json").read_text())
+        self.assertNotIn("compact_inbox_version", coordination)
+        self.assertNotIn("notice_batch_version", coordination)
+        candidate_mcp = stage.tomllib.loads((self.stage / "codex/config.toml").read_text())
+        args = candidate_mcp["mcp_servers"]["cairn"]["args"]
+        self.assertNotIn("--search-view", args)
+        self.assertNotIn("--tool-profile", args)
+
+        claude_stage = self.home / ".cache/cairn-token-efficiency-stages/claude-candidate"
+        claude_report = stage.stage(self.home, claude_stage, self.expected, profile="capture-only")
+        self.assertEqual(claude_report["opt_ins"], ["capture_observations"])
+        claude_config = json.loads((claude_stage / "claude/ordinary/config.json").read_text())
+        self.assertIs(claude_config["capture_observations"], True)
+        self.assertNotIn("recall_view", claude_config)
+        wrapper = (claude_stage / "claude/cairn-canary-mcp").read_text()
+        self.assertNotIn("--search-view", wrapper)
+        self.assertNotIn("--tool-profile", wrapper)
+
+    def test_capture_only_profile_refuses_an_existing_recall_opt_in(self):
+        path = self.home / ".local/share/cairn/codex-hooks/config.json"
+        memory = json.loads(path.read_text())
+        memory["recall_view"] = "compact/1"
+        self.write(path, memory)
+        relative = ".local/share/cairn/codex-hooks/config.json"
+        self.expected[relative] = stage.sha256(path)
+
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            with self.assertRaisesRegex(ValueError, "capture-only profile requires baseline without recall_view"):
+                stage.stage(self.home, self.stage, self.expected, codex_only=True,
+                            profile="capture-only")
+        self.assertFalse(self.stage.exists())
+
     def test_current_codex_config_baseline_preserves_unrelated_toml_and_reports_exact_hooks(self):
         config_path = self.home / ".codex/config.toml"
         original = config_path.read_bytes()
@@ -210,9 +257,10 @@ exec {binary} mcp \\
         config_path = self.home / ".codex/config.toml"
         real_stage_mcp = stage.stage_mcp
 
-        def mutate_after_read(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
+        def mutate_after_read(home, destination, expected, *, codex_only=False,
+                              codex_config_baseline=None, profile="full"):
             result = real_stage_mcp(home, destination, expected, codex_only=codex_only,
-                                    codex_config_baseline=codex_config_baseline)
+                                    codex_config_baseline=codex_config_baseline, profile=profile)
             config_path.write_text(config_path.read_text() + "\n[notice]\nother = true\n")
             return result
 
@@ -277,9 +325,10 @@ exec {binary} mcp \\
         path = self.home / ".codex/hooks.json"
         real_stage_mcp = stage.stage_mcp
 
-        def change_after_copy(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
+        def change_after_copy(home, destination, expected, *, codex_only=False,
+                              codex_config_baseline=None, profile="full"):
             result = real_stage_mcp(home, destination, expected, codex_only=codex_only,
-                                    codex_config_baseline=codex_config_baseline)
+                                    codex_config_baseline=codex_config_baseline, profile=profile)
             data = json.loads(path.read_text())
             data["hooks"]["Stop"].append({"hooks": [{"command": "new-unreviewed-hook"}]})
             self.write(path, data)
