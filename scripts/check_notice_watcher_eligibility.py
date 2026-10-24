@@ -162,17 +162,17 @@ def check(binary):
         ref = {"record_id": source["record_id"], "version": source["version"]}
         routine_request = {"request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
                            "destination": {"type": "agent", "name": registered["inbox"]},
-                           "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 10}}
+                           "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 30}}
         routine = call(binary, home, env, "sender", "event-publish", routine_request)
         routine_status = call(binary, home, env, "sender", "event-inspect",
                               {"event_id": routine["event_id"]})
         routine_delivery = routine_status["deliveries"][0]
         fixed_deadline = parse_time(routine_delivery["available_at"])
         require(routine["notice_policy"] == {"owner": principals["sender"], "version": 1,
-                                              "urgency": "routine", "defer_seconds": 10}
+                                              "urgency": "routine", "defer_seconds": 30}
                 and routine_delivery["state"] == "pending"
                 and routine_delivery["attempts"] == 0
-                and fixed_deadline - parse_time(routine["created_at"]) == timedelta(seconds=10),
+                and fixed_deadline - parse_time(routine["created_at"]) == timedelta(seconds=30),
                 "routine policy or fixed deadline differs")
         require(datetime.now(timezone.utc) < fixed_deadline, "routine deadline elapsed before watcher probe")
         first = watch()
@@ -215,6 +215,50 @@ def check(binary):
         call(binary, home, env, "worker", "session-inbox-reconcile", {
             "request_id": str(uuid.uuid4()), "session": session,
             "attempt_id": claimed["attempt_id"], "reason": "delivery_completed"})
+        # Explicitly urgent notices have the same immediate wake eligibility
+        # as requests. Keep the routine event pending so this checks priority
+        # and identity across two notices, not only request-over-notice order.
+        urgent_notice = call(binary, home, env, "sender", "event-publish", {
+            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+            "destination": {"type": "agent", "name": registered["inbox"]},
+            "notice_policy": {"version": 1, "urgency": "urgent", "defer_seconds": 0}})
+        urgent_notice_delivery = call(binary, home, env, "sender", "event-inspect",
+                                      {"event_id": urgent_notice["event_id"]})["deliveries"][0]
+        require(urgent_notice["notice_policy"] == {"owner": principals["sender"], "version": 1,
+                                                    "urgency": "urgent", "defer_seconds": 0}
+                and urgent_notice_delivery["state"] == "pending"
+                and urgent_notice_delivery["attempts"] == 0,
+                "urgent notice policy or initial delivery differs")
+        require(datetime.now(timezone.utc) < fixed_deadline,
+                "routine deadline elapsed before urgent-notice bypass probe")
+        third = watch()
+        refusal = third.get("wake_refusal") or {}
+        observation = (third.get("delivery_observation") or {}).get("value") or {}
+        require(refusal.get("delivery_id") == urgent_notice_delivery["delivery_id"]
+                and refusal.get("condition") == "native_transport_unavailable"
+                and observation.get("delivery_id") == urgent_notice_delivery["delivery_id"]
+                and observation.get("condition") == "native_transport_unavailable"
+                and call(binary, home, env, "worker", "session-inbox-ready", session)["event_id"]
+                == urgent_notice["event_id"],
+                "explicitly urgent notice did not bypass the routine deadline")
+        urgent_notice_claim = call(binary, home, env, "worker", "session-inbox-claim", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "delivery_id": urgent_notice_delivery["delivery_id"],
+            "native_turn_id": "synthetic-urgent-notice-observation", "turn_exclusive": True})["attempt"]
+        require(urgent_notice_claim
+                and urgent_notice_claim["delivery"]["event"]["event_id"] == urgent_notice["event_id"]
+                and urgent_notice_claim["delivery"]["delivery_id"] == urgent_notice_delivery["delivery_id"],
+                "urgent notice claim changed its event or delivery identity")
+        urgent_notice_settled = call(binary, home, env, "worker", "event-complete", {
+            "request_id": str(uuid.uuid4()), "delivery_id": urgent_notice_delivery["delivery_id"],
+            "lease_id": urgent_notice_claim["delivery"]["lease_id"],
+            "disposition": "failed", "code": "processing_failed"}, session=session)
+        require(urgent_notice_settled["state"] == "failed", "urgent notice fixture settlement differs")
+        call(binary, home, env, "worker", "session-inbox-reconcile", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "attempt_id": urgent_notice_claim["attempt_id"], "reason": "delivery_completed"})
+        require(call(binary, home, env, "worker", "session-inbox-ready", session).get("delivery_id") is None,
+                "settled urgent notice exposed the still-deferred routine notice early")
         require(datetime.now(timezone.utc) < fixed_deadline,
                 "routine deadline elapsed before publisher flush probe")
         flush_request = {"request_id": str(uuid.uuid4()), "event_id": routine["event_id"]}
@@ -333,8 +377,9 @@ def check(binary):
                 "watcher claimed a notice without a native transport")
         print(json.dumps({"case": "routine_notice_watcher_eligibility", "store_api": "disposable",
                           "watcher_process": "real_once", "native_owner": "synthetic_live_child",
-                          "defer_seconds": 10, "early_wake_attempt": False,
-                          "urgent_request_observed": True, "flush_released_original": True,
+                          "defer_seconds": 30, "early_wake_attempt": False,
+                          "urgent_request_observed": True, "urgent_notice_observed": True,
+                          "flush_released_original": True,
                           "restart_preserved_deadline": True, "busy_owner_wake": False,
                           "expired_notice_observed_after_idle": True,
                           "native_transport": "unavailable", "model_wake": False,

@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +110,49 @@ func TestNoticePolicyValidationAndImmediateDefault(t *testing.T) {
 	status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: ordinary.EventID}, dest)
 	if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].AvailableAt != nil {
 		t.Fatalf("default notice should be immediate: %+v %v", status, err)
+	}
+}
+
+func TestRoutineNoticePublicationRollsBackWhenDeliveryInsertFails(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	trigger := "notice_publish_probe_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	sql := fmt.Sprintf(`CREATE FUNCTION cairn.%s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected notice delivery failure'; END $$; CREATE TRIGGER %s BEFORE INSERT ON cairn.agent_delivery FOR EACH ROW WHEN (NEW.consumer='%s') EXECUTE FUNCTION cairn.%s()`,
+		trigger, trigger, receiver.channel.Principal, trigger)
+	if _, err := sender.pool.Exec(ctx, sql); err != nil {
+		t.Fatal(err)
+	}
+	defer sender.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON cairn.agent_delivery; DROP FUNCTION IF EXISTS cairn.%s()`, trigger, trigger))
+	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
+		NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}
+	if _, err := sender.PublishEvent(ctx, request, dest); err == nil {
+		t.Fatal("injected delivery insert failure succeeded")
+	}
+	var events, deliveries int
+	if err := sender.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_event WHERE publisher=$1 AND repo=$2 AND record_id=$3 AND version=$4 AND kind='notice'`,
+		sender.channel.Principal, source.Scope.Repo, source.RecordID, source.Version).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := sender.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.publisher=$1 AND e.repo=$2 AND e.record_id=$3 AND e.version=$4 AND e.kind='notice'`,
+		sender.channel.Principal, source.Scope.Repo, source.RecordID, source.Version).Scan(&deliveries); err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 || deliveries != 0 {
+		t.Fatalf("failed publication left partial state: events=%d deliveries=%d", events, deliveries)
+	}
+	if _, err := sender.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER %s ON cairn.agent_delivery`, trigger)); err != nil {
+		t.Fatal(err)
+	}
+	event, err := sender.PublishEvent(ctx, request, dest)
+	if err != nil {
+		t.Fatalf("retry after rollback: %v", err)
+	}
+	status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+	if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].AvailableAt == nil ||
+		!status.Deliveries[0].AvailableAt.Equal(event.CreatedAt.Add(60*time.Second)) {
+		t.Fatalf("retry did not commit one fixed-deadline delivery: %+v %v", status, err)
 	}
 }
 
