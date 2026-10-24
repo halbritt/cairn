@@ -64,6 +64,11 @@ crash_dsn="host=$test_root/socket dbname=cairn_panel_process_crash_child sslmode
 CAIRN_DATABASE_URL="$crash_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$crash_dsn" CAIRN_DATABASE_URL="$crash_dsn" \
     python3 scripts/check_panel_process_crash_child.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_relay_uncertain_response
+uncertain_dsn="host=$test_root/socket dbname=cairn_panel_relay_uncertain_response sslmode=disable"
+CAIRN_DATABASE_URL="$uncertain_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$uncertain_dsn" CAIRN_DATABASE_URL="$uncertain_dsn" \
+    python3 scripts/check_panel_relay_uncertain_response.py "$test_root/cairn"
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
