@@ -2918,6 +2918,11 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
         return ''
     if not isinstance(context, dict) or context.get('attempt_id') != attempt_id:
         return ''
+    fallback = None
+    if context.get('compact_source_unavailable') is True:
+        fallback = context.get('compact_fallback_control')
+        if not isinstance(fallback, str) or not fallback:
+            raise CoordinationError('INVALID_HOST', 'unavailable source has no settlement instructions')
     renew_inbox(config, state, path, attempt)
     if attempt.get('lease_lapsed'):
         return ''
@@ -2927,6 +2932,10 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
         state['active_prompt'] = dict(id=observation['native_turn_id'])
     write_state(path, state)
     kind = ((attempt.get('delivery') or {}).get('event') or {}).get('kind') or context.get('kind') or 'inbox'
+    if fallback:
+        return (f"Cairn inbox reminder: attempt {attempt_id} still needs an explicit outcome. "
+                f"{fallback} Ending the turn again without settlement will record this delivery "
+                "as processing_failed.")
     if kind in ('response', 'notice') and isinstance(context.get('acknowledgement'), list):
         ack_cmd = shlex.join(context['acknowledgement'])
         return (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has not been "
@@ -3116,6 +3125,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                         f"failed --code source_unavailable. After confirmed settlement, run cairn-inbox advance "
                         f"{context['compact_handle']}. Its neighbors remain separate and unacknowledged.")
             context['compact_fallback_control'] = fallback
+            context['compact_source_unavailable'] = True
             write_state(target, context)
             return fallback
         settle = (f"Explicitly settle with cairn-inbox settle {context['compact_handle']} handled "

@@ -52,6 +52,7 @@ uv run --with tiktoken==0.12.0 python -m unittest discover -s scripts -p test_wo
 uv run --with tiktoken==0.12.0 python -m unittest \
   scripts.test_inbox_recovery.InboxRecovery.test_unacknowledged_turn_end_reminder_surfaces_exact_ack_and_avoids_looping \
   scripts.test_inbox_recovery.InboxRecovery.test_acknowledging_after_turn_end_reminder_completes_cleanly
+python3 -m unittest scripts.test_inbox_recovery
 make check
 ```
 
@@ -62,6 +63,14 @@ operation/attempt/phase transitions to native response IDs, prove actual
 reminder ingestion, measure recovery time or token savings, or establish a
 correctly settled live outcome. The existing production turn-end reminder
 uses a persisted `inbox_ack_reminded` attempt marker and has one-reminder/no-loop
-tests; this slice did not verify a new state transition, install a per-revision
-runtime policy, or change its operator action. The relay and provider failure
-paths still need selected exact evidence. CAIRN-226 remains open.
+tests. A follow-up disposable lifecycle fixture verified the transition from an
+unavailable compact batch source to an explicit `failed --code source_unavailable`
+settlement, and the absence of a reminder after a stale lease. It caught and
+fixed a reminder that previously suggested plain acknowledgement for the
+unavailable source. The original retry or failed-settlement instructions now
+appear in the single permitted reminder. Normal notice and response
+acknowledgements remain covered by the existing tests. There is no general
+per-revision runtime policy: attempt source versions are pinned, and
+`state_revision` in the report is selected observation metadata. The relay
+and provider failure paths still need selected exact evidence. CAIRN-226
+remains open.

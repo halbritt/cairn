@@ -347,7 +347,8 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual([item['operation'] for item in self.log()].count('ack'), 2)
 
     def test_notice_batch_unavailable_source_can_settle_failed_explicitly(self):
-        self.config.update(compact_inbox_version=1, notice_batch_version=1)
+        self.config.update(compact_inbox_version=1, notice_batch_version=1,
+                           remind_unacknowledged_turn_end=True)
         self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
         self.state['inbox_attempt']['native_turn_id'] = 'native-turn-one'
         self.state['process'] = coordination.process_reference(os.getpid())
@@ -357,6 +358,16 @@ class InboxRecovery(unittest.TestCase):
             'ack': [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))]})
         self.assertIn('failed --code source_unavailable', rendered)
         self.assertIn('advance', rendered)
+        self.state['delivered_since_idle'] = True
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        reminder = coordination.inbox_context(self.config, self.state, self.path, observation)
+        self.assertIn('failed --code source_unavailable', reminder)
+        self.assertNotIn(shlex.join(context['acknowledgement']), reminder)
+        self.assertFalse(self.state.get('inbox_turn_ended'))
+        self.assertEqual(self.state.get('inbox_ack_reminded'), ATTEMPT)
+        self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
+                      'ack': [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))],
+                      'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
         binding = self.root / 'bindings' / 'fixture.json'
         binding.parent.mkdir()
         coordination.write_state(binding, self.config)
@@ -367,6 +378,12 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
         self.assertEqual(json.loads(settled.stdout)['status'], 'failed')
         self.assertEqual([entry['operation'] for entry in self.log()].count('history'), 0)
+        self.assertEqual(coordination.inbox_context(self.config, self.state, self.path, observation), '')
+        self.assertNotIn('inbox_attempt', self.state)
+        reconciles = [json.loads(entry['input']) for entry in self.log()
+                      if entry['operation'] == 'session-inbox-reconcile']
+        self.assertEqual([item['reason'] for item in reconciles], ['delivery_completed'])
+        self.assertNotIn('unacknowledged_turn_end_diagnostic', self.state)
 
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()
@@ -988,6 +1005,25 @@ class InboxRecovery(unittest.TestCase):
         reconciles = [json.loads(e['input']) for e in self.log() if e['operation'] == 'session-inbox-reconcile']
         self.assertEqual([r['reason'] for r in reconciles], ['delivery_completed'])
         self.assertNotIn('unacknowledged_turn_end_diagnostic', self.state)
+
+    def test_stale_lease_turn_end_never_emits_actionable_reminder(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        self.context()
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        self.state['delivered_since_idle'] = True
+        self.replies({'event-renew': [dict(ok=False, status='STALE_LEASE')],
+                      'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
+        self.assertEqual(coordination.inbox_context(config, self.state, self.path, observation), '')
+        self.assertNotIn('inbox_attempt', self.state)
+        self.assertNotIn('inbox_ack_reminded', self.state)
+        self.assertEqual([entry['operation'] for entry in self.log()].count('event-renew'), 1)
+        reconciles = [json.loads(entry['input']) for entry in self.log()
+                      if entry['operation'] == 'session-inbox-reconcile']
+        self.assertEqual([item['reason'] for item in reconciles], ['turn_ended'])
+        diagnostic = self.state['unacknowledged_turn_end_diagnostic']
+        self.assertTrue(diagnostic['lease_lapsed'])
+        self.assertEqual(diagnostic['outcome'], 'processing_failed')
 
 
 if __name__ == '__main__':
