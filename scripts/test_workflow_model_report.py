@@ -23,6 +23,7 @@ class WorkflowReportTests(unittest.TestCase):
 
     def context(self, stem, event, kind, turn="turn"):
         item = dict(event_id=event, delivery_id=f"delivery-{stem}", kind=kind,
+                    attempt_id="44444444-4444-4444-8444-444444444444",
                     native_turn_id=turn, source=dict(record_id="source", version=2))
         (self.root / f"binding/inbox/{stem}.json").write_text(json.dumps(item))
 
@@ -67,6 +68,9 @@ class WorkflowReportTests(unittest.TestCase):
         self.assertEqual(notice_row["assessment"], "unknown")
         self.assertEqual(notice_row["deliveries"][0]["settlement"]["disposition"], "failed")
         self.assertNotIn(request, json.dumps(result))
+        self.assertEqual(request_row["deliveries"][0]["attempt"],
+                         self.report.opaque("44444444-4444-4444-8444-444444444444"))
+        self.assertEqual(result["coverage"]["attempt_known"], 3)
 
     def test_shared_turn_and_partial_usage_do_not_claim_event_cost(self):
         one = "11111111-1111-4111-8111-111111111111"
@@ -139,6 +143,14 @@ class WorkflowReportTests(unittest.TestCase):
         self.assertTrue(provider["duplicate_response_id"])
         self.assertIsNone(provider["usage"]["tokens"]["input"]["total"])
         self.assertEqual(result["coverage"]["duplicate_provider_response_ids"], 1)
+
+    def test_attempt_reference_accepts_only_canonical_native_or_drain_identity(self):
+        attempt = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        self.assertEqual(self.report.attempt_ref(attempt), self.report.opaque(attempt))
+        self.assertEqual(self.report.attempt_ref("drain-" + attempt),
+                         self.report.opaque("drain-" + attempt))
+        self.assertIsNone(self.report.attempt_ref("owner prompt or raw payload"))
+        self.assertIsNone(self.report.attempt_ref(attempt.upper()))
 
 
 if __name__ == "__main__":

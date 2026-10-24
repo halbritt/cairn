@@ -14,6 +14,12 @@ unique in the selected logs. A binding match is recorded separately from a
 unique turn ID without a binding match. Ambiguous and missing matches remain
 unjoined. The selected coordination tree is read as it exists when the command
 runs; the provider window applies only to native logs.
+Each retained delivery carries an opaque attempt reference when its context
+contains a canonical native UUID or `drain-` UUID. Missing or malformed
+attempts remain null and are counted in `coverage.attempt_unknown`. The
+recovery report requires the same event, delivery and attempt before joining
+model work. Older reports without attempt references remain usable for other
+dimensions but cannot prove that join.
 
 ```sh
 uv run --with tiktoken==0.12.0 python scripts/workflow_model_report.py \

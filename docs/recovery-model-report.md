@@ -2,9 +2,10 @@
 
 `scripts/recovery_model_report.py` joins a local
 `cairn.workflow-model-report/1` file with selected, payload-free recovery
-observations. It groups exact failure phases and counts a joined provider turn
-once per phase even when multiple deliveries share it. Missing provider evidence
-remains unknown. The report does not infer a failure from a log substring,
+observations. The `cairn.recovery-model-report/2` result requires exact event,
+delivery **and attempt** identity to join a provider turn, and counts a joined
+turn once per phase even when multiple observations share it. Missing provider
+evidence remains unknown. The report does not infer a failure from a log substring,
 attribute all turn usage to Cairn, or turn a refused wake into a zero-token run.
 
 Prepare a private `cairn.recovery-evidence/1` JSON file from an authorized
@@ -23,8 +24,10 @@ exact operation, attempt, and state observation. For example:
       "code": "API_CONNECTION_FAILED",
       "recovery_state": "retry_same_intent",
       "operator_action": "manual_retry",
+      "model_invocation": "started",
       "state_revision": 2,
-      "reminder_emitted": false
+      "reminder_emitted": false,
+      "reminder_kind": "recovery_failure"
     }
   ]
 }
@@ -36,9 +39,17 @@ Allowed phases are `before_admission`, `admission`, `grant`, `source`, `tool`,
 `retry_same_intent`, `held`, `committed`, or `unknown`), and operator action
 (`none`, `manual_retry`, `self_drain`, `intervention`, or `unknown`). A reminder
 observation needs its exact attempt ID and observed state revision. A repeated
-emission for one attempt and revision is reported as a diagnostic. Use a null
+emission for one attempt, revision and reminder kind is reported as a diagnostic.
+`model_invocation` describes the recipient native model turn for this exact
+attempt, not any sender work. It is an explicit selected observation: `not_started`,
+`started`, or `unknown` (the default). Only `not_started` with an observed
+refusal proves a pre-model refusal in this report; missing native logs alone
+leave model work unknown. `reminder_kind` is `turn_end`, `waiting_work`,
+`recovery_failure`, or `unspecified` (the default). Use a null
 delivery ID only for a phase with no selected delivery identity, such as a
 pre-admission refusal. Never infer a pre-model refusal solely from absent logs.
+For later phases, `attempt_id` is required. Old workflow reports without the
+opaque attempt field cannot establish a provider join.
 
 ```sh
 uv run --with tiktoken==0.12.0 python scripts/recovery_model_report.py \
@@ -51,9 +62,13 @@ The output file is created with owner-only permissions and cannot overwrite an
 existing file. It contains opaque event, delivery, attempt and turn references,
 bounded machine codes and classifications, not payloads or native file paths.
 Keep the input and output private. A phase's `observed_responses` is a count of
-joined whole native turns; compare matched attempts, operation identities,
+joined whole native turns. It is **null** when any selected observation in that
+phase has unknown provider work; zero requires explicit no-model evidence or
+an exactly joined turn with zero responses. Compare matched attempts, operation identities,
 model route and task outcomes before making a cost or recovery-time claim.
 
-This first read-only analysis slice does not change wake, reminder or replay
-behavior. CAIRN-226 still requires exact failure instrumentation, bounded
-state-aware reminders, fixture coverage and accepted recovery outcomes.
+The frozen local classification panel is `trials/recovery-model/FROZEN.json`;
+run `uv run --with tiktoken==0.12.0 python scripts/eval_recovery_model_panel.py`.
+It makes no provider call and does not claim that production reminders were
+deduplicated. CAIRN-226 still requires selected live failure evidence,
+state-aware runtime reminder verification and accepted recovery outcomes.

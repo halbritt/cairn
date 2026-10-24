@@ -33,7 +33,7 @@ class RecoveryModelReportTests(unittest.TestCase):
 
     def workflow(self):
         provider = dict(usage=dict(observed_responses=3))
-        deliveries = [dict(delivery=opaque(identity), turn_ref="one-shared-turn",
+        deliveries = [dict(delivery=opaque(identity), attempt=opaque(ATTEMPT), turn_ref="one-shared-turn",
                            provider=provider) for identity in (DELIVERY_ONE, DELIVERY_TWO)]
         return dict(schema="cairn.workflow-model-report/1",
                     workflows=[dict(event=opaque(EVENT), deliveries=deliveries)])
@@ -45,6 +45,7 @@ class RecoveryModelReportTests(unittest.TestCase):
         self.assertEqual(phase["observations"], 2)
         self.assertEqual(phase["provider_turns"], 1)
         self.assertEqual(phase["observed_responses"], 3)
+        self.assertEqual(phase["joined_attempt"], 2)
         self.assertEqual(phase["operator_actions"], {"manual_retry": 2})
         self.assertNotIn(EVENT, json.dumps(result))
         self.assertNotIn(DELIVERY_ONE, json.dumps(result))
@@ -53,13 +54,66 @@ class RecoveryModelReportTests(unittest.TestCase):
     def test_pre_model_refusal_stays_unknown_without_a_matched_delivery(self):
         item = self.observation()
         item.update(phase="before_admission", outcome="refused", delivery_id=None,
-                    recovery_state="pending", operator_action="unknown")
+                    recovery_state="pending", operator_action="unknown",
+                    model_invocation="not_started")
         result = recovery.compile_report(self.workflow(), self.evidence([item]))
         row = result["observations"][0]
         self.assertEqual(row["delivery_join"], "not_applicable")
-        self.assertEqual(row["provider_join"], "unknown")
+        self.assertEqual(row["provider_join"], "not_invoked")
+        self.assertEqual(row["model_work_class"], "observed_pre_model_refusal")
         self.assertEqual(result["phases"]["before_admission"]["observed_responses"], 0)
-        self.assertEqual(result["phases"]["before_admission"]["missing_provider"], 1)
+        self.assertEqual(result["phases"]["before_admission"]["missing_provider"], 0)
+
+    def test_absent_model_evidence_is_unknown_not_zero(self):
+        item = self.observation()
+        item.update(phase="before_admission", outcome="refused", delivery_id=None,
+                    recovery_state="pending", operator_action="unknown")
+        result = recovery.compile_report(self.workflow(), self.evidence([item]))
+        self.assertEqual(result["observations"][0]["model_work_class"], "unknown")
+        self.assertIsNone(result["phases"]["before_admission"]["observed_responses"])
+
+    def test_delivery_without_exact_attempt_cannot_inherit_provider_turn(self):
+        workflow = self.workflow()
+        workflow["workflows"][0]["deliveries"][0]["attempt"] = opaque(DELIVERY_TWO)
+        result = recovery.compile_report(workflow, self.evidence([self.observation()]))
+        row = result["observations"][0]
+        self.assertEqual(row["delivery_join"], "matched")
+        self.assertEqual(row["attempt_join"], "mismatch")
+        self.assertEqual(row["provider_join"], "unknown")
+        self.assertIsNone(result["phases"]["settlement"]["observed_responses"])
+
+    def test_provider_projection_without_turn_identity_stays_unknown(self):
+        workflow = self.workflow()
+        workflow["workflows"][0]["deliveries"][0]["turn_ref"] = None
+        result = recovery.compile_report(workflow, self.evidence([self.observation()]))
+        self.assertEqual(result["observations"][0]["provider_join"], "unknown")
+        self.assertIsNone(result["phases"]["settlement"]["observed_responses"])
+
+    def test_same_delivery_retried_attempt_uses_only_exact_attempt_turn(self):
+        workflow = self.workflow()
+        previous = dict(workflow['workflows'][0]['deliveries'][0],
+                        attempt=opaque(DELIVERY_TWO), turn_ref='previous-turn',
+                        provider=dict(usage=dict(observed_responses=99)))
+        workflow['workflows'][0]['deliveries'].insert(0, previous)
+        result = recovery.compile_report(workflow, self.evidence([self.observation()]))
+        self.assertEqual(result['observations'][0]['attempt_join'], 'matched')
+        self.assertEqual(result['phases']['settlement']['provider_turns'], 1)
+        self.assertEqual(result['phases']['settlement']['observed_responses'], 3)
+
+    def test_self_drain_attempt_joins_only_its_own_turn(self):
+        item = self.observation()
+        item['attempt_id'] = 'drain-' + ATTEMPT
+        workflow = self.workflow()
+        workflow['workflows'][0]['deliveries'][0]['attempt'] = opaque('drain-' + ATTEMPT)
+        result = recovery.compile_report(workflow, self.evidence([item]))
+        self.assertEqual(result['observations'][0]['attempt_join'], 'matched')
+        self.assertEqual(result['observations'][0]['provider_join'], 'joined')
+
+    def test_no_model_claim_conflicting_with_exact_provider_refuses(self):
+        item = self.observation()
+        item["model_invocation"] = "not_started"
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            recovery.compile_report(self.workflow(), self.evidence([item]))
 
     def test_repeated_reminder_same_attempt_and_revision_is_reported(self):
         first = self.observation()
@@ -68,6 +122,9 @@ class RecoveryModelReportTests(unittest.TestCase):
         second.update(reminder_emitted=True)
         result = recovery.compile_report(self.workflow(), self.evidence([first, second]))
         self.assertEqual(result["repeated_emitted_reminder_revisions"], 1)
+        second["reminder_kind"] = "waiting_work"
+        result = recovery.compile_report(self.workflow(), self.evidence([first, second]))
+        self.assertEqual(result["repeated_emitted_reminder_revisions"], 0)
 
     def test_duplicate_provider_response_identity_blocks_response_total(self):
         workflow = self.workflow()
@@ -78,7 +135,9 @@ class RecoveryModelReportTests(unittest.TestCase):
     def test_malformed_and_unbounded_metadata_refuse(self):
         cases = [dict(phase="guess"), dict(code="secret text"),
                  dict(reminder_emitted="yes"), dict(reminder_emitted=True, state_revision=None),
-                 dict(operator_action="arbitrary"), dict(state_revision=-1)]
+                 dict(operator_action="arbitrary"), dict(state_revision=-1),
+                 dict(model_invocation="assumed"), dict(reminder_kind="unbounded text"),
+                 dict(attempt_id=None)]
         for change in cases:
             with self.subTest(change=change):
                 item = self.observation()

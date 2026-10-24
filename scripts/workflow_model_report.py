@@ -32,6 +32,19 @@ def event_uuid(value):
     return str(uuid.UUID(value))
 
 
+def attempt_ref(value):
+    """Opaque only canonical native or self-drain attempt identities."""
+    if not isinstance(value, str):
+        return None
+    prefix = "drain-" if value.startswith("drain-") else ""
+    raw = value[len(prefix):]
+    try:
+        canonical = str(uuid.UUID(raw))
+    except ValueError:
+        return None
+    return opaque(prefix + canonical) if raw == canonical else None
+
+
 def safe_label(value):
     return value if isinstance(value, str) and LABEL.fullmatch(value) else None
 
@@ -228,7 +241,8 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
         journal = journal_for(path)
         source = context.get("source") or {}
         version = source.get("version")
-        row = dict(delivery=opaque(context["delivery_id"]), kind=safe_label(context.get("kind")),
+        row = dict(delivery=opaque(context["delivery_id"]), attempt=attempt_ref(context.get("attempt_id")),
+                   kind=safe_label(context.get("kind")),
                    admission="context_retained", turn_join=join_basis,
                    source=dict(record=opaque(source["record_id"]) if isinstance(source.get("record_id"), str) else None,
                                version=version if type(version) is int and version > 0 else None),
@@ -285,6 +299,10 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
                    for h in HARNESS if h not in traced]
     covered_events = set(rows) | set(events)
     coverage.update(deliveries=len(contexts), events=len(covered_events),
+                    attempt_known=sum(row["attempt"] is not None for deliveries in rows.values()
+                                      for row in deliveries),
+                    attempt_unknown=sum(row["attempt"] is None for deliveries in rows.values()
+                                        for row in deliveries),
                     input_sessions=len(sessions),
                     duplicate_provider_response_ids=sum(n > 1 for n in response_ids.values()),
                     assessed_events=sum(k in covered_events for k in assessments),
