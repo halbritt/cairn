@@ -19,7 +19,7 @@ import trial_blind_packet_draft as packet
 import trial_paired_request as paired
 import trial_task_eval as task_eval
 
-SCHEMA = 'cairn.legacy-v12-case-material-manifest/1'
+SCHEMA = 'cairn.legacy-v12-case-material-manifest/2'
 EVALUATOR_CONTRACT_SCHEMA = 'cairn.legacy-v12-evaluator-observation-contract/1'
 VERSION = 12
 EXPECTED_CASES_SHA256 = '383f70fb16dc72ce7a02941eafb65747a007c47da08de27f3ed3dffeedbaf446'
@@ -71,12 +71,24 @@ def _channels(case):
     channels = ['task_statement', 'grading_instructions', 'final_answer']
     unavailable = []
     if kinds & {'command', 'tool_output'}:
-        unavailable.append(dict(name='action_trace', reason='raw_tool_output_unavailable'))
+        if _action_trace_projection(case) is None:
+            unavailable.append(dict(name='action_trace', reason='raw_tool_output_unavailable'))
+        else:
+            channels.append('action_trace')
     if kinds & {'file', 'exists', 'added', 'unchanged', 'shell', 'commit_files', 'staged'}:
         channels.append('artifact_bundle')
     if 'shell' in kinds:
         channels.append('evaluator_observation')
     return channels, unavailable
+
+
+def _action_trace_projection(case):
+    """Only db-coverage has a frozen, exact allowlisted safe action projection."""
+    kinds = {check.get('type') for check in selected_checks(case)}
+    if case.get('id') == 'db-coverage' and kinds == {
+            'all', 'tool_output', 'file', 'added', 'answer'}:
+        return task_eval.DB_COVERAGE_ACTION_PROJECTION
+    return None
 
 
 def _evaluator_contract(evaluator_sha256, assets_sha256):
@@ -204,6 +216,7 @@ def issue(output, *, root=None):
                 pins[name.rsplit('/', 1)[-1].split('.', 1)[0]] = dict(path=str(output/name), **_digest(content))
             rows.append(dict(case=case_id, channels=contract['required_channels'],
                              unavailable_channels=unavailable,
+                             action_trace_projection=_action_trace_projection(case),
                              contract=pins['contract'], task_statement=pins['task'],
                              grading_instructions=pins['grading'],
                              source_case_sha256=hashlib.sha256(source_case).hexdigest()))
@@ -261,11 +274,13 @@ def read_manifest(reference, *, root=None, evaluator_sha256=None):
               'legacy_material_manifest_inventory')
         by_id = {case['id']: case for case in cases}
         for row in manifest['cases']:
-            _need(type(row) is dict and set(row) == {'case', 'channels', 'unavailable_channels', 'contract', 'task_statement',
+            _need(type(row) is dict and set(row) == {'case', 'channels', 'unavailable_channels',
+                  'action_trace_projection', 'contract', 'task_statement',
                   'grading_instructions', 'source_case_sha256'}, 'legacy_material_manifest_case')
             case = by_id[row['case']]
             expected_channels, expected_unavailable = _channels(case)
             _need(row['channels'] == expected_channels and row['unavailable_channels'] == expected_unavailable and
+                  row['action_trace_projection'] == _action_trace_projection(case) and
                   row['source_case_sha256'] == hashlib.sha256(_canonical(case)).hexdigest(),
                   'legacy_material_manifest_case_mismatch')
             for field in ('contract', 'task_statement', 'grading_instructions'):

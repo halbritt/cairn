@@ -34,9 +34,10 @@ class CaseMaterialsTests(unittest.TestCase):
         cases = {row['case']: row for row in manifest['cases']}
         self.assertEqual(cases['rhumb-ci-scope']['channels'], [
             'task_statement', 'grading_instructions', 'final_answer'])
-        self.assertNotIn('action_trace', cases['db-coverage']['channels'])
-        self.assertEqual(cases['db-coverage']['unavailable_channels'], [
-            dict(name='action_trace', reason='raw_tool_output_unavailable')])
+        self.assertIn('action_trace', cases['db-coverage']['channels'])
+        self.assertEqual(cases['db-coverage']['unavailable_channels'], [])
+        self.assertEqual(cases['db-coverage']['action_trace_projection'],
+                         task_eval.DB_COVERAGE_ACTION_PROJECTION)
         self.assertIn('artifact_bundle', cases['db-coverage']['channels'])
         self.assertNotIn('action_trace', cases['deploy-stamp']['channels'])
         self.assertIn('artifact_bundle', cases['deploy-stamp']['channels'])
@@ -77,16 +78,36 @@ class CaseMaterialsTests(unittest.TestCase):
         with self.assertRaisesRegex(paired.Refusal, '^legacy_material_output_conflict$'):
             materials.issue(self.output)
 
-    def test_changed_db_coverage_selects_an_explicitly_unavailable_action_channel(self):
+    def test_changed_db_coverage_selects_only_its_bound_safe_action_channel(self):
         pin = materials.issue(self.output)
         manifest_pin = {key: pin[key] for key in ('schema', 'path', 'bytes', 'sha256')}
         selected = blind._materials(dict(schema=blind.SELECTED_REQUEST_SCHEMA,
             case_materials=manifest_pin), [('db-coverage', 0)],
             dict(evaluator_sha256=hashlib.sha256(Path(task_eval.__file__).read_bytes()).hexdigest()))
         row = selected['db-coverage']
-        self.assertNotIn('action_trace', row['channels'])
-        self.assertEqual(row['unavailable_channels'], [
-            dict(name='action_trace', reason='raw_tool_output_unavailable')])
+        self.assertIn('action_trace', row['channels'])
+        self.assertEqual(row['unavailable_channels'], [])
+        self.assertEqual(row['action_trace_projection'], task_eval.DB_COVERAGE_ACTION_PROJECTION)
+
+    def test_projection_selection_is_limited_to_frozen_db_coverage_source(self):
+        cases = {case['id']: case for case in task_eval.load_cases(12)}
+        self.assertEqual(materials._action_trace_projection(cases['db-coverage']),
+                         task_eval.DB_COVERAGE_ACTION_PROJECTION)
+        self.assertTrue(all(materials._action_trace_projection(case) is None
+                            for case_id, case in cases.items() if case_id != 'db-coverage'))
+
+    def test_manifest_refuses_a_changed_projection_declaration(self):
+        pin = materials.issue(self.output)
+        manifest_path = Path(pin['path'])
+        manifest = json.loads(manifest_path.read_bytes())
+        db = next(row for row in manifest['cases'] if row['case'] == 'db-coverage')
+        db['action_trace_projection'] = 'cairn.legacy-action-trace/1'
+        encoded = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode() + b'\n'
+        manifest_path.write_bytes(encoded)
+        reference = dict(schema=pin['schema'], path=pin['path'], bytes=len(encoded),
+                         sha256=hashlib.sha256(encoded).hexdigest())
+        with self.assertRaisesRegex(paired.Refusal, '^legacy_material_manifest_case_mismatch$'):
+            materials.read_manifest(reference)
 
     def test_genuine_pregrade_pin_projects_only_blind_workspace_and_git_artifacts(self):
         out = Path(self.temp.name) / 'result'

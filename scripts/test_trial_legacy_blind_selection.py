@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import trial_blind_packet_draft as packet
 import trial_legacy_blind_selection as legacy
 import trial_legacy_case_materials as case_materials
 import trial_paired_request as paired
+import trial_task_eval as task_eval
 
 NOW = dt.datetime(2026, 10, 15, 12, tzinfo=dt.timezone.utc)
 BASE, CAND = 'baseline-mem', 'candidate-mem'
@@ -123,6 +125,281 @@ class Case(unittest.TestCase):
 
 
 class ConversionTests(Case):
+    def test_changed_db_coverage_pair_converts_with_manifest_bound_safe_action_facts(self):
+        case = case_materials.case_source('db-coverage')
+        task = case['wordings']['task']
+        fixture = Fixture(self.root/'db-run', outcomes={('db-coverage', 0): ('correct', 'mistake')},
+                          tasks={'db-coverage': task})
+        fixture.save()
+        answer = 'I ran the integration checks and reviewed the database coverage.'
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command='make test-integration')),
+                dict(type='tool_use', id='toolu_memory', name='mcp__cairn__search',
+                     input={'query': 'MEMORY-SECRET ARM-CAND'}),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_test',
+                     content='initdb: warning: /private/MEMORY-SECRET\nok example.com/cairnmini/core 0.01s\n',
+                     is_error=False),
+            ]))),
+            json.dumps(dict(type='assistant', message=dict(content=[dict(type='text', text=answer)]))),
+            json.dumps(dict(type='result', result=answer)),
+        ]) + '\n'
+        stream_bytes = raw.encode()
+        for record in fixture.records:
+            record['prompt_bytes'] = len(task.encode())
+            record['prompt_sha256'] = hashlib.sha256(task.encode()).hexdigest()
+            record['stream_sha256'] = hashlib.sha256(stream_bytes).hexdigest()
+            record['answer_chars'] = len(answer)
+            base = fixture.run/'runs'/record['run_id']
+            (base/'stream.jsonl').write_bytes(stream_bytes)
+            (base/'result.json').write_text(json.dumps(record, indent=2))
+
+        issued_path = self.root/'selected-materials'
+        issued = case_materials.issue(issued_path)
+        material_pin = {key: issued[key] for key in ('schema', 'path', 'bytes', 'sha256')}
+        material_binding = dict(schema=issued['schema'], sha256=issued['sha256'])
+        evaluator_sha = hashlib.sha256(Path(task_eval.__file__).read_bytes()).hexdigest()
+
+        agent_path = Path(fixture.request['agent']['path'])
+        agent = json.loads(agent_path.read_bytes())
+        agent['records'] = sorted(fixture.records, key=lambda row: row['run_id'])
+        agent['frozen'] = dict(version=12, label_version=12,
+                               cases_sha256=case_materials.EXPECTED_CASES_SHA256)
+        agent['case_materials'] = material_binding
+        agent_pin = pin(agent_path, json.dumps(agent, indent=2).encode())
+
+        plan_path = Path(fixture.request['plan']['path'])
+        plan = json.loads(plan_path.read_bytes())
+        plan['evaluator_sha256'] = evaluator_sha
+        plan['case_materials'] = material_binding
+        plan_pin = pin(plan_path, json.dumps(plan, indent=2).encode())
+
+        binding_path = Path(fixture.request['binding']['path'])
+        binding = json.loads(binding_path.read_bytes())
+        binding.update(agent_sha256=agent_pin['sha256'], plan_sha256=plan_pin['sha256'])
+        binding_pin = pin(binding_path, C(binding))
+
+        def source_pin(path):
+            content = Path(path).read_bytes()
+            return dict(path=str(path), bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+
+        fixture.request = dict(
+            schema=legacy.SELECTED_REQUEST_SCHEMA, agent=agent_pin, plan=plan_pin,
+            binding=binding_pin, namespace='namespace-A', policy=fixture.request['policy'],
+            policy_ref=fixture.request['policy_ref'], review_measurement=fixture.request['review_measurement'],
+            action_parser=dict(schema='cairn.legacy-action-parser/1',
+                               task_eval=source_pin(task_eval.__file__),
+                               task_permissions=source_pin(legacy.permissions.__file__)),
+            case_materials=material_pin)
+        request_pin = fixture.resave_request()
+
+        snapshot_pin = dict(schema='cairn.legacy-pregrade-snapshot-pin/1',
+                            record_path='final-artifacts/synthetic.json', bytes=1, sha256='a'*64)
+        artifact = C(dict(schema='cairn.legacy-blind-final-artifacts/1', workspace_entries=[],
+                          deletions=[], git_index_refs=[]))
+        with patch.object(legacy, '_pregrade_snapshot', return_value=(b'{}', {}, artifact, snapshot_pin)):
+            receipt = legacy.convert(request_pin, self.root/'converted')
+            before = {path.relative_to(self.root/'converted').as_posix(): path.read_bytes()
+                      for path in (self.root/'converted').rglob('*') if path.is_file()}
+            replayed = legacy.convert(request_pin, self.root/'converted')
+            after = {path.relative_to(self.root/'converted').as_posix(): path.read_bytes()
+                     for path in (self.root/'converted').rglob('*') if path.is_file()}
+        self.assertEqual(receipt, replayed)
+        self.assertEqual(before, after)
+        selection = json.loads(Path(receipt['selection']['path']).read_bytes())
+        self.assertEqual(len(selection['comparisons']), 1)
+        action_refs = []
+        for sample in selection['samples']:
+            channel = next(row for row in sample['channels'] if row['name'] == 'action_trace')
+            ref = channel['entries'][0]['input']
+            action_refs.append(json.loads(Path(ref['path']).read_bytes()))
+        self.assertEqual(len(action_refs), 2)
+        for projection in action_refs:
+            self.assertEqual(projection['schema'], legacy.DB_COVERAGE_ACTION_PROJECTION)
+            self.assertEqual(projection['events'], [dict(action='make_test_integration', status='completed',
+                output_facts=dict(initdb_diagnostic=True, core_test_ok=True,
+                                  forbidden=dict(failure=False, skip=False, cached=False, no_test_files=False)))])
+        subjects = []
+        for file in (self.root/'converted'/'subjects').glob('*.json'):
+            subjects.append(json.loads(file.read_bytes()))
+        self.assertEqual(len(subjects), 2)
+        self.assertTrue(all(subject['schema'] == 'cairn.legacy-db-coverage-action-subject/1' and
+                            subject['selected_materials'] == material_binding and
+                            subject['projection'] == legacy.DB_COVERAGE_ACTION_PROJECTION
+                            for subject in subjects))
+        converted = b''.join(before.values())
+        for secret in (b'MEMORY-SECRET', b'ARM-CAND', b'/private/', b'0.01s', b'initdb: warning'):
+            self.assertNotIn(secret, converted)
+
+        bad_request = copy.deepcopy(fixture.request)
+        bad_request['action_parser']['task_eval']['sha256'] = '0'*64
+        bad_pin = pin(self.root/'bad-request.json', C(bad_request))
+        with patch.object(legacy, '_pregrade_snapshot', return_value=(b'{}', {}, artifact, snapshot_pin)):
+            with self.assertRaisesRegex(paired.Refusal, '^legacy_pin_mismatch$'):
+                legacy.convert(bad_pin, self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+
+    def test_db_coverage_action_trace_is_an_exact_allowlisted_projection(self):
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_ok', name='Bash', input=dict(command='make test-integration')),
+                dict(type='tool_use', id='toolu_bad', name='Bash', input=dict(command='cat /tmp/ARM-CAND')),
+                dict(type='tool_use', id='toolu_secret', name='mcp__cairn__search', input={'query': 'MEMORY-SECRET'}),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_ok', content='OUTPUT-SECRET ARM-CAND', is_error=False),
+                dict(type='tool_result', tool_use_id='toolu_bad', content='RAW-OUTPUT-SECRET', is_error=False),
+            ]))),
+            json.dumps(dict(type='result', result='FINAL-ANSWER-SECRET')),
+        ]) + '\n'
+        trace = legacy.task_eval.parse_stream(raw, 'claude')
+        projection = legacy._db_coverage_action_projection(trace, raw, 'claude')
+        value = json.loads(projection)
+        self.assertEqual(value, dict(schema='cairn.legacy-db-coverage-action-trace/1',
+            events=[dict(action='make_test_integration', status='completed', output_facts=dict(
+                initdb_diagnostic=False, core_test_ok=False,
+                forbidden=dict(failure=False, skip=False, cached=False, no_test_files=False)))]))
+        for secret in (b'OUTPUT-SECRET', b'ARM-CAND', b'MEMORY-SECRET', b'RAW-OUTPUT-SECRET',
+                       b'FINAL-ANSWER-SECRET', b'go test ./...; echo'):
+            self.assertNotIn(secret, projection)
+
+    def test_db_coverage_action_trace_preserves_coarse_failure_and_started_states(self):
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_fail', name='Bash', input=dict(command='go test ./...')),
+                dict(type='tool_use', id='toolu_wait', name='Bash', input=dict(command='make test', run_in_background=True)),
+                dict(type='tool_use', id='toolu_other', name='Bash', input=dict(command='git status')),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_fail', content='PRIVATE', is_error=True),
+                dict(type='tool_result', tool_use_id='toolu_wait', content='Command running in background', is_error=False),
+            ]))),
+            json.dumps(dict(type='result', result='done')),
+        ]) + '\n'
+        trace = legacy.task_eval.parse_stream(raw, 'claude')
+        projection = json.loads(legacy._db_coverage_action_projection(trace, raw, 'claude'))
+        self.assertEqual(projection, dict(schema='cairn.legacy-db-coverage-action-trace/1', events=[
+            dict(action='go_test_all', status='failed'), dict(action='make_test', status='not_completed')]))
+
+    def test_db_coverage_action_trace_normalizes_codex_wrapper_without_copying_output(self):
+        raw = '\n'.join([
+            json.dumps(dict(type='item.completed', item=dict(id='1', type='command_execution',
+                command="/bin/bash -lc 'make test'", aggregated_output='PRIVATE-MEMORY-ARM', exit_code=0))),
+            json.dumps(dict(type='item.completed', item=dict(id='2', type='command_execution',
+                command="/bin/bash -lc 'go test ./...'", aggregated_output='FAIL-SECRET', exit_code=2))),
+        ]) + '\n'
+        trace = legacy.task_eval.parse_stream(raw, 'codex')
+        projection = legacy._db_coverage_action_projection(trace, raw, 'codex')
+        self.assertEqual(json.loads(projection), dict(schema='cairn.legacy-db-coverage-action-trace/1', events=[
+            dict(action='make_test', status='completed'), dict(action='go_test_all', status='failed')]))
+        for secret in (b'PRIVATE-MEMORY-ARM', b'FAIL-SECRET', b'/bin/bash', b'go test'):
+            self.assertNotIn(secret, projection)
+
+    def test_db_coverage_action_trace_accepts_only_the_supported_simple_command_classes(self):
+        for command, expected in (('bash scripts/test-postgres.sh', 'test_postgres_script'),
+                                  ('go test', 'go_test'), ('go test ./core', 'go_test_core')):
+            raw = '\n'.join([
+                json.dumps(dict(type='assistant', message=dict(content=[
+                    dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command=command)),
+                ]))),
+                json.dumps(dict(type='user', message=dict(content=[
+                    dict(type='tool_result', tool_use_id='toolu_test', content='safe output', is_error=False),
+                ]))),
+            ]) + '\n'
+            trace = legacy.task_eval.parse_stream(raw, 'claude')
+            projection = json.loads(legacy._db_coverage_action_projection(trace, raw, 'claude'))
+            event = projection['events'][0]
+            self.assertEqual(event['action'], expected)
+            self.assertEqual(event['status'], 'completed')
+            if expected.startswith('go_test'):
+                self.assertNotIn('output_facts', event)
+            else:
+                self.assertEqual(event['output_facts'], dict(
+                    initdb_diagnostic=False, core_test_ok=False,
+                    forbidden=dict(failure=False, skip=False, cached=False, no_test_files=False)))
+
+    def test_db_coverage_action_trace_projects_only_allowlisted_output_facts(self):
+        output = ('initdb: warning: private path /tmp/MEMORY-SECRET ARM-CAND\n'
+                  'ok example.com/cairnmini/core 0.03s\n'
+                  '--- SKIP: TestPrivate (0.00s)\n(cached)\nno test files\nFAIL private-package\n')
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command='make test-integration')),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_test', content=output, is_error=False),
+            ]))),
+        ]) + '\n'
+        trace = legacy.task_eval.parse_stream(raw, 'claude')
+        projection = legacy._db_coverage_action_projection(trace, raw, 'claude')
+        self.assertEqual(json.loads(projection), dict(schema='cairn.legacy-db-coverage-action-trace/1', events=[
+            dict(action='make_test_integration', status='completed', output_facts=dict(
+                initdb_diagnostic=True, core_test_ok=True,
+                forbidden=dict(failure=True, skip=True, cached=True, no_test_files=True)))
+        ]))
+        for secret in (b'MEMORY-SECRET', b'ARM-CAND', b'/tmp/', b'0.03s', b'private-package',
+                       b'TestPrivate', b'initdb: warning', b'no test files'):
+            self.assertNotIn(secret, projection)
+
+    def test_db_coverage_action_trace_refuses_compound_wrapped_and_unparseable_evidence(self):
+        commands = ('make test-integration && echo MEMORY-SECRET',
+                    'env make test', 'bash -lc \'make test-integration\'',
+                    'go test ./core -run TestSecret')
+        for command in commands:
+            raw = json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_bad', name='Bash', input=dict(command=command)),
+            ]))) + '\n'
+            with self.subTest(command=command), self.assertRaisesRegex(
+                    paired.Refusal, '^legacy_db_action_command_ambiguous$'):
+                trace = legacy.task_eval.parse_stream(raw, 'claude')
+                legacy._db_coverage_action_projection(trace, raw, 'claude')
+
+        for output in ('x' * (legacy._DB_COVERAGE_OUTPUT_LIMIT + 1), 'bad\ufffdoutput'):
+            raw = '\n'.join([
+                json.dumps(dict(type='assistant', message=dict(content=[
+                    dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command='make test-integration')),
+                ]))),
+                json.dumps(dict(type='user', message=dict(content=[
+                    dict(type='tool_result', tool_use_id='toolu_test', content=output, is_error=False),
+                ]))),
+            ]) + '\n'
+            with self.subTest(output_size=len(output)), self.assertRaisesRegex(
+                    paired.Refusal, '^legacy_db_action_output_unparseable$'):
+                trace = legacy.task_eval.parse_stream(raw, 'claude')
+                legacy._db_coverage_action_projection(trace, raw, 'claude')
+
+        duplicate_summaries = ('ok example.com/cairnmini/core 0.01s\n'
+                               'ok example.com/cairnmini/core 0.02s\n')
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command='make test-integration')),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_test', content=duplicate_summaries, is_error=False),
+            ]))),
+        ]) + '\n'
+        with self.assertRaisesRegex(paired.Refusal, '^legacy_db_action_output_ambiguous$'):
+            trace = legacy.task_eval.parse_stream(raw, 'claude')
+            legacy._db_coverage_action_projection(trace, raw, 'claude')
+
+    def test_non_integration_command_output_is_not_scanned_or_size_limited(self):
+        output = 'x' * (legacy._DB_COVERAGE_OUTPUT_LIMIT + 1)
+        raw = '\n'.join([
+            json.dumps(dict(type='assistant', message=dict(content=[
+                dict(type='tool_use', id='toolu_test', name='Bash', input=dict(command='make test')),
+            ]))),
+            json.dumps(dict(type='user', message=dict(content=[
+                dict(type='tool_result', tool_use_id='toolu_test', content=output, is_error=False),
+            ]))),
+        ]) + '\n'
+        trace = legacy.task_eval.parse_stream(raw, 'claude')
+        projection = legacy._db_coverage_action_projection(trace, raw, 'claude')
+        self.assertEqual(json.loads(projection), dict(schema=legacy.DB_COVERAGE_ACTION_PROJECTION,
+            events=[dict(action='make_test', status='completed')]))
+        self.assertNotIn(b'x', projection)
+
     def test_v12_evaluator_projection_redacts_check_names_logs_verdicts_arm_and_memory(self):
         case = case_materials.case_source('deploy-stamp')
         checks = case_materials.shell_checks(case)

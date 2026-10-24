@@ -36,6 +36,7 @@ class CaseMaterialsPinTests(unittest.TestCase):
             files_sha256=labels, evaluator_observation_contract=dict(schema='synthetic-contract/1'),
             cases=[dict(case='synthetic', channels=['task_statement', 'grading_instructions', 'final_answer',
                                                        'artifact_bundle'], unavailable_channels=[],
+                        action_trace_projection=None,
                         contract=self.material('contract'),
                         task_statement=self.material('task'), grading_instructions=self.material('instructions'),
                         source_case_sha256=hashlib.sha256(canonical(case)).hexdigest())])

@@ -32,6 +32,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 
@@ -44,6 +45,7 @@ import trial_legacy_case_materials as case_materials
 REQUEST_SCHEMA = 'cairn.legacy-blind-conversion/1'
 ACTION_REQUEST_SCHEMA = 'cairn.legacy-blind-conversion/2'
 SELECTED_REQUEST_SCHEMA = 'cairn.legacy-blind-conversion/3'
+DB_COVERAGE_ACTION_PROJECTION = 'cairn.legacy-db-coverage-action-trace/1'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 RECEIPT_SCHEMA = 'cairn.legacy-blind-conversion-receipt/1'
 AGENT_SCHEMA = 'cairn.task-eval.agent/1'
@@ -166,6 +168,7 @@ def _materials(request, changed, plan):
                                 task_statement=row['task_statement'],
                                 grading_instructions=row['grading_instructions'],
                                 channels=row['channels'], unavailable_channels=row['unavailable_channels'],
+                                action_trace_projection=row['action_trace_projection'],
                                 manifest=request['case_materials'],
                                 evaluator_contract=manifest['evaluator_observation_contract'],
                                 source_case_sha256=row['source_case_sha256'],
@@ -238,6 +241,96 @@ def _action_projection(trace, text, harness):
                                           commands=commands, tool_outputs=outputs))
     need(len(content) <= paired.ORIGINAL_LIMITS['tool_room_bytes'], 'legacy_action_bound')
     return content
+
+
+_DB_COVERAGE_ACTIONS = {
+    'make test': 'make_test',
+    'make test-integration': 'make_test_integration',
+    'bash scripts/test-postgres.sh': 'test_postgres_script',
+    'go test': 'go_test',
+    'go test ./...': 'go_test_all',
+    'go test ./core': 'go_test_core',
+}
+_DB_COVERAGE_OUTPUT_LIMIT = 32 * 1024
+_DB_COVERAGE_CONTROL_CHARS = frozenset('\t\r\n')
+_DB_COMMAND_MENTION = re.compile(r'\b(?:make\s+test(?:-integration)?|go\s+test|test-postgres\.sh)\b')
+_DB_INITDB_DIAGNOSTIC = re.compile(r'(?m)^initdb: (?:warning|hint):')
+_DB_CORE_TEST_OK = re.compile(
+    r'(?m)^ok\s+example\.com/cairnmini/core\s+\d+\.\d+s\s*$')
+_DB_FORBIDDEN_OUTPUT = {
+    'failure': re.compile(r'(?m)^(?:FAIL|---\s*FAIL|panic:)'),
+    'skip': re.compile(r'---\s*SKIP'),
+    'cached': re.compile(r'\(cached\)'),
+    'no_test_files': re.compile(r'no test files'),
+}
+
+
+def _db_coverage_action_projection(trace, text, harness):
+    """Retain only exact selected test commands and coarse tool-result states."""
+    need(harness in ('claude', 'codex') and type(trace) is dict and
+         type(trace.get('commands')) is list, 'legacy_db_action_shape')
+
+    def action(command):
+        if harness == 'codex':
+            command = task_eval.unwrap_shell(command)
+        need(type(command) is str, 'legacy_db_action_command_unparseable')
+        if command == command.strip() and '\n' not in command and '\r' not in command:
+            selected = _DB_COVERAGE_ACTIONS.get(command)
+            if selected is not None:
+                return selected
+        if _DB_COMMAND_MENTION.search(command):
+            raise paired.Refusal('legacy_db_action_command_ambiguous')
+        return None
+
+    observed_output_bytes = 0
+
+    def output_facts(output):
+        nonlocal observed_output_bytes
+        try:
+            size = len(output.encode('utf-8', errors='strict'))
+        except UnicodeError:
+            raise paired.Refusal('legacy_db_action_output_unparseable') from None
+        observed_output_bytes += size
+        need(observed_output_bytes <= _DB_COVERAGE_OUTPUT_LIMIT and '\ufffd' not in output and
+             all(ord(char) >= 32 or char in _DB_COVERAGE_CONTROL_CHARS for char in output),
+             'legacy_db_action_output_unparseable')
+        ok_lines = _DB_CORE_TEST_OK.findall(output)
+        need(len(ok_lines) <= 1, 'legacy_db_action_output_ambiguous')
+        return dict(initdb_diagnostic=bool(_DB_INITDB_DIAGNOSTIC.search(output)),
+                    core_test_ok=bool(ok_lines),
+                    forbidden={name: bool(pattern.search(output))
+                               for name, pattern in _DB_FORBIDDEN_OUTPUT.items()})
+
+    commands = []
+    for command in trace['commands']:
+        selected = action(command)
+        commands.append(selected)
+
+    outputs = task_eval.parse_tool_outputs(text, harness, require_completed=True)
+    statuses = {}
+    for row in outputs:
+        need(type(row) is dict and type(row.get('command')) is str and
+             type(row.get('output')) is str and type(row.get('is_error')) is bool,
+             'legacy_db_action_shape')
+        selected = action(row['command'])
+        if selected is not None:
+            facts = (output_facts(row['output']) if selected in
+                     ('make_test_integration', 'test_postgres_script') else None)
+            statuses.setdefault(selected, []).append(
+                ('failed' if row['is_error'] else 'completed', facts))
+
+    events = []
+    for selected in commands:
+        if selected is None:
+            continue
+        queue = statuses.get(selected, [])
+        status, facts = queue.pop(0) if queue else ('not_completed', None)
+        event = dict(action=selected, status=status)
+        if selected in ('make_test_integration', 'test_postgres_script'):
+            event['output_facts'] = facts
+        events.append(event)
+    need(not any(statuses.values()), 'legacy_db_action_parser_mismatch')
+    return packet.canonical_bytes(dict(schema=DB_COVERAGE_ACTION_PROJECTION, events=events))
 
 
 def _retain(files, output, name, content):
@@ -532,14 +625,25 @@ def _plan(request_pin, output):
                 sources['final_answer'] = _retain(files, output, 'answers/'+sample_id+'.txt', answer)
                 observed['final_answer'] = _digest(answer)
             if 'action_trace' in chosen['channels']:
-                sources['action_trace'] = _retain(files, output, 'actions/'+sample_id+'.json',
-                                                   _action_projection(trace, text, harness))
+                projection = chosen.get('action_trace_projection')
+                if projection == DB_COVERAGE_ACTION_PROJECTION:
+                    action_bytes = _db_coverage_action_projection(trace, text, harness)
+                else:
+                    need(request['schema'] != SELECTED_REQUEST_SCHEMA,
+                         'legacy_action_projection_unbound')
+                    action_bytes = _action_projection(trace, text, harness)
+                sources['action_trace'] = _retain(files, output, 'actions/'+sample_id+'.json', action_bytes)
                 subject = dict(schema='cairn.legacy-action-subject/1', source=source, parser=parser,
                     agent=request['agent'], plan=request['plan'], binding=request['binding'],
                     attempt=record_pins[record['run_id']], harness=harness,
                     stream=dict(path=str(run_dir/'runs'/record['run_id']/'stream.jsonl'), **_digest(content)),
                     prompt=dict(bytes=record['prompt_bytes'], sha256=record['prompt_sha256']),
                     stream_representation='legacy-retained-utf8/1', custody='harness_recorded_hash')
+                if projection == DB_COVERAGE_ACTION_PROJECTION:
+                    subject = dict(subject, schema='cairn.legacy-db-coverage-action-subject/1',
+                        selected_materials=dict(schema=chosen['manifest']['schema'],
+                                                sha256=chosen['manifest']['sha256']),
+                        projection=projection)
                 subject_pin = _retain(files, output, 'subjects/'+sample_id+'.json', packet.canonical_bytes(subject))
                 observation = dict(schema='cairn.blind-evaluator-observation/2', source=source,
                     channel='action_trace', evidence=[sources['action_trace']],
@@ -549,11 +653,12 @@ def _plan(request_pin, output):
                 observed['action_trace'] = dict(projection=sources['action_trace'], subject=subject_pin,
                                                 observation=observations['action_trace'])
             artifact_ref = None
+            artifact_content = None
             snapshot_pin = None
             if 'artifact_bundle' in chosen['channels']:
-                raw_snapshot, snapshot, artifact_bytes, snapshot_pin = _pregrade_snapshot(
+                raw_snapshot, snapshot, artifact_content, snapshot_pin = _pregrade_snapshot(
                     run_dir, record, case_materials.case_source(case), content)
-                artifact_ref = _retain(files, output, 'artifacts/'+sample_id+'.json', artifact_bytes)
+                artifact_ref = _retain(files, output, 'artifacts/'+sample_id+'.json', artifact_content)
                 sources['artifact_bundle'] = artifact_ref
                 observed['artifact_bundle'] = dict(snapshot=snapshot_pin, projection=artifact_ref)
             if 'evaluator_observation' in chosen['channels']:
@@ -581,7 +686,7 @@ def _plan(request_pin, output):
                 source=source,
                 sample_id=sample_id, case_contract_sha256=chosen['contract']['sha256'],
                 channels=[dict(name=channel,
-                               entries=[_artifact_entry(case_materials.ARTIFACT_NAME, sources[channel])]
+                               entries=[_artifact_entry(artifact_ref, artifact_content)]
                                if channel == 'artifact_bundle' else [_entry(channel, sources[channel])],
                                observation=observations.get(channel))
                           for channel in chosen['channels']]))

@@ -20,6 +20,20 @@ attest historical helper bytes: the helper pin identifies this conversion's
 selected dependency. Source drift requires an explicit compatible selection;
 the converter never substitutes a newer parser silently.
 
+Request `/3` uses the selected v12 material manifest. Its v2 manifest may bind
+the `db-coverage` case to the separate
+`cairn.legacy-db-coverage-action-trace/1` projection. That projection emits only
+allowlisted command classes, `completed` / `failed` / `not_completed`, and
+booleans for the frozen initdb diagnostic, target Go package result, and
+forbidden FAIL/SKIP/cached/no-test-files output facts. It never copies command
+or output text. Only exact simple commands are accepted; ambiguous command
+forms, multiple matching target-package summaries, invalidly encoded or
+control-character output, and oversized output refuse conversion. The private
+action subject binds the selected manifest digest and projection name. A
+replayed conversion regenerates the same projected bytes from the pinned
+attempt stream. This case-specific projection does not change the existing
+unredacted caller-selected `/2` action projection contract.
+
 The existing ordered `cairn.blind-case-contract/2` decides which channels appear.
 `/2` adds support for `action_trace`; `/1` still refuses it. Both still refuse
 `artifact_bundle` and `evaluator_observation` because original final-workspace/

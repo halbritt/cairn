@@ -62,7 +62,8 @@ OTHER_REPO = "trial:other-collection"
 CLAUDE_CONTEXT_BYTES = 9500  # scripts/install-claude-hooks.py
 CODEX_CONTEXT_BYTES = 12000  # scripts/install-codex-hooks.py
 RANK_DEPTH = 50
-CASE_MATERIALS_SCHEMA = 'cairn.legacy-v12-case-material-manifest/1'
+CASE_MATERIALS_SCHEMA = 'cairn.legacy-v12-case-material-manifest/2'
+DB_COVERAGE_ACTION_PROJECTION = 'cairn.legacy-db-coverage-action-trace/1'
 CASE_MATERIALS_LIMIT = 2 * 1024 * 1024
 MEMORY_INSTRUCTION = """# Shared memory
 
@@ -209,7 +210,7 @@ def verify_frozen(version=None, *, root=TRIAL):
 
 
 def _legacy_case_material_channels(case):
-    """Derive only the v12 public channel families from frozen check types."""
+    """Derive frozen v12 channels and the one explicitly versioned safe projection."""
     check_types = set()
 
     def visit(value):
@@ -230,9 +231,16 @@ def _legacy_case_material_channels(case):
         channels.append('artifact_bundle')
     if 'shell' in check_types:
         channels.append('evaluator_observation')
-    unavailable = ([dict(name='action_trace', reason='raw_tool_output_unavailable')]
-                   if check_types & {'command', 'tool_output'} else [])
-    return channels, unavailable
+    projection = (DB_COVERAGE_ACTION_PROJECTION
+                  if case.get('id') == 'db-coverage' and check_types == {
+                      'all', 'tool_output', 'file', 'added', 'answer'} else None)
+    unavailable = []
+    if check_types & {'command', 'tool_output'}:
+        if projection is None:
+            unavailable.append(dict(name='action_trace', reason='raw_tool_output_unavailable'))
+        else:
+            channels.append('action_trace')
+    return channels, unavailable, projection
 
 
 def case_materials_pin(path, expected_sha256, cases, *, root=TRIAL):
@@ -294,7 +302,8 @@ def case_materials_pin(path, expected_sha256, cases, *, root=TRIAL):
         raise ValueError('case_materials_case_coverage')
     expected_cases = {case['id']: case for case in cases}
     ids = []
-    row_fields = {'case', 'channels', 'unavailable_channels', 'contract', 'task_statement',
+    row_fields = {'case', 'channels', 'unavailable_channels', 'action_trace_projection',
+                  'contract', 'task_statement',
                   'grading_instructions', 'source_case_sha256'}
     for row in case_rows:
         if type(row) is not dict or set(row) != row_fields:
@@ -308,8 +317,9 @@ def case_materials_pin(path, expected_sha256, cases, *, root=TRIAL):
             raise ValueError('case_materials_channels')
         if type(row['unavailable_channels']) is not list:
             raise ValueError('case_materials_unavailable_channels')
-        expected_channels, expected_unavailable = _legacy_case_material_channels(expected_cases[cid])
-        if row['channels'] != expected_channels or row['unavailable_channels'] != expected_unavailable:
+        expected_channels, expected_unavailable, expected_projection = _legacy_case_material_channels(expected_cases[cid])
+        if (row['channels'] != expected_channels or row['unavailable_channels'] != expected_unavailable
+                or row['action_trace_projection'] != expected_projection):
             raise ValueError('case_materials_channel_contract_mismatch')
         for field in ('contract', 'task_statement', 'grading_instructions'):
             pin = row[field]
