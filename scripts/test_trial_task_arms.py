@@ -66,12 +66,9 @@ class ArmContractTest(unittest.TestCase):
             config=dict(harness='claude',cairn='/tmp/trial/store/cairn',socket='/tmp/trial/unused.sock',token_file='/tmp/trial/unused.token',
                         repo=te.TRIAL_REPO,state_dir='/tmp/trial/hookstate',context_bytes=5400,semantic_fallback=False)
             bindings=bind_ordinary_claude(root,config,code/'inbox_recall.py')
-            bindings += [(code,'/tmp/trial/hook','ro'),(state,'/tmp/trial/hookstate','rw'),
-                         (root/'hook-config.json','/tmp/trial/hookconfig.json','ro'),
-                         (cli,'/tmp/trial/store/cairn','ro'),(work,'/workspace','rw'),
-                         (te.ROOT/'scripts/trial_hook_observer.py','/tmp/trial/hook-observer.py','ro'),
-                         (te.ROOT/'scripts/trial_source_delivery.py','/tmp/trial/trial_source_delivery.py','ro'),
-                         (te.ROOT/'scripts/trial_observation_storage.py','/tmp/trial/trial_observation_storage.py','ro')]
+            bindings += [(code,'/tmp/trial/hook','ro'), (cli,'/tmp/trial/store/cairn','ro'),
+                         (work,'/workspace','rw')]
+            bindings += te.trial_hook_observer_bindings(root/'hook-config.json',state)
             command=te.runtime_sandbox()
             for source,target,mode in bindings:
                 command += ['--ro-bind' if mode=='ro' else '--bind',str(source),str(target)]

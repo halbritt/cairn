@@ -1280,6 +1280,17 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     return command + provider_args
 
 
+def trial_hook_observer_bindings(config_path, state_dir):
+    """Mount the observer and its helper modules at their importable sandbox paths."""
+    return [
+        (ROOT / "scripts/trial_hook_observer.py", "/tmp/trial/hook-observer.py", "ro"),
+        (ROOT / "scripts/trial_source_delivery.py", "/tmp/trial/trial_source_delivery.py", "ro"),
+        (ROOT / "scripts/trial_observation_storage.py", "/tmp/trial/trial_observation_storage.py", "ro"),
+        (config_path, "/tmp/trial/hookconfig.json", "ro"),
+        (state_dir, "/tmp/trial/hookstate", "rw"),
+    ]
+
+
 def codex_weekly_command(codex_entry, model, effort):
     """Build a subscription-routed Codex command with no ambient user config."""
     return [codex_entry, "exec", "--json", "--ephemeral", "--ignore-user-config",
@@ -1469,11 +1480,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
             *(legacy_limits.mcp_tool_room_arguments() if original or codex_weekly else [])])))
         (base / "mcp.json").write_text(json.dumps(mcp))
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
-                  (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
-                  (ROOT / "scripts/trial_hook_observer.py", "/tmp/trial/hook-observer.py", "ro"),
-                  (ROOT / "scripts/trial_source_delivery.py", "/tmp/trial/trial_source_delivery.py", "ro"),
-                  (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
-                  (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
+                  (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro")]
+        binds += trial_hook_observer_bindings(base / "hook-config.json", session_state)
+        binds += [(base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
         if args.harness == "claude":
             provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", memory_instruction]
         else:
