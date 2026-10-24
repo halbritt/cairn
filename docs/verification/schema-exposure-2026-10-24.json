@@ -1,0 +1,152 @@
+{
+  "schema": "cairn.schema-exposure-audit/1",
+  "since": "2026-10-21T00:00:00Z",
+  "until": "2026-10-24T00:00:00Z",
+  "proxy_tokenizer": "tiktoken o200k_base; not verified for deployed models",
+  "claude_files": 16,
+  "claude": {
+    "total_requests": 4407,
+    "requests_without_shape": 0,
+    "requests_by_cairn_tool_count": {
+      "0": 2693,
+      "2": 162,
+      "3": 1352,
+      "4": 200
+    },
+    "assistants_without_id": 0,
+    "errors": {},
+    "phases": {
+      "all": {
+        "requests": 4407,
+        "shapes_observed": 4407,
+        "requests_with_cairn_tools": 1714,
+        "requests_with_usage": 4031,
+        "cairn_tool_count": 5180,
+        "cairn_schema_bytes": 17312490,
+        "cairn_schema_proxy_tokens": 3512938,
+        "responses_with_usage": 4278,
+        "response_input_tokens": 1607949361,
+        "response_input_less_cached": 11866450,
+        "response_cache_creation_tokens": 11850818,
+        "response_cache_read_tokens": 1596082911
+      },
+      "file_first": {
+        "requests": 14,
+        "shapes_observed": 14,
+        "requests_with_cairn_tools": 1,
+        "requests_with_usage": 13,
+        "cairn_tool_count": 4,
+        "cairn_schema_bytes": 15624,
+        "cairn_schema_proxy_tokens": 3173,
+        "responses_with_usage": 13,
+        "response_input_tokens": 1235669,
+        "response_input_less_cached": 186491,
+        "response_cache_creation_tokens": 186435,
+        "response_cache_read_tokens": 1049178
+      },
+      "first_cairn_use": {
+        "requests": 3,
+        "shapes_observed": 3,
+        "requests_with_cairn_tools": 2,
+        "requests_with_usage": 3,
+        "cairn_tool_count": 6,
+        "cairn_schema_bytes": 22374,
+        "cairn_schema_proxy_tokens": 4588,
+        "responses_with_usage": 3,
+        "response_input_tokens": 1762822,
+        "response_input_less_cached": 2058,
+        "response_cache_creation_tokens": 2022,
+        "response_cache_read_tokens": 1760764
+      },
+      "first_pull": {
+        "requests": 2,
+        "shapes_observed": 2,
+        "requests_with_cairn_tools": 2,
+        "requests_with_usage": 2,
+        "cairn_tool_count": 5,
+        "cairn_schema_bytes": 16780,
+        "cairn_schema_proxy_tokens": 3417,
+        "responses_with_usage": 2,
+        "response_input_tokens": 166240,
+        "response_input_less_cached": 7866,
+        "response_cache_creation_tokens": 7862,
+        "response_cache_read_tokens": 158374
+      },
+      "first_write": {
+        "requests": 2,
+        "shapes_observed": 2,
+        "requests_with_cairn_tools": 2,
+        "requests_with_usage": 2,
+        "cairn_tool_count": 6,
+        "cairn_schema_bytes": 22374,
+        "cairn_schema_proxy_tokens": 4588,
+        "responses_with_usage": 2,
+        "response_input_tokens": 958700,
+        "response_input_less_cached": 1636,
+        "response_cache_creation_tokens": 1602,
+        "response_cache_read_tokens": 957064
+      },
+      "same_digest_repeat": {
+        "requests": 128,
+        "shapes_observed": 128,
+        "requests_with_cairn_tools": 69,
+        "requests_with_usage": 110,
+        "cairn_tool_count": 199,
+        "cairn_schema_bytes": 654616,
+        "cairn_schema_proxy_tokens": 133702,
+        "responses_with_usage": 110,
+        "response_input_tokens": 39500812,
+        "response_input_less_cached": 1453410,
+        "response_cache_creation_tokens": 1453154,
+        "response_cache_read_tokens": 38047402
+      },
+      "post_compaction": {
+        "requests": 8,
+        "shapes_observed": 8,
+        "requests_with_cairn_tools": 6,
+        "requests_with_usage": 7,
+        "cairn_tool_count": 20,
+        "cairn_schema_bytes": 69605,
+        "cairn_schema_proxy_tokens": 14088,
+        "responses_with_usage": 7,
+        "response_input_tokens": 1285892,
+        "response_input_less_cached": 85664,
+        "response_cache_creation_tokens": 85620,
+        "response_cache_read_tokens": 1200228
+      },
+      "after_first_cairn_use": {
+        "requests": 2067,
+        "shapes_observed": 2067,
+        "requests_with_cairn_tools": 1709,
+        "requests_with_usage": 1928,
+        "cairn_tool_count": 5164,
+        "cairn_schema_bytes": 17252118,
+        "cairn_schema_proxy_tokens": 3500589,
+        "responses_with_usage": 1993,
+        "response_input_tokens": 801865912,
+        "response_input_less_cached": 6277319,
+        "response_cache_creation_tokens": 6271587,
+        "response_cache_read_tokens": 795588593
+      },
+      "other": {
+        "requests": 2268,
+        "shapes_observed": 2268,
+        "requests_with_cairn_tools": 2,
+        "requests_with_usage": 2045,
+        "cairn_tool_count": 6,
+        "cairn_schema_bytes": 22374,
+        "cairn_schema_proxy_tokens": 4588,
+        "responses_with_usage": 2227,
+        "response_input_tokens": 787471368,
+        "response_input_less_cached": 5011010,
+        "response_cache_creation_tokens": 5001322,
+        "response_cache_read_tokens": 782460358
+      }
+    },
+    "phase_note": "Labels overlap; schema bytes are declared request-shape sizes, not uncached or billed tokens."
+  },
+  "codex": {
+    "request_schema": "unavailable_in_retained_native_log",
+    "note": "Codex tool calls and response usage do not reveal per-request tool schemas."
+  }
+}
