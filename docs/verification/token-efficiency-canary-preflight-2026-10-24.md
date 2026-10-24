@@ -85,9 +85,12 @@ is absent, and staging makes no provider request.
 
 For a focused Codex+Claude staging review, build the new private candidate after
 the source revision is committed, then validate both copied bindings against the
-candidate's copied bridge. If only the selected Codex TOML has unrelated drift,
-add `--snapshot-current-codex-config`; the stager records its exact owner-only
-baseline and edits only the Cairn MCP entry. The full candidate report hashes
+candidate's copied bridge. If selected account files have unrelated drift, add
+`--snapshot-current-codex-config` and `--snapshot-current-claude-mcp-config`.
+The stager records the Codex TOML's exact owner-only baseline and edits only the
+Cairn MCP entry. For Claude, it records only the full config's hash and emits a
+sanitized MCP file containing only the candidate Cairn server; it does not
+retain the account config or other MCP server definitions. The full candidate report hashes
 the selected hook settings, separate ordinary and coordination configs,
 one-binding manifest, MCP config/wrapper, and lifecycle pin closure. This is
 config-isolation and source-pin evidence only; it does not load a native session
@@ -96,6 +99,7 @@ or authorize provider calls.
 ```sh
 python3 -B scripts/stage_token_efficiency_canary.py \
   --snapshot-current-codex-config \
+  --snapshot-current-claude-mcp-config \
   --profile compact-inbox \
   --destination "$HOME/.cache/cairn-token-efficiency-stages/COMPACT_INBOX_CANDIDATE"
 ```

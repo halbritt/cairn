@@ -250,7 +250,7 @@ def stage_account(home, stage, harness, *, profile="full"):
 
 
 def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_baseline=None,
-              profile="full"):
+              claude_config_baseline=None, profile="full"):
     binary = destination / "bin/cairn"
     codex_path = home / ".codex/config.toml"
     codex_raw = codex_path.read_bytes() if codex_config_baseline is None else codex_config_baseline
@@ -323,20 +323,29 @@ def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_bas
                                  .replace(old_tail, wrapper_tail + "\n"), encoding="utf-8")
     candidate_wrapper.chmod(0o700)
     claude_path = home / ".claude.json"
-    claude_raw = claude_path.read_bytes()
-    if snapshot_sha256(".claude.json", claude_raw) != expected[".claude.json"]:
+    claude_raw = (claude_path.read_bytes() if claude_config_baseline is None
+                  else claude_config_baseline)
+    if (claude_config_baseline is None and
+            snapshot_sha256(".claude.json", claude_raw) != expected[".claude.json"]):
         raise ValueError(f"installed snapshot drift: {claude_path}")
     claude_data = json.loads(claude_raw)
     old_claude = claude_data["mcpServers"]["cairn"]
     if old_claude.get("command") != str(wrapper) or old_claude.get("args") != ["claude"]:
         raise ValueError("unexpected selected Claude MCP command")
-    claude_data["mcpServers"]["cairn"]["command"] = str(candidate_wrapper)
-    claude_candidate = destination / "claude/.claude.json"
+    if (set(old_claude) - {"command", "args", "type", "env"} or
+            old_claude.get("type", "stdio") != "stdio" or
+            old_claude.get("env", {}) not in ({}, None)):
+        raise ValueError("unexpected selected Claude MCP server settings")
+    candidate_server = {key: value for key, value in old_claude.items() if key == "type"}
+    candidate_server.update(command=str(candidate_wrapper), args=["claude"])
+    claude_data = {"mcpServers": {"cairn": candidate_server}}
+    claude_candidate = destination / "claude/cairn-canary-mcp.json"
     write_json(claude_candidate, claude_data)
     return {"candidate_binary": str(binary), "candidate_binary_present": False,
             "codex": codex_result,
-            "claude": {"account_mcp": str(claude_path), "expected_sha256": hashlib.sha256(claude_raw).hexdigest(),
+            "claude": {"account_mcp": str(claude_path), "baseline_sha256": hashlib.sha256(claude_raw).hexdigest(),
                        "candidate_mcp": str(claude_candidate), "candidate_sha256": sha256(claude_candidate),
+                       "candidate_servers": ["cairn"],
                        "account_wrapper": str(candidate_wrapper), "wrapper_sha256": sha256(candidate_wrapper)}}
 
 
@@ -366,24 +375,40 @@ def private_stage_root(home):
 
 
 def stage(home, destination, expected=EXPECTED, *, codex_only=False,
-          snapshot_codex_config_baseline=False, profile="full"):
+          snapshot_codex_config_baseline=False, snapshot_claude_config_baseline=False,
+          profile="full"):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
     if profile not in ("full", "capture-only", "compact-inbox"):
         raise ValueError("profile must be full, capture-only or compact-inbox")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
+    claude_config_path = home / ".claude.json"
     if snapshot_codex_config_baseline:
         if snapshot_paths is None:
             snapshot_paths = tuple(expected)
         snapshot_paths = tuple(path for path in snapshot_paths if path != ".codex/config.toml")
+    if snapshot_claude_config_baseline:
+        if codex_only:
+            raise ValueError("Claude config baseline requires Claude staging")
+        if snapshot_paths is None:
+            snapshot_paths = tuple(expected)
+        snapshot_paths = tuple(path for path in snapshot_paths if path != ".claude.json")
+    if snapshot_codex_config_baseline and snapshot_paths is not None:
+        snapshot_paths = tuple(path for path in snapshot_paths if path != ".codex/config.toml")
     check_snapshot(home, expected, snapshot_paths)
     codex_config_path = home / ".codex/config.toml"
+    if snapshot_claude_config_baseline:
+        info = claude_config_path.stat()
+        if (claude_config_path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022):
+            raise ValueError(f"unsafe selected Claude config baseline: {claude_config_path}")
     if snapshot_codex_config_baseline:
         info = codex_config_path.stat()
         if (codex_config_path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022):
             raise ValueError(f"unsafe selected Codex config baseline: {codex_config_path}")
     codex_config_baseline = (codex_config_path.read_bytes()
                              if snapshot_codex_config_baseline else None)
+    claude_config_baseline = (claude_config_path.read_bytes()
+                              if snapshot_claude_config_baseline else None)
     peer_paths = CODEX_PEER_PATHS if codex_only else (
         ".codex-harm/hooks.json", ".codex-harm/config.toml",
         ".claude-harm/settings.json", ".claude-harm/.claude.json")
@@ -409,7 +434,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
         for harness in harnesses:
             report["accounts"][harness] = stage_account(home, destination, harness, profile=profile)
         report["mcp"] = stage_mcp(home, destination, expected, codex_only=codex_only,
-                                   codex_config_baseline=codex_config_baseline, profile=profile)
+                                   codex_config_baseline=codex_config_baseline,
+                                   claude_config_baseline=claude_config_baseline, profile=profile)
         report["source_hashes"] = {name: sha256(ROOT / "integrations/lifecycle" / name)
                                    for name in ("memory.py", "coordination.py", "inbox_recall.py")}
         report["source_hashes"]["scripts/stage_token_efficiency_canary.py"] = sha256(Path(__file__))
@@ -443,6 +469,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False,
         check_snapshot(home, expected, snapshot_paths)
         if codex_config_baseline is not None and (home / ".codex/config.toml").read_bytes() != codex_config_baseline:
             raise ValueError("selected Codex config changed during staging")
+        if claude_config_baseline is not None and claude_config_path.read_bytes() != claude_config_baseline:
+            raise ValueError("selected Claude config changed during staging")
         write_json(destination / "stage.json", report)
     except Exception:
         shutil.rmtree(destination)
@@ -458,11 +486,14 @@ def main():
                         help="stage only the selected .codex account; do not read or copy Claude configuration")
     parser.add_argument("--snapshot-current-codex-config", action="store_true",
                         help="pin the current selected Codex TOML as a private baseline; allow whole-file drift only there")
+    parser.add_argument("--snapshot-current-claude-mcp-config", action="store_true",
+                        help="pin the current Claude config hash but stage only its Cairn MCP entry")
     parser.add_argument("--profile", choices=("full", "capture-only", "compact-inbox"), default="full",
                         help="opt-in profile to stage; capture-only enables no other token-efficiency feature")
     args = parser.parse_args()
     report = stage(Path.home(), args.destination, codex_only=args.codex_only,
                    snapshot_codex_config_baseline=args.snapshot_current_codex_config,
+                   snapshot_claude_config_baseline=args.snapshot_current_claude_mcp_config,
                    profile=args.profile)
     print(json.dumps(report, indent=2))
 
