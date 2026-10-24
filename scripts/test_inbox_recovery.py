@@ -48,6 +48,7 @@ LEASE = 'e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607'
 EVENT = 'f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607'
 RESULT = dict(record_id='9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', version=1)
 HANDLED = dict(ok=True, status='OK', data=dict(state='handled', result=RESULT))
+REPLIED = dict(ok=True, status='OK', data=dict(event_id=EVENT, ref=RESULT))
 LOST = dict(ok=False, status='API_CONNECTION_FAILED')
 
 
@@ -284,12 +285,149 @@ class InboxRecovery(unittest.TestCase):
 
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()
-        for key in ('completion', 'acknowledgement', 'response'):
+        for key in ('completion', 'acknowledgement', 'response', 'finish_reply'):
             self.assertEqual(context[key][:3], [sys.executable, str(SCRIPT.resolve()), 'inbox'])
         self.assertEqual(context['commands']['complete'][:2], [str(self.cairn), 'complete'])
         self.assertIn('--lease', context['commands']['complete'])
         self.assertEqual(context['request_ids']['completion'], self.state['inbox_completion'])
         self.assertEqual(context['request_ids']['response'], self.state['inbox_response'])
+
+    def test_finish_reply_uses_committed_result_and_independent_identities(self):
+        self.state['inbox_attempt']['delivery']['event']['correlation_id'] = LEASE
+        context = self.context()
+        self.replies({'complete': [HANDLED], 'publish': [REPLIED]})
+        sent = self.run_context(context['finish_reply'], 'Selected result')
+        self.assertEqual(sent.returncode, 0, sent.stdout + sent.stderr)
+        envelope = json.loads(sent.stdout)
+        self.assertTrue(envelope['ok'])
+        self.assertEqual(envelope['data']['result'], RESULT)
+        self.assertTrue(envelope['data']['completion_committed'])
+        self.assertTrue(envelope['data']['reply_committed'])
+        self.assertFalse(envelope['data']['reply_pending'])
+        journal = self.journal()
+        self.assertEqual(journal['completion']['request_id'], context['request_ids']['completion'])
+        self.assertEqual(journal['response']['request_id'], context['request_ids']['response'])
+        self.assertNotEqual(journal['completion']['request_id'], journal['response']['request_id'])
+        self.assertEqual(journal['response']['argv'][-3:], ['--version', '1', RESULT['record_id']])
+        reply = [entry for entry in self.log() if entry['operation'] == 'publish'][0]
+        self.assertEqual(reply['argv'], journal['response']['argv'][1:])
+        self.assertEqual(reply['input'], '')
+        self.assertIn('--causation-id', reply['argv'])
+        self.assertEqual(reply['argv'][reply['argv'].index('--causation-id') + 1], EVENT)
+        self.assertEqual(reply['argv'][reply['argv'].index('--correlation-id') + 1], LEASE)
+        changed = self.run_context(context['finish_reply'], 'Changed selected result')
+        self.assertEqual(json.loads(changed.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
+        self.assertEqual([entry['operation'] for entry in self.log()].count('complete'), 1)
+
+    def test_finish_reply_both_intents_are_durable_before_completion(self):
+        context = self.context()
+        self.cairn.write_text(FAKE.replace("body = sys.stdin.read()",
+            "body = sys.stdin.read()\n"
+            "journal = json.load(open(os.path.join(root, 'state', 'intents', '" + ATTEMPT + ".json')))\n"
+            "assert sys.argv[1] != 'complete' or journal['completion']['status'] == 'pending'\n"
+            "assert journal['finish_reply']['request_id'] != journal['completion']['request_id']"))
+        self.replies({'complete': [HANDLED], 'publish': [REPLIED]})
+        sent = self.run_context(context['finish_reply'], 'Selected result')
+        self.assertEqual(sent.returncode, 0, sent.stdout + sent.stderr)
+
+    def test_finish_reply_lost_completion_replays_then_publishes(self):
+        context = self.context()
+        self.replies({'complete': [LOST, HANDLED], 'publish': [REPLIED]})
+        first = self.run_context(context['finish_reply'], 'Selected result')
+        partial = json.loads(first.stdout)['data']
+        self.assertNotEqual(first.returncode, 0)
+        self.assertFalse(partial['completion_committed'])
+        self.assertTrue(partial['reply_pending'])
+        self.assertNotIn('response', self.journal())
+        pending = coordination.flush_journal(self.config, ATTEMPT)
+        self.assertEqual(pending, set())
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
+        self.assertEqual(self.journal()['response']['status'], 'committed')
+        log = self.log()
+        completions = [entry for entry in log if entry['operation'] == 'complete']
+        self.assertEqual(completions[0], completions[1])
+        self.assertEqual([entry['operation'] for entry in log], ['complete', 'complete', 'publish'])
+
+    def test_finish_reply_recovers_after_completion_before_reply_and_lost_publish(self):
+        context = self.context()
+        self.replies({'complete': [HANDLED], 'publish': [LOST, REPLIED]})
+        first = self.run_context(context['finish_reply'], 'Selected result')
+        partial = json.loads(first.stdout)['data']
+        self.assertNotEqual(first.returncode, 0)
+        self.assertTrue(partial['completion_committed'])
+        self.assertTrue(partial['reply_pending'])
+        self.assertFalse(partial['reply_committed'])
+        original = self.journal()['response']
+        self.assertEqual(original['status'], 'pending')
+        self.assertEqual(coordination.flush_journal(self.config, ATTEMPT), set())
+        log = self.log()
+        self.assertEqual([entry['operation'] for entry in log], ['complete', 'publish', 'publish'])
+        self.assertEqual(log[1], log[2])
+        self.assertEqual(self.journal()['response']['status'], 'committed')
+
+    def test_finish_reply_watcher_materializes_reply_after_completion_crash(self):
+        context = self.context()
+        self.replies({'publish': [REPLIED]})
+        # Durable state after completion commits, before its reply slot is written.
+        target = coordination.intent_path(self.config['state_dir'], ATTEMPT)
+        completion = dict(kind='complete', request_id=context['request_ids']['completion'],
+                          argv=context['commands']['complete'], input='Selected result',
+                          status='committed', code='OK', result=RESULT)
+        intent = dict(argv=context['commands']['respond'], request_id=context['request_ids']['response'])
+        coordination.write_state(target, dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT,
+                                             delivery_id=DELIVERY, kind='request', completion=completion,
+                                             finish_reply=intent))
+        self.assertEqual(coordination.flush_journal(self.config, ATTEMPT), set())
+        self.assertEqual(self.journal()['response']['request_id'], context['request_ids']['response'])
+        self.assertEqual(self.journal()['response']['argv'][-3:], ['--version', '1', RESULT['record_id']])
+        self.assertEqual([entry['operation'] for entry in self.log()], ['publish'])
+
+    def test_finish_reply_refusal_reports_committed_completion_without_closure(self):
+        context = self.context()
+        for code in ('DEADLINE_EXCEEDED', 'DESTINATION_PROHIBITED', 'NOT_FOUND', 'STALE_SESSION'):
+            with self.subTest(code=code):
+                coordination.intent_path(self.config['state_dir'], ATTEMPT).unlink(missing_ok=True)
+                self.replies({'complete': [HANDLED], 'publish': [dict(ok=False, status=code)]})
+                sent = self.run_context(context['finish_reply'], 'Selected result')
+                self.assertNotEqual(sent.returncode, 0)
+                envelope = json.loads(sent.stdout)
+                self.assertFalse(envelope['ok'])
+                self.assertEqual(envelope['status'], code)
+                self.assertTrue(envelope['data']['completion_committed'])
+                self.assertFalse(envelope['data']['reply_pending'])
+                self.assertTrue(envelope['data']['reply_refused'])
+                self.assertFalse(envelope['data']['reply_committed'])
+                self.assertEqual(self.journal()['completion']['status'], 'committed')
+                self.assertEqual(self.journal()['response']['status'], 'refused')
+
+    def test_finish_reply_completion_refusal_never_publishes(self):
+        context = self.context()
+        self.replies({'complete': [dict(ok=False, status='STALE_LEASE')],
+                      'publish': [dict(ok=True, status='OK', data=dict(event_id=EVENT))]})
+        sent = self.run_context(context['finish_reply'], 'Selected result')
+        envelope = json.loads(sent.stdout)
+        self.assertNotEqual(sent.returncode, 0)
+        self.assertFalse(envelope['data']['completion_committed'])
+        self.assertFalse(envelope['data']['reply_committed'])
+        self.assertFalse(envelope['data']['reply_pending'])
+        self.assertEqual([entry['operation'] for entry in self.log()], ['complete'])
+
+    def test_finish_reply_does_not_close_on_mismatched_success_response(self):
+        context = self.context()
+        wrong = dict(ok=True, status='OK', data=dict(event_id=EVENT, ref=dict(record_id=LEASE, version=1)))
+        self.replies({'complete': [HANDLED], 'publish': [wrong, REPLIED]})
+        first = self.run_context(context['finish_reply'], 'Selected result')
+        envelope = json.loads(first.stdout)
+        self.assertNotEqual(first.returncode, 0)
+        self.assertEqual(envelope['status'], 'SCHEMA_MISMATCH')
+        self.assertTrue(envelope['data']['completion_committed'])
+        self.assertTrue(envelope['data']['reply_pending'])
+        self.assertFalse(envelope['data']['reply_committed'])
+        self.assertEqual(self.journal()['response']['status'], 'pending')
+        second = self.run_context(context['finish_reply'], 'Selected result')
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        publishes = [entry for entry in self.log() if entry['operation'] == 'publish']
+        self.assertEqual(publishes[0], publishes[1])
 
     def test_new_admission_pins_result_scope_before_claim(self):
         attempt = self.state.pop('inbox_attempt')

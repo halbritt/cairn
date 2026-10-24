@@ -215,6 +215,26 @@ their own stable operation request IDs, and external effects require an
 idempotent destination. The service does not promise exactly-once arbitrary
 agent behavior. Multiple result effects are outside the atomic completion API.
 
+For a native request inbox context, `finish_reply` is an opt-in command that
+takes the selected result on stdin. It journals the completion and explicit
+reply intent under separate request UUIDs before calling the API, completes the
+delivery, and publishes a response citing that attempt's committed result
+version. The context fixes the original sender, publisher session, causation and
+correlation. The command does not choose the result or assert that the task was
+accepted. The separate `completion` and `response` commands remain available.
+
+The command returns `cairn.finish-reply/1` data with `completion_committed`,
+`reply_pending`, `reply_committed`, `reply_refused`, and the exact confirmed
+result reference. A lost completion or publication response is retried with
+the same saved arguments and UUIDs. A reported publication success must carry
+an event UUID and the exact result reference before the helper marks the reply
+committed. The host can finish a journaled reply after a crash between the two
+stages. A reply refusal leaves the committed result
+visible in the journal and returns a nonzero status; it never reports full
+closure. Response deadlines, stale sessions, source privacy changes, and
+forgetting continue to be enforced by the existing completion and publication
+operations. Retrying with different result text or reply intent refuses.
+
 ## Inspection and recovery
 
 `events` returns a bounded page after a numeric collection position, with the
