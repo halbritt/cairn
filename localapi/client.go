@@ -3,6 +3,8 @@ package localapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,6 +87,13 @@ func NewClient(socket, tokenFile string) (*Client, error) {
 }
 
 func (c *Client) Close() { c.transport.CloseIdleConnections() }
+
+// CredentialFingerprint binds a local retry journal to this authenticated
+// client. It is not a principal or an authorization proof.
+func (c *Client) CredentialFingerprint() string {
+	digest := sha256.Sum256([]byte(c.token))
+	return hex.EncodeToString(digest[:])
+}
 
 func (c *Client) Call(ctx context.Context, operation string, request, response any) error {
 	if operation == "" || strings.Trim(operation, "abcdefghijklmnopqrstuvwxyz-") != "" {

@@ -18,6 +18,7 @@ Everyday operations:
   publish, inbox, ack, complete, retry, renew: durable agent events (use --help)
   subscribe, unsubscribe, subscriptions, events, event-status, event-stats
   remember     Save a selected note using text, --stdin or a JSON draft
+  send         Journal selected assignment source and explicit publication (--help)
   search       Find relevant notes using a query or --browse
   pull         Read a selected note using the returned receipt and handle
   pull-evidence Read a selected supporting source
@@ -61,6 +62,9 @@ The API still owns authorization, version checks and privacy.
 func agentOperationHelp(operation string) (commandHelp, error) {
 	if isEventCommand(operation) {
 		return commandHelp(eventHelp), nil
+	}
+	if operation == "send" {
+		return commandHelp(sendHelp), nil
 	}
 	var detail, example string
 	switch operation {

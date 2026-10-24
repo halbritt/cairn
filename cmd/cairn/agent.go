@@ -76,7 +76,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := isEventCommand(operation) || operation == "clients" || operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
+	commandArgs := isEventCommand(operation) || operation == "clients" || operation == "evidence" || operation == "remember" || operation == "send" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
 	if !commandArgs && f.NArg() != 1 {
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
@@ -84,7 +84,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	case "event-watch":
 	case "agent-register", "agent-context", "agent-heartbeat", "agent-leave", "agent-directory", "agent-resolve", "session-inbox-ready", "session-inbox-pending", "session-inbox-claim", "session-inbox-reconcile", "session-inbox-control", "session-delivery-observe", "session-tool-capture", "session-tool-stop":
 	case "worker-register", "worker-heartbeat", "worker-health", "worker-list", "pool-list", "wake-claim", "wake-attempts", "wake-control", "wake-change", "event-list", "event-inspect", "event-metrics", "event-publish", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "event-group", "event-groups", "response-group", "response-groups":
-	case "version", "clients", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "set-sections", "cite", "assessments", "assessments-page", "history", "recompile", "explain-page":
+	case "version", "clients", "remember", "send", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "set-sections", "cite", "assessments", "assessments-page", "history", "recompile", "explain-page":
 	case "handoff-request-status", "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "recall-observation", "capture-observation", "capture-observations", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
 	default:
 		return nil, invalid("unknown agent operation")
@@ -142,6 +142,9 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 			return nil, err
 		}
 		return result, nil
+	}
+	if operation == "send" {
+		return agentSend(ctx, client, session, f.Args()[1:], input)
 	}
 	if operation == "run" {
 		return runTask(ctx, client, f.Args()[1:])

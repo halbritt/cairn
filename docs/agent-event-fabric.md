@@ -79,6 +79,38 @@ Reserve repository-wide task/run wildcards for selected reusable guidance. Recor
 kind is descriptive: a `note` can be either an assignment or a reusable lesson;
 there is no assignment kind blacklist.
 
+For a selected one-off source and an explicit destination, `agent send` composes
+the two mutations through an owner-only local retry journal:
+
+```sh
+install -d -m 0700 "$HOME/.local/share/cairn/send-journals"
+journal="$HOME/.local/share/cairn/send-journals/assignment-001.json"
+cairn agent --token-file "$token_file" \
+  --agent-id "$sender_agent_id" --execution-id "$sender_execution_id" \
+  send --journal "$journal" --repo "$collection" --stdin --kind request \
+  --shareable --to "$recipient_principal" < assignment.txt
+```
+
+Choose a new journal path for each intended send and retain it for retries.
+Run the same command with the same stdin after a connection failure or process
+restart. The helper writes distinct source and publication UUIDs before its
+first API call, saves under `coordination/<publication-request-UUID>`, and
+publishes the exact returned version. The journal stores a digest and IDs, not
+the assignment body or token. A different body, destination, shareability,
+session or other selected intent with the same journal refuses with
+`IDEMPOTENCY_CONFLICT`.
+
+The result's `source_saved: true` means the source reference was confirmed;
+`source_saved: null` means it remains unconfirmed. `publication_pending: true`
+means the journal still needs a publication retry or reconciliation, including
+when the API response was lost. A publish refusal leaves the confirmed source
+reference available in the result and journal. The helper does not choose a
+recipient, resolve an ambiguous description, register a session, widen a local
+source, or treat publication as task completion. For a fresh resolved recipient,
+pass `--resolution FILE` containing the exact unique `data.resolution` object;
+stale resolution is still refused by publication. Use ordinary `remember` for
+reusable repository guidance. The manual sequence below remains supported.
+
 For an existing authenticated session, choose and retain two different UUIDs once:
 `source_request_id` for remembering the source and `publication_id` for publication.
 Also retain the assignment text, exact returned source reference, destination and
