@@ -16,7 +16,8 @@ operation on auth, quota, route/model drift or a failed admission guard; do not
 substitute an API or OpenRouter route.
 
 The frozen plan requires one stop policy per provider account: exact
-harness/account/purpose, a hash-pinned owner-only JSON caller-recorded status sample, a maximum
+harness/account/purpose, a hash-pinned owner-only JSON caller-recorded status
+sample, a maximum
 used-percentage ceiling, a per-workflow percentage-point reserve, and strictly
 sequential provider admission. The sample must report subscription routing,
 `ordinary_usage_allowed: true`, current utilization, and an expiry. The gate
@@ -110,8 +111,10 @@ addition to `schema`; `source_type` is `caller_recorded` and `measurement` is
 `utilization_status`. Each observed stage
 uses a `capacity_check` with `evidence_path` and `evidence_sha256`; its owner-only
 document adds exact `workflow_id` and `stage_id` fields. Task-stage checks join
-the native turn's `started_at`. Reports also require actor turn intervals not
-to overlap on the same account. The reports validate the stated ceiling and
+the native turn's `started_at`. The plan hash includes its gate-recorded freeze
+time, so report revalidation checks initial status freshness at freeze time
+after that short status window has elapsed. Reports also require all joined
+actor turn intervals to not overlap on the same account. The reports validate the stated ceiling and
 reserve in percentage points, not token units; they do not establish a
 22-case/4-arm capacity guarantee. Capture stages do not have a native provider
 interval join in the current workflow report; capture concurrency therefore

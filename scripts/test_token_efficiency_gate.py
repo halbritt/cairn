@@ -193,6 +193,31 @@ class TokenEfficiencyGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "utilization evidence stale"):
             gate.freeze(plan, self.fixture)
 
+    def test_expired_initial_status_is_checked_at_frozen_time_during_report(self):
+        frozen_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        evidence_path = Path(self.frozen["plan"]["capacity_admission"]["accounts"][0]["evidence_path"])
+        evidence = json.loads(evidence_path.read_text())
+        evidence["observed_at"] = (frozen_at - timedelta(seconds=5)).isoformat()
+        evidence["valid_until"] = (frozen_at + timedelta(seconds=50)).isoformat()
+        evidence_path.write_text(json.dumps(evidence) + "\n")
+        evidence_path.chmod(0o600)
+        self.frozen["plan"]["capacity_admission"]["accounts"][0]["evidence_sha256"] = hashlib.sha256(
+            evidence_path.read_bytes()).hexdigest()
+        self.frozen["plan"]["frozen_at"] = frozen_at.isoformat()
+        self.frozen["plan_sha256"] = gate.sha(self.frozen["plan"])
+        self.observations["plan_sha256"] = self.frozen["plan_sha256"]
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "ready_for_human_grade")
+
+    def test_overlap_sweep_detects_same_account_turns_across_other_accounts(self):
+        base = datetime.now(timezone.utc)
+        intervals = [
+            (base, base + timedelta(seconds=10), "account-a", "long-a"),
+            (base + timedelta(seconds=1), base + timedelta(seconds=2), "account-b", "short-b"),
+            (base + timedelta(seconds=3), base + timedelta(seconds=4), "account-a", "short-a"),
+        ]
+        self.assertEqual(gate.overlapping_provider_turns(intervals), [("short-a", "long-a")])
+
     def test_capacity_is_bound_to_model_and_capture_accounts(self):
         plan = copy.deepcopy(self.plan)
         plan["capacity_admission"]["accounts"][0]["account"] = "other-account"
@@ -526,14 +551,19 @@ class TokenEfficiencyGateTests(unittest.TestCase):
             path.write_text(json.dumps(value))
         frozen, output = root / "frozen.json", root / "report.json"
         script = Path(gate.__file__)
-        for command in (["freeze", "--plan", str(plan), "--fixture", str(self.fixture),
-                         "--output", str(frozen)],
-                        ["report", "--frozen", str(frozen), "--fixture", str(self.fixture),
-                         "--observations", str(observations), "--workflow-report", str(native),
-                         "--output", str(output)]):
-            completed = subprocess.run([sys.executable, str(script), *command],
-                                       capture_output=True, text=True, timeout=10)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+        completed = subprocess.run([sys.executable, str(script), "freeze", "--plan", str(plan),
+                                    "--fixture", str(self.fixture), "--output", str(frozen)],
+                                   capture_output=True, text=True, timeout=10)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        frozen_plan = json.loads(frozen.read_text())
+        observed = json.loads(observations.read_text())
+        observed["plan_sha256"] = frozen_plan["plan_sha256"]
+        observations.write_text(json.dumps(observed))
+        completed = subprocess.run([sys.executable, str(script), "report", "--frozen", str(frozen),
+                                    "--fixture", str(self.fixture), "--observations", str(observations),
+                                    "--workflow-report", str(native), "--output", str(output)],
+                                   capture_output=True, text=True, timeout=10)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(json.loads(output.read_text())["state"], "ready_for_human_grade")
         self.assertEqual(output.stat().st_mode & 0o777, 0o600)
 

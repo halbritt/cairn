@@ -6,6 +6,7 @@ stage IDs to selected, opaque native workflow evidence. Caller observations
 can establish coverage for review, but cannot establish independent acceptance.
 """
 import argparse
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -137,7 +138,10 @@ def validate_plan(plan):
     require(len(pairs) == len(set(pairs)), "duplicate case/arm pair")
     require(set(pairs) == {(case, arm) for case in CASES for arm in ARMS}, "missing case/arm pair")
     require(len(stages) == len(set(stages)), "stage IDs must be globally disjoint")
-    validate_capacity_admission(plan)
+    frozen_at = _utc_timestamp(plan["frozen_at"], "plan: frozen_at") if "frozen_at" in plan else None
+    if frozen_at is not None:
+        require(frozen_at <= datetime.now(timezone.utc), "plan: frozen_at is in the future")
+    validate_capacity_admission(plan, checked_at=frozen_at)
     return plan
 
 
@@ -152,7 +156,7 @@ def _utc_timestamp(value, label):
     return parsed.astimezone(timezone.utc)
 
 
-def validate_capacity_admission(plan):
+def validate_capacity_admission(plan, *, checked_at=None):
     """Require a fresh utilization stop policy for every subscription account."""
     admission = plan.get("capacity_admission")
     require(isinstance(admission, dict)
@@ -190,7 +194,8 @@ def validate_capacity_admission(plan):
         require(type(row["reserve_percentage_points"]) is int
                 and 1 <= row["reserve_percentage_points"] <= 100,
                 f"{purpose}: positive utilization reserve in percentage points required")
-        validate_utilization_evidence(evidence, harness=harness, account=account, row=row)
+        validate_utilization_evidence(evidence, harness=harness, account=account, row=row,
+                                      checked_at=checked_at)
 
 
 def load_capacity_evidence(reference, *, purpose):
@@ -227,7 +232,7 @@ def load_capacity_evidence(reference, *, purpose):
 
 
 def validate_utilization_evidence(evidence, *, harness, account, row, started_at=None,
-                                 workflow_id=None, stage_id=None):
+                                  workflow_id=None, stage_id=None, checked_at=None):
     """Check one owner-only subscription status sample against its frozen stop policy."""
     purpose = row["purpose"]
     evidence_keys = {"schema", "provider", "route", "harness", "account", "source_type", "measurement",
@@ -252,7 +257,7 @@ def validate_utilization_evidence(evidence, *, harness, account, row, started_at
                 f"{purpose}: capacity sample does not identify this workflow and stage")
     observed_at = _utc_timestamp(evidence["observed_at"], f"{purpose}: observed_at")
     valid_until = _utc_timestamp(evidence["valid_until"], f"{purpose}: valid_until")
-    cutoff = started_at or datetime.now(timezone.utc)
+    cutoff = started_at or checked_at or datetime.now(timezone.utc)
     require(observed_at <= cutoff, f"{purpose}: utilization was not checked before provider turn")
     require((cutoff - observed_at).total_seconds() <= 60,
             f"{purpose}: utilization precheck older than 60 seconds")
@@ -268,6 +273,19 @@ def validate_utilization_evidence(evidence, *, harness, account, row, started_at
     require(evidence["used_percent"] + row["reserve_percentage_points"]
             <= row["ceiling_used_percent"],
             f"{purpose}: utilization stop ceiling or per-run reserve reached")
+
+
+def overlapping_provider_turns(intervals):
+    """Return same-account turn overlaps, including non-adjacent interleavings."""
+    latest_end_by_account = {}
+    overlaps = []
+    for started_at, ended_at, account, stage_id in sorted(intervals):
+        previous = latest_end_by_account.get(account)
+        if previous and started_at < previous[0]:
+            overlaps.append((stage_id, previous[1]))
+        if previous is None or ended_at > previous[0]:
+            latest_end_by_account[account] = (ended_at, stage_id)
+    return overlaps
 
 
 def verify_fixture(plan, fixture):
@@ -300,9 +318,13 @@ def verify_fixture(plan, fixture):
 
 
 def freeze(plan, fixture):
-    validate_plan(plan)
-    verify_fixture(plan, fixture)
-    return dict(schema="cairn.token-efficiency-frozen/1", plan_sha256=sha(plan), plan=plan)
+    require(isinstance(plan, dict) and "frozen_at" not in plan, "frozen_at is gate-owned")
+    frozen_plan = copy.deepcopy(plan)
+    frozen_plan["frozen_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    validate_plan(frozen_plan)
+    verify_fixture(frozen_plan, fixture)
+    return dict(schema="cairn.token-efficiency-frozen/1", plan_sha256=sha(frozen_plan),
+                plan=frozen_plan)
 
 
 def verify_frozen(frozen, fixture):
@@ -570,10 +592,8 @@ def report(frozen, fixture, observations, native):
         if state == "observed" and not native_joined:
             counts["unjoined_observed_runs"] += 1
             problems.append(f"{workflow_id}: observed workflow has no native joined stage")
-    provider_intervals.sort()
-    for previous, current in zip(provider_intervals, provider_intervals[1:]):
-        if previous[2] == current[2] and current[0] < previous[1]:
-            problems.append(f"{current[3]}: provider turn overlaps {previous[3]} under sequential admission")
+    problems.extend(f"{stage_id}: provider turn overlaps {previous} under sequential admission"
+                    for stage_id, previous in overlapping_provider_turns(provider_intervals))
     if counts["missing_runs"] or counts["missing_stages"]:
         problems.append("planned workflow or stage missing")
     return dict(schema="cairn.token-efficiency-gate-report/1",
