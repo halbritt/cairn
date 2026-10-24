@@ -42,12 +42,52 @@ required-source recovery. A task grader must also check usefulness; observed
 tool calls and model assertions alone do not establish task success. Keep every
 failed, refused and unknown run in the report rather than dropping it.
 
+## Mechanical fixture gate
+
+`scripts/token_efficiency_gate.py` freezes and checks this panel without calling
+a provider. It complements `trial_task_eval.py`'s existing corpus freeze and
+`workflow_model_report.py`'s native usage join. The private fixture is JSON with
+schema `cairn.token-efficiency-fixture/1` and the 22 ordered case IDs, each with
+a nonempty `acceptance_check`. The plan pins its file hash and each check's
+canonical JSON hash. It also fixes the model, effort, subscription route,
+account, limits, four arm commits, API/ordinary/inbox/client pins, and one
+workflow per case and arm. Stage IDs are globally distinct; each stage names
+its role and the pin it expects.
+
+```sh
+python3 -B scripts/token_efficiency_gate.py freeze \
+  --plan private-plan.json --fixture private-fixture.json --output private-frozen.json
+python3 -B scripts/token_efficiency_gate.py report \
+  --frozen private-frozen.json --fixture private-fixture.json \
+  --observations private-observations.json \
+  --workflow-report private-workflows.json --output private-gate-report.json
+```
+
+The observation ledger names every planned workflow and stage. Sender stages
+join by the exact opaque workflow event; recipient stages also join by the
+exact opaque attempt. Its selected native workload label must equal the frozen
+workflow ID, including the arm; an event from the same case in another arm
+therefore fails the join. The native report must carry the matching provider
+model, effort and selected pin. Every observed stage's declared route and four
+pins must match the frozen plan. Failed stages need an explicit disposition; unrun,
+missing, unknown and failed work remain in their denominators. A null usage
+field remains unknown even if its provider turn joined. The gate never adds
+shared-turn token fields into an event saving.
+
+`ready_for_human_grade` means the mechanical panel is complete enough for an
+independent task grader to review. It does **not** mean a task passed. The
+output always states `independent_task_acceptance=unassessed` and
+`release_decision=defer`, even when caller JSON asserts success. Missing joins,
+byte-only evidence, route/model/pin drift or an unrun case yield `incomplete`.
+The local test uses a synthetic 22-case, four-arm panel; no real paired plan
+or provider result is frozen by that test.
+
 ## Evidence currently available
 
 | Evidence | Established | Still missing for this gate |
 | --- | --- | --- |
 | [Baseline](token-efficiency-baseline-2026-10-23.json) and CAIRN-214 workflow join | Retrospective model usage and a partial exact workflow join; missingness is visible. | Matched candidate outcomes, complete sender/recipient/capture allocation and causal savings. |
-| CAIRN-215/216/219/220/222/224 candidates; CAIRN-221 integration branch | Opt-in or shadow source slices and local fixtures. CAIRN-220 passed the full disposable PostgreSQL integration gate; CAIRN-221 had not landed at this register date. | Selected capability enablement, paired accepted tasks, live rollback and latency/actionability checks. |
+| CAIRN-215/216/219/220/221/222/224 candidates | Opt-in or shadow source slices and local fixtures. CAIRN-220 and CAIRN-221 passed disposable PostgreSQL integration; CAIRN-224's local failure matrix passed. | Selected capability enablement, paired accepted tasks, live rollback and latency/actionability checks. |
 | [CAIRN-223 pilot](source-fit-2026-10-24.md) | Six synthetic source cases; seven completed native task runs. | The eighth run exceeded the frozen ceiling and is unscored; seven arms were unrun. Native tool recovery and complete-source acceptance remain open. |
 | [CAIRN-225 schema audit](schema-exposure-2026-10-24.md) | Read-only Claude declaration exposure and whole-response cache accounting; source compact profile preserves tool schemas. | Observed compact provider requests, Codex/OpenCode comparable request exposure, true retry/resume and accepted-task effects. |
 | Effective recall deployment inventory | On 2026-10-24, `check_effective_recall_deployment.py --compact` verified four ordinary hooks, three inbox bindings and fixture renders without writing to them. | `live_observed=false`: the inventory does not prove a native turn loaded the newer opt-in code or wording. |
