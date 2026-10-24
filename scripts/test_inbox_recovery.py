@@ -997,6 +997,39 @@ class InboxRecovery(unittest.TestCase):
         self.assertTrue(diag.get('reminded'))
         self.assertEqual(diag.get('outcome'), 'processing_failed')
 
+    def test_reminder_revision_suppresses_identical_content_and_surfaces_changed_command(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
+        context = self.context()
+        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        target.write_text(json.dumps(dict(context, kind='response')))
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        with unittest.mock.patch.object(coordination, 'renew_inbox') as renew:
+            first = coordination.unacknowledged_turn_end_reminder(config, self.state, self.path, observation)
+            first_revision = self.state['inbox_ack_reminder_revision']['sha256']
+            self.assertIn(shlex.join(context['acknowledgement']), first)
+            self.assertEqual(coordination.unacknowledged_turn_end_reminder(
+                config, self.state, self.path, observation), '')
+            self.assertEqual(renew.call_count, 1)
+
+            changed = dict(context)
+            changed['acknowledgement'] = [*context['acknowledgement'], '--recovery-recheck']
+            target.write_text(json.dumps(dict(changed, kind='response')))
+            second = coordination.unacknowledged_turn_end_reminder(config, self.state, self.path, observation)
+            self.assertIn(shlex.join(changed['acknowledgement']), second)
+            self.assertNotEqual(self.state['inbox_ack_reminder_revision']['sha256'], first_revision)
+            self.assertEqual(renew.call_count, 2)
+
+    def test_legacy_attempt_only_reminder_marker_stays_suppressed(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
+        self.context()
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        self.state['inbox_ack_reminded'] = ATTEMPT
+        self.assertEqual(coordination.unacknowledged_turn_end_reminder(
+            config, self.state, self.path, observation), '')
+        self.assertNotIn('inbox_ack_reminder_revision', self.state)
+
     def test_acknowledging_after_turn_end_reminder_completes_cleanly(self):
         self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
         context = self.context()

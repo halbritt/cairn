@@ -1882,7 +1882,8 @@ def advance_batch_intent(config, state, path):
         state['inbox_intent'] = dict(request_id=next_attempt['attempt_id'], session=request['session'],
                                      native_turn_id=next_attempt['native_turn_id'])
         state['inbox_result_policy'] = dict(claim_request_id=next_attempt['attempt_id'], version=1)
-        for key in ('inbox_close', 'inbox_completion', 'inbox_response', 'inbox_ack_reminded'):
+        for key in ('inbox_close', 'inbox_completion', 'inbox_response', 'inbox_ack_reminded',
+                    'inbox_ack_reminder_revision'):
             state.pop(key, None)
     state.pop('batch_advance_intent')
     write_state(path, state)
@@ -2116,7 +2117,8 @@ def release_inbox(config, state, path, reason, fenced=False):
 
 def clear_inbox(state, path):
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'batch_advance_intent', 'held_refusal_observation',
+                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'inbox_ack_reminder_revision',
+                'batch_advance_intent', 'held_refusal_observation',
                 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
                 'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
@@ -2910,7 +2912,6 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
             or attempt.get('session') != session_ref(state.get('agent') or {})
             or attempt.get('finished_at') or attempt.get('cancel') or attempt.get('lease_lapsed')
             or (state.get('active_prompt') or {}).get('joined')
-            or state.get('inbox_ack_reminded') == attempt_id
             or not attempt_commands_absent(config, attempt)):
         return ''
     target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
@@ -2925,35 +2926,52 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
         fallback = context.get('compact_fallback_control')
         if not isinstance(fallback, str) or not fallback:
             raise CoordinationError('INVALID_HOST', 'unavailable source has no settlement instructions')
-    renew_inbox(config, state, path, attempt)
-    if attempt.get('lease_lapsed'):
-        return ''
-    state['inbox_ack_reminded'] = attempt_id
-    state['delivered_since_idle'] = True
-    if config.get('harness') == 'claude' and observation.get('native_turn_id'):
-        state['active_prompt'] = dict(id=observation['native_turn_id'])
-    write_state(path, state)
     kind = ((attempt.get('delivery') or {}).get('event') or {}).get('kind') or context.get('kind') or 'inbox'
     if fallback:
-        return (f"Cairn inbox reminder: attempt {attempt_id} still needs an explicit outcome. "
-                f"{fallback} Ending the turn again without settlement will record this delivery "
-                "as processing_failed.")
-    if kind in ('response', 'notice') and isinstance(context.get('acknowledgement'), list):
+        reminder = (f"Cairn inbox reminder: attempt {attempt_id} still needs an explicit outcome. "
+                    f"{fallback} Ending the turn again without settlement will record this delivery "
+                    "as processing_failed.")
+    elif kind in ('response', 'notice') and isinstance(context.get('acknowledgement'), list):
         ack_cmd = shlex.join(context['acknowledgement'])
-        return (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has not been "
-                f"acknowledged yet. Run the exact acknowledgement command before ending your turn: {ack_cmd}. "
-                "Ending the turn again without acknowledging will record this delivery as processing_failed.")
-    if isinstance(context.get('completion'), list):
+        reminder = (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has not been "
+                    f"acknowledged yet. Run the exact acknowledgement command before ending your turn: {ack_cmd}. "
+                    "Ending the turn again without acknowledging will record this delivery as processing_failed.")
+    elif isinstance(context.get('completion'), list):
         command = context.get('finish_reply') or context['completion']
         comp_cmd = shlex.join(command)
         reply_hint = ('' if context.get('finish_reply') else
                       f" Then send the reply with {shlex.join(context['response'])} --version RESULT_VERSION RESULT_RECORD_UUID."
                       if isinstance(context.get('response'), list) else '')
-        return (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has no journaled "
-                f"completion yet. Run the exact command with a concise selected result on stdin before ending "
-                f"your turn: {comp_cmd}.{reply_hint} "
-                "Ending the turn again without completion will record this delivery as processing_failed.")
-    return ''
+        reminder = (f"Cairn inbox reminder: this turn received a {kind} (attempt {attempt_id}) that has no journaled "
+                    f"completion yet. Run the exact command with a concise selected result on stdin before ending "
+                    f"your turn: {comp_cmd}.{reply_hint} "
+                    "Ending the turn again without completion will record this delivery as processing_failed.")
+    else:
+        return ''
+
+    # Deduplicate an unchanged recovery prompt, but allow changed actionable
+    # instructions for the same attempt. Old attempt-only markers are retained
+    # conservatively because their former prompt revision is unknown.
+    prior = state.get('inbox_ack_reminder_revision')
+    if state.get('inbox_ack_reminded') == attempt_id:
+        if not isinstance(prior, dict) or prior.get('attempt_id') != attempt_id:
+            return ''
+    revision = hashlib.sha256(json.dumps(
+        dict(attempt_id=attempt_id, journal_state=journal_completion_state(config, attempt), reminder=reminder),
+        sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+    if isinstance(prior, dict) and prior.get('attempt_id') == attempt_id and prior.get('sha256') == revision:
+        return ''
+
+    renew_inbox(config, state, path, attempt)
+    if attempt.get('lease_lapsed'):
+        return ''
+    state['inbox_ack_reminded'] = attempt_id
+    state['inbox_ack_reminder_revision'] = dict(attempt_id=attempt_id, sha256=revision)
+    state['delivered_since_idle'] = True
+    if config.get('harness') == 'claude' and observation.get('native_turn_id'):
+        state['active_prompt'] = dict(id=observation['native_turn_id'])
+    write_state(path, state)
+    return reminder
 
 
 def inbox_context(config, state, path, observation, wake_binding=None):

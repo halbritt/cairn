@@ -465,6 +465,17 @@ Retest busy/joined owner input, transient provider failure, refusal before/after
 grant, stalled drain, expired lease and relay uncertainty. Model-free transport
 retries require established idempotence and cannot reinterpret application errors.
 
+Implemented offline slice (CAIRN-226): the native turn-end reminder records a
+revision hash over the exact rendered recovery instruction, attempt identity and
+journal state. Repeated identical reminders for the same attempt are suppressed;
+changed actionable instructions can be surfaced. Legacy attempt-only markers
+remain conservatively suppressed because their old instruction cannot be
+reconstructed. `scripts/test_inbox_recovery.py` covers identical and changed
+instructions plus legacy state. This bounds the reminder mechanism only; it
+does not measure model responses or token savings. Exact model-work attribution,
+the cross-failure acceptance matrix and effective deployment verification still
+depend on CAIRN-214 and remain open.
+
 Add local regression workloads and deploy inventory to every resulting slice.
 Store changes require disposable PostgreSQL integration tests and `make check`.
 No GitHub Actions. Verify actual ordinary-hook and separately pinned inbox routes,
