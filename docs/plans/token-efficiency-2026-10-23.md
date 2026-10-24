@@ -531,7 +531,9 @@ panel is separate work with explicit resource limits and a stop/defer result.
 
 The validated Pincite release is `d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`,
 corpus `corpus-2026-07-12-a11702cc9217`, doctrine
-`doctrine-f6bbb5196a3f8bf9`. The performance packet applied evidence-before-
+`doctrine-f6bbb5196a3f8bf9`. Packet `pkt-e685b461697fbefb`, content SHA-256
+`e685b461697fbefb2e299e9041e01fe91c8fc08d66f359efca13d609d3c824d6`, retriever
+`retriever-ec995ecdd083b2c8` applied evidence-before-
 intervention, explicit invariants, semantic preservation, information hiding
 and the no-change option. Repository contracts and owner authorization govern.
 Evidence supports prioritizing bounded experiments and implementation tickets;
@@ -544,5 +546,26 @@ read-only audit but become material when their corresponding code changes occur.
 The report and tickets were checked against source, deployed pins, actual retained
 usage and existing issues using the docs guard. Tests cover cumulative-accounting
 double count, streaming duplicates, missing reasoning, partial payloads, failed
-acknowledgments and incomplete log lines. These tests validate the audit's narrow
+acknowledgments, incomplete log lines and image exclusion. These tests validate the audit's narrow
 accounting behavior; they do not validate proposed remediations.
+
+## Plane execution backlog
+
+[CAIRN-213 initiative](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/9d3a3c73-30b8-482e-bbf5-54ee74e69d40/). All children are unassigned Backlog work items; project has no existing labels. Native parent relationships and written dependencies were read back and verified. The installed CLI and available tools do not expose relation creation, so dependencies below are explicit links, not native blocking edges.
+
+| Item | Scope | Blocked by |
+| --- | --- | --- |
+| [CAIRN-214](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/d40c7276-8a1b-4d32-b18c-771eec922aab/) | Join native model usage to complete Cairn workflows without retaining payloads | None |
+| [CAIRN-215](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/a309a059-1ca2-4203-b366-25eca6db06fa/) | Retain auxiliary capture usage and outcomes under the triggering session | None |
+| [CAIRN-216](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/97cf7b05-9313-4974-bba9-80b4b6933729/) | Deliver compact scoped notice and response envelopes with explicit settlement | CAIRN-214 |
+| [CAIRN-217](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/b5dd7513-b53a-496c-bf1b-f20fee1026fe/) | Compose request completion and reply in one journaled agent operation | CAIRN-214 |
+| [CAIRN-218](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/ab45e94e-deea-4bf2-bddd-cdf6130c4a09/) | Publish selected task-scoped sources through one retry-safe sender action | CAIRN-214 |
+| [CAIRN-219](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/40436051-5386-4852-ad51-8b73b1cba7b5/) | Reduce residual recall framing while preserving whole-source access and diagnostics | CAIRN-214 |
+| [CAIRN-220](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/901058ad-2448-47ef-83b5-a04d76d84919/) | Add explicit routine-notice urgency and bounded wake deferral policy | CAIRN-214 |
+| [CAIRN-221](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/6e8fff37-e2a3-4cf0-9565-424a5621a339/) | Handle bounded already-waiting notices in one native turn with per-item outcomes | CAIRN-216 |
+| [CAIRN-222](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/ee01fb33-3589-4a67-9f21-bd65818dd0b2/) | Avoid unnecessary capture calls without losing corrections or unfinished-work recovery | CAIRN-215, CAIRN-214 |
+| [CAIRN-223](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/71eb904e-c721-4c08-a987-c2dc3e25905e/) | Test oversized-note and wrong-project recall remedies against complete-source task outcomes | CAIRN-214, CAIRN-219 |
+| [CAIRN-224](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/fdb21808-ebf7-4117-8bd5-2e5da57db726/) | Preserve minimal coordination and memory state across native compaction and resume | CAIRN-214, CAIRN-216, CAIRN-219 |
+| [CAIRN-225](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/195e63e0-1650-40da-bf1e-37f4d5229bb9/) | Measure and reduce Cairn bootstrap and tool discovery overhead per harness | CAIRN-214 |
+| [CAIRN-226](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/e177f5e9-53d3-474d-a988-317bc72be697/) | Measure and bound model work caused by delivery failures and recovery reminders | CAIRN-214 |
+| [CAIRN-227](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/6dccdad9-9c0c-4ebd-b613-f73090e4bdd2/) | Gate token-efficiency rollout on matched workflow quality and effective deployment evidence | CAIRN-214, CAIRN-215, CAIRN-216, CAIRN-217, CAIRN-218, CAIRN-219, CAIRN-220, CAIRN-221, CAIRN-222, CAIRN-223, CAIRN-224, CAIRN-225, CAIRN-226 |

@@ -96,6 +96,7 @@ def analyze_codex(path, since, until):
     current = None
     usage_ids = set()
     versions = set()
+    recall_metrics = []
     for r in records(path, errors):
         p = r.get("payload", {})
         typ = r.get("type")
@@ -127,11 +128,11 @@ def analyze_codex(path, since, until):
             usage_ids.add(rid)
             u = p.get("usage", {})
             target = turns[p.get("turn_id") or current]
-            target["usage"].append({"input": u.get("input_tokens", 0),
-                "cached": u.get("cached_input_tokens", 0),
-                "write": u.get("cache_write_input_tokens", 0),
-                "output": u.get("output_tokens", 0),
-                "reasoning": u.get("reasoning_output_tokens", 0)})
+            target["usage"].append({"input": u.get("input_tokens"),
+                "cached": u.get("cached_input_tokens"),
+                "write": u.get("cache_write_input_tokens"),
+                "output": u.get("output_tokens"),
+                "reasoning": u.get("reasoning_output_tokens")})
         elif typ == "event_msg" and p.get("type") == "task_complete":
             target = turns[p.get("turn_id") or current]
             target.update(completed=True, end=ts)
@@ -155,7 +156,26 @@ def analyze_codex(path, since, until):
                             t["kinds"].append(k)
                     if any(m in text for m in MARKERS):
                         t["contexts"].append(counts(text))
-    return dict(turns=dict(turns), errors=dict(errors), versions=sorted(versions))
+                    at = text.find('{"selected":')
+                    if "Cairn candidates/openings" in text and at >= 0:
+                        try:
+                            recall = json.JSONDecoder().raw_decode(text[at:])[0]
+                        except json.JSONDecodeError:
+                            errors["invalid_recall_json"] += 1
+                            continue
+                        row = dict(total_bytes=len(text.encode()), source_bytes=0, partial=0, whole=0,
+                                   query_truncated=recall.get("candidate_search", {}).get("discovery", {}).get("query_projection", {}).get("truncated"))
+                        for item in recall.get("candidate_bodies", []):
+                            response = item.get("response", {})
+                            record = response.get("selection", {}).get("record", {})
+                            span = response.get("span") or {}
+                            row["source_bytes"] += len((record.get("body", "") + span.get("body", "")).encode())
+                            row["partial"] += response.get("source_extent") == "partial_span"
+                            row["whole"] += bool(record.get("body"))
+                        for selection in recall.get("selected", []):
+                            row["source_bytes"] += len(selection.get("record", {}).get("body", "").encode())
+                        recall_metrics.append(row)
+    return dict(turns=dict(turns), errors=dict(errors), versions=sorted(versions), recall_metrics=recall_metrics)
 
 
 def analyze_claude(path, since, until):
@@ -226,9 +246,10 @@ def analyze_claude(path, since, until):
             if mid and u:
                 # Streaming blocks repeat message id; retain the last usage,
                 # never sum each block's duplicate input accounting.
-                responses[mid] = (current, {"input": u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0),
-                    "cached": u.get("cache_read_input_tokens", 0), "write": u.get("cache_creation_input_tokens", 0),
-                    "output": u.get("output_tokens", 0),
+                input_fields = [u.get(k) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")]
+                responses[mid] = (current, {"input": sum(input_fields) if all(v is not None for v in input_fields) else None,
+                    "cached": u.get("cache_read_input_tokens"), "write": u.get("cache_creation_input_tokens"),
+                    "output": u.get("output_tokens"),
                     "reasoning": (u.get("output_tokens_details") or {}).get("thinking_tokens")})
             for block in p.get("content", []):
                 if block.get("type") == "tool_use":
@@ -272,6 +293,7 @@ def summarize(sessions):
         row = {"turns": len(turns), "native_completed": sum(t["completed"] for t in turns),
                "models": sorted({m for t in turns for m in t["models"]}),
                "compactions": sum(t["compactions"] for t in turns)}
+        row["missing_usage_fields"] = dict(collections.Counter(k for t in turns for u in t["usage"] for k, v in u.items() if v is None))
         for field in ("input", "cached", "write", "output", "reasoning"):
             values = [sum(u[field] for u in t["usage"] if u[field] is not None) for t in turns if t["usage"] and any(u[field] is not None for u in t["usage"])]
             row[field] = distribution(values)

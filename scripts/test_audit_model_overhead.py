@@ -20,7 +20,7 @@ class AccountingTests(unittest.TestCase):
             return getattr(self.audit, "analyze_"+harness)(path, 0, 2000000000)
 
     def test_codex_response_records_not_cumulative_or_duplicate(self):
-        usage = dict(input_tokens=100, cached_input_tokens=80, output_tokens=12, reasoning_output_tokens=5)
+        usage = dict(input_tokens=100, cached_input_tokens=80, cache_write_input_tokens=0, output_tokens=12, reasoning_output_tokens=5)
         record = dict(type="token_usage_record", payload=dict(turn_id="t", response_id="r", usage=usage,
                       thread_token_usage=dict(input_tokens=99999)))
         result = self.run_records([
@@ -79,6 +79,14 @@ class AccountingTests(unittest.TestCase):
             path.write_text('{"type":"session_meta","payload":{}}\n{"type":')
             result = self.audit.analyze_codex(path, 0, 2000000000)
             self.assertEqual(result["errors"]["partial_lines"], 1)
+
+    def test_image_payload_is_not_counted_as_text(self):
+        result = self.run_records([
+            dict(type="api-request-blob", hash="a", message=dict(role="user", content=[
+                dict(type="text", text="Cairn inbox: fixture"),
+                dict(type="image", source=dict(data="a"*100000))])),
+            dict(type="api-request", keep=0, tail=["a"], querySource="fixture")], "claude")
+        self.assertLess(result["request_metrics"][0]["cairn_message_bytes"], 100)
 
 
 if __name__ == "__main__":

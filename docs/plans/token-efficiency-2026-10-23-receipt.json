@@ -1,0 +1,215 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-token-efficiency-2026-10-23",
+  "question": "Which bounded measurement and remediation experiments should enter the Cairn backlog, without claiming production optimization acceptance?",
+  "scope": [
+    "measurement",
+    "remediation planning",
+    "Plane backlog"
+  ],
+  "status": "recommended",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "2026-10-23 explicit goal and work-instance clarification",
+    "authorized_scope": [
+      "read-only investigation",
+      "bounded instrumentation and isolated experiments",
+      "plan and create/update Plane work items",
+      "integrate audit artifacts; remediation implementation remains future work"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-token-requirements",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized investigation, measurement, bounded experiments, planning and backlog; full remediation implementation is excluded.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/.cache/agent-worktrees/cairn/token-efficiency-541/docs/plans/token-efficiency-2026-10-23.md",
+          "method": "read-only source/retained-log audit or local unittest execution, as described",
+          "content_sha256": "2bc463589f7716a15a8c93c48e8737a1a1363866e5124422872d843bb1af4542"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "task scope and authority statement",
+        "a bounded decision question"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-token-runtime",
+      "evidence_class": "evidence-runtime-observation",
+      "summary": "Retained native provider usage, emitted recall context and journal joins establish observed overhead with sampling/attribution limitations; no causal savings claim.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/.cache/agent-worktrees/cairn/token-efficiency-541/docs/verification/token-efficiency-baseline-2026-10-23.json",
+          "method": "read-only source/retained-log audit or local unittest execution, as described",
+          "content_sha256": "7bc6c168550adb228ea315a55fc4a93901a2c4170543aebb1f0d6e8ec94c6c55"
+        }
+      ],
+      "satisfies": [
+        "observations",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "actual current cost/risk or absence within a stated interval"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-token-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Six synthetic audit accounting tests passed; they check cumulative and streaming duplication, missing usage details, partial blobs, failed acknowledgment and partial lines, not future remediation behavior.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/.cache/agent-worktrees/cairn/token-efficiency-541/scripts/test_audit_model_overhead.py",
+          "method": "read-only source/retained-log audit or local unittest execution, as described",
+          "content_sha256": "487cf4c8761ae7c47391db62d8ded3ae5304f9848538e06f5bbdeba2259057a6"
+        }
+      ],
+      "satisfies": [
+        "tests, characterization, probes, or explicit residual risk"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "observed-overhead",
+      "type": "observation",
+      "text": "Retained sampled native usage and exact journal joins establish repeated model work and incomplete marginal attribution.",
+      "evidence": [
+        "cairn-token-runtime"
+      ]
+    },
+    {
+      "id": "bounded-backlog",
+      "type": "recommendation",
+      "text": "Prioritize workflow/capture metering and compact notice/memory interfaces; evaluate batching, capture gating and context changes under correctness and usefulness gates. This is not production acceptance.",
+      "depends_on": [
+        "observed-overhead"
+      ],
+      "alternatives": [
+        "Leave production unchanged pending measurements",
+        "Use byte-only estimates",
+        "Broad summarization or autonomous coalescing"
+      ],
+      "tradeoffs": [
+        "Instrumentation and compatibility effort",
+        "Lower context can add retrieval turns or lose qualifications",
+        "Batching can increase latency or weaken per-item recovery unless explicitly designed"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Bounded measured slices with reversible capabilities",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-token-runtime",
+        "cairn-token-requirements"
+      ]
+    },
+    {
+      "option": "Treat all notice traffic as useless and suppress it",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-token-runtime"
+      ]
+    },
+    {
+      "option": "Claim quota savings from bytes or uncontrolled total usage",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-token-runtime"
+      ]
+    },
+    {
+      "option": "Broad model-based summarization/ranking expansion",
+      "disposition": "deferred",
+      "evidence": [
+        "cairn-token-runtime"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/plans/token-efficiency-2026-10-23.md",
+    "docs/verification/token-efficiency-baseline-2026-10-23.json",
+    "scripts/audit_model_overhead.py",
+    "CAIRN-213 through CAIRN-227",
+    "pkt-e685b461697fbefb",
+    "e685b461697fbefb2e299e9041e01fe91c8fc08d66f359efca13d609d3c824d6"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Audit accounting tests pass; aggregate report excludes raw content.",
+    "Actual Plane children and parent links read back.",
+    "Future remediations need paired accepted tasks, full workflow costs and preservation controls."
+  ],
+  "reopening_conditions": [
+    "Provider/harness/accounting schemas change",
+    "Effective deployment differs",
+    "Paired task quality or reliability regresses",
+    "New measurements change impact ranking"
+  ],
+  "residual_risk": [
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: affected behavior and state",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: decision owner",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: repository contract",
+    "Material to production implementation/acceptance, which is not claimed: reversibility and verification",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: causal explanation",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: changed path exercised after repair",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: failing reproduction before repair",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: first divergence",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: relevant regression evidence",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: discriminating checks",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: expected behavior and authority to observe",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: expected contract",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: hypothesis ledger",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: stable reproduction or explicit inability",
+    "Material to production implementation/acceptance, which is not claimed: cancellation, shutdown, and cleanup tests",
+    "Material to production implementation/acceptance, which is not claimed: capacity/backpressure and error propagation",
+    "Material to production implementation/acceptance, which is not claimed: explicit lifecycle and failure policy",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: ownership and lifecycle map",
+    "Material to production implementation/acceptance, which is not claimed: retention and contention measurement where reused",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: before/after checks of non-target resources and quality",
+    "Material to production implementation/acceptance, which is not claimed: behavior tests including boundaries and errors",
+    "Material to production implementation/acceptance, which is not claimed: concurrency/order/lifetime tests where relevant",
+    "Material to production implementation/acceptance, which is not claimed: explicit preservation matrix",
+    "Material to production implementation/acceptance, which is not claimed: proc-establish-preservation-boundaries",
+    "Material to production implementation/acceptance, which is not claimed: evidence-benchmarks",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: evidence-operational-constraints",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: evidence-profiling",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: alternatives including no change where viable",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: evidence connecting the proposed action to the condition",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: accepted policy or current relied-upon constraint",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: all mutation/creation paths and authority",
+    "Material to production implementation/acceptance, which is not claimed: failure and recovery requirements",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: identified authoritative owner",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: actual caller needs",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: caller needs and decision owner",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: decision owner and volatility",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: leaked knowledge or coordinated change",
+    "Material to production implementation/acceptance, which is not claimed: material cost/failure semantics callers require",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: representative change or use scenario",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: representative change scenario",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: state, invariant, and dependency ownership",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: expected future change from accepted plans",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: intervention cost and uncertainty",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: proc-decide-leave-code-alone",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: accepted desired behavior and semantic authority",
+    "Material to production implementation/acceptance, which is not claimed: preservation matrix and consumers",
+    "Material to production implementation/acceptance, which is not claimed: proc-establish-preservation-boundaries",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: current source, configuration, and relevant runtime state",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: repository instructions from root through target path",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: target repository and task scope",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: user instruction and authority",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: change-type classification",
+    "Material to production implementation/acceptance, which is not claimed: checkpoint verification",
+    "Nonmaterial to the narrower decision to create bounded experiment tickets; revisit during implementation: per-edit change classification",
+    "Material to production implementation/acceptance, which is not claimed: preservation boundary and semantic authority"
+  ]
+}

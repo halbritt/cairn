@@ -12,6 +12,7 @@
         "claude-fable-5-1"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 3,
         "sum": 5517263,
@@ -100,6 +101,7 @@
         "claude-fable-5-1"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 5,
         "sum": 2078036,
@@ -191,6 +193,9 @@
         "claude-sonnet-5-5"
       ],
       "compactions": 3,
+      "missing_usage_fields": {
+        "reasoning": 1
+      },
       "input": {
         "n": 394,
         "sum": 770334514,
@@ -280,6 +285,7 @@
         "claude-sonnet-5-5"
       ],
       "compactions": 4,
+      "missing_usage_fields": {},
       "input": {
         "n": 162,
         "sum": 652126884,
@@ -368,6 +374,7 @@
         "claude-fable-5-1"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 1,
         "sum": 203498143,
@@ -457,6 +464,9 @@
         "claude-opus-5-5"
       ],
       "compactions": 0,
+      "missing_usage_fields": {
+        "reasoning": 1
+      },
       "input": {
         "n": 31,
         "sum": 159686737,
@@ -545,6 +555,7 @@
         "claude-opus-5-5"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 5,
         "sum": 7674632,
@@ -633,6 +644,7 @@
         "gpt-6-astra"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 0
       },
@@ -696,6 +708,7 @@
         "gpt-6-astra"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 0
       },
@@ -761,6 +774,7 @@
         "gpt-6.1-sol"
       ],
       "compactions": 141,
+      "missing_usage_fields": {},
       "input": {
         "n": 1529,
         "sum": 2973556290,
@@ -850,6 +864,7 @@
         "gpt-6.1-sol"
       ],
       "compactions": 26,
+      "missing_usage_fields": {},
       "input": {
         "n": 503,
         "sum": 456537293,
@@ -939,6 +954,7 @@
         "gpt-6.1-sol"
       ],
       "compactions": 24,
+      "missing_usage_fields": {},
       "input": {
         "n": 88,
         "sum": 401446181,
@@ -1028,6 +1044,7 @@
         "gpt-6.1-sol"
       ],
       "compactions": 10,
+      "missing_usage_fields": {},
       "input": {
         "n": 148,
         "sum": 87369721,
@@ -1117,6 +1134,7 @@
         "gpt-6.1-sol"
       ],
       "compactions": 0,
+      "missing_usage_fields": {},
       "input": {
         "n": 5,
         "sum": 1542518,
@@ -1220,7 +1238,8 @@
       "Native end and committed acknowledgment do not establish task usefulness.",
       "Provider usage is whole-response; cached input and reasoning are subsets.",
       "Incomplete Claude request blobs prevent complete attribution; no raw message text is published."
-    ]
+    ],
+    "analyzer_revision": "final accounting adds null usage fields, image exclusion, frozen manifest and exact journal joins; see associated commit"
   },
   "bounded_notice_workflows": {
     "codex": {
@@ -1425,5 +1444,13 @@
     },
     "repeated_source_recipient_groups": 2,
     "extra_deliveries": 2
+  },
+  "recall_text": {
+    "blocks": 139,
+    "total_bytes": 641473,
+    "source_bytes": 71377,
+    "partial": 72,
+    "whole": 20,
+    "truncated_query_projections": 15
   }
 }
