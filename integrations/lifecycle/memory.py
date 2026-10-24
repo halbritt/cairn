@@ -1236,7 +1236,9 @@ def optional_delivery_view(candidate):
 
 def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None, observer=None):
     measure = measure or (lambda text: len(text.encode()))
-    view_name = (getattr(observer, 'config', {}) or {}).get('recall_view', 'full')
+    observer_config = getattr(observer, 'config', None)
+    view_name = (observer_config.get('recall_view', 'full')
+                 if isinstance(observer_config, dict) else 'full')
     if view_name not in ('full', 'compact/1'):
         raise HookError('invalid lifecycle recall_view: expected full or compact/1')
     cue = (COMPACT_AGENT_TOOLS_CUE if view_name == 'compact/1' else AGENT_TOOLS_CUE).format(budget=budget)

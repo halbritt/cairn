@@ -129,7 +129,11 @@ class CodexTurnBudgetTests(unittest.TestCase):
     def test_capture_and_binding_reset_preserve_independent_ledger(self):
         self.invoke()
         before = self.ledger_path().read_bytes()
-        with patch.object(hook, 'capture', return_value={}):
+        def capture_without_writes(memory, event, state):
+            state['last_capture'] = dict(outcome='unchanged')
+            return {}
+
+        with patch.object(hook, 'capture', side_effect=capture_without_writes):
             self.invoke(hook_event_name='PreCompact', workstream='Different binding')
         self.assertEqual(self.ledger_path().read_bytes(), before)
         self.assertEqual(self.text(self.invoke(retained_record_ids=[])), '')

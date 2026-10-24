@@ -1,13 +1,17 @@
 import datetime as dt
+import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import audit_schema_exposure as audit
-
-
+@unittest.skipUnless(importlib.util.find_spec("tiktoken"), "run with uv --with tiktoken==0.12.0")
 class SchemaExposureAuditTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import audit_schema_exposure
+        cls.audit = audit_schema_exposure
+
     def test_overlapping_request_phases_and_final_streaming_usage(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "session.jsonl"
@@ -26,9 +30,9 @@ class SchemaExposureAuditTests(unittest.TestCase):
                 dict(type="api-request", shapeHash="shape-a", requestDigest="digest-b", timestamp="2026-10-24T00:04:00Z"),
             ]
             path.write_text("".join(json.dumps(row) + "\n" for row in rows))
-            requests, errors = audit.inspect_claude(path, dt.datetime.fromisoformat("2026-10-24T00:00:00+00:00"),
+            requests, errors = self.audit.inspect_claude(path, dt.datetime.fromisoformat("2026-10-24T00:00:00+00:00"),
                                                      dt.datetime.fromisoformat("2026-10-25T00:00:00+00:00"))
-            result = audit.aggregate(requests, errors)
+            result = self.audit.aggregate(requests, errors)
             self.assertEqual(result["total_requests"], 3)
             self.assertEqual(result["requests_by_cairn_tool_count"], {"1": 3})
             self.assertEqual(result["phases"]["file_first"]["requests"], 1)
