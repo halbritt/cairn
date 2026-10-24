@@ -88,7 +88,7 @@ var remoteOperations = map[string]bool{
 	"create": true, "edit": true, "revise": true, "append": true, "replace": true, "set-sections": true,
 	"cite": true, "delete": true, "supersede": true,
 	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true, "explain-page": true,
-	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true, "recall-observation": true,
+	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true, "recall-observation": true, "capture-observation": true,
 	"agent-register": true, "agent-context": true, "agent-heartbeat": true, "agent-leave": true, "agent-resolve": true, "agent-directory": true,
 	"session-inbox-ready": true, "session-inbox-pending": true, "session-inbox-claim": true, "session-inbox-reconcile": true, "session-inbox-control": true, "session-delivery-observe": true,
 	"event-publish": true, "event-complete": true, "event-renew": true, "event-subscribe": true, "event-subscriptions": true, "event-list": true, "event-watch": true, "event-inspect": true, "event-group": true, "event-groups": true,
@@ -99,6 +99,6 @@ var remoteOperations = map[string]bool{
 	"preview-retract": false, "supersession": false, "evidence-impact": false, "check-evidence": false,
 	"run-index": false, "run-package": false, "spawn": false, "terminal": false, "task-state": false, "run-status": false, "claim-run": false, "bind-run": false, "link-run-retrieval": false, "delivery": false, "outcome": false,
 	"assess-run": false, "assessments": false, "assessments-page": false,
-	"refusal": false, "use-report": false, "run-report": false, "conflicts": false, "conflict": false, "event-metrics": false,
+	"refusal": false, "use-report": false, "capture-observations": false, "run-report": false, "conflicts": false, "conflict": false, "event-metrics": false,
 	"handoff-request-status": false,
 }

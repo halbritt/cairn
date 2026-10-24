@@ -34,6 +34,7 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
     engine_path = home / 'cairn/engine.json'
     model_overrides = shared.retain_model_overrides({}, engine_path, preview_model, recall_model)
     model_overrides = shared.retain_recall_mode(model_overrides, engine_path, recall_mode)
+    model_overrides = shared.retain_capture_observations(model_overrides, engine_path)
     plugin = home / 'plugins/cairn'
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),

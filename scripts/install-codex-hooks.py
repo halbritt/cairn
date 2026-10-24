@@ -56,6 +56,7 @@ def install(hooks_path, destination, config, recall_mode=None):
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
     config = shared.retain_recall_mode(config, config_path, recall_mode)
+    config = shared.retain_capture_observations(config, config_path)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event, settings in EVENTS.items():
         groups = hooks.setdefault(event, [])

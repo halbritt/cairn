@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func TestRecallObservationRouteKeepsProfileBoundaries(t *testing.T) {
+func TestLifecycleObservationRoutesKeepProfileBoundaries(t *testing.T) {
 	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("run make test-integration")
@@ -134,6 +134,30 @@ func TestRecallObservationRouteKeepsProfileBoundaries(t *testing.T) {
 	if seen["codex"] != 1 || seen["opencode"] != 1 || seen["claude"] != 1 || len(seen) != 3 {
 		t.Fatalf("reports missing or refused observations stored: %+v", report.RecallRollups)
 	}
+	capture := core.CaptureObservationRequest{RequestID: uuid.NewString(), Repo: repo, Harness: "claude", HookEvent: "PreCompact",
+		Method: "capture-meter/1", SessionSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Outcome: "unchanged"}
+	if code, body := call(server, "hosted", "capture-observation", capture); code != 200 {
+		t.Fatalf("capture report: %d %s", code, body)
+	}
+	if code, _ := call(server, "hosted", "capture-observations", core.CaptureObservationsRequest{Repo: repo, Limit: 10}); code != 403 {
+		t.Fatalf("hosted capture history read: %d", code)
+	}
+	if code, _ := call(remote, "box", "capture-observations", core.CaptureObservationsRequest{Repo: repo, Limit: 10}); code != 403 {
+		t.Fatalf("remote capture history read: %d", code)
+	}
+	code, body = call(server, "local", "capture-observations", core.CaptureObservationsRequest{Repo: repo, Limit: 10})
+	if code != 200 {
+		t.Fatalf("local capture history read: %d %s", code, body)
+	}
+	var captures core.CaptureObservations
+	if err := json.Unmarshal(body, &captures); err != nil || len(captures.Rows) != 1 || captures.Rows[0].Outcome != "unchanged" {
+		t.Fatalf("capture history: %+v %v", captures, err)
+	}
+	capture.Repo = "outside/" + repo
+	capture.RequestID = uuid.NewString()
+	if code, _ := call(server, "hosted", "capture-observation", capture); code != 403 {
+		t.Fatalf("cross-repo capture report: %d", code)
+	}
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -142,5 +166,9 @@ func TestRecallObservationRouteKeepsProfileBoundaries(t *testing.T) {
 	var principals int
 	if err = conn.QueryRow(ctx, `SELECT count(DISTINCT caller) FROM cairn.recall_observation WHERE repo=$1 AND caller IN ('agent:recall-hosted','machine:box/agent')`, repo).Scan(&principals); err != nil || principals != 2 {
 		t.Fatalf("callers must be the authenticated principals: %d %v", principals, err)
+	}
+	var captureCaller string
+	if err = conn.QueryRow(ctx, `SELECT caller FROM cairn.capture_observation WHERE repo=$1`, repo).Scan(&captureCaller); err != nil || captureCaller != "agent:recall-hosted" {
+		t.Fatalf("capture caller must be authenticated: %q %v", captureCaller, err)
 	}
 }

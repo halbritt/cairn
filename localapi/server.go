@@ -289,6 +289,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		serveJSON(w, r, c.store.RecordUsageCoverage)
 	case "/v1/recall-observation":
 		serveJSON(w, r, c.store.RecordRecallObservation)
+	case "/v1/capture-observation":
+		serveJSON(w, r, c.store.RecordCaptureObservation)
+	case "/v1/capture-observations":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "capture observation history requires a local profile")
+			return
+		}
+		serveJSON(w, r, c.store.CaptureObservations)
 	case "/v1/evidence-impact":
 		if !c.destination.AllowLocal {
 			writeError(w, 403, "AUTHORITY_DENIED", "evidence impact inspection requires a local profile")

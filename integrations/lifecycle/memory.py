@@ -46,6 +46,7 @@ SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 # Per-prompt recall observations: reported to the API for use-report, never to the model.
 RECALL_METER_METHOD = "cairn-lifecycle/recall-meter/1"
+CAPTURE_METER_METHOD = "cairn-lifecycle/capture-meter/1"
 RECALL_HARNESSES = ("claude", "codex", "opencode", "hermes")
 RECALL_HOOK_SECONDS = 13  # the installed host timeout for SessionStart/UserPromptSubmit
 RECALL_REPORT_SECONDS = 1.0  # most this hook spends reporting its own observation
@@ -763,10 +764,56 @@ def report_recall(memory, event, started, elapsed, status, injected, error_class
         return
 
 
+def report_capture(memory, event, elapsed):
+    """Best-effort selected metrics, after capture locks and state commit."""
+    if memory.config.get("capture_observations") is not True:
+        return
+    try:
+        timeout = min(RECALL_REPORT_SECONDS, CAPTURE_HOOK_SECONDS - elapsed - CAPTURE_COMMIT_MARGIN_SECONDS)
+        if timeout < 0.25:
+            return
+        observed = memory.capture_observation
+        selector = observed.get("selector", {})
+        body = dict(request_id=str(uuid.uuid4()), repo=memory.config["repo"],
+                    harness=memory.config.get("harness", "claude"),
+                    hook_event=event["hook_event_name"], method=CAPTURE_METER_METHOD,
+                    session_sha256=hashlib.sha256(event["session_id"].encode()).hexdigest(),
+                    outcome=observed.get("outcome", "error"), duration_ms=whole_ms(elapsed))
+        if observed.get("snapshot_sha256"):
+            body["snapshot_sha256"] = observed["snapshot_sha256"]
+        if observed.get("selector_outcome"):
+            body["selector_outcome"] = observed["selector_outcome"]
+            for source, target in (("requested_model", "requested_model"),
+                                   ("reported_model", "reported_model")):
+                if valid_model_name(selector.get(source)):
+                    body[target] = selector[source]
+            for source, target in (("elapsed_ms", "selector_duration_ms"),
+                                   ("reported_duration_ms", "selector_duration_ms")):
+                value = selector.get(source)
+                if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 3600000:
+                    body[target] = round(value)
+                    break
+            usage = selector.get("usage")
+            if isinstance(usage, dict):
+                for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens",
+                            "cache_read_input_tokens"):
+                    value = usage.get(key)
+                    if type(value) is int and 0 <= value <= RECALL_TOKEN_LIMIT:
+                        body[key] = value
+            cost = selector.get("reported_cost_usd")
+            if type(cost) in (int, float) and math.isfinite(cost) and 0 <= cost < 1000:
+                body["cost_usd"] = cost
+        run_json(memory.command + ["capture-observation"], body=encoded(body),
+                 timeout=timeout, env=caller_environment())
+    except Exception:  # noqa: BLE001 - reporting cannot alter a confirmed capture or marker
+        return
+
+
 class Memory:
     def __init__(self, config, session):
         self.config = config
         self.meter = RecallMeter()
+        self.capture_observation = {}
         self.receipt_credits = {}
         self.pull_calls = {}
         self.scope = ["--repo", config["repo"], "--task", config.get("task_id", config.get("harness", "claude") + "/" + session),
@@ -2956,6 +3003,11 @@ def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture", ob
     if observation is not None:
         if result.get("is_error"):
             observation["outcome"] = "reported_error"
+        by_model = result.get("modelUsage")
+        if isinstance(by_model, dict):
+            reported = [name for name in by_model if valid_model_name(name)]
+            if len(reported) == 1:
+                observation["reported_model"] = reported[0]
         for key, target in (("duration_ms", "reported_duration_ms"),
                             ("duration_api_ms", "reported_api_duration_ms"),
                             ("total_cost_usd", "reported_cost_usd")):
@@ -2989,6 +3041,7 @@ def capture(memory, event, state=None):
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)
+    memory.capture_observation["snapshot_sha256"] = digest
     if state.get("captured_digest") == digest:
         record_capture_status(state, "unchanged")
         return {}
@@ -3009,13 +3062,26 @@ def capture(memory, event, state=None):
                                      "body": r["body"]} for r in handoffs],
                "existing_memories": [{k: r[k] for k in ("record_id", "kind", "body")} for r in candidates],
                "messages": messages}
-    result = select_json(memory.config, CAPTURE_SCHEMA, CAPTURE_PROMPT, excerpt)
+    observation = {}
+    memory.capture_observation["selector"] = observation
+    try:
+        result = select_json(memory.config, CAPTURE_SCHEMA, CAPTURE_PROMPT, excerpt, observation=observation)
+    except Exception as exc:
+        if "outcome" in observation:
+            memory.capture_observation["selector_outcome"] = "timeout" if is_timeout(exc) else "error"
+        raise
+    if "outcome" in observation:
+        memory.capture_observation["selector_outcome"] = "error" if result.get("is_error") else "completed"
     if result.get("is_error"):
         raise HookError("checkpoint selection failed; no note saved")
     writes = selected_writes(memory, event, result.get("structured_output"), previous, candidates, handoffs)
     saved = []
     for body, kind, old in writes:
-        identity = save_note(memory, body, kind, old)
+        try:
+            identity = save_note(memory, body, kind, old)
+        except Exception:
+            memory.capture_observation["outcome"] = "write_error"
+            raise
         if kind == "note":
             state["workstream"] = body.split("\n", 1)[0]
         if identity:
@@ -3115,7 +3181,10 @@ def handle(config, event, *, _inbox_resolved=False):
         return handle_event(config, event, reports, _inbox_resolved=_inbox_resolved)
     finally:
         for report in reports:
-            report_recall(**report)
+            if report.pop("capture", False):
+                report_capture(**report)
+            else:
+                report_recall(**report)
 
 
 CAPTURE_STATE_FIELDS = ("captured_digest", "captured_messages", "capture_snapshot_marker",
@@ -3179,17 +3248,23 @@ def capture_event(memory, event, path, lock_path, hook_started):
             state = event_state(copy.deepcopy(original), event)
         if event["hook_event_name"] == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
             _trace_note(outcome="early_return:stop_too_little_dialogue")
+            memory.capture_observation["outcome"] = "too_little_dialogue"
             result = {}
         else:
             _trace_note(stage="capture")
             prior = state.pop("capture_snapshot_marker", None)
             result = capture(memory, event, state)
+            memory.capture_observation["outcome"] = state["last_capture"]["outcome"]
             if memory.config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
                 state["codex_capture_marker"] = state["capture_snapshot_marker"]
             elif prior is not None:
                 state["capture_snapshot_marker"] = prior
         with lock_path.open("a") as lock:
-            lock_capture_commit(lock, memory.config, event, hook_started)
+            try:
+                lock_capture_commit(lock, memory.config, event, hook_started)
+            except (HookError, OSError):
+                memory.capture_observation["outcome"] = "state_commit_error"
+                raise
             current = json.loads(path.read_text()) if path.exists() else {}
             fields = lambda value: {key: value[key] for key in CAPTURE_STATE_FIELDS if key in value}
             same_binding = current.get("binding", [None, ""]) == original.get("binding", [None, ""])
@@ -3207,7 +3282,11 @@ def capture_event(memory, event, path, lock_path, hook_started):
                     current[key] = state[key]
                 else:
                     current.pop(key, None)
-            save_state(path, current)
+            try:
+                save_state(path, current)
+            except OSError:
+                memory.capture_observation["outcome"] = "state_commit_error"
+                raise
             _trace_note(stage="saved")
             if memory.config.get("harness") == "hermes":
                 result = dict(result, cairn_status={key: current[key] for key in
@@ -3278,7 +3357,14 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     _trace_note(stage="lock_attempt")
     path = lock_dir / (state_key + ".json")
     if event_name in ("PreCompact", "SessionEnd", "Stop"):
-        return capture_event(memory, event, path, lock_dir / (state_key + ".lock"), hook_started)
+        try:
+            return capture_event(memory, event, path, lock_dir / (state_key + ".lock"), hook_started)
+        except Exception as exc:
+            memory.capture_observation.setdefault("outcome", "timeout" if is_timeout(exc) else "error")
+            raise
+        finally:
+            reports.append(dict(capture=True, memory=memory, event=event,
+                                elapsed=time.monotonic() - hook_started))
     with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

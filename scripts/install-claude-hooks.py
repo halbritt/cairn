@@ -40,6 +40,17 @@ def retain_recall_mode(config, existing_path, recall_mode=None):
     return result
 
 
+def retain_capture_observations(config, existing_path):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    value = result.get('capture_observations', existing.get('capture_observations'))
+    if value is not None:
+        if type(value) is not bool:
+            raise ValueError('capture_observations must be a boolean')
+        result['capture_observations'] = value
+    return result
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
@@ -60,6 +71,7 @@ def install(settings_path, destination, config, preview_model=None, recall_model
     config_path = destination / "config.json"
     config = retain_model_overrides(config, config_path, preview_model, recall_model)
     config = retain_recall_mode(config, config_path, recall_mode)
+    config = retain_capture_observations(config, config_path)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         groups = hooks.setdefault(event, [])

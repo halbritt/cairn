@@ -26,6 +26,7 @@ def install(config_dir, destination, claude, model=None, preview_model=None, rec
     engine_config = destination / "config.json"
     config = installer.retain_model_overrides(config, engine_config, preview_model, recall_model)
     config = installer.retain_recall_mode(config, engine_config, recall_mode)
+    config = installer.retain_capture_observations(config, engine_config)
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     script = destination / "memory.py"
     shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)

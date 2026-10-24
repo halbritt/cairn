@@ -13,6 +13,17 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-10-24
+
+- Selected capture can report opt-in, bounded usage and outcome observations
+  (CAIRN-215). The hook keeps a session and capture-snapshot hash, call and
+  hook durations, configured and reported model names, provider token fields
+  and reported cost when available. `cairn agent capture-observations` gives a
+  local-profile history separate from the latest `last_capture` state. The
+  setting is disabled by default and reporting failure cannot change note
+  writes or capture markers. Installed bindings need the updated API and hook
+  before the setting is enabled.
+
 
 ## 2026-10-22
 

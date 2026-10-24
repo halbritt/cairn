@@ -27,6 +27,30 @@ reported elapsed time. Set `"recall_observations": false` in the lifecycle
 configuration to stop reporting. The installed hooks are unchanged until they are
 reinstalled with this engine.
 
+Selected capture has a separate opt-in observation stream. Set
+`"capture_observations": true` in a lifecycle binding after its API supports
+`capture-observation`. Each Stop, PreCompact or SessionEnd capture invocation
+reports a session SHA-256 reference, the bounded capture snapshot SHA-256 when
+one exists, its outcome, and the auxiliary selector's reported model, token
+usage, cost and duration when available. An unchanged, courtesy or empty skip
+has no selector usage; missing values remain unknown. Reporting occurs after
+the session locks and cannot change a confirmed note write or capture marker.
+The selector keeps the configured subscription authentication and does not
+switch providers for observation. The latest `last_capture` state remains a
+status snapshot; it is not historical accounting.
+
+The API retains one row per reported invocation; its history read requires a
+local profile using `cairn agent capture-observations` with `repo`, `limit` (1–200),
+optional `session_sha256` and `offset`. It contains no dialogue, selected note
+body, model output or credentials. A missing report can mean an older API,
+disabled opt-in, insufficient hook time, or a reporting failure; it is not a
+zero-cost capture. Reporting has a one-second cap and preserves five seconds
+of the 150-second capture hook budget. The
+observation is hook testimony, not proof of accepted task work or a billing
+export. Disable the opt-in to roll back metering without changing capture.
+Installers retain an existing per-binding opt-in during reinstall; no binding is
+enabled by default.
+
 A handled failure replaces an earlier success with `outcome: failed`, zero
 delivered bytes/records and a fixed `error_type` category. Two optional fields
 may follow from the original failure, recorded before any required-context

@@ -89,6 +89,15 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "preview_model"):
             installer.install(settings, destination, self.config, preview_model=" ")
 
+    def test_capture_meter_opt_in_survives_reinstall(self):
+        settings = self.root / "settings.json"
+        destination = self.root / "installed"
+        installer.install(settings, destination, dict(self.config, capture_observations=True))
+        installer.install(settings, destination, self.config)
+        self.assertTrue(json.loads((destination / "config.json").read_text())["capture_observations"])
+        with self.assertRaisesRegex(ValueError, "capture_observations"):
+            installer.install(settings, destination, dict(self.config, capture_observations="true"))
+
     def test_invalid_model_overrides_fail_before_selector_or_installer_writes(self):
         settings = self.root / "settings.json"
         destination = self.root / "installed"
@@ -219,7 +228,10 @@ class LifecycleTests(unittest.TestCase):
             with patch.object(hook, "capture") as capture, self.assertRaisesRegex(hook.HookError, "already running"):
                 hook.handle(config, self.event)
             capture.assert_not_called()
-        with patch.object(hook, "capture", return_value={}) as capture:
+        def fake_capture(memory, event, state):
+            hook.record_capture_status(state, "empty")
+            return {}
+        with patch.object(hook, "capture", side_effect=fake_capture) as capture:
             hook.handle(config, self.event)
             capture.assert_called_once()
 
@@ -443,7 +455,7 @@ class LifecycleTests(unittest.TestCase):
 class CourtesyCaptureTests(unittest.TestCase):
     def test_only_complete_courtesy_pairs_skip_selection(self):
         from unittest.mock import Mock
-        memory = Mock(config={})
+        memory = Mock(config={}, capture_observation={})
         courtesy = [dict(role='user', text='Thanks!'), dict(role='assistant', text="You're welcome.")]
         state = {}
         self.assertEqual(hook.capture(memory, dict(messages=courtesy), state), {})
@@ -456,7 +468,7 @@ class CourtesyCaptureTests(unittest.TestCase):
 
     def test_uncaptured_or_changed_prefix_cannot_be_hidden_by_courtesy(self):
         from unittest.mock import Mock
-        memory = Mock(config={})
+        memory = Mock(config={}, capture_observation={})
         memory.checkpoint.side_effect = hook.HookError('selection path reached')
         original = [dict(role='user', text='Correct the database to PostgreSQL 17.'), dict(role='assistant', text='Updated.')]
         thanks = [dict(role='user', text='Thanks!'), dict(role='assistant', text="You're welcome.")]
