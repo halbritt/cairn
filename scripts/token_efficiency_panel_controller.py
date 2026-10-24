@@ -6,6 +6,7 @@ claims a turn, grades an answer, or emits gate observations.
 """
 
 import argparse
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -42,13 +43,38 @@ CASE_ADAPTERS = {
         "publishers": {"duplicate_a": "sender"},
         "sessions": {"worker": "worker"},
     },
+    "routine_burst_urgent_request": {
+        "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
+                   for event_id in ("routine_1", "routine_2", "routine_3")]
+                  + [{"id": "urgent_1", "kind": "request", "recipient": "worker"}],
+        "transitions": [],
+        "publishers": {event_id: "sender" for event_id in
+                       ("routine_1", "routine_2", "routine_3", "urgent_1")},
+        "sessions": {"worker": "worker"},
+        "interventions": {
+            "baseline": {"routine_notice_policy": None},
+            "envelope": {"routine_notice_policy": None},
+            "batch": {"routine_notice_policy": {"version": 1, "urgency": "routine",
+                                                 "defer_seconds": 30}},
+            "combined": {"routine_notice_policy": {"version": 1, "urgency": "routine",
+                                                    "defer_seconds": 30}},
+        },
+    },
 }
 
 
 def case_name(workflow_id):
-    require(workflow_id.startswith("baseline.") and workflow_id[9:] in CASE_ADAPTERS,
+    parts = workflow_id.split(".")
+    require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
+            and (parts[0] == "baseline" or parts[1] == "routine_burst_urgent_request"
+                 and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
-    return workflow_id[9:]
+    return parts[1]
+
+
+def database_name(workflow_id):
+    case = case_name(workflow_id)
+    return f"cairn_panel_{workflow_id.replace('.', '_')}" if case == "routine_burst_urgent_request" else f"cairn_panel_{case}"
 
 
 def require(value, message):
@@ -91,7 +117,7 @@ def disposable_inputs(args):
             "disposable integration root required")
     private_dir(root)
     require((root / "data" / "PG_VERSION").is_file(), "disposable PostgreSQL cluster required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_{case} sslmode=disable"
+    dsn = f"host={root / 'socket'} dbname={database_name(args.workflow_id)} sslmode=disable"
     require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
             and os.environ.get("CAIRN_DATABASE_URL") == dsn,
             "controller requires the dedicated disposable database")
@@ -143,8 +169,27 @@ def frozen_case(export, fixture, workflow_id):
     require(setup["sources"] == [] and descriptors == adapter["events"]
             and setup["transitions"] == adapter["transitions"], "unsupported panel setup")
     run = next(item for item in actual["prospective_runs"] if item["workflow_id"] == workflow_id)
-    require(run["intervention"] is None, "baseline must not add arm policy")
-    return binding, setup, actual["event_source_defaults"], adapter
+    expected_intervention = (adapter["interventions"][run["arm"]]
+                             if "interventions" in adapter else None)
+    require(run["intervention"] == expected_intervention, "unsupported arm intervention")
+    return binding, setup, actual["event_source_defaults"], adapter, expected_intervention
+
+
+def database_now(dsn):
+    process = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c",
+                              "SELECT clock_timestamp()"], text=True, capture_output=True, timeout=10)
+    require(process.returncode == 0 and len(process.stdout) < 128,
+            "cannot verify disposable database clock")
+    value = datetime.fromisoformat(process.stdout.strip())
+    require(value.tzinfo is not None, "database clock lacks timezone")
+    return value
+
+
+def instant(value):
+    require(isinstance(value, str), "native event timestamp missing")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    require(parsed.tzinfo is not None, "native event timestamp lacks timezone")
+    return parsed
 
 
 def call(binary, socket, token, operation, args=(), body=None, session=None):
@@ -185,7 +230,8 @@ def materialize(args):
     worker_token = Path(args.worker_token).read_bytes()
     require(sender_token != worker_token,
             "sender and worker token identities must differ")
-    binding, setup, defaults, adapter = frozen_case(export, args.fixture, args.workflow_id)
+    binding, setup, defaults, adapter, intervention = frozen_case(export, args.fixture,
+                                                                    args.workflow_id)
     require(defaults == {"kind": "note", "record_class": "A", "operation": "create",
                          "sensitivity": "shareable", "claim_type": "self",
                          "scope": {"repo": "fixture:cairn-token-efficiency", "task_id": "*", "run_id": "*"}},
@@ -198,6 +244,7 @@ def materialize(args):
     immutable = {"schema": "cairn.panel-controller-intent/2", "workflow_id": args.workflow_id,
                  "fixture_sha256": binding["fixture_sha256"],
                  "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
+                 "intervention_sha256": binding["intervention_sha256"],
                  "adapter_sha256": panel.sha(adapter), "binary_sha256": binary_hash,
                  "sender_principal": args.sender_principal,
                  "sender_token_sha256": hashlib.sha256(sender_token).hexdigest(),
@@ -273,6 +320,8 @@ def materialize(args):
     require(set(owners) == {"sender", "worker"}, "both authenticated profiles required")
     events = {}
     transitions = []
+    last_position = 0
+    delivery_ids = set()
     for event_spec in setup["events"]:
         event_id = event_spec["id"]
         publisher_role = adapter["publishers"][event_id]
@@ -311,6 +360,10 @@ def materialize(args):
                    "destination": destination}
         if causation:
             payload["causation_id"] = causation
+        notice_policy = (intervention["routine_notice_policy"]
+                         if intervention is not None and event_spec["kind"] == "notice" else None)
+        if notice_policy is not None:
+            payload["notice_policy"] = notice_policy
         body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         published = call(binary, socket, publisher_token, ("agent", "event-publish"),
                          body=body, session=publisher_session)
@@ -320,6 +373,18 @@ def materialize(args):
                 and published.get("destination") == destination
                 and published.get("causation_id", "") == causation,
                 "published event differs from source, publisher, recipient or cause")
+        if case == "routine_burst_urgent_request":
+            require(type(published.get("position")) is int
+                    and published["position"] > last_position,
+                    "burst event publication order changed")
+            last_position = published["position"]
+            require("task_deadline" not in published and "admission_expires_at" not in published
+                    and "response_group" not in published,
+                    "burst fixture does not authorize an event deadline")
+            expected_policy = ({**notice_policy, "owner": owners[publisher_role]}
+                               if notice_policy is not None else None)
+            require(published.get("notice_policy") == expected_policy,
+                    "publisher-owned routine notice policy differs")
         status = call(binary, socket, publisher_token, ("event-status",),
                       (published["event_id"],), session=publisher_session)
         deliveries = status.get("deliveries") or []
@@ -327,6 +392,17 @@ def materialize(args):
                 and deliveries[0].get("state") == "pending" and deliveries[0].get("attempts") == 0
                 and deliveries[0].get("consumer") == recipient_session["inbox"],
                 "pending native delivery differs from publication")
+        available_at = deliveries[0].get("available_at")
+        if case == "routine_burst_urgent_request":
+            require(deliveries[0]["delivery_id"] not in delivery_ids,
+                    "distinct burst events share a delivery")
+            delivery_ids.add(deliveries[0]["delivery_id"])
+            if notice_policy is None:
+                require(available_at is None, "immediate burst event has deferred availability")
+            else:
+                require(instant(available_at) == instant(published["created_at"])
+                        + timedelta(seconds=notice_policy["defer_seconds"]),
+                        "routine notice availability differs from fixed policy deadline")
         events[event_id] = {"event_spec_sha256": panel.sha(event_spec),
                             "source_body_sha256": hashlib.sha256(event_spec["body"].encode()).hexdigest(),
                             "source_ref": ref, "observed_writer": source["observed_writer"],
@@ -337,6 +413,11 @@ def materialize(args):
                             "recipient_inbox": recipient_session["inbox"],
                             "delivery_id": deliveries[0]["delivery_id"],
                             "delivery_state": "pending", "attempts": 0}
+        if case == "routine_burst_urgent_request":
+            events[event_id]["position"] = published["position"]
+            events[event_id]["notice_policy"] = published.get("notice_policy")
+            events[event_id]["available_at"] = available_at
+            events[event_id]["created_at"] = published["created_at"]
         for transition in setup["transitions"]:
             if transition["phase"] == "after_first_publish" and transition["target"] == event_id:
                 repeated = call(binary, socket, publisher_token, ("agent", "event-publish"),
@@ -356,6 +437,42 @@ def materialize(args):
                                     "first_event_id": published["event_id"],
                                     "retry_event_id": repeated["event_id"],
                                     "delivery_id": deliveries[0]["delivery_id"]})
+    readiness_snapshot = None
+    if case == "routine_burst_urgent_request":
+        worker_session = sessions["worker"]
+        selected = events["urgent_1" if intervention["routine_notice_policy"] else "routine_1"]
+        deadline = (min(instant(events[event_id]["available_at"]) for event_id in
+                        ("routine_1", "routine_2", "routine_3"))
+                    if intervention["routine_notice_policy"] else None)
+        snapshot_path = run_dir / "readiness.json"
+        if snapshot_path.exists():
+            private_file(snapshot_path)
+            readiness_snapshot = read_json(snapshot_path)
+        else:
+            ready = call(binary, socket, tokens["worker"], ("agent", "session-inbox-ready"),
+                         body=json.dumps({"agent_id": worker_session["agent_id"],
+                                          "execution_id": worker_session["execution_id"]}))
+            observed_at = database_now(dsn)
+            require(deadline is None or observed_at < deadline,
+                    "routine notice window expired before priority readiness proof")
+            require(ready == {"event_id": selected["event_id"],
+                              "delivery_id": selected["delivery_id"]},
+                    "native readiness differs from frozen burst order")
+            readiness_snapshot = {"basis": "selected_native_ready_hint",
+                                  "event_id": ready["event_id"],
+                                  "delivery_id": ready["delivery_id"],
+                                  "observed_at": observed_at.isoformat(),
+                                  "earliest_routine_available_at": deadline.isoformat() if deadline else None}
+            write_new(snapshot_path, readiness_snapshot)
+        require(set(readiness_snapshot) == {"basis", "event_id", "delivery_id", "observed_at",
+                                            "earliest_routine_available_at"}
+                and readiness_snapshot["basis"] == "selected_native_ready_hint"
+                and readiness_snapshot["event_id"] == selected["event_id"]
+                and readiness_snapshot["delivery_id"] == selected["delivery_id"]
+                and readiness_snapshot["earliest_routine_available_at"] ==
+                    (deadline.isoformat() if deadline else None)
+                and (deadline is None or instant(readiness_snapshot["observed_at"]) < deadline),
+                "stored readiness snapshot differs from durable burst setup")
     receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
@@ -366,6 +483,9 @@ def materialize(args):
                "sessions": sessions, "events": events, "transitions": transitions,
                "provider_called": False, "native_turn_join": "unimplemented",
                "task_outcome": "unassessed"}
+    if readiness_snapshot is not None:
+        receipt["readiness_snapshot"] = readiness_snapshot
+        receipt["native_batch_transfer"] = "unrun"
     output = run_dir / "materialization.json"
     if output.exists():
         private_file(output)
@@ -379,7 +499,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, default=panel.FIXTURE)
     parser.add_argument("--export", type=Path, required=True)
-    parser.add_argument("--workflow-id", choices=tuple(f"baseline.{case}" for case in CASE_ADAPTERS),
+    choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
+    choices += tuple(f"{arm}.routine_burst_urgent_request" for arm in
+                     ("envelope", "batch", "combined"))
+    parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--home", type=Path, required=True)

@@ -42,13 +42,21 @@ export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"
 go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
-for panel_case in single_notice actionable_response duplicate_send; do
-    panel_database="cairn_panel_$panel_case"
+for panel_workflow in baseline.single_notice baseline.actionable_response baseline.duplicate_send \
+    baseline.routine_burst_urgent_request envelope.routine_burst_urgent_request \
+    batch.routine_burst_urgent_request combined.routine_burst_urgent_request; do
+    panel_case="${panel_workflow#*.}"
+    panel_arm="${panel_workflow%%.*}"
+    if [[ "$panel_case" == routine_burst_urgent_request ]]; then
+        panel_database="cairn_panel_${panel_arm}_${panel_case}"
+    else
+        panel_database="cairn_panel_$panel_case"
+    fi
     "$pg_bin/createdb" -h "$test_root/socket" "$panel_database"
     panel_controller_dsn="host=$test_root/socket dbname=$panel_database sslmode=disable"
     CAIRN_DATABASE_URL="$panel_controller_dsn" "$test_root/cairn" migrate
     CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$panel_controller_dsn" CAIRN_DATABASE_URL="$panel_controller_dsn" \
-        python3 scripts/check_token_efficiency_panel_controller.py "$test_root/cairn" "baseline.$panel_case"
+        python3 scripts/check_token_efficiency_panel_controller.py "$test_root/cairn" "$panel_workflow"
 done
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"

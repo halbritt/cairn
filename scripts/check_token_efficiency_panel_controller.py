@@ -2,6 +2,7 @@
 """Exercise one selected panel setup in this invocation's disposable database."""
 
 import hashlib
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -22,25 +23,31 @@ def require(value, message):
 
 def check(binary, workflow_id):
     require(workflow_id in ("baseline.single_notice", "baseline.actionable_response",
-                            "baseline.duplicate_send"), "unsupported workflow")
-    case = workflow_id.split(".", 1)[1]
+                            "baseline.duplicate_send") or workflow_id in tuple(
+                                f"{arm}.routine_burst_urgent_request" for arm in
+                                ("baseline", "envelope", "batch", "combined")),
+            "unsupported workflow")
+    arm, case = workflow_id.split(".", 1)
+    burst = case == "routine_burst_urgent_request"
+    label = workflow_id.replace(".", "-") if burst else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
     require(root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700,
             "private cluster root")
     require((root / "data" / "PG_VERSION").is_file(), "cluster not initialized")
     require(binary == root / "cairn" and binary.is_file(), "disposable binary")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_{case} sslmode=disable"
+    database = f"cairn_panel_{arm}_{case}" if burst else f"cairn_panel_{case}"
+    dsn = f"host={root / 'socket'} dbname={database} sslmode=disable"
     require(os.environ["CAIRN_TEST_DATABASE_URL"] == os.environ["CAIRN_DATABASE_URL"] == dsn,
             "dedicated database")
 
-    export_parent = root / f"panel-export-{case}"
+    export_parent = root / f"panel-export-{label}"
     export_parent.mkdir(mode=0o700)
     panel.PRIVATE_PARENT = export_parent
     export = export_parent / "frozen"
     fixture, fixture_hash = panel.read_fixture()
     panel.export(fixture, fixture_hash, export)
-    home = root / f"panel-controller-home-{case}"
+    home = root / f"panel-controller-home-{label}"
     home.mkdir(mode=0o700)
     principals = {role: f"agent/panel-{role}-{uuid.uuid4()}"
                   for role in ("sender", "worker", "other")}
@@ -103,13 +110,13 @@ def check(binary, workflow_id):
                    "--sender-token", str(home / "sender.token"),
                    "--worker-token", str(home / "worker.token"),
                    "--sender-principal", principals["sender"],
-                   "--run-dir", str(root / f"panel-run-{case}")]
+                   "--run-dir", str(root / f"panel-run-{label}")]
         swapped = list(command)
         swapped[swapped.index("--worker-token") + 1] = str(home / "sender.token")
         rejected = subprocess.run(swapped, text=True, capture_output=True, env=env, timeout=20)
         require(rejected.returncode != 0 and "token identities must differ" in rejected.stderr,
                 "same-token identity was accepted")
-        require(not (root / f"panel-run-{case}").exists(), "same-token request mutated state")
+        require(not (root / f"panel-run-{label}").exists(), "same-token request mutated state")
         actor_path = export / "actor" / f"{case}.json"
         actor_bytes = actor_path.read_bytes()
         actor = json.loads(actor_bytes)
@@ -118,7 +125,7 @@ def check(binary, workflow_id):
         rejected = subprocess.run(command, text=True, capture_output=True, env=env, timeout=20)
         require(rejected.returncode != 0 and "actor export differs" in rejected.stderr,
                 "tampered actor was accepted")
-        require(not (root / f"panel-run-{case}").exists(), "tampered actor mutated state")
+        require(not (root / f"panel-run-{label}").exists(), "tampered actor mutated state")
         actor_path.write_bytes(actor_bytes)
 
         first = subprocess.run(command, text=True, capture_output=True, env=env, timeout=30)
@@ -131,6 +138,24 @@ def check(binary, workflow_id):
         require(receipt["provider_called"] is False and receipt["native_turn_join"] == "unimplemented",
                 "no actor turn")
         require(receipt["task_outcome"] == "unassessed", "no task outcome")
+        if burst:
+            require(receipt["native_batch_transfer"] == "unrun", "batch transfer not run")
+            snapshot = receipt["readiness_snapshot"]
+            selected = receipt["events"]["urgent_1" if arm in ("batch", "combined")
+                                         else "routine_1"]
+            require(snapshot["basis"] == "selected_native_ready_hint"
+                    and snapshot["event_id"] == selected["event_id"]
+                    and snapshot["delivery_id"] == selected["delivery_id"],
+                    "one-time native readiness snapshot")
+            if arm in ("batch", "combined"):
+                require(datetime.fromisoformat(snapshot["observed_at"])
+                        < datetime.fromisoformat(snapshot["earliest_routine_available_at"]),
+                        "readiness was captured after routine deadline")
+            else:
+                require(snapshot["earliest_routine_available_at"] is None,
+                        "default arm has no deferral deadline")
+            require(json.loads((root / f"panel-run-{label}" / "readiness.json").read_text())
+                    == snapshot, "readiness receipt persisted")
         expected_sessions = ({"worker_a": "worker", "worker": "sender"}
                              if case == "actionable_response" else {"worker": "worker"})
         require(set(receipt["sessions"]) == set(expected_sessions), "session roles")
@@ -143,6 +168,10 @@ def check(binary, workflow_id):
         require(principals["sender"] != principals["worker"], "separate profiles")
         require(set(json.loads(actor_path.read_text())) == {"schema", "case", "task"},
                 "actor export isolation")
+        if burst and arm == "batch":
+            deadline = datetime.fromisoformat(receipt["readiness_snapshot"]["earliest_routine_available_at"])
+            now = datetime.fromisoformat(sql("SELECT clock_timestamp()"))
+            time.sleep(max(0, (deadline - now).total_seconds()) + 0.2)
         second = subprocess.run(command, text=True, capture_output=True, env=env, timeout=30)
         require(second.returncode == 0 and json.loads(second.stdout) == receipt, second.stderr)
         changed = list(command)
@@ -157,6 +186,7 @@ def check(binary, workflow_id):
                                if case == "actionable_response" else
                                {event["id"]: "sender" for event in fixture_case["setup"]["events"]})
         require(set(receipt["events"]) == set(expected_publishers), "event IDs")
+        last_position = 0
         for spec in fixture_case["setup"]["events"]:
             event = receipt["events"][spec["id"]]
             publisher = expected_publishers[spec["id"]]
@@ -186,9 +216,28 @@ def check(binary, workflow_id):
                     and status["deliveries"][0]["state"] == "pending"
                     and status["deliveries"][0]["attempts"] == 0,
                     "exact delivery")
+            if burst:
+                require(type(event["position"]) is int and event["position"] > last_position,
+                        "fixture publication order")
+                last_position = event["position"]
+                policy = ({"owner": principals["sender"], "version": 1,
+                           "urgency": "routine", "defer_seconds": 30}
+                          if arm in ("batch", "combined") and spec["kind"] == "notice"
+                          else None)
+                require(event["notice_policy"] == status["event"].get("notice_policy") == policy,
+                        "publisher-owned notice policy")
+                available = status["deliveries"][0].get("available_at")
+                require(event["available_at"] == available, "stable native availability")
+                if policy is None:
+                    require(available is None, "default or urgent event is immediate")
+                else:
+                    require(datetime.fromisoformat(available.replace("Z", "+00:00")) ==
+                            datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
+                            + timedelta(seconds=30), "fixed routine availability deadline")
+                require("task_deadline" not in status["event"], "fixture has no task deadline")
         sender_stats = cli("sender", "event-stats")
         expected_events = len(fixture_case["setup"]["events"])
-        require(sender_stats["published"] == 1, sender_stats)
+        require(sender_stats["published"] == (4 if burst else 1), sender_stats)
         require(sql("SELECT count(*) FROM cairn.agent_event") == str(expected_events),
                 "unexpected event count")
         require(sql("SELECT count(*) FROM cairn.agent_delivery") == str(expected_events),
