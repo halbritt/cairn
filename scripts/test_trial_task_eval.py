@@ -428,6 +428,14 @@ class InjectionTest(unittest.TestCase):
         self.assertIsNone(trace["admission_failure"])
         self.assertTrue(trace["completed"])
 
+    def test_codex_recovered_top_level_error_is_cleared_by_later_completed_turn(self):
+        events = [dict(type="error", error=dict(codexErrorInfo="rate_limit_exceeded")),
+                  dict(type="turn.started"), dict(type="turn.completed", usage={})]
+        trace = te.parse_codex_stream("\n".join(map(json.dumps, events)))
+        self.assertTrue(trace["completed"])
+        self.assertFalse(trace["is_error"])
+        self.assertIsNone(trace["admission_failure"])
+
     def test_codex_nonzero_or_unterminated_execution_fails_closed_as_unknown(self):
         # run_agent applies this branch after parsing and before retaining the
         # admission stop; prose and item-level warnings are intentionally absent.

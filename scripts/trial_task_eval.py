@@ -1023,6 +1023,7 @@ def parse_codex_stream(text):
     """Read completed native exec items; item-level warnings are not turn failures."""
     commands, writes, memory, errors = [], [], [], []
     answer, turns, usage, seen, admission_failure = "", 0, {}, set(), None
+    terminal_failure = False
     for line in text.splitlines():
         try:
             event = json.loads(line)
@@ -1033,6 +1034,11 @@ def parse_codex_stream(text):
         kind = event.get("type")
         if kind == "turn.completed":
             turns += 1
+            if not terminal_failure:
+                # A top-level `error` may describe a transient failed turn
+                # followed by a successful retry in the same exec stream.
+                errors.clear()
+                admission_failure = None
             for key, value in (event.get("usage") or {}).items():
                 if isinstance(value, int):
                     usage[key] = usage.get(key, 0) + value
@@ -1055,6 +1061,8 @@ def parse_codex_stream(text):
                 admission_failure = dict(provider="codex", reason="capacity_exhausted", api_error_status=429)
             else:
                 admission_failure = dict(provider="codex", reason="provider_error_unknown", api_error_status=None)
+            if kind == "turn.failed":
+                terminal_failure = True
         elif kind == "item.completed":
             item = event.get("item") or {}
             if item.get("id") in seen:

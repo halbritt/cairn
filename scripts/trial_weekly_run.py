@@ -69,8 +69,8 @@ SELECTION_FIELDS = ('schema campaign_id scheduled_at current candidate harness_c
 CODEX_SELECTION_FIELDS = (SELECTION_FIELDS+' codex_account_binding_sha256 codex_account_assignment_sha256 '
                           'provider_model provider_binary_sha256')
 ONE_RUN_SELECTION_FIELDS = ('schema campaign_id scheduled_at current candidate harness_commit executor '
-                            'one_run_override_sha256 writer_sha256 account_assignment_sha256 account_ids '
-                            'provider_model provider_binary_sha256 selected_by')
+                            'slot_id expires_at one_run_override_sha256 writer_sha256 '
+                            'account_assignment_sha256 account_ids provider_model provider_binary_sha256 selected_by')
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
 DISTRACTORS = 1900
@@ -444,6 +444,7 @@ def one_run_selection_gate(profile, preview, executor_name, capacity):
     need(document['schema'] == ONE_RUN_SELECTION_SCHEMA, 'one_run_selection_shape')
     paired.identifier(document['selected_by'])
     expected = dict(campaign_id=profile['campaign_id'], scheduled_at=preview['scheduled_at'],
+                    slot_id=preview['slot_id'], expires_at=preview['expires_at'],
                     current=preview['current'], candidate=preview['candidate'],
                     harness_commit=preview['harness'], executor=executor_name,
                     one_run_override_sha256=capacity['override_sha256'],

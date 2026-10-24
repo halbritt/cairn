@@ -499,6 +499,7 @@ class WeeklyRunTests(unittest.TestCase):
         provider = execution['provider']
         selection_doc = dict(schema=weekly.ONE_RUN_SELECTION_SCHEMA, campaign_id=profile['campaign_id'],
                              scheduled_at=weekly.candidate._iso(start), current=self.repo.current,
+                             slot_id=slot_id, expires_at=weekly.candidate._iso(end),
                              candidate=self.repo.candidate, harness_commit=self.repo.harness,
                              executor=profile['executor'], one_run_override_sha256=override_ref['sha256'],
                              writer_sha256=paired.canonical_sha(profile['writer']),
