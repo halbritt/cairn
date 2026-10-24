@@ -422,16 +422,17 @@ def gate_pins_from_runtime(runtime):
 
 
 def create_owner_only_dir(path):
-    path = Path(path).expanduser().absolute()
-    require(not path.exists() and not path.is_symlink(), "output must be a new directory")
-    parent = path.parent
-    require(parent != ROOT and ROOT not in parent.parents,
+    requested = Path(path).expanduser().absolute()
+    parent = requested.parent.resolve(strict=True)
+    repository = ROOT.resolve(strict=True)
+    require(parent != repository and repository not in parent.parents,
             "provider evidence must be written outside the repository")
-    require(not parent.is_symlink(), "output parent must not be a symlink")
     parent_info = parent.stat()
     require(stat.S_ISDIR(parent_info.st_mode) and parent_info.st_uid == os.getuid()
             and stat.S_IMODE(parent_info.st_mode) == 0o700,
             "output parent must be an owner-only directory")
+    path = parent / requested.name
+    require(not path.exists() and not path.is_symlink(), "output must be a new directory")
     path.mkdir(mode=0o700)
     require(stat.S_IMODE(path.stat().st_mode) == 0o700, "output directory must be mode 0700")
     return path

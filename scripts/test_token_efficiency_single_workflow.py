@@ -79,6 +79,13 @@ class SingleWorkflowTests(unittest.TestCase):
             single.select_workflow(self.fixture_path, self.controller_path,
                                    case="single_notice", arm="combined")
 
+    def test_output_parent_symlink_cannot_resolve_into_repository(self):
+        repo_alias = self.root / "repo-alias"
+        repo_alias.symlink_to(single.ROOT, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "outside the repository"):
+            single.create_owner_only_dir(repo_alias / "capacity-receipts")
+        self.assertFalse((single.ROOT / "capacity-receipts").exists())
+
     def test_stage_capacity_must_be_fresh_and_exactly_bound(self):
         now = datetime.now(timezone.utc)
         evidence = {
