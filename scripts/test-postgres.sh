@@ -74,6 +74,11 @@ notice_watcher_dsn="host=$test_root/socket dbname=cairn_notice_watcher_eligibili
 CAIRN_DATABASE_URL="$notice_watcher_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$notice_watcher_dsn" CAIRN_DATABASE_URL="$notice_watcher_dsn" \
     python3 scripts/check_notice_watcher_eligibility.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_bound_compact_notice
+bound_compact_dsn="host=$test_root/socket dbname=cairn_bound_compact_notice sslmode=disable"
+CAIRN_DATABASE_URL="$bound_compact_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$bound_compact_dsn" CAIRN_DATABASE_URL="$bound_compact_dsn" \
+    python3 scripts/check_bound_compact_notice.py "$test_root/cairn"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_panel_source_forgotten
 source_forgotten_dsn="host=$test_root/socket dbname=cairn_panel_source_forgotten sslmode=disable"
 CAIRN_DATABASE_URL="$source_forgotten_dsn" "$test_root/cairn" migrate
