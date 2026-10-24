@@ -250,6 +250,34 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertEqual([call['op'] for call in self.calls()].count('history'), before_history)
         self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'restored')
 
+    def test_resume_after_settlement_refreshes_current_correction_without_old_source(self):
+        state_path, old_body = self.unfinished_checkpoint(required='Earlier required rule.')
+        self.invoke()
+        before_history = [call['op'] for call in self.calls()].count('history')
+        self.state.pop('inbox_attempt')
+        self.state.pop('inbox_intent')
+        title = memory.workstream_prefix(self.event) + 'Fixture repair'
+        current_body = title + '\nNext: use the corrected retry identity.'
+        self.fixture['search']['selected'][0]['record']['body'] = 'Current required rule after resume.'
+        self.fixture['search']['index'][0].update(version=2, summary=current_body,
+            body_sha256=hashlib.sha256(current_body.encode()).hexdigest())
+        self.fixture['pull']['selection']['record'].update(version=2, body=current_body)
+        self.freeze()
+
+        resume = dict(self.compact_event(), source='resume')
+        result = self.memory_main(resume)
+        self.assertEqual(result['code'], 0, result)
+        text = json.loads(result['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertIn('Current required rule after resume.', text)
+        checkpoint = json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])
+        self.assertEqual(checkpoint['body'], current_body)
+        self.assertEqual(checkpoint['version'], 2)
+        self.assertEqual(checkpoint['source_extent'], 'whole')
+        self.assertNotIn(old_body, text)
+        self.assertNotIn(self.body, text)
+        self.assertEqual([call['op'] for call in self.calls()].count('history'), before_history)
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'restored')
+
     def test_compaction_between_completion_and_reply_preserves_exact_pending_intent(self):
         self.unfinished_checkpoint()
         self.invoke()
