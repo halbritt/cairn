@@ -1,0 +1,78 @@
+# CAIRN-227 one-account canary preflight, 2026-10-24
+
+This is a read-only deployment snapshot and a sequence for a **future** owner-approved trial. It authorizes no installation, service restart, database migration, grant change, or provider request. The [acceptance register](token-efficiency-gate-2026-10-24.md) remains **Defer**: its 22 situations × 4 arms need accepted paired tasks, usage, latency, failures, and an exercised rollback. The inventory below was observed on this host at source commit `b7dee256b84e21786e66f4f3bf906e8edb1f5d7b`; compare every hash again at admission.
+
+## Current effective inventory
+
+`cairn version` and authenticated `cairn agent ... version` both report installed client/API revision `37ad2df3604a86d4c0c42dba85f3dfcdc637f494` (protocol 2). The installed `/home/halbritt/.local/bin/cairn` hashes to `8bd95485fcc84230f52ba51f793e0d3e92dcfbe43f00ddf8db01d72737449ecb`. The active, enabled `cairn-api.service` uses that binary with the local socket, loopback listener, TLS-terminated proxy, machine ID `proximal`, and embedding worker; its unit is `/home/halbritt/.config/systemd/user/cairn-api.service` with `50-managed-database.conf` and `semantic.conf` drop-ins. Its managed PostgreSQL URL is in the drop-in. No database version or migration state was queried. Source has migrations through `core/schema/068_notice_flush.sql`; `cmd/cairn/commands.go` dispatches `migrate` to `store.Migrate`. The installed revision predates this source's opt-in capabilities.
+
+The candidate migration hashes, in order, are `064_capture_observation.sql` `c0a53b2efaa6e115f1029052f59b26812aa65ee0d7ee3cdd437498f222c03029`, `065_capture_admission_shadow.sql` `9a24ef576c0e149d5e89c8b1b00323e9e3cc43bcfe75afed4567ce941a24a05d`, `066_notice_wake_policy.sql` `e3771fdea3daeb780dc8783c08ad32705aade22ccf5e7fc519be4f639d49df4d`, `067_native_notice_batch.sql` `5034a9852772786371cb88d0f4c5e0c8562689fd9f01c502cf4d36c8aab7e455`, and `068_notice_flush.sql` `3a4cd3aea5d1f2508edda85716a3d4cff7d262ee4d9a3f94d2789736c4c3fdb6` under `core/schema/`. The gate script `scripts/token_efficiency_gate.py` hashes to `c96fac9f3aa8ec9785f98b52c83016ffafff4bdc3e8cd2cc4a7fec46e6f7854c`.
+
+Read-only `python3 -B scripts/check_effective_recall_deployment.py --compact` returned `ok=true`, `pins_valid=true`, `contract_valid=true`, `issues=[]`, four ordinary hooks, three enabled inbox bindings, and `live_observed=false`. It validates existing pins and synthetic render fixtures; it does not observe an actual new hook turn.
+
+| Ordinary hook or selected config | SHA-256 | Relationship |
+| --- | --- | --- |
+| `/home/halbritt/.codex/hooks.json` | `02d086bdd332739d7985d8583e5c8c7e63e40fb5e64c5b83d81f7faf3aa78333` | Selected Codex account |
+| `/home/halbritt/.codex-harm/hooks.json` | `c880e3668e767ab4181f3ee7494cd25fc8d99e9c96253d74c863308af3d49c26` | Other Codex account; must stay pinned to current behavior |
+| `/home/halbritt/.claude/settings.json` | `1654d27f5da01c0be4ece3cb23c457bf2b696262aff14f20ad80b18c26f1e7dc` | Selected Claude account |
+| `/home/halbritt/.claude-harm/settings.json` | `c802af22005f1b1a0f127bfadf7c365c2e9f4c65756a3b2e5d2e8a1fd3d38858` | Other Claude account; must stay pinned to current behavior |
+| `/home/halbritt/.local/share/cairn/codex-hooks/config.json` | `e3d21c2f334bada43918f2d839b1f92e660fb6ac7b419327749fa000acf249d2` | Shared by both Codex ordinary hooks; `agent_tools`, no opt-in keys |
+| `/home/halbritt/.local/share/cairn/claude-hooks/config.json` | `62677d97808bfccd8c929318844a7233303d58a28340db54f0b5da4c33823ae4` | Selected Claude ordinary config; `agent_tools`, no opt-in keys |
+| `/home/halbritt/.local/share/cairn/rollouts/05f7aae-agent489-20261020/source/memory.py` | `cad93847f313b20e7a734ae41d694c3b015403a1216287209b0e8332d50f3e1c` | Installed ordinary engine used by all four hooks |
+
+| Pinned inbox binding or coordination file | SHA-256 | Relationship |
+| --- | --- | --- |
+| `/home/halbritt/.local/share/cairn/deployments/inbox-recall-codex-4b0757a-20260930/binding.json` | `8b1f0670fb6f71b8fdfefa49595b7f3b2d6bfb0bb63771fd2f8341ee1af8d120` | Enabled; pins **codex-one, codex-two, codex-three** and the shared memory config |
+| `/home/halbritt/.local/share/cairn/deployments/inbox-recall-claude-one-2306e44-20260930/binding.json` | `d40a15f6cc90933f6b36c509b86daa611b74cbef48aa931fdf21779b3070ead1` | Enabled; selected Claude binding |
+| `/home/halbritt/.local/share/cairn/deployments/inbox-recall-claude-two-e68f3ab-20260930/binding.json` | `8064e3362f375c032a141b8e4f79a963293888184731ff183b0117c3a3079fae` | Enabled; other Claude binding |
+| `/home/halbritt/.local/share/cairn/coordination/bindings/codex-one.json` | `1c1e1468bfb8d94d0e219ac8be3560271bbbc324541fbd3a00fba66ab2f907d5` | Selected Codex; native delivery; no compact/batch keys |
+| `/home/halbritt/.local/share/cairn/coordination/bindings/claude-one.json` | `286ba2ecb76a61b762a9f1ddce8e5d6d064baf4a7d51d3e0bcd14ebe827f3579` | Selected Claude; native delivery; no compact/batch keys |
+| `/home/halbritt/.local/share/cairn/coordination/bindings/codex-two.json` | `ef019c2d40d1994dd08be8d73a617f33e94cbf4b03e3485cf99bfdbd349612a3` | Other Codex binding in shared manifest |
+| `/home/halbritt/.local/share/cairn/coordination/bindings/codex-three.json` | `232d27d2171a078c3d2c34939e1374ad0bb4e0fdbb3f7eff540d190ed3c95a13` | Other Codex binding in shared manifest |
+| `/home/halbritt/.local/share/cairn/coordination/bindings/claude-two.json` | `7fb2c2f631bf1ed08b6468f374a05414edf867d814f044a373f0244c91fbf428` | Other Claude binding |
+| `/home/halbritt/.local/share/cairn/claude-harm-hooks/config.json` | `521a50d7a5d78e5e4f332c7c3c1d1d91bbc82f88bf858940dcc86f8ff3679c92` | Other Claude ordinary config |
+| `/home/halbritt/.local/share/cairn/coordination/coordination.py` | `c50cc32315a7dc802f817e0641c567ba8a0d30ff131f6b273ff271c41fa012e3` | Installed native coordination engine |
+| `/home/halbritt/.local/share/cairn/deployments/ledger-compaction-cairn186-20261022/source/inbox_recall.py` | `d93d44ca3a7dbcd09886adea9c4a6ef4e948e3c5b739f2f170e959ace6c8d943` | Pinned inbox bridge in all three bindings |
+
+The selected Codex MCP entry is `/home/halbritt/.codex/config.toml` (`098ae337713b9052837b834c4a413420fb7ea1042a20128be4ba82505144b6aa`); the other Codex entry is `/home/halbritt/.codex-harm/config.toml` (`eac9d873dbe6655bd83d5c6b8014c815e4849a907aa7928fea78295ea5851403`). The selected Claude MCP entry is `/home/halbritt/.claude.json` (`ab75e929466344ca64c2abc4a7e720339f38a0ccd960f311ad6fd0520266863e`), calling `/home/halbritt/.local/bin/cairn-shared-mcp` (`21d8d12e13976031be8bc8c7f1c7f14e95ad2f47c6968370d7c484b24d52fe01`). The other Claude MCP file `/home/halbritt/.claude-harm/.claude.json` hashes to `e8e4a04f4cac39745937facdf9070f7de1658df8f6df1d99d173e0675884805c`. The shared wrapper invokes the current installed binary with full default search and tool descriptions. Do not edit that wrapper to test one account.
+
+## Candidate capabilities and expected account differences
+
+The source files at the observed commit hash as follows: `integrations/lifecycle/memory.py` `824243df9e8c43e6b283832c27e5f611865bcea237a7d7067836795e29541f37`; `coordination.py` `257f3d8e2efabdde273bf16d29b80612f8d0b3533e24e95557c65841b1230930`; `inbox_recall.py` `293bd5c2f75fc117352454c356115dc43f7c6c1253ea527a0faa027945adfc22`. These are candidate bytes, not installed bytes. A new source commit requires a new reviewed hash set.
+
+| Slice | Future opt-in difference on selected account | Other-account/default behavior |
+| --- | --- | --- |
+| CAIRN-215 | Add `"capture_observations": true` to selected ordinary memory config after API/schema support. | Existing configs omit it; observations are metadata, not billing proof. |
+| CAIRN-216 | Add `"compact_inbox_version": 1` to selected native coordination config; installer flag is `--compact-inbox`. | Full notice/response remains the default; old handles retain their original attempt checks. |
+| CAIRN-219 | Add `"recall_view": "compact/1"` to selected ordinary memory config, and `--search-view compact/1` to its MCP process. | Full views and scoped exact inspection remain available. |
+| CAIRN-220 | No account config change. A selected publisher can explicitly pass `--notice-urgency routine --notice-defer-seconds N` (0–60) per notice; `notice-flush --request-id UUID EVENT_UUID` is its publisher-authenticated release. | No notice policy keeps the current immediate path. No broad automatic deferral. |
+| CAIRN-221 | Add `"notice_batch_version": 1` only with compact inbox; installer flag is `--notice-batch`. | One item per turn remains default; batch caps at three already-waiting notices and stops for a waiting request or urgent notice. |
+| CAIRN-222 | **No gate config change.** `transport_only` is a shadow candidate in capture observation; the selector still runs. | Never infer a production capture skip from the local shadow panel. |
+| CAIRN-224 | Codex only: add `"context_lifecycle": "compact/1"` to selected `agent_tools` ordinary config. | Claude remains full; Codex full remains rollback path. |
+| CAIRN-225 | Add `--tool-profile compact/1` to each selected MCP process command. | Full tool schema remains default and discoverable. |
+
+The selected account files must be **copied to isolated canary destinations**, with separate ordinary config/state and coordination config/manifest pins, before any opt-in is enabled. In particular, editing the current Codex memory config or its three-config manifest in place would affect `.codex-harm`, `codex-two`, and `codex-three`. The selected Claude MCP command needs an account-specific wrapper or direct command; changing `cairn-shared-mcp` would broaden the trial. The installer writes hook files and may update trust; it cannot be treated as a dry run. Its `--compact-inbox` path refuses a bound **enabled** inbox manifest. No exact canary destination or command is approved until a diff proves one-account isolation and all pin validators accept it.
+
+## Staged procedure for a later decision
+
+1. **Freeze and admit.** Name the one Codex and one Claude subscription account, verify their effective homes and provider route without exposing credentials, and freeze fixture/acceptance hashes, baseline and candidate commits, model/effort, quota reserve, per-run ceiling, source/config pins, rollback window, and the 22 × 4 stage IDs using [the gate](token-efficiency-gate-2026-10-24.md). A missing route or budget stops the provider arm. An authentication or quota failure stops that arm without OpenRouter fallback. This preflight has neither the approved account selection nor budget.
+2. **Read-only drift check.** From the exact candidate checkout, run `sha256sum` over the files listed above, `cairn version`, `cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" version`, `systemctl --user show cairn-api.service -p ActiveState -p FragmentPath -p ExecStart`, and `python3 -B scripts/check_effective_recall_deployment.py --compact`. Inspect the report's `live_observed` separately. Stop if any hash, owner, mode, home, pin, or server/client revision differs from the frozen review.
+
+   ```sh
+   git rev-parse HEAD
+   sha256sum integrations/lifecycle/memory.py integrations/lifecycle/coordination.py integrations/lifecycle/inbox_recall.py scripts/token_efficiency_gate.py core/schema/06{4,5,6,7,8}_*.sql
+   cairn version
+   cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" version
+   systemctl --user show cairn-api.service -p ActiveState -p FragmentPath -p ExecStart
+   python3 -B scripts/check_effective_recall_deployment.py --compact
+   ```
+3. **Disposable validation.** Run `make test-integration` against its disposable PostgreSQL cluster and `make check`; run the focused native inbox, capture, lifecycle, recovery and MCP fixtures from the candidate revision. These checks do not authorize a managed-database migration. Compare `core/schema` migration inventory and a reviewed backup/restore rehearsal before any later `cairn migrate` or binary/service change. Do not run integration tests against the managed database.
+4. **Stage without activation.** After explicit deployment approval, construct owner-only immutable candidate engine, bridge, config and MCP paths; copy only the selected Codex/Claude hook settings to isolated account destinations and review exact diffs. Use `scripts/install-codex-hooks.py --help`, `scripts/install-claude-hooks.py --help`, and `scripts/install-agent-coordination.py --help` to check the selected arguments at that revision. Preserve all non-Cairn hook entries. For each selected inbox recall binding, stage a new manifest with `enabled: false`, wait for pre-existing callbacks/attempts to settle, and validate `inbox_recall.validate_binding(config, require_enabled=False)` against the complete pinned set. The existing enabled manifests and active grants are outside this preflight. Only a reviewed atomic manifest activation and fresh native session can enter a trial.
+5. **Bounded canary and measurement.** Admit only frozen tasks within the reserved subscription budget. Observe the effective installed binary and exact ordinary/inbox/MCP pins in each new account session; exercise small and oversized exact sources, explicit settlement/retry, urgent interruption, partial failure, compaction/resume, full inspection, cache accounting and latency. Record independent accepted task outcomes and all failed/unknown arms in the same denominator. `scripts/token_efficiency_gate.py report` can check structural completeness; a human grades task quality. A source fixture or lower hook byte count alone cannot pass.
+6. **Rollback and stop.** Stop new canary admissions on source/privacy failure, lost actionable item, duplicate effect, false completion, required correction loss, route/auth/quota drift, unknown deployment pin, or task-quality/latency regression. Disable the selected new manifests for new turns; let already admitted callbacks, handles and grants settle under their original pinned code. Restore the reviewed selected hook/MCP/coordination config set only after that boundary, then start fresh sessions and rerun the effective inventory. For CAIRN-220, explicitly `notice-flush` any known publisher-owned deferred routine notice that must be released; do not discard it or alter another publisher's event. Preserve API/schema backups and do not blind-downgrade a migrated database. Verify the old binary is compatible with the retained schema before any service rollback.
+
+## Current admission blockers
+
+- The installed CLI/API revision and hook/bridge/coordination bytes lack the candidate capabilities. A reviewed build, additive migration and service rollout are still required; operational schema version and backup/restore readiness were not read or tested.
+- The installed Codex ordinary config and inbox manifest are shared, as is the Claude MCP wrapper. **Toggling any shared file does not select one account and blocks canary admission.** No isolated per-account config/wrapper paths, owner-only pin set, or validated account-scoped hook diff exists. Fresh-session loading and active-callback boundaries have not been observed.
+- There is no frozen real paired ledger, independent task grader, approved subscription route and quota reserve, accepted one-account assignment, or live rollback result. `live_observed=false` in the inventory. The dated release decision remains **Defer**.
