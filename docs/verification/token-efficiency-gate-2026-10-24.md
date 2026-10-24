@@ -257,6 +257,15 @@ subscription quota is available. Those historical runs do not substitute for
 this new frozen token-efficiency panel. The CAIRN-223 bounded pilot is also
 incomplete and cannot be silently replayed under the same freeze.
 
+The [single-workflow dry run](token-efficiency-one-workflow-dry-run-2026-10-24.md)
+provides a provider-free preflight for `baseline.single_notice`. It verifies the
+current selected `.codex`/installed API pins and two caller-recorded utilization
+samples, then freezes one recipient-stage contract. It does not call a task
+model, establish a native join, produce an independent task grade, or complete
+the paired panel. Its status remains `full_panel_status=incomplete` and release
+remains `defer`; it refuses capture, concurrency, and every unsupported case or
+arm.
+
 ## Release decision
 
 **Defer combined rollout.** Current data supports continued local development

@@ -248,3 +248,11 @@ Future admission must solve the carrier and joins, freeze the selected
 accounts, routes, pins and limits, then run and review all four arms. The
 subscription route rule remains in force. CAIRN-227 release status remains
 **Defer**.
+
+For a provider-free preflight of one fixture, see the [single-workflow dry
+run](../../docs/verification/token-efficiency-one-workflow-dry-run-2026-10-24.md).
+It supports only `baseline.single_notice`, checks the selected Codex account and
+current installation pins, and records fresh caller-status samples. It never
+starts an actor turn; its task grade stays unassessed and the 22-case paired
+gate stays incomplete. Capture, concurrent receivers, other arms and all other
+case setups remain refused by this narrow helper.
