@@ -143,6 +143,7 @@ class CodexTranscriptTests(unittest.TestCase):
 def considered(event, state):
     """What a completed real capture records: the position of its snapshot."""
     state["capture_snapshot_marker"] = hook.codex_snapshot_marker(event["transcript_path"])
+    hook.record_capture_status(state, "nothing_selected")
     return {}
 
 
@@ -208,7 +209,7 @@ class CodexHookTests(unittest.TestCase):
 
     def test_dialogue_appended_during_capture_is_not_marked_captured(self):
         self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)  # six messages
-        def select(config, schema, prompt, excerpt, timeout=35):
+        def select(config, schema, prompt, excerpt, timeout=35, observation=None):
             self.assertEqual(len(excerpt["messages"]), hook.CODEX_STOP_MIN_MESSAGES)
             self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2 + 1)  # a new pair lands during selection
             return {"structured_output": {"checkpoint": None, "workstream": None, "memories": []}}
