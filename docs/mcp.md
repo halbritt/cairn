@@ -100,6 +100,27 @@ at least `--tokens`. OpenCode's native adapter uses the corresponding
 conversation room. A running MCP process keeps its startup settings and code
 until it is restarted.
 
+The MCP facade accepts an opt-in `--search-view compact/1` startup flag.
+`codex-config`, `claude-config` and `opencode-config` pass it through when
+generating a new configuration. The default response remains
+`cairn.mcp-search/1`. The opt-in response is
+`cairn.mcp-search-compact/1`: it retains whole required selections, indexed
+source identity and preview spans, complete `pull_arguments`, omission counts,
+discovery state, declared context and filters, paging, receipt budget and expiry.
+It removes repeated query,
+ranking and tokenizer metadata from the model-facing response. The sealed
+receipt and current pull checks are unchanged. `cairn_client_info` reports the
+active `facade.search_view` only when compact mode is selected.
+
+The authenticated `cairn agent recompile` and `explain-page` operations
+remain available for full retained receipt and candidate diagnostics under the
+same profile. Historical recompilation does not prove current eligibility; use
+a current search and pull before acting. This flag does not change the native
+hook's recall text or the SDK native adapter's source-authored search schema.
+The compact projection's final MCP envelope is checked against the configured
+input room, including JSON escaping. It has no accepted task-outcome or
+subscription-cost claim yet.
+
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
 It requires an explicit memory cap and must be between 1 and the smaller of
@@ -535,8 +556,9 @@ call. Budget search results and whole current predecessor pulls together before
 spending the remaining allowance. Neither search mode certifies novelty or
 replaces the source and applicability checks below.
 
-The preparation response is the normal search view, including required `selected` context,
-`index`, omission reasons, source seal, receipt and complete `pull_arguments`.
+The preparation response uses the facade's configured search view, including
+required `selected` context, `index`, omission reasons, source seal, receipt
+and complete `pull_arguments`.
 An added `preparation` object says `note_saved: false` and explains the decision.
 The receipt records retrieval, not a save reservation or a duplicate-check
 certificate. Preparation does not invoke `create`, `edit` or `supersede`.

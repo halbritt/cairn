@@ -28,6 +28,9 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 	if o.config.MaxTokens != 1000000 {
 		command = append(command, "--max-tokens", strconv.Itoa(o.config.MaxTokens))
 	}
+	if o.config.SearchView != "" {
+		command = append(command, "--search-view", o.config.SearchView)
+	}
 	for _, pin := range [][2]string{{"--revision", o.pins.Revision}, {"--workspace-sha256", o.pins.WorkspaceSHA256},
 		{"--task-class", o.pins.TaskClass}, {"--task-phase", o.pins.TaskPhase}, {"--binding", o.pins.BindingID}, {"--capability", o.pins.CapabilityID}} {
 		if pin[1] != "" {

@@ -17,6 +17,8 @@ func TestMCPScopeOptions(t *testing.T) {
 		{[]string{"--codex-thread", "--max-tokens", "160000"}, true},
 		{[]string{"--codex-thread", "--max-tokens", "31000"}, false},
 		{[]string{"--codex-thread", "--max-tokens", "1000001"}, false},
+		{[]string{"--codex-thread", "--search-view", "compact/1"}, true},
+		{[]string{"--codex-thread", "--search-view", "compact/2"}, false},
 	} {
 		f := flags("mcp")
 		o := mcpFlags(f)
@@ -27,5 +29,23 @@ func TestMCPScopeOptions(t *testing.T) {
 		if err := o.validate(f.NArg()); (err == nil) != tc.valid {
 			t.Fatalf("%v: %v", tc.args, err)
 		}
+	}
+}
+
+func TestCompactSearchViewPropagatesToMCPCommand(t *testing.T) {
+	f := flags("mcp")
+	o := mcpFlags(f)
+	if err := f.Parse([]string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread", "--search-view", "compact/1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.validate(f.NArg()); err != nil {
+		t.Fatal(err)
+	}
+	command, err := o.command("/cairn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command[len(command)-2] != "--search-view" || command[len(command)-1] != "compact/1" {
+		t.Fatalf("generated MCP command lost opt-in view: %q", command)
 	}
 }

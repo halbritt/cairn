@@ -14,6 +14,7 @@ import (
 
 type clientInfoComponent struct {
 	Build                         *buildinfo.Info `json:"build,omitempty"`
+	SearchView                    string          `json:"search_view,omitempty"`
 	SearchMemoryBudgetBytes       string          `json:"search_memory_budget_bytes"`
 	SearchMinPullBytes            string          `json:"search_min_pull_bytes"`
 	SupportBasis                  string          `json:"support_basis"`
@@ -42,6 +43,9 @@ func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ s
 	result := clientInfoResult{Schema: "cairn.client-info/1",
 		Facade: clientInfoComponent{Build: &t.facadeBuild, SearchMemoryBudgetBytes: "supported", SearchMinPullBytes: "supported", SupportBasis: "registered_search_contract", InspectionFirstFittingWholeV1: "supported", InspectionSupportBasis: "registered_search_contract", SourceOpening: "supported", SourceOpeningBasis: "registered_pull_contract"},
 		API:    clientInfoAPI{clientInfoComponent: clientInfoComponent{SearchMemoryBudgetBytes: "unknown", SearchMinPullBytes: "unknown", SupportBasis: "no_api_capability_contract", InspectionFirstFittingWholeV1: "unknown", InspectionSupportBasis: "no_api_inspection_capability_contract", SourceOpening: "unknown", SourceOpeningBasis: "no_api_source_opening_capability_contract"}, SourceOpeningBinding: "unknown", State: "unavailable"}}
+	if t.config.SearchView != "" {
+		result.Facade.SearchView = t.config.SearchView
+	}
 	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Keep capability decoding separate: malformed optional declarations must

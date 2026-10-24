@@ -120,7 +120,7 @@ func (t memoryTools) attemptSearch(ctx context.Context, request core.CompileRequ
 	if ctx.Err() != nil {
 		return nil, nil, errSearchCancelled
 	}
-	view, room, err := searchView(index, args, false, room, receiptRoom)
+	view, room, err := searchView(index, args, t.config.SearchView, false, room, receiptRoom)
 	if err != nil {
 		return nil, nil, errSearchPreparation
 	}

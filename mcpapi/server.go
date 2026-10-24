@@ -25,10 +25,14 @@ type Config struct {
 	MaxTokens       int
 	Context         *core.ContextPins
 	CodexThread     bool
+	SearchView      string
 }
 
 // Validate checks startup scope, text integrity and room; the API validates pin semantics on retrieval.
 func (c Config) Validate() error {
+	if c.SearchView != "" && c.SearchView != "compact/1" {
+		return fmt.Errorf("MCP search view must be compact/1 or omitted")
+	}
 	if strings.TrimSpace(c.Scope.Repo) == "" || c.Scope.Repo == "*" {
 		return fmt.Errorf("MCP requires an explicit repository")
 	}
@@ -159,6 +163,33 @@ type searchResult struct {
 	BytesRemaining   int              `json:"bytes_remaining"`
 }
 
+// compactSearchResult is an opt-in projection of the same sealed receipt.
+// Missing fields in this view are not assertions of zero or false.
+type compactSearchResult struct {
+	Schema            string                 `json:"schema"`
+	Status            string                 `json:"status"`
+	Selected          []core.Selection       `json:"selected"`
+	Index             []searchEntry          `json:"index"`
+	Omitted           map[string]int         `json:"omitted"`
+	Discovery         *core.DiscoveryRanking `json:"discovery,omitempty"`
+	AdvisoryConflicts bool                   `json:"advisory_conflicts"`
+	Kinds             []string               `json:"kinds,omitempty"`
+	Context           *core.ContextPins      `json:"context,omitempty"`
+	Page              *core.BrowsePage       `json:"page,omitempty"`
+	Browse            *core.BrowsePage       `json:"browse,omitempty"`
+	MemoryBudget      *core.MemoryBudget     `json:"memory_budget,omitempty"`
+	Preparation       *notePreparation       `json:"preparation,omitempty"`
+	Scope             core.Scope             `json:"scope"`
+	Destination       core.Destination       `json:"destination"`
+	SourceSchema      string                 `json:"source_schema"`
+	SourceSeal        string                 `json:"source_seal"`
+	ReceiptID         string                 `json:"receipt_id"`
+	RequestID         string                 `json:"request_id"`
+	ExpiresAt         time.Time              `json:"expires_at"`
+	CreditsRemaining  int                    `json:"credits_remaining"`
+	BytesRemaining    int                    `json:"bytes_remaining"`
+}
+
 // NewServer borrows client; its caller owns the connection and process lifetime.
 // The API profile controls writer identity, role, repository and destination.
 func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
@@ -171,7 +202,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	choice := new(localapi.PreviewCapabilityChoice)
 	tools := memoryTools{previewChoice: choice, client: client, retrieval: localRetrievalBackend{client: client, previewChoice: choice}, config: config, facadeBuild: facadeBuild}
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_prepare_note", Description: "Before saving reusable knowledge, inspect possible predecessors with a short subject query and known entities. Creates a bounded lexical search receipt, not a note. Returns eligible previews and complete pull_arguments; pull current bodies and check applicability before choosing cairn_edit for the same A note or cairn_remember for distinct knowledge. Similarity is not supersession. Hosted profiles cannot obtain the required protected impact preview; formal supersession needs the authorized local/operator workflow. No automatic save, edit, retirement or model call."}, tools.prepareNote)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Reports whether this facade preserves paired source openings, and whether the API declares its reader guard and the authenticated principal's receipt binding; both stay unknown without a recognized declaration and neither shows that any other reader is ready. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build, active opt-in search_view, and declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Reports whether this facade preserves paired source openings, and whether the API declares its reader guard and the authenticated principal's receipt binding; both stay unknown without a recognized declaration and neither shows that any other reader is ready. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}, tools.assess)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. The configured output budget applies without silent truncation."}, tools.assessments)
@@ -271,11 +302,11 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
 	}
-	view, memoryRoom, err := searchView(index, args, prepare, memoryRoom, receiptRoom)
+	view, memoryRoom, err := searchView(index, args, t.config.SearchView, prepare, memoryRoom, receiptRoom)
 	return toolResult(view, err, memoryRoom)
 }
 
-func searchView(index core.IndexResult, args searchArgs, prepare bool, memoryRoom, receiptRoom int) (searchResult, int, error) {
+func searchView(index core.IndexResult, args searchArgs, presentation string, prepare bool, memoryRoom, receiptRoom int) (any, int, error) {
 	view, err := presentSearch(index, args.RequestID)
 	if prepare {
 		view.Preparation = &notePreparation{NoteSaved: false, Guidance: preparationGuidance}
@@ -285,6 +316,19 @@ func searchView(index core.IndexResult, args searchArgs, prepare bool, memoryRoo
 	}
 	if err == nil && args.InspectionPolicy != "" {
 		memoryRoom, err = indexview.InspectionViewRoom(index, args.InspectionPolicy, memoryRoom, receiptRoom)
+	}
+	if err == nil && presentation == "compact/1" {
+		return compactSearchResult{
+			Schema: "cairn.mcp-search-compact/1", Status: view.Status,
+			Selected: view.Selected, Index: view.Index, Omitted: view.Omitted,
+			Discovery: view.Discovery, Page: view.Page, Browse: view.Browse,
+			AdvisoryConflicts: view.AdvisoryConflicts, Kinds: view.Kinds, Context: view.Context,
+			MemoryBudget: view.MemoryBudget, Preparation: view.Preparation,
+			Scope: view.Scope, Destination: view.Destination,
+			SourceSchema: view.SourceSchema, SourceSeal: view.SourceSeal,
+			ReceiptID: view.ReceiptID, RequestID: view.RequestID, ExpiresAt: view.ExpiresAt,
+			CreditsRemaining: view.CreditsRemaining, BytesRemaining: view.BytesRemaining,
+		}, memoryRoom, nil
 	}
 	return view, memoryRoom, err
 }

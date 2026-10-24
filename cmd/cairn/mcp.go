@@ -28,6 +28,7 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.BoolVar(&o.config.CodexThread, "codex-thread", false, "group searches by Codex tool-call thread metadata instead of --task/--run")
 	f.IntVar(&o.config.AvailableTokens, "tokens", 32000, "memory input room per tool result")
 	f.IntVar(&o.config.MaxTokens, "max-tokens", 1000000, "maximum explicit search input room and pull output; --tokens remains the default")
+	f.StringVar(&o.config.SearchView, "search-view", "", "optional model-facing search presentation: compact/1")
 	f.StringVar(&o.pins.Revision, "revision", "", "declared repository revision")
 	f.StringVar(&o.pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
 	f.StringVar(&o.pins.TaskClass, "task-class", "", "task category")
