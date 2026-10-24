@@ -40,10 +40,12 @@ import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
 import trial_embedding_launch as embedding_launch
 import trial_legacy_limits as limits
+import trial_legacy_case_materials as case_materials
 import trial_original_execution as original
 import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
+import trial_writer_release as writer_release
 import trial_weekly_accounts as weekly_accounts
 from check_weekly_paired_eval import WEEKLY_ARMS, WEEKLY_ATTEMPTS, WEEKLY_CASES, WEEKLY_SEEDS
 
@@ -51,11 +53,12 @@ PROFILE_SCHEMA = 'cairn.weekly-run-profile/1'
 SPEC_SCHEMA = 'cairn.weekly-run-spec/1'
 RECEIPT_SCHEMA = 'cairn.weekly-run-receipt/1'
 CLAIM_SCHEMA = 'cairn.weekly-run-claim/1'
-SELECTION_SCHEMA = 'cairn.weekly-run-selection/1'
+SELECTION_SCHEMA = 'cairn.weekly-run-selection/2'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
-                  'weekly_source embedding postgres capacity executor selection account execution')
-SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
+                  'weekly_source embedding postgres capacity executor selection account execution writer')
+SELECTION_FIELDS = ('schema campaign_id scheduled_at current candidate harness_commit executor '
+                    'capacity_receipt_sha256 writer_sha256 selected_by')
 CODEX_SELECTION_FIELDS = (SELECTION_FIELDS+' codex_account_binding_sha256 codex_account_assignment_sha256 '
                           'provider_model provider_binary_sha256')
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
@@ -178,6 +181,12 @@ class LegacyHarnessExecutor:
     def execute(self, spec, run_dir):
         output = Path(run_dir) / 'agent'
         argv = legacy_argv(spec, output)
+        if spec.get('case_materials') is not None:
+            argv += ['--case-materials', spec['case_materials']['path'],
+                     '--case-materials-sha256', spec['case_materials']['sha256']]
+        argv += ['--original-writer-cgroup', spec['writer']['cgroup'],
+                 '--original-writer-controls', spec['writer']['controls']['path'],
+                 '--original-writer-controls-sha256', spec['writer']['controls']['sha256']]
         env = legacy_environment(spec)
         with open(Path(run_dir) / 'harness.log', 'xb') as log:
             os.chmod(log.name, 0o600)
@@ -240,6 +249,12 @@ class CodexWeeklyExecutor:
         need(fragment.get('harness')=='codex','codex_provider_contract_mismatch')
         argv=[str(Path(spec['harness']['root'])/'scripts/trial-task-eval.sh'),'agent','--legacy-fixtures',
               '--codex-weekly-limits','--output',str(output),'--arms']
+        if spec.get('case_materials') is not None:
+            argv += ['--case-materials', spec['case_materials']['path'],
+                     '--case-materials-sha256', spec['case_materials']['sha256']]
+        argv += ['--original-writer-cgroup', spec['writer']['cgroup'],
+                 '--original-writer-controls', spec['writer']['controls']['path'],
+                 '--original-writer-controls-sha256', spec['writer']['controls']['sha256']]
         for name in ARMS:
             arm=spec['arms'][name]
             argv += ['--memory',f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
@@ -292,7 +307,27 @@ def check_profile(profile):
     need(profile['selection'] is None or isinstance(profile['selection'], dict), 'profile_selection')
     need(profile['account'] is None or isinstance(profile['account'], dict), 'account_selection_invalid')
     need(profile['execution'] is None or isinstance(profile['execution'], dict), 'original_execution_unbound')
+    check_writer(profile['writer'])
     return repo, runs
+
+
+def check_writer(writer):
+    """Require an explicit reviewed writer boundary; never infer host defaults."""
+    paired.shape(writer, 'cgroup controls', 'weekly_writer_unselected')
+    cgroup = paired.plain_path(writer['cgroup'])
+    need(cgroup.is_dir() and cgroup.resolve() == cgroup, 'weekly_writer_unavailable')
+    paired.shape(writer['controls'], 'path sha256', 'weekly_writer_controls_unselected')
+    document = paired.read_json_pin(writer['controls'])
+    paired.shape(document, 'schema controls reviewed_identity', 'weekly_writer_controls_invalid')
+    need(document['schema'] == 'cairn.writer-controls/1' and isinstance(document['controls'], dict) and
+         document['reviewed_identity'] is not None, 'weekly_writer_controls_invalid')
+    try:
+        writer_release.check_controls(document['controls'])
+        reviewed = writer_release.check_reviewed(document['reviewed_identity'])
+    except (writer_release.WriterUnavailable, TypeError, ValueError):
+        raise paired.Refusal('weekly_writer_controls_invalid') from None
+    need(reviewed is not None, 'weekly_writer_review_unselected')
+    return dict(cgroup=str(cgroup), controls=dict(writer['controls']))
 
 
 def current_slot(schedule, now):
@@ -354,7 +389,8 @@ def selection_gate(profile, preview, executor_name, capacity):
     expected = dict(campaign_id=profile['campaign_id'], scheduled_at=preview['scheduled_at'],
                     current=preview['current'], candidate=preview['candidate'],
                     harness_commit=preview['harness'], executor=executor_name,
-                    capacity_receipt_sha256=capacity['receipt_sha256'])
+                    capacity_receipt_sha256=capacity['receipt_sha256'],
+                    writer_sha256=paired.canonical_sha(profile['writer']))
     if codex:
         fragment=preview['original_execution']
         assignment = capacity.get('account_assignment')
@@ -434,6 +470,7 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
         recorded = stored.get('original_execution')
         need((recorded.get('declared') if isinstance(recorded, dict) else None) == fragment,
              'stored_slot_execution_mismatch')
+        need(stored.get('writer') == check_writer(profile['writer']), 'stored_slot_writer_mismatch')
         if profile['executor'] == CodexWeeklyExecutor.name:
             assert_account_slot_binding(stored, requested_plan, requested_assignment,
                                         executors[profile['executor']].account_ids,
@@ -464,7 +501,7 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
                  current=dict(ref=profile['current_ref'], commit=current),
                  candidate=dict(ref=profile['candidate_ref'], commit=cand), harness_commit=harness,
                  executor=executor.name, capacity=capacity, account_preflight=account_preflight,
-                 selection=selection, original_execution=fragment)
+                 selection=selection, writer=check_writer(profile['writer']), original_execution=fragment)
     try:
         slot.mkdir(mode=0o700)
     except FileExistsError:
@@ -580,6 +617,13 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
         for item in planned:
             item['account_id'] = assigned[item['run_id']]
     need(len(planned) == WEEKLY_ATTEMPTS, 'harness_cases_not_planned')
+    material_manifest = None
+    if version == case_materials.VERSION:
+        material_pin = case_materials.issue(slot / 'case-materials', root=trial)
+        material_manifest = dict(schema=material_pin['schema'], path=material_pin['path'],
+                                 bytes=material_pin['bytes'], sha256=material_pin['sha256'])
+        case_materials.read_manifest(material_manifest, root=trial)
+    selected_writer = check_writer(profile['writer'])
     # Per-case task identity and selected-input charge; no task text is retained.
     tasks = {}
     for case in loaded:
@@ -614,7 +658,8 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
                 cases=WEEKLY_CASES, arm_count=WEEKLY_ARMS, seeds=list(plan['seeds']),
                 attempts=WEEKLY_ATTEMPTS, distractors=DISTRACTORS, limits=dict(paired.ORIGINAL_LIMITS),
                 capacity=claim['capacity'], planned=planned, schedule_sha256=paired.canonical_sha(planned),
-                tasks=tasks, account=profile['account'])
+                case_materials=material_manifest,
+                writer=selected_writer, tasks=tasks, account=profile['account'])
     if assignment_reference is not None:
         spec['account_assignment'] = assignment_reference
     paired.write_selected(slot / 'spec.json', spec)
@@ -729,6 +774,16 @@ def _agent_result(path, spec):
     selected = dict(model=spec['actor_model'], harness='codex' if spec['harness'].get('kind')=='codex-weekly' else 'claude', wording='task')
     if not all(record.get(key) == value for record in records for key, value in selected.items()):
         return dict(result, status='rejected', code='agent_row_not_selected')
+    if spec.get('case_materials') is not None:
+        selected_materials = dict(schema=case_materials.SCHEMA, sha256=spec['case_materials']['sha256'])
+        try:
+            case_materials.read_manifest(spec['case_materials'],
+                                         root=Path(spec['harness']['root']) / TRIAL_PATH,
+                                         evaluator_sha256=plan.get('evaluator_sha256'))
+        except paired.Refusal:
+            return dict(result, status='rejected', code='agent_case_materials_unavailable')
+        if plan.get('case_materials') != selected_materials or document.get('case_materials') != selected_materials:
+            return dict(result, status='rejected', code='agent_case_materials_mismatch')
     result['plan'] = dict(path=str(Path(path).parent / 'plan.json'), sha256=hashlib.sha256(plan_content).hexdigest())
     if summary['stopped_reason'] == 'capacity_exhausted':
         return dict(result, status='incomplete', code='provider_cap_stop')

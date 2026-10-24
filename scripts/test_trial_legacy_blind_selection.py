@@ -9,6 +9,7 @@ import unittest
 
 import trial_blind_packet_draft as packet
 import trial_legacy_blind_selection as legacy
+import trial_legacy_case_materials as case_materials
 import trial_paired_request as paired
 
 NOW = dt.datetime(2026, 10, 15, 12, tzinfo=dt.timezone.utc)
@@ -122,6 +123,29 @@ class Case(unittest.TestCase):
 
 
 class ConversionTests(Case):
+    def test_v12_evaluator_projection_redacts_check_names_logs_verdicts_arm_and_memory(self):
+        case = case_materials.case_source('deploy-stamp')
+        checks = case_materials.shell_checks(case)
+        self.assertTrue(checks)
+        record = dict(check_log=[dict(run=check['run'][:200], exit=0, seconds=0.01,
+                                      output='MEMORY-BODY ARM-CAND ORACLE-VERDICT')
+                                 for check in checks],
+                      baseline_custody=dict(sha256='1'*64))
+        pin = lambda name: dict(path='/private/'+name, bytes=1, sha256='2'*64)
+        chosen = dict(evaluator_contract=dict(evaluator_source_sha256='3'*64,
+            selected_assets_sha256='4'*64,
+            precedence=dict(version='cairn.task-eval.grade-precedence/v12', rules=['selected'])),
+            manifest=dict(schema=case_materials.SCHEMA, sha256='5'*64))
+        public, subject = legacy._evaluator_projection(case,
+            record, dict(schema='cairn.blind-source/2', arm='CAND', run_id='private-run'),
+            pin('task'), pin('stream'), pin('artifact'), pin('answer'), None, pin('snapshot'),
+            pin('attempt'), chosen)
+        for forbidden in (b'MEMORY-BODY', b'ARM-CAND', b'ORACLE-VERDICT',
+                          checks[0]['run'].encode(), b'private-run', b'/private/'):
+            self.assertNotIn(forbidden, public)
+        self.assertIn(b'process_exit_codes', public)
+        self.assertEqual(subject['selected_materials'], dict(schema=case_materials.SCHEMA, sha256='5'*64))
+
     def test_changed_pairs_compose_into_blind_draft_without_arm_or_oracle_leaks(self):
         receipt = legacy.convert(self.f.save(), self.root/'out')
         selection = json.loads(Path(receipt['selection']['path']).read_bytes())

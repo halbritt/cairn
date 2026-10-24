@@ -353,6 +353,16 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(receipt['plan_sha256'], plan['sha256'])
         self.runs = self.root / 'runs'
         self.runs.mkdir(mode=0o700)
+        writer_cgroup = self.root / 'writer-cgroup'
+        writer_cgroup.mkdir(mode=0o700)
+        writer_controls = dict(schema='cairn.writer-controls/1',
+            controls=dict(memory_max=512*1024*1024, memory_swap_max=0, pids_max=32,
+                          cpu_max='100000 100000'),
+            reviewed_identity=dict(schema='cairn.writer-reviewed-identity/2',
+                kernel=dict(release='synthetic-kernel', version='synthetic-build'),
+                bwrap=dict(path='/usr/bin/bwrap', sha256='a'*64),
+                source_scope=dict(test='synthetic'), execution='sealed_memfd'))
+        writer_controls_pin = write_pin(self.root/'writer-controls.json', writer_controls)
         worker = self.embedding_fixture()
         frozen = self.repo.path / 'trials/task-eval/FROZEN.json'
         self.profile = dict(
@@ -365,7 +375,8 @@ class WeeklyRunTests(unittest.TestCase):
             postgres=dict(bin_dir=str(self.root / 'pgbin')),
             capacity=dict(receipt=self.receipt_pin, plan=self.plan_pin,
                           models=dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'fixture-model')),
-            executor='fake', selection=None, account=None, execution=None)
+            executor='fake', selection=None, account=None, execution=None,
+            writer=dict(cgroup=str(writer_cgroup), controls=writer_controls_pin))
         self.profile['execution'] = self.execution_pin()
         config_home = self.root / 'accounts/weekly'
         config_home.mkdir(parents=True)
@@ -428,6 +439,7 @@ class WeeklyRunTests(unittest.TestCase):
                         scheduled_at='2026-10-09T19:59:00Z', current=self.repo.current,
                         candidate=self.repo.candidate, harness_commit=self.repo.harness, executor='fake',
                         capacity_receipt_sha256=self.receipt_pin['sha256'],
+                        writer_sha256=weekly.paired.canonical_sha(self.profile['writer']),
                         selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107b7a1e07')
         document.update(changes)
         self.profile['selection'] = write_pin(self.root / 'selection.json', document)
