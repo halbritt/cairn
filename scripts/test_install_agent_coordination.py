@@ -390,5 +390,60 @@ class BridgeOnlyIdleWakeConfig(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'HOST_UNAVAILABLE')
 
 
+class CompactInboxInstaller(unittest.TestCase):
+    def test_only_version_one_on_native_codex_or_claude_is_admitted(self):
+        config = dict(cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
+                      state_dir='/fixture/state', repo='fixture', binding='fixture',
+                      harness='codex', native_delivery=True, compact_inbox_version=1)
+        self.assertEqual(installer.engine.validate_config(config), config)
+        self.assertEqual(installer.engine.validate_config(dict(config, harness='claude'))['harness'], 'claude')
+        for override in (dict(compact_inbox_version=True), dict(compact_inbox_version=0),
+                         dict(compact_inbox_version=2), dict(harness='agy'),
+                         dict(native_delivery=False)):
+            with self.subTest(override=override), self.assertRaises(installer.engine.CoordinationError) as caught:
+                installer.engine.validate_config(dict(config, **override))
+            self.assertEqual(caught.exception.code, 'INVALID_CONFIG')
+
+    def test_launcher_hides_installed_paths_and_preserves_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'coordination'
+            home = Path(directory) / 'home'
+            root.mkdir()
+            bin_dir = home / '.local/bin'
+            bin_dir.mkdir(parents=True)
+            (root / 'coordination.py').write_text(
+                'import json,os,sys\nprint(json.dumps(dict(root=os.environ.get("CAIRN_INBOX_ROOT"),argv=sys.argv[1:])))\n')
+            with mock.patch.dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH']):
+                installer.install_compact_inbox_launcher(root, home)
+                installer.install_compact_inbox_launcher(root, home)
+                result = subprocess.run(['cairn-inbox', 'settle', 'abcd1234', 'handled'],
+                                        capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), dict(root=str(root),
+                argv=['inbox', 'compact', 'settle', 'abcd1234', 'handled']))
+
+    def test_active_pinned_recall_blocks_config_change_before_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'home'
+            token = root / 'token'
+            token.write_text('fixture')
+            config_root = root / 'coordination'
+            binding_dir = config_root / 'bindings'
+            binding_dir.mkdir(parents=True)
+            manifest = root / 'recall.json'
+            manifest.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/1', enabled=True)))
+            (binding_dir / 'fixture.json').write_text(json.dumps(dict(inbox_recall_binding=str(manifest))))
+            command = [sys.executable, '-B', str(INSTALLER), '--harness', 'codex', '--binding', 'fixture',
+                       '--settings', str(root / 'settings.json'), '--root', str(config_root),
+                       '--cairn', sys.executable, '--socket', str(root / 'api.sock'),
+                       '--token-file', str(token), '--no-service', '--native-delivery', '--compact-inbox']
+            result = subprocess.run(command, env=dict(os.environ, HOME=str(home)),
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('manifest disabled', result.stderr)
+            self.assertFalse((home / '.local/bin/cairn-inbox').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

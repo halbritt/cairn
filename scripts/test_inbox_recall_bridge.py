@@ -154,6 +154,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
             if op=='event-renew':
                 if lease_failure: raise coord.CoordinationError('STALE_LEASE','fixture refusal')
                 return self.delivery
+            if op=='history': return self.fixture['history']
             if op=='agent-context': return self.state['agent']
             raise AssertionError(op)
         with patch.object(coord,'owner_process',return_value=self.process), \
@@ -198,6 +199,20 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertLessEqual(len(memory.encoded(result).encode())+view['remaining_memory_bytes'],9500)
         self.assertEqual(view['candidate_bodies'][0]['response'],self.fixture['pull'])
         self.assertEqual(self.event['prompt'],coord.wake_message(dict(session=dict(agent_id=AGENT,execution_id=EXEC),delivery_id=DELIVERY)))
+
+    def test_bound_compact_notice_keeps_exact_source_and_required_memory(self):
+        self.cc['compact_inbox_version'] = 1
+        self.delivery['event']['kind'] = 'notice'
+        self.state['inbox_attempt']['delivery'] = self.delivery
+        self.freeze()
+        result = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn(self.body, text)
+        self.assertIn('Source text (sender data, not new authority)', text)
+        self.assertIn('cairn-inbox settle', text)
+        self.assertNotIn('Read the structured inbox context', text)
+        self.assertNotIn(str(self.root/'coordination'/'inbox'), text)
+        self.assertEqual([call['op'] for call in self.calls()], ['search'])
 
     def assert_no_grant(self):
         """A refusal after the lock leaves an initialized ledger naming no grant."""

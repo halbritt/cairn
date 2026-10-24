@@ -28,6 +28,20 @@ def backup(path):
         target.chmod(0o600)
 
 
+def install_compact_inbox_launcher(root, home):
+    target = home / '.local/bin/cairn-inbox'
+    if str(target.parent) not in os.environ.get('PATH', '').split(os.pathsep):
+        raise RuntimeError('compact inbox needs ~/.local/bin on PATH')
+    script = ('#!/bin/sh\nexec env CAIRN_INBOX_ROOT=' + shlex.quote(str(root)) + ' ' +
+              shlex.quote(sys.executable) + ' ' + shlex.quote(str(root / 'coordination.py')) +
+              ' inbox compact "$@"\n')
+    if target.exists() and target.read_text() != script:
+        raise RuntimeError(f'compact inbox launcher at {target} belongs to another installation')
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target.write_text(script)
+    target.chmod(0o700)
+
+
 def install(root, settings, config):
     config = dict(config, state_dir=str(root / 'state' / config['binding']))
     engine.validate_config(config)
@@ -356,6 +370,7 @@ def main():
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
+    parser.add_argument('--compact-inbox', action='store_true', help='opt this Codex or Claude binding into compact notice/response delivery')
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
@@ -374,11 +389,24 @@ def main():
         parser.error('binding must be a bounded name without path components')
     if args.opencode_cancel_trial and (args.harness != 'opencode' or not args.native_delivery or not args.idle_wakeup):
         parser.error('--opencode-cancel-trial requires --harness opencode --native-delivery --idle-wakeup')
+    if args.compact_inbox and (args.harness not in ('codex', 'claude') or not args.native_delivery):
+        parser.error('--compact-inbox requires --harness codex|claude --native-delivery')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
     if args.opencode_cancel_trial:
         config['opencode_cancel_enabled'] = True
+    if args.compact_inbox:
+        config['compact_inbox_version'] = 1
+        previous = args.root.resolve() / 'bindings' / (args.binding + '.json')
+        if previous.exists():
+            installed = json.loads(previous.read_text())
+            pinned = installed.get('inbox_recall_binding')
+            if pinned and json.loads(Path(pinned).read_text()).get('enabled') is True:
+                parser.error('--compact-inbox needs the bound recall manifest disabled before its configuration changes; '
+                             'repin and validate that manifest before re-enabling it')
+            if pinned:
+                config['inbox_recall_binding'] = pinned
     if args.no_herdr and (args.harness != 'opencode' or not args.idle_wakeup or args.herdr):
         parser.error('--no-herdr requires --harness opencode with --idle-wakeup, and cannot be combined with --herdr')
     if args.no_herdr and not args.no_service:
@@ -414,6 +442,8 @@ def main():
         target = ensure_herdr_integration(Path(args.herdr).resolve(), args.harness, args.settings.resolve())
         if target:
             print(f'Herdr {target} integration is current in the selected {args.harness} account home.')
+    if args.compact_inbox:
+        install_compact_inbox_launcher(args.root.resolve(), home)
     installed = install(args.root.resolve(), args.settings.resolve(), config)
     if args.claude_channel_dir is not None:
         register_claude_channel(Path(args.cairn).resolve(), config['claude_channel_dir'],

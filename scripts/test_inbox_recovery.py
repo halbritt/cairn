@@ -1,4 +1,5 @@
 """Native inbox commands survive lost replies and partitions without silent loss."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -7,6 +8,7 @@ import subprocess
 import shlex
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 
@@ -81,10 +83,12 @@ class InboxRecovery(unittest.TestCase):
         path = self.root / 'log.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def context(self, with_rendered=False):
+    def context(self, with_rendered=False, extra_replies=None):
         """Write the native context exactly as the hook does, without a live API."""
-        self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
-                      'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
+        replies = {'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
+                   'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]}
+        replies.update(extra_replies or {})
+        self.replies(replies)
         observation = dict(event='UserPromptSubmit', phase='busy', native_turn_id='')
         self.state['delivered_since_idle'] = False
         with unittest.mock.patch.object(coordination, 'recover_inbox'):
@@ -139,6 +143,175 @@ class InboxRecovery(unittest.TestCase):
                     self.assertNotIn('pull_arguments', rendered)
                     self.assertNotIn('optional re-pull', rendered)
                     self.assertNotIn('semantic rephrase', rendered)
+
+    def test_opted_in_notice_inlines_checked_source_with_short_settlement_handle(self):
+        self.config['compact_inbox_version'] = 1
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        body = 'A selected notice with exact source text.'
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context, rendered = self.context(with_rendered=True, extra_replies={
+            'history': [dict(ok=True, status='OK', data=history)]})
+        self.assertIn(body, rendered)
+        self.assertIn('notice', rendered)
+        self.assertIn('agent/requester', rendered)
+        self.assertIn('settle', rendered)
+        self.assertNotIn(str(self.root), rendered)
+        self.assertNotIn(ATTEMPT, rendered)
+        self.assertNotIn(LEASE, rendered)
+        self.assertNotIn('fixture-token-value', rendered)
+        self.assertLess(len(rendered.encode()), 800)
+        self.assertEqual(context['source'], dict(record_id=RESULT['record_id'], version=1))
+        self.assertEqual(len(context['compact_handle']), 16)
+
+    def test_compact_handle_reads_exact_source_and_journals_explicit_settlement(self):
+        self.config['compact_inbox_version'] = 1
+        self.config['harness'] = 'codex'
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        body = 'The requested answer is ready.'
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context, rendered = self.context(with_rendered=True, extra_replies={
+            'history': [dict(ok=True, status='OK', data=history)],
+            'ack': [dict(ok=True, status='OK', data=dict(state='handled', attempts=1))]})
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root), CODEX_THREAD_ID='native-1')
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact']
+        read = subprocess.run([*command, 'read', context['compact_handle']], env=env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(read.returncode, 0, read.stdout + read.stderr)
+        self.assertEqual(json.loads(read.stdout)['body'], body)
+        self.assertNotIn('ack', [entry['operation'] for entry in self.log()])
+        settled = subprocess.run([*command, 'settle', context['compact_handle'], 'handled'], env=env,
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
+        self.assertEqual(json.loads(settled.stdout)['status'], 'handled')
+        journal = self.journal()['completion']
+        self.assertEqual(journal['status'], 'committed')
+        self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
+
+    def test_compact_handle_refuses_wrong_session_expiry_forgetting_and_restore(self):
+        self.config['compact_inbox_version'] = 1
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        body = 'Notice that must not be settled through a stale handle.'
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context = self.context(extra_replies={'history': [dict(ok=True, status='OK', data=history)]})
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        index_path = self.root / 'state' / 'compact' / (context['compact_handle'] + '.json')
+        original_index = json.loads(index_path.read_text())
+        original_state = json.loads(self.path.read_text())
+        replies = json.loads((self.root / 'replies.json').read_text())
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle', context['compact_handle'], 'handled']
+        for case, expected in [('other_session', 'NOT_THIS_SESSION'), ('other_process', 'NOT_THIS_SESSION'),
+                               ('expired', 'HANDLE_EXPIRED'),
+                               ('forgotten', 'NOT_FOUND'), ('restored', 'STALE_SESSION'),
+                               ('lease_lapsed', 'STALE_LEASE')]:
+            with self.subTest(case=case):
+                coordination.write_state(index_path, original_index)
+                coordination.write_state(self.path, original_state)
+                self.replies(replies)
+                env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+                other_process = None
+                if case == 'other_session':
+                    env['CLAUDE_SESSION_ID'] = 'another-native-session'
+                elif case == 'other_process':
+                    other_process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+                    changed = json.loads(json.dumps(original_state))
+                    changed['process'] = coordination.process_reference(other_process.pid)
+                    coordination.write_state(self.path, changed)
+                elif case == 'expired':
+                    coordination.write_state(index_path, dict(original_index,
+                        issued_at=time.time() - coordination.COMPACT_HANDLE_SECONDS - 1))
+                elif case == 'forgotten':
+                    self.replies(dict(replies, history=[dict(ok=False, status='NOT_FOUND')]))
+                elif case == 'restored':
+                    changed = json.loads(json.dumps(original_state))
+                    changed['agent']['execution_id'] = 'new-execution'
+                    coordination.write_state(self.path, changed)
+                else:
+                    self.replies(dict(replies, **{'event-renew': [dict(ok=False, status='STALE_LEASE')]}))
+                try:
+                    refused = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(refused.returncode, 0)
+                    self.assertEqual(json.loads(refused.stdout)['status'], expected)
+                    self.assertNotIn('ack', [entry['operation'] for entry in self.log()])
+                finally:
+                    if other_process:
+                        other_process.terminate()
+                        other_process.wait(timeout=5)
+
+    def test_oversized_compact_source_requires_read_and_failed_settlement_is_idempotent(self):
+        self.config['compact_inbox_version'] = 1
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        body = 'Important qualification. ' * 250
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context, rendered = self.context(with_rendered=True, extra_replies={
+            'history': [dict(ok=True, status='OK', data=history)],
+            'ack': [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))]})
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        self.assertNotIn(body, rendered)
+        self.assertIn('read its exact text', rendered)
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact']
+        read = subprocess.run([*command, 'read', context['compact_handle']], env=env,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(read.stdout)['body'], body)
+        settle = [*command, 'settle', context['compact_handle'], 'failed', '--code', 'processing_failed']
+        for _ in range(2):
+            result = subprocess.run(settle, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)['status'], 'failed')
+        changed = subprocess.run([*command, 'settle', context['compact_handle'], 'ignored',
+                                  '--code', 'unsupported_kind'], env=env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(changed.returncode, 0)
+        self.assertEqual(json.loads(changed.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
+        entries = [entry for entry in self.log() if entry['operation'] == 'ack']
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]['argv'], entries[1]['argv'])
+        self.assertIn('--disposition', entries[0]['argv'])
+        self.assertIn('failed', entries[0]['argv'])
+        self.assertIn('--code', entries[0]['argv'])
+
+    def test_compact_ignored_settlement_keeps_reason_code(self):
+        self.config['compact_inbox_version'] = 1
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        body = 'Unsupported source kind for this recipient.'
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context = self.context(extra_replies={
+            'history': [dict(ok=True, status='OK', data=history)],
+            'ack': [dict(ok=True, status='OK', data=dict(state='ignored', attempts=1))]})
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle',
+                   context['compact_handle'], 'ignored', '--code', 'unsupported_kind']
+        settled = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(settled.returncode, 0, settled.stdout + settled.stderr)
+        self.assertEqual(json.loads(settled.stdout)['status'], 'ignored')
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
 
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()

@@ -7,6 +7,7 @@ delivery attempts and idempotent polls in PostgreSQL.
 
 For the explicit same-delivery task-source and memory binding, see
 [recall on an admitted inbox request](inbox-recall.md). It is disabled by default.
+For optional compact notice and response handling, see [compact native inbox](compact-inbox.md).
 
 ## Boundaries and ownership
 
