@@ -135,7 +135,8 @@ class ConversionTests(Case):
         chosen = dict(evaluator_contract=dict(evaluator_source_sha256='3'*64,
             selected_assets_sha256='4'*64,
             precedence=dict(version='cairn.task-eval.grade-precedence/v12', rules=['selected'])),
-            manifest=dict(schema=case_materials.SCHEMA, sha256='5'*64))
+            manifest=dict(schema=case_materials.SCHEMA, sha256='5'*64),
+            source_case_sha256='6'*64)
         public, subject = legacy._evaluator_projection(case,
             record, dict(schema='cairn.blind-source/2', arm='CAND', run_id='private-run'),
             pin('task'), pin('stream'), pin('artifact'), pin('answer'), None, pin('snapshot'),
@@ -177,6 +178,10 @@ class ConversionTests(Case):
         public = b''.join(p.read_bytes() for p in sorted((self.root/'draft/public').rglob('*')) if p.is_file())
         answer = self.f.answers['case-a.candidate-mem.s0']
         self.assertIn(__import__('base64').b64encode(answer.encode()), public)
+        for row in self.f.request['cases']:
+            self.assertNotIn(row['contract']['path'].encode(), public)
+            self.assertNotIn(row['task_statement']['path'].encode(), public)
+            self.assertNotIn(row['grading_instructions']['path'].encode(), public)
         for leak in (b'CURRENT', b'CAND', BASE.encode(), CAND.encode(), b'.s0', SECRET.encode(), b'fixture-note'):
             self.assertNotIn(leak, public)
         # The converter's own output never copies oracle-derived record fields.

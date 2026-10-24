@@ -100,23 +100,36 @@ runner verifies (5b52a0f):
    - With no account selected, the executor still refuses
      `dedicated_account_unbound`.
 
+   The profile also requires `writer: {cgroup, controls: {path, sha256}}`.
+   `cgroup` must be an explicit absolute delegated parent. `controls` pins a
+   `cairn.writer-controls/1` file with a required
+   `cairn.writer-reviewed-identity/2` (kernel, bubblewrap, source scope, and
+   sealed-memfd execution). The runner checks this selection before effects,
+   binds its canonical digest into `cairn.weekly-run-selection/2`, records it
+   in the claim/spec, and passes the existing three writer flags to Claude and
+   Codex weekly harnesses. There is no inferred host default.
+
    Still declared, not observed: which account the file belongs to, and the
    `dedicated: true, interactive_use: false` flags in the capacity evidence.
 3. **Writable workspace snapshot, addressed.** The actor could write the
    `.eval-snapshot.json` that grading read. 86298af binds original grading to
    a privately retained pre-actor baseline, and the runner verifies each
    attempt's baseline (5b52a0f). See `docs/original-attempt-custody.md` for
-   its scope; that document, not this lane, makes the claim. The artifact and
-   evaluator channels remain unavailable and refused.
+   its scope; that document, not this lane, makes the claim. v12 now retains a
+   bounded writer-released pre-grade snapshot before evaluation. The blind
+   converter can project its workspace/Git bytes into `artifact_bundle` and
+   emit a redacted shell-exit evaluator observation. A changed pair whose
+   selected manifest has an unavailable channel, conversion refuses.
 
 **Authorization is a bound input, not a blocker.** The `--legacy-fixtures`
 help says the flag is "not authorization to replay" (`:1807`). Selecting the
 fixtures therefore authorizes nothing. That does not mean authority cannot
 exist: the owner has delegated campaign decisions. The runner requires an
-explicit, pinned `cairn.weekly-run-selection/1` in profile field
+explicit, pinned `cairn.weekly-run-selection/2` in profile field
 `selection`. It must name this exact campaign, slot start, current,
-candidate and harness commits, executor, and capacity-receipt hash, plus
-the selecting identity. Without one, the runner refuses
+candidate and harness commits, executor, capacity-receipt hash, the canonical
+SHA-256 of the selected writer configuration, and the selecting identity.
+Without one, the runner refuses
 `live_invocation_not_selected`. If any field differs, it refuses
 `live_selection_mismatch`. The selection is recorded as
 `declared_unauthenticated`. No selection exists today, because root has not

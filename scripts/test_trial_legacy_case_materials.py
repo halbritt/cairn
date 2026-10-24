@@ -1,8 +1,11 @@
 """Private selected-material issuer tests; frozen source only, no actors/grading."""
+import base64
 import json
 import hashlib
+import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +15,8 @@ import trial_legacy_case_materials as materials
 import trial_legacy_blind_selection as blind
 import trial_paired_request as paired
 import trial_task_eval as task_eval
+import trial_legacy_pregrade as pregrade
+from trial_attempt_custody import AttemptBaseline
 
 
 class CaseMaterialsTests(unittest.TestCase):
@@ -82,6 +87,52 @@ class CaseMaterialsTests(unittest.TestCase):
         self.assertNotIn('action_trace', row['channels'])
         self.assertEqual(row['unavailable_channels'], [
             dict(name='action_trace', reason='raw_tool_output_unavailable')])
+
+    def test_genuine_pregrade_pin_projects_only_blind_workspace_and_git_artifacts(self):
+        out = Path(self.temp.name) / 'result'
+        base = out / 'runs' / 'synthetic.none.s0'
+        cwd = base / 'work' / 'repo'
+        cwd.mkdir(parents=True)
+        (cwd / 'result.txt').write_text('actor result\n')
+        env = dict(os.environ, GIT_AUTHOR_NAME='Synthetic', GIT_AUTHOR_EMAIL='synthetic@example.invalid',
+                   GIT_COMMITTER_NAME='Synthetic', GIT_COMMITTER_EMAIL='synthetic@example.invalid')
+        for command in (['git', 'init', '-q'], ['git', 'add', '.'], ['git', 'commit', '-qm', 'initial'],
+                        ['git', 'tag', 'eval-base']):
+            subprocess.run(command, cwd=cwd, env=env, check=True, capture_output=True)
+        (base / 'work' / '.eval-snapshot.json').write_text(json.dumps({
+            'result.txt': hashlib.sha256(b'actor result\n').hexdigest()}))
+        case = dict(id='synthetic', cwd='repo')
+        baseline = AttemptBaseline.capture(base, case, 'none', 0)
+        reviewed = dict(schema='cairn.writer-reviewed-identity/2',
+            kernel=dict(release='kernel', version='build'), bwrap=dict(path='/usr/bin/bwrap', sha256='a'*64),
+            source_scope=dict(kernel='reviewed', bwrap='reviewed'), execution='sealed_memfd')
+        writer = dict(schema='cairn.legacy-writer-release/1',
+            attempt=dict(run_id='synthetic.none.s0', workspace=str(cwd)), state='released', release='released',
+            bootstrap=dict(state='member'), close_errors=[], complete_descendant_custody=False,
+            writer_quiescence=dict(state='namespace_init_exited',
+                basis='reviewed_identity_source_zap_before_pidfd_notify', scope=reviewed['source_scope']),
+            init=dict(state='bound', pid_namespace=dict(inode=123, dev=1)), init_exit='exited',
+            launch_evidence=dict(namespaces=dict(pid=123)),
+            runtime_identity=dict(kernel=reviewed['kernel'], bwrap=reviewed['bwrap']),
+            reviewed_identity=reviewed, execution_binding=dict(mode='sealed_memfd', sha256='a'*64))
+        stream = b'{"type":"result","result":"done"}\n'
+        prompt = 'Synthetic task.'
+        pin = pregrade.capture(base=base, case=case, arm='none', seed=0, baseline=baseline,
+                               writer_record=writer, stream_bytes=stream, prompt=prompt)
+        writer['final_artifact_custody'] = pin
+        (base / 'writer-release.json').write_text(json.dumps(writer))
+        stream_path = base / 'stream.jsonl'
+        stream_path.write_bytes(stream)
+        record = dict(run_id='synthetic.none.s0', case='synthetic', arm='none', seed=0,
+            baseline_custody=baseline.pin, final_artifact_custody=pin, writer_release=writer,
+            prompt_bytes=len(prompt.encode()), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
+            stream_sha256=hashlib.sha256(stream).hexdigest())
+        _raw, snapshot, public, observed_pin = blind._pregrade_snapshot(out, record, case, stream)
+        self.assertEqual(observed_pin, pin)
+        self.assertIn(b'actor result', base64.b64decode(snapshot['workspace']['entries'][0]['content_b64']))
+        self.assertNotIn(str(cwd).encode(), public)
+        self.assertNotIn(b'synthetic.none.s0', public)
+        self.assertNotIn(b'final_artifact_custody', public)
 
 
 if __name__ == '__main__':
