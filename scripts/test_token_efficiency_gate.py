@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 import token_efficiency_gate as gate
+import preflight_token_efficiency_panel as panel
 
 
 class TokenEfficiencyGateTests(unittest.TestCase):
@@ -66,21 +67,158 @@ class TokenEfficiencyGateTests(unittest.TestCase):
                     usage=dict(observed_responses=1, usage_records=1,
                                tokens={field: dict(total=10) for field in gate.TOKEN_FIELDS}))
 
+    def enable_capture_selector(self):
+        self.plan["capture_selector"] = dict(harness="claude", account="capture-account",
+                                             id="claude-fixture", route="subscription",
+                                             effort_configuration="unset")
+        for arm in gate.ARMS:
+            self.plan["arms"][arm]["pins"]["capture"] = f"capture-pin-{arm}"
+        for run in self.observations["runs"]:
+            for stage in run["stages"]:
+                stage["pins"] = dict(self.plan["arms"][run["arm"]]["pins"])
+
+    def capture_provider(self, arm, efforts=None):
+        self.response_seq += 1
+        return dict(harness="claude", account="capture-account", models=["claude-fixture"],
+                    efforts=efforts, pin=self.plan["arms"][arm]["pins"]["capture"],
+                    duplicate_response_id=False, response_refs=[f"{self.response_seq:024x}"],
+                    usage=dict(observed_responses=1,
+                               tokens={field: dict(total=10) for field in gate.TOKEN_FIELDS}))
+
     def test_caller_only_stages_cannot_make_observed_workflow_ready(self):
+        self.enable_capture_selector()
         planned = self.plan["runs"][0]
         planned["stages"][0]["role"] = "coordinator"
-        planned["stages"][1]["role"] = "capture"
+        planned["stages"][1].update(role="capture", pin="capture", capture_phase="seed")
         self.frozen = gate.freeze(self.plan, self.fixture)
         self.observations["plan_sha256"] = self.frozen["plan_sha256"]
         for stage, pin in zip(self.observations["runs"][0]["stages"], ("client", "inbox")):
             stage.pop("attempt", None)
             stage["evidence_ref"] = "caller_selected"
             stage["provider"] = self.provider(pin)
+        capture_stage = self.observations["runs"][0]["stages"][1]
+        capture_stage.update(model="claude-fixture", effort=None,
+                             provider=self.capture_provider("baseline", efforts=[]))
         self.native["workflows"][0].update(sender_provider=None, deliveries=[])
         result = gate.report(self.frozen, self.fixture, self.observations, self.native)
         self.assertEqual(result["state"], "incomplete")
         self.assertEqual(result["counts"]["unjoined_observed_runs"], 1)
+        self.assertEqual(result["counts"]["unknown_effort_stages"], 1)
         self.assertTrue(any("native joined stage" in issue for issue in result["problems"]))
+
+    def test_actual_capture_fixture_requires_seed_and_repeat_stages_in_every_arm(self):
+        fixture, fixture_hash = panel.read_fixture()
+        self.enable_capture_selector()
+        self.plan["fixture_sha256"] = fixture_hash
+        self.plan["acceptance_checks"] = {row["id"]: gate.sha(row["acceptance_check"])
+                                          for row in fixture["cases"]}
+        capture_runs = [run for run in self.plan["runs"] if run["case"] == "unchanged_capture"]
+        for run in capture_runs:
+            for phase in ("seed", "repeat"):
+                run["stages"].append(dict(stage_id=f"{run['workflow_id']}.capture.{phase}",
+                                          role="capture", pin="capture", capture_phase=phase))
+        frozen = gate.freeze(self.plan, panel.FIXTURE)
+        observations = copy.deepcopy(self.observations)
+        observations["plan_sha256"] = frozen["plan_sha256"]
+        for run in observations["runs"]:
+            if run["case"] == "unchanged_capture":
+                for phase in ("seed", "repeat"):
+                    run["stages"].append(dict(stage_id=f"{run['workflow_id']}.capture.{phase}",
+                                              state="not_reached"))
+        observed = gate.report(frozen, panel.FIXTURE, observations, self.native)
+        self.assertEqual(observed["state"], "incomplete")
+        self.assertEqual(sum("observed capture requires provider-backed seed stage" in problem
+                             for problem in observed["problems"]), 4)
+        self.assertEqual(sum("observed capture requires selected repeat skip stage" in problem
+                             for problem in observed["problems"]), 4)
+        missing_selector = copy.deepcopy(self.plan)
+        missing_selector.pop("capture_selector")
+        with self.assertRaisesRegex(ValueError, "capture stage requires frozen selector"):
+            gate.freeze(missing_selector, panel.FIXTURE)
+        missing_repeat = copy.deepcopy(self.plan)
+        next(run for run in missing_repeat["runs"] if run["case"] == "unchanged_capture")["stages"].pop()
+        with self.assertRaisesRegex(ValueError, "seed and repeat capture stages required"):
+            gate.freeze(missing_repeat, panel.FIXTURE)
+        wrong_route = copy.deepcopy(self.plan)
+        wrong_route["capture_selector"]["route"] = "OpenRouter"
+        with self.assertRaisesRegex(ValueError, "capture selector route must be subscription"):
+            gate.freeze(wrong_route, panel.FIXTURE)
+
+    def test_capture_provider_uses_auxiliary_identity_and_pin_without_inventing_effort(self):
+        self.enable_capture_selector()
+        slot = self.plan["runs"][0]["stages"][1]
+        slot.update(role="capture", pin="capture", capture_phase="seed")
+        self.frozen = gate.freeze(self.plan, self.fixture)
+        self.observations["plan_sha256"] = self.frozen["plan_sha256"]
+        stage = self.observations["runs"][0]["stages"][1]
+        stage.pop("attempt", None)
+        stage.update(model="claude-fixture", effort=None, evidence_ref="selected_capture",
+                     provider=self.capture_provider("baseline", efforts=[]))
+        ready = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(ready["state"], "ready_for_human_grade")
+        self.assertEqual(ready["counts"]["unknown_effort_stages"], 1)
+        self.assertEqual(ready["counts"]["unknown_provider_stages"], 0)
+        for field, wrong in (("response_refs", []), ("response_refs", ["caller-only"]),
+                             ("response_refs", ["a" * 24, "a" * 24]),
+                             ("usage", {"observed_responses": 0})):
+            with self.subTest(field=field, wrong=wrong):
+                original = stage["provider"][field]
+                stage["provider"][field] = wrong
+                result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+                self.assertEqual(result["state"], "incomplete")
+                self.assertEqual(result["counts"]["unknown_provider_stages"], 1)
+                self.assertTrue(any("selected capture provider response missing" in problem
+                                    for problem in result["problems"]))
+                stage["provider"][field] = original
+        for field, wrong in (("models", ["gpt-6-sol"]), ("account", "wrong"),
+                             ("pin", "client-pin"), ("efforts", "high")):
+            with self.subTest(field=field):
+                original = stage["provider"][field]
+                stage["provider"][field] = wrong
+                result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+                self.assertEqual(result["state"], "incomplete")
+                self.assertTrue(any("provider model/account/effort/pin mismatch" in problem
+                                    for problem in result["problems"]))
+                stage["provider"][field] = original
+        for field, wrong, reason in (("route", "OpenRouter", "route drift"),
+                                     ("model", "gpt-6-sol", "capture selector model/effort drift"),
+                                     ("effort", "medium", "capture selector model/effort drift")):
+            with self.subTest(field=field):
+                original = stage[field]
+                stage[field] = wrong
+                with self.assertRaisesRegex(ValueError, reason):
+                    gate.report(self.frozen, self.fixture, self.observations, self.native)
+                stage[field] = original
+
+    def test_repeat_skip_is_selected_zero_call_testimony_and_never_ready(self):
+        self.enable_capture_selector()
+        slot = self.plan["runs"][0]["stages"][1]
+        slot.update(role="capture", pin="capture", capture_phase="repeat")
+        self.frozen = gate.freeze(self.plan, self.fixture)
+        self.observations["plan_sha256"] = self.frozen["plan_sha256"]
+        stage = self.observations["runs"][0]["stages"][1]
+        stage.pop("attempt", None)
+        stage.update(state="skipped", model="claude-fixture", effort=None,
+                     skip_reason="unchanged_confirmed_snapshot",
+                     capture_observation_ref="11111111-1111-4111-8111-111111111111",
+                     snapshot_sha256="a" * 64, selector_calls=0, new_records=0)
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "incomplete")
+        self.assertEqual(result["counts"]["skipped_capture_stages"], 1)
+        self.assertEqual(result["counts"]["unknown_effort_stages"], 1)
+        self.assertTrue(any("selected hook testimony" in issue for issue in result["problems"]))
+        for field, wrong in (("provider", self.capture_provider("baseline")),
+                             ("selector_calls", 1), ("new_records", 1),
+                             ("capture_observation_ref", "caller-only")):
+            with self.subTest(field=field):
+                original = stage.get(field)
+                stage[field] = wrong
+                with self.assertRaisesRegex(ValueError, "selected capture skip shape"):
+                    gate.report(self.frozen, self.fixture, self.observations, self.native)
+                if original is None:
+                    stage.pop(field)
+                else:
+                    stage[field] = original
 
     def test_native_join_requires_completed_model_work(self):
         self.native["workflows"][0]["sender_provider"]["native_completed"] = False
@@ -200,7 +338,7 @@ class TokenEfficiencyGateTests(unittest.TestCase):
         self.native["workflows"][0]["sender_provider"]["pin"] = "wrong-pin"
         result = gate.report(self.frozen, self.fixture, self.observations, self.native)
         self.assertEqual(result["state"], "incomplete")
-        self.assertTrue(any("provider model/effort/pin" in issue for issue in result["problems"]))
+        self.assertTrue(any("provider model/account/effort/pin" in issue for issue in result["problems"]))
 
     def test_caller_claim_of_acceptance_never_becomes_an_independent_grade(self):
         self.observations["accepted_task_outcomes"] = 88

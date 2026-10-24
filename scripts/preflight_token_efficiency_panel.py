@@ -78,6 +78,26 @@ def read_fixture(path=FIXTURE):
     return data, hashlib.sha256(raw).hexdigest()
 
 
+def capture_binding(capture, plan):
+    """Resolve hook harness and auxiliary selector model from one frozen plan."""
+    require(isinstance(capture, dict) and isinstance(plan, dict),
+            "capture binding input")
+    require("harness_ref" in capture and "model_ref" in capture,
+            "capture model references")
+    require(capture["harness_ref"] == "plan.model.harness"
+            and capture["model_ref"] == "plan.capture_selector.id", "capture model references")
+    model = plan.get("model")
+    selector = plan.get("capture_selector")
+    require(isinstance(model, dict) and isinstance(model.get("harness"), str)
+            and model["harness"], "capture frozen hook harness")
+    require(isinstance(selector, dict) and selector.get("harness") == "claude"
+            and isinstance(selector.get("id"), str) and selector["id"]
+            and selector.get("route") == "subscription"
+            and selector.get("effort_configuration") == "unset",
+            "capture frozen selector identity")
+    return {"harness": model["harness"], "model": selector["id"]}
+
+
 def validate(data):
     exact_keys(data, ("schema", "purpose", "sources", "event_source_defaults",
                       "arm_interventions", "cases"),
@@ -159,7 +179,8 @@ def validate(data):
         task = row["actor_task"]
         require(isinstance(task, str) and 30 <= len(task) <= 500, f"{case}: actor task")
         setup = row["setup"]
-        exact_keys(setup, ("sources", "events", "transitions"), f"{case}: setup")
+        exact_keys(setup, ("sources", "events", "transitions"), f"{case}: setup",
+                   ("capture",))
         source_ids = setup["sources"]
         require(isinstance(source_ids, list) and len(source_ids) == len(set(source_ids))
                 and all(isinstance(name, str) and name in sources for name in source_ids),
@@ -188,6 +209,43 @@ def validate(data):
                 require(isinstance(event["idempotency_key"], str)
                         and event["idempotency_key"].isidentifier(), f"{case}: idempotency key")
             ids.add(event["id"])
+        capture = setup.get("capture")
+        if case == "unchanged_capture":
+            # Controller-only synthetic selector output. It is not a provider
+            # observation, actor input, or permission to seed a digest directly.
+            exact_keys(capture, ("target", "harness_ref", "hook_event", "model_ref",
+                                 "dialogue", "seed_selection"), f"{case}: capture")
+            require(capture["target"] == "capture_same"
+                    and capture["harness_ref"] == "plan.model.harness"
+                    and capture["hook_event"] == "PreCompact"
+                    and capture["model_ref"] == "plan.capture_selector.id",
+                    f"{case}: capture identity")
+            dialogue = capture["dialogue"]
+            require(isinstance(dialogue, list) and len(dialogue) == 2,
+                    f"{case}: dialogue")
+            for role, message in zip(("user", "assistant"), dialogue):
+                exact_keys(message, ("role", "text"), f"{case}: message")
+                require(message["role"] == role and isinstance(message["text"], str)
+                        and 20 <= len(message["text"]) <= 500,
+                        f"{case}: message content")
+            selection = capture["seed_selection"]
+            exact_keys(selection, ("checkpoint", "workstream", "memories"),
+                       f"{case}: seed selection")
+            require(selection["checkpoint"] is None and selection["workstream"] is None
+                    and isinstance(selection["memories"], list)
+                    and len(selection["memories"]) == 1,
+                    f"{case}: one synthetic selected memory")
+            selected = selection["memories"][0]
+            exact_keys(selected, ("record_id", "kind", "title", "body"),
+                       f"{case}: selected memory")
+            require(selected["record_id"] is None and selected["kind"] == "procedure"
+                    and isinstance(selected["title"], str)
+                    and 5 <= len(selected["title"]) <= 90
+                    and isinstance(selected["body"], str)
+                    and 20 <= len(selected["body"]) <= 2000,
+                    f"{case}: selected memory content")
+        else:
+            require("capture" not in setup, f"{case}: unexpected capture setup")
         transitions = setup["transitions"]
         require(isinstance(transitions, list), f"{case}: transitions")
         for transition in transitions:
@@ -195,7 +253,10 @@ def validate(data):
             require(all(isinstance(transition[key], str) and transition[key]
                         for key in ("phase", "action", "target")), f"{case}: transition text")
             require(transition["action"] in ACTIONS, f"{case}: transition action")
-            require(transition["target"] in ids | set(source_ids) | {"parser_review", "capture_same"},
+            targets = ids | set(source_ids) | {"parser_review"}
+            if capture is not None:
+                targets.add(capture["target"])
+            require(transition["target"] in targets,
                     f"{case}: undeclared transition target")
             require("count" not in transition or transition["action"] == "repeat_source"
                     and type(transition["count"]) is int and 2 <= transition["count"] <= 200,
@@ -206,6 +267,12 @@ def validate(data):
             require(expected_kind in {event["kind"] for event in events}, f"{case}: event kind")
         require(tuple(item["action"] for item in transitions) == actions,
                 f"{case}: transition sequence")
+        if case == "unchanged_capture":
+            require([(item["phase"], item["action"], item["target"])
+                     for item in transitions] == [
+                         ("before_capture", "seed_capture", capture["target"]),
+                         ("at_capture", "repeat_capture", capture["target"])],
+                    f"{case}: capture transition binding")
         check = row["acceptance_check"]
         exact_keys(check, ("must", "must_not"), f"{case}: acceptance check")
         for key in ("must", "must_not"):

@@ -846,10 +846,38 @@
     },
     {
       "id": "unchanged_capture",
-      "actor_task": "Review the repeated Cairn capture candidate and skip a new record if its selected content is unchanged.",
+      "actor_task": "Review a previously confirmed Cairn capture snapshot and avoid a new capture record when the identical snapshot is presented again.",
       "setup": {
         "sources": [],
         "events": [],
+        "capture": {
+          "target": "capture_same",
+          "harness_ref": "plan.model.harness",
+          "hook_event": "PreCompact",
+          "model_ref": "plan.capture_selector.id",
+          "dialogue": [
+            {
+              "role": "user",
+              "text": "Remember the Cairn relay retry procedure after this task."
+            },
+            {
+              "role": "assistant",
+              "text": "I recorded the relay retry procedure for later use."
+            }
+          ],
+          "seed_selection": {
+            "checkpoint": null,
+            "workstream": null,
+            "memories": [
+              {
+                "record_id": null,
+                "kind": "procedure",
+                "title": "Relay retry confirmation",
+                "body": "On a Cairn relay retry, verify the persisted receipt before publishing again."
+              }
+            ]
+          }
+        },
         "transitions": [
           {
             "phase": "before_capture",
@@ -865,7 +893,7 @@
       },
       "acceptance_check": {
         "must": [
-          "detect unchanged selected content",
+          "detect unchanged confirmed capture snapshot",
           "skip auxiliary model work and new record"
         ],
         "must_not": [
