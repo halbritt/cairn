@@ -73,6 +73,7 @@ fi
 python3 scripts/check_use_report.py "$test_root/cairn"
 python3 scripts/check_recall_observation.py "$test_root/cairn" "$test_root/recall-observation-home"
 python3 scripts/check-capture.py "$test_root/cairn" "$test_root/capture-home"
+python3 scripts/check_capture_observation.py "$test_root/cairn" "$test_root/capture-observation-home"
 python3 scripts/check-proposal-groups.py "$test_root/cairn" "$test_root/proposal-groups-home"
 python3 scripts/check-local-api.py "$test_root/cairn" "$test_root/api-home"
 if [[ -n "${CAIRN_SEMANTIC_WORKER:-}" ]]; then
