@@ -1288,9 +1288,18 @@ def codex_weekly_command(codex_entry, model, effort):
             "-c", "model_reasoning_effort=" + json.dumps(effort), "-m", model]
 
 
-# Inside the sandbox, before the provider: the mounted engine's task-key contract and the
-# owner-only inbox recall binding (shared by prospective and original weekly agent_tools arms).
+# Inside the sandbox, before the provider: Claude's task-key contract or Codex's
+# native-turn handler, plus the owner-only inbox recall binding.
 BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
+CODEX_BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert config.get('harness')=='codex' and 'recall_task_key' not in config; assert engine.get('recall_task_key') is not None and engine['recall_task_key'](config) is None; assert engine.get('bound_codex') is not None and engine['bound_codex'](config); assert callable(engine.get('codex_agent_context')); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
+
+
+def binding_check_command(harness):
+    if harness == "claude":
+        return BINDING_CHECK
+    if harness == "codex":
+        return CODEX_BINDING_CHECK
+    raise ValueError("unknown harness " + harness)
 
 
 def paired_json_pin(path, sha256):
@@ -1304,13 +1313,14 @@ def paired_json_pin(path, sha256):
 
 def original_binding_check(root, cwd_name, binds, env, harness, sandbox_options, base, timeout):
     """Run BINDING_CHECK in the attempt sandbox for an original agent_tools arm; refuse before launch."""
-    checked = sandbox_command(root, cwd_name, binds, env, prerequisite_command(BINDING_CHECK), harness, **sandbox_options)
+    check = binding_check_command(harness)
+    checked = sandbox_command(root, cwd_name, binds, env, prerequisite_command(check), harness, **sandbox_options)
     try:
         done = subprocess.run(checked, capture_output=True, timeout=min(120, timeout))
-        row = dict(argv=BINDING_CHECK, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
+        row = dict(argv=check, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
                    stderr_sha256=hashlib.sha256(done.stderr).hexdigest())
     except subprocess.TimeoutExpired:
-        row = dict(argv=BINDING_CHECK, exit=None, error="prerequisite_timeout")
+        row = dict(argv=check, exit=None, error="prerequisite_timeout")
     (base / "original-binding-check.json").write_text(json.dumps(row, indent=2))
     if row["exit"] != 0:
         raise RuntimeError("original_recall_binding_invalid: binding check failed before provider launch")
@@ -1442,7 +1452,10 @@ def run_agent(case, arm, seed, order, args, stores, out):
                 binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
         if (prospective or original_arms) and config["recall_mode"] == "agent_tools":
-            binds += bind_ordinary_claude(base, config, arm_config["bridge"], launcher_task=True)
+            # Claude's single child has an explicit one-task key. Codex uses its
+            # own durable per-native-turn grant; never add Claude's key there.
+            binds += bind_ordinary_claude(base, config, arm_config["bridge"],
+                                          launcher_task=args.harness == "claude")
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
         if prospective:
             hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
@@ -1485,7 +1498,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             binds += [(settings_path, "/tmp/trial/settings.json", "ro"), (mcp_path, "/tmp/trial/mcp.json", "ro")]
             provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json"]
         prerequisites = []
-        binding_check = [BINDING_CHECK] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
+        binding_check = [binding_check_command(args.harness)] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
         prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
         for argv in prerequisite_commands:
             checked = sandbox_command(root, case["cwd"], binds, env, prerequisite_command(argv), args.harness, **sandbox_options)
@@ -2114,7 +2127,12 @@ def cmd_agent(args):
                         cid = c["id"]
                         record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
                                       outcome="harness_error", error=selected_observation_error('runner', error)['exception_type'] if prospective else str(error)[-600:],
-                                      harness=args.harness, model=args.model)
+                                      harness=args.harness, model=args.model, wording=args.wording)
+                        if (args.harness == "codex" and getattr(args, "codex_weekly_limits", False)
+                                and getattr(args, "_codex_account_assignment", None) is not None):
+                            account = weekly_accounts.account_for(args._codex_account_assignment, cid, arm, seed)
+                            record["account_id"] = account["account_id"]
+                            record["account_auth_sha256"] = account["auth_sha256"]
                         if args.harness == "codex" and getattr(args, "codex_weekly_limits", False):
                             record["observer_integrity_unknown"] = True
                             record["observer_failure_reason"] = "codex_attempt_exception"

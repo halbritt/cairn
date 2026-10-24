@@ -187,7 +187,7 @@ class RunAgentTests(RecallRunBase):
 
 @unittest.skipUnless(shutil.which('bwrap'), 'needs the local filesystem sandbox')
 class BindingPreflightTests(RecallRunBase):
-    """The original agent_tools arm runs the real binding check in the real sandbox before any provider."""
+    """Original agent_tools arms run their harness-specific binding check before the provider."""
 
     def setUp(self):
         super().setUp()
@@ -249,9 +249,76 @@ class BindingPreflightTests(RecallRunBase):
 
     def test_valid_binding_and_task_key_pass_the_real_check_then_launch_once(self):
         record = self.run_preflighted()
-        self.assertEqual(json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())['exit'], 0)
+        check = json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())
+        self.assertEqual(check['exit'], 0)
+        self.assertEqual(check['argv'], task.BINDING_CHECK)
         self.assertEqual(self.actors, 1)
         self.assertEqual(record['original_arm']['recall_mode'], 'agent_tools')
+
+    def _configure_codex(self):
+        self.args.harness = 'codex'
+        self.args.original_limits = False
+        self.args.codex_weekly_limits = True
+        self.args.model = 'gpt-6-luna'
+        self.args.reasoning_effort = 'high'
+        self.args.codex_install = str(self.root / 'codex-install')
+        binary = self.root / 'codex'
+        binary.write_text('#!/bin/sh\nexit 0\n')
+        binary.chmod(0o700)
+        self.args.codex_binary = str(binary)
+        self.args.codex_binary_sha256 = pin(binary)['sha256']
+        auth = self.home / '.codex' / 'auth.json'
+        auth.parent.mkdir()
+        auth.write_text('{}')
+        self.args.codex_auth_file = str(auth)
+        self.args.codex_auth_sha256 = pin(auth)['sha256']
+
+    def _run_codex_preflighted(self):
+        self._configure_codex()
+        with patch.object(task.codex_account_selection, 'verify_auth_file'), \
+                patch.object(task.codex_weekly_limits, 'assess', return_value=dict(
+                    schema='cairn.codex-weekly-limit-assessment/1', status='within_codex_weekly_limits',
+                    failures=[], unknown=[])), \
+                patch.object(task, 'parse_stream', return_value=dict(
+                    commands=[], writes=[], memory_calls=[], answer='Done.', turns=1,
+                    completed=True, is_error=False, admission_failure=None)), \
+                patch.object(task, 'read_custody', return_value=dict(
+                    classification='observed', leader_reaped=True, cleanup=dict(status='observed_clear'))), \
+                patch.object(task, 'codex_custody_failure', return_value=None):
+            return self.run_preflighted()
+
+    def test_codex_uses_native_turn_binding_without_claude_task_key_and_keeps_weekly_limits(self):
+        record = self._run_codex_preflighted()
+        check = json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())
+        self.assertEqual(check['exit'], 0)
+        self.assertEqual(check['argv'], task.CODEX_BINDING_CHECK)
+        self.assertEqual(self.actors, 1)
+        self.assertEqual(record['codex_weekly_limits']['status'], 'within_codex_weekly_limits')
+        config = json.loads(self.attempt('CURRENT', 'hook-config.json').read_text())
+        self.assertEqual((config['harness'], config['recall_mode']), ('codex', 'agent_tools'))
+        self.assertNotIn('recall_task_key', config)
+        expected_context = task.codex_weekly_limits.hook_context_bytes(
+            self.case['wordings']['task'], task.MEMORY_INSTRUCTION)
+        self.assertEqual(config['context_bytes'], expected_context)
+        hooks = json.loads(self.attempt('CURRENT', 'codex-home/hooks.json').read_text())['hooks']
+        self.assertEqual(hooks['UserPromptSubmit'][0]['hooks'][0]['additionalContextLimit'], expected_context)
+        mcp = json.loads(self.attempt('CURRENT', 'mcp.json').read_text())['mcpServers']['cairn']['args']
+        self.assertEqual(mcp[-len(task.legacy_limits.mcp_tool_room_arguments()):],
+                         task.legacy_limits.mcp_tool_room_arguments())
+
+    def test_codex_refuses_before_provider_when_pinned_engine_lacks_native_turn_route(self):
+        engine = self.recall['CURRENT'] / 'memory.py'
+        source = engine.read_text()
+        self.assertIn('def codex_agent_context(', source)
+        engine.write_text(source.replace('def codex_agent_context(', 'def unsupported_codex_agent_context(', 1))
+        engine.chmod(0o600)
+        self.reload()
+        self._configure_codex()
+        with patch.object(task.codex_account_selection, 'verify_auth_file'):
+            with self.assertRaisesRegex(RuntimeError, '^original_recall_binding_invalid'):
+                self.run_preflighted()
+        self.assertEqual(self.actors, 0)
+        self.assertNotEqual(json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())['exit'], 0)
 
     def test_invalid_bridge_refuses_before_the_provider(self):
         (self.recall['CURRENT'] / 'inbox_recall.py').write_text('# not the reviewed bridge\n')

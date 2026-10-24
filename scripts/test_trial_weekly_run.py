@@ -511,6 +511,57 @@ class WeeklyRunTests(unittest.TestCase):
         profile['selection'] = write_pin(self.root / 'one-run-selection.json', selection_doc)
         return profile, override_ref
 
+    def test_codex_prelaunch_exception_is_incomplete_after_assignment_and_row_selection_checks(self):
+        cases = [f'synthetic-{index:02d}' for index in range(21)]
+        seeds = [1, 2, 3]
+        account_ids = ['account-A', 'account-B', 'account-C']
+        accounts = [dict(account_id=account_id, auth_sha256=chr(ord('a') + index) * 64)
+                    for index, account_id in enumerate(account_ids)]
+        planned = []
+        for seed_index, seed in enumerate(seeds):
+            for case_index, case in enumerate(cases):
+                account_id = account_ids[(case_index + seed_index) % 3]
+                for arm in ('CURRENT', 'CAND'):
+                    planned.append(dict(run_id=f'{case}.{arm}.s{seed}', case=case, arm=arm, seed=seed,
+                                        account_id=account_id))
+        assignment = dict(accounts=accounts)
+        assignment_path = self.root / 'assignment.json'
+        assignment_path.write_text(json.dumps(assignment, sort_keys=True))
+        assignment_ref = dict(path=str(assignment_path), sha256=hashlib.sha256(assignment_path.read_bytes()).hexdigest())
+        first = planned[0]
+        records = [dict(run_id=first['run_id'], case=first['case'], arm=first['arm'], seed=first['seed'],
+                        outcome='harness_error', harness='codex', model='gpt-6-luna', wording='task',
+                        account_id=first['account_id'],
+                        account_auth_sha256=next(row['auth_sha256'] for row in accounts
+                                                 if row['account_id'] == first['account_id']),
+                        observer_integrity_unknown=True)]
+        started = {first['run_id']}
+        unstarted = [dict(run_id=row['run_id'], case=row['case'], arm=row['arm'], seed=row['seed'])
+                     for row in planned[1:]]
+        plan = dict(arms=['CURRENT', 'CAND'],
+                    runs=[[row['case'], row['arm'], row['seed'], index] for index, row in enumerate(planned)],
+                    account_assignment_sha256=assignment_ref['sha256'],
+                    run_accounts=[dict(run_id=row['run_id'], account_id=row['account_id']) for row in planned])
+        out = self.root / 'agent-output'
+        out.mkdir()
+        agent_path = out / 'agent.json'
+        document = dict(schema='cairn.task-eval.agent/1',
+                        frozen=dict(label_version=12, labels_sha256='f' * 64),
+                        distractors=1900, arms=['CURRENT', 'CAND'], model='gpt-6-luna', wording='task',
+                        records=records,
+                        admission=dict(state='stopped_observer_failure', planned=126, admitted=1,
+                                       stop=None, observer_stop=dict(run_id=first['run_id'],
+                                           reason='codex_attempt_exception'), not_started=unstarted),
+                        measurement_failures=[])
+        agent_path.write_text(json.dumps(document))
+        (out / 'plan.json').write_text(json.dumps(plan))
+        spec = dict(actor_model='gpt-6-luna',
+                    harness=dict(kind='codex-weekly', label_version=12, labels_sha256='f' * 64),
+                    planned=planned, account_assignment=assignment_ref, case_materials=None)
+        result = weekly._agent_result(agent_path, spec)
+        self.assertEqual((result['status'], result['code']), ('incomplete', 'attempts_unfinished'))
+        self.assertEqual(started, {records[0]['run_id']})
+
     def test_manual_one_run_bypasses_only_capacity_proof_and_records_unknown(self):
         profile, override_ref = self.manual_codex_profile()
         profile['capacity']['receipt'] = None  # No fabricated reservation or capacity evidence.

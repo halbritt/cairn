@@ -1051,8 +1051,8 @@ class CodexAccountAssignmentPlanTests(unittest.TestCase):
                 def stop(self):
                     pass
 
-            def execute(with_assignment):
-                out = root / ('assigned' if with_assignment else 'unassigned')
+            def execute(with_assignment, fail_first=False):
+                out = root / ('assigned-error' if fail_first else 'assigned' if with_assignment else 'unassigned')
                 stores_before = StubStore.instances
                 first_submission = {}
                 argv = ['agent', '--legacy-fixtures', '--output', str(out), '--harness', 'codex',
@@ -1079,6 +1079,8 @@ class CodexAccountAssignmentPlanTests(unittest.TestCase):
                         first_submission.update(plan_exists=path.is_file(),
                                                 plan=json.loads(path.read_text()) if path.is_file() else None,
                                                 run_id=run_id, stores=sorted(stores))
+                    if fail_first:
+                        raise RuntimeError('synthetic prelaunch refusal')
                     assigned_runs.add(run_id)
                     return dict(run_id=run_id, case=case['id'], arm=arm, seed=seed,
                                 outcome='incomplete', codex_weekly_limits=dict(status='within_codex_weekly_limits'),
@@ -1091,16 +1093,24 @@ class CodexAccountAssignmentPlanTests(unittest.TestCase):
                      patch.object(te, 'cairn_json', return_value={'version': 'stubbed'}), \
                      redirect_stdout(StringIO()):
                     result = te.main(argv)
-                self.assertEqual(result, 0)
+                self.assertEqual(result, 2 if fail_first else 0)
                 self.assertEqual(provider_calls.call_count, 1)
                 self.assertEqual(StubStore.instances - stores_before, 2)
-                self.assertEqual(run_calls.call_count, 126)
+                self.assertEqual(run_calls.call_count, 1 if fail_first else 126)
                 self.assertTrue(first_submission['plan_exists'])
                 self.assertEqual(first_submission['stores'], ['CAND', 'CURRENT'])
                 plan = json.loads((out / 'plan.json').read_text())
+                report = json.loads((out / 'agent.json').read_text())
+                if fail_first:
+                    self.assertEqual(len(report['records']), 1)
+                    attempt = report['records'][0]
+                    assigned = next(row for row in assignment['assignments'] if row['run_id'] == attempt['run_id'])
+                    self.assertEqual(attempt['account_id'], assigned['account_id'])
+                    account = next(row for row in accounts if row['account_id'] == assigned['account_id'])
+                    self.assertEqual(attempt['account_auth_sha256'], account['auth_sha256'])
+                    return
                 self.assertEqual(len(plan['runs']), 126)
                 self.assertEqual(len(assigned_runs), 126)
-                report = json.loads((out / 'agent.json').read_text())
                 if with_assignment:
                     self.assertEqual(first_submission['plan']['account_assignment_sha256'], assignment_sha256)
                     self.assertEqual(plan['account_assignment_sha256'], assignment_sha256)
@@ -1118,6 +1128,7 @@ class CodexAccountAssignmentPlanTests(unittest.TestCase):
 
             execute(True)
             execute(False)
+            execute(True, fail_first=True)
 
 
 if __name__ == "__main__":

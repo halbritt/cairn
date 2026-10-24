@@ -377,13 +377,19 @@ Without the pin, the executor is blocked with `original_execution_unbound`.
 **Per-arm recall controls and embedding config (carried since the
 recall-controls lane):**
 - **Literal controls.** `recall_mode` and `semantic_fallback` reach each
-  arm's hook configuration exactly as declared. An `agent_tools` arm is
-  bound with the existing `bind_ordinary_claude` (inbox-recall binding,
-  launcher task key), as the prospective route binds it. Before the provider
-  starts, the attempt sandbox runs the same `BINDING_CHECK` that prospective
-  prerequisites use: the engine's `RECALL_TASK_VERSION` and `recall_task_key`,
-  then `inbox_recall.validate_binding(..., require_enabled=True)`. Any failure
-  refuses `original_recall_binding_invalid` and the provider never runs. The
+  arm's hook configuration exactly as declared. An `agent_tools` arm receives
+  an owner-only inbox-recall binding. Claude's single child gets a fresh
+  `recall_task_key` after the pinned engine passes `RECALL_TASK_VERSION = 1`.
+  Codex does not receive that Claude launcher key: it uses the pinned engine's
+  existing durable grant for each canonical native turn. Before the provider
+  starts, the attempt sandbox runs the harness-specific binding check. Claude
+  validates its task-key contract; Codex verifies that no task key is present,
+  that the pinned engine supports its bound native-turn handler, and that the
+  bridge accepts the enabled binding. Any failure refuses
+  `original_recall_binding_invalid` and the provider never runs. Codex's native
+  turn grant remains bounded by the same hook context allowance and the weekly
+  Codex JSONL assessment. The binding creates no task-wide grant; the aggregate
+  weekly assessment remains a separate gate. The
   controls document's hook and bridge pins are checked for their closed
   `{path, sha256}` shape first (`original_arms_shape`). Prospective input,
   its `validate_arms` and its schedule are not used; the legacy schedule and
