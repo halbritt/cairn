@@ -106,6 +106,7 @@ def check_snapshot(home, expected, relative_paths=None):
 
 def replace_exact_hooks(settings, old_memory, old_coordination, new_memory, new_coordination, harness):
     result = copy.deepcopy(settings)
+    changes = []
     for kind, old, new in (("memory", old_memory, new_memory),
                            ("coordination", old_coordination, new_coordination)):
         for event in EVENTS[harness][kind]:
@@ -114,11 +115,12 @@ def replace_exact_hooks(settings, old_memory, old_coordination, new_memory, new_
             if len(matches) != 1:
                 raise ValueError(f"expected one selected {harness} {kind} hook at {event}, got {len(matches)}")
             matches[0]["command"] = new
+            changes.append({"kind": kind, "event": event, "before": old, "after": new})
     remaining = {hook.get("command") for groups in result["hooks"].values()
                  for group in groups for hook in group["hooks"]}
     if old_memory in remaining or old_coordination in remaining:
         raise ValueError(f"unmapped selected {harness} hook remains")
-    return result
+    return result, changes
 
 
 def selected_command(settings, config_path, kind):
@@ -194,7 +196,7 @@ def stage_account(home, stage, harness):
 
     old_memory = selected_command(settings, old_memory_path, "memory")
     old_coordination = selected_command(settings, old_coord_path, "coordination")
-    candidate = replace_exact_hooks(settings, old_memory, old_coordination,
+    candidate, hook_changes = replace_exact_hooks(settings, old_memory, old_coordination,
                                     staged_command(old_memory, memory_script, memory_path),
                                     staged_command(old_coordination, coordination_script, coordination_path), harness)
     candidate_path = target / settings_path.name
@@ -205,21 +207,36 @@ def stage_account(home, stage, harness):
                         shlex.quote(shlex.split(old_coordination)[0]) + " " +
                         shlex.quote(str(coordination_script)) + ' inbox compact "$@"\n', encoding="utf-8")
     launcher.chmod(0o700)
+    closure_files = [memory_script, coordination_script, bridge_path, memory_path,
+                     coordination_path, manifest_path, candidate_path, launcher,
+                     *(native / sibling for sibling in COORD_SIBLINGS)]
+    closure = {"schema": "cairn.lifecycle-pin-closure/1",
+               "source_revision": subprocess.run(
+                   ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                   capture_output=True, text=True).stdout.strip(),
+               "files": {str(path.relative_to(target)): sha256(path) for path in closure_files}}
+    closure_path = target / "pin-closure.json"
+    write_json(closure_path, closure)
+    closure_path.chmod(0o400)
     return {"account_settings": str(settings_path), "expected_sha256": sha256(settings_path),
             "candidate_settings": str(candidate_path), "candidate_sha256": sha256(candidate_path),
+            "hook_changes": hook_changes,
             "manifest": str(manifest_path), "manifest_sha256": sha256(manifest_path),
+            "pin_closure": str(closure_path), "pin_closure_sha256": sha256(closure_path),
             "manifest_enabled": False, "coordination_count": 1,
             "compact_launcher": str(launcher), "compact_launcher_sha256": sha256(launcher),
             "required_path_prefix": str(launcher.parent)}
 
 
-def stage_mcp(home, destination, expected, *, codex_only=False):
+def stage_mcp(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
     binary = destination / "bin/cairn"
     codex_path = home / ".codex/config.toml"
-    codex_text = codex_path.read_text(encoding="utf-8")
+    codex_raw = codex_path.read_bytes() if codex_config_baseline is None else codex_config_baseline
+    codex_text = codex_raw.decode("utf-8")
     codex_data = tomllib.loads(codex_text)
     old_codex = codex_data["mcp_servers"]["cairn"]
-    if old_codex["command"] != str(home / ".local/bin/cairn") or old_codex["args"][-1] != "--codex-thread":
+    if (old_codex["command"] != str(home / ".local/bin/cairn") or
+            not isinstance(old_codex.get("args"), list) or old_codex["args"].count("--codex-thread") != 1):
         raise ValueError("unexpected selected Codex MCP command")
     start = codex_text.index("[mcp_servers.cairn]\n")
     end = codex_text.find("\n[", start + 1)
@@ -230,7 +247,14 @@ def stage_mcp(home, destination, expected, *, codex_only=False):
     old_args_line = "args = " + json.dumps(old_codex["args"])
     if section.count(old_command_line) != 1 or section.count(old_args_line) != 1:
         raise ValueError("Codex Cairn MCP section differs from reviewed layout")
-    new_args = [*old_codex["args"], "--search-view", "compact/1", "--tool-profile", "compact/1"]
+    new_args = list(old_codex["args"])
+    for flag, value in (("--search-view", "compact/1"), ("--tool-profile", "compact/1")):
+        positions = [index for index, item in enumerate(new_args) if item == flag]
+        if len(positions) > 1 or (positions and (positions[0] + 1 >= len(new_args) or
+                                                  new_args[positions[0] + 1] != value)):
+            raise ValueError(f"selected Codex MCP has an incompatible {flag} opt-in")
+        if not positions:
+            new_args.extend((flag, value))
     section = section.replace(old_command_line, "command = " + json.dumps(str(binary)))
     section = section.replace(old_args_line, "args = " + json.dumps(new_args))
     candidate_codex = codex_text[:start] + section + codex_text[end:]
@@ -242,11 +266,22 @@ def stage_mcp(home, destination, expected, *, codex_only=False):
     codex_candidate = destination / "codex/config.toml"
     codex_candidate.write_text(candidate_codex, encoding="utf-8")
     codex_candidate.chmod(0o600)
+    baseline_path = None
+    if codex_config_baseline is not None:
+        baseline_path = destination / "codex/config.baseline.toml"
+        baseline_path.write_bytes(codex_config_baseline)
+        baseline_path.chmod(0o400)
+    codex_result = {"account_mcp": str(codex_path),
+                    "expected_sha256": hashlib.sha256(codex_raw).hexdigest(),
+                    "candidate_mcp": str(codex_candidate), "candidate_sha256": sha256(codex_candidate)}
+    if baseline_path is not None:
+        codex_result.update({"baseline_snapshot": str(baseline_path),
+                             "baseline_sha256": hashlib.sha256(codex_config_baseline).hexdigest(),
+                             "candidate_changes": ["mcp_servers.cairn.command", "mcp_servers.cairn.args"]})
 
     if codex_only:
         return {"candidate_binary": str(binary), "candidate_binary_present": False,
-                "codex": {"account_mcp": str(codex_path), "expected_sha256": sha256(codex_path),
-                          "candidate_mcp": str(codex_candidate), "candidate_sha256": sha256(codex_candidate)},
+                "codex": codex_result,
                 "claude": {"staged": False}}
 
     wrapper = home / ".local/bin/cairn-shared-mcp"
@@ -272,8 +307,7 @@ def stage_mcp(home, destination, expected, *, codex_only=False):
     claude_candidate = destination / "claude/.claude.json"
     write_json(claude_candidate, claude_data)
     return {"candidate_binary": str(binary), "candidate_binary_present": False,
-            "codex": {"account_mcp": str(codex_path), "expected_sha256": sha256(codex_path),
-                      "candidate_mcp": str(codex_candidate), "candidate_sha256": sha256(codex_candidate)},
+            "codex": codex_result,
             "claude": {"account_mcp": str(claude_path), "expected_sha256": hashlib.sha256(claude_raw).hexdigest(),
                        "candidate_mcp": str(claude_candidate), "candidate_sha256": sha256(claude_candidate),
                        "account_wrapper": str(candidate_wrapper), "wrapper_sha256": sha256(candidate_wrapper)}}
@@ -304,11 +338,22 @@ def private_stage_root(home):
     return root
 
 
-def stage(home, destination, expected=EXPECTED, *, codex_only=False):
+def stage(home, destination, expected=EXPECTED, *, codex_only=False,
+          snapshot_codex_config_baseline=False):
     if not destination.is_absolute() or destination.exists() or destination.is_symlink():
         raise ValueError("stage destination must be a new absolute directory")
+    if snapshot_codex_config_baseline and not codex_only:
+        raise ValueError("current Codex config baseline is available only in --codex-only mode")
     snapshot_paths = CODEX_ONLY_SNAPSHOT_PATHS if codex_only else None
+    if snapshot_codex_config_baseline:
+        snapshot_paths = tuple(path for path in snapshot_paths if path != ".codex/config.toml")
     check_snapshot(home, expected, snapshot_paths)
+    codex_config_path = home / ".codex/config.toml"
+    if snapshot_codex_config_baseline:
+        info = codex_config_path.stat()
+        if (codex_config_path.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o022):
+            raise ValueError(f"unsafe selected Codex config baseline: {codex_config_path}")
+    codex_config_baseline = codex_config_path.read_bytes() if snapshot_codex_config_baseline else None
     peer_paths = CODEX_PEER_PATHS if codex_only else (
         ".codex-harm/hooks.json", ".codex-harm/config.toml",
         ".claude-harm/settings.json", ".claude-harm/.claude.json")
@@ -325,7 +370,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False):
         harnesses = ("codex",) if codex_only else ("codex", "claude")
         for harness in harnesses:
             report["accounts"][harness] = stage_account(home, destination, harness)
-        report["mcp"] = stage_mcp(home, destination, expected, codex_only=codex_only)
+        report["mcp"] = stage_mcp(home, destination, expected, codex_only=codex_only,
+                                   codex_config_baseline=codex_config_baseline)
         report["source_hashes"] = {name: sha256(ROOT / "integrations/lifecycle" / name)
                                    for name in ("memory.py", "coordination.py", "inbox_recall.py")}
         report["source_hashes"]["scripts/stage_token_efficiency_canary.py"] = sha256(Path(__file__))
@@ -357,6 +403,8 @@ def stage(home, destination, expected=EXPECTED, *, codex_only=False):
         report["unchanged_account_hashes"] = {
             str(home / relative): digest for relative, digest in peer_hashes_after.items()}
         check_snapshot(home, expected, snapshot_paths)
+        if codex_config_baseline is not None and (home / ".codex/config.toml").read_bytes() != codex_config_baseline:
+            raise ValueError("selected Codex config changed during staging")
         write_json(destination / "stage.json", report)
     except Exception:
         shutil.rmtree(destination)
@@ -370,8 +418,11 @@ def main():
                         help="new offline directory, outside installed account and Cairn paths")
     parser.add_argument("--codex-only", action="store_true",
                         help="stage only the selected .codex account; do not read or copy Claude configuration")
+    parser.add_argument("--snapshot-current-codex-config", action="store_true",
+                        help="pin the current selected Codex TOML as a private baseline; allow whole-file drift only there")
     args = parser.parse_args()
-    report = stage(Path.home(), args.destination, codex_only=args.codex_only)
+    report = stage(Path.home(), args.destination, codex_only=args.codex_only,
+                   snapshot_codex_config_baseline=args.snapshot_current_codex_config)
     print(json.dumps(report, indent=2))
 
 

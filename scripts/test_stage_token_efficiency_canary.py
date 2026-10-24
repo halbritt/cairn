@@ -158,6 +158,83 @@ exec {binary} mcp \\
         before[".claude.json"] = (self.home / ".claude.json").read_bytes()
         self.assertEqual(before, {relative: (self.home / relative).read_bytes() for relative in self.expected})
 
+    def test_current_codex_config_baseline_preserves_unrelated_toml_and_reports_exact_hooks(self):
+        config_path = self.home / ".codex/config.toml"
+        original = config_path.read_bytes()
+        # A selected-account local setting changes the whole-file pin while the
+        # Cairn table stays structurally valid. Keep this value out of reports.
+        original_text = original.decode()
+        parsed = stage.tomllib.loads(original_text)
+        old_args_line = "args = " + json.dumps(parsed["mcp_servers"]["cairn"]["args"])
+        opted_args = parsed["mcp_servers"]["cairn"]["args"] + [
+            "--search-view", "compact/1", "--tool-profile", "compact/1"]
+        opted_args_line = "args = " + json.dumps(opted_args)
+        config_path.write_text(original_text.replace(old_args_line, opted_args_line) +
+                               "\n[notice]\nopt_in = true\n")
+        baseline = config_path.read_bytes()
+        self.expected[".codex/config.toml"] = "0" * 64
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}):
+            report = stage.stage(self.home, self.stage, self.expected, codex_only=True,
+                                 snapshot_codex_config_baseline=True)
+        mcp = report["mcp"]["codex"]
+        baseline_path = Path(mcp["baseline_snapshot"])
+        self.assertEqual(baseline_path.read_bytes(), baseline)
+        self.assertEqual(baseline_path.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(mcp["baseline_sha256"], stage.hashlib.sha256(baseline).hexdigest())
+        candidate_text = Path(mcp["candidate_mcp"]).read_text()
+        candidate = stage.tomllib.loads(candidate_text)
+        original_values = stage.tomllib.loads(baseline.decode())
+        self.assertEqual(candidate["notice"], original_values["notice"])
+        self.assertEqual(candidate["mcp_servers"]["other"], original_values["mcp_servers"]["other"])
+        selected_args = candidate["mcp_servers"]["cairn"]["args"]
+        self.assertEqual(selected_args.count("--search-view"), 1)
+        self.assertEqual(selected_args.count("--tool-profile"), 1)
+        start = baseline.decode().index("[mcp_servers.cairn]\n")
+        end = baseline.decode().find("\n[", start + 1)
+        candidate_end = candidate_text.find("\n[", candidate_text.index("[mcp_servers.cairn]\n") + 1)
+        self.assertEqual(candidate_text[:start], baseline.decode()[:start])
+        self.assertEqual(candidate_text[candidate_end:], baseline.decode()[end:])
+        changes = report["accounts"]["codex"]["hook_changes"]
+        self.assertEqual({change["kind"] for change in changes}, {"memory", "coordination"})
+        self.assertEqual({change["event"] for change in changes},
+                         set(stage.EVENTS["codex"]["memory"] + stage.EVENTS["codex"]["coordination"]))
+        closure_path = Path(report["accounts"]["codex"]["pin_closure"])
+        self.assertEqual(closure_path.stat().st_mode & 0o777, 0o400)
+        closure = json.loads(closure_path.read_text())
+        self.assertTrue({"ordinary/memory.py", "coordination/coordination.py", "inbox_recall.py"}
+                        <= set(closure["files"]))
+        self.assertEqual(stage.sha256(closure_path), report["accounts"]["codex"]["pin_closure_sha256"])
+        self.assertEqual(config_path.read_bytes(), baseline)
+
+    def test_current_codex_config_change_during_staging_removes_candidate(self):
+        config_path = self.home / ".codex/config.toml"
+        real_stage_mcp = stage.stage_mcp
+
+        def mutate_after_read(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
+            result = real_stage_mcp(home, destination, expected, codex_only=codex_only,
+                                    codex_config_baseline=codex_config_baseline)
+            config_path.write_text(config_path.read_text() + "\n[notice]\nother = true\n")
+            return result
+
+        with mock.patch.dict(stage.os.environ, {"CODEX_HOME": str(self.home / ".codex")}), \
+             mock.patch.object(stage, "stage_mcp", side_effect=mutate_after_read):
+            with self.assertRaisesRegex(ValueError, "changed during staging"):
+                stage.stage(self.home, self.stage, self.expected, codex_only=True,
+                            snapshot_codex_config_baseline=True)
+        self.assertFalse(self.stage.exists())
+
+    def test_current_codex_config_baseline_rejects_symlink(self):
+        config_path = self.home / ".codex/config.toml"
+        contents = config_path.read_bytes()
+        config_path.unlink()
+        target = self.home / "external-config.toml"
+        target.write_bytes(contents)
+        config_path.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "unsafe selected Codex config baseline"):
+            stage.stage(self.home, self.stage, self.expected, codex_only=True,
+                        snapshot_codex_config_baseline=True)
+        self.assertFalse(self.stage.exists())
+
     def test_claude_cache_timestamp_may_advance_but_mcp_drift_refuses(self):
         path = self.home / ".claude.json"
         data = json.loads(path.read_text())
@@ -200,8 +277,9 @@ exec {binary} mcp \\
         path = self.home / ".codex/hooks.json"
         real_stage_mcp = stage.stage_mcp
 
-        def change_after_copy(home, destination, expected, *, codex_only=False):
-            result = real_stage_mcp(home, destination, expected, codex_only=codex_only)
+        def change_after_copy(home, destination, expected, *, codex_only=False, codex_config_baseline=None):
+            result = real_stage_mcp(home, destination, expected, codex_only=codex_only,
+                                    codex_config_baseline=codex_config_baseline)
             data = json.loads(path.read_text())
             data["hooks"]["Stop"].append({"hooks": [{"command": "new-unreviewed-hook"}]})
             self.write(path, data)
