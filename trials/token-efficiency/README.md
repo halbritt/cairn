@@ -129,10 +129,18 @@ partial source, scheduling, or recovery checks.
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
 joins native turns, or grades task outcomes. A separate disposable-only
-controller in `scripts/token_efficiency_panel_controller.py` materializes
-`baseline.single_notice` through the authenticated local API. It persists an
-immutable intent before source creation and publication, then verifies exact
-Store-owned source, session, event and pending-delivery identities. Its private
+controller in `scripts/token_efficiency_panel_controller.py` materializes three
+baseline setups through the authenticated local API, each in a separate
+disposable database: `single_notice`, `actionable_response`, and
+`duplicate_send`. It registers synthetic Codex sessions for setup; these are
+not selected live harness or deployment evidence. It persists an immutable
+intent before source creation and publication, then verifies exact Store-owned
+source, session, event and
+pending-delivery identities. For `actionable_response`, the controller
+publishes a synthetic response whose causal ID is the preceding request's
+observed event ID; no actor handles the request. For `duplicate_send`, it
+repeats the identical publication with one native request UUID and verifies
+one durable event and delivery; no task effect is exercised. Its private
 receipt states that no provider call, native turn join or task outcome occurred.
 The remaining case/arm setups have no executable controller path yet.
 

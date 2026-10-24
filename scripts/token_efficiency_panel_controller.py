@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize one frozen panel setup through a disposable Cairn API.
+"""Materialize selected frozen panel setups through a disposable Cairn API.
 
 This prepares a pending native inbox delivery. It never launches an actor,
 claims a turn, grades an answer, or emits gate observations.
@@ -18,8 +18,37 @@ import ordinary_task_receipt as receipt_binding
 import preflight_token_efficiency_panel as panel
 
 
-DATABASE = "cairn_panel_controller"
-WORKFLOW = "baseline.single_notice"
+# Adapters bind fixture recipients and publishers to authenticated profiles,
+# and guard the exact supported event and transition descriptors.
+CASE_ADAPTERS = {
+    "single_notice": {
+        "events": [{"id": "notice_a", "kind": "notice", "recipient": "worker"}],
+        "transitions": [], "publishers": {"notice_a": "sender"},
+        "sessions": {"worker": "worker"},
+    },
+    "actionable_response": {
+        "events": [{"id": "request_decision", "kind": "request", "recipient": "worker_a"},
+                   {"id": "response_a", "kind": "response", "recipient": "worker",
+                    "causation": "request_decision"}],
+        "transitions": [],
+        "publishers": {"request_decision": "sender", "response_a": "worker"},
+        "sessions": {"worker_a": "worker", "worker": "sender"},
+    },
+    "duplicate_send": {
+        "events": [{"id": "duplicate_a", "kind": "request", "recipient": "worker",
+                    "idempotency_key": "ck8"}],
+        "transitions": [{"phase": "after_first_publish", "action": "duplicate_publish",
+                         "target": "duplicate_a"}],
+        "publishers": {"duplicate_a": "sender"},
+        "sessions": {"worker": "worker"},
+    },
+}
+
+
+def case_name(workflow_id):
+    require(workflow_id.startswith("baseline.") and workflow_id[9:] in CASE_ADAPTERS,
+            "unsupported workflow")
+    return workflow_id[9:]
 
 
 def require(value, message):
@@ -56,12 +85,13 @@ def write_new(path, value):
 
 
 def disposable_inputs(args):
+    case = case_name(args.workflow_id)
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."),
             "disposable integration root required")
     private_dir(root)
     require((root / "data" / "PG_VERSION").is_file(), "disposable PostgreSQL cluster required")
-    dsn = f"host={root / 'socket'} dbname={DATABASE} sslmode=disable"
+    dsn = f"host={root / 'socket'} dbname=cairn_panel_{case} sslmode=disable"
     require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
             and os.environ.get("CAIRN_DATABASE_URL") == dsn,
             "controller requires the dedicated disposable database")
@@ -82,7 +112,7 @@ def disposable_inputs(args):
     private_dir(export)
     private_dir(export / "actor")
     private_file(export / "controller.json")
-    private_file(export / "actor" / "single_notice.json")
+    private_file(export / "actor" / f"{case}.json")
     run_dir = Path(args.run_dir)
     require(run_dir.parent == root and run_dir.name not in ("", ".", ".."),
             "run directory must be a direct child of disposable root")
@@ -93,30 +123,35 @@ def disposable_inputs(args):
     return root, socket, export, run_dir
 
 
-def frozen_case(export, fixture):
+def frozen_case(export, fixture, workflow_id):
+    case = case_name(workflow_id)
+    adapter = CASE_ADAPTERS[case]
     require(Path(fixture).resolve(strict=True) == panel.FIXTURE.resolve(strict=True),
             "canonical frozen fixture required")
     data, fixture_hash = panel.read_fixture(fixture)
     expected = panel.manifest(data, fixture_hash)
     actual = read_json(export / "controller.json")
     require(actual == expected, "exported controller differs from frozen fixture")
-    binding = receipt_binding.frozen_binding(actual, WORKFLOW)
-    row = next(item for item in actual["cases"] if item["id"] == "single_notice")
-    actor = read_json(export / "actor" / "single_notice.json")
+    binding = receipt_binding.frozen_binding(actual, workflow_id)
+    row = next(item for item in actual["cases"] if item["id"] == case)
+    actor = read_json(export / "actor" / f"{case}.json")
     require(actor == row["actor"] and set(actor) == {"schema", "case", "task"}
             and panel.sha(actor) == binding["actor_sha256"], "actor export differs from frozen task")
     setup = row["setup"]
-    require(setup["sources"] == [] and len(setup["events"]) == 1
-            and setup["transitions"] == [] and setup["events"][0]["id"] == "notice_a"
-            and setup["events"][0]["kind"] == "notice"
-            and setup["events"][0]["recipient"] == "worker", "unsupported panel setup")
-    run = next(item for item in actual["prospective_runs"] if item["workflow_id"] == WORKFLOW)
-    require(run["intervention"] is None, "baseline notice must not add arm policy")
-    return binding, setup["events"][0], actual["event_source_defaults"]
+    descriptors = [{key: value for key, value in event.items() if key != "body"}
+                   for event in setup["events"]]
+    require(setup["sources"] == [] and descriptors == adapter["events"]
+            and setup["transitions"] == adapter["transitions"], "unsupported panel setup")
+    run = next(item for item in actual["prospective_runs"] if item["workflow_id"] == workflow_id)
+    require(run["intervention"] is None, "baseline must not add arm policy")
+    return binding, setup, actual["event_source_defaults"], adapter
 
 
-def call(binary, socket, token, operation, args=(), body=None):
+def call(binary, socket, token, operation, args=(), body=None, session=None):
     connection = ["--socket", str(socket), "--token-file", str(token)]
+    if session is not None:
+        connection += ["--agent-id", session["agent_id"],
+                       "--execution-id", session["execution_id"]]
     if operation[0] == "agent":
         command = [str(binary), "agent", *connection, *operation[1:], *args]
     else:
@@ -145,11 +180,12 @@ def registered_owner(dsn, agent_id):
 
 def materialize(args):
     root, socket, export, run_dir = disposable_inputs(args)
+    case = case_name(args.workflow_id)
     sender_token = Path(args.sender_token).read_bytes()
     worker_token = Path(args.worker_token).read_bytes()
     require(sender_token != worker_token,
             "sender and worker token identities must differ")
-    binding, event_spec, defaults = frozen_case(export, args.fixture)
+    binding, setup, defaults, adapter = frozen_case(export, args.fixture, args.workflow_id)
     require(defaults == {"kind": "note", "record_class": "A", "operation": "create",
                          "sensitivity": "shareable", "claim_type": "self",
                          "scope": {"repo": "fixture:cairn-token-efficiency", "task_id": "*", "run_id": "*"}},
@@ -158,84 +194,176 @@ def materialize(args):
         run_dir.mkdir(mode=0o700)
     private_dir(run_dir)
     intent_path = run_dir / "intent.json"
-    event_hash = panel.sha(event_spec)
     binary_hash = hashlib.sha256(Path(args.binary).read_bytes()).hexdigest()
-    immutable = {"schema": "cairn.panel-controller-intent/1", "workflow_id": WORKFLOW,
+    immutable = {"schema": "cairn.panel-controller-intent/2", "workflow_id": args.workflow_id,
                  "fixture_sha256": binding["fixture_sha256"],
                  "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
-                 "event_sha256": event_hash, "binary_sha256": binary_hash,
+                 "adapter_sha256": panel.sha(adapter), "binary_sha256": binary_hash,
                  "sender_principal": args.sender_principal,
                  "sender_token_sha256": hashlib.sha256(sender_token).hexdigest(),
                  "worker_token_sha256": hashlib.sha256(worker_token).hexdigest()}
+    event_ids = [event["id"] for event in setup["events"]]
+    dynamic_keys = {"run_id", "register_request_ids", "source_request_ids",
+                    "publication_request_ids"}
     if intent_path.exists():
         private_file(intent_path)
         intent = read_json(intent_path)
         require({key: intent.get(key) for key in immutable} == immutable
-                and set(intent) == set(immutable) | {"run_id", "register_request_id",
-                                                       "source_request_id", "publication_request_id"},
+                and set(intent) == set(immutable) | dynamic_keys
+                and set(intent["register_request_ids"]) == set(adapter["sessions"])
+                and set(intent["source_request_ids"]) == set(event_ids)
+                and set(intent["publication_request_ids"]) == set(event_ids),
                 "prior intent differs from frozen setup")
     else:
-        intent = immutable | {key: str(uuid.uuid4()) for key in
-                              ("run_id", "register_request_id", "source_request_id",
-                               "publication_request_id")}
+        run_id = str(uuid.uuid4())
+        publication_ids = {event_id: str(uuid.uuid4()) for event_id in event_ids}
+        for event in setup["events"]:
+            if "idempotency_key" in event:
+                publication_ids[event["id"]] = str(uuid.uuid5(
+                    uuid.UUID(run_id), f'{case}/{event["idempotency_key"]}'))
+        intent = immutable | {
+            "run_id": run_id,
+            "register_request_ids": {role: str(uuid.uuid4()) for role in adapter["sessions"]},
+            "source_request_ids": {event_id: str(uuid.uuid4()) for event_id in event_ids},
+            "publication_request_ids": publication_ids,
+        }
         write_new(intent_path, intent)
+    for value in (intent["run_id"], *intent["register_request_ids"].values(),
+                  *intent["source_request_ids"].values(),
+                  *intent["publication_request_ids"].values()):
+        require(str(uuid.UUID(value)) == value, "invalid intent UUID")
+    for event in setup["events"]:
+        if "idempotency_key" in event:
+            expected_id = str(uuid.uuid5(uuid.UUID(intent["run_id"]),
+                                         f'{case}/{event["idempotency_key"]}'))
+            require(intent["publication_request_ids"][event["id"]] == expected_id,
+                    "idempotency key differs from journaled native UUID")
     binary = Path(args.binary)
-    sender = Path(args.sender_token)
-    worker = Path(args.worker_token)
+    tokens = {"sender": Path(args.sender_token), "worker": Path(args.worker_token)}
     repo = defaults["scope"]["repo"]
-    session = call(binary, socket, worker, ("agents", "register"),
-                   ("--request-id", intent["register_request_id"], "--binding", "panel-" + intent["run_id"],
-                    "--native-session", intent["run_id"], "--harness", "codex", "--project", "Cairn",
-                    "--workspace", str(root), "--state", "idle", "--delivery-mode", "existing-session",
-                    "--repo", repo))
-    require(session.get("inbox") == "agent/" + session.get("agent_id", "")
-            and session.get("execution_id") and session.get("agent_id"),
-            "registered session identity mismatch")
     dsn = os.environ["CAIRN_DATABASE_URL"]
-    worker_owner = registered_owner(dsn, session["agent_id"])
-    require(worker_owner != args.sender_principal, "sender cannot own worker session")
-    source = call(binary, socket, sender, ("agent", "remember"),
-                  ("--request-id", intent["source_request_id"], "--repo", repo, "--task", "*",
-                   "--run", "*", "--kind", "note", "--shareable", "--stdin"), event_spec["body"])
-    ref = {"record_id": source.get("record_id"), "version": source.get("version")}
-    require(ref["version"] == 1 and source.get("body") == event_spec["body"]
-            and source.get("scope") == defaults["scope"] and source.get("kind") == "note"
-            and source.get("sensitivity") == "shareable" and source.get("claim_type") == "self"
-            and source.get("observed_writer") == args.sender_principal,
-            "stored source does not match fixture")
-    history = call(binary, socket, worker, ("agent", "history"),
-                   body=json.dumps({"record_id": ref["record_id"], "version": ref["version"]}))
-    versions = history.get("versions") or []
-    require(len(versions) == 1 and versions[0].get("body") == event_spec["body"]
-            and versions[0].get("observed_writer") == args.sender_principal,
-            "recipient cannot read exact source version")
-    published = call(binary, socket, sender, ("agent", "event-publish"),
-                     body=json.dumps({"request_id": intent["publication_request_id"], "repo": repo,
-                                      "kind": "notice", "ref": ref,
-                                      "destination": {"type": "agent", "name": session["inbox"]}}))
-    require(published.get("ref") == ref and published.get("kind") == "notice"
-            and published.get("from") == args.sender_principal
-            and published.get("destination") == {"type": "agent", "name": session["inbox"]},
-            "published event does not match source and recipient")
-    status = call(binary, socket, sender, ("event-status",), (published["event_id"],))
-    deliveries = status.get("deliveries") or []
-    require(status.get("event") == published and len(deliveries) == 1
-            and deliveries[0].get("state") == "pending" and deliveries[0].get("attempts") == 0
-            and deliveries[0].get("consumer") == session["inbox"],
-            "pending native delivery differs from publication")
-    receipt = {"schema": "cairn.panel-materialization/1", "workflow_id": WORKFLOW,
+    sessions = {}
+    owners = {"sender": args.sender_principal}
+    for recipient, token_role in adapter["sessions"].items():
+        session = call(binary, socket, tokens[token_role], ("agents", "register"),
+                       ("--request-id", intent["register_request_ids"][recipient],
+                        "--binding", f'panel-{intent["run_id"]}-{recipient}',
+                        "--native-session", f'{intent["run_id"]}/{recipient}',
+                        "--harness", "codex", "--project", "Cairn", "--workspace", str(root),
+                        "--state", "idle", "--delivery-mode", "existing-session", "--repo", repo))
+        metadata = session.get("metadata") or {}
+        require(session.get("inbox") == "agent/" + session.get("agent_id", "")
+                and session.get("execution_id") and session.get("agent_id")
+                and session.get("repo") == repo
+                and session.get("native_session_id") == f'{intent["run_id"]}/{recipient}'
+                and metadata.get("harness") == "codex"
+                and metadata.get("delivery_mode") == "existing-session",
+                "registered session identity mismatch")
+        owner = registered_owner(dsn, session["agent_id"])
+        if token_role == "sender":
+            require(owner == args.sender_principal, "sender session owner differs")
+        else:
+            require(owner != args.sender_principal, "sender cannot own worker session")
+        if token_role in owners:
+            require(owners[token_role] == owner, "profile owns inconsistent sessions")
+        owners[token_role] = owner
+        sessions[recipient] = {"agent_id": session["agent_id"],
+                               "execution_id": session["execution_id"],
+                               "inbox": session["inbox"], "observed_owner": owner}
+    require(set(owners) == {"sender", "worker"}, "both authenticated profiles required")
+    events = {}
+    transitions = []
+    for event_spec in setup["events"]:
+        event_id = event_spec["id"]
+        publisher_role = adapter["publishers"][event_id]
+        publisher_token = tokens[publisher_role]
+        recipient = event_spec["recipient"]
+        recipient_session = sessions[recipient]
+        source = call(binary, socket, publisher_token, ("agent", "remember"),
+                      ("--request-id", intent["source_request_ids"][event_id], "--repo", repo,
+                       "--task", "*", "--run", "*", "--kind", "note", "--shareable", "--stdin"),
+                      event_spec["body"])
+        ref = {"record_id": source.get("record_id"), "version": source.get("version")}
+        require(ref["version"] == 1 and source.get("body") == event_spec["body"]
+                and source.get("scope") == defaults["scope"] and source.get("kind") == "note"
+                and source.get("sensitivity") == "shareable" and source.get("claim_type") == "self"
+                and source.get("observed_writer") == owners[publisher_role],
+                "stored source does not match fixture or publisher")
+        recipient_token = tokens[adapter["sessions"][recipient]]
+        history = call(binary, socket, recipient_token, ("agent", "history"),
+                       body=json.dumps(ref))
+        versions = history.get("versions") or []
+        require(len(versions) == 1 and versions[0].get("body") == event_spec["body"]
+                and versions[0].get("observed_writer") == owners[publisher_role],
+                "recipient cannot read exact source version")
+        causation = ""
+        publisher_session = None
+        if "causation" in event_spec:
+            prior = events.get(event_spec["causation"])
+            require(prior is not None, "causal parent was not published first")
+            causation = prior["event_id"]
+            publisher_session = sessions[prior["recipient"]]
+            require(publisher_session["observed_owner"] == owners[publisher_role],
+                    "causal publisher does not own parent recipient session")
+        destination = {"type": "agent", "name": recipient_session["inbox"]}
+        payload = {"request_id": intent["publication_request_ids"][event_id],
+                   "repo": repo, "kind": event_spec["kind"], "ref": ref,
+                   "destination": destination}
+        if causation:
+            payload["causation_id"] = causation
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        published = call(binary, socket, publisher_token, ("agent", "event-publish"),
+                         body=body, session=publisher_session)
+        event_publisher = (publisher_session["inbox"] if publisher_session else owners[publisher_role])
+        require(published.get("ref") == ref and published.get("kind") == event_spec["kind"]
+                and published.get("from") == event_publisher
+                and published.get("destination") == destination
+                and published.get("causation_id", "") == causation,
+                "published event differs from source, publisher, recipient or cause")
+        status = call(binary, socket, publisher_token, ("event-status",),
+                      (published["event_id"],), session=publisher_session)
+        deliveries = status.get("deliveries") or []
+        require(status.get("event") == published and len(deliveries) == 1
+                and deliveries[0].get("state") == "pending" and deliveries[0].get("attempts") == 0
+                and deliveries[0].get("consumer") == recipient_session["inbox"],
+                "pending native delivery differs from publication")
+        events[event_id] = {"event_spec_sha256": panel.sha(event_spec),
+                            "source_body_sha256": hashlib.sha256(event_spec["body"].encode()).hexdigest(),
+                            "source_ref": ref, "observed_writer": source["observed_writer"],
+                            "event_publisher": published["from"],
+                            "publication_request_id": payload["request_id"],
+                            "event_id": published["event_id"], "kind": published["kind"],
+                            "causation_id": causation, "recipient": recipient,
+                            "recipient_inbox": recipient_session["inbox"],
+                            "delivery_id": deliveries[0]["delivery_id"],
+                            "delivery_state": "pending", "attempts": 0}
+        for transition in setup["transitions"]:
+            if transition["phase"] == "after_first_publish" and transition["target"] == event_id:
+                repeated = call(binary, socket, publisher_token, ("agent", "event-publish"),
+                                body=body, session=publisher_session)
+                require(repeated == published, "identical publish retry changed the event")
+                repeated_status = call(binary, socket, publisher_token,
+                                       ("event-status",), (published["event_id"],),
+                                       session=publisher_session)
+                retry_deliveries = repeated_status.get("deliveries") or []
+                require(repeated_status.get("event") == published and len(retry_deliveries) == 1
+                        and retry_deliveries[0].get("delivery_id") == deliveries[0]["delivery_id"]
+                        and retry_deliveries[0].get("state") == "pending"
+                        and retry_deliveries[0].get("attempts") == 0,
+                        "identical publish retry changed delivery identity or state")
+                transitions.append({"action": transition["action"], "target": event_id,
+                                    "publication_request_id": payload["request_id"],
+                                    "first_event_id": published["event_id"],
+                                    "retry_event_id": repeated["event_id"],
+                                    "delivery_id": deliveries[0]["delivery_id"]})
+    receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
                "acceptance_check_sha256": binding["acceptance_check_sha256"],
                "intervention_sha256": binding["intervention_sha256"],
-               "event_sha256": event_hash,
-               "binary_sha256": binary_hash,
-               "source_body_sha256": hashlib.sha256(event_spec["body"].encode()).hexdigest(),
-               "source_ref": ref, "observed_writer": source["observed_writer"],
-               "event_id": published["event_id"], "delivery_id": deliveries[0]["delivery_id"],
-               "agent_id": session["agent_id"], "execution_id": session["execution_id"],
-               "observed_worker_owner": worker_owner,
-               "recipient_inbox": session["inbox"], "delivery_state": "pending", "attempts": 0,
+               "adapter_sha256": immutable["adapter_sha256"], "binary_sha256": binary_hash,
+               "setup_harness": "codex",
+               "sessions": sessions, "events": events, "transitions": transitions,
                "provider_called": False, "native_turn_join": "unimplemented",
                "task_outcome": "unassessed"}
     output = run_dir / "materialization.json"
@@ -251,7 +379,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, default=panel.FIXTURE)
     parser.add_argument("--export", type=Path, required=True)
-    parser.add_argument("--workflow-id", choices=(WORKFLOW,), required=True)
+    parser.add_argument("--workflow-id", choices=tuple(f"baseline.{case}" for case in CASE_ADAPTERS),
+                        required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--home", type=Path, required=True)
     parser.add_argument("--sender-token", type=Path, required=True)
@@ -259,7 +388,7 @@ def main():
     parser.add_argument("--sender-principal", required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
-    require(args.workflow_id == WORKFLOW, "unsupported workflow")
+    case_name(args.workflow_id)
     result = materialize(args)
     print(json.dumps(result, sort_keys=True))
 
