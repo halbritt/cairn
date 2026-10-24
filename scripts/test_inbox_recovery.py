@@ -104,6 +104,22 @@ class InboxRecovery(unittest.TestCase):
     def journal(self):
         return json.loads(coordination.intent_path(self.config['state_dir'], ATTEMPT).read_text())
 
+    def compact_context(self, kind, body, disposition='handled', harness='claude'):
+        self.config.update(compact_inbox_version=1, harness=harness)
+        self.state['inbox_attempt']['delivery']['event']['kind'] = kind
+        self.state['process'] = coordination.process_reference(os.getpid())
+        coordination.write_state(self.path, self.state)
+        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
+            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
+        context = self.context(with_rendered=True, extra_replies={
+            'history': [dict(ok=True, status='OK', data=history)],
+            'ack': [dict(ok=True, status='OK', data=dict(state=disposition, attempts=1))]})
+        binding = self.root / 'bindings' / 'fixture.json'
+        binding.parent.mkdir()
+        coordination.write_state(binding, self.config)
+        return context
+
     def test_only_requests_cue_memory_after_exact_task_source_read(self):
         for kind in ('request', 'response', 'notice'):
             with self.subTest(kind=kind):
@@ -166,21 +182,8 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(len(context['compact_handle']), 16)
 
     def test_compact_handle_reads_exact_source_and_journals_explicit_settlement(self):
-        self.config['compact_inbox_version'] = 1
-        self.config['harness'] = 'codex'
-        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
-        self.state['process'] = coordination.process_reference(os.getpid())
-        coordination.write_state(self.path, self.state)
         body = 'The requested answer is ready.'
-        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
-            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
-            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
-        context, rendered = self.context(with_rendered=True, extra_replies={
-            'history': [dict(ok=True, status='OK', data=history)],
-            'ack': [dict(ok=True, status='OK', data=dict(state='handled', attempts=1))]})
-        binding = self.root / 'bindings' / 'fixture.json'
-        binding.parent.mkdir()
-        coordination.write_state(binding, self.config)
+        context, rendered = self.compact_context('response', body, harness='codex')
         env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root), CODEX_THREAD_ID='native-1')
         command = [sys.executable, str(SCRIPT), 'inbox', 'compact']
         read = subprocess.run([*command, 'read', context['compact_handle']], env=env,
@@ -197,18 +200,8 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
 
     def test_compact_handle_refuses_wrong_session_expiry_forgetting_and_restore(self):
-        self.config['compact_inbox_version'] = 1
-        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
-        self.state['process'] = coordination.process_reference(os.getpid())
-        coordination.write_state(self.path, self.state)
         body = 'Notice that must not be settled through a stale handle.'
-        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
-            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
-            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
-        context = self.context(extra_replies={'history': [dict(ok=True, status='OK', data=history)]})
-        binding = self.root / 'bindings' / 'fixture.json'
-        binding.parent.mkdir()
-        coordination.write_state(binding, self.config)
+        context, _ = self.compact_context('notice', body)
         index_path = self.root / 'state' / 'compact' / (context['compact_handle'] + '.json')
         original_index = json.loads(index_path.read_text())
         original_state = json.loads(self.path.read_text())
@@ -253,20 +246,8 @@ class InboxRecovery(unittest.TestCase):
                         other_process.wait(timeout=5)
 
     def test_oversized_compact_source_requires_read_and_failed_settlement_is_idempotent(self):
-        self.config['compact_inbox_version'] = 1
-        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
-        self.state['process'] = coordination.process_reference(os.getpid())
-        coordination.write_state(self.path, self.state)
         body = 'Important qualification. ' * 250
-        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
-            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
-            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
-        context, rendered = self.context(with_rendered=True, extra_replies={
-            'history': [dict(ok=True, status='OK', data=history)],
-            'ack': [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))]})
-        binding = self.root / 'bindings' / 'fixture.json'
-        binding.parent.mkdir()
-        coordination.write_state(binding, self.config)
+        context, rendered = self.compact_context('notice', body, disposition='failed')
         self.assertNotIn(body, rendered)
         self.assertIn('read its exact text', rendered)
         env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
@@ -291,20 +272,8 @@ class InboxRecovery(unittest.TestCase):
         self.assertIn('--code', entries[0]['argv'])
 
     def test_compact_ignored_settlement_keeps_reason_code(self):
-        self.config['compact_inbox_version'] = 1
-        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
-        self.state['process'] = coordination.process_reference(os.getpid())
-        coordination.write_state(self.path, self.state)
         body = 'Unsupported source kind for this recipient.'
-        history = dict(record_id=RESULT['record_id'], historical=True, versions=[dict(
-            version=1, payload_available=True, body=body, body_bytes=len(body.encode()),
-            body_sha256=hashlib.sha256(body.encode()).hexdigest())])
-        context = self.context(extra_replies={
-            'history': [dict(ok=True, status='OK', data=history)],
-            'ack': [dict(ok=True, status='OK', data=dict(state='ignored', attempts=1))]})
-        binding = self.root / 'bindings' / 'fixture.json'
-        binding.parent.mkdir()
-        coordination.write_state(binding, self.config)
+        context, _ = self.compact_context('response', body, disposition='ignored')
         env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
         command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle',
                    context['compact_handle'], 'ignored', '--code', 'unsupported_kind']

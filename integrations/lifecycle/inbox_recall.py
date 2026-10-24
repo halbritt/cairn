@@ -784,6 +784,15 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                                                         additionalContext=compose(text)))).encode())
         selected = required.get('selected', [])
         required_text = engine.render_recall(selected, []) if selected else ''
+        if (publication and publication['kind'] in ('notice', 'response') and
+                config.get('compact_inbox_version') == 1 and cost(required_text) > budget):
+            context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')).read_text())
+            if (context.get('delivery_id') != identity['delivery_id'] or
+                    context.get('event_id') != identity['event_id'] or
+                    context.get('source') != identity['source'] or
+                    not isinstance(context.get('compact_fallback_control'), str)):
+                raise ValueError('compact inbox fallback differs from admitted source')
+            control = context['compact_fallback_control']
         if cost(required_text) > budget and source is not None:
             # Whole oversized task keeps its exact-source read workflow. No
             # optional retrieval is attempted from a truncated assignment.

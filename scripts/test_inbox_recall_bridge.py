@@ -214,6 +214,28 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertNotIn(str(self.root/'coordination'/'inbox'), text)
         self.assertEqual([call['op'] for call in self.calls()], ['search'])
 
+    def test_bound_compact_notice_uses_scoped_read_when_inline_exceeds_budget(self):
+        self.cc['compact_inbox_version'] = 1
+        self.delivery['event']['kind'] = 'notice'
+        self.state['inbox_attempt']['delivery'] = self.delivery
+        self.body = 'Exact notice source. ' * 170  # Under the 4,096-byte inline cap.
+        self.fixture['history']['versions'][0].update(
+            body=self.body, body_bytes=len(self.body.encode()),
+            body_sha256=hashlib.sha256(self.body.encode()).hexdigest())
+        required = 'Whole mandatory context survives the source budget fallback.'
+        self.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+        self.mc['context_bytes'] = 3000
+        self.freeze()
+
+        result = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn(required, text)
+        self.assertIn('cairn-inbox read ', text)
+        self.assertIn('cairn-inbox settle ', text)
+        self.assertNotIn(self.body, text)
+        self.assertEqual([call['op'] for call in self.calls()], ['search'])
+        self.assertLessEqual(len(memory.encoded(result).encode()), self.mc['context_bytes'])
+
     def assert_no_grant(self):
         """A refusal after the lock leaves an initialized ledger naming no grant."""
         ledger=self.root/'memory'/f'{SESSION}.inbox-recall.json'
