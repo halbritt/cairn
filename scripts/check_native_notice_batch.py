@@ -254,10 +254,68 @@ def check(binary):
         ready = call(binary, home, env, "worker", "session-inbox-ready", session)
         require(ready["delivery_id"] == events[3]["delivery_id"],
                 "fourth notice not available for later turn")
+
+        # A priority delivery can arrive after a later turn has claimed its
+        # first routine notice. The batch must stop before transferring the
+        # already-waiting routine neighbor; neither pending delivery is settled.
+        later_source = call(binary, home, env, "sender", "create", {
+            "request_id": str(uuid.uuid4()),
+            "draft": {"kind": "note", "body": "Synthetic mid-batch priority fixture source.",
+                      "scope": {"repo": repo, "task_id": "*", "run_id": "*"},
+                      "claim_type": "self", "sensitivity": "shareable"}})
+        later_ref = {"record_id": later_source["record_id"], "version": later_source["version"]}
+        routine_event = call(binary, home, env, "sender", "event-publish", {
+            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": later_ref,
+            "destination": {"type": "agent", "name": registered["inbox"]},
+            "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 0}})
+        next_turn = f"synthetic-native-priority-turn-{uuid.uuid4()}"
+        priority_claim = {"request_id": str(uuid.uuid4()), "session": session,
+                          "delivery_id": ready["delivery_id"], "native_turn_id": next_turn,
+                          "turn_exclusive": False}
+        first_priority_batch = call(binary, home, env, "worker", "session-inbox-claim", {
+            **priority_claim})["attempt"]
+        require(first_priority_batch is not None
+                and first_priority_batch["delivery"]["event"]["event_id"] == events[3]["event_id"],
+                "later turn did not claim the exact remaining routine notice")
+        urgent_event = call(binary, home, env, "sender", "event-publish", {
+            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": later_ref,
+            "destination": {"type": "agent", "name": registered["inbox"]},
+            "notice_policy": {"version": 1, "urgency": "urgent", "defer_seconds": 0}})
+        priority_state = {"agent": registered, "process": coordinator.process_reference(os.getpid()),
+                          "inbox_intent": {"request_id": first_priority_batch["attempt_id"],
+                                           "session": session, "native_turn_id": next_turn},
+                          "inbox_attempt": first_priority_batch,
+                          "inbox_journals": [first_priority_batch["attempt_id"]],
+                          "inbox_result_policy": {"claim_request_id": first_priority_batch["attempt_id"],
+                                                   "version": 1}}
+        coordinator.write_state(state_path, priority_state)
+        priority_cue = coordinator.inbox_context(config, priority_state, state_path,
+            {"event": "UserPromptSubmit", "phase": "busy", "native_turn_id": next_turn})
+        require("cairn-inbox" in priority_cue, "new routine item did not receive its own compact context")
+        priority_context = json.loads((state_dir / "inbox" /
+                                       (first_priority_batch["attempt_id"] + ".json")).read_text())
+        priority_handle = priority_context["compact_handle"]
+        settled_priority = compact(script, root, env, session_id, "settle", priority_handle, "handled")
+        require(settled_priority["status"] == "handled" and settled_priority["attempts"] == 1,
+                "claimed routine item was not explicitly settled")
+        stopped = compact(script, root, env, session_id, "advance", priority_handle)
+        require(stopped["next"] is None and stopped["remainder"] == "priority_waiting",
+                "urgent arrival failed to stop the native batch")
+        for event in (routine_event, urgent_event):
+            delivery = call(binary, home, env, "sender", "event-inspect",
+                            {"event_id": event["event_id"]})["deliveries"][0]
+            require(delivery["state"] == "pending" and delivery["attempts"] == 0,
+                    "batch stop settled or claimed a neighboring delivery")
+        reconciled = call(binary, home, env, "worker", "session-inbox-reconcile", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "attempt_id": first_priority_batch["attempt_id"], "reason": "delivery_completed"})
+        require(reconciled["finished_at"] is not None,
+                "priority boundary did not retain explicit turn settlement")
         print(json.dumps({"case": "native_notice_batch", "store_api": "disposable",
                           "source_helper": "real", "items_in_one_synthetic_turn": 3,
                           "outcomes": ["handled", "failed", "ignored"],
                           "remainder": "batch_limit_fourth_pending",
+                          "urgent_arrival": "stops_batch_without_claiming_neighbor",
                           "handoff_retry": "same_attempt_no_duplicate",
                           "provider_called": False, "task_outcome": "unassessed"}))
     finally:

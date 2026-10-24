@@ -26,3 +26,14 @@ selector. The disposable API regression now exercises that boundary.
 The focused fresh database probe and `make check` validate source behavior.
 They do not establish that the installed coordinator or a live canary has
 processed a batch.
+
+A follow-up focused disposable API probe adds the missing urgent-arrival
+transition: after a later native turn claims its first routine notice, an
+explicitly urgent notice is published while another routine notice is already
+waiting. The real compact helper explicitly settles the claimed item as
+handled, then `advance` returns `priority_waiting`. Store inspection confirms
+the waiting routine and urgent deliveries both remain pending with zero
+attempts; final reconciliation closes only the explicitly handled attempt.
+This closes the source-fixture gap for mid-batch urgent preemption through the
+authenticated API/helper path. It remains a synthetic native owner without a
+provider turn or accepted task outcome.
