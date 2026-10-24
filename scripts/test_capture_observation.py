@@ -120,12 +120,42 @@ class CaptureObservationTests(unittest.TestCase):
                 state = self.root / "state" / (self.event["session_id"] + ".json")
                 self.assertFalse(state.exists() and "captured_digest" in json.loads(state.read_text()))
 
-    def test_state_commit_failure_is_distinct_from_selector_result(self):
-        with patch.object(hook, "save_state", side_effect=OSError("disk unavailable")):
+    def test_selected_write_survives_state_commit_failure_and_retries_same_snapshot(self):
+        self.model_result["structured_output"] = dict(
+            memories=[dict(record_id=None, kind="decision", title="Endpoint",
+                           body="Use the corrected endpoint for this migration.")],
+            workstream=None, checkpoint=None)
+        write_attempts = []
+        durable_writes = {}
+
+        def persist(_memory, operation, payload=None, **_kwargs):
+            self.assertEqual(operation, "create")
+            write_attempts.append(payload)
+            request_id = payload["request_id"]
+            durable_writes.setdefault(request_id, payload)
+            return dict(record_id="saved-record")
+
+        with patch.object(hook, "save_state", side_effect=OSError("disk unavailable")), \
+             patch.object(hook.Memory, "call", new=persist):
             with self.assertRaises(OSError):
                 self.invoke()
+
         self.assertEqual(self.reports[-1]["outcome"], "state_commit_error")
         self.assertEqual(self.reports[-1]["selector_outcome"], "completed")
+        self.assertEqual(len(write_attempts), 1, "the selected note was not saved before state failure")
+        state_path = self.root / "state" / (self.event["session_id"] + ".json")
+        self.assertFalse(state_path.exists(), "failed commit left a captured marker behind")
+
+        with patch.object(hook.Memory, "call", new=persist):
+            self.invoke()
+
+        self.assertEqual(len(write_attempts), 2, "retry did not repeat the unconfirmed snapshot write")
+        self.assertEqual(write_attempts[0], write_attempts[1],
+                         "retry changed the idempotent selected-write request")
+        self.assertEqual(len(durable_writes), 1, "retry created a duplicate durable note")
+        committed = json.loads(state_path.read_text())
+        self.assertEqual(committed["last_capture"]["outcome"], "saved")
+        self.assertIn("captured_digest", committed)
 
     def test_concurrent_state_change_is_not_reported_as_confirmed_capture(self):
         def concurrent_update(command, *, body, observation=None, **kwargs):
