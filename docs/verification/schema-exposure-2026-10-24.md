@@ -79,6 +79,11 @@ change was authorized by this read-only audit. The current evidence supports
 only baseline exposure and a reversible candidate; it does not establish a
 workflow cost improvement or full CAIRN-225 acceptance.
 
+A later [isolated Claude loopback probe](claude-compact-request-shape-2026-10-24.md)
+observed the compact declarations in a real Claude client's outgoing request
+to a local Messages stub. It did not use the subscription route or measure
+provider usage, and it changed no installed account setting.
+
 Reproduce locally with the existing private manifest:
 
 ```sh

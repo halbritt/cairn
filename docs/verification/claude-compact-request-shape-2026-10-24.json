@@ -1,0 +1,30 @@
+{
+  "schema": "cairn.claude-loopback-schema-exposure/1",
+  "candidate_binary_sha256": "3710c0e6fcff74f54a73832764ea636c29fb5e216a7874b90d7787c2679931b3",
+  "claude_version": "2.1.310 (Claude Code)",
+  "model_label": "claude-sonnet-5-5",
+  "request_count_per_profile": 1,
+  "tool_count": 10,
+  "tool_names_equal": true,
+  "validation_shapes_equal": true,
+  "other_declarations_equal": true,
+  "retrieval": {
+    "cairn_search": {
+      "full_bytes": 6371,
+      "compact_bytes": 2684,
+      "full_sha256": "54e9466057c0519a4f868ee411a0ba2c8227e6e3500ca57c188b57f4e04d2ad2",
+      "compact_sha256": "c3528e5c03275ebe50b1ae37e328f06a96ad7581f4665747b8ef99450f7e1f92"
+    },
+    "cairn_pull": {
+      "full_bytes": 1588,
+      "compact_bytes": 636,
+      "full_sha256": "ae819f7916f33009aa36ad235bb61746936f2f7d7c52f91282e8dba28bf69c72",
+      "compact_sha256": "155f95b2ed08a036749c96c9fefd2cf545eadf2d85c7a49ab8ebddcf68b59184"
+    }
+  },
+  "transport": "local_messages_stub_fake_key",
+  "provider_called": false,
+  "subscription_request_observed": false,
+  "provider_usage": "unmeasured",
+  "actor_task_outcome": "unassessed"
+}
