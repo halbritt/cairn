@@ -1,0 +1,115 @@
+{
+  "schema": "cairn.opencode-tool-request-shape/1",
+  "opencode_version": "1.19.4+cairn.148842e",
+  "opencode_binary_sha256": "66209749ccbe28bd46d14b4ef992f7d1f6750f874147476e581b0223ec0015c5",
+  "adapter_sha256": "bbf3ce4b9a3c07c489da04d8bd82246b1925c71c1907b3f8bfaa12172b0f6012",
+  "route": "OpenCode native custom tool adapter to local OpenAI-compatible stub",
+  "canary_request_count": 2,
+  "canary_tool_request_count": 1,
+  "canary_tool_free_request_count": 1,
+  "canary_request_order": [
+    {
+      "cairn_tool_count": 0,
+      "tool_names": []
+    },
+    {
+      "cairn_tool_count": 9,
+      "tool_names": [
+        "cairn_assess",
+        "cairn_assessments",
+        "cairn_edit",
+        "cairn_history",
+        "cairn_prepare_note",
+        "cairn_pull",
+        "cairn_pull_evidence",
+        "cairn_remember",
+        "cairn_search"
+      ]
+    }
+  ],
+  "external_provider_called": false,
+  "model_inference": false,
+  "tool_execution": false,
+  "cairn_api_or_store_access": false,
+  "raw_request_retained": false,
+  "first_request": {
+    "all_tool_names": [
+      "cairn_assess",
+      "cairn_assessments",
+      "cairn_edit",
+      "cairn_history",
+      "cairn_prepare_note",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_search"
+    ],
+    "cairn_tool_names": [
+      "cairn_assess",
+      "cairn_assessments",
+      "cairn_edit",
+      "cairn_history",
+      "cairn_prepare_note",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_search"
+    ],
+    "cairn_tool_count": 9,
+    "cairn_declarations_canonical_json_utf8_bytes": 23821,
+    "declarations": {
+      "cairn_assess": {
+        "canonical_json_utf8_bytes": 2504,
+        "schema_sha256": "071f1f880356b30732b1d5f1caac7d90a3474283d8f83b45a6f2ae358e8676e2",
+        "schema_json_utf8_bytes": 1850
+      },
+      "cairn_assessments": {
+        "canonical_json_utf8_bytes": 947,
+        "schema_sha256": "9041e514fbd5d9c764e6bc6d3717dbdbf0fc330eeb679ea2d6cf8ed34e2124d8",
+        "schema_json_utf8_bytes": 341
+      },
+      "cairn_edit": {
+        "canonical_json_utf8_bytes": 2768,
+        "schema_sha256": "eb9a017d98040a7efee252c62ca3dfd18aae427f3417053d423ee0e402f50fc6",
+        "schema_json_utf8_bytes": 1768
+      },
+      "cairn_history": {
+        "canonical_json_utf8_bytes": 2201,
+        "schema_sha256": "b4cdedd4fc6ee25b123b9acbced8b33897b97b7b87c9112a6696ab6e83ad644c",
+        "schema_json_utf8_bytes": 1400
+      },
+      "cairn_prepare_note": {
+        "canonical_json_utf8_bytes": 3701,
+        "schema_sha256": "b33b6cfac8cd376f84c37e3a863c92944ddbc4eeb76849c051ea70fe74e67647",
+        "schema_json_utf8_bytes": 3263
+      },
+      "cairn_pull": {
+        "canonical_json_utf8_bytes": 2320,
+        "schema_sha256": "29a1bda7b582674fe755098ed6ae791c20d06ac6ef621d1c1d04a657b91e76c7",
+        "schema_json_utf8_bytes": 1175
+      },
+      "cairn_pull_evidence": {
+        "canonical_json_utf8_bytes": 1776,
+        "schema_sha256": "36feac88629ac24673f0cee41d9e02125bad300c40c59881156bb31ee3cd7a55",
+        "schema_json_utf8_bytes": 1349
+      },
+      "cairn_remember": {
+        "canonical_json_utf8_bytes": 2150,
+        "schema_sha256": "996d8f91f77b6f9aff03a0c69d083ebe55be53b94695c52460b6fd7a25da0f3f",
+        "schema_json_utf8_bytes": 1746
+      },
+      "cairn_search": {
+        "canonical_json_utf8_bytes": 5454,
+        "schema_sha256": "d8aacb22b70389218819b1b09aafb7be89ec6d55620458b69f7ffd05a781fc9d",
+        "schema_json_utf8_bytes": 4905
+      }
+    },
+    "declaration_set_sha256": "7eeee7a8157975de8fdb172d6b3041b7b1870ffd797b4f4270de4c6337018aff",
+    "validation_set_sha256": "08968bbea4606c355440d273d826368c28eeb36ddfbde743005042eba82d977c"
+  },
+  "limits": [
+    "Single current native adapter profile; no full-vs-compact comparison",
+    "Schema presence is not provider billing or accepted task evidence",
+    "No cold/retry/resume/cache accounting or task outcome"
+  ]
+}

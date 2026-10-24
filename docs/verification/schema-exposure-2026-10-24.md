@@ -102,6 +102,13 @@ request included a Cairn declaration; Codex's local MCP registry did show the
 same ten tools and equal argument contracts. This does not supersede the
 historical failed preflight or establish first-use/provider savings.
 
+A later [OpenCode native-tool probe](opencode-tool-request-shape-2026-10-24.md)
+captured a tool-free canary request followed by a local tool-bearing request
+with all nine native Cairn declarations. It records validation-schema hashes
+and canonical declaration sizes without saving the request body. This adds
+OpenCode request-shape evidence for that adapter build; it does not measure
+provider usage, compare profiles, or establish an accepted task benefit.
+
 Reproduce locally with the existing private manifest:
 
 ```sh
