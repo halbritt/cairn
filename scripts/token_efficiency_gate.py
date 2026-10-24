@@ -45,6 +45,23 @@ def sha(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def unique_pairs(pairs):
+    value = {}
+    for key, item in pairs:
+        require(key not in value, f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def invalid_constant(value):
+    raise ValueError(f"non-JSON number: {value}")
+
+
+def read_json(path):
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs,
+                      parse_constant=invalid_constant)
+
+
 def validate_plan(plan):
     require(isinstance(plan, dict), "plan object")
     require(plan.get("schema") == "cairn.token-efficiency-plan/1", "plan schema")
@@ -124,7 +141,7 @@ def validate_plan(plan):
 def verify_fixture(plan, fixture):
     require(hashlib.sha256(fixture.read_bytes()).hexdigest() == plan["fixture_sha256"],
             "fixture hash mismatch")
-    source = json.loads(fixture.read_text())
+    source = read_json(fixture)
     require(source.get("schema") == "cairn.token-efficiency-fixture/1", "fixture schema")
     rows = source.get("cases") or []
     require([row.get("id") for row in rows] == list(CASES), "fixture case IDs")
@@ -425,10 +442,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "freeze":
-            value = freeze(json.loads(args.plan.read_text()), args.fixture)
+            value = freeze(read_json(args.plan), args.fixture)
         else:
-            value = report(json.loads(args.frozen.read_text()), args.fixture,
-                           json.loads(args.observations.read_text()), json.loads(args.workflow_report.read_text()))
+            value = report(read_json(args.frozen), args.fixture,
+                           read_json(args.observations), read_json(args.workflow_report))
         write_new(args.output, value)
     except (ValueError, KeyError, OSError) as exc:
         parser.error(str(exc))

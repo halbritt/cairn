@@ -367,6 +367,48 @@ class TokenEfficiencyGateTests(unittest.TestCase):
         self.assertEqual(json.loads(output.read_text())["state"], "ready_for_human_grade")
         self.assertEqual(output.stat().st_mode & 0o777, 0o600)
 
+    def test_cli_rejects_duplicate_keys_in_every_input(self):
+        root = self.fixture.parent
+        paths = {name: root / f"{name}.json" for name in
+                 ("plan", "fixture", "frozen", "observations", "native")}
+        values = {"plan": self.plan, "fixture": json.loads(self.fixture_body),
+                  "frozen": self.frozen, "observations": self.observations,
+                  "native": self.native}
+        script = Path(gate.__file__)
+        for target in paths:
+            with self.subTest(target=target):
+                for name, path in paths.items():
+                    payload = json.dumps(values[name], separators=(",", ":"))
+                    if name == target:
+                        schema = values[name]["schema"]
+                        payload = payload.replace('"schema":',
+                                                  f'"schema":"{schema}","schema":', 1)
+                    path.write_text(payload)
+                if target == "fixture":
+                    plan = dict(self.plan, fixture_sha256=hashlib.sha256(
+                        paths["fixture"].read_bytes()).hexdigest())
+                    paths["plan"].write_text(json.dumps(plan))
+                output = root / f"{target}.out.json"
+                if target in ("plan", "fixture"):
+                    args = ["freeze", "--plan", str(paths["plan"]),
+                            "--fixture", str(paths["fixture"])]
+                else:
+                    args = ["report", "--frozen", str(paths["frozen"]),
+                            "--fixture", str(paths["fixture"]),
+                            "--observations", str(paths["observations"]),
+                            "--workflow-report", str(paths["native"])]
+                completed = subprocess.run([sys.executable, str(script), *args,
+                                            "--output", str(output)],
+                                           capture_output=True, text=True, timeout=10)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertIn("duplicate JSON key: schema", completed.stderr)
+                self.assertFalse(output.exists())
+
+    def test_input_parser_rejects_non_json_numbers(self):
+        self.fixture.write_text('{"schema":"cairn.token-efficiency-fixture/1","extra":NaN}')
+        with self.assertRaisesRegex(ValueError, "non-JSON number: NaN"):
+            gate.read_json(self.fixture)
+
 
 if __name__ == "__main__":
     unittest.main()
