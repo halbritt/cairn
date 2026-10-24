@@ -13,6 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -25,7 +26,7 @@ SLOTS = ('primary', 'secondary')
 NOTE_LIMIT = 65536
 REASON_LIMIT = 16384
 CONFIG_SCHEMA = 'cairn.grader-delivery-config/1'
-AUTHORITY_SCHEMA = 'cairn.grader-release-authority/1'
+AUTHORITY_SCHEMA = 'cairn.grader-release-authority/2'
 REQUEST_SCHEMA = 'cairn.grader-request/1'
 RESPONSE_SCHEMA = 'cairn.grader-response/1'
 DISPUTE_SCHEMA = 'cairn.grader-dispute/1'
@@ -116,11 +117,11 @@ def _load_plan(plan_dir, config, now):
 
 
 def _check_authority(authority_pin, plan, rows, plan_sha, now):
-    """Separately held release authority; matching declarations, not authentication."""
+    """Check the separately selected owner release and its reported route bindings."""
     content = _read_pinned(authority_pin, 'grader_authority_mismatch')
     authority = blind._json(content)
-    paired.shape(authority, 'schema plan_receipt_sha256 binding_sha256 issuer observed_at valid_until recipients '
-                 'packets max_request_bytes', 'grader_authority_mismatch')
+    paired.shape(authority, 'schema plan_receipt_sha256 binding_sha256 instruction_sha256 issuer observed_at '
+                 'valid_until recipients packets max_request_bytes', 'grader_authority_mismatch')
     paired.need(authority['schema'] == AUTHORITY_SCHEMA and authority['plan_receipt_sha256'] == plan_sha and
                 authority['binding_sha256'] == plan['binding_sha256'], 'grader_authority_mismatch')
     paired.need(paired.utc(authority['observed_at']) <= now < paired.utc(authority['valid_until']), 'grader_authority_stale')
@@ -131,14 +132,31 @@ def _check_authority(authority_pin, plan, rows, plan_sha, now):
                      execution_id=s['execution_id']) for s in plan['sessions']['slots']]
     recipients = authority['recipients']
     paired.need(type(recipients) is list and len(recipients) == 2, 'grader_authority_mismatch')
-    models = {}
+    models, routes, route_hashes = {}, {}, {}
     for want, got in zip(expected, recipients):
-        paired.shape(got, 'slot agent_id session_id execution_id model', 'grader_authority_mismatch')
+        paired.shape(got, 'slot agent_id session_id execution_id model route declared_route_sha256 '
+                     'metadata_source model_custody',
+                     'grader_authority_mismatch')
         paired.need({k: got[k] for k in want} == want, 'grader_authority_mismatch')
         _text(got['model'], 'grader_authority_mismatch', 128)
+        paired.shape(got['route'], 'harness project workspace delivery_mode', 'grader_authority_mismatch')
+        for value in got['route'].values():
+            _text(value, 'grader_authority_mismatch', 4096)
+        route_pin = next(row for row in plan['sessions']['slots'] if row['slot'] == want['slot'])['route']
+        declared_route_sha = _sha(_read_pinned(route_pin, 'grader_authority_mismatch'))
+        paired.need(got['declared_route_sha256'] == declared_route_sha, 'grader_authority_mismatch')
+        paired.need(got['metadata_source'] == 'reported' and
+                    got['model_custody'] == 'owner_selected_and_reported', 'grader_authority_mismatch')
         paired.need(issuer['agent_id'] != got['agent_id'] and issuer['session_id'] != got['session_id'],
                     'grader_recipient_excluded')
         models[got['slot']] = got['model']
+        routes[got['slot']] = got['route']
+        route_hashes[got['slot']] = declared_route_sha
+    paired.need(len({r['agent_id'] for r in recipients}) == 2 and
+                len({r['session_id'] for r in recipients}) == 2 and
+                len({r['execution_id'] for r in recipients}) == 2, 'grader_recipient_excluded')
+    paired.need(type(authority['instruction_sha256']) is str and len(authority['instruction_sha256']) == 64 and
+                all(ch in '0123456789abcdef' for ch in authority['instruction_sha256']), 'grader_authority_mismatch')
     packets = sorted((p['pair_id'], d['slot'], d['packet_sha256']) for p, d, _ in rows)
     declared = authority['packets']
     paired.need(type(declared) is list and all(isinstance(r, dict) and set(r) == {'pair_id', 'slot', 'packet_sha256'}
@@ -147,7 +165,34 @@ def _check_authority(authority_pin, plan, rows, plan_sha, now):
                 len(declared) == len(packets), 'grader_authority_mismatch')
     limit = authority['max_request_bytes']
     paired.need(type(limit) is int and 0 < limit <= NOTE_LIMIT, 'grader_authority_mismatch')
-    return dict(sha256=_sha(content), models=models, max_request_bytes=limit)
+    return dict(sha256=_sha(content), models=models, routes=routes, route_hashes=route_hashes,
+                max_request_bytes=limit)
+
+
+def _resolve_grader(fabric, config, authority, recipient):
+    """Read one current candidate; publication later revalidates it transactionally."""
+    paired.need(callable(getattr(fabric, 'resolve', None)), 'grader_directory_unavailable')
+    result = fabric.resolve(agent_id=recipient['agent_id'], repo=config['repo'],
+        expected_execution_id=recipient['execution_id'], expected_session_id=recipient['session_id'],
+        expected_model=authority['models'][recipient['slot']], expected_route=authority['routes'][recipient['slot']])
+    paired.need(isinstance(result, dict) and result.get('state') == 'unique' and
+                isinstance(result.get('resolution'), dict) and isinstance(result.get('candidate'), dict),
+                'grader_session_not_live')
+    row, resolution = result['candidate'], result['resolution']
+    metadata = row.get('metadata')
+    route = authority['routes'][recipient['slot']]
+    paired.need(resolution.get('agent_id') == recipient['agent_id'] and
+                resolution.get('execution_id') == recipient['execution_id'] and
+                resolution.get('repo') == config['repo'] and
+                row.get('agent_id') == recipient['agent_id'] and row.get('execution_id') == recipient['execution_id'] and
+                row.get('native_session_id') == recipient['session_id'] and row.get('repo') == config['repo'] and
+                row.get('online') is True and row.get('stopped') is False and
+                row.get('metadata_source') == 'reported' and isinstance(metadata, dict) and
+                metadata.get('state') == 'idle' and metadata.get('model') == authority['models'][recipient['slot']] and
+                all(metadata.get(k) == v for k, v in route.items()) and
+                metadata.get('observed_model') in (None, '', authority['models'][recipient['slot']]),
+                'grader_session_not_live')
+    return resolution
 
 
 def _check_blind(body):
@@ -224,7 +269,7 @@ def _ref(value, code='grader_fabric_invalid'):
     return dict(record_id=value['record_id'], version=value['version'])
 
 
-def _send(run, fabric, config, kind, key, destination, body, ids, extra=None):
+def _send(run, fabric, config, kind, key, destination, body, ids, extra=None, resolution=None):
     """Save then publish one exact source under derived request UUIDs (store idempotency)."""
     content = body.encode()
     task = 'coordination/'+ids[1]
@@ -234,7 +279,8 @@ def _send(run, fabric, config, kind, key, destination, body, ids, extra=None):
     source = _ref(fabric.remember(request_id=ids[0], repo=config['repo'], task=task, run='*', body=body, shareable=True))
     run.record(kind+'-source', key, source)
     published = fabric.publish(request_id=ids[1], repo=config['repo'], destination=destination, kind='request',
-                               record_id=source['record_id'], version=source['version'], correlation_id=run.run_id)
+                               record_id=source['record_id'], version=source['version'], correlation_id=run.run_id,
+                               resolution=resolution)
     paired.need(isinstance(published, dict) and type(published.get('event_id')) is str and published['event_id'] != '',
                 'grader_fabric_invalid')
     run.record(kind+'-event', key, dict(event_id=published['event_id']))
@@ -263,14 +309,28 @@ def _dispatch(plan_dir, run_dir, fabric, config, authority_pin, now):
         ids = (_derived(run_id, 'request', key, 'source'), _derived(run_id, 'request', key, 'publication'))
         body = _render(plan, bundle, pair, delivery, ids[1], authority['models'][delivery['slot']])
         prepared.append((pair, delivery, destination, key, ids, body, _envelope(body, delivery, authority)))
+    # Resolve every exact recipient only after all requests fit, but before the
+    # first source write. The event API rechecks this pin transactionally.
+    resolutions = {}
+    for _, delivery, _, _, _, _, _ in prepared:
+        slot = delivery['slot']
+        if slot not in resolutions:
+            resolutions[slot] = _resolve_grader(fabric, config, authority, delivery)
     run = _Run(run_dir, dict(identity, authority_sha256=authority['sha256']), create=True)
     deliveries = []
     for pair, delivery, destination, key, ids, body, envelope in prepared:
         sent = _send(run, fabric, config, 'request', key, destination, body, ids,
-                     dict(model=authority['models'][delivery['slot']]))
+                     dict(model=authority['models'][delivery['slot']],
+                          route_sha256=authority['route_hashes'][delivery['slot']],
+                          reported_route_sha256=paired.canonical_sha(authority['routes'][delivery['slot']]),
+                          route_custody='reported'), resolutions[delivery['slot']])
         deliveries.append(dict(pair_id=pair['pair_id'], slot=delivery['slot'], agent_id=delivery['agent_id'],
                                session_id=delivery['session_id'], execution_id=delivery['execution_id'],
-                               model=authority['models'][delivery['slot']], envelope=envelope, **sent))
+                               model=authority['models'][delivery['slot']],
+                               route_sha256=authority['route_hashes'][delivery['slot']],
+                               reported_route_sha256=paired.canonical_sha(authority['routes'][delivery['slot']]),
+                               route_custody='reported',
+                               envelope=envelope, **sent))
     return dict(schema='cairn.grader-delivery-dispatch/1', run_id=run.run_id, authority_sha256=authority['sha256'],
                 deliveries=deliveries,
                 rendered_request_bytes=sum(d['envelope']['rendered_request_bytes'] for d in deliveries),
@@ -457,9 +517,39 @@ class CliFabric:
         return self._call(['remember', '--request-id', request_id, '--repo', repo, '--task', task, '--run', run,
                            '--kind', 'note', *flags, '--stdin'], body.encode('utf-8'))
 
-    def publish(self, *, request_id, repo, destination, kind, record_id, version, correlation_id):
-        return self._call(['publish', '--request-id', request_id, '--repo', repo, '--to', destination, '--kind', kind,
-                           '--version', str(version), '--correlation-id', correlation_id, record_id])
+    def resolve(self, *, agent_id, repo, expected_execution_id, expected_session_id, expected_model, expected_route):
+        argv = [self.base[0], 'agents', 'resolve', '--token-file', self.base[self.base.index('--token-file')+1],
+                '--repo', repo, '--agent-id', agent_id]
+        if '--socket' in self.base:
+            argv += ['--socket', self.base[self.base.index('--socket')+1]]
+        try:
+            done = self.runner(argv, capture_output=True, timeout=self.timeout, check=False)
+        except (subprocess.TimeoutExpired, OSError):
+            raise paired.Refusal('grader_directory_unavailable') from None
+        try:
+            envelope = json.loads(done.stdout)
+        except (ValueError, TypeError):
+            raise paired.Refusal('grader_directory_unavailable') from None
+        paired.need(done.returncode == 0 and isinstance(envelope, dict) and envelope.get('ok') is True and
+                    envelope.get('schema') == 'cairn.response/1', 'grader_directory_unavailable')
+        data = envelope.get('data')
+        paired.need(isinstance(data, dict) and data.get('state') == 'unique' and
+                    isinstance(data.get('resolution'), dict) and type(data.get('candidates')) is list and
+                    len(data['candidates']) == 1, 'grader_session_not_live')
+        return dict(state='unique', resolution=data['resolution'], candidate=data['candidates'][0])
+
+    def publish(self, *, request_id, repo, destination, kind, record_id, version, correlation_id, resolution=None):
+        args = ['publish', '--request-id', request_id, '--repo', repo]
+        if resolution is None:
+            args += ['--to', destination]
+            return self._call(args + ['--kind', kind, '--version', str(version), '--correlation-id',
+                                      correlation_id, record_id])
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix='cairn-grader-resolution-',
+                                         suffix='.json') as stream:
+            json.dump(resolution, stream, separators=(',', ':'))
+            stream.flush()
+            return self._call(args + ['--resolution', stream.name, '--kind', kind, '--version', str(version),
+                                      '--correlation-id', correlation_id, record_id])
 
     def event_status(self, event_id):
         return self._call(['event-status', event_id])

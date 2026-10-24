@@ -28,9 +28,21 @@ refuses `grader_delivery_unavailable` before reading anything.
 configuration file, the CLI prints that fixed refusal and returns 2:
 
 ```sh
+python3 scripts/trial_grader_release_issuer.py issue --plan DIR --instruction FILE --config FILE --output PIN.json
 python3 scripts/trial_grader_delivery.py dispatch --plan DIR --run DIR --config FILE --authority PIN.json
 python3 scripts/trial_grader_delivery.py collect|route --plan DIR --run DIR --config FILE
 ```
+
+The instruction is a separate private `cairn.grader-release-instruction/1`
+document with the exact plan receipt and binding hashes, owner/coordinator
+identity, two ordered grader selections (slot, agent, native session,
+execution, selected model, route-file hash, and expected reported route),
+`max_request_bytes`, and `valid_for_seconds` from 1 to 300. The issuer checks
+the instruction's selection against the plan, reads each grader by exact agent
+UUID from the current directory, requires its exact native session and
+execution, and rejects stale presence or changed reported route. It writes the
+authority with mode 0600 and prints only the output pin. The owner instruction
+and authority remain private files; neither contains case or oracle material.
 
 The config file is `{"delivery": CONFIG, "cli": {"cairn", "token_file", "socket"}}`.
 `CliFabric` runs the existing `cairn agent` operations `remember`, `publish`,
@@ -51,23 +63,42 @@ owner only.
 ## Release authority (held separately)
 
 Dispatch requires a pin `{path, bytes, sha256}` to a closed
-`cairn.grader-release-authority/1` document:
+`cairn.grader-release-authority/2` document. The private
+[`trial_grader_release_issuer.py`](../scripts/trial_grader_release_issuer.py)
+tool creates one only from a separately selected
+`cairn.grader-release-instruction/1` file bound to the exact plan-receipt
+digest and two current Cairn directory entries. It
+does not create sessions, claim inboxes, publish events, or call a provider.
+The instruction names the exact recipient identities, model and route, byte
+limit, and validity (at most five minutes). The issuer reads current presence
+and refuses a missing, expired, stopped, duplicate, coordinator, actor,
+reviewer, or earlier-exposed grader identity. This is an owner-selected input;
+its identity fields are declarations, not credentials.
 
 ```text
 plan_receipt_sha256   SHA256 of the plan's receipt.json bytes
 binding_sha256        the plan's grading-join binding hash
+instruction_sha256    SHA256 of the separately selected owner instruction
 issuer                {role: owner|coordinator, agent_id, session_id}
-observed_at, valid_until
-recipients            [{slot, agent_id, session_id, execution_id, model}] primary, secondary
+observed_at, valid_until   current time and no more than five minutes later
+recipients            [{slot, agent_id, session_id, execution_id, model, route,
+                        declared_route_sha256, metadata_source, model_custody}]
 packets               [{pair_id, slot, packet_sha256}] exactly the plan's deliveries
 max_request_bytes     1..65536, the limit for the whole rendered request
 ```
 
-The adapter never creates, extends or infers this document. It checks that the
-document matches the plan and is current at `now`. A matching hash and role are
-declarations. They do not authenticate the issuer or give the issuer authority.
-That authority is held and established outside this module. The issuer cannot
-be a recipient.
+`route` records the owner-selected and directory-reported `harness`, `project`,
+`workspace`, and `delivery_mode`. Cairn presence and the transactional
+resolution prove that the same execution and reported context were current at
+publication. They do not attest to the actual model, account, or provider
+route. `model_custody` is `owner_selected_and_reported`.
+
+The adapter never creates or extends this document. It checks that the document
+matches the plan and is current at `now`. The private issuer requires the caller
+to select an explicit owner instruction file; it does not infer authorization
+from the plan or grader-session metadata. A matching hash and role remain
+declarations; they do not cryptographically authenticate the issuer. The
+issuer cannot be a recipient.
 
 ## Recipients and exclusions
 
@@ -82,6 +113,13 @@ come from the authority and are recorded as `model_custody: "declared"`. The
 fabric cannot observe which model actually answers.
 
 ## Request rendering and envelope accounting
+
+Before writing any source note, dispatch resolves both recipients through the
+live Cairn directory. It requires one current candidate for each exact agent,
+native session, execution, model, and reported route. Each publish then supplies
+that exact `AgentResolution` to Cairn; the store checks execution, generation,
+context revision, and presence transactionally. A stale resolution refuses
+publication and is never retargeted.
 
 Each pair-and-slot request is a canonical `cairn.grader-request/1` JSON note.
 It contains:
@@ -176,6 +214,7 @@ one-shot request UUIDs. No disposition is created, and `resolution` stays
 
 ```sh
 python3 -B -m unittest discover -s scripts -p 'test_trial_grader_delivery*.py'
+python3 -B -m unittest discover -s scripts -p 'test_trial_grader_release_issuer.py'
 ```
 
 The tests cover:
@@ -196,11 +235,14 @@ The tests cover:
 - agreement and disagreement through the unchanged join
 - owner routing without resolution
 - the CLI argv contract
+- explicit owner instruction, exact plan and packet binding, live presence,
+  duplicate/excluded recipient, route mismatch, short validity, and refusal
+  before effects
 
 The following remain open:
 
-- actual delivery to fresh, eligible grader sessions under a reviewed release
-  authority
+- a real owner instruction and actual delivery to two fresh, eligible grader
+  sessions (none are currently available)
 - observed recipient model and execution identity
 - packets larger than one note
 - runtime admission and capacity

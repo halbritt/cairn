@@ -25,6 +25,7 @@ PUBLISHER = dict(agent_id='33333333-3333-4333-8333-333333333333',
                  execution_id='44444444-4444-4444-8444-444444444444')
 OWNER = 'agent/55555555-5555-4555-8555-555555555555'
 MODELS = dict(primary='claude-opus-5-5', secondary='gpt-6-astra')
+ROUTE = dict(harness='codex', project='cairn', workspace='/work/grader', delivery_mode='existing-session')
 
 
 def sha(text):
@@ -38,6 +39,7 @@ class FakeFabric:
     def __init__(self):
         self.records, self.remembered, self.events, self.published = {}, {}, {}, {}
         self.calls = []
+        self.published_resolutions = []
         self.fail_publish = 0
 
     def remember(self, *, request_id, repo, task, run, body, shareable):
@@ -52,8 +54,20 @@ class FakeFabric:
         self.remembered[request_id] = (intent, ref)
         return dict(ref)
 
-    def publish(self, *, request_id, repo, destination, kind, record_id, version, correlation_id):
+    def resolve(self, *, agent_id, repo, expected_execution_id, expected_session_id, expected_model, expected_route):
+        self.calls.append(('resolve', agent_id))
+        result = getattr(self, 'resolution_result', None)
+        if result is not None:
+            return result
+        return dict(state='unique', resolution=dict(agent_id=agent_id, execution_id=expected_execution_id, repo=repo,
+            database_generation=1, context_revision=1), candidate=dict(agent_id=agent_id,
+            execution_id=expected_execution_id, native_session_id=expected_session_id, repo=repo,
+            online=True, stopped=False, metadata_source='reported', metadata=dict(model=expected_model,
+            observed_model=expected_model, state='idle', **expected_route)))
+
+    def publish(self, *, request_id, repo, destination, kind, record_id, version, correlation_id, resolution=None):
         self.calls.append(('publish', request_id))
+        self.published_resolutions.append(resolution)
         if self.fail_publish:
             self.fail_publish -= 1
             raise paired.Refusal('grader_fabric_uncertain')
@@ -125,12 +139,16 @@ class Case(unittest.TestCase):
         """Synthetic stand-in for a separately held release authority; never produced by the adapter."""
         receipt = (self.root/'plan/receipt.json').read_bytes()
         plan = json.loads((self.root/'plan/plan.json').read_bytes())
-        doc = dict(schema='cairn.grader-release-authority/1', plan_receipt_sha256=hashlib.sha256(receipt).hexdigest(),
+        doc = dict(schema='cairn.grader-release-authority/2', plan_receipt_sha256=hashlib.sha256(receipt).hexdigest(),
             binding_sha256=plan['binding_sha256'],
+            instruction_sha256='a'*64,
             issuer=dict(role='owner', agent_id='owner-agent', session_id='owner-session'),
             observed_at='2026-10-15T11:00:00Z', valid_until='2026-10-15T13:00:00Z',
             recipients=[dict(slot=s['slot'], agent_id=s['agent_id'], session_id=s['session_id'],
-                             execution_id=s['execution_id'], model=MODELS[s['slot']]) for s in plan['sessions']['slots']],
+                             execution_id=s['execution_id'], model=MODELS[s['slot']], route=dict(ROUTE),
+                             declared_route_sha256=grader._sha(grader._read_pinned(s['route'])),
+                             metadata_source='reported', model_custody='owner_selected_and_reported')
+                        for s in plan['sessions']['slots']],
             packets=[dict(pair_id=p['pair_id'], slot=d['slot'], packet_sha256=d['packet_sha256'])
                      for p in plan['pairs'] for d in p['deliveries']],
             max_request_bytes=65536)
@@ -251,6 +269,21 @@ class UnconfiguredTests(Case):
 
 
 class DispatchTests(Case):
+    def test_publication_rechecks_selected_session_and_fails_before_source_write_when_stale(self):
+        self.plan(); fabric = FakeFabric()
+        fabric.resolution_result = dict(state='stale', resolution=None, candidate={})
+        with self.assertRaisesRegex(paired.Refusal, 'grader_session_not_live'):
+            self.dispatch(fabric)
+        self.assertFalse((self.root/'run').exists())
+        self.assertFalse(any(call[0] in ('remember', 'publish') for call in fabric.calls))
+
+    def test_every_grader_publication_uses_its_live_session_resolution(self):
+        self.plan(); fabric = FakeFabric(); result = self.dispatch(fabric)
+        self.assertEqual(len(result['deliveries']), 2)
+        self.assertEqual(len(fabric.published_resolutions), 2)
+        self.assertTrue(all(row and row['agent_id'] in (PRIMARY, SECONDARY)
+                            for row in fabric.published_resolutions))
+
     def test_each_pair_and_slot_gets_one_blind_request_to_its_exact_session(self):
         f = self.plan(); fabric = FakeFabric()
         receipt = self.dispatch(fabric)
@@ -593,6 +626,34 @@ class CliFabricTests(unittest.TestCase):
         self.assertEqual(calls[-1][0], base + ['event-status', 'e'])
         fabric.history(record_id='r', version=1)
         self.assertEqual(calls[-1], (base + ['history'], b'{"record_id":"r","version":1}'))
+
+    def test_resolve_and_publication_use_exact_transactional_session_pin(self):
+        row = dict(agent_id=PRIMARY, execution_id='44444444-4444-4444-8444-444444444444',
+            native_session_id='native-session', repo='R', online=True, stopped=False, metadata_source='reported',
+            metadata=dict(model='gpt-6-luna', observed_model='gpt-6-luna', state='idle', harness='codex',
+                project='cairn', workspace='/work/grader', delivery_mode='existing-session'))
+        resolution = dict(agent_id=PRIMARY, execution_id=row['execution_id'], repo='R',
+                          database_generation=7, context_revision=3)
+        responses = [dict(schema='cairn.response/1', ok=True, data=dict(state='unique', resolution=resolution,
+            candidates=[row])), dict(schema='cairn.response/1', ok=True, data=dict(event_id='e'))]
+        calls = []
+        def runner(argv, *, input=None, capture_output, timeout, check):
+            calls.append(argv)
+            if argv[1] == 'agents':
+                return subprocess.CompletedProcess(argv, 0, json.dumps(responses.pop(0)).encode(), b'')
+            path = argv[argv.index('--resolution')+1]
+            self.assertEqual(json.loads(Path(path).read_bytes()), resolution)
+            return subprocess.CompletedProcess(argv, 0, json.dumps(responses.pop(0)).encode(), b'')
+        fabric = grader.CliFabric(cairn='/usr/bin/cairn', token_file='/t/token', socket=None,
+                                  publisher=PUBLISHER, runner=runner)
+        current = fabric.resolve(agent_id=PRIMARY, repo='R', expected_execution_id=row['execution_id'],
+            expected_session_id='native-session', expected_model='gpt-6-luna',
+            expected_route=dict(harness='codex', project='cairn', workspace='/work/grader',
+                                delivery_mode='existing-session'))
+        fabric.publish(request_id='p', repo='R', destination='agent/'+PRIMARY, kind='request', record_id='r',
+                       version=1, correlation_id='c', resolution=current['resolution'])
+        self.assertEqual(calls[0][:3], ['/usr/bin/cairn', 'agents', 'resolve'])
+        self.assertIn('--resolution', calls[1])
 
     def test_refused_or_unparseable_responses_refuse(self):
         fabric, _ = self.fabric([dict(schema='cairn.response/1', ok=False, status='INVALID_REQUEST')])

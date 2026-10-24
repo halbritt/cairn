@@ -15,7 +15,7 @@ from unittest.mock import patch
 import trial_legacy_occurrence as occurrence
 import trial_paired_request as paired
 import trial_run_report as report
-from test_trial_grader_delivery import FakeFabric, config, OWNER, MODELS, NOW
+from test_trial_grader_delivery import FakeFabric, config, OWNER, MODELS, NOW, ROUTE
 from test_trial_legacy_blind_selection import Fixture, C, pin, SHAPE_TASKS
 from test_trial_legacy_grading_bundle import POLICY, CHANGED
 
@@ -99,11 +99,15 @@ class Occurrence:
     def authorize(self):
         plan = json.loads((self.out/'delivery-plan/plan.json').read_bytes())
         receipt = (self.out/'delivery-plan/receipt.json').read_bytes()
-        doc = dict(schema='cairn.grader-release-authority/1', plan_receipt_sha256=hashlib.sha256(receipt).hexdigest(),
+        doc = dict(schema='cairn.grader-release-authority/2', plan_receipt_sha256=hashlib.sha256(receipt).hexdigest(),
             binding_sha256=plan['binding_sha256'], issuer=dict(role='owner', agent_id='owner-agent', session_id='owner-session'),
+            instruction_sha256='a'*64,
             observed_at='2026-10-15T11:00:00Z', valid_until='2026-10-15T13:00:00Z',
             recipients=[dict(slot=s['slot'], agent_id=s['agent_id'], session_id=s['session_id'],
-                             execution_id=s['execution_id'], model=MODELS[s['slot']]) for s in plan['sessions']['slots']],
+                             execution_id=s['execution_id'], model=MODELS[s['slot']], route=dict(ROUTE),
+                             declared_route_sha256=hashlib.sha256(Path(s['route']['path']).read_bytes()).hexdigest(),
+                             metadata_source='reported', model_custody='owner_selected_and_reported')
+                        for s in plan['sessions']['slots']],
             packets=[dict(pair_id=p['pair_id'], slot=d['slot'], packet_sha256=d['packet_sha256'])
                      for p in plan['pairs'] for d in p['deliveries']], max_request_bytes=65536)
         self.input['release_authority'] = pin(self.root/'authority.json', C(doc))
