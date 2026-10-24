@@ -143,9 +143,10 @@ export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
 joins native turns, or grades task outcomes. A separate disposable-only
 controller in `scripts/token_efficiency_panel_controller.py` materializes three
-baseline setups through the authenticated local API, each in a separate
-disposable database: `single_notice`, `actionable_response`, and
-`duplicate_send`. It registers synthetic Codex sessions for setup; these are
+baseline setups (`single_notice`, `actionable_response`, `duplicate_send`) and
+all four `routine_burst_urgent_request` arm setups through the authenticated
+local API, each in a separate disposable database. It registers synthetic Codex
+sessions for setup; these are
 not selected live harness or deployment evidence. It persists an immutable
 intent before source creation and publication, then verifies exact Store-owned
 source, session, event and
@@ -155,7 +156,15 @@ observed event ID; no actor handles the request. For `duplicate_send`, it
 repeats the identical publication with one native request UUID and verifies
 one durable event and delivery; no task effect is exercised. Its private
 receipt states that no provider call, native turn join or task outcome occurred.
-The remaining case/arm setups have no executable controller path yet.
+For the burst, the sender publishes three routine notices followed by one
+request. The batch and combined arms apply the sender-owned version 1 routine
+policy with a fixed 30-second availability delay; baseline and envelope leave
+all notices immediate. A selected native `session-inbox-ready` hint is saved
+once with its observed time before the first routine deadline. An exact retry
+after that deadline rechecks durable IDs and availability times without claiming
+that the earlier priority still holds. The receipt labels native batch transfer
+`unrun`; no actor handled the request or acknowledged a notice. All other
+case/arm setups still lack an executable controller path.
 
 The Go probes above write only to disposable integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate

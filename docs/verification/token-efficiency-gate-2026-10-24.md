@@ -125,6 +125,16 @@ real paired plan or provider result is frozen by that test.
 | CAIRN-227 [mechanical gate](../../scripts/token_efficiency_gate.py) and [panel setup probes](../../trials/token-efficiency/README.md) | Synthetic 22-case, four-arm plans and exact native joins are checked. The false-ready fix requires a completed native sender or recipient turn with response references; failed publication/settlement stays incomplete. Disposable Store tests check six source/event setups and selected source or transition paths for 15 other fixture IDs. A local hook test checks the final capture setup; a disposable authenticated controller materializes `baseline.single_notice`, `baseline.actionable_response`, and `baseline.duplicate_send` with exact source/event receipts, synthetic response causation, and same-ID publication retry. Its Codex sessions are synthetic setup identities, not selected live harness or deployment evidence; it records no provider or task outcome. | A real frozen paired ledger, capture-observation and ordinary-task joins, independent task grades, effective route and deployment pins, canary and rollback. No setup probe grades an actor task; `ready_for_human_grade` is structural only and release stays `defer`. |
 | Effective recall deployment inventory | On 2026-10-24, `check_effective_recall_deployment.py --compact` verified four ordinary hooks, three inbox bindings and fixture renders without writing to them. | `live_observed=false`: the inventory does not prove a native turn loaded the newer opt-in code or wording. |
 
+The CAIRN-227 disposable controller also materializes all four
+`routine_burst_urgent_request` arms in separate databases. Its receipt verifies
+four exact source/event/delivery identities, sender-owned routine policy in
+batch and combined, and fixed 30-second notice availability. It retains a
+one-time selected native readiness hint with its observed time before the first
+routine deadline; a post-deadline retry checks durable identities without
+reasserting that earlier hint. This is setup evidence only: native batch
+transfer, actor handling, provider usage, task acceptance and effective arm
+deployment remain unobserved.
+
 The `busy_owner_task` panel input now freezes a synthetic parser source and
 sample under `setup.active_task`. Its private check grades the parser conclusion
 and the order of review and notice handling. Preflight verifies the source and
