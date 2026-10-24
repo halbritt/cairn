@@ -1,8 +1,10 @@
 # Cairn tool declaration exposure: retained native evidence
 
 Date: 2026-10-24. Source checkout: `9a1369d` plus the already landed opt-in
-MCP `compact/1` tool profile (`fa1eed9`). No provider request was made for this
-audit. The aggregate [JSON](schema-exposure-2026-10-24.json) has no paths,
+MCP `compact/1` tool profile (`fa1eed9`). No successful provider request was
+made for this audit. A later Codex loopback preflight accidentally attempted a
+public API connection; it returned HTTP 401 before any request body was
+captured. The aggregate [JSON](schema-exposure-2026-10-24.json) has no paths,
 session IDs, request IDs, tool arguments, messages, or credentials. The private
 frozen manifest and source logs stay under the owner's account.
 
@@ -83,6 +85,16 @@ A later [isolated Claude loopback probe](claude-compact-request-shape-2026-10-24
 observed the compact declarations in a real Claude client's outgoing request
 to a local Messages stub. It did not use the subscription route or measure
 provider usage, and it changed no installed account setting.
+
+The Codex loopback preflight did not capture a request shape. Its invocation
+used `--ignore-user-config`, which made Codex ignore the isolated `CODEX_HOME`
+configuration pointing to the local Responses stub. Codex instead attempted
+`wss://api.openai.com/v1/responses` and received HTTP 401. The attempt was
+stopped immediately; there was no retry on another provider or account, and no
+request body was captured. This establishes no Codex schema exposure, cache
+behavior, token usage or subscription quota state. It is not evidence of
+subscription exhaustion. The failure is recorded here so it cannot be mistaken
+for a completed request-shape observation.
 
 Reproduce locally with the existing private manifest:
 
