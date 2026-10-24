@@ -8,6 +8,25 @@ turn once per phase even when multiple observations share it. Missing provider
 evidence remains unknown. The report does not infer a failure from a log substring,
 attribute all turn usage to Cairn, or turn a refused wake into a zero-token run.
 
+For a bounded, read-only cohort of helper-recorded refused settlement
+operations, `scripts/select_refused_recovery_evidence.py` reads retained local
+`*/intents/*.json` journals and requires their delivery, attempt and
+completion-request identities to match the sibling inbox context. The context
+supplies the event ID; the journal does not carry it. The selector emits a
+private 0600 evidence file with unknown model, operator and recovery
+classifications. Its output is a retained
+state selection, not proof that a recipient model did or did not run:
+
+```sh
+install -d -m 700 "$HOME/.cache/cairn-recovery"
+python3 -B scripts/select_refused_recovery_evidence.py \
+  --state-root "$HOME/.local/share/cairn/coordination/state" \
+  --output "$HOME/.cache/cairn-recovery/recovery-evidence-new.json"
+```
+
+The output directory must be private and the output file must not exist yet.
+Use a current-format workflow report with attempt references before joining.
+
 Prepare a private `cairn.recovery-evidence/1` JSON file from an authorized
 exact operation, attempt, and state observation. For example:
 

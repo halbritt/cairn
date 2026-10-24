@@ -56,6 +56,42 @@ python3 -m unittest scripts.test_inbox_recovery
 make check
 ```
 
+## Retained refused-settlement convenience cohort
+
+At 2026-10-24 11:08 UTC, a read-only selector inspected the retained local
+coordination journals and their sibling inbox contexts. It selected exactly 13
+helper-recorded `completion.status=refused` operations. Each journal's
+delivery, attempt and completion request matched its sibling inbox context,
+which supplied the event ID: eight `HOLD_RELEASED` and five `STALE_SESSION`.
+The selection is an owner-host convenience snapshot, not a sampled population
+rate or a count of every provider failure. It contains twelve request
+deliveries and one response delivery. The selected private evidence is SHA-256
+`66a9517ddc58ee49233471a5117785414073ff2eda21a71d79a59fe765e7a3bd`.
+
+A current-format workflow report was regenerated from the frozen 40-file
+2026-10-21 through 2026-10-24 native-log manifest and the current retained
+coordination tree. Its SHA-256 is
+`a0048e9a8291e64b302ad7f6b32ebf865580e936c1153d071f6593970f8b333b`.
+The recovery report joined all 13 selected deliveries and attempts, but no
+provider turn for those attempts in that convenience log sample. It reports
+`provider_turns=0`, `observed_responses=null`, and model work, operator action
+and eventual recovery as unknown for all 13. Zero joined turns does **not**
+mean zero model work. The private report SHA-256 is
+`926e6b19d62b5bfffb686f29bca0b38e4fe1c781d2d69410bc9419a651d8807a`.
+All three artifacts remain owner-only under
+`~/.cache/cairn-token-audit-20261023/`; no IDs, bodies, commands or raw logs
+were committed.
+
+The selector is `scripts/select_refused_recovery_evidence.py`. It fails closed
+on a missing or mismatched sibling context, ambiguous JSON, noncanonical IDs,
+duplicate selected identity, malformed refusal code or unsafe output
+directory. It exports only exact IDs and bounded codes to a create-new 0600
+private file.
+The unknown recovery/operator/model fields are intentional: the refused
+journal does not establish those facts. Reproduce with the frozen private
+manifest and commands in `docs/workflow-model-report.md`, then run the selector
+and `docs/recovery-model-report.md` command with fresh private output names.
+
 ## Acceptance still open
 
 The panel uses synthetic selected classifications. It does not join real
