@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import stat
 import subprocess
 import sys
@@ -58,6 +59,17 @@ def empty_database(dsn):
                             text=True, capture_output=True, timeout=10)
     require(result.returncode == 0 and result.stdout.strip() == "0",
             "notice watcher database must be fresh")
+
+
+def expire_disposable_deadline(dsn, delivery_id):
+    canonical = str(uuid.UUID(delivery_id))
+    result = subprocess.run(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
+                             "-d", dsn, "-c", "UPDATE cairn.agent_delivery SET "
+                             "available_at=clock_timestamp()-interval '1 second' "
+                             f"WHERE delivery_id='{canonical}'::uuid"],
+                            text=True, capture_output=True, timeout=10)
+    require(result.returncode == 0 and result.stdout.strip() == "UPDATE 1",
+            "disposable deadline did not advance")
 
 
 def check(binary):
@@ -114,7 +126,7 @@ def check(binary):
         session = {key: registered[key] for key in ("agent_id", "execution_id")}
         require(registered["inbox"] == "agent/" + session["agent_id"],
                 "registered inbox differs")
-        owner = subprocess.Popen(["sleep", "30"], env=env, stdout=subprocess.DEVNULL,
+        owner = subprocess.Popen(["sleep", "90"], env=env, stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
         engine, script = coordinator()
         root = cluster / "notice-watcher-coordination"
@@ -230,10 +242,101 @@ def check(binary):
                 and after["deliveries"][0]["attempts"] == 0
                 and after["deliveries"][0]["available_at"] == flushed["flushed_at"],
                 "flush changed original event/delivery or failed to preserve pending state")
+
+        # Finish fixture cleanup, then probe a new routine notice across a real
+        # local API restart. A busy owner must remain a distinct wake barrier
+        # even when the notice's fixed deadline has passed.
+        routine_claim = call(binary, home, env, "worker", "session-inbox-claim", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "delivery_id": routine_delivery["delivery_id"],
+            "native_turn_id": "synthetic-flushed-notice", "turn_exclusive": True})["attempt"]
+        require(routine_claim and routine_claim["delivery"]["event"]["event_id"] == routine["event_id"],
+                "flushed routine cleanup claimed another event")
+        call(binary, home, env, "worker", "event-complete", {
+            "request_id": str(uuid.uuid4()), "delivery_id": routine_delivery["delivery_id"],
+            "lease_id": routine_claim["delivery"]["lease_id"],
+            "disposition": "failed", "code": "processing_failed"}, session=session)
+        call(binary, home, env, "worker", "session-inbox-reconcile", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "attempt_id": routine_claim["attempt_id"], "reason": "delivery_completed"})
+
+        busy = call(binary, home, env, "worker", "agent-context", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "expected_revision": registered["context_revision"],
+            "metadata": dict(registered["metadata"], state="busy")})
+        require(busy["metadata"]["state"] == "busy", "owner did not report busy")
+        delayed = call(binary, home, env, "sender", "event-publish", {
+            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+            "destination": {"type": "agent", "name": registered["inbox"]},
+            "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
+        delayed_before = call(binary, home, env, "sender", "event-inspect",
+                              {"event_id": delayed["event_id"]})["deliveries"][0]
+        delayed_id = delayed_before["delivery_id"]
+        delayed_deadline = delayed_before["available_at"]
+        require(parse_time(delayed_deadline) - parse_time(delayed["created_at"])
+                == timedelta(seconds=60), "second fixed deadline differs")
+        api.terminate()
+        api.wait(timeout=5)
+        api = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+        restart_deadline = time.monotonic() + 10
+        while True:
+            require(api.poll() is None and time.monotonic() < restart_deadline,
+                    "disposable API did not restart")
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+                    probe.settimeout(0.2)
+                    probe.connect(str(home / "api.sock"))
+                break
+            except OSError:
+                time.sleep(0.02)
+        delayed_after = call(binary, home, env, "sender", "event-inspect",
+                             {"event_id": delayed["event_id"]})["deliveries"][0]
+        require(delayed_after["delivery_id"] == delayed_id
+                and delayed_after["available_at"] == delayed_deadline
+                and delayed_after["attempts"] == 0,
+                "API restart changed the fixed routine deadline or delivery")
+        before_busy = watch()
+        require((before_busy.get("delivery_observation") or {}).get("value", {}).get("condition") == "busy"
+                and (before_busy.get("delivery_observation") or {}).get("value", {}).get("delivery_id") is None,
+                "busy owner was offered deferred notice")
+
+        expire_disposable_deadline(dsn, delayed_id)
+        expired = call(binary, home, env, "sender", "event-inspect",
+                       {"event_id": delayed["event_id"]})["deliveries"][0]
+        require(expired["delivery_id"] == delayed_id and expired["state"] == "pending"
+                and expired["attempts"] == 0
+                and parse_time(expired["available_at"]) < datetime.now(timezone.utc),
+                "expired original notice was not durably pending")
+        require(call(binary, home, env, "worker", "session-inbox-ready", session)
+                .get("delivery_id") is None,
+                "busy session exposed a ready head")
+        still_busy = watch()
+        require((still_busy.get("delivery_observation") or {}).get("value", {}).get("condition") == "busy"
+                and "idle_wake" not in still_busy,
+                "busy owner was woken after routine deadline")
+        idle = call(binary, home, env, "worker", "agent-context", {
+            "request_id": str(uuid.uuid4()), "session": session,
+            "expected_revision": busy["context_revision"],
+            "metadata": dict(busy["metadata"], state="idle")})
+        require(idle["metadata"]["state"] == "idle", "owner did not report idle")
+        require(call(binary, home, env, "worker", "session-inbox-ready", session)["delivery_id"]
+                == delayed_id, "expired original notice was not ready after idle report")
+        ready_after_idle = watch()
+        ready_observation = (ready_after_idle.get("delivery_observation") or {}).get("value") or {}
+        require(ready_observation.get("condition") == "native_transport_unavailable"
+                and ready_observation.get("delivery_id") == delayed_id
+                and (ready_after_idle.get("wake_refusal") or {}).get("delivery_id") == delayed_id,
+                "eligible original notice was not observed after busy owner became idle")
+        require(call(binary, home, env, "sender", "event-inspect",
+                     {"event_id": delayed["event_id"]})["deliveries"][0]["attempts"] == 0,
+                "watcher claimed a notice without a native transport")
         print(json.dumps({"case": "routine_notice_watcher_eligibility", "store_api": "disposable",
                           "watcher_process": "real_once", "native_owner": "synthetic_live_child",
                           "defer_seconds": 10, "early_wake_attempt": False,
                           "urgent_request_observed": True, "flush_released_original": True,
+                          "restart_preserved_deadline": True, "busy_owner_wake": False,
+                          "expired_notice_observed_after_idle": True,
                           "native_transport": "unavailable", "model_wake": False,
                           "task_outcome": "unassessed"}))
     finally:
