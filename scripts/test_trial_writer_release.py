@@ -592,6 +592,10 @@ class NamespaceInitTests(Base):
         self.assertEqual(result['final_artifact_custody'], 'not_established')
 
     def test_high_numbered_pidfd_still_observes_init_exit(self):
+        nofile_soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if nofile_soft != resource.RLIM_INFINITY and nofile_soft <= 1024:
+            self.skipTest(
+                f'RLIMIT_NOFILE soft limit {nofile_soft} does not permit a descriptor >= 1024')
         leaf = self.leaf_with_device()
         self.addCleanup(leaf.close)
         child = subprocess.Popen(['/usr/bin/sleep', '30'])
