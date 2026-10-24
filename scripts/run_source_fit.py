@@ -1,7 +1,8 @@
 """Bounded CAIRN-223 native subscription trial on a disposable Cairn store.
 
 Run only after the frozen panel and preflight are reviewed. Retains selected
-terminal answers/usage outside the repository; never saves raw native streams.
+terminal answers/usage and sanitized tool-result metadata outside the repository;
+never saves raw native streams or tool-result content.
 """
 
 import argparse
@@ -85,6 +86,8 @@ def parse_stream(stdout):
     terminal = None
     models = set()
     tool_calls = []
+    tool_names = {}
+    tool_results = []
     for line in stdout.splitlines():
         try:
             event = json.loads(line)
@@ -98,7 +101,37 @@ def parse_stream(stdout):
             content = message.get('content') if isinstance(message, dict) else None
             for part in content if isinstance(content, list) else []:
                 if isinstance(part, dict) and part.get('type') == 'tool_use':
-                    tool_calls.append(part.get('name'))
+                    name = part.get('name')
+                    tool_calls.append(name)
+                    ident = part.get('id')
+                    if isinstance(ident, str) and isinstance(name, str):
+                        tool_names[ident] = name
+        if event.get('type') == 'user':
+            message = event.get('message')
+            content = message.get('content') if isinstance(message, dict) else None
+            for part in content if isinstance(content, list) else []:
+                if not isinstance(part, dict) or part.get('type') != 'tool_result':
+                    continue
+                ident = part.get('tool_use_id')
+                name = tool_names.get(ident) if isinstance(ident, str) else None
+                if not isinstance(name, str) or not name.startswith('mcp__cairn__'):
+                    continue
+                # Keep enough to distinguish a missing, failed, or successful
+                # result and identify its exact bytes, without retaining note
+                # text or the native model stream in the trial ledger.
+                raw_content = part.get('content')
+                if isinstance(raw_content, str):
+                    encoded_content = raw_content.encode('utf-8')
+                else:
+                    encoded_content = json.dumps(
+                        raw_content, ensure_ascii=False, sort_keys=True,
+                        separators=(',', ':')).encode('utf-8')
+                tool_results.append(dict(
+                    tool=name,
+                    tool_use_id=ident,
+                    is_error=part.get('is_error') if type(part.get('is_error')) is bool else None,
+                    content_bytes=len(encoded_content),
+                    content_sha256=hashlib.sha256(encoded_content).hexdigest()))
         if event.get('type') == 'result':
             terminal = event
     if terminal is None:
@@ -118,7 +151,7 @@ def parse_stream(stdout):
         raise RuntimeError('native_answer_missing')
     return dict(model=next(iter(models)), usage={key: usage[key] for key in required},
                 tokens=sum(usage[key] for key in required), answer=answer,
-                tool_calls=tool_calls,
+                tool_calls=tool_calls, tool_results=tool_results,
                 turns=terminal.get('num_turns'), duration_ms=terminal.get('duration_ms'),
                 estimated_api_cost_usd=terminal.get('total_cost_usd'))
 

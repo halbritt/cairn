@@ -1,5 +1,6 @@
 """Prospective admission and terminal evidence guards for source-fit trials."""
 
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -30,14 +31,22 @@ class SourceFitTrialGuardTests(unittest.TestCase):
 
     def test_terminal_requires_one_resolved_model_and_complete_usage(self):
         assistant = dict(type='assistant', message=dict(model='claude-sonnet-5-5',
-            content=[dict(type='tool_use', name='mcp__cairn__cairn_pull')]))
+            content=[dict(type='tool_use', id='toolu_pull', name='mcp__cairn__cairn_pull')]))
+        tool_result = dict(type='user', message=dict(content=[dict(
+            type='tool_result', tool_use_id='toolu_pull', is_error=False,
+            content='PRIVATE SOURCE BODY')]))
         result = dict(type='result', result='Answer', is_error=False, usage=dict(
             input_tokens=1, cache_read_input_tokens=2,
             cache_creation_input_tokens=3, output_tokens=4))
-        stream = '\n'.join(json.dumps(row) for row in (assistant, result))
+        stream = '\n'.join(json.dumps(row) for row in (assistant, tool_result, result))
         parsed = parse_stream(stream)
         self.assertEqual(parsed['tokens'], 10)
         self.assertEqual(parsed['tool_calls'], ['mcp__cairn__cairn_pull'])
+        self.assertEqual(parsed['tool_results'], [dict(
+            tool='mcp__cairn__cairn_pull', tool_use_id='toolu_pull', is_error=False,
+            content_bytes=len(b'PRIVATE SOURCE BODY'),
+            content_sha256=hashlib.sha256(b'PRIVATE SOURCE BODY').hexdigest())])
+        self.assertNotIn('PRIVATE SOURCE BODY', json.dumps(parsed))
         with self.assertRaisesRegex(RuntimeError, 'native_usage_missing'):
             parse_stream('\n'.join(json.dumps(row) for row in
                          (assistant, dict(result, usage={'input_tokens': 1}))))
