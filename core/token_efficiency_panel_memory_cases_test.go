@@ -25,13 +25,16 @@ type panelMemorySource struct {
 }
 
 type panelMemoryCase struct {
-	ID    string `json:"id"`
-	Setup struct {
+	ID        string `json:"id"`
+	ActorTask string `json:"actor_task"`
+	Setup     struct {
 		Sources     []string          `json:"sources"`
 		Events      []json.RawMessage `json:"events"`
 		Transitions []struct {
+			Phase  string `json:"phase"`
 			Action string `json:"action"`
 			Target string `json:"target"`
+			Count  int    `json:"count"`
 		} `json:"transitions"`
 	} `json:"setup"`
 }
