@@ -1,7 +1,8 @@
 # Weekly runner reconciliation (CAIRN-107)
 
-Status: source-only, 2026-10-21. This change adds `scripts/trial_weekly_run.py`
-and the user units `integrations/systemd/cairn-weekly-eval.{service,timer}`.
+Status: source-only, 2026-10-24. This change adds `scripts/trial_weekly_run.py`,
+the one-run capacity-unverified override, and the user units
+`integrations/systemd/cairn-weekly-eval.{service,timer}`.
 The units are not installed or enabled. This work made no live run, no
 provider or model call, no account change and no campaign execution, and it
 read no real case or oracle. It does not assert runtime admission. The source
@@ -124,16 +125,16 @@ runner verifies (5b52a0f):
 **Authorization is a bound input, not a blocker.** The `--legacy-fixtures`
 help says the flag is "not authorization to replay" (`:1807`). Selecting the
 fixtures therefore authorizes nothing. That does not mean authority cannot
-exist: the owner has delegated campaign decisions. The runner requires an
-explicit, pinned `cairn.weekly-run-selection/2` in profile field
-`selection`. It must name this exact campaign, slot start, current,
-candidate and harness commits, executor, capacity-receipt hash, the canonical
-SHA-256 of the selected writer configuration, and the selecting identity.
-Without one, the runner refuses
-`live_invocation_not_selected`. If any field differs, it refuses
-`live_selection_mismatch`. The selection is recorded as
-`declared_unauthenticated`. No selection exists today, because root has not
-selected a live invocation.
+exist: the owner has delegated campaign decisions and gave the one-run
+instruction. The scheduled path requires a pinned
+`cairn.weekly-run-selection/2` and capacity receipt. The explicit manual path
+requires a pinned `cairn.weekly-run-selection/3` plus
+`cairn.weekly-one-run-override/2`; it names one exact slot, current, candidate
+and harness commits, writer digest, account assignment, provider model and
+binary, and override digest. The instruction provenance is declared, not
+authenticated. Both paths record `declared_unauthenticated`. A fresh manual
+slot selection and override are required for any invocation; this source
+change alone does not execute one.
 
 **Executor path.** `LegacyHarnessExecutor.execute` is real. It builds the
 original argv with `--original-limits` (`legacy_argv`) and runs the exported
@@ -142,9 +143,9 @@ account (`legacy_environment`). It returns the `agent.json` path and exit
 code. The tests run this path from start to finish against a fake
 `trial-task-eval.sh`. With a selected account, `check` reports no blockers.
 Without one, it refuses `weekly_executor_blocked`,
-`blockers: ["dedicated_account_unbound"]`, before any effect. A live run
-still needs real capacity evidence for that one account and a root-issued
-selection.
+`blockers: ["dedicated_account_unbound"]`, before any effect. The scheduled
+path still needs real capacity evidence. The explicit one-run path records
+capacity as unverified and does not establish acceptance or runtime admission.
 
 ## Ledger
 
@@ -1090,7 +1091,8 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | Join | Anchor | State |
 | --- | --- | --- |
 | Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Workload `/3` now validates a hash-pinned case/seed account assignment, exact per-account actor/grader job counts, and route identity. Real input still missing: no absolute-allowance observation and matching per-account reserve exists. Percentages remain inadmissible as capacity |
-| Live selection to runner | `cairn.weekly-run-selection/2` to `selection_gate` | **Implemented**. Binds the selected writer controls pin and reviewer identity; no selection issued (root decision) |
+| Scheduled live selection to runner | `cairn.weekly-run-selection/2` to `selection_gate` | **Implemented**. Binds the selected writer controls pin and reviewer identity; scheduled path still requires the capacity receipt |
+| Explicit one-run capacity override | `cairn.weekly-one-run-override/2` plus `cairn.weekly-run-selection/3` to `unreserved_one_run_gate` / `one_run_selection_gate` | **Implemented and synthetically tested**. Requires `--one-run-override PATH SHA256`, one exact slot and the original 21/126/3-account assignment; bypasses only absolute allowance and reservation comparison. Workload/call/token allowance and provider-pool route remain unknown; interactivity is unknown, dedication unavailable, reservation none. Receipt says `capacity_unverified`, `accepted: false`, and `runtime_admission: false`. Instruction provenance is declared, not authenticated. The timer/default path does not pass this flag |
 | Runner to Claude harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` plus the original-execution flags | **Implemented**, fake harness only. Carries every declared control except an ambient arm with `semantic_fallback` (`semantic_fallback_selector`). Needs a selected account |
 | Runner to Codex harness | `CodexWeeklyExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --codex-weekly-limits` and Codex provider flags | **Implemented and synthetically checked**. Reads rate-limit and model-catalog status per assigned account through its pinned Codex CLI, checks ChatGPT auth identity/hash per attempt, keeps pair arms on the same assigned account, selects `gpt-6-luna` with explicit `model_provider="openai"` and `--parallel 1`, then verifies the returned account mapping. Catalog presence is not per-account entitlement. No absolute quota or campaign admission claim |
 | Harness content hashes | `trial_task_eval.run_agent` `stream_sha256`/`prompt_sha256` (`:1323-1324`, 04ba225) to `_agent_result` | **Implemented**: required on every row. Present only in runs from a harness commit at or after 04ba225; older runs, including 2026-09-29, can never be complete |
@@ -1112,9 +1114,19 @@ described in the [2026-10-24 source verification](verification/codex-weekly-mult
 The three observed rate-limit percentages do not provide absolute capacity and
 cannot pass the runtime gate.
 
+The manual override is a narrow owner-directed admission path for one slot. It
+does not create a capacity receipt or reservation and does not imply the
+provider will finish the workload. Codex auth identity checks and the
+subscription status/model preflight still run before claim. A typed auth or
+quota error stops admission with status 401 or 429; any opaque terminal,
+nonzero, truncated, or custody-uncertain Codex attempt stops with
+`provider_error_unknown`. No message or tool text is searched for error
+keywords, and no API-key or OpenRouter fallback is available. Grader-release
+authority and eligible grader pairs remain separate downstream requirements.
+
 ## Tests
 
-`scripts/test_trial_weekly_run.py` has 35 tests. They use an owned temporary
+`scripts/test_trial_weekly_run.py` has 63 tests. They use an owned temporary
 Git repository with synthetic case IDs, a fake compiler, a fake
 `trial-task-eval.sh` that writes synthetic legacy output (agent, plan, runs,
 streams), and the capacity adapter's synthetic 21-case/126-attempt evidence.

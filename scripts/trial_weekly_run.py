@@ -17,6 +17,11 @@ What this is not:
   `trial_capacity_adapter` receipt whose sources still verify, bound to the
   original 21-case, 126-attempt plan, covering the whole slot window and the
   executor's exact accounts. Percentages never reach this gate.
+- The opt-in `--one-run-override PATH SHA256` is a separate manual path for one
+  selected slot. It bypasses only remaining-allowance and held-reservation
+  comparison, records `capacity_unverified`, and always records
+  `accepted: false` and `runtime_admission: false`. It does not change the
+  scheduled path or establish that the provider can finish the workload.
 - The shipped `legacy-harness` and `codex-weekly` executors enforce their
   respective original-limit evidence paths. Neither is selected by default;
   see docs/weekly-runner-reconciliation.md.
@@ -46,6 +51,7 @@ import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
 import trial_writer_release as writer_release
+import trial_one_run_override as one_run_override_contract
 import trial_weekly_accounts as weekly_accounts
 from check_weekly_paired_eval import WEEKLY_ARMS, WEEKLY_ATTEMPTS, WEEKLY_CASES, WEEKLY_SEEDS
 
@@ -54,6 +60,7 @@ SPEC_SCHEMA = 'cairn.weekly-run-spec/1'
 RECEIPT_SCHEMA = 'cairn.weekly-run-receipt/1'
 CLAIM_SCHEMA = 'cairn.weekly-run-claim/1'
 SELECTION_SCHEMA = 'cairn.weekly-run-selection/2'
+ONE_RUN_SELECTION_SCHEMA = 'cairn.weekly-run-selection/3'
 BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
                   'weekly_source embedding postgres capacity executor selection account execution writer')
@@ -61,6 +68,9 @@ SELECTION_FIELDS = ('schema campaign_id scheduled_at current candidate harness_c
                     'capacity_receipt_sha256 writer_sha256 selected_by')
 CODEX_SELECTION_FIELDS = (SELECTION_FIELDS+' codex_account_binding_sha256 codex_account_assignment_sha256 '
                           'provider_model provider_binary_sha256')
+ONE_RUN_SELECTION_FIELDS = ('schema campaign_id scheduled_at current candidate harness_commit executor '
+                            'one_run_override_sha256 writer_sha256 account_assignment_sha256 account_ids '
+                            'provider_model provider_binary_sha256 selected_by')
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
 DISTRACTORS = 1900
@@ -403,9 +413,54 @@ def selection_gate(profile, preview, executor_name, capacity):
     return dict(sha256=reference['sha256'], selected_by=document['selected_by'], proof='declared_unauthenticated')
 
 
+def unreserved_one_run_gate(profile, preview, executor, reference):
+    """Validate non-quota identity inputs for a manual slot; claim no capacity.
+
+    The only bypass is quota/workload/reservation pre-admission. This still
+    requires the exact original account assignment; the Codex executor then
+    checks every selected auth identity and performs the usual status/model
+    preflight before the slot claim.
+    """
+    capacity, plan = profile['capacity'], paired.read_json_pin(profile['capacity']['plan'])
+    need(executor.name == CodexWeeklyExecutor.name and isinstance(executor, CodexWeeklyExecutor),
+         'one_run_override_codex_required')
+    result = one_run_override_contract.validate(
+        reference, campaign_id=profile['campaign_id'], slot_id=preview['slot_id'],
+        scheduled_at=preview['scheduled_at'], expires_at=preview['expires_at'],
+        current=preview['current'], candidate=preview['candidate'], harness_commit=preview['harness'],
+        executor=executor.name, plan_reference=capacity['plan'],
+        assignment_reference=plan.get('account_assignment'), account_ids=executor.account_ids)
+    return result, plan
+
+
+def one_run_selection_gate(profile, preview, executor_name, capacity):
+    """Bind a distinct manual selection to this exact override and reviewed writer pin."""
+    reference = profile['selection']
+    need(reference is not None, 'live_invocation_not_selected')
+    document = paired.read_json_pin(reference)
+    codex = executor_name == CodexWeeklyExecutor.name
+    need(codex, 'one_run_codex_selection_required')
+    paired.shape(document, ONE_RUN_SELECTION_FIELDS, 'one_run_selection_shape')
+    need(document['schema'] == ONE_RUN_SELECTION_SCHEMA, 'one_run_selection_shape')
+    paired.identifier(document['selected_by'])
+    expected = dict(campaign_id=profile['campaign_id'], scheduled_at=preview['scheduled_at'],
+                    current=preview['current'], candidate=preview['candidate'],
+                    harness_commit=preview['harness'], executor=executor_name,
+                    one_run_override_sha256=capacity['override_sha256'],
+                    writer_sha256=paired.canonical_sha(profile['writer']),
+                    account_assignment_sha256=capacity['account_assignment_sha256'],
+                    account_ids=capacity['accounts'])
+    fragment = preview['original_execution']
+    expected.update(provider_model=fragment['model'],
+                    provider_binary_sha256=fragment['provider']['sha256'])
+    need(all(document[key] == value for key, value in expected.items()), 'one_run_selection_mismatch')
+    return dict(sha256=reference['sha256'], selected_by=document['selected_by'],
+                proof='declared_unauthenticated', mode='manual_one_run_override')
+
+
 # ---------------------------------------------------------------- run
 
-def run(profile, *, now, executors=None, compiler=None):
+def run(profile, *, now, executors=None, compiler=None, one_run_override=None):
     """Run or refuse one weekly slot; return its receipt.
 
     Every refusal before the slot claim writes nothing. A repeated call for a
@@ -428,7 +483,8 @@ def run(profile, *, now, executors=None, compiler=None):
     need(harness == profile['harness_commit'], 'harness_unresolved')
     # One owner per runs_root from the retry decision through the recorded claim.
     with _runs_lock(runs):
-        admitted = _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness)
+        admitted = _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness,
+                          one_run_override=one_run_override)
     if 'claim' not in admitted:
         return admitted
     slot, claim, plan, executor = admitted['slot'], admitted['claim'], admitted['plan'], admitted['executor']
@@ -454,7 +510,8 @@ def _runs_lock(runs):
     return held()
 
 
-def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness):
+def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, harness,
+           *, one_run_override=None):
     """Under the runs lock: stored receipt, or every check, retirement and the recorded claim."""
     fragment = None if profile['execution'] is None else original.declared(
         profile, current=current, candidate=cand, models=profile['capacity']['models'])
@@ -471,6 +528,13 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
         need((recorded.get('declared') if isinstance(recorded, dict) else None) == fragment,
              'stored_slot_execution_mismatch')
         need(stored.get('writer') == check_writer(profile['writer']), 'stored_slot_writer_mismatch')
+        stored_override = (stored.get('capacity') or {}).get('override_sha256')
+        if stored_override is not None:
+            need(one_run_override is not None, 'stored_slot_override_required')
+            paired.pin(one_run_override)
+            need(stored_override == one_run_override['sha256'], 'stored_slot_override_mismatch')
+        else:
+            need(one_run_override is None, 'stored_slot_override_mismatch')
         if profile['executor'] == CodexWeeklyExecutor.name:
             assert_account_slot_binding(stored, requested_plan, requested_assignment,
                                         executors[profile['executor']].account_ids,
@@ -480,6 +544,12 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
         assert_account_slot_binding(previous_claim, requested_plan, requested_assignment,
                                     executors[profile['executor']].account_ids,
                                     'retry_account_assignment_mismatch')
+    if retry:
+        previous_override = ((previous_claim or {}).get('capacity') or {}).get('override_sha256')
+        if previous_override is not None:
+            need(one_run_override is not None, 'retry_override_required')
+            paired.pin(one_run_override)
+            need(previous_override == one_run_override['sha256'], 'retry_override_mismatch')
     executor = executors.get(profile['executor'])
     need(executor is not None, 'weekly_executor_unknown')
     preview = dict(slot_id=slot_id, scheduled_at=candidate._iso(start), expires_at=candidate._iso(end),
@@ -488,8 +558,12 @@ def _admit(profile, now, executors, runs, slot_id, start, end, current, cand, ha
                    original_execution=fragment)
     executor.check(preview)
     need(executor.limits == paired.ORIGINAL_LIMITS, 'executor_limits_unenforced')
-    capacity, plan = capacity_gate(profile['capacity'], now=now, slot_end=end, account_ids=executor.account_ids)
-    selection = selection_gate(profile, preview, executor.name, capacity)
+    if one_run_override is None:
+        capacity, plan = capacity_gate(profile['capacity'], now=now, slot_end=end, account_ids=executor.account_ids)
+        selection = selection_gate(profile, preview, executor.name, capacity)
+    else:
+        capacity, plan = unreserved_one_run_gate(profile, preview, executor, one_run_override)
+        selection = one_run_selection_gate(profile, preview, executor.name, capacity)
     account_preflight = []
     if isinstance(executor, CodexWeeklyExecutor):
         account_preflight = executor.subscription_preflight(preview, now)
@@ -872,6 +946,8 @@ def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exi
                    pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)
+    if claim.get('capacity', {}).get('mode') == 'manual_one_run_override':
+        receipt.update(capacity_status='capacity_unverified', accepted=False)
     paired.write_selected(slot / 'receipt.json', receipt)
     return receipt
 
@@ -880,11 +956,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--profile', default=str(DEFAULT_PROFILE))
     parser.add_argument('--now', help='UTC YYYY-MM-DDTHH:MM:SSZ (default: current time)')
+    parser.add_argument('--one-run-override', nargs=2, metavar=('PATH', 'SHA256'),
+                        help='explicit manual one-slot override pin; never used by the scheduled unit')
     args = parser.parse_args(argv)
     try:
         profile = paired.read_json(paired.plain_path(args.profile))
         now = paired.utc(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
-        result = run(profile, now=now)
+        override_reference = None
+        if args.one_run_override is not None:
+            override_reference = dict(path=str(Path(args.one_run_override[0]).absolute()),
+                                      sha256=args.one_run_override[1])
+        result = run(profile, now=now, one_run_override=override_reference)
     except original.Unsupported as error:
         result = dict(schema=RECEIPT_SCHEMA, status='refused', code=str(error), unsupported=error.fields,
                       runtime_admission=False)

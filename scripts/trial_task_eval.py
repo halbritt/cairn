@@ -1022,7 +1022,7 @@ def parse_tool_outputs(text, harness="claude", *, require_completed=False):
 def parse_codex_stream(text):
     """Read completed native exec items; item-level warnings are not turn failures."""
     commands, writes, memory, errors = [], [], [], []
-    answer, turns, usage, seen = "", 0, {}, set()
+    answer, turns, usage, seen, admission_failure = "", 0, {}, set(), None
     for line in text.splitlines():
         try:
             event = json.loads(line)
@@ -1037,7 +1037,24 @@ def parse_codex_stream(text):
                 if isinstance(value, int):
                     usage[key] = usage.get(key, 0) + value
         elif kind in ("turn.failed", "error"):
-            errors.append(event.get("error") or event.get("message") or kind)
+            error = event.get("error") if isinstance(event.get("error"), dict) else {}
+            errors.append(error or event.get("message") or kind)
+            # Only structured provider metadata can classify auth vs quota.
+            # Current exec JSONL often supplies only a message; stop admission
+            # as unknown rather than interpreting provider or model prose.
+            status = next((error.get(key) for key in ("status", "status_code", "http_status")
+                           if type(error.get(key)) is int), None)
+            info = error.get("codexErrorInfo") or event.get("codexErrorInfo")
+            if status is None:
+                status = next((event.get(key) for key in ("status", "status_code", "http_status")
+                               if type(event.get(key)) is int), None)
+            code = info if isinstance(info, str) else error.get("code") or event.get("code")
+            if status == 401 or code in ("unauthorized", "authentication_failed"):
+                admission_failure = dict(provider="codex", reason="authentication_failed", api_error_status=401)
+            elif status == 429 or code in ("rate_limit_exceeded", "usage_limit_exceeded", "capacity_exhausted"):
+                admission_failure = dict(provider="codex", reason="capacity_exhausted", api_error_status=429)
+            else:
+                admission_failure = dict(provider="codex", reason="provider_error_unknown", api_error_status=None)
         elif kind == "item.completed":
             item = event.get("item") or {}
             if item.get("id") in seen:
@@ -1056,9 +1073,46 @@ def parse_codex_stream(text):
     return dict(commands=commands, writes=writes, memory_calls=memory, answer=answer,
                 turns=turns, turn_unit="native_exec_turn", duration_ms=None, cost_usd=None,
                 is_error=bool(errors), errors=errors, completed=bool(turns) and not errors,
+                admission_failure=admission_failure,
                 subtype="turn.failed" if errors else "turn.completed" if turns else "unterminated",
                 input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cached_input_tokens"),
                 cache_creation_tokens=usage.get("cache_write_input_tokens"), output_tokens=usage.get("output_tokens"))
+
+
+def codex_process_admission_failure(trace, exit_code):
+    """Keep scheduling closed on an opaque failed or truncated Codex process."""
+    failure = trace.get("admission_failure")
+    if failure is not None:
+        return failure
+    if exit_code != 0 or not trace.get("completed"):
+        return dict(provider="codex", reason="provider_error_unknown", api_error_status=None)
+    return None
+
+
+def codex_custody_failure(process_custody, writer_record):
+    """Name missing process, writer-release, or final-artifact custody separately."""
+    if (not isinstance(process_custody, dict)
+            or process_custody.get("cleanup", {}).get("status") != "observed_clear"):
+        return "process_custody_unknown"
+    if not isinstance(writer_record, dict) or writer_record.get("state") != "released":
+        return "writer_release_unknown"
+    pin = writer_record.get("final_artifact_custody")
+    if not (isinstance(pin, dict) and pin.get("schema") == "cairn.legacy-pregrade-snapshot-pin/1"
+            and isinstance(pin.get("record_path"), str) and pin["record_path"].startswith("final-artifacts/")
+            and type(pin.get("bytes")) is int and pin["bytes"] > 0
+            and isinstance(pin.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", pin["sha256"])):
+        return "final_artifact_custody_unknown"
+    return None
+
+
+def campaign_admission_open(stop, observer_stop):
+    """Whether the scheduler may admit another attempt after a terminal observation."""
+    return stop is None and observer_stop is None
+
+
+def admission_stop(record, run_id):
+    failure = (record.get("trace") or {}).get("admission_failure")
+    return dict(run_id=run_id, **failure) if isinstance(failure, dict) else None
 
 
 def claude_admission_failure(result, assistant_error):
@@ -1578,6 +1632,15 @@ def run_agent(case, arm, seed, order, args, stores, out):
             finally:
                 os.close(directory)
     trace = parse_stream(stdout, args.harness)
+    if codex_weekly:
+        # Codex can terminate on auth/quota failures without emitting a typed
+        # terminal event. Do not infer which failure occurred from prose; stop
+        # the campaign as an opaque provider failure before admitting another
+        # account attempt.
+        trace["admission_failure"] = codex_process_admission_failure(trace, code)
+        codex_custody_problem = codex_custody_failure(process_custody, writer_record)
+    else:
+        codex_custody_problem = None
     if prospective:
         # Retain only fixed terminal admission metadata before fallible grading.
         # Prospective runs intentionally have no raw stream recovery path.
@@ -1675,6 +1738,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if codex_weekly:
             record["codex_weekly_limits"] = limit_assessment
             record["process_custody"] = process_custody
+        if codex_custody_problem:
+            record["observer_integrity_unknown"] = True
+            record["observer_failure_reason"] = codex_custody_problem
         if writer_record is not None:
             record["writer_release"] = writer_record
             record["final_artifact_custody"] = writer_record.get(
@@ -2010,10 +2076,10 @@ def cmd_agent(args):
         records, next_run, stop, observer_stop = [], 0, None, None
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
             futures = {}
-            while futures or (stop is None and observer_stop is None and next_run < len(plan)):
+            while futures or (campaign_admission_open(stop, observer_stop) and next_run < len(plan)):
                 # Keep no queued backlog: after a confirmed failure only the
                 # already admitted window may finish. Never cancel its evidence.
-                while stop is None and observer_stop is None and len(futures) < args.parallel and next_run < len(plan):
+                while campaign_admission_open(stop, observer_stop) and len(futures) < args.parallel and next_run < len(plan):
                     c, a, s, p = plan[next_run]
                     futures[pool.submit(run_agent, c, a, s, p, args, stores, out)] = next_run
                     next_run += 1
@@ -2028,6 +2094,9 @@ def cmd_agent(args):
                         record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
                                       outcome="harness_error", error=selected_observation_error('runner', error)['exception_type'] if prospective else str(error)[-600:],
                                       harness=args.harness, model=args.model)
+                        if args.harness == "codex" and getattr(args, "codex_weekly_limits", False):
+                            record["observer_integrity_unknown"] = True
+                            record["observer_failure_reason"] = "codex_attempt_exception"
                         # A later grading failure must not hide a provider stop.
                         base = out / "runs" / record["run_id"]
                         if prospective:
@@ -2047,8 +2116,13 @@ def cmd_agent(args):
                             try:
                                 selected = json.loads(terminal.read_text())
                                 failure = selected.get("admission_failure")
-                                allowed = [dict(provider="claude", reason=reason, api_error_status=status)
-                                           for reason, status in (("authentication_failed", 401), ("capacity_exhausted", 429))]
+                                allowed = [dict(provider=provider, reason=reason, api_error_status=status)
+                                           for provider, reason, status in (
+                                               ("claude", "authentication_failed", 401),
+                                               ("claude", "capacity_exhausted", 429),
+                                               ("codex", "authentication_failed", 401),
+                                               ("codex", "capacity_exhausted", 429),
+                                               ("codex", "provider_error_unknown", None))]
                                 if selected.get("schema") != "cairn.native-terminal/1" or (failure is not None and failure not in allowed):
                                     raise ValueError("invalid selected terminal metadata")
                                 record["trace"] = dict(admission_failure=failure)
@@ -2072,12 +2146,14 @@ def cmd_agent(args):
                     if prospective and arm in stores and "receipt_explanation_export" not in record:
                         record["receipt_explanation_export"] = receipt_export_metadata(out / "runs" / record["run_id"])
                     records.append(record)
-                    failure = (record.get("trace") or {}).get("admission_failure")
-                    if stop is None and failure:
-                        stop = dict(run_id=record["run_id"], **failure)
+                    if stop is None:
+                        stop = admission_stop(record, record["run_id"])
+                    if stop is not None and stop.get("run_id") == record["run_id"]:
                         print(json.dumps(dict(admission_stop=stop)), flush=True)
-                    if observer_stop is None and record.get('observer_integrity_unknown'):
-                        observer_stop = dict(run_id=record['run_id'], reason='observer_custody_unknown')
+                    if (observer_stop is None and record.get('observer_integrity_unknown')
+                            and (prospective or (args.harness == "codex" and getattr(args, "codex_weekly_limits", False)))):
+                        observer_stop = dict(run_id=record['run_id'], reason=record.get(
+                            'observer_failure_reason', 'observer_custody_unknown'))
                         print(json.dumps(dict(observer_admission_stop=observer_stop)), flush=True)
                     print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
         if prospective:

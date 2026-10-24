@@ -11,7 +11,7 @@ import trial_paired_request as paired
 import trial_weekly_accounts as weekly_accounts
 from check_weekly_paired_eval import WEEKLY_ATTEMPTS, WEEKLY_CASES, WEEKLY_SEEDS
 
-SCHEMA = 'cairn.weekly-one-run-override/1'
+SCHEMA = 'cairn.weekly-one-run-override/2'
 INSTRUCTION_SCHEMA = 'cairn.owner-instruction-provenance/1'
 UNCERTAINTY_SCHEMA = 'cairn.weekly-capacity-uncertainty/1'
 FIELDS = ('schema campaign_id slot_id scheduled_at expires_at current candidate '
@@ -23,7 +23,10 @@ ARMS = ['CURRENT', 'CAND']
 
 def _unknown_capacity():
     return dict(schema=UNCERTAINTY_SCHEMA, state='capacity_unverified',
-                absolute_call_allowance='unknown', absolute_token_allowance='unknown',
+                planned_attempts=WEEKLY_ATTEMPTS, account_count=3,
+                workload_units='unknown', absolute_call_allowance='unknown',
+                absolute_token_allowance='unknown', provider_pool_route='unverified',
+                account_interactive_use='unknown', dedicated_account_proof='unavailable',
                 reservation='none', accepted=False)
 
 
@@ -137,8 +140,10 @@ def validate(reference, *, campaign_id, slot_id, scheduled_at, expires_at, curre
         plan_sha256=plan['sha256'],
         plan_file_sha256=plan_reference['sha256'],
         account_assignment_sha256=assignment['sha256'],
+        account_assignment=assignment,
         accounts=assigned_accounts,
         capacity_status='capacity_unverified',
+        capacity_uncertainty=dict(document['uncertainty']),
         capacity_receipt_sha256=None,
         reservation='none',
         accepted=False,

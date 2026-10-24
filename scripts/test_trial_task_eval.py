@@ -396,6 +396,79 @@ class InjectionTest(unittest.TestCase):
         self.assertEqual(trace["turns"], 1)
         self.assertTrue(trace["completed"])
         self.assertFalse(trace["is_error"])
+        self.assertIsNone(trace["admission_failure"])
+
+    def test_codex_terminal_provider_errors_stop_admission_from_structured_metadata(self):
+        fixtures = [
+            (dict(type="turn.failed", error=dict(message="expired")),
+             dict(provider="codex", reason="provider_error_unknown", api_error_status=None)),
+            (dict(type="error", error=dict(codexErrorInfo="unauthorized")),
+             dict(provider="codex", reason="authentication_failed", api_error_status=401)),
+            (dict(type="turn.failed", error=dict(codexErrorInfo="rate_limit_exceeded")),
+             dict(provider="codex", reason="capacity_exhausted", api_error_status=429)),
+            (dict(type="error", error=dict(status_code=401, message="not parsed")),
+             dict(provider="codex", reason="authentication_failed", api_error_status=401)),
+            (dict(type="turn.failed", error=dict(http_status=429)),
+             dict(provider="codex", reason="capacity_exhausted", api_error_status=429)),
+        ]
+        for event, expected in fixtures:
+            with self.subTest(event=event):
+                trace = te.parse_codex_stream(json.dumps(event))
+                self.assertEqual(trace["admission_failure"], expected)
+
+    def test_codex_prose_and_item_errors_do_not_trigger_provider_stop(self):
+        events = [
+            dict(type="item.completed", item=dict(id="warning", type="error",
+                 message="401 unauthorized rate limit")),
+            dict(type="item.completed", item=dict(id="answer", type="agent_message",
+                 text="quota 429 unauthorized")),
+            dict(type="turn.completed", usage={}),
+        ]
+        trace = te.parse_codex_stream("\n".join(map(json.dumps, events)))
+        self.assertIsNone(trace["admission_failure"])
+        self.assertTrue(trace["completed"])
+
+    def test_codex_nonzero_or_unterminated_execution_fails_closed_as_unknown(self):
+        # run_agent applies this branch after parsing and before retaining the
+        # admission stop; prose and item-level warnings are intentionally absent.
+        for exit_code in (1, 0):
+            with self.subTest(exit_code=exit_code):
+                trace = te.parse_codex_stream("")
+                self.assertEqual(te.codex_process_admission_failure(trace, exit_code), dict(
+                    provider="codex", reason="provider_error_unknown", api_error_status=None))
+        completed = te.parse_codex_stream(json.dumps(dict(type="turn.completed", usage={})))
+        self.assertIsNone(te.codex_process_admission_failure(completed, 0))
+        terminal = te.parse_codex_stream(json.dumps(dict(type="turn.failed", error=dict(codexErrorInfo="unauthorized"))))
+        self.assertEqual(te.codex_process_admission_failure(terminal, 1), terminal["admission_failure"])
+
+    def test_codex_terminal_or_exception_record_closes_campaign_admission(self):
+        for failure in (
+            dict(provider="codex", reason="authentication_failed", api_error_status=401),
+            dict(provider="codex", reason="capacity_exhausted", api_error_status=429),
+            dict(provider="codex", reason="provider_error_unknown", api_error_status=None),
+        ):
+            with self.subTest(failure=failure):
+                # The scheduler's future-exception branch records this same
+                # opaque stop, and its admission predicate then closes globally.
+                record = dict(run_id="case.CAND.s1", outcome="harness_error",
+                              trace=dict(admission_failure=failure))
+                stop = te.admission_stop(record, record["run_id"])
+                self.assertEqual(stop, dict(run_id=record["run_id"], **failure))
+                self.assertFalse(te.campaign_admission_open(stop, None))
+        self.assertTrue(te.campaign_admission_open(None, None))
+
+    def test_codex_custody_and_final_artifact_failures_use_observer_stop(self):
+        released = dict(state='released', final_artifact_custody=dict(
+            schema='cairn.legacy-pregrade-snapshot-pin/1', record_path='final-artifacts/a.json',
+            bytes=20, sha256='a'*64))
+        clear = dict(cleanup=dict(status='observed_clear'))
+        self.assertIsNone(te.codex_custody_failure(clear, released))
+        self.assertEqual(te.codex_custody_failure(clear, dict(state='released')),
+                         'final_artifact_custody_unknown')
+        self.assertEqual(te.codex_custody_failure(dict(cleanup=dict(status='unknown')), released),
+                         'process_custody_unknown')
+        observer_stop = dict(run_id='case.CAND.s1', reason='final_artifact_custody_unknown')
+        self.assertFalse(te.campaign_admission_open(None, observer_stop))
 
     def test_parse_hook_output(self):
         view = {"selected": [], "index": [{"record_id": "a"}, {"record_id": "b"}],

@@ -18,7 +18,9 @@ import unittest.mock
 import trial_paired_request as paired
 import trial_task_eval as te
 import trial_original_execution as original
+import trial_one_run_override as one_run_override
 import trial_weekly_run as weekly
+import trial_weekly_accounts as weekly_accounts
 from trial_capacity_adapter import adapt
 from test_trial_capacity_adapter import Inputs
 from test_trial_paired_capacity import write_pin
@@ -450,6 +452,103 @@ class WeeklyRunTests(unittest.TestCase):
     def run_weekly(self, executors=None, now=NOW_DT, profile=None):
         executors = {'fake': self.executor} if executors is None else executors
         return weekly.run(profile or self.profile, now=now, executors=executors, compiler=fake_compiler)
+
+    def manual_codex_profile(self):
+        """Build a synthetic three-account Codex profile for the explicit one-slot path."""
+        profile = copy.deepcopy(self.profile)
+        profile['executor'] = weekly.CodexWeeklyExecutor.name
+        profile['account'] = None
+        profile['capacity']['models'] = dict.fromkeys(('CURRENT', 'CAND', 'primary', 'secondary'), 'gpt-6-luna')
+        account_rows = []
+        for index in range(3):
+            home = self.root / f'codex-account-{index}'
+            home.mkdir()
+            auth_path = home / 'auth.json'
+            auth_path.write_text(json.dumps(dict(auth_mode='chatgpt', tokens=dict(account_id=f'account-{index}'))))
+            account_rows.append(dict(account_id=f'account-{index}', auth_file=str(auth_path),
+                                     auth_sha256=hashlib.sha256(auth_path.read_bytes()).hexdigest(),
+                                     config_home=str(home)))
+        cases = [f'synthetic-{index:02d}' for index in range(21)]
+        assignment = weekly_accounts.balanced(cases, [1, 2, 3], account_rows)
+        assignment_ref = write_pin(self.root / 'manual-assignment.json', assignment)
+        plan = dict(attempts=126, arms=['CURRENT', 'CAND'], cases=cases, seeds=[1, 2, 3],
+                    account_assignment=assignment_ref)
+        plan['sha256'] = paired.canonical_sha(plan)
+        plan_ref = write_pin(self.root / 'manual-plan.json', plan)
+        profile['capacity'].update(plan=plan_ref, receipt=self.receipt_pin)
+
+        execution = self.execution_document()
+        execution['schema'] = 'cairn.weekly-execution/2'
+        actor = execution.pop('native')
+        execution['provider'] = dict(harness='codex', binary=actor['binary'], model='gpt-6-luna', effort='low')
+        execution_ref = write_pin(self.root / 'declared/codex-execution.json', execution)
+        profile['execution'] = execution_ref
+        start, end = weekly.current_slot(profile['schedule'], NOW_DT)
+        slot_id = str(uuid.uuid5(weekly.NAMESPACE, profile['campaign_id'] + '|' + weekly.candidate._iso(start)))
+        override_doc = dict(
+            schema=one_run_override.SCHEMA, campaign_id=profile['campaign_id'], slot_id=slot_id,
+            scheduled_at=weekly.candidate._iso(start), expires_at=weekly.candidate._iso(end),
+            current=self.repo.current, candidate=self.repo.candidate, harness_commit=self.repo.harness,
+            executor=profile['executor'], plan_sha256=plan['sha256'], plan_file_sha256=plan_ref['sha256'],
+            account_assignment_sha256=assignment_ref['sha256'], account_ids=sorted(row['account_id'] for row in account_rows),
+            owner_instruction=dict(schema=one_run_override.INSTRUCTION_SCHEMA, source='synthetic-test',
+                                   reference='fixture-only', statement_sha256='a'*64,
+                                   observed_at=NOW, declared_by='owner'),
+            uncertainty=one_run_override._unknown_capacity())
+        override_ref = write_pin(self.root / 'one-run-override.json', override_doc)
+        provider = execution['provider']
+        selection_doc = dict(schema=weekly.ONE_RUN_SELECTION_SCHEMA, campaign_id=profile['campaign_id'],
+                             scheduled_at=weekly.candidate._iso(start), current=self.repo.current,
+                             candidate=self.repo.candidate, harness_commit=self.repo.harness,
+                             executor=profile['executor'], one_run_override_sha256=override_ref['sha256'],
+                             writer_sha256=paired.canonical_sha(profile['writer']),
+                             account_assignment_sha256=assignment_ref['sha256'],
+                             account_ids=sorted(row['account_id'] for row in account_rows),
+                             provider_model=provider['model'],
+                             provider_binary_sha256=provider['binary']['sha256'],
+                             selected_by='9a1f0a52-1d0e-4b8e-9a51-0c107b7a1e07')
+        profile['selection'] = write_pin(self.root / 'one-run-selection.json', selection_doc)
+        return profile, override_ref
+
+    def test_manual_one_run_bypasses_only_capacity_proof_and_records_unknown(self):
+        profile, override_ref = self.manual_codex_profile()
+        profile['capacity']['receipt'] = None  # No fabricated reservation or capacity evidence.
+        def finish(profile, slot, claim, plan, executor, repo, compiler):
+            self.assertEqual(claim['capacity']['capacity_status'], 'capacity_unverified')
+            self.assertEqual(claim['capacity']['reservation'], 'none')
+            plan = paired.read_json_pin(profile['capacity']['plan'])
+            self.assertEqual(claim['capacity']['account_assignment_sha256'],
+                             plan['account_assignment']['sha256'])
+            return weekly._finish(slot, claim, status='incomplete', code='synthetic_not_executed')
+
+        with unittest.mock.patch.object(weekly.CodexWeeklyExecutor, 'subscription_preflight', return_value=[{'synthetic': True}]) as preflight, \
+             unittest.mock.patch.object(weekly, '_execute', side_effect=finish):
+            result = weekly.run(profile, now=NOW_DT, one_run_override=override_ref)
+        self.assertEqual(result['status'], 'incomplete')
+        self.assertEqual(result['capacity_status'], 'capacity_unverified')
+        self.assertFalse(result['accepted'])
+        self.assertFalse(result['runtime_admission'])
+        self.assertIsNone(result['capacity']['capacity_receipt_sha256'])
+        self.assertEqual(preflight.call_count, 1)
+        self.assertEqual(len(list(self.runs.iterdir())), 1)
+
+    def test_manual_selection_mismatch_refuses_before_claim_or_preflight(self):
+        profile, override_ref = self.manual_codex_profile()
+        profile['selection'] = write_pin(self.root / 'bad-one-run-selection.json',
+                                         dict(json.loads(Path(profile['selection']['path']).read_text()),
+                                              one_run_override_sha256='0'*64))
+        with unittest.mock.patch.object(weekly.CodexWeeklyExecutor, 'subscription_preflight') as preflight:
+            with self.assertRaisesRegex(paired.Refusal, '^one_run_selection_mismatch$'):
+                weekly.run(profile, now=NOW_DT, one_run_override=override_ref)
+        preflight.assert_not_called()
+        self.assertEqual(os.listdir(self.runs), [])
+
+    def test_without_explicit_override_normal_capacity_gate_still_refuses(self):
+        profile, _ = self.manual_codex_profile()
+        profile['capacity']['receipt'] = None
+        with self.assertRaises(paired.Refusal):
+            weekly.run(profile, now=NOW_DT)
+        self.assertEqual(os.listdir(self.runs), [])
 
     def refuses(self, code, **kwargs):
         with self.assertRaisesRegex(paired.Refusal, f'^{code}$') as caught:
@@ -901,6 +1000,16 @@ class WeeklyRunTests(unittest.TestCase):
         env = weekly.legacy_environment(dict(spec, account=self.profile['account']),
                                         dict(PATH='/bin', CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR='/ambient'))
         self.assertEqual(env['CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR'], self.profile['account']['config_home'])
+
+    def test_codex_environment_strips_api_key_and_openrouter_fallback(self):
+        env = weekly.codex_environment(dict(postgres=dict(bin_dir='/synthetic/pg')), dict(
+            PATH='/bin', OPENAI_API_KEY='must-not-pass', OPENAI_BASE_URL='must-not-pass',
+            OPENROUTER_API_KEY='must-not-pass', OPENROUTER_BASE_URL='must-not-pass',
+            CAIRN_CODEX_AUTH_FILE='/ambient/must-not-pass'))
+        self.assertFalse(any(name in env for name in (
+            'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL',
+            'CAIRN_CODEX_AUTH_FILE')))
+        self.assertEqual(env['CAIRN_PG_BIN'], '/synthetic/pg')
 
 
     def test_harness_without_original_limits_support_is_never_executed(self):

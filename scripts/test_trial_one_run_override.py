@@ -64,8 +64,10 @@ class OneRunOverrideTest(unittest.TestCase):
                 observed_at='2026-10-24T11:55:00Z', declared_by='owner'),
             uncertainty=dict(
                 schema=override.UNCERTAINTY_SCHEMA, state='capacity_unverified',
+                planned_attempts=126, account_count=3, workload_units='unknown',
                 absolute_call_allowance='unknown', absolute_token_allowance='unknown',
-                reservation='none', accepted=False),
+                provider_pool_route='unverified', account_interactive_use='unknown',
+                dedicated_account_proof='unavailable', reservation='none', accepted=False),
         )
 
     def _override_ref(self):
@@ -99,6 +101,14 @@ class OneRunOverrideTest(unittest.TestCase):
 
         with self.assertRaisesRegex(paired.Refusal, 'override_binding_mismatch'):
             override.validate(self._override_ref(), **self.context)
+
+    def test_missing_route_dedication_and_capacity_are_reported_as_unknown(self):
+        checked = override.validate(self._override_ref(), **self.context)
+
+        self.assertEqual(checked['capacity_uncertainty']['provider_pool_route'], 'unverified')
+        self.assertEqual(checked['capacity_uncertainty']['account_interactive_use'], 'unknown')
+        self.assertEqual(checked['capacity_uncertainty']['dedicated_account_proof'], 'unavailable')
+        self.assertEqual(checked['capacity_uncertainty']['workload_units'], 'unknown')
 
     def test_missing_instruction_provenance_is_refused(self):
         self.document['owner_instruction'].pop('reference')
