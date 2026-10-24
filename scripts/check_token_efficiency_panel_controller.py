@@ -28,11 +28,13 @@ def check(binary, workflow_id):
                                 f"{arm}.{case}" for arm in
                                 ("baseline", "envelope", "batch", "combined")
                                 for case in ("routine_burst_urgent_request",
-                                             "wrong_project_memory", "corrected_note")),
+                                             "wrong_project_memory", "corrected_note",
+                                             "meaningful_owner_correction")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
-    source_case = case in ("wrong_project_memory", "corrected_note")
+    source_case = case in ("wrong_project_memory", "corrected_note",
+                           "meaningful_owner_correction")
     label = workflow_id.replace(".", "-") if burst or source_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
@@ -235,13 +237,34 @@ def check(binary, workflow_id):
             require(len(versions) == 1 and versions[0]["body"] == source["body"]
                     and versions[0]["version"] == observed["version"],
                     "exact Store history differs from frozen source")
-        if case == "corrected_note":
-            require(receipt["sources"]["old_export"]["record_id"] ==
-                    receipt["sources"]["export_correction"]["record_id"],
+        if case in ("corrected_note", "meaningful_owner_correction"):
+            old_name, current_name = (("old_export", "export_correction")
+                                      if case == "corrected_note" else ("owner_old", "owner_new"))
+            require(receipt["sources"][old_name]["record_id"] ==
+                    receipt["sources"][current_name]["record_id"],
                     "edit did not preserve Store record identity")
         if source_case:
+            preparation = receipt.get("source_preparation")
+            require(preparation == {
+                "status": "source_lineage_and_history_verified",
+                "corrections": ([{
+                    "target": "owner_new", "record_id": receipt["sources"]["owner_new"]["record_id"],
+                    "from_version": 1, "to_version": 2, "fixture_phase": "after_old_record",
+                    "fixture_action": "apply_correction", "status": "source_setup_only",
+                }] if case == "meaningful_owner_correction" else
+                    [{"target": "export_correction",
+                      "record_id": receipt["sources"]["export_correction"]["record_id"],
+                      "from_version": 1, "to_version": 2, "fixture_phase": None,
+                      "fixture_action": None, "status": "source_setup_only"}]
+                    if case == "corrected_note" else []),
+                "runtime_transition": "unrun",
+            }, "source preparation must not claim actor correction")
+            require(receipt["task_outcome"] == "unassessed"
+                    and receipt["provider_called"] is False
+                    and receipt["native_turn_join"] == "unimplemented",
+                    "source setup cannot establish actor acceptance")
             require(sql("SELECT count(*) FROM cairn.memory_record") ==
-                    ("1" if case == "corrected_note" else "2"),
+                    ("1" if case in ("corrected_note", "meaningful_owner_correction") else "2"),
                     "source-only Store record count differs")
         expected_publishers = ({"request_decision": "sender", "response_a": "worker"}
                                if case == "actionable_response" else

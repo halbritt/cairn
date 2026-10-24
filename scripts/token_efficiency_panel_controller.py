@@ -67,6 +67,12 @@ CASE_ADAPTERS = {
         "events": [], "transitions": [], "publishers": {},
         "sessions": {"worker": "worker"},
     },
+    "meaningful_owner_correction": {
+        "sources": ["owner_old", "owner_new"],
+        "events": [], "transitions": [{"phase": "after_old_record", "action": "apply_correction",
+                                         "target": "owner_new"}],
+        "publishers": {}, "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -92,7 +98,8 @@ def case_name(workflow_id):
     require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
             and (parts[0] == "baseline" or
                  parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note") and parts[0] in ("envelope", "batch", "combined")),
+                              "corrected_note", "meaningful_owner_correction")
+                 and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
 
@@ -100,7 +107,8 @@ def case_name(workflow_id):
 def database_name(workflow_id):
     case = case_name(workflow_id)
     return (f"cairn_panel_{workflow_id.replace('.', '_')}"
-            if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note")
+            if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
+                        "meaningful_owner_correction")
             else f"cairn_panel_{case}")
 
 
@@ -769,6 +777,38 @@ def materialize(args):
     if case == "small_request_result_reply":
         synthetic_settlement = settle_small_request(binary, socket, tokens, repo, actor, setup,
                                                     intent, sessions, events)
+    source_preparation = None
+    if source_ids:
+        corrections = []
+        for current_name in source_ids:
+            current_spec = fixture_sources[current_name]
+            if current_spec["operation"] != "edit":
+                continue
+            old_name = current_spec["supersedes"][0]
+            old, current = sources[old_name], sources[current_name]
+            require(old["record_id"] == current["record_id"]
+                    and old["version"] + 1 == current["version"],
+                    "source correction lineage differs")
+            transition = next((item for item in setup["transitions"]
+                               if item["action"] == "apply_correction"
+                               and item["target"] == current_name), None)
+            if transition is not None:
+                require(setup["sources"].index(old_name) < setup["sources"].index(current_name),
+                        "correction target must follow its old source in setup")
+            corrections.append({
+                "target": current_name,
+                "record_id": current["record_id"],
+                "from_version": old["version"],
+                "to_version": current["version"],
+                "fixture_phase": transition["phase"] if transition else None,
+                "fixture_action": transition["action"] if transition else None,
+                "status": "source_setup_only",
+            })
+        source_preparation = {
+            "status": "source_lineage_and_history_verified",
+            "corrections": corrections,
+            "runtime_transition": "unrun",
+        }
     receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
@@ -781,6 +821,7 @@ def materialize(args):
                "task_outcome": "unassessed"}
     if source_ids:
         receipt["sources"] = sources
+        receipt["source_preparation"] = source_preparation
     if readiness_snapshot is not None:
         receipt["readiness_snapshot"] = readiness_snapshot
         receipt["native_batch_transfer"] = "unrun"
@@ -805,7 +846,7 @@ def main():
     choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
     choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
                      for case in ("routine_burst_urgent_request", "wrong_project_memory",
-                                  "corrected_note"))
+                                  "corrected_note", "meaningful_owner_correction"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)
