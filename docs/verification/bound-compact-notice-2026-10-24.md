@@ -143,3 +143,30 @@ read; it does **not** establish a provider usage saving or accepted task work.
 It exercised one notice only; a compact response workflow, paired task
 outcome, provider usage, latency and canary/rollback evidence remain open.
 CAIRN-216 remains open.
+
+## Claude native compact causal response
+
+The same disposable loopback fixture now runs both the notice case and a causal
+response case. For the response, Alice publishes a request to Bob's principal
+inbox. Bob claims and completes that request through the Store with a result
+record. Bob then publishes a `response` event to Alice's registered native
+Claude session inbox, with the original request event ID as `causation_id` and
+the committed completion result as the exact source reference. No causal
+relationship or completion result is fabricated by the fixture.
+
+Claude receives the response at its native Stop boundary. The outgoing request
+contains the compact handle but not the 7,237-byte response body before the
+explicit read. Native Bash invokes compact `read`; the fixture verifies the
+response kind, exact result record ID and full source, then invokes compact
+`settle ... handled`. After settlement, Store event status reports `handled`
+without a result reference. A repo event listing contains no event whose
+causation points at the response event, so the test detected neither false
+task completion nor a reply-to-response loop. The notice and response cases
+both pass from `scripts/check_claude_compact_native_disposable.py`; the
+integration gate runs both when `CAIRN_CLAUDE_BINARY` is supplied.
+
+These are scripted local Messages exchanges against disposable Store state.
+They establish native compact read and settlement for one causal response,
+not actor understanding, accepted task outcome, provider usage or latency.
+CAIRN-216 remains open for paired task results, usage/latency, and live
+canary/rollback evidence.

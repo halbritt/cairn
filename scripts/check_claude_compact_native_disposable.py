@@ -64,6 +64,8 @@ def main():
             if not raw:
                 if command == 'agents':
                     argv += [args[0], *common, *args[1:]]
+                elif command == 'inbox':
+                    argv += ['next', *common, *args]
                 else:
                     argv += [*common, *args]
             result = subprocess.run(argv, input=body, env=env, text=True,
@@ -72,17 +74,16 @@ def main():
             if payload.get('status') != 'OK' or result.returncode:
                 raise AssertionError('disposable API call failed: ' + str(payload.get('status')))
             return payload['data']
-        source = api_call('alice', 'create', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()), draft=dict(
-            kind='note', body='fixture source seed', sensitivity='shareable', claim_type='self',
-            scope=dict(repo=repo, task_id='*', run_id='*')))))
-        config = dict(cairn=str(binary), socket=str(root / 'api.sock'), token_file=str(root / 'bob.token'),
+        config = dict(cairn=str(binary), socket=str(root / 'api.sock'), token_file=str(root / 'alice.token'),
                       repo=repo)
         claude = shutil.which('claude')
         if not claude:
             raise RuntimeError('installed Claude CLI required')
-        check(str(Path(claude).resolve(strict=True)), root / 'claude', config, api_call)
+        native_binary = str(Path(claude).resolve(strict=True))
+        check(native_binary, root / 'claude-notice', config, api_call, scenario='notice')
+        check(native_binary, root / 'claude-response', config, api_call, scenario='response')
         print(json.dumps(dict(result='PASS', environment='private loopback and disposable PostgreSQL',
-                              seed_record=source['record_id'], subscription_provider_called=False), sort_keys=True))
+                              subscription_provider_called=False), sort_keys=True))
     finally:
         if api is not None:
             api.terminate()

@@ -13,7 +13,8 @@ import uuid
 from check_claude_tools import response_events
 
 
-def check(binary, root, config, api_call):
+def check(binary, root, config, api_call, scenario='response'):
+    assert scenario in ('notice', 'response')
     spec = importlib.util.spec_from_file_location('claude_compact_installer',
         Path(__file__).with_name('install-agent-coordination.py'))
     installer = importlib.util.module_from_spec(spec)
@@ -23,17 +24,17 @@ def check(binary, root, config, api_call):
     home.mkdir(mode=0o700)
     settings = home / 'settings.json'
     executable_dir = str(Path(binary).resolve(strict=True).parent)
-    config = dict(config, harness='claude', binding='claude-compact-native',
+    config = dict(config, harness='claude', binding='claude-compact-' + scenario,
         process_names=['claude'], process_exe_dirs=[executable_dir],
         compact_inbox_version=1, config_home=str(home), native_delivery=True,
-        state_dir=str(root / 'engine/state/claude-compact-native'),
+        state_dir=str(root / f'engine/state/claude-compact-{scenario}'),
         cairn=str(Path(config['cairn']).resolve()))
     installed = installer.install(root / 'engine', settings, config)
     native_id = str(uuid.uuid4())
-    body = 'Native compact notice body. ' + ('selected exact source text. ' * 240)
-    source = api_call('alice', 'create', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()), draft=dict(
-        kind='note', body=body, sensitivity='shareable', claim_type='self',
-        scope=dict(repo=config['repo'], task_id='*', run_id='*')))))
+    body = 'Native compact causal response body. ' + ('selected exact response text. ' * 240)
+    request_source = None
+    causal_request = None
+    source = None
     message = None
     requests, failures, tool_results = [], [], {}
     source_visibility = dict(before_read=None, after_read=False)
@@ -43,7 +44,7 @@ def check(binary, root, config, api_call):
             pass
 
         def do_POST(self):
-            nonlocal message
+            nonlocal message, source, causal_request, request_source
             self.connection.settimeout(10)
             size = int(self.headers.get('Content-Length', '0'))
             if not 0 < size <= 2 * 1024 * 1024 or len(requests) >= 6:
@@ -61,14 +62,40 @@ def check(binary, root, config, api_call):
                             if block.get('type') == 'tool_result':
                                 tool_results[block['tool_use_id']] = block
                 if message is None:
-                    entries = api_call('bob', 'agents', 'list', '--harness', 'claude')['agents']
+                    entries = api_call('alice', 'agents', 'list', '--harness', 'claude')['agents']
                     target = next(a for a in entries if a['native_session_id'] == native_id)
                     assert target['metadata']['state'] == 'busy'
-                    message = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', target['inbox'],
-                        '--kind', 'notice', '--version', str(source['version']), source['record_id'])
+                    if scenario == 'notice':
+                        source = api_call('bob', 'create', raw=True, body=json.dumps(dict(
+                            request_id=str(uuid.uuid4()), draft=dict(kind='note', body=body,
+                            sensitivity='shareable', claim_type='self',
+                            scope=dict(repo=config['repo'], task_id='*', run_id='*')))))
+                        message = api_call('bob', 'publish', '--request-id', str(uuid.uuid4()),
+                            '--to', target['inbox'], '--kind', 'notice', '--version',
+                            str(source['version']), source['record_id'])
+                    else:
+                        request_source = api_call('alice', 'create', raw=True, body=json.dumps(dict(
+                            request_id=str(uuid.uuid4()), draft=dict(kind='note', body='Fixture task request for causal response',
+                            sensitivity='shareable', claim_type='self',
+                            scope=dict(repo=config['repo'], task_id='*', run_id='*')))))
+                        causal_request = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()),
+                            '--to', 'agent/bob', '--kind', 'request', '--version', str(request_source['version']),
+                            request_source['record_id'])
+                        delivery = api_call('bob', 'inbox')['delivery']
+                        assert delivery and delivery['event']['event_id'] == causal_request['event_id']
+                        completion = api_call('bob', 'complete', '--request-id', str(uuid.uuid4()),
+                            '--lease', delivery['lease_id'], '--shareable', '--stdin', delivery['delivery_id'],
+                            body=body)
+                        assert completion['state'] == 'handled' and completion['result']['version'] == 1
+                        source = completion['result']
+                        message = api_call('bob', 'publish', '--request-id', str(uuid.uuid4()), '--to', target['inbox'],
+                            '--kind', 'response', '--version', str(source['version']), '--causation-id',
+                            causal_request['event_id'], source['record_id'])
+                        assert message['causation_id'] == causal_request['event_id']
+                        assert message['ref'] == source
                     block = dict(type='text', text='Initial local fixture turn finished.')
                 else:
-                    contexts = list((root / 'engine/state/claude-compact-native/inbox').glob('*.json'))
+                    contexts = list((root / f'engine/state/claude-compact-{scenario}/inbox').glob('*.json'))
                     context = next(json.loads(p.read_text()) for p in contexts
                                    if json.loads(p.read_text()).get('event_id') == message['event_id'])
                     handle = context.get('compact_handle')
@@ -82,20 +109,20 @@ def check(binary, root, config, api_call):
                         command = shlex.join([str(Path(installed).parents[1] / 'coordination.py'),
                             'inbox', 'compact', 'read', handle])
                         block = dict(type='tool_use', id='compact_read', name='Bash',
-                                     input=dict(command=command, description='Read exact compact notice source'))
+                                     input=dict(command=command, description='Read exact compact inbox source'))
                     elif 'compact_settle' not in tool_results:
                         result = tool_results['compact_read']
                         rendered = json.dumps(result.get('content'))
-                        assert body in rendered and source['record_id'] in rendered and 'notice' in rendered
+                        assert body in rendered and source['record_id'] in rendered and scenario in rendered
                         source_visibility['after_read'] = body in serialized
                         command = shlex.join([str(Path(installed).parents[1] / 'coordination.py'),
                             'inbox', 'compact', 'settle', handle, 'handled'])
                         block = dict(type='tool_use', id='compact_settle', name='Bash',
-                                     input=dict(command=command, description='Explicitly settle compact notice'))
+                                     input=dict(command=command, description='Explicitly settle compact inbox item'))
                     else:
                         settled = json.dumps(tool_results['compact_settle'].get('content'))
                         assert 'handled' in settled and 'attempts' in settled
-                        block = dict(type='text', text='Native compact notice handled.')
+                        block = dict(type='text', text='Native compact inbox item handled.')
                 encoded = response_events('native_compact_' + str(len(requests)), request['model'], block)
             except (AssertionError, ValueError, KeyError, StopIteration) as exc:
                 failures.append(type(exc).__name__ + ': ' + str(exc))
@@ -125,12 +152,25 @@ def check(binary, root, config, api_call):
                 stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, start_new_session=True)
             process.communicate(json.dumps(dict(type='user', message=dict(role='user', content='Reply INITIAL_DONE.'))) + '\n', timeout=80)
         assert process.returncode == 0 and not failures, (process.returncode, failures)
-        assert message is not None and 'compact_read' in tool_results and 'compact_settle' in tool_results, \
-            'native Claude compact notice did not complete read and settlement'
-        status = api_call('alice', 'event-status', message['event_id'])
-        assert status['deliveries'][0]['state'] == 'handled'
-        print(json.dumps(dict(result='PASS', native_session_registered=True, exact_compact_read=True,
-            explicit_handled_settlement=True, source_text_before_compact_read=source_visibility['before_read'],
+        assert message is not None and source is not None
+        assert 'compact_read' in tool_results and 'compact_settle' in tool_results, \
+            'native Claude compact response did not complete read and settlement'
+        status = api_call('bob', 'event-status', message['event_id'])
+        delivery_status = status['deliveries'][0]
+        assert delivery_status['state'] == 'handled' and not delivery_status.get('result'), \
+            'handling a response falsely completed it with a task result'
+        events = api_call('alice', 'events', '--limit', '100')
+        if scenario == 'response':
+            assert causal_request is not None and message['causation_id'] == causal_request['event_id']
+            assert message['ref'] == source
+        assert not events.get('more') and not any(event.get('causation_id') == message['event_id']
+                                                   for event in events['events']), \
+            'settlement caused a response-to-response loop'
+        print(json.dumps(dict(result='PASS', scenario=scenario, native_session_registered=True,
+            causal_response=scenario == 'response',
+            exact_compact_read=True, explicit_handled_settlement=True, response_result_absent=True,
+            reply_to_response_event_absent=True,
+            source_text_before_compact_read=source_visibility['before_read'],
             source_text_after_compact_read=source_visibility['after_read'],
             source_bytes=len(body.encode()), subscription_provider_called=False), sort_keys=True))
     finally:
