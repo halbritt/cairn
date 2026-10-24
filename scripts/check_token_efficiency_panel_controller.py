@@ -25,19 +25,22 @@ def check(binary, workflow_id):
     require(workflow_id in ("baseline.single_notice", "baseline.actionable_response",
                             "baseline.duplicate_send", "baseline.small_request_result_reply",
                             "baseline.concurrent_receivers") or workflow_id in tuple(
-                                f"{arm}.routine_burst_urgent_request" for arm in
-                                ("baseline", "envelope", "batch", "combined")),
+                                f"{arm}.{case}" for arm in
+                                ("baseline", "envelope", "batch", "combined")
+                                for case in ("routine_burst_urgent_request",
+                                             "wrong_project_memory", "corrected_note")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
-    label = workflow_id.replace(".", "-") if burst else case
+    source_case = case in ("wrong_project_memory", "corrected_note")
+    label = workflow_id.replace(".", "-") if burst or source_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
     require(root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700,
             "private cluster root")
     require((root / "data" / "PG_VERSION").is_file(), "cluster not initialized")
     require(binary == root / "cairn" and binary.is_file(), "disposable binary")
-    database = f"cairn_panel_{arm}_{case}" if burst else f"cairn_panel_{case}"
+    database = f"cairn_panel_{arm}_{case}" if burst or source_case else f"cairn_panel_{case}"
     dsn = f"host={root / 'socket'} dbname={database} sslmode=disable"
     require(os.environ["CAIRN_TEST_DATABASE_URL"] == os.environ["CAIRN_DATABASE_URL"] == dsn,
             "dedicated database")
@@ -214,6 +217,32 @@ def check(binary, workflow_id):
             require(sql("SELECT count(*) FROM cairn.agent_session") == str(len(expected_sessions)),
                     "changed second worker identity registered a session")
         fixture_case = next(row for row in fixture["cases"] if row["id"] == case)
+        require(set(receipt.get("sources", {})) == set(fixture_case["setup"]["sources"]),
+                "source identities differ from frozen setup")
+        for name in fixture_case["setup"]["sources"]:
+            source = fixture["sources"][name]
+            observed = receipt["sources"][name]
+            require(observed["source_record_sha256"] == panel.sha(source)
+                    and observed["source_body_sha256"] == hashlib.sha256(
+                        source["body"].encode()).hexdigest()
+                    and observed["version"] == source["logical_version"]
+                    and observed["operation"] == source["operation"]
+                    and observed["observed_writer"] == principals["sender"],
+                    "durable source receipt differs from fixture")
+            exact = cli("sender", "agent", "history", body=json.dumps({
+                "record_id": observed["record_id"], "version": observed["version"]}))
+            versions = exact["versions"]
+            require(len(versions) == 1 and versions[0]["body"] == source["body"]
+                    and versions[0]["version"] == observed["version"],
+                    "exact Store history differs from frozen source")
+        if case == "corrected_note":
+            require(receipt["sources"]["old_export"]["record_id"] ==
+                    receipt["sources"]["export_correction"]["record_id"],
+                    "edit did not preserve Store record identity")
+        if source_case:
+            require(sql("SELECT count(*) FROM cairn.memory_record") ==
+                    ("1" if case == "corrected_note" else "2"),
+                    "source-only Store record count differs")
         expected_publishers = ({"request_decision": "sender", "response_a": "worker"}
                                if case == "actionable_response" else
                                {event["id"]: "sender" for event in fixture_case["setup"]["events"]})
@@ -320,7 +349,7 @@ def check(binary, workflow_id):
         if case == "small_request_result_reply":
             expected_events += 1
         require(sender_stats["published"] == (4 if burst else 2 if case == "concurrent_receivers"
-                                               else 1), sender_stats)
+                                               else 0 if source_case else 1), sender_stats)
         require(sql("SELECT count(*) FROM cairn.agent_event") == str(expected_events),
                 "unexpected event count")
         require(sql("SELECT count(*) FROM cairn.agent_delivery") == str(expected_events),

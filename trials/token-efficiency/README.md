@@ -113,6 +113,12 @@ ranking, then checks stale-handle refusal and exact retained history after
 the `corrected_note` and `meaningful_owner_correction` edits. Project labels
 are fixture metadata, not Store-enforced project scope; actor decisions remain
 unrun.
+The disposable controller now also materializes `wrong_project_memory` and
+`corrected_note` as frozen run identities in baseline and combined arms. It
+creates the exact shareable sources through the authenticated API, edits the
+export source under one Store record, verifies exact version history, and
+retains only source identities and hashes in its receipt. It does not launch an
+actor or grade the project distinction or current endpoint.
 
 `core/token_efficiency_panel_recovery_test.go` checks an expired lease under
 its current native hold, an offline presence with operator release and explicit

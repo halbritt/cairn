@@ -57,6 +57,16 @@ CASE_ADAPTERS = {
         "transitions": [], "publishers": {"request_hash": "sender"},
         "sessions": {"worker": "worker", "sender": "sender"},
     },
+    "wrong_project_memory": {
+        "sources": ["trail_atlas", "cairn_atlas"],
+        "events": [], "transitions": [], "publishers": {},
+        "sessions": {"worker": "worker"},
+    },
+    "corrected_note": {
+        "sources": ["old_export", "export_correction"],
+        "events": [], "transitions": [], "publishers": {},
+        "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -80,15 +90,18 @@ CASE_ADAPTERS = {
 def case_name(workflow_id):
     parts = workflow_id.split(".")
     require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
-            and (parts[0] == "baseline" or parts[1] == "routine_burst_urgent_request"
-                 and parts[0] in ("envelope", "batch", "combined")),
+            and (parts[0] == "baseline" or
+                 parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
+                              "corrected_note") and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
 
 
 def database_name(workflow_id):
     case = case_name(workflow_id)
-    return f"cairn_panel_{workflow_id.replace('.', '_')}" if case == "routine_burst_urgent_request" else f"cairn_panel_{case}"
+    return (f"cairn_panel_{workflow_id.replace('.', '_')}"
+            if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note")
+            else f"cairn_panel_{case}")
 
 
 def require(value, message):
@@ -184,13 +197,14 @@ def frozen_case(export, fixture, workflow_id):
     setup = row["setup"]
     descriptors = [{key: value for key, value in event.items() if key != "body"}
                    for event in setup["events"]]
-    require(setup["sources"] == [] and descriptors == adapter["events"]
+    require(setup["sources"] == adapter.get("sources", []) and descriptors == adapter["events"]
             and setup["transitions"] == adapter["transitions"], "unsupported panel setup")
     run = next(item for item in actual["prospective_runs"] if item["workflow_id"] == workflow_id)
     expected_intervention = (adapter["interventions"][run["arm"]]
                              if "interventions" in adapter else None)
     require(run["intervention"] == expected_intervention, "unsupported arm intervention")
-    return binding, setup, actual["event_source_defaults"], adapter, expected_intervention, actor
+    return (binding, setup, actual["event_source_defaults"], adapter,
+            expected_intervention, actor, actual["sources"])
 
 
 def database_now(dsn):
@@ -253,6 +267,57 @@ def registered_owner(dsn, agent_id):
     owner = process.stdout.strip()
     require(owner.startswith("agent/") and "\n" not in owner, "registered owner missing")
     return owner
+
+
+def materialize_memory_sources(binary, socket, token, fixture_sources, names, intent, owner, repo):
+    """Create the frozen A sources, retaining one Store record across an edit."""
+    records, families = {}, {}
+    for name in names:
+        source = fixture_sources[name]
+        require(source["record_class"] == "A" and source["claim_type"] == "self"
+                and source["sensitivity"] == "shareable"
+                and source["scope"] == {"repo": repo, "task_id": "*", "run_id": "*"},
+                "unsupported memory source authority or scope")
+        draft = {key: source[key] for key in
+                 ("kind", "body", "scope", "claim_type", "sensitivity")}
+        family = source["record_family"]
+        if source["operation"] == "create":
+            require(family not in families and source["logical_version"] == 1
+                    and source["supersedes"] == [], "memory source create lineage changed")
+            payload = {"request_id": intent["source_request_ids"][name], "draft": draft}
+            record = call(binary, socket, token, ("agent", "create"), body=json.dumps(payload))
+        else:
+            prior = families.get(family)
+            require(source["operation"] == "edit" and prior is not None
+                    and source["supersedes"] == [prior["name"]]
+                    and source["logical_version"] == prior["version"] + 1,
+                    "memory source edit lineage changed")
+            payload = {"request_id": intent["source_request_ids"][name],
+                       "record_id": prior["record_id"], "expected_version": prior["version"],
+                       "draft": draft}
+            record = call(binary, socket, token, ("agent", "edit"), body=json.dumps(payload))
+        ref = {"record_id": record.get("record_id"), "version": record.get("version")}
+        require(record.get("body") == source["body"]
+                and record.get("kind") == source["kind"]
+                and record.get("scope") == source["scope"]
+                and record.get("observed_writer") == owner
+                and ref["version"] == source["logical_version"]
+                and (source["operation"] == "create" or
+                     ref["record_id"] == families[family]["record_id"]),
+                "durable memory source differs from frozen record")
+        history = call(binary, socket, token, ("agent", "history"), body=json.dumps(ref))
+        versions = history.get("versions") or []
+        require(len(versions) == 1 and versions[0].get("version") == ref["version"]
+                and versions[0].get("body") == source["body"]
+                and versions[0].get("observed_writer") == owner,
+                "exact memory source history differs")
+        records[name] = {"source_record_sha256": panel.sha(source),
+                         "source_body_sha256": hashlib.sha256(source["body"].encode()).hexdigest(),
+                         "record_id": ref["record_id"], "version": ref["version"],
+                         "record_family": family, "operation": source["operation"],
+                         "observed_writer": owner}
+        families[family] = {"name": name, **ref}
+    return records
 
 
 def settle_small_request(binary, socket, tokens, repo, actor, setup, intent, sessions, events):
@@ -388,7 +453,7 @@ def materialize(args):
         other_token = Path(args.other_token).read_bytes()
         require(len({sender_token, worker_token, other_token}) == 3,
                 "sender and both worker token identities must differ")
-    binding, setup, defaults, adapter, intervention, actor = frozen_case(
+    binding, setup, defaults, adapter, intervention, actor, fixture_sources = frozen_case(
         export, args.fixture, args.workflow_id)
     require(defaults == {"kind": "note", "record_class": "A", "operation": "create",
                          "sensitivity": "shareable", "claim_type": "self",
@@ -410,6 +475,8 @@ def materialize(args):
     if other_token is not None:
         immutable["other_token_sha256"] = hashlib.sha256(other_token).hexdigest()
     event_ids = [event["id"] for event in setup["events"]]
+    source_ids = list(setup["sources"])
+    require(set(event_ids).isdisjoint(source_ids), "source and event labels overlap")
     dynamic_keys = {"run_id", "register_request_ids", "source_request_ids",
                     "publication_request_ids"}
     if case == "small_request_result_reply":
@@ -420,7 +487,7 @@ def materialize(args):
         require({key: intent.get(key) for key in immutable} == immutable
                 and set(intent) == set(immutable) | dynamic_keys
                 and set(intent["register_request_ids"]) == set(adapter["sessions"])
-                and set(intent["source_request_ids"]) == set(event_ids)
+                and set(intent["source_request_ids"]) == set(event_ids + source_ids)
                 and set(intent["publication_request_ids"]) == set(event_ids)
                 and (case != "small_request_result_reply" or
                      set(intent["settlement_request_ids"]) ==
@@ -436,7 +503,7 @@ def materialize(args):
         intent = immutable | {
             "run_id": run_id,
             "register_request_ids": {role: str(uuid.uuid4()) for role in adapter["sessions"]},
-            "source_request_ids": {event_id: str(uuid.uuid4()) for event_id in event_ids},
+            "source_request_ids": {name: str(uuid.uuid4()) for name in event_ids + source_ids},
             "publication_request_ids": publication_ids,
         }
         if case == "small_request_result_reply":
@@ -500,6 +567,8 @@ def materialize(args):
         require(len(set(owners.values())) == 3 and
                 sessions["worker_a"]["inbox"] != sessions["worker_b"]["inbox"],
                 "distinct worker owners and inboxes required")
+    sources = materialize_memory_sources(binary, socket, tokens["sender"], fixture_sources,
+                                         source_ids, intent, owners["sender"], repo)
     events = {}
     transitions = []
     last_position = 0
@@ -710,6 +779,8 @@ def materialize(args):
                "sessions": sessions, "events": events, "transitions": transitions,
                "provider_called": False, "native_turn_join": "unimplemented",
                "task_outcome": "unassessed"}
+    if source_ids:
+        receipt["sources"] = sources
     if readiness_snapshot is not None:
         receipt["readiness_snapshot"] = readiness_snapshot
         receipt["native_batch_transfer"] = "unrun"
@@ -732,8 +803,9 @@ def main():
     parser.add_argument("--fixture", type=Path, default=panel.FIXTURE)
     parser.add_argument("--export", type=Path, required=True)
     choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
-    choices += tuple(f"{arm}.routine_burst_urgent_request" for arm in
-                     ("envelope", "batch", "combined"))
+    choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
+                     for case in ("routine_burst_urgent_request", "wrong_project_memory",
+                                  "corrected_note"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)

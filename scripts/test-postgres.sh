@@ -45,10 +45,14 @@ go build -o "$test_root/cairn" ./cmd/cairn
 for panel_workflow in baseline.single_notice baseline.actionable_response baseline.duplicate_send \
     baseline.small_request_result_reply baseline.concurrent_receivers \
     baseline.routine_burst_urgent_request envelope.routine_burst_urgent_request \
-    batch.routine_burst_urgent_request combined.routine_burst_urgent_request; do
+    batch.routine_burst_urgent_request combined.routine_burst_urgent_request \
+    baseline.wrong_project_memory combined.wrong_project_memory \
+    baseline.corrected_note combined.corrected_note; do
     panel_case="${panel_workflow#*.}"
     panel_arm="${panel_workflow%%.*}"
-    if [[ "$panel_case" == routine_burst_urgent_request ]]; then
+    if [[ "$panel_case" == routine_burst_urgent_request ||
+          "$panel_case" == wrong_project_memory ||
+          "$panel_case" == corrected_note ]]; then
         panel_database="cairn_panel_${panel_arm}_${panel_case}"
     else
         panel_database="cairn_panel_$panel_case"
