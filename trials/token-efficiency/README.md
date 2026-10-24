@@ -107,6 +107,12 @@ exact sources for `semantic_unavailable`, `wrong_project_memory`, and
 `meaningful_owner_correction`. These memory checks use a separate disposable
 database for each case so another case's required C conflict cannot alter
 retrieval under the fixture's shared repository scope.
+The [authenticated memory lifecycle probe](../../docs/verification/panel-memory-lifecycle-2026-10-24.md)
+checks the real CLI/API search and pull surface for wrong-project source
+ranking, then checks stale-handle refusal and exact retained history after
+the `corrected_note` and `meaningful_owner_correction` edits. Project labels
+are fixture metadata, not Store-enforced project scope; actor decisions remain
+unrun.
 
 `core/token_efficiency_panel_recovery_test.go` checks an expired lease under
 its current native hold, an offline presence with operator release and explicit
