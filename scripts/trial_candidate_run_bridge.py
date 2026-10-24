@@ -14,6 +14,7 @@ import uuid
 import trial_candidate_request as candidate
 import trial_paired_request as paired
 import trial_weekly_run as weekly
+import trial_weekly_input as weekly_input
 
 SCHEMA = 'cairn.candidate-run-bridge/1'
 RECEIPT = 'cairn.candidate-run-bridge-receipt/1'
@@ -120,7 +121,8 @@ def _load(selection_pin, now):
          'bridge_frozen_mismatch')
     need(execution['actor_api_base'] == commits['CURRENT'] and execution['seeds'] == plan['seeds'] and
          execution['wording'] == schedule['wording'] == 'task', 'bridge_execution_mismatch')
-    need(execution['native']['model'] == profile['capacity']['models']['CURRENT'] ==
+    actor=weekly_input.actor(execution)
+    need(actor['model'] == profile['capacity']['models']['CURRENT'] ==
          profile['capacity']['models']['CAND'], 'bridge_model_mismatch')
     # The runner's execution contract is the reviewed request's exact execution declaration.
     need(profile.get('execution') == request['weekly_input']['execution'], 'bridge_execution_mismatch')
@@ -177,6 +179,7 @@ class _Executor:
 
 def _run(selection_pin, output, now, executors, compiler, runner):
     selected, binding, profile, execution, planned, runs, sources = _load(selection_pin, now)
+    actor=weekly_input.actor(execution)
     output = paired.plain_path(str(output))
     need(output.parent.is_dir() and not (output == runs or output in runs.parents or runs in output.parents),
          'bridge_output_overlap')
@@ -202,8 +205,9 @@ def _run(selection_pin, output, now, executors, compiler, runner):
                  pair['schedule_sha256'] == binding['runner']['schedule_sha256'], 'bridge_runner_binding_mismatch')
             # A complete run must have observed exactly the declared native bytes and effort.
             observed = (content.get('original_execution') or {}).get('observed') or {}
-            need((observed.get('native') or {}).get('sha256') == execution['native']['binary']['sha256'] and
-                 observed.get('reasoning_effort') == execution['native']['effort'], 'bridge_runner_execution_mismatch')
+            actor_key='provider' if execution['schema']==weekly_input.CODEX_EXECUTION_SCHEMA else 'native'
+            need((observed.get(actor_key) or {}).get('sha256') == actor['binary']['sha256'] and
+                 observed.get('reasoning_effort') == actor['effort'], 'bridge_runner_execution_mismatch')
         return dict(schema=RECEIPT, selection=dict(selection_pin), binding=binding, status=content['status'],
                     runner_spec=spec_pin, runner_receipt=_pin(retained), runner=content, runtime_admitted=False)
 
@@ -214,9 +218,10 @@ def _run(selection_pin, output, now, executors, compiler, runner):
              spec['harness']['commit'] == binding['harness_commit'] and
              spec['account'] == profile['account'], 'bridge_runner_mismatch')
         declared = spec['original_execution']
-        need(declared['execution'] == binding['execution'] and declared['native'] == execution['native']['binary'] and
-             declared['model'] == spec['actor_model'] == execution['native']['model'] and
-             declared['effort'] == execution['native']['effort'], 'bridge_runner_mismatch')
+        actor_key='provider' if execution['schema']==weekly_input.CODEX_EXECUTION_SCHEMA else 'native'
+        need(declared['execution'] == binding['execution'] and declared[actor_key] == actor['binary'] and
+             declared['model'] == spec['actor_model'] == actor['model'] and
+             declared['effort'] == actor['effort'], 'bridge_runner_mismatch')
         # The runner prepares the reviewed embedding config; the declared worker stays separate.
         reviewed = execution['memory_arms']['CURRENT']
         need(spec['embedding']['declared_worker'] == reviewed['embedding_worker'] and

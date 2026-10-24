@@ -27,7 +27,11 @@ runner verifies (5b52a0f):
    timeout, no MCP tool room, hook context that did not charge the task wire,
    no per-line timing, and no search, pull, answer or last-memory bound.
    `trial_task_eval.py agent --legacy-fixtures --original-limits` now does
-   the following, for Claude with task wording only. Without the flag, the
+   the following, for Claude with task wording only. The Codex executor added
+   on 2026-10-24 uses a distinct `--codex-weekly-limits` path; it does not
+   relabel Claude stream evidence. Without either explicit flag, the legacy
+   configuration is unchanged.
+   For Claude, the flag does the following:
    legacy configuration is unchanged.
    - It sets the hook timeout to `ORIGINAL_LIMITS['hook_seconds']` (5 s).
    - It appends `--tokens 32000 --max-tokens 32000` to the MCP server
@@ -60,6 +64,19 @@ runner verifies (5b52a0f):
    Remaining limitation: the legacy prompt is passed as an argument, so the
    charged task wire is the prospective JSON-wire formula applied to the same
    prompt, not an observed stdin wire.
+   For Codex, `--codex-weekly-limits` applies the same original ceilings using
+   Codex `exec --json` events and Codex capture timing. A tool result must have
+   the complete Codex result payload and `status=completed`; required hook
+   observations and a terminal `turn.completed` event must also be present.
+   Missing or unfamiliar Codex evidence is `unknown`, never translated from a
+   Claude stream or accepted as within limits. The weekly runner binds the
+   Codex executable hash, model and effort in the version-2 provider contract,
+   and binds the selected auth-file path and account identifier into the live
+   selection. The Codex route also requires the selected auth file's pinned
+   SHA-256 and checks its parsed `auth_mode` is `chatgpt` before copying it;
+   the Codex invocation explicitly sets `model_provider="openai"`. These are
+   implementation and synthetic-test claims only; they do not prove account
+   ownership or quota capacity.
 2. **`dedicated_account_unbound`, closed in source when an account is
    selected.** The sandbox used to bind the host `~/.claude/.credentials.json`
    read-write. Now the account is selected explicitly:
@@ -829,7 +846,8 @@ Each join from this runner to an actual 21-case / 126-attempt /
 | --- | --- | --- |
 | Capacity adapter to runner pre-check | `trial_capacity_adapter.adapt`/`verify_sources` to `trial_weekly_run.capacity_gate` | **Implemented** (synthetic). Real input missing: no absolute-allowance observation and no account binding for the executor's account exist (blocker 2). The absolute unit is the current adapter constraint |
 | Live selection to runner | `cairn.weekly-run-selection/1` to `selection_gate` | **Implemented**. No selection issued (root decision) |
-| Runner to harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` plus the original-execution flags | **Implemented**, fake harness only. Carries every declared control except an ambient arm with `semantic_fallback` (`semantic_fallback_selector`). Needs a selected account |
+| Runner to Claude harness | `LegacyHarnessExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --original-limits` plus the original-execution flags | **Implemented**, fake harness only. Carries every declared control except an ambient arm with `semantic_fallback` (`semantic_fallback_selector`). Needs a selected account |
+| Runner to Codex harness | `CodexWeeklyExecutor.execute` to `trial-task-eval.sh agent --legacy-fixtures --codex-weekly-limits` and Codex provider flags | **Implemented**, fake harness only. Uses the exact pinned ChatGPT auth file, `gpt-6-luna`, explicit `model_provider="openai"` and `--parallel 1`; Codex JSONL observations are checked by the separate Codex reader. No run or quota-headroom claim |
 | Harness content hashes | `trial_task_eval.run_agent` `stream_sha256`/`prompt_sha256` (`:1323-1324`, 04ba225) to `_agent_result` | **Implemented**: required on every row. Present only in runs from a harness commit at or after 04ba225; older runs, including 2026-09-29, can never be complete |
 | Runner receipt to pair binding | `_pair_binding` writes `cairn.legacy-pair-binding/1` | **Implemented**. Declared, not reviewed issuance; the issuer's identity is not authenticated |
 | Pair binding to converter | receipt `pair_binding` + `agent`/`plan` pins to `trial_legacy_blind_selection.convert` | **Implemented and tested end to end** (synthetic: 63 pairs, 15 changed). The conversion request's case materials (contracts, task statements, grading instructions) still need a real, private issuer |

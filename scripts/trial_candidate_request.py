@@ -30,8 +30,8 @@ from check_weekly_paired_eval import (REQUIRED_ROLES as ROLES, WEEKLY_ATTEMPTS, 
 PROFILE_SCHEMA = 'cairn.paired-candidate-profile/1'
 ENTRY_SCHEMA = 'cairn.weekly-candidate-entry/1'
 DEFAULT_PROFILE = Path.home()/'.config/cairn/paired-candidate.json'
-PROFILE_FIELDS = ('schema repo current_ref queue campaign_id weekly_source native seeds workload '
-                  'embedding recall postgres schedule proposal usage')
+PROFILE_FIELDS_BASE = ('schema repo current_ref queue campaign_id weekly_source seeds workload '
+                       'embedding recall postgres schedule proposal usage')
 PG_TOOLS = ('initdb', 'pg_ctl', 'postgres', 'psql')
 HOOK = 'integrations/lifecycle/memory.py'
 BRIDGE = 'integrations/lifecycle/inbox_recall.py'
@@ -54,7 +54,9 @@ def _int(value, low, high=2**31 - 1):
 
 
 def check_profile(profile):
-    paired.shape(profile, PROFILE_FIELDS, 'profile_shape')
+    paired.need(isinstance(profile,dict) and set(profile) in
+                (set((PROFILE_FIELDS_BASE+' native').split()),set((PROFILE_FIELDS_BASE+' provider').split())),
+                'profile_shape')
     paired.need(profile['schema'] == PROFILE_SCHEMA, 'profile_schema')
     repo = paired.plain_path(profile['repo'])
     paired.need((repo/'.git').exists(), 'profile_repo')
@@ -63,8 +65,15 @@ def check_profile(profile):
     paired.need(queue.is_dir() and queue.stat().st_mode & 0o077 == 0, 'private_queue_required')
     paired.identifier(profile['campaign_id'])
     paired.shape(profile['weekly_source'], 'root label_version frozen_sha256', 'profile_weekly_source')
-    paired.shape(profile['native'], 'binary model effort', 'profile_native')
-    paired.pin(profile['native']['binary'])
+    if 'native' in profile:
+        paired.shape(profile['native'], 'binary model effort', 'profile_native')
+        paired.pin(profile['native']['binary'])
+    else:
+        paired.shape(profile['provider'], 'harness binary model effort', 'profile_provider')
+        paired.need(profile['provider']['harness']=='codex','profile_provider')
+        paired.pin(profile['provider']['binary'])
+        paired.need(type(profile['provider']['model']) is str and profile['provider']['model']=='gpt-6-luna'
+                    and profile['provider']['effort'] in ('low','medium','high','xhigh','max'), 'profile_provider')
     seeds = profile['seeds']
     paired.need(type(seeds) is list and len(seeds) == 3 and all(_int(s, 0) for s in seeds)
                 and len(set(seeds)) == 3, 'profile_seeds')
@@ -353,7 +362,7 @@ def _entry(entry):
 def _queue(profile, entry, record, ids, repo, bin_dir, current, cand, compiler, smoke, now):
     import trial_task_eval
     import trial_weekly_draft
-    from trial_weekly_input import EXECUTION_SCHEMA, REFERENCE_SCHEMA, generated_distractors
+    from trial_weekly_input import CODEX_EXECUTION_SCHEMA, EXECUTION_SCHEMA, REFERENCE_SCHEMA, generated_distractors
 
     arms = {name: build_arm(repo, commit, entry/'arms'/name, compiler)
             for name, commit in (('CURRENT', current), ('CAND', cand))}
@@ -367,8 +376,11 @@ def _queue(profile, entry, record, ids, repo, bin_dir, current, cand, compiler, 
                    for name, arm in arms.items()}
     source = profile['weekly_source']
     generator = Path(trial_task_eval.__file__).resolve()
-    execution = dict(schema=EXECUTION_SCHEMA, weekly_source=dict(source), actor_api_base=current,
-                     native=profile['native'], arms=['CURRENT', 'CAND'], memory_arms=memory_arms,
+    is_codex='provider' in profile
+    execution = dict(schema=CODEX_EXECUTION_SCHEMA if is_codex else EXECUTION_SCHEMA,
+                     weekly_source=dict(source), actor_api_base=current,
+                     **({'provider':profile['provider']} if is_codex else {'native':profile['native']}),
+                     arms=['CURRENT', 'CAND'], memory_arms=memory_arms,
                      seeds=profile['seeds'], wording='task', workload=profile['workload'],
                      distractors=dict(count=1900, seed=20260928, generator_source=_file_pin(generator),
                                       generated_sha256=generated_distractors()['sha256']))

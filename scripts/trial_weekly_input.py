@@ -18,6 +18,7 @@ from trial_task_input import _relative
 
 REFERENCE_SCHEMA = 'cairn.weekly-input-reference/1'
 EXECUTION_SCHEMA = 'cairn.weekly-execution/1'
+CODEX_EXECUTION_SCHEMA = 'cairn.weekly-execution/2'
 SCHEDULE_SCHEMA = 'cairn.weekly-schedule/1'
 SOURCE_BYTES = 64 * 1024 * 1024
 SOURCE_ENTRIES = 4096
@@ -60,17 +61,23 @@ def generated_distractors():
 def _execution(reference):
     execution = read_json_pin(reference['execution'])
     shape(execution, 'schema weekly_source actor_api_base native arms memory_arms seeds wording workload distractors',
+          'weekly_execution_shape') if execution.get('schema') == EXECUTION_SCHEMA else \
+        shape(execution, 'schema weekly_source actor_api_base provider arms memory_arms seeds wording workload distractors',
           'weekly_execution_shape')
-    need(execution['schema'] == EXECUTION_SCHEMA, 'weekly_execution_schema')
+    need(execution['schema'] in (EXECUTION_SCHEMA,CODEX_EXECUTION_SCHEMA), 'weekly_execution_schema')
     need(canonical_sha(execution['weekly_source']) == canonical_sha(
          {k:reference[k] for k in ('root','label_version','frozen_sha256')}),
          'weekly_source_binding')
     _revision(execution['actor_api_base'])
-    native = execution['native']
-    shape(native, 'binary model effort', 'weekly_native_shape')
-    pin(native['binary'])
-    need(type(native['model']) is str and 0 < len(native['model'].encode('utf8')) <= 256
-         and '\0' not in native['model'] and native['effort'] in ('low','medium','high','xhigh','max'),
+    actor = execution['provider'] if execution['schema'] == CODEX_EXECUTION_SCHEMA else execution['native']
+    if execution['schema'] == CODEX_EXECUTION_SCHEMA:
+        shape(actor, 'harness binary model effort', 'weekly_provider_shape')
+        need(actor['harness'] == 'codex', 'weekly_provider_unsupported')
+    else:
+        shape(actor, 'binary model effort', 'weekly_native_shape')
+    pin(actor['binary'])
+    need(type(actor['model']) is str and 0 < len(actor['model'].encode('utf8')) <= 256
+         and '\0' not in actor['model'] and actor['effort'] in ('low','medium','high','xhigh','max'),
          'weekly_native_declaration')
     need(execution['arms'] == ['CURRENT','CAND'] and execution['wording'] == 'task', 'weekly_plan_policy')
     seeds = execution['seeds']
@@ -103,6 +110,11 @@ def _execution(reference):
     need(plain_path(growth['generator_source']['path']) == Path(weekly.__file__).resolve(),
          'weekly_generator_source')
     return execution
+
+
+def actor(execution):
+    """Return a typed provider declaration without flattening Codex into the Claude native shape."""
+    return execution['provider'] if execution.get('schema')==CODEX_EXECUTION_SCHEMA else execution['native']
 
 
 def _cases(cases, notes, root, version):

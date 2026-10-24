@@ -6,7 +6,7 @@ import json
 
 import trial_paired_request as paired
 import trial_weekly_request as dispatch
-from trial_weekly_input import load_weekly_input
+from trial_weekly_input import actor, load_weekly_input
 
 SCHEMA = 'cairn.weekly-eval.proposal/1'
 FIELDS = ('schema request_id campaign_id occurrence_id scheduled_at expires_at '
@@ -44,7 +44,8 @@ def _draft(proposal, draft_dir, *, now):
     paired.pin(proposal['supervisor_source'])
     paired.permission_profile_check(proposal['permission_profile'])
     paired.grading_check(proposal['grading'], set())  # Reviewers are not selected yet.
-    models = dict(CURRENT=bundle['execution']['native']['model'], CAND=bundle['execution']['native']['model'],
+    selected_actor=actor(bundle['execution'])
+    models = dict(CURRENT=selected_actor['model'], CAND=selected_actor['model'],
                   **{role: proposal['grading'][role]['model'] for role in ('primary', 'secondary')})
     paired.capacity_check(proposal['capacity'], bundle['plan'], now, models)
     capacity = paired.read_json_pin(proposal['capacity'])

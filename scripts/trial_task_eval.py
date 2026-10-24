@@ -35,7 +35,9 @@ import time
 import uuid
 
 from trial_account_selection import credentials_source
+import trial_codex_account_selection as codex_account_selection
 import trial_legacy_limits as legacy_limits
+import trial_codex_weekly_limits as codex_weekly_limits
 import trial_native_copy as native_copy
 import trial_original_arms as original_arm_controls
 import trial_embedding_identity as identity_declaration
@@ -1080,6 +1082,14 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     return command + provider_args
 
 
+def codex_weekly_command(codex_entry, model, effort):
+    """Build a subscription-routed Codex command with no ambient user config."""
+    return [codex_entry, "exec", "--json", "--ephemeral", "--ignore-user-config",
+            "--ignore-rules", "--skip-git-repo-check", "--sandbox", "danger-full-access",
+            "-c", 'model_provider="openai"', "-c", 'approval_policy="never"',
+            "-c", "model_reasoning_effort=" + json.dumps(effort), "-m", model]
+
+
 # Inside the sandbox, before the provider: the mounted engine's task-key contract and the
 # owner-only inbox recall binding (shared by prospective and original weekly agent_tools arms).
 BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
@@ -1118,6 +1128,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     prospective = getattr(args, "_prospective", None)
     # Legacy fixtures under the original paired limits (trial_legacy_limits).
     original = bool(getattr(args, "original_limits", False)) and not prospective
+    codex_weekly = bool(getattr(args, "codex_weekly_limits", False)) and not prospective
     memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
     corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
     prompt = case["wordings"][args.wording]
@@ -1161,15 +1172,24 @@ def run_agent(case, arm, seed, order, args, stores, out):
             env["ENABLE_TOOL_SEARCH"] = "false"
     else:
         # Invoke the reviewed npm entry point, not this host's coordination launcher.
-        install = Path(args.codex_install).resolve()
+        if codex_weekly:
+            codex_account_selection.verify_auth_file(args.codex_auth_file,args.codex_auth_sha256)
         profile = base / "codex-home"
         profile.mkdir(mode=0o700)
-        binds += [(install, install, "ro"), (profile, home / ".codex", "rw"),
-                  (Path(args.codex_auth_file).resolve(), home / ".codex/auth.json", "ro")]
-        provider = [str(install / "codex/bin/codex.js"), "exec", "--json", "--ephemeral", "--ignore-user-config",
-                    "--ignore-rules", "--skip-git-repo-check", "--sandbox", "danger-full-access",
-                    "-c", 'approval_policy="never"', "-c", "model_reasoning_effort=" + json.dumps(args.reasoning_effort),
-                    "-m", args.model]
+        binds += [(profile, home / ".codex", "rw"),
+                  (Path(args.codex_auth_file).resolve(strict=True), home / ".codex/auth.json", "ro")]
+        if getattr(args, "codex_binary", None):
+            codex_binary = Path(args.codex_binary).resolve(strict=True)
+            if native_copy.file_sha256(str(codex_binary)) != args.codex_binary_sha256:
+                raise ValueError("codex_binary_mismatch")
+            codex_entry = home / ".codex/codex"
+            binds.append((codex_binary, codex_entry, "ro"))
+            codex_entry = str(codex_entry)
+        else:
+            install = Path(args.codex_install).resolve()
+            binds.append((install, install, "ro"))
+            codex_entry = str(install / "codex/bin/codex.js")
+        provider = codex_weekly_command(codex_entry,args.model,args.reasoning_effort)
     if arm == "direct":
         notes = [corpus[n]["body"] for n in case["expected"]]
         if notes:
@@ -1178,6 +1198,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
         store = stores[arm]
         task_wire = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
         context_limit = 9500 - len(task_wire) - 512 - len(memory_instruction.encode()) if prospective else (
+            codex_weekly_limits.hook_context_bytes(prompt, memory_instruction) if getattr(args, "codex_weekly_limits", False) else
             legacy_limits.hook_context_bytes(prompt, memory_instruction) if original
             else CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
         if context_limit < 1000:
@@ -1211,13 +1232,13 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if prospective:
             hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
             hook_cmd += " --frozen-prompt-sha256 " + hashlib.sha256(prompt.encode()).hexdigest()
-        hook_timeout = legacy_limits.hook_timeout_seconds() if original else 13
+        hook_timeout = legacy_limits.hook_timeout_seconds() if original or codex_weekly else 13
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=hook_timeout)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
             "mcp", "--socket", str(trial / "sock/api.sock"), "--token-file", str(trial / "agent.token"), "--repo", TRIAL_REPO,
             "--task", "task-eval/" + run_id, "--run", run_id,
-            *(legacy_limits.mcp_tool_room_arguments() if original else [])])))
+            *(legacy_limits.mcp_tool_room_arguments() if original or codex_weekly else [])])))
         (base / "mcp.json").write_text(json.dumps(mcp))
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
                   (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
@@ -1229,8 +1250,9 @@ def run_agent(case, arm, seed, order, args, stores, out):
             provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", memory_instruction]
         else:
             # Only recall hooks; capture and production inbox hooks are absent.
-            hooks = {event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13,
-                                            additionalContextLimit=CODEX_CONTEXT_BYTES)])]
+            hooks = {event: [dict(hooks=[dict(type="command", command=hook_cmd,
+                                            timeout=legacy_limits.hook_timeout_seconds() if codex_weekly else 13,
+                                            additionalContextLimit=min(CODEX_CONTEXT_BYTES, context_limit))])]
                      for event in ("SessionStart", "UserPromptSubmit")}
             (profile / "hooks.json").write_text(json.dumps(dict(hooks=hooks)))
             server = mcp["mcpServers"]["cairn"]
@@ -1283,7 +1305,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
                                                           custody_path=base / "native-process-custody.json")
             stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
-        elif original:
+        elif original or codex_weekly:
             # The existing capture records per-line receive times for the last-memory bound.
             raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json",
                                                           custody_path=base / "native-process-custody.json")
@@ -1329,15 +1351,16 @@ def run_agent(case, arm, seed, order, args, stores, out):
             if (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
                     or process_custody["cleanup"]["status"] != "observed_clear"):
                 custody_failure = "process_custody_unknown"
-        if original and arm in stores:
+        if (original or codex_weekly) and arm in stores:
             hook_rows = None  # malformed observations stay unknown in the assessment
             observations = base / "hook-state/observations.jsonl"
             try:
                 hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
             except (OSError, ValueError):
                 pass
-            limit_assessment = legacy_limits.assess(stdout, hook_rows, timings=timings,
-                                                    input_bytes=legacy_limits.input_charge(prompt, memory_instruction))
+            checker = codex_weekly_limits if codex_weekly else legacy_limits
+            limit_assessment = checker.assess(stdout, hook_rows, timings=timings,
+                                              input_bytes=checker.input_charge(prompt, memory_instruction))
     else:
         (base / "native-output-metadata.json").write_text(json.dumps(dict(
             stdout_bytes=len(raw_stdout) if capture_error is None else None,
@@ -1430,10 +1453,16 @@ def run_agent(case, arm, seed, order, args, stores, out):
         if original_native is not None:
             record["original_native"] = dict(binary_sha256=row_sha256, effort=args.reasoning_effort,
                                              target=original_native["observed"]["target"])
+        if codex_weekly and getattr(args, "codex_binary", None):
+            record["original_codex"] = dict(binary_sha256=args.codex_binary_sha256, effort=args.reasoning_effort,
+                                            target=str(Path.home()/".codex/codex"))
         if arm in stores and getattr(args, "_original_arms", None):
             record["original_arm"] = observed_arm
         if original:
             record["original_limits"] = limit_assessment
+            record["process_custody"] = process_custody
+        if codex_weekly:
+            record["codex_weekly_limits"] = limit_assessment
             record["process_custody"] = process_custody
     if prospective:
         record["selected_input"] = selected_input
@@ -1611,9 +1640,21 @@ def cmd_agent(args):
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      receipt_exporter_sha256=hashlib.sha256((ROOT / "scripts/trial_receipt_explanation.py").read_bytes()).hexdigest(),
                      harness_version=None if getattr(args, "original_native_path", None) and not prospective else
-                     run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
+                     run([str(Path(args.codex_binary).resolve(strict=True)) if args.harness == "codex" and getattr(args,"codex_binary",None)
+                          else str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex"
+                          else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
     if getattr(args, "original_limits", False) and not prospective:
         execution["original_limits"] = dict(legacy_limits.LIMITS)
+    if getattr(args, "codex_weekly_limits", False) and not prospective:
+        execution["codex_weekly_limits"] = dict(schema=codex_weekly_limits.SCHEMA,
+                                                limits=codex_weekly_limits.LIMITS)
+        codex_binary=Path(args.codex_binary).resolve(strict=True)
+        if native_copy.file_sha256(str(codex_binary)) != args.codex_binary_sha256:
+            raise ValueError("codex_binary_mismatch")
+        execution["original_codex"] = dict(declared=dict(path=str(codex_binary),sha256=args.codex_binary_sha256),
+                                           observed=dict(sha256=args.codex_binary_sha256,
+                                                         version=execution["harness_version"],
+                                                         target=str(Path.home()/".codex/codex")))
     out = Path(args.output)
     out.mkdir(mode=0o700)
     if getattr(args, "original_native_path", None) and not prospective:
@@ -1807,6 +1848,9 @@ def cmd_agent(args):
             # Memory-arm rows must be measured within the original limits; a missing assessment fails.
             report["measurement_failures"] = [r["run_id"] for r in records if r.get("arm") in stores
                                                and (r.get("original_limits") or {}).get("status") != "within_original_limits"]
+        elif getattr(args, "codex_weekly_limits", False):
+            report["measurement_failures"] = [r["run_id"] for r in records if r.get("arm") in stores
+                                               and (r.get("codex_weekly_limits") or {}).get("status") != "within_codex_weekly_limits"]
         report["summary"] = summarise_agent(report["records"], arms)
         (out / "agent.json").write_text(json.dumps(report, indent=2))
         print(json.dumps(report["summary"], indent=2))
@@ -1966,8 +2010,11 @@ def main(argv=None):
     a.add_argument("--reasoning-effort", default=None, choices=["low", "medium", "high", "xhigh", "max", "ultra"])
     a.add_argument("--codex-install", default=str(Path.home() / ".npm-global/lib/node_modules/@openai"),
                    help="npm installation containing codex/bin/codex.js and its platform packages")
+    a.add_argument("--codex-binary", help="exact selected Codex executable for a weekly run")
+    a.add_argument("--codex-binary-sha256", help="expected SHA-256 of --codex-binary")
     a.add_argument("--codex-auth-file", default=str(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"),
                    help="existing account auth only; read-only mount into isolated profile")
+    a.add_argument("--codex-auth-sha256", help="expected digest of the selected subscription auth file")
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
     a.add_argument("--semantic-worker")
@@ -1987,6 +2034,8 @@ def main(argv=None):
     a.add_argument("--original-limits", action="store_true",
                    help="legacy Claude fixtures under trial_paired_request.ORIGINAL_LIMITS (5 s hooks, 32000 tool room, "
                         "task wire charged, captured stream timing); exceeding rows are measurement failures")
+    a.add_argument("--codex-weekly-limits", action="store_true",
+                   help="Codex JSONL-specific check under unchanged CAIRN-107 limits; missing evidence fails closed")
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
@@ -2005,7 +2054,7 @@ def main(argv=None):
         for path, digest in zip(originals[::2], originals[1::2]):
             if (path is None) != (digest is None):
                 parser.error("original execution paths and SHA-256 values go together")
-        if any(originals) and not args.original_limits:
+        if any(originals) and not (args.original_limits or args.codex_weekly_limits):
             parser.error("original execution requires --original-limits")
         if args.prospective_input:
             if args.arms is not None or args.memory or args.semantic_recall or args.semantic_worker or args.embedding_worker:
@@ -2026,6 +2075,18 @@ def main(argv=None):
             args.reasoning_effort = args.reasoning_effort or "high"
         if args.original_limits and (args.prospective_input or args.harness != "claude" or args.wording != "task"):
             parser.error("--original-limits applies only to legacy Claude fixtures with task wording")
+        if args.codex_weekly_limits and (args.prospective_input or args.harness != "codex" or args.wording != "task"):
+            parser.error("--codex-weekly-limits applies only to legacy Codex fixtures with task wording")
+        if args.codex_weekly_limits and args.original_native_path is not None:
+            parser.error("Codex weekly execution uses --codex-binary, not --original-native-path")
+        if (args.codex_binary is None) != (args.codex_binary_sha256 is None):
+            parser.error("--codex-binary and --codex-binary-sha256 go together")
+        if args.codex_weekly_limits and args.codex_binary is None:
+            parser.error("--codex-weekly-limits requires a pinned --codex-binary")
+        if args.codex_weekly_limits and args.codex_auth_sha256 is None:
+            parser.error("--codex-weekly-limits requires a pinned --codex-auth-sha256")
+        if args.codex_auth_sha256 is not None and not args.codex_weekly_limits:
+            parser.error("--codex-auth-sha256 applies only to Codex weekly execution")
         if args.cold_readiness_timeout <= 0 or args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:
             parser.error("invalid execution limits")
         labels = [s.split(":", 1)[0] for s in args.memory]
@@ -2041,8 +2102,13 @@ def main(argv=None):
                 parser.error("--model is required for Codex")
             if args.max_turns is not None:
                 parser.error("Codex exec has no --max-turns contract; use --timeout")
-            if not (Path(args.codex_install) / "codex/bin/codex.js").is_file() or not Path(args.codex_auth_file).is_file():
+            if (args.codex_binary is None and not (Path(args.codex_install) / "codex/bin/codex.js").is_file()) or not Path(args.codex_auth_file).is_file():
                 parser.error("Codex installation and existing auth file must exist")
+            if args.codex_weekly_limits:
+                try:
+                    codex_account_selection.verify_auth_file(args.codex_auth_file,args.codex_auth_sha256)
+                except (OSError,ValueError) as error:
+                    parser.error(str(error))
         else:
             args.model = args.model or "sonnet"
             args.max_turns = args.max_turns if args.max_turns is not None else 40

@@ -17,8 +17,9 @@ What this is not:
   `trial_capacity_adapter` receipt whose sources still verify, bound to the
   original 21-case, 126-attempt plan, covering the whole slot window and the
   executor's exact accounts. Percentages never reach this gate.
-- The shipped `legacy-harness` executor refuses with named blockers; see
-  docs/weekly-runner-reconciliation.md. No executor is selected by default.
+- The shipped `legacy-harness` and `codex-weekly` executors enforce their
+  respective original-limit evidence paths. Neither is selected by default;
+  see docs/weekly-runner-reconciliation.md.
 """
 import argparse
 import datetime as dt
@@ -32,6 +33,8 @@ import sys
 import uuid
 
 import trial_account_selection as selection
+import trial_codex_account_selection as codex_account
+import trial_codex_weekly_limits as codex_limits
 import trial_attempt_custody as custody
 import trial_capacity_adapter as adapter
 import trial_candidate_request as candidate
@@ -52,6 +55,7 @@ BINDING_SCHEMA = 'cairn.legacy-pair-binding/1'
 PROFILE_FIELDS = ('schema repo current_ref candidate_ref harness_commit runs_root campaign_id schedule '
                   'weekly_source embedding postgres capacity executor selection account execution')
 SELECTION_FIELDS = 'schema campaign_id scheduled_at current candidate harness_commit executor capacity_receipt_sha256 selected_by'
+CODEX_SELECTION_FIELDS = SELECTION_FIELDS+' codex_account_binding_sha256 provider_model provider_binary_sha256'
 DEFAULT_PROFILE = Path.home() / '.config/cairn/weekly-run.json'
 ARMS = ('CURRENT', 'CAND')
 DISTRACTORS = 1900
@@ -135,6 +139,12 @@ def legacy_environment(spec, base=None):
                 **{selection.ENVIRONMENT: spec['account']['config_home']})
 
 
+def codex_environment(spec, base=None):
+    base=os.environ if base is None else base
+    env={k:v for k,v in base.items() if k not in STRIPPED_ENVIRONMENT and not k.startswith('CAIRN_')}
+    return dict(env,CAIRN_PG_BIN=spec['postgres']['bin_dir'],PYTHONDONTWRITEBYTECODE='1')
+
+
 class LegacyHarnessExecutor:
     """Runs `trial-task-eval.sh agent --legacy-fixtures` from the exported harness commit.
 
@@ -176,7 +186,54 @@ class LegacyHarnessExecutor:
 
 
 def default_executors(account=None):
-    return {LegacyHarnessExecutor.name: LegacyHarnessExecutor(account)}
+    return {LegacyHarnessExecutor.name: LegacyHarnessExecutor(account),
+            CodexWeeklyExecutor.name: CodexWeeklyExecutor(account)}
+
+
+class CodexWeeklyExecutor:
+    """Codex executor with a distinct Codex provider pin, account path and JSONL limit reader."""
+    name='codex-weekly'
+    limits=paired.ORIGINAL_LIMITS
+    configuration=dict(codex_jsonl=True,hook_timeout_seconds=paired.ORIGINAL_LIMITS['hook_seconds'],
+                       mcp_tool_room=limits['tool_room_bytes'],task_wire_charged=True,stream_timing=True)
+    capabilities=original.LEGACY_CAPABILITIES
+
+    def __init__(self,account=None):
+        self.account=account
+        self.account_ids=() if account is None else (account.get('account_id'),)
+
+    def check(self,preview):
+        blockers=[]
+        if self.account is None: blockers.append('codex_account_unbound')
+        else: codex_account.selected_auth(self.account)
+        fragment=preview.get('original_execution')
+        if fragment is None: blockers.append('original_execution_unbound')
+        elif fragment.get('harness')!='codex': blockers.append('codex_provider_contract_mismatch')
+        if blockers: raise ExecutorBlocked(blockers)
+        original.check_supported(fragment,self.capabilities)
+        need(fragment['model']=='gpt-6-luna','codex_model_mismatch')
+
+    def execute(self,spec,run_dir):
+        output=Path(run_dir)/'agent'
+        fragment=spec['original_execution']
+        need(fragment.get('harness')=='codex','codex_provider_contract_mismatch')
+        argv=[str(Path(spec['harness']['root'])/'scripts/trial-task-eval.sh'),'agent','--legacy-fixtures',
+              '--codex-weekly-limits','--output',str(output),'--arms']
+        for name in ARMS:
+            arm=spec['arms'][name]
+            argv += ['--memory',f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
+        argv += ['--distractors',str(spec['distractors']),'--seeds',str(len(spec['seeds'])),'--first-seed',str(spec['seeds'][0]),
+                 '--embedding-worker',spec['embedding']['worker']['path'],'--harness','codex','--model',spec['actor_model'],
+                 '--codex-auth-file',
+                 str(codex_account.selected_auth(self.account)),'--codex-auth-sha256',self.account['auth_sha256'],
+                 '--timeout','900','--parallel','1',
+                 *original.harness_flags(fragment,spec['original_arms'])]
+        env=codex_environment(spec)
+        with open(Path(run_dir)/'harness.log','xb') as log:
+            os.chmod(log.name,0o600)
+            done=subprocess.run(argv,cwd=spec['harness']['root'],env=env,stdin=subprocess.DEVNULL,
+                                stdout=log,stderr=subprocess.STDOUT)
+        return dict(agent=output/'agent.json',exit_code=done.returncode)
 
 
 # ---------------------------------------------------------------- profile and slot
@@ -257,13 +314,18 @@ def selection_gate(profile, preview, executor_name, capacity):
     reference = profile['selection']
     need(reference is not None, 'live_invocation_not_selected')
     document = paired.read_json_pin(reference)
-    paired.shape(document, SELECTION_FIELDS, 'live_selection_shape')
+    codex=executor_name==CodexWeeklyExecutor.name
+    paired.shape(document, CODEX_SELECTION_FIELDS if codex else SELECTION_FIELDS, 'live_selection_shape')
     need(document['schema'] == SELECTION_SCHEMA, 'live_selection_shape')
     paired.identifier(document['selected_by'])
     expected = dict(campaign_id=profile['campaign_id'], scheduled_at=preview['scheduled_at'],
                     current=preview['current'], candidate=preview['candidate'],
                     harness_commit=preview['harness'], executor=executor_name,
                     capacity_receipt_sha256=capacity['receipt_sha256'])
+    if codex:
+        fragment=preview['original_execution']
+        expected.update(codex_account_binding_sha256=paired.canonical_sha(profile['account']),
+                        provider_model=fragment['model'],provider_binary_sha256=fragment['provider']['sha256'])
     need(all(document[key] == value for key, value in expected.items()), 'live_selection_mismatch')
     return dict(sha256=reference['sha256'], selected_by=document['selected_by'], proof='declared_unauthenticated')
 
@@ -427,8 +489,12 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
     harness_source = harness_eval.read_text() if harness_eval.is_file() else ''
     need((harness / 'scripts/trial_account_selection.py').is_file()
          and 'selected = credentials_source()' in harness_source, 'harness_account_selector_unsupported')
-    need((harness / 'scripts/trial_legacy_limits.py').is_file() and '"--original-limits"' in harness_source,
-         'harness_original_limits_unsupported')
+    if profile['executor']=='codex-weekly':
+        need((harness/'scripts/trial_codex_weekly_limits.py').is_file() and '"--codex-weekly-limits"' in harness_source,
+             'harness_codex_weekly_limits_unsupported')
+    else:
+        need((harness / 'scripts/trial_legacy_limits.py').is_file() and '"--original-limits"' in harness_source,
+             'harness_original_limits_unsupported')
     loaded = te.load_cases(version, root=trial)
     case_ids = [case['id'] for case in loaded]
     need(len(case_ids) == WEEKLY_CASES and sorted(case_ids) == sorted(plan['cases']), 'harness_cases_not_planned')
@@ -460,7 +526,7 @@ def _prepare(profile, slot, claim, plan, repo, compiler):
     except paired.Refusal as error:
         raise paired.Refusal('original_execution_embedding_' + str(error)) from None
     spec = dict(schema=SPEC_SCHEMA, slot_id=claim['slot_id'], arms=arms,
-                harness=dict(commit=claim['harness_commit'], root=str(harness), label_version=version,
+                harness=dict(commit=claim['harness_commit'], root=str(harness), kind=claim['executor'], label_version=version,
                              frozen_sha256=source['frozen_sha256'], labels_sha256=frozen['labels_sha256']),
                 # The retained launcher runs; the declared worker and config stay separate fields.
                 embedding=dict(worker=dict(launch['launcher']), declared_worker=dict(launch['declared_worker']),
@@ -562,7 +628,7 @@ def _agent_result(path, spec):
         return dict(result, status='rejected', code='agent_rows_not_planned')
     # Read from the raw rows: report._agent drops these fields. A runner-exception
     # row without wording is rejected too; it could never be complete.
-    selected = dict(model=spec['actor_model'], harness='claude', wording='task')
+    selected = dict(model=spec['actor_model'], harness='codex' if spec['harness'].get('kind')=='codex-weekly' else 'claude', wording='task')
     if not all(record.get(key) == value for record in records for key, value in selected.items()):
         return dict(result, status='rejected', code='agent_row_not_selected')
     result['plan'] = dict(path=str(Path(path).parent / 'plan.json'), sha256=hashlib.sha256(plan_content).hexdigest())
@@ -613,9 +679,11 @@ def _limit_result(result, run_dir, records, spec):
             return dict(result, status='incomplete', code='original_limit_unobserved')
         if hashlib.sha256(stream).hexdigest() != record['stream_sha256']:
             return dict(result, status='rejected', code='attempt_content_mismatch')
-        assessment = limits.assess(stream.decode('utf-8', errors='replace'), rows, input_bytes=task['input_bytes'],
-                                   timings=timings)
-        counts[assessment['status']] += 1
+        checker=codex_limits if spec['harness'].get('kind')=='codex-weekly' else limits
+        assessment = checker.assess(stream.decode('utf-8', errors='replace'), rows, input_bytes=task['input_bytes'],
+                                    timings=timings)
+        category='within_original_limits' if assessment['status'].startswith('within_') else assessment['status']
+        counts[category] += 1
         for reason in assessment['failures'] + assessment['unknown']:
             reasons[reason] = reasons.get(reason, 0) + 1
     result = dict(result, limit_assessment=dict(counts, reasons=dict(sorted(reasons.items())),

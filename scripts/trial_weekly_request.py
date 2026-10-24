@@ -25,7 +25,9 @@ def review_subjects(request, bundle):
     Check/prepare rebuild the bundle themselves. This public reviewer utility
     does not validate or admit a request supplied by its caller.
     """
+    from trial_weekly_input import CODEX_EXECUTION_SCHEMA, actor
     execution, source = bundle['execution'], bundle['source']
+    actor_key='provider' if execution['schema']==CODEX_EXECUTION_SCHEMA else 'native'
     interfaces = dict(actor_api_base=execution['actor_api_base'], memory_arms=execution['memory_arms'])
     corpus = dict(source=source, distractors=execution['distractors'])
     subjects = dict(
@@ -35,8 +37,8 @@ def review_subjects(request, bundle):
         comparator=dict(plan=bundle['plan'], schedule_sha256=bundle['schedule']['sha256'],
                         interfaces=interfaces, corpus=corpus),
         supervisor={k:request[k] for k in ('supervisor_source','limits','permission_profile')},
-        native=dict(native=execution['native'], **{k:request[k] for k in
-                    ('permission_profile','limits','supervisor_source')}),
+        native={actor_key:actor(execution), **{k:request[k] for k in
+                    ('permission_profile','limits','supervisor_source')}},
         integration=dict(request_core={k:v for k,v in request.items() if k != 'dispositions'}))
     return {name:paired.canonical_sha(dict(schema=f'cairn.weekly-{name}-review/1', **value))
             for name,value in subjects.items()}
@@ -73,8 +75,9 @@ def _checked(request, *, now, companion, review):
     paired.shape(request['reply'], 'event_id recipient_id correlation_id', 'reply_shape')
     for ident in request['reply'].values():
         paired.identifier(ident)
+    from trial_weekly_input import actor
     evidence, retained = validate_companion(request,companion,review,now=now,
-        native_model=bundle['execution']['native']['model'])
+        native_model=actor(bundle['execution'])['model'])
     return request,bundle,evidence,retained
 
 

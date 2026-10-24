@@ -27,6 +27,8 @@ needs a hook selector model and binary that the execution contract does not
 declare. It refuses ``original_execution_unsupported:semantic_fallback_selector``.
 No value is ever dropped, coerced or replaced by an ambient one.
 """
+from pathlib import Path
+
 import trial_embedding_identity as identity_declaration
 import trial_paired_request as paired
 import trial_weekly_input as weekly_input
@@ -58,12 +60,14 @@ def declared(profile, *, current, candidate, models):
     need({k: source.get(k) for k in ('label_version', 'frozen_sha256')} == profile['weekly_source'],
          'original_execution_source_mismatch')
     execution = weekly_input._execution(dict(source, execution=reference))
-    native, arms = execution['native'], execution['memory_arms']
-    need(native['model'] == models['CURRENT'] == models['CAND'], 'original_execution_model_mismatch')
+    provider = execution['provider'] if execution['schema'] == weekly_input.CODEX_EXECUTION_SCHEMA else execution['native']
+    arms = execution['memory_arms']
+    need(provider['model'] == models['CURRENT'] == models['CAND'], 'original_execution_model_mismatch')
     need((arms['CURRENT']['api_revision'], arms['CAND']['api_revision']) == (current, candidate),
          'original_execution_arm_mismatch')
     need(arms['CURRENT']['embedding_worker'] == profile['embedding']['worker'], 'original_execution_embedding_mismatch')
-    return dict(identity=_identity(arms['CURRENT']['embedding_model_identity']), **_fragment(reference, native, arms))
+    return dict(identity=_identity(arms['CURRENT']['embedding_model_identity']),
+                **_fragment(reference, provider, arms, harness='codex' if execution['schema'] == weekly_input.CODEX_EXECUTION_SCHEMA else 'claude'))
 
 
 def _identity(reference):
@@ -79,13 +83,15 @@ def _identity(reference):
         raise Unsupported(['model_identity_declaration']) from None
 
 
-def _fragment(reference, native, arms):
-    return dict(schema=SCHEMA, execution=dict(reference), native=dict(native['binary']), model=native['model'],
-                effort=native['effort'],
+def _fragment(reference, actor, arms, *, harness='claude'):
+    provider_pin=dict(actor['binary'])
+    fragment=dict(schema=SCHEMA, execution=dict(reference), harness=harness, model=actor['model'], effort=actor['effort'],
                 arms={name: {k: (dict(arms[name][k]) if k in ('hook', 'bridge') else arms[name][k])
                              for k in ('recall_mode', 'semantic_fallback', 'recall_revision', 'hook', 'bridge')}
                       for name in ARMS},
                 embedding={k: dict(arms['CURRENT']['embedding_' + k]) for k in ('worker', 'config', 'model_identity')})
+    fragment['provider' if harness=='codex' else 'native']=provider_pin
+    return fragment
 
 
 def supported(fragment, capabilities):
@@ -119,9 +125,11 @@ def arm_controls(fragment, recall):
 def harness_flags(fragment, controls):
     """Structured legacy harness flags; no PATH:SHA concatenation."""
     identity = fragment['embedding']['model_identity']
-    return ['--original-native-path', fragment['native']['path'],
-            '--original-native-sha256', fragment['native']['sha256'],
-            '--reasoning-effort', fragment['effort'],
+    actor='provider' if fragment.get('harness')=='codex' else 'native'
+    flags=(['--codex-binary',fragment[actor]['path'],'--codex-binary-sha256',fragment[actor]['sha256'],
+            '--codex-weekly-limits'] if actor=='provider' else
+           ['--original-native-path', fragment[actor]['path'], '--original-native-sha256',fragment[actor]['sha256']])
+    return flags + ['--reasoning-effort', fragment['effort'],
             '--original-arms', controls['path'], '--original-arms-sha256', controls['sha256'],
             '--original-embedding-identity', identity['path'],
             '--original-embedding-identity-sha256', identity['sha256']]
@@ -153,15 +161,24 @@ def check_observed(plan, records, fragment):
     Returns None, or (status, code): an absent observation is incomplete, a
     malformed one or a contradicting one is rejected. Never raises on shape.
     """
-    if not isinstance(plan, dict) or plan.get('original_native') is None:
+    codex=fragment.get('harness')=='codex'
+    observed_key='original_codex' if codex else 'original_native'
+    if not isinstance(plan, dict) or plan.get(observed_key) is None:
         return 'incomplete', 'original_execution_unobserved'
-    native = plan['original_native']
+    native = plan[observed_key]
     if not isinstance(native, dict) or set(native) != {'declared', 'observed'} or not isinstance(native['observed'], dict):
         return 'rejected', 'original_execution_observation_malformed'
     copy = native['observed']
-    if not _copy_shape(copy):
+    if codex:
+        valid_copy=(isinstance(copy,dict) and set(copy)=={'sha256','version','target'} and
+                    _hex64(copy.get('sha256')) and type(copy.get('version')) is str and
+                    copy.get('target')==str(Path.home()/'.codex/codex'))
+    else:
+        valid_copy=_copy_shape(copy)
+    if not valid_copy:
         return 'rejected', 'original_execution_observation_malformed'
-    if (native['declared'] != fragment['native'] or copy['sha256'] != fragment['native']['sha256']
+    actor_key='provider' if codex else 'native'
+    if (native['declared'] != fragment[actor_key] or copy['sha256'] != fragment[actor_key]['sha256']
             or plan.get('reasoning_effort') != fragment['effort'] or plan.get('model') != fragment['model']):
         return 'rejected', 'original_execution_mismatch'
     backends = plan.get('memory_backends')
@@ -186,7 +203,7 @@ def check_observed(plan, records, fragment):
         if {k: identity[k] for k in ('model_sha256', 'algorithm')} != {
                 k: fragment['identity'][k] for k in ('model_sha256', 'algorithm')}:
             return 'rejected', 'original_execution_identity_mismatch'
-    expected = dict(binary_sha256=fragment['native']['sha256'], effort=fragment['effort'], target=copy['target'])
+    expected = dict(binary_sha256=fragment[actor_key]['sha256'], effort=fragment['effort'], target=copy['target'])
     arms = {name: dict(recall_mode=arm['recall_mode'], semantic_fallback=arm['semantic_fallback'],
                        recall_revision=arm['recall_revision'], hook_sha256=arm['hook']['sha256'],
                        bridge_sha256=arm['bridge']['sha256']) for name, arm in fragment['arms'].items()}
@@ -198,7 +215,7 @@ def check_observed(plan, records, fragment):
     if loaded['arms'] != arms:
         return 'rejected', 'original_execution_mismatch'
     for record in records:
-        row = record.get('original_native') if isinstance(record, dict) else None
+        row = record.get(observed_key) if isinstance(record, dict) else None
         arm = record.get('original_arm') if isinstance(record, dict) else None
         if row is None or arm is None:
             return 'incomplete', 'original_execution_unobserved'
@@ -210,7 +227,10 @@ def check_observed(plan, records, fragment):
 
 def observed(plan):
     """Receipt projection of what the harness observed (no declared values)."""
-    return dict(native=plan['original_native']['observed'], reasoning_effort=plan['reasoning_effort'],
+    codex=plan.get('harness')=='codex'
+    key='original_codex' if codex else 'original_native'
+    actor='provider' if codex else 'native'
+    return dict(**{actor:plan[key]['observed']}, reasoning_effort=plan['reasoning_effort'],
                 arms=plan.get('original_arms'),
                 identities={name: dict(model_sha256=plan['memory_backends'][name]['readiness']['identity']['model_sha256'],
                                        algorithm=plan['memory_backends'][name]['readiness']['identity']['algorithm'],

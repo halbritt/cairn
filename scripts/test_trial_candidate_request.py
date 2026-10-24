@@ -20,6 +20,8 @@ import uuid
 
 import trial_candidate_request as candidate
 import trial_paired_request as paired
+import trial_weekly_input as weekly_input
+import trial_weekly_draft
 import trial_weekly_request as dispatch
 from test_trial_weekly_request import END, Fixture, NOW
 from test_trial_paired_capacity import write_pin
@@ -149,7 +151,6 @@ class CandidateRequestTests(unittest.TestCase):
         self.assertEqual(set(subjects['subjects']), set(paired.REVIEWS))
         self.assertEqual(core['weekly_input']['execution']['path'], str(entry/'execution.json'))
         self.assertFalse((entry/'preparation').exists())
-        # Disposable PostgreSQL is declared under the entry and never an existing DSN.
         environment = json.loads((entry/'environment.json').read_text())
         self.assertEqual(environment['postgres']['cluster_root'], str(entry/'cluster'))
         self.assertEqual(environment['postgres']['listen_addresses'], '')
@@ -159,6 +160,19 @@ class CandidateRequestTests(unittest.TestCase):
         self.assertEqual(state['state'], 'queued_for_review')
         listed = candidate.list_queue(self.profile)
         self.assertEqual([e['request_id'] for e in listed], [receipt['request_id']])
+
+    def test_codex_subscription_profile_queues_a_distinct_v2_provider_contract(self):
+        self.profile.pop('native')
+        self.profile['provider']=dict(harness='codex',binary=self.fixture.component,
+                                      model='gpt-6-luna',effort='high')
+        with patch.object(trial_weekly_draft,'draft',return_value=dict(status='drafted_for_review')):
+            receipt=self.run_request(compiler=FakeCompiler())
+        self.assertEqual(receipt['status'],'queued_for_review')
+        entry=self.queue/receipt['request_id']
+        execution=json.loads((entry/'execution.json').read_text())
+        self.assertEqual(execution['schema'],weekly_input.CODEX_EXECUTION_SCHEMA)
+        self.assertEqual(execution['provider'],self.profile['provider'])
+        self.assertNotIn('native',execution)
 
     def test_usage_precheck_refuses_before_any_build_or_queue_write(self):
         self.snapshot['roles']['primary_grader']['remaining_tokens'] = 10
