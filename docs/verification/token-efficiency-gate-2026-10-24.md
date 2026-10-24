@@ -68,8 +68,16 @@ join by the exact opaque workflow event; recipient stages also join by the
 exact opaque attempt. Its selected native workload label must equal the frozen
 workflow ID, including the arm; an event from the same case in another arm
 therefore fails the join. The native report must carry the matching provider
-model, effort and selected pin. Every observed stage's declared route and four
-pins must match the frozen plan. Failed stages need an explicit disposition; unrun,
+model, effort and selected pin. Its joined turns carry opaque response references,
+not provider IDs or model content. Every observed workflow needs at least one
+observed sender turn or exact recipient attempt with a completed native turn and
+nonempty response references. Caller-selected coordinator, capture and recovery
+metadata cannot substitute for that native join; a workflow that has only those
+stages remains incomplete without inventing a sender turn. An explicitly failed
+native publication or recipient settlement also makes an observed stage
+incomplete. Older native reports without response references must be regenerated.
+Every observed stage's declared route and four pins must match the frozen plan.
+Failed stages need an explicit disposition; unrun,
 missing, unknown and failed work remain in their denominators. A null usage
 field remains unknown even if its provider turn joined. The gate never adds
 shared-turn token fields into an event saving.
@@ -79,8 +87,10 @@ independent task grader to review. It does **not** mean a task passed. The
 output always states `independent_task_acceptance=unassessed` and
 `release_decision=defer`, even when caller JSON asserts success. Missing joins,
 byte-only evidence, route/model/pin drift or an unrun case yield `incomplete`.
-The local test uses a synthetic 22-case, four-arm panel; no real paired plan
-or provider result is frozen by that test.
+Explicitly failed runs with a disposition and null token fields can still be
+structurally ready for review; neither is silently converted to a successful
+task or known cost. The local test uses a synthetic 22-case, four-arm panel; no
+real paired plan or provider result is frozen by that test.
 
 ## Evidence currently available
 

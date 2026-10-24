@@ -177,6 +177,7 @@ def provider_projection(session, turn, duplicate_ids):
     return dict(harness=session["harness"], account=session["home"], pin=session["pin"],
                 models=sorted({safe_label(v) for v in turn["models"] if safe_label(v)}),
                 efforts=sorted({safe_label(v) for v in turn["efforts"] if safe_label(v)}) or None,
+                response_refs=[opaque("response\0" + value) for value in turn["responses"]],
                 activity="idle_wake" if turn["wake"] else "active_or_unclassified",
                 native_completed=turn["completed"], tools=turn["tools"],
                 cairn_tools=turn["cairn_tools"], compactions=turn["compactions"],

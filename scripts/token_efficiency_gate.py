@@ -151,7 +151,8 @@ def report(frozen, fixture, observations, native):
     require(all(row["workflow_id"] in planned_ids for row in observed), "unplanned workflow ID")
     by_id = {row["workflow_id"]: row for row in observed}
     counts = dict(planned_runs=len(plan["runs"]), missing_runs=0, unrun_runs=0,
-                  failed_runs=0, observed_runs=0, planned_stages=0, missing_stages=0,
+                  failed_runs=0, observed_runs=0, unjoined_observed_runs=0,
+                  planned_stages=0, missing_stages=0,
                   unknown_stages=0, failed_stages=0, not_reached_stages=0, observed_stages=0,
                   unknown_provider_stages=0, unknown_usage_fields={field: 0 for field in TOKEN_FIELDS})
     problems = []
@@ -196,6 +197,7 @@ def report(frozen, fixture, observations, native):
         require(all(stage["stage_id"] in expected_stages for stage in stages),
                 f"{workflow_id}: unplanned stage ID")
         actual_stages = {stage["stage_id"]: stage for stage in stages}
+        native_joined = False
         for stage_id, slot in expected_stages.items():
             stage = actual_stages.get(stage_id)
             if stage is None:
@@ -221,8 +223,12 @@ def report(frozen, fixture, observations, native):
             require(stage.get("pins") == plan["arms"][arm]["pins"], f"{stage_id}: pin drift")
             role = slot["role"]
             provider = None
+            native_basis = None
             if native_row and role == "sender":
                 provider = native_row.get("sender_provider")
+                native_basis = provider.get("turn_join") if isinstance(provider, dict) else None
+                if native_row.get("publication") == "failed":
+                    problems.append(f"{stage_id}: native publication not committed")
             elif native_row and role == "recipient":
                 attempt = stage.get("attempt")
                 require(isinstance(attempt, str) and OPAQUE.fullmatch(attempt), f"{stage_id}: attempt")
@@ -231,6 +237,9 @@ def report(frozen, fixture, observations, native):
                 matches = [row for row in native_row.get("deliveries", []) if row.get("attempt") == attempt]
                 require(len(matches) <= 1, f"{stage_id}: ambiguous native attempt")
                 provider = matches[0].get("provider") if matches else None
+                native_basis = matches[0].get("turn_join") if matches else None
+                if matches and (matches[0].get("settlement") or {}).get("status") == "failed":
+                    problems.append(f"{stage_id}: native attempt not settled")
             elif role in ("coordinator", "capture", "recovery"):
                 # This selected evidence remains reviewable, not a native usage join.
                 require(isinstance(stage.get("evidence_ref"), str) and ID.fullmatch(stage["evidence_ref"]),
@@ -243,7 +252,27 @@ def report(frozen, fixture, observations, native):
             if not provider_ok(provider, plan["model"], plan["arms"][arm]["pins"][slot["pin"]]):
                 problems.append(f"{stage_id}: provider model/effort/pin mismatch or duplicate response")
                 continue
-            usage = (provider.get("usage") or {}).get("tokens") or {}
+            provider_usage = provider.get("usage") or {}
+            if role in ("sender", "recipient"):
+                basis_ok = native_basis in ("binding", "unique_turn_id")
+                completed = provider.get("native_completed") is True
+                response_refs = provider.get("response_refs")
+                response_ok = (type(provider_usage.get("observed_responses")) is int
+                               and provider_usage["observed_responses"] > 0
+                               and isinstance(response_refs, list)
+                               and len(response_refs) == provider_usage["observed_responses"]
+                               and all(isinstance(value, str) and OPAQUE.fullmatch(value)
+                                       for value in response_refs)
+                               and len(response_refs) == len(set(response_refs)))
+                if not basis_ok:
+                    problems.append(f"{stage_id}: native turn join missing")
+                if not completed:
+                    problems.append(f"{stage_id}: native turn incomplete")
+                if not response_ok:
+                    problems.append(f"{stage_id}: native response missing")
+                if basis_ok and completed and response_ok:
+                    native_joined = True
+            usage = provider_usage.get("tokens") or {}
             for field in TOKEN_FIELDS:
                 value = usage.get(field)
                 if not isinstance(value, dict) or type(value.get("total")) is not int or value["total"] < 0:
@@ -251,6 +280,9 @@ def report(frozen, fixture, observations, native):
         rows.append(dict(workflow_id=workflow_id, case=case, arm=arm, state=state))
         if state == "observed" and not any(stage.get("state") == "observed" for stage in stages):
             problems.append(f"{workflow_id}: observed workflow has no observed stage")
+        if state == "observed" and not native_joined:
+            counts["unjoined_observed_runs"] += 1
+            problems.append(f"{workflow_id}: observed workflow has no native joined stage")
     if counts["missing_runs"] or counts["missing_stages"]:
         problems.append("planned workflow or stage missing")
     return dict(schema="cairn.token-efficiency-gate-report/1",

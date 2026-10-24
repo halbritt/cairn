@@ -61,6 +61,9 @@ class WorkflowReportTests(unittest.TestCase):
         self.assertEqual(request_row["assessment"], "accepted")
         self.assertEqual(request_row["response_events"], [self.report.opaque(response)])
         self.assertEqual(request_row["deliveries"][0]["provider"]["usage"]["tokens"]["input"]["total"], 100)
+        self.assertEqual(request_row["deliveries"][0]["provider"]["response_refs"],
+                         [self.report.opaque("response\0provider-r1")])
+        self.assertNotIn("provider-r1", json.dumps(result))
         self.assertEqual(request_row["deliveries"][0]["settlement"]["reply_status"], "committed")
         recipient_groups = [group for group in result["coverage_by_dimension"] if group["stage"] == "recipient"]
         self.assertEqual(sum(group["joined_provider"] for group in recipient_groups), 1)
@@ -81,12 +84,15 @@ class WorkflowReportTests(unittest.TestCase):
         turn.update(responses=["r1", "r2"], usage=[dict(input=10, cached=None,
                     write=None, output=2, reasoning=None)])
         result = self.report.compile_report([self.session(dict(turn=turn))], self.root)
+        shared_refs = []
         for workflow in result["workflows"]:
             delivery = workflow["deliveries"][0]
             self.assertTrue(delivery["shared_turn"])
+            shared_refs.append(delivery["provider"]["response_refs"])
             self.assertIsNone(delivery["provider"]["usage"]["tokens"]["input"]["total"])
             self.assertEqual(delivery["provider"]["usage"]["tokens"]["input"]["known_sum"], 10)
         self.assertEqual(result["coverage"]["shared_turns"], 1)
+        self.assertEqual(shared_refs[0], shared_refs[1])
         self.assertEqual(sum(group["missing_usage_fields"]["input"] for group in
                              result["coverage_by_dimension"]), 2)
 
@@ -119,6 +125,8 @@ class WorkflowReportTests(unittest.TestCase):
         workflow = result["workflows"][0]
         self.assertEqual(workflow["publication"], "committed")
         self.assertEqual(workflow["sender_provider"]["usage"]["tokens"]["input"]["total"], 20)
+        self.assertEqual(workflow["sender_provider"]["response_refs"],
+                         [self.report.opaque("response\0provider-sender")])
         self.assertEqual(workflow["deliveries"], [])
         self.assertEqual(workflow["assessment"], "unassessed")
         self.assertTrue(workflow["owner_input_joined"])

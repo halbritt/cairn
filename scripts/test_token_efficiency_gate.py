@@ -25,6 +25,7 @@ class TokenEfficiencyGateTests(unittest.TestCase):
         arms = {arm: dict(commit="a" * 40, pins=dict(self.pins)) for arm in gate.ARMS}
         runs, observations, workflows = [], [], []
         sequence = 0
+        self.response_seq = 0
         for arm in gate.ARMS:
             for case in gate.CASES:
                 sequence += 1
@@ -40,9 +41,11 @@ class TokenEfficiencyGateTests(unittest.TestCase):
                                          state="observed", stages=[dict(stage_id=sender_id, **common),
                                                                    dict(stage_id=recipient_id, attempt=attempt,
                                                                         **common)]))
-                workflows.append(dict(event=event, workload=workflow_id,
-                                      sender_provider=self.provider("client"),
-                                      deliveries=[dict(attempt=attempt, provider=self.provider("inbox"))]))
+                workflows.append(dict(event=event, workload=workflow_id, publication="committed",
+                                      sender_provider=dict(self.provider("client"), turn_join="binding"),
+                                      deliveries=[dict(attempt=attempt, turn_join="binding",
+                                                       settlement=dict(status="committed"),
+                                                       provider=self.provider("inbox"))]))
         self.plan = dict(schema="cairn.token-efficiency-plan/1", cases=list(gate.CASES),
                          acceptance_checks={row["id"]: gate.sha(row["acceptance_check"])
                                             for row in fixture_cases},
@@ -55,10 +58,53 @@ class TokenEfficiencyGateTests(unittest.TestCase):
         self.native = dict(schema="cairn.workflow-model-report/1", workflows=workflows)
 
     def provider(self, pin):
+        self.response_seq += 1
         return dict(harness=self.model["harness"], account=self.model["account"],
                     models=[self.model["id"]], efforts=[self.model["effort"]],
-                    pin=self.pins[pin], duplicate_response_id=False,
-                    usage=dict(tokens={field: dict(total=10) for field in gate.TOKEN_FIELDS}))
+                    pin=self.pins[pin], duplicate_response_id=False, native_completed=True,
+                    response_refs=[f"{self.response_seq:024x}"],
+                    usage=dict(observed_responses=1, usage_records=1,
+                               tokens={field: dict(total=10) for field in gate.TOKEN_FIELDS}))
+
+    def test_caller_only_stages_cannot_make_observed_workflow_ready(self):
+        planned = self.plan["runs"][0]
+        planned["stages"][0]["role"] = "coordinator"
+        planned["stages"][1]["role"] = "capture"
+        self.frozen = gate.freeze(self.plan, self.fixture)
+        self.observations["plan_sha256"] = self.frozen["plan_sha256"]
+        for stage, pin in zip(self.observations["runs"][0]["stages"], ("client", "inbox")):
+            stage.pop("attempt", None)
+            stage["evidence_ref"] = "caller_selected"
+            stage["provider"] = self.provider(pin)
+        self.native["workflows"][0].update(sender_provider=None, deliveries=[])
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "incomplete")
+        self.assertEqual(result["counts"]["unjoined_observed_runs"], 1)
+        self.assertTrue(any("native joined stage" in issue for issue in result["problems"]))
+
+    def test_native_join_requires_completed_model_work(self):
+        self.native["workflows"][0]["sender_provider"]["native_completed"] = False
+        self.native["workflows"][0]["deliveries"][0]["provider"]["usage"]["observed_responses"] = 0
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "incomplete")
+        self.assertTrue(any("native turn incomplete" in issue for issue in result["problems"]))
+        self.assertTrue(any("native response missing" in issue for issue in result["problems"]))
+
+    def test_native_response_identity_cannot_be_replaced_by_a_count(self):
+        self.native["workflows"][0]["sender_provider"].pop("response_refs")
+        self.native["workflows"][0]["deliveries"][0]["provider"]["response_refs"] = []
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "incomplete")
+        self.assertEqual(sum("native response missing" in issue for issue in result["problems"]), 2)
+
+    def test_explicit_native_publication_and_attempt_failure_block_observed_stage(self):
+        self.native["workflows"][0]["publication"] = "failed"
+        self.native["workflows"][0]["deliveries"][0]["settlement"]["status"] = "failed"
+        result = gate.report(self.frozen, self.fixture, self.observations, self.native)
+        self.assertEqual(result["state"], "incomplete")
+        self.assertTrue(any("native publication not committed" in issue for issue in result["problems"]))
+        self.assertTrue(any("native attempt not settled" in issue for issue in result["problems"]))
+        self.assertEqual(result["counts"]["observed_runs"], 88)
 
     def test_complete_panel_is_ready_for_human_grade_with_unknown_usage_and_failed_run(self):
         first = self.observations["runs"][0]
