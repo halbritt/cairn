@@ -34,6 +34,15 @@ class PanelTests(unittest.TestCase):
         self.assertFalse(result["setup_executed"])
         self.assertEqual(result["native_join"], "unimplemented")
         self.assertEqual(set(result["source_body_sha256"]), set(self.data["sources"]))
+        self.assertEqual(set(result["source_record_sha256"]), set(self.data["sources"]))
+        burst = {run["arm"]: run for run in result["prospective_runs"]
+                 if run["case"] == "routine_burst_urgent_request"}
+        self.assertEqual(burst["baseline"]["intervention_sha256"],
+                         burst["envelope"]["intervention_sha256"])
+        self.assertEqual(burst["batch"]["intervention_sha256"],
+                         burst["combined"]["intervention_sha256"])
+        self.assertNotEqual(burst["baseline"]["intervention_sha256"],
+                            burst["batch"]["intervention_sha256"])
 
     def test_existing_gate_accepts_fixture_custody_without_freezing_a_provider(self):
         plan = {"fixture_sha256": self.fixture_hash,
@@ -59,7 +68,33 @@ class PanelTests(unittest.TestCase):
         changed["cases"][8]["setup"]["transitions"].reverse()
         changes.append(changed)
         changed = copy.deepcopy(self.data)
-        changed["cases"][7]["setup"]["events"][1]["idempotency_key"] = "different"
+        changed["cases"][7]["setup"]["events"][0]["idempotency_key"] = "different"
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["cases"][21]["setup"]["events"].append(
+            {"id": "fake_handoff", "kind": "handoff", "recipient": "worker", "body": "bad"})
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["cases"][0] = []
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["sources"]["conflict_48"]["conflicts_with"] = []
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["sources"]["conflict_24"]["authority"]["mandatory"] = False
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["sources"]["trail_atlas"]["scope"]["repo"] = "fixture:trail"
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["sources"]["handoff_state"]["kind"] = "handoff"
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["cases"][1]["setup"]["events"][1]["causation"] = "missing_request"
+        changes.append(changed)
+        changed = copy.deepcopy(self.data)
+        changed["arm_interventions"]["routine_burst_urgent_request"]["baseline"] = {
+            "routine_notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 30}}
         changes.append(changed)
         for candidate in changes:
             with self.subTest(candidate=changes.index(candidate)), self.assertRaises(ValueError):

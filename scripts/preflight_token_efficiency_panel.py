@@ -17,22 +17,22 @@ from token_efficiency_gate import ARMS, CASES, sha
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "trials/token-efficiency/FIXTURE.json"
 PRIVATE_PARENT = Path.home() / ".cache/cairn-token-efficiency-panels"
-EVENT_KINDS = {"notice", "request", "response", "handoff"}
+EVENT_KINDS = {"notice", "request", "response"}
 ACTIONS = {
     "repeat_source", "start_task", "drop_reply", "retry_delivery", "remove_source",
     "expire_lease", "crash_recipient", "hide_receipt", "retry_same_response",
     "rotate_execution", "disable_semantic", "compact_context", "seed_capture",
-    "repeat_capture", "apply_correction", "pause_after_source_check",
+    "repeat_capture", "apply_correction", "pause_after_source_check", "duplicate_publish",
 }
 EXPECTED = {
     "single_notice": (1, "notice", ()),
-    "actionable_response": (1, "response", ()),
+    "actionable_response": (2, "response", ()),
     "small_request_result_reply": (1, "request", ()),
     "long_source": (1, "request", ("repeat_source",)),
     "routine_burst_urgent_request": (4, "request", ()),
     "busy_owner_task": (1, "notice", ("start_task",)),
     "concurrent_receivers": (2, "request", ()),
-    "duplicate_send": (2, "request", ()),
+    "duplicate_send": (1, "request", ("duplicate_publish",)),
     "completion_reply_lost": (1, "request", ("drop_reply", "retry_delivery")),
     "source_forgotten_before_read": (1, "request", ("remove_source",)),
     "lease_expiry": (1, "request", ("expire_lease",)),
@@ -46,7 +46,7 @@ EXPECTED = {
     "compaction_before_after_settlement": (2, "notice", ("compact_context", "compact_context")),
     "unchanged_capture": (0, None, ("seed_capture", "repeat_capture")),
     "meaningful_owner_correction": (0, None, ("apply_correction",)),
-    "unfinished_handoff": (1, "handoff", ("pause_after_source_check",)),
+    "unfinished_handoff": (0, None, ("pause_after_source_check",)),
 }
 
 
@@ -79,19 +79,79 @@ def read_fixture(path=FIXTURE):
 
 
 def validate(data):
-    exact_keys(data, ("schema", "purpose", "sources", "cases"), "fixture")
+    exact_keys(data, ("schema", "purpose", "sources", "event_source_defaults",
+                      "arm_interventions", "cases"),
+               "fixture")
     require(data["schema"] == "cairn.token-efficiency-fixture/1", "fixture schema")
     require(data["purpose"] == "Prospective synthetic paired tasks; no trial outcomes", "fixture purpose")
+    require(data["event_source_defaults"] == {
+        "kind": "note", "record_class": "A", "operation": "create",
+        "sensitivity": "shareable", "claim_type": "self",
+        "scope": {"repo": "fixture:cairn-token-efficiency", "task_id": "*", "run_id": "*"}},
+        "event source defaults")
+    interventions = data["arm_interventions"]
+    policy = {"version": 1, "urgency": "routine", "defer_seconds": 30}
+    require(interventions == {"routine_burst_urgent_request": {
+        "baseline": {"routine_notice_policy": None},
+        "envelope": {"routine_notice_policy": None},
+        "batch": {"routine_notice_policy": policy},
+        "combined": {"routine_notice_policy": policy}}},
+        "arm-specific routine notice policy")
     sources = data["sources"]
     require(isinstance(sources, dict) and 1 <= len(sources) <= 32, "source catalog")
     for name, source in sources.items():
-        exact_keys(source, ("project", "body"), f"source {name}")
+        exact_keys(source, ("project", "body", "kind", "record_class", "sensitivity",
+                            "claim_type",
+                            "scope", "operation", "record_family", "logical_version",
+                            "supersedes", "conflicts_with"), f"source {name}", ("authority",))
         require(isinstance(name, str) and name.isidentifier(), "source ID")
         require(source["project"] in ("Cairn", "Trail"), f"{name}: project")
+        require(source["record_class"] in ("A", "C"), f"{name}: class")
+        if source["record_class"] == "A":
+            require(source["kind"] in ("note", "procedure", "preference")
+                    and source["operation"] in ("create", "edit")
+                    and "authority" not in source, f"{name}: ordinary record")
+        else:
+            require(source["kind"] == "instruction" and source["operation"] == "issue",
+                    f"{name}: required instruction")
+            require(source.get("authority") == {
+                "grant": "disposable_operator_root", "mandatory": True,
+                "requires_runtime": False, "category": "workflow",
+                "policy_key": "synthetic-evacuation-threshold"}, f"{name}: issue authority")
+        require(source["sensitivity"] == "shareable", f"{name}: sensitivity")
+        require(source["claim_type"] == "self", f"{name}: claim type")
+        require(source["scope"] == {"repo": "fixture:cairn-token-efficiency",
+                                    "task_id": "*", "run_id": "*"}, f"{name}: shared scope")
+        require(isinstance(source["record_family"], str)
+                and source["record_family"].isidentifier(), f"{name}: record family")
+        require(type(source["logical_version"]) is int and source["logical_version"] > 0,
+                f"{name}: logical version")
+        for relation in ("supersedes", "conflicts_with"):
+            refs = source[relation]
+            require(isinstance(refs, list) and all(isinstance(ref, str) for ref in refs)
+                    and len(refs) == len(set(refs)) and name not in refs
+                    and all(ref in sources for ref in refs), f"{name}: {relation}")
         require(isinstance(source["body"], str) and 20 <= len(source["body"]) <= 2000,
                 f"{name}: source body")
+    for name, source in sources.items():
+        for previous in source["supersedes"]:
+            require(sources[previous]["scope"] == source["scope"]
+                    and sources[previous]["kind"] == source["kind"]
+                    and sources[previous]["record_family"] == source["record_family"]
+                    and sources[previous]["logical_version"] + 1 == source["logical_version"]
+                    and source["operation"] == "edit"
+                    and sources[previous]["operation"] == "create",
+                    f"{name}: invalid supersession")
+        for other in source["conflicts_with"]:
+            require(name in sources[other]["conflicts_with"]
+                    and source["record_class"] == sources[other]["record_class"] == "C"
+                    and source["scope"] == sources[other]["scope"]
+                    and source["authority"]["policy_key"] == sources[other]["authority"]["policy_key"],
+                    f"{name}: invalid required conflict")
     rows = data["cases"]
-    require(isinstance(rows, list) and [row.get("id") for row in rows] == list(CASES),
+    require(isinstance(rows, list) and len(rows) == len(CASES)
+            and all(isinstance(row, dict) for row in rows)
+            and [row.get("id") for row in rows] == list(CASES),
             "exact ordered 22 case IDs")
     for row in rows:
         case = row["id"]
@@ -107,15 +167,23 @@ def validate(data):
         events = setup["events"]
         require(isinstance(events, list), f"{case}: events")
         ids = set()
-        for event in events:
+        for position, event in enumerate(events):
             exact_keys(event, ("id", "kind", "recipient", "body"), f"{case}: event",
-                       ("idempotency_key",))
+                       ("idempotency_key", "causation"))
             require(all(isinstance(event[key], str) and 1 <= len(event[key]) <= 500
                         for key in ("id", "kind", "recipient", "body")), f"{case}: event text")
             require(event["id"].isidentifier() and event["id"] not in ids, f"{case}: event ID")
             require(event["kind"] in EVENT_KINDS, f"{case}: event kind")
             require(event["recipient"] in ("worker", "worker_a", "worker_b"),
                     f"{case}: recipient")
+            if event["kind"] == "response":
+                cause = event.get("causation")
+                require(isinstance(cause, str)
+                        and any(prior["id"] == cause and prior["kind"] == "request"
+                                for prior in events[:position]),
+                        f"{case}: response causation")
+            else:
+                require("causation" not in event, f"{case}: non-response causation")
             if "idempotency_key" in event:
                 require(isinstance(event["idempotency_key"], str)
                         and event["idempotency_key"].isidentifier(), f"{case}: idempotency key")
@@ -145,10 +213,17 @@ def validate(data):
                     and all(isinstance(item, str) and 12 <= len(item) <= 300 for item in check[key]),
                     f"{case}: {key}")
     require([event.get("idempotency_key") for event in rows[7]["setup"]["events"]]
-            == ["ck8", "ck8"], "duplicate-send identity")
+            == ["ck8"], "duplicate-send identity")
     require(rows[6]["setup"]["events"][0]["recipient"] == "worker_a"
             and rows[6]["setup"]["events"][1]["recipient"] == "worker_b",
             "concurrent receiver custody")
+    require([sources[name]["record_class"] for name in rows[14]["setup"]["sources"]]
+            == ["C", "C"], "required conflict setup")
+    require([sources[name]["project"] for name in rows[16]["setup"]["sources"]]
+            == ["Trail", "Cairn"], "cross-project setup")
+    require(rows[17]["setup"]["sources"] == ["old_export", "export_correction"]
+            and sources["export_correction"]["supersedes"] == ["old_export"],
+            "corrected note setup")
 
 
 def manifest(data, fixture_hash):
@@ -163,15 +238,22 @@ def manifest(data, fixture_hash):
                       "actor": actor, "setup": row["setup"],
                       "acceptance_check": row["acceptance_check"]})
         for arm in ARMS:
+            intervention = data["arm_interventions"].get(row["id"], {}).get(arm)
             runs.append({"workflow_id": f"{arm}.{row['id']}", "case": row["id"],
                          "arm": arm, "actor_sha256": sha(actor),
                          "setup_sha256": sha(row["setup"]),
-                         "acceptance_check_sha256": sha(row["acceptance_check"])})
+                         "acceptance_check_sha256": sha(row["acceptance_check"]),
+                         "intervention_sha256": sha(intervention),
+                         "intervention": intervention})
     source_hashes = {name: hashlib.sha256(source["body"].encode()).hexdigest()
                      for name, source in data["sources"].items()}
+    source_record_hashes = {name: sha(source) for name, source in data["sources"].items()}
     return {"schema": "cairn.token-efficiency-panel-manifest/1",
             "fixture_sha256": fixture_hash, "sources": data["sources"],
-            "source_body_sha256": source_hashes, "cases": cases,
+            "event_source_defaults": data["event_source_defaults"],
+            "arm_interventions": data["arm_interventions"],
+            "source_body_sha256": source_hashes,
+            "source_record_sha256": source_record_hashes, "cases": cases,
             "prospective_runs": runs, "setup_executed": False, "provider_called": False,
             "native_join": "unimplemented", "independent_task_acceptance": "unassessed",
             "release": "defer"}
