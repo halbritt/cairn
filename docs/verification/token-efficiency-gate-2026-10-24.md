@@ -158,6 +158,13 @@ forgets an admitted source through the operator workflow after a synthetic
 claim and records one exact `source_unavailable` failed settlement. It did
 not run an actor task or requester explanation.
 
+The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
+issues both frozen mandatory C sources in a disposable database. Operator
+history reads both whole versions; authenticated agent index and search return
+`OPEN_CONFLICT` without a source body or partial selected answer. The search
+refusal carries diagnostic metadata with `selected: null` and no index entry.
+No actor decided the threshold or ran a provider.
+
 The [process-crash child probe](../../scripts/check_panel_process_crash_child.py)
 observed the synthetic claim child exit from SIGKILL and then explicitly reported
 `process_exited` reconciliation; it establishes no native actor/model outcome or

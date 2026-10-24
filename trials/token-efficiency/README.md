@@ -201,6 +201,14 @@ uses another disposable Store to forget an admitted source through the
 operator workflow after a synthetic claim, then settles that exact delivery
 as `source_unavailable`. A requester explanation and actor task remain unrun.
 
+The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
+issues the exact `conflict_24` and `conflict_48` mandatory instructions through
+the operator CLI in a separate disposable database. Operator history returns
+both complete bodies. An authenticated agent's index and search return coded
+`OPEN_CONFLICT`; neither returns an answer or any source body. Search retains
+diagnostic metadata with no selected source or index entry. No actor judged
+the evacuation threshold or produced a response.
+
 The Go probes above write only to disposable integration databases and make
 no claim about full panel execution or accepted outcomes. The existing gate
 requires native workflow evidence for observed sender/recipient turns. An
