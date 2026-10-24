@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 from git_trunk_tools import (
@@ -97,6 +100,7 @@ class GitTrunkToolsTests(unittest.TestCase):
 
     def test_gc_removes_merged_inactive_and_preserves_active(self) -> None:
         wt_merged = git_wt_create(self.repo, "merged-wt", base_dir=self.wt_base)
+        os.utime(wt_merged, (time.time() - 24 * 60 * 60, time.time() - 24 * 60 * 60))
         wt_active = git_wt_create(self.repo, "active-wt", base_dir=self.wt_base)
         wt_unmerged = git_wt_create(self.repo, "unmerged-wt", base_dir=self.wt_base)
         (wt_unmerged / "wip.txt").write_text("wip\n")
@@ -111,6 +115,54 @@ class GitTrunkToolsTests(unittest.TestCase):
 
         git_land(wt_active)
         git_land(wt_unmerged)
+
+    def test_gc_preserves_live_process_worktree_then_reclaims_stale_worktree(self) -> None:
+        wt = git_wt_create(self.repo, "live-test-wt", base_dir=self.wt_base)
+        # Make it old enough that only the live process can protect it.
+        old = time.time() - 24 * 60 * 60
+        os.utime(wt, (old, old))
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            cwd=wt,
+        )
+        try:
+            active_result = git_wt_gc([self.repo], active_workspaces=set())
+            self.assertNotIn(str(wt), active_result["removed_worktrees"])
+            self.assertTrue(wt.is_dir())
+        finally:
+            child.terminate()
+            child.wait(timeout=10)
+
+        stale_result = git_wt_gc([self.repo], active_workspaces=set())
+        self.assertIn(str(wt), stale_result["removed_worktrees"])
+        self.assertFalse(wt.exists())
+
+    def test_gc_defers_merged_worktree_for_active_primary_session(self) -> None:
+        wt = git_wt_create(self.repo, "root-session-wt", base_dir=self.wt_base)
+        old = time.time() - 24 * 60 * 60
+        os.utime(wt, (old, old))
+
+        active_result = git_wt_gc(
+            [self.repo],
+            active_workspaces={str(self.repo)},
+            busy_workspaces={str(self.repo)},
+        )
+        self.assertNotIn(str(wt), active_result["removed_worktrees"])
+        self.assertTrue(wt.is_dir())
+
+        stale_result = git_wt_gc([self.repo], active_workspaces=set())
+        self.assertIn(str(wt), stale_result["removed_worktrees"])
+        self.assertFalse(wt.exists())
+
+        idle_wt = git_wt_create(self.repo, "idle-root-session-wt", base_dir=self.wt_base)
+        os.utime(idle_wt, (old, old))
+        idle_result = git_wt_gc(
+            [self.repo],
+            active_workspaces={str(self.repo)},
+            busy_workspaces=set(),
+        )
+        self.assertIn(str(idle_wt), idle_result["removed_worktrees"])
+        self.assertFalse(idle_wt.exists())
 
     def test_stop_hygiene_hook_blocks_once_then_circuit_breaks(self) -> None:
         self.assertEqual(

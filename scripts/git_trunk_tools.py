@@ -15,6 +15,8 @@ import subprocess
 import sys
 import time
 
+WORKTREE_GC_GRACE_SECONDS = 2 * 60 * 60
+
 
 def _run_git(cwd: Path | str, *args: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -225,11 +227,11 @@ def git_wt_create(
     return dest.resolve()
 
 
-def _active_agent_workspaces() -> set[str]:
+def _active_agent_workspaces() -> tuple[set[str], set[str]]:
     token = Path.home() / ".local" / "share" / "cairn" / "hosted-agent.token"
     cairn_bin = shutil.which("cairn")
     if not cairn_bin or not token.is_file():
-        return set()
+        return set(), set()
     try:
         res = subprocess.run(
             [cairn_bin, "agent", "--token-file", str(token), "agent-directory"],
@@ -241,26 +243,77 @@ def _active_agent_workspaces() -> set[str]:
         )
         data = json.loads(res.stdout).get("data", {})
         active = set()
+        busy = set()
         for entry in data.get("agents") or []:
             if entry.get("online") and not entry.get("stopped"):
-                ws = (entry.get("metadata") or {}).get("workspace")
+                metadata = entry.get("metadata") or {}
+                ws = metadata.get("workspace")
                 if isinstance(ws, str) and ws:
-                    active.add(str(Path(ws).resolve()))
-        return active
+                    resolved = str(Path(ws).resolve())
+                    active.add(resolved)
+                    if metadata.get("state") == "busy":
+                        busy.add(resolved)
+        return active, busy
     except Exception:
+        return set(), set()
+
+
+def _active_process_cwds() -> set[Path] | None:
+    """Return current-user process working directories, or None if unknown."""
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
         return set()
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return None
+
+    cwds: set[Path] = set()
+    uid = os.getuid()
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != uid:
+                continue
+            raw = os.readlink(entry / "cwd")
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError:
+            # Same-user service processes can still be hidden by ptrace policy.
+            # Session workspaces and the creation grace cover those processes.
+            continue
+        if raw.endswith(" (deleted)"):
+            continue
+        cwds.add(Path(raw).resolve())
+    return cwds
 
 
-def git_wt_gc(repo_roots: list[Path], *, active_workspaces: set[str] | None = None) -> dict[str, object]:
-    active = active_workspaces if active_workspaces is not None else _active_agent_workspaces()
+def git_wt_gc(
+    repo_roots: list[Path],
+    *,
+    active_workspaces: set[str] | None = None,
+    busy_workspaces: set[str] | None = None,
+) -> dict[str, object]:
+    if active_workspaces is None:
+        active, discovered_busy = _active_agent_workspaces()
+    else:
+        active, discovered_busy = active_workspaces, set()
+    busy = busy_workspaces if busy_workspaces is not None else discovered_busy
+    process_cwds = _active_process_cwds()
     removed_worktrees: list[str] = []
     removed_branches: list[str] = []
     dirty_orphans: list[str] = []
+    protected_worktrees: list[str] = []
 
     for repo in repo_roots:
         primary = find_git_root(repo)
         if primary is None or primary != primary_worktree(primary):
             continue
+        primary_busy = any(
+            Path(workspace) == primary or primary in Path(workspace).parents
+            for workspace in busy
+        )
         _run_git(primary, "worktree", "prune", check=False)
         trunk = detect_trunk_branch(primary)
         wt_out = _run_git(primary, "worktree", "list", "--porcelain", check=False).stdout
@@ -273,17 +326,32 @@ def git_wt_gc(repo_roots: list[Path], *, active_workspaces: set[str] | None = No
             if wt_path == primary:
                 continue
             if any(wt_path == Path(a) or Path(a) in wt_path.parents or wt_path in Path(a).parents for a in active):
+                protected_worktrees.append(str(wt_path))
                 continue
             is_merged = _run_git(primary, "merge-base", "--is-ancestor", lines.get("HEAD", "HEAD"), trunk, check=False).returncode == 0
             status_lines = _run_git(wt_path, "status", "--porcelain", check=False).stdout.splitlines() if wt_path.is_dir() else []
             non_deleted_dirty = [ln for ln in status_lines if not ln.startswith(" D ")]
-            if is_merged and not non_deleted_dirty:
-                _run_git(primary, "worktree", "remove", "--force", str(wt_path), check=False)
-                if wt_path.exists():
-                    shutil.rmtree(wt_path, ignore_errors=True)
-                removed_worktrees.append(str(wt_path))
-            elif status_lines or not is_merged:
-                dirty_orphans.append(str(wt_path))
+            if not is_merged or non_deleted_dirty:
+                if status_lines or not is_merged:
+                    dirty_orphans.append(str(wt_path))
+                continue
+            if primary_busy:
+                protected_worktrees.append(str(wt_path))
+                continue
+            if process_cwds is None or any(wt_path == cwd or wt_path in cwd.parents for cwd in process_cwds):
+                protected_worktrees.append(str(wt_path))
+                continue
+            try:
+                recent = wt_path.is_dir() and time.time() - wt_path.stat().st_mtime < WORKTREE_GC_GRACE_SECONDS
+            except OSError:
+                recent = True
+            if recent:
+                protected_worktrees.append(str(wt_path))
+                continue
+            _run_git(primary, "worktree", "remove", "--force", str(wt_path), check=False)
+            if wt_path.exists():
+                shutil.rmtree(wt_path, ignore_errors=True)
+            removed_worktrees.append(str(wt_path))
 
         _run_git(primary, "worktree", "prune", check=False)
         merged_refs = _run_git(primary, "for-each-ref", "--merged", trunk, "--format=%(refname:short)", "refs/heads/", check=False).stdout.splitlines()
@@ -301,6 +369,7 @@ def git_wt_gc(repo_roots: list[Path], *, active_workspaces: set[str] | None = No
         "removed_worktrees": removed_worktrees,
         "removed_branches": removed_branches,
         "dirty_orphans": dirty_orphans,
+        "protected_worktrees": protected_worktrees,
     }
 
 
