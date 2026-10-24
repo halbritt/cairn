@@ -99,3 +99,24 @@ python3 -B scripts/evaluate_capture_admission.py \
   --output /tmp/cairn-222-capture-evaluation.json
 PYTHONPATH=scripts python3 -B -m unittest test_evaluate_capture_admission -q
 ```
+
+## Native Claude follow-up boundary
+
+The local native Claude SessionEnd fixture in
+[`capture-observation-hook-2026-10-24.md`](capture-observation-hook-2026-10-24.md)
+proves that the installed Claude hook can call the scripted selector and join
+its result to a disposable Store session. It sends one initial conversation and
+ends that session. It does not establish a confirmed prior capture followed by
+a wake-only suffix.
+
+Claude's installed capture events are PreCompact and SessionEnd. The local CLI
+fixture does not provide a deterministic native PreCompact trigger or a way to
+continue a session after a confirmed PreCompact capture while preserving the
+same native transcript and session identity. Seeding the capture marker or
+calling the hook with a hand-built event would manufacture the prerequisite
+rather than observe the lifecycle. Therefore this fixture cannot establish a
+native Claude wake-only selector skip followed by a later correction or
+unfinished handoff at PreCompact. No suppression was added. The reachable
+PreCompact and SessionEnd recovery boundaries remain unchanged, and the existing
+Codex hook regression remains the only direct sequence evidence for an ignored
+wake followed by correction/handoff capture.
