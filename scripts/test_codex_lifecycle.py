@@ -310,6 +310,23 @@ class CodexHookTests(unittest.TestCase):
 
 
 class CodexInstallerTests(unittest.TestCase):
+    def test_compact_context_capability_is_opt_in_preserved_and_reversible(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(installer, 'trust'):
+            root = Path(directory)
+            hooks = root / 'hooks.json'
+            dest = root / 'dest'
+            config = dict(cairn='/bin/cairn', claude='/bin/claude', socket='/s', token_file='/t', repo='shared')
+            with self.assertRaisesRegex(ValueError, 'agent_tools'):
+                installer.install(hooks, dest, config, context_lifecycle='compact/1')
+            self.assertFalse(hooks.exists())
+            installer.install(hooks, dest, config, recall_mode='agent_tools', context_lifecycle='compact/1')
+            installed = dest / 'config.json'
+            self.assertEqual(json.loads(installed.read_text())['context_lifecycle'], 'compact/1')
+            installer.install(hooks, dest, config)
+            self.assertEqual(json.loads(installed.read_text())['context_lifecycle'], 'compact/1')
+            installer.install(hooks, dest, config, context_lifecycle='full')
+            self.assertNotIn('context_lifecycle', json.loads(installed.read_text()))
+
     def test_installer_merges_hooks_preserves_coordination_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)

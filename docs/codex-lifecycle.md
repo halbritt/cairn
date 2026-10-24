@@ -105,10 +105,31 @@ capture selection is unchanged. An omitted mode retains the existing default.
 
 ### Delegated recall across compaction
 
+An opt-in Codex `agent_tools` lifecycle trial restores one current unfinished
+workstream checkpoint after a compact or resume `SessionStart` when that turn's
+optional grant was already consumed. Enable it for a fresh session with:
+
+```sh
+python3 scripts/install-codex-hooks.py --recall-mode agent_tools --context-lifecycle compact/1
+```
+
+Reruns preserve the setting. Use
+`--context-lifecycle full` to return to the prior path. The trial uses current
+hosted search and an exact whole-source pull. It never credits a partial span,
+an older version, a completed checkpoint, or a body that fails the emission
+budget. When a named checkpoint cannot be confirmed, it gives a short current
+search cue. Required instructions still refresh whole first. The ledger records
+`required_refresh_bytes` and `checkpoint_refresh_bytes` separately; these are
+serialized delivery bytes, not provider tokens or proof the model retained the
+content. On a bound Codex request, the same opt-in emits the native
+`finish_reply` command instead of two result-parsing commands. Existing native
+context retains the separate commands for rollback and recovery.
+
 For Codex `agent_tools`, an ordinary `UserPromptSubmit` with canonical native
 session and turn UUIDs can issue one optional recall allowance per native turn.
-`SessionStart` never opens an allowance: startup, resume and compaction deliver
-only required context, or no additional context when none is required. A wake
+`SessionStart` never opens an allowance: by default startup, resume and
+compaction deliver only required context, or no additional context when none is
+required. A wake
 notification or a prompt without a valid turn ID cannot open an allowance.
 
 The hook retains grants in `<session_id>.memory-budget.json` under `state_dir`,

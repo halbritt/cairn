@@ -42,11 +42,13 @@ if op=='search':
  if fixture.get('fail_search'): print(json.dumps(dict(ok=False,status=fixture['fail_search'] if isinstance(fixture['fail_search'],str) else 'AUTHORITY_DENIED')));sys.exit(7)
  if fixture.get('fail_task_search') and len([x for x in (root/'calls.jsonl').read_text().splitlines() if json.loads(x)['op']=='search'])>1:
   print(json.dumps(dict(ok=False,status=fixture['fail_task_search'])));sys.exit(7)
- result=fixture['search']
+ result=fixture.get('search_pages',{}).get(args[args.index('--offset')+1],fixture['search']) if '--offset' in args else fixture['search']
 elif op=='history':
  if fixture.get('fail_history'): print(json.dumps(dict(ok=False,status=fixture['fail_history'])));sys.exit(7)
  result=fixture['history']
-elif op=='pull': result=fixture['pull']
+elif op=='pull':
+ if fixture.get('fail_pull'): print(json.dumps(dict(ok=False,status=fixture['fail_pull'])));sys.exit(7)
+ result=fixture['pull']
 else: raise SystemExit('unexpected '+op)
 print(json.dumps(dict(ok=True,status='OK',data=result)))
 '''
@@ -199,6 +201,120 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertLessEqual(len(memory.encoded(result).encode())+view['remaining_memory_bytes'],9500)
         self.assertEqual(view['candidate_bodies'][0]['response'],self.fixture['pull'])
         self.assertEqual(self.event['prompt'],coord.wake_message(dict(session=dict(agent_id=AGENT,execution_id=EXEC),delivery_id=DELIVERY)))
+
+    def test_opt_in_codex_request_control_uses_one_finish_reply_command(self):
+        self.mc['context_lifecycle'] = 'compact/1'
+        required = 'Current required instruction remains whole.'
+        self.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+        self.freeze()
+        text = self.invoke()['hookSpecificOutput']['additionalContext']
+        self.assertIn(self.body, text)
+        self.assertIn(required, text)
+        control = text.split('Cairn inbox task data')[0]
+        self.assertIn('"finish_reply"', control)
+        self.assertNotIn('"completion"', control)
+        self.assertNotIn('"response"', control)
+        self.assertEqual([call['op'] for call in self.calls()], ['search', 'history', 'search', 'pull'])
+
+    def test_opt_in_compaction_restores_current_whole_checkpoint_separately(self):
+        self.invoke()  # Consume the native optional grant before compaction.
+        state_path = Path(self.mc['state_dir']) / (SESSION + '.json')
+        title = memory.workstream_prefix(self.event) + 'Fixture repair'
+        memory.save_state(state_path, dict(binding=[None, ''], seen={}, workstream=title))
+        self.mc['context_lifecycle'] = 'compact/1'
+        required = 'Whole required rule after compaction.'
+        body = title + '\nNext: check the fixture and report actual verification.'
+        self.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+        self.fixture['search']['page'] = dict(offset=0, next_offset=None)
+        self.fixture['search']['index'] = [dict(record_id=AGENT, version=1, kind='note', **{'class': 'A'},
+            summary=body, body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+            pull_arguments=dict(receipt_id=EXEC, handle=AGENT, request_id=ATTEMPT))]
+        self.fixture['pull'] = dict(selection=dict(record=dict(record_id=AGENT, version=1, body=body)),
+                                    credits_remaining=3)
+        self.freeze()
+        first_calls = len(self.calls())
+        first = self.memory_main(self.compact_event())
+        self.assertEqual(first['code'], 0, first)
+        text = json.loads(first['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertIn(required, text)
+        checkpoint = json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])
+        self.assertEqual(checkpoint['body'], body)
+        self.assertIn('"source_extent":"whole"', text)
+        self.assertEqual([call['op'] for call in self.calls()[first_calls:]], ['search', 'search', 'pull'])
+        self.assertIn('--offset', self.calls()[first_calls + 1]['args'])
+        grant = self.memory_ledger()['turns'][TURN]
+        required_cost = memory.codex_hook_cost(self.compact_event(), memory.render_recall(self.fixture['search']['selected'], []))
+        self.assertEqual(grant['required_refresh_bytes'], required_cost)
+        self.assertEqual(grant['required_refresh_bytes'] + grant['checkpoint_refresh_bytes'], len(first['stdout'].encode()))
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'restored')
+        corrected = title + '\nNext: verify the corrected retry identity.'
+        self.fixture['search']['index'][0].update(version=2, summary=corrected,
+            body_sha256=hashlib.sha256(corrected.encode()).hexdigest())
+        self.fixture['pull']['selection']['record'].update(version=2, body=corrected)
+        self.fixture['search']['selected'][0]['record']['body'] = 'Corrected current required rule.'
+        self.freeze()
+        second = self.memory_main(self.compact_event())
+        second_text = json.loads(second['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertIn('Corrected current required rule.', second_text)
+        second_checkpoint = json.loads(second_text[second_text.index('{"schema":"cairn.checkpoint-refresh/1"'):])
+        self.assertEqual(second_checkpoint['body'], corrected)
+        self.fixture['pull'].update(source_extent='partial_span', span=dict(body=corrected[:20]))
+        self.freeze()
+        partial = self.memory_main(self.compact_event())
+        self.assertNotIn(corrected, partial['stdout'])
+        self.assertIn('not restored', partial['stdout'])
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'not_whole')
+        completed = title + '\n\nStatus: complete\nFinal verification recorded.'
+        self.fixture['search']['index'][0].update(version=3, summary=completed,
+            body_sha256=hashlib.sha256(completed.encode()).hexdigest())
+        self.fixture['pull']['selection']['record'].update(version=3, body=completed)
+        self.fixture['pull'].pop('source_extent')
+        self.fixture['pull'].pop('span')
+        self.freeze()
+        closed = self.memory_main(self.compact_event())
+        self.assertNotIn('cairn.checkpoint-refresh/1', closed['stdout'])
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'complete')
+        self.fixture['search']['index'][0].update(version=4, summary=corrected,
+            body_sha256=hashlib.sha256(corrected.encode()).hexdigest())
+        self.fixture['fail_pull'] = 'AUTHORITY_DENIED'
+        self.freeze()
+        private = self.memory_main(self.compact_event())
+        self.assertIn('not restored', private['stdout'])
+        self.assertNotIn('cairn.checkpoint-refresh/1', private['stdout'])
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'unavailable')
+        self.fixture.pop('fail_pull')
+        self.fixture['search']['page']['next_offset'] = 0
+        self.freeze()
+        before = len(self.calls())
+        incomplete = self.memory_main(self.compact_event())
+        self.assertIn('not restored', incomplete['stdout'])
+        self.assertEqual([call['op'] for call in self.calls()[before:]], ['search', 'search'])
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'incomplete_search')
+
+    def test_opt_in_checkpoint_can_be_on_next_complete_search_page(self):
+        self.invoke()
+        title = memory.workstream_prefix(self.event) + 'Paged repair'
+        state_path = Path(self.mc['state_dir']) / (SESSION + '.json')
+        memory.save_state(state_path, dict(binding=[None, ''], seen={}, workstream=title))
+        self.mc['context_lifecycle'] = 'compact/1'
+        body = title + '\nNext: verify the retained result.'
+        entry = dict(record_id=AGENT, version=2, kind='note', **{'class': 'A'},
+                     summary=body, body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+                     pull_arguments=dict(receipt_id=EXEC, handle=AGENT, request_id=ATTEMPT))
+        base = dict(self.fixture['search'], selected=[])
+        self.fixture['search_pages'] = {'0': dict(base, index=[], page=dict(offset=0, next_offset=1)),
+                                        '1': dict(base, index=[entry], page=dict(offset=1, next_offset=None))}
+        self.fixture['pull'] = dict(selection=dict(record=dict(record_id=AGENT, version=2, body=body)),
+                                    credits_remaining=3)
+        self.freeze()
+        before = len(self.calls())
+        resumed = self.memory_main(self.compact_event())
+        self.assertEqual(resumed['code'], 0, resumed)
+        text = json.loads(resumed['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertEqual(json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])['body'], body)
+        calls = self.calls()[before:]
+        self.assertEqual([call['op'] for call in calls], ['search', 'search', 'search', 'pull'])
+        self.assertEqual([call['args'][call['args'].index('--offset')+1] for call in calls[1:3]], ['0', '1'])
 
     def test_bound_compact_notice_keeps_exact_source_and_required_memory(self):
         self.cc['compact_inbox_version'] = 1

@@ -127,7 +127,7 @@ fallback cues carry this same distinction. See [whole source allocation](inspect
 Agent compliance is required for native calls;
 this bridge does not intercept every tool result or provide a global API budget.
 
-After compaction, current required-only context is restored whole under a separate
+By default after compaction, current required-only context is restored whole under a separate
 per-emission serialized limit. It does not consume or renew an already reserved
 optional grant. Every such output is accumulated in `required_refresh_bytes`;
 initial Codex `emitted_hook_bytes` (Claude `output_bytes`) and reserved optional
@@ -135,6 +135,12 @@ bytes remain unchanged.
 **This does not satisfy an evaluation requiring all cumulative task memory bytes
 to stay below 9500 when initial delivery plus refreshes exceeds that limit.**
 Retain that original evaluation failure instead of silently changing its denominator.
+With the Codex `context_lifecycle: compact/1` trial, a confirmed current whole
+unfinished checkpoint may follow required context on compact/resume. Its added
+serialized bytes are recorded in `checkpoint_refresh_bytes`; they also count
+toward cumulative delivery even though they do not renew an optional grant.
+The trial leaves the required refresh boundary and the existing full request
+control available for rollback.
 The runtime distinguishes a bounded current-context delivery from optional-read
 permission; neither measures the model's actual free context.
 

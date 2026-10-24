@@ -50,13 +50,23 @@ def trust(config_home, hooks_path, command):
     coordination.trust_codex_hooks(config_home, hooks_path, command, expected=len(EVENTS))
 
 
-def install(hooks_path, destination, config, recall_mode=None):
+def install(hooks_path, destination, config, recall_mode=None, context_lifecycle=None):
     data = json.loads(hooks_path.read_text()) if hooks_path.exists() else {}
     hooks = data.setdefault("hooks", {})
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
     config = shared.retain_recall_mode(config, config_path, recall_mode)
     config = shared.retain_capture_observations(config, config_path)
+    if context_lifecycle is None and config_path.exists():
+        context_lifecycle = json.loads(config_path.read_text()).get('context_lifecycle', 'full')
+    if context_lifecycle == 'compact/1':
+        if config.get('recall_mode') != 'agent_tools':
+            raise ValueError('compact context lifecycle requires agent_tools recall')
+        config['context_lifecycle'] = 'compact/1'
+    elif context_lifecycle in (None, 'full'):
+        config.pop('context_lifecycle', None)
+    else:
+        raise ValueError('unsupported context lifecycle')
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event, settings in EVENTS.items():
         groups = hooks.setdefault(event, [])
@@ -95,6 +105,8 @@ def main():
     parser.add_argument("--recall-model")
     parser.add_argument("--recall-mode", choices=("ambient", "agent_tools"),
                         help="optional recall path; omitted preserves the installed mode (default ambient)")
+    parser.add_argument("--context-lifecycle", choices=("full", "compact/1"),
+                        help="opt-in Codex compact/resume checkpoint refresh; full rolls it back")
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
@@ -105,7 +117,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     config_path = args.destination.absolute() / "config.json"
     config = shared.retain_model_overrides(config, config_path, args.preview_model, args.recall_model)
-    install(args.hooks.absolute(), args.destination.absolute(), config, args.recall_mode)
+    install(args.hooks.absolute(), args.destination.absolute(), config, args.recall_mode, args.context_lifecycle)
     print(f"Installed and trusted Cairn lifecycle hooks in {args.hooks}. Start a fresh Codex session.")
 
 

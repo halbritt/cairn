@@ -1592,6 +1592,7 @@ def codex_budget_ledger(path, session, budget):
                     or (required["count"] > 0 and not re.fullmatch(r"[0-9a-f]{64}", required["selection_sha256"]))
                     or (required["count"] == 0 and required["selection_sha256"] != "")
                     or type(grant.get("required_refresh_bytes", 0)) is not int or grant.get("required_refresh_bytes", 0) < 0
+                    or type(grant.get("checkpoint_refresh_bytes", 0)) is not int or grant.get("checkpoint_refresh_bytes", 0) < 0
                     or ("serialized_hook_bytes" in grant and (type(grant["serialized_hook_bytes"]) is not int
                         or grant["serialized_hook_bytes"] < 0))):
                 raise ValueError("invalid required-context accounting")
@@ -1896,7 +1897,7 @@ def save_codex_ledger(path, ledger):
     save_codex_budget(path, ledger)
 
 
-def codex_agent_context(memory, event, result, budget, status, deadline):
+def codex_agent_context(memory, event, result, budget, status, deadline, state):
     # handle holds the session lock through this independent ledger save and
     # final state save. Capture, binding changes and seen resets cannot refund it.
     session = event.get("session_id")
@@ -1963,14 +1964,30 @@ def codex_agent_context(memory, event, result, budget, status, deadline):
         # Current mandatory context is restored independently of the consumed
         # optional allowance. Count it honestly; cumulative delivery may exceed
         # the original per-task evaluation cap.
-        grant["required_refresh_bytes"] = grant.get("required_refresh_bytes", 0) + cost(text)
+        required_cost = cost(text)
+        checkpoint_state = None
+        if (memory.config.get("context_lifecycle", "full") == "compact/1"
+                and event.get("source") in ("compact", "resume")):
+            checkpoint, checkpoint_state = current_checkpoint_view(memory, event, state, result, deadline)
+            if checkpoint:
+                candidate = text + "\n" + checkpoint if text else checkpoint
+                if cost(candidate) <= budget:
+                    text = candidate
+                else:
+                    checkpoint_state = "budget_deferred"
+        grant["required_refresh_bytes"] = grant.get("required_refresh_bytes", 0) + required_cost
+        grant["checkpoint_refresh_bytes"] = grant.get("checkpoint_refresh_bytes", 0) + cost(text) - required_cost
         persist_current()
-        status.update(outcome="required_only" if text else "suppressed", discovery="agent_tools",
+        status.update(outcome="required_checkpoint" if checkpoint_state == "restored" else
+                      "required_only" if text else "suppressed", discovery="agent_tools",
                       optional_deferred="native_turn_grant_used", bytes=len(text.encode()),
                       native_turn_id=ledger["active_turn_id"],
                       cumulative_hook_bytes=grant["emitted_hook_bytes"],
                       required_refresh_bytes=grant["required_refresh_bytes"],
+                      checkpoint_refresh_bytes=grant["checkpoint_refresh_bytes"],
                       reserved_native_bytes=grant["reserved_native_bytes"])
+        if checkpoint_state is not None:
+            status["checkpoint_refresh"] = checkpoint_state
         return text
     if bound:
         # A successful current empty selection can clear a pending requirement
@@ -2019,6 +2036,63 @@ def current_pull(memory, entry, deadline):
     if entry.get("body_sha256") and hashlib.sha256(record["body"].encode()).hexdigest() != entry["body_sha256"]:
         raise HookError("optional body hash changed")
     return pulled
+
+
+def current_checkpoint_view(memory, event, state, result, deadline):
+    """Restore one current whole unfinished note after a Codex context reset."""
+    title = state.get("workstream")
+    if (not isinstance(title, str) or not title.startswith(workstream_prefix(event))
+            or len(title.encode()) > 256 or any(c in title for c in '\r\n"')):
+        return "", None
+    for item in result.get("selected", []):
+        body = item.get("record", {}).get("body") if isinstance(item, dict) else None
+        if isinstance(body, str) and body.startswith(title + "\n"):
+            return "", "covered_by_required"
+    cue = ("Current unfinished checkpoint was not restored for " + title +
+           "; search current Cairn memory before relying on earlier context.")
+    def matching(search):
+        return [entry for entry in search.get("index", []) if isinstance(entry, dict)
+                and entry.get("class") == "A" and entry.get("kind") == "note"
+                and isinstance(entry.get("summary"), str)
+                and entry["summary"].startswith(title + "\n") and not entry.get("conflicts")]
+    try:
+        entries = []
+        offset = 0
+        for _ in range(3):
+            found = memory.search('"' + title + '"', room=16000, kinds=("note",), offset=offset,
+                                  timeout=recall_timeout(deadline))
+            page = found.get("page")
+            if not isinstance(page, dict) or page.get("offset") != offset:
+                return cue, "incomplete_search"
+            entries.extend(matching(found))
+            if len(entries) > 1:
+                return cue, "ambiguous"
+            next_offset = page.get("next_offset")
+            if next_offset is None:
+                break
+            if type(next_offset) is not int or next_offset <= offset:
+                return cue, "incomplete_search"
+            offset = next_offset
+        else:
+            return cue, "incomplete_search"
+        if not entries:
+            return cue, "not_found"
+        entry = entries[0]
+        pulled = current_pull(memory, entry, deadline)
+        record = pulled.get("selection", {}).get("record", {})
+        body = record.get("body")
+        if (pulled.get("source_extent") == "partial_span" or pulled.get("span") is not None
+                or not isinstance(body, str) or not body.startswith(title + "\n")
+                or len(body.encode()) > CHECKPOINT_BYTES):
+            return cue, "not_whole"
+        if body[len(title):].lstrip().startswith("Status: complete\n"):
+            return "", "complete"
+        view = dict(schema="cairn.checkpoint-refresh/1", record_id=entry["record_id"],
+                    version=entry["version"], source_extent="whole", body=body)
+        return ("Current saved unfinished work (ordinary note, verify against this task):\n" + encoded(view),
+                "restored")
+    except (HookError, OSError, ValueError, KeyError, TypeError):
+        return cue, "unavailable"
 
 
 def optional_span_hint(entry):
@@ -2566,6 +2640,10 @@ def recall(memory, event, state=None):
         raise HookError("invalid lifecycle recall_mode: expected ambient or agent_tools")
     if memory.config.get('recall_view', 'full') not in ('full', 'compact/1'):
         raise HookError('invalid lifecycle recall_view: expected full or compact/1')
+    if (memory.config.get('context_lifecycle', 'full') not in ('full', 'compact/1') or
+            (memory.config.get('context_lifecycle') == 'compact/1' and
+             (memory.config.get('harness') != 'codex' or mode != 'agent_tools'))):
+        raise HookError('context_lifecycle compact/1 requires Codex agent_tools recall')
     recall_task_key(memory.config)  # Reject malformed explicit launch binding before retrieval.
     if mode == "agent_tools":
         deadline = started + 5
@@ -2597,7 +2675,7 @@ def recall(memory, event, state=None):
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     if mode == "agent_tools" and memory.config.get("harness") == "codex":
-        text = codex_agent_context(memory, event, result, budget, status, deadline)
+        text = codex_agent_context(memory, event, result, budget, status, deadline, state)
         status["elapsed_seconds"] = round(time.monotonic() - started, 3)
         if bound_codex(memory.config):
             status["discovery"] = "deferred" if status.get("optional_deferred") else bound_discovery
