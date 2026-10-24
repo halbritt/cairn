@@ -229,6 +229,30 @@ class InboxRecovery(unittest.TestCase):
         self.assertNotIn('body', json.loads(retry.stdout))
         self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
 
+    def test_committed_compact_settlement_refuses_forgotten_payload(self):
+        context, _ = self.compact_context('notice', 'Forgotten payload must not be replayed.')
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        command = [sys.executable, str(SCRIPT), 'inbox', 'compact', 'settle',
+                   context['compact_handle'], 'handled']
+        first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(json.loads(first.stdout)['status'], 'handled')
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
+
+        # RecordHistory reports PAYLOAD_UNAVAILABLE when deletion tombstones a
+        # source whose identity remains visible. A retry must check that source
+        # before replaying the already committed acknowledgement.
+        replies = json.loads((self.root / 'replies.json').read_text())
+        replies['event-renew'] = [dict(ok=False, status='STALE_LEASE')]
+        replies['history'] = [dict(ok=False, status='PAYLOAD_UNAVAILABLE')]
+        self.replies(replies)
+        retry = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(retry.returncode, 0)
+        self.assertEqual(json.loads(retry.stdout)['status'], 'PAYLOAD_UNAVAILABLE')
+        self.assertNotIn('body', json.loads(retry.stdout))
+        self.assertEqual([entry['operation'] for entry in self.log()].count('ack'), 1)
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
+
     def test_compact_handle_refuses_wrong_session_expiry_forgetting_and_restore(self):
         body = 'Notice that must not be settled through a stale handle.'
         context, _ = self.compact_context('notice', body)

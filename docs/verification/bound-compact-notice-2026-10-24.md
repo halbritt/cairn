@@ -19,6 +19,12 @@ delivery leased. Explicit `handled` settlement commits one acknowledgement;
 an identical helper retry returns the same result. The publisher sees the
 original delivery handled with one attempt and no invented result record.
 
+The probe then forgets the source through the operator path. The worker's real
+history request returns `PAYLOAD_UNAVAILABLE`; retrying the already committed
+handled settlement refuses with that status, exposes no body, and leaves the
+delivery handled at one attempt. This verifies the deleted-payload recovery
+path against the disposable Store rather than a mocked history response.
+
 This is a source, hook and Store transition probe. The synthetic admission
 does not prove native transport, actor comprehension, accepted task outcome,
 provider usage, latency, or an installed Codex/Claude canary.

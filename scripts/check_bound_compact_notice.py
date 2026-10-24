@@ -189,12 +189,13 @@ def check(binary):
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, text=True, env=env)
 
-        def owner_request(request):
+        def owner_request(request, expected_code=0):
             owner.stdin.write(json.dumps(request) + '\n')
             owner.stdin.flush()
             require(select.select([owner.stdout], [], [], 30)[0], 'synthetic owner timed out')
             result = json.loads(owner.stdout.readline())
-            require(result['code'] == 0, f"synthetic owner: {result['stdout']} {result['stderr']}")
+            require(result['code'] == expected_code,
+                    f"synthetic owner: {result['stdout']} {result['stderr']}")
             return json.loads(result['stdout'])
 
         base = dict(session_id=native_id, turn_id=turn_id, cwd=str(work),
@@ -286,10 +287,44 @@ def check(binary):
                 'helper did not retain committed acknowledgement identity')
         require(required['record_id'] in json.dumps(output),
                 'bound output did not retain required Store record identity')
+
+        # Exercise the Store's real forgotten-payload response after a committed
+        # settlement. History must refuse with PAYLOAD_UNAVAILABLE, and the
+        # helper must not disclose the body or replay another acknowledgement.
+        preview_result = subprocess.run([str(binary), 'preview-delete', source['record_id']],
+            env=env, capture_output=True, text=True, timeout=15)
+        preview_envelope = json.loads(preview_result.stdout)
+        require(preview_result.returncode == 0 and preview_envelope['status'] == 'OK',
+                f"preview-delete: {preview_envelope.get('status')}")
+        forget = dict(request_id=str(uuid.uuid4()), record_id=source['record_id'],
+                      expected_version=source['version'], grant_id=grant['grant_id'],
+                      preview_id=preview_envelope['data']['preview_id'])
+        forget_result = subprocess.run([str(binary), 'forget'], input=json.dumps(forget),
+            env=env, capture_output=True, text=True, timeout=15)
+        forget_envelope = json.loads(forget_result.stdout)
+        require(forget_result.returncode == 0 and forget_envelope['status'] == 'OK',
+                f"forget: {forget_envelope.get('status')}")
+        history_result = subprocess.run([str(binary), 'agent', '--socket', str(socket),
+            '--token-file', str(home / 'worker.token'), '--agent-id', session['agent_id'],
+            '--execution-id', session['execution_id'], 'history'], input=json.dumps(ref),
+            env=env, capture_output=True, text=True, timeout=15)
+        history_envelope = json.loads(history_result.stdout)
+        require(history_result.returncode != 0
+                and history_envelope['status'] == 'PAYLOAD_UNAVAILABLE',
+                f"forgotten history: {history_envelope.get('status')}")
+        retry = owner_request(dict(_compact=['settle', handle, 'handled'], session_id=native_id),
+                              expected_code=7)
+        require(retry['ok'] is False and retry['status'] == 'PAYLOAD_UNAVAILABLE'
+                and 'body' not in retry,
+                'committed settlement retry exposed or accepted a forgotten source')
+        after_forgetting = profile('sender', 'event-inspect',
+                                   dict(event_id=event['event_id']))['deliveries'][0]
+        require(after_forgetting['state'] == 'handled' and after_forgetting['attempts'] == 1,
+                'forgotten-source retry changed the already committed delivery')
         print(json.dumps(dict(case='bound_compact_notice', store_api='disposable',
                               callbacks='synthetic_store_claim_and_bound_wake_prompt',
                               required_context='whole', source='scoped_whole_read',
-                              settlement='explicit_handled_once', provider_called=False,
+                              settlement='explicit_handled_once_then_forgotten_retry_refused', provider_called=False,
                               actor_task='unrun', task_outcome='unassessed')))
     finally:
         stop(owner)
