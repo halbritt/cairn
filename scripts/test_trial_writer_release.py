@@ -606,6 +606,25 @@ class NamespaceInitTests(Base):
         self.assertGreaterEqual(leaf.init_pidfd, 1024)
         self.assertEqual(leaf.init_exit(time.monotonic() + 1), 'exited')
 
+    def test_pidfd_poll_errors_and_unrelated_events_are_not_exit_evidence(self):
+        leaf = self.leaf_with_device()
+        self.addCleanup(leaf.close)
+        leaf.init_pidfd = os.open('/dev/null', os.O_RDONLY)
+        events = (
+            (leaf.init_pidfd, select.POLLERR),
+            (leaf.init_pidfd, select.POLLNVAL),
+            (leaf.init_pidfd, select.POLLHUP),
+            (leaf.init_pidfd, select.POLLIN | select.POLLERR),
+            (leaf.init_pidfd + 1, select.POLLIN),
+            (leaf.init_pidfd, select.POLLOUT),
+        )
+        for event in events:
+            with self.subTest(event=event):
+                poller = unittest.mock.Mock()
+                poller.poll.return_value = [event]
+                with patch.object(writer.select, 'poll', return_value=poller):
+                    self.assertEqual(leaf.init_exit(time.monotonic() + 1), 'exit_unknown')
+
     ESCAPES = {
         'double_fork': "if os.fork() == 0:\n    if os.fork() == 0:\n        write()\n    os._exit(0)\n",
         'setsid': "if os.fork() == 0:\n    os.setsid()\n    write()\n",
