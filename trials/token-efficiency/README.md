@@ -65,21 +65,27 @@ task with saved source state; it does not invent a native handoff event kind.
 The required-source conflict may correctly refuse before delivering either
 body, so its acceptance check allows that bounded refusal.
 
-`core/token_efficiency_panel_materialization_test.go` exercises a bounded
-native store slice under `make test-integration`'s disposable PostgreSQL
-cluster. It reads this fixture and checks A record creation/edit with retained
-history for `corrected_note`, governed C issuance and a required-conflict
-refusal for `required_conflict_group`, and one request source/event with an
-identical publish retry and one delivery for `duplicate_send`. The test uses
-store-owned writer identity, the disposable test operator grant, and the
-fixture's source/event fields. It does not materialize the other 19 situations
-or any four-arm intervention.
+Two Go integration tests exercise source and event setup for six cases under
+`make test-integration`'s disposable PostgreSQL cluster.
+`core/token_efficiency_panel_materialization_test.go` checks A record
+creation/edit with retained history for `corrected_note`, governed C issuance
+and required-conflict refusal for `required_conflict_group`, and one request
+source/event with an identical publish retry and one delivery for
+`duplicate_send`. `core/token_efficiency_panel_events_test.go` checks a pending
+`single_notice`, exact request/response causation and responding writer for
+`actionable_response`, and four isolated publication setups for
+`routine_burst_urgent_request`. The burst test applies only the fixture's
+routine-notice policy per arm and checks availability. It checks urgent
+readiness in the batch and combined setups, where routine notices are deferred;
+it does not run batch transfer or handling. These tests use store-owned writer
+identity, a disposable test operator grant where needed, and fixture source
+and event fields. The other 16 situations remain unmaterialized.
 
 **Current preflight boundary:** the Python validator checks the fixture and
 export as data. It never inserts records, issues authority, applies arm
 interventions, executes transitions, launches a provider, measures tokens,
-joins native turns, or grades task outcomes. The three-case Go test above
-inserts only into its disposable integration database and makes no claim about
+joins native turns, or grades task outcomes. The six-case Go tests above
+insert only into their disposable integration database and make no claim about
 full panel execution or accepted outcomes. The existing gate requires native
 workflow evidence for observed sender/recipient turns. An ordinary-memory case
 has no proven native join yet; a fabricated inbox event would change what that
