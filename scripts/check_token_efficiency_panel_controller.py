@@ -23,7 +23,8 @@ def require(value, message):
 
 def check(binary, workflow_id):
     require(workflow_id in ("baseline.single_notice", "baseline.actionable_response",
-                            "baseline.duplicate_send", "baseline.small_request_result_reply") or workflow_id in tuple(
+                            "baseline.duplicate_send", "baseline.small_request_result_reply",
+                            "baseline.concurrent_receivers") or workflow_id in tuple(
                                 f"{arm}.routine_burst_urgent_request" for arm in
                                 ("baseline", "envelope", "batch", "combined")),
             "unsupported workflow")
@@ -50,7 +51,7 @@ def check(binary, workflow_id):
     home = root / f"panel-controller-home-{label}"
     home.mkdir(mode=0o700)
     principals = {role: f"agent/panel-{role}-{uuid.uuid4()}"
-                  for role in ("sender", "worker", "other")}
+                  for role in ("sender", "worker", "other", "stranger")}
     identities = []
     for role, principal in principals.items():
         token = secrets.token_urlsafe(32)
@@ -111,12 +112,22 @@ def check(binary, workflow_id):
                    "--worker-token", str(home / "worker.token"),
                    "--sender-principal", principals["sender"],
                    "--run-dir", str(root / f"panel-run-{label}")]
+        if case == "concurrent_receivers":
+            command += ["--other-token", str(home / "other.token")]
         swapped = list(command)
         swapped[swapped.index("--worker-token") + 1] = str(home / "sender.token")
         rejected = subprocess.run(swapped, text=True, capture_output=True, env=env, timeout=20)
         require(rejected.returncode != 0 and "token identities must differ" in rejected.stderr,
                 "same-token identity was accepted")
         require(not (root / f"panel-run-{label}").exists(), "same-token request mutated state")
+        if case == "concurrent_receivers":
+            swapped = list(command)
+            swapped[swapped.index("--other-token") + 1] = str(home / "worker.token")
+            rejected = subprocess.run(swapped, text=True, capture_output=True, env=env, timeout=20)
+            require(rejected.returncode != 0 and "token identities must differ" in rejected.stderr,
+                    "same-token second worker was accepted")
+            require(not (root / f"panel-run-{label}").exists(),
+                    "same-token second worker mutated state")
         actor_path = export / "actor" / f"{case}.json"
         actor_bytes = actor_path.read_bytes()
         actor = json.loads(actor_bytes)
@@ -138,6 +149,8 @@ def check(binary, workflow_id):
         require(receipt["provider_called"] is False and receipt["native_turn_join"] == "unimplemented",
                 "no actor turn")
         require(receipt["task_outcome"] == "unassessed", "no task outcome")
+        if case == "concurrent_receivers":
+            require(receipt["native_actor_concurrency"] == "unrun", "no concurrent actors")
         if burst:
             require(receipt["native_batch_transfer"] == "unrun", "batch transfer not run")
             snapshot = receipt["readiness_snapshot"]
@@ -159,7 +172,9 @@ def check(binary, workflow_id):
         expected_sessions = ({"worker_a": "worker", "worker": "sender"}
                              if case == "actionable_response" else
                              {"worker": "worker", "sender": "sender"}
-                             if case == "small_request_result_reply" else {"worker": "worker"})
+                             if case == "small_request_result_reply" else
+                             {"worker_a": "worker", "worker_b": "other"}
+                             if case == "concurrent_receivers" else {"worker": "worker"})
         require(set(receipt["sessions"]) == set(expected_sessions), "session roles")
         for label, token_role in expected_sessions.items():
             session = receipt["sessions"][label]
@@ -168,6 +183,12 @@ def check(binary, workflow_id):
                     == session["observed_owner"] == principals[token_role], "session owner")
             require(session["inbox"] == f"agent/{agent_id}", "session inbox")
         require(principals["sender"] != principals["worker"], "separate profiles")
+        if case == "concurrent_receivers":
+            require(len({principals["sender"], receipt["sessions"]["worker_a"]["observed_owner"],
+                         receipt["sessions"]["worker_b"]["observed_owner"]}) == 3,
+                    "two distinct worker owners")
+            require(receipt["sessions"]["worker_a"]["inbox"] !=
+                    receipt["sessions"]["worker_b"]["inbox"], "two distinct worker inboxes")
         require(set(json.loads(actor_path.read_text())) == {"schema", "case", "task"},
                 "actor export isolation")
         if burst and arm == "batch":
@@ -177,12 +198,21 @@ def check(binary, workflow_id):
         second = subprocess.run(command, text=True, capture_output=True, env=env, timeout=30)
         require(second.returncode == 0 and json.loads(second.stdout) == receipt, second.stderr)
         changed = list(command)
-        changed[changed.index("--worker-token") + 1] = str(home / "other.token")
+        changed[changed.index("--worker-token") + 1] = str(
+            home / ("stranger.token" if case == "concurrent_receivers" else "other.token"))
         rejected = subprocess.run(changed, text=True, capture_output=True, env=env, timeout=20)
         require(rejected.returncode != 0 and "prior intent differs" in rejected.stderr,
                 "changed worker identity accepted on retry")
         require(sql("SELECT count(*) FROM cairn.agent_session") == str(len(expected_sessions)),
                 "changed worker identity registered a session")
+        if case == "concurrent_receivers":
+            changed = list(command)
+            changed[changed.index("--other-token") + 1] = str(home / "stranger.token")
+            rejected = subprocess.run(changed, text=True, capture_output=True, env=env, timeout=20)
+            require(rejected.returncode != 0 and "prior intent differs" in rejected.stderr,
+                    "changed second worker identity accepted on retry")
+            require(sql("SELECT count(*) FROM cairn.agent_session") == str(len(expected_sessions)),
+                    "changed second worker identity registered a session")
         fixture_case = next(row for row in fixture["cases"] if row["id"] == case)
         expected_publishers = ({"request_decision": "sender", "response_a": "worker"}
                                if case == "actionable_response" else
@@ -239,11 +269,58 @@ def check(binary, workflow_id):
                             datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
                             + timedelta(seconds=30), "fixed routine availability deadline")
                 require("task_deadline" not in status["event"], "fixture has no task deadline")
+        if case == "concurrent_receivers":
+            isolation = receipt["recipient_isolation"]
+            require(isolation["basis"] == "native_readiness_and_cross_session_refusal"
+                    and isolation["worker_a_to_worker_b_status"] == "NOT_FOUND",
+                    "native isolation basis")
+            for recipient, event_id, token_role in (("worker_a", "request_a", "worker"),
+                                                    ("worker_b", "request_b", "other")):
+                session = receipt["sessions"][recipient]
+                event = receipt["events"][event_id]
+                expected = {"session_agent_id": session["agent_id"],
+                            "event_id": event["event_id"], "delivery_id": event["delivery_id"]}
+                require(isolation[recipient] == expected, "receipt readiness identity")
+                result = subprocess.run(
+                    [str(binary), "agent", "--socket", str(home / "api.sock"),
+                     "--token-file", str(home / f"{token_role}.token"), "session-inbox-ready"],
+                    input=json.dumps({"agent_id": session["agent_id"],
+                                      "execution_id": session["execution_id"]}),
+                    text=True, capture_output=True, env=env, timeout=20)
+                envelope = json.loads(result.stdout)
+                require(result.returncode == 0 and envelope["status"] == "OK"
+                        and envelope["data"] == {"event_id": event["event_id"],
+                                                 "delivery_id": event["delivery_id"]},
+                        "exact native recipient readiness")
+            b_session = receipt["sessions"]["worker_b"]
+            b_event = receipt["events"]["request_b"]
+            result = subprocess.run(
+                [str(binary), "agent", "--socket", str(home / "api.sock"),
+                 "--token-file", str(home / "worker.token"), "session-inbox-ready"],
+                input=json.dumps({"agent_id": b_session["agent_id"],
+                                  "execution_id": b_session["execution_id"]}),
+                text=True, capture_output=True, env=env, timeout=20)
+            envelope = json.loads(result.stdout)
+            require(result.returncode != 0 and envelope["schema"] == "cairn.response/1"
+                    and envelope["ok"] is False and envelope["status"] == "NOT_FOUND",
+                    "A profile must be refused on exact B session")
+            b_status = cli("sender", "event-status", b_event["event_id"])
+            require(len(b_status["deliveries"]) == 1 and
+                    b_status["deliveries"][0]["delivery_id"] == b_event["delivery_id"] and
+                    b_status["deliveries"][0]["consumer"] == b_session["inbox"] and
+                    b_status["deliveries"][0]["state"] == "pending" and
+                    b_status["deliveries"][0]["attempts"] == 0 and
+                    isolation["worker_b_after_refusal"] ==
+                    {"delivery_id": b_event["delivery_id"], "state": "pending", "attempts": 0},
+                    "B delivery unchanged by A refusal")
+            require(sql("SELECT count(*) FROM cairn.agent_session_attempt") == "0",
+                    "setup must not claim either session")
         sender_stats = cli("sender", "event-stats")
         expected_events = len(fixture_case["setup"]["events"])
         if case == "small_request_result_reply":
             expected_events += 1
-        require(sender_stats["published"] == (4 if burst else 1), sender_stats)
+        require(sender_stats["published"] == (4 if burst else 2 if case == "concurrent_receivers"
+                                               else 1), sender_stats)
         require(sql("SELECT count(*) FROM cairn.agent_event") == str(expected_events),
                 "unexpected event count")
         require(sql("SELECT count(*) FROM cairn.agent_delivery") == str(expected_events),

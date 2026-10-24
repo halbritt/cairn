@@ -45,6 +45,13 @@ CASE_ADAPTERS = {
         "publishers": {"duplicate_a": "sender"},
         "sessions": {"worker": "worker"},
     },
+    "concurrent_receivers": {
+        "events": [{"id": "request_a", "kind": "request", "recipient": "worker_a"},
+                   {"id": "request_b", "kind": "request", "recipient": "worker_b"}],
+        "transitions": [],
+        "publishers": {"request_a": "sender", "request_b": "sender"},
+        "sessions": {"worker_a": "worker", "worker_b": "other"},
+    },
     "small_request_result_reply": {
         "events": [{"id": "request_hash", "kind": "request", "recipient": "worker"}],
         "transitions": [], "publishers": {"request_hash": "sender"},
@@ -149,7 +156,11 @@ def disposable_inputs(args):
     run_dir = Path(args.run_dir)
     require(run_dir.parent == root and run_dir.name not in ("", ".", ".."),
             "run directory must be a direct child of disposable root")
-    for token in (args.sender_token, args.worker_token):
+    token_paths = [args.sender_token, args.worker_token]
+    if case == "concurrent_receivers":
+        require(args.other_token is not None, "second worker token required")
+        token_paths.append(args.other_token)
+    for token in token_paths:
         path = Path(token)
         require(path.parent == home, "test token path must be in disposable home")
         private_file(path)
@@ -216,6 +227,20 @@ def call(binary, socket, token, operation, args=(), body=None, session=None):
             and isinstance(result.get("data"), dict),
             f"Cairn {operation[-1]} refused: {result.get('status')}")
     return result["data"]
+
+
+def refused_readiness(binary, socket, token, session):
+    command = [str(binary), "agent", "--socket", str(socket), "--token-file", str(token),
+               "session-inbox-ready"]
+    process = subprocess.run(command, input=json.dumps({"agent_id": session["agent_id"],
+                                                         "execution_id": session["execution_id"]}),
+                             text=True, capture_output=True, timeout=20)
+    require(len(process.stdout) <= 1_000_000, "Cairn refusal exceeds bound")
+    result = json.loads(process.stdout, object_pairs_hook=panel.pairs_unique)
+    require(process.returncode != 0 and result.get("schema") == "cairn.response/1"
+            and result.get("ok") is False and result.get("status") == "NOT_FOUND",
+            "other worker session was visible to first worker profile")
+    return "NOT_FOUND"
 
 
 def registered_owner(dsn, agent_id):
@@ -358,6 +383,11 @@ def materialize(args):
     worker_token = Path(args.worker_token).read_bytes()
     require(sender_token != worker_token,
             "sender and worker token identities must differ")
+    other_token = None
+    if case == "concurrent_receivers":
+        other_token = Path(args.other_token).read_bytes()
+        require(len({sender_token, worker_token, other_token}) == 3,
+                "sender and both worker token identities must differ")
     binding, setup, defaults, adapter, intervention, actor = frozen_case(
         export, args.fixture, args.workflow_id)
     require(defaults == {"kind": "note", "record_class": "A", "operation": "create",
@@ -377,6 +407,8 @@ def materialize(args):
                  "sender_principal": args.sender_principal,
                  "sender_token_sha256": hashlib.sha256(sender_token).hexdigest(),
                  "worker_token_sha256": hashlib.sha256(worker_token).hexdigest()}
+    if other_token is not None:
+        immutable["other_token_sha256"] = hashlib.sha256(other_token).hexdigest()
     event_ids = [event["id"] for event in setup["events"]]
     dynamic_keys = {"run_id", "register_request_ids", "source_request_ids",
                     "publication_request_ids"}
@@ -429,6 +461,8 @@ def materialize(args):
                     "idempotency key differs from journaled native UUID")
     binary = Path(args.binary)
     tokens = {"sender": Path(args.sender_token), "worker": Path(args.worker_token)}
+    if other_token is not None:
+        tokens["other"] = Path(args.other_token)
     repo = defaults["scope"]["repo"]
     dsn = os.environ["CAIRN_DATABASE_URL"]
     sessions = {}
@@ -459,7 +493,13 @@ def materialize(args):
         sessions[recipient] = {"agent_id": session["agent_id"],
                                "execution_id": session["execution_id"],
                                "inbox": session["inbox"], "observed_owner": owner}
-    require(set(owners) == {"sender", "worker"}, "both authenticated profiles required")
+    expected_roles = ({"sender", "worker", "other"} if case == "concurrent_receivers"
+                      else {"sender", "worker"})
+    require(set(owners) == expected_roles, "authenticated profiles differ from adapter")
+    if case == "concurrent_receivers":
+        require(len(set(owners.values())) == 3 and
+                sessions["worker_a"]["inbox"] != sessions["worker_b"]["inbox"],
+                "distinct worker owners and inboxes required")
     events = {}
     transitions = []
     last_position = 0
@@ -624,6 +664,39 @@ def materialize(args):
                 and (deadline is None or instant(readiness_snapshot["observed_at"]) < deadline),
                 "stored readiness snapshot differs from durable burst setup")
     synthetic_settlement = None
+    recipient_isolation = None
+    if case == "concurrent_receivers":
+        for recipient, event_id, token_role in (("worker_a", "request_a", "worker"),
+                                                ("worker_b", "request_b", "other")):
+            session = sessions[recipient]
+            ready = call(binary, socket, tokens[token_role], ("agent", "session-inbox-ready"),
+                         body=json.dumps({"agent_id": session["agent_id"],
+                                          "execution_id": session["execution_id"]}))
+            require(ready == {"event_id": events[event_id]["event_id"],
+                              "delivery_id": events[event_id]["delivery_id"]},
+                    "native readiness differs from exact recipient delivery")
+        b = events["request_b"]
+        refusal = refused_readiness(binary, socket, tokens["worker"], sessions["worker_b"])
+        b_status = call(binary, socket, tokens["sender"], ("event-status",),
+                        (b["event_id"],))
+        b_deliveries = b_status.get("deliveries") or []
+        require(len(b_deliveries) == 1 and
+                b_deliveries[0].get("delivery_id") == b["delivery_id"] and
+                b_deliveries[0].get("consumer") == sessions["worker_b"]["inbox"] and
+                b_deliveries[0].get("state") == "pending" and
+                b_deliveries[0].get("attempts") == 0,
+                "other worker delivery changed after cross-session refusal")
+        recipient_isolation = {
+            "basis": "native_readiness_and_cross_session_refusal",
+            "worker_a": {"session_agent_id": sessions["worker_a"]["agent_id"],
+                         "event_id": events["request_a"]["event_id"],
+                         "delivery_id": events["request_a"]["delivery_id"]},
+            "worker_b": {"session_agent_id": sessions["worker_b"]["agent_id"],
+                         "event_id": b["event_id"], "delivery_id": b["delivery_id"]},
+            "worker_a_to_worker_b_status": refusal,
+            "worker_b_after_refusal": {"delivery_id": b["delivery_id"],
+                                       "state": "pending", "attempts": 0},
+        }
     if case == "small_request_result_reply":
         synthetic_settlement = settle_small_request(binary, socket, tokens, repo, actor, setup,
                                                     intent, sessions, events)
@@ -642,6 +715,9 @@ def materialize(args):
         receipt["native_batch_transfer"] = "unrun"
     if synthetic_settlement is not None:
         receipt["synthetic_store_settlement"] = synthetic_settlement
+    if recipient_isolation is not None:
+        receipt["recipient_isolation"] = recipient_isolation
+        receipt["native_actor_concurrency"] = "unrun"
     output = run_dir / "materialization.json"
     if output.exists():
         private_file(output)
@@ -664,6 +740,7 @@ def main():
     parser.add_argument("--home", type=Path, required=True)
     parser.add_argument("--sender-token", type=Path, required=True)
     parser.add_argument("--worker-token", type=Path, required=True)
+    parser.add_argument("--other-token", type=Path)
     parser.add_argument("--sender-principal", required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
