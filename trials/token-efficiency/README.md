@@ -119,6 +119,11 @@ its current native hold, an offline presence with operator release and explicit
 reissue, and execution fencing for `lease_expiry`, `process_crash`, and
 `stale_execution`. Expired test presence is an observable offline boundary,
 not proof that a recipient process crashed.
+The [stale journal probe](../../docs/verification/panel-stale-journal-2026-10-24.md)
+adds a disposable CLI/API and native helper path for `stale_execution`: a
+pending old-execution completion is refused after reviewed reissue and execution
+rotation while the current execution can settle the successor. Its host turn
+and result text are synthetic, so it does not grade an actor task.
 `core/token_efficiency_panel_session_boundary_test.go` checks that a reported
 busy session has no ready routine notice until it reports idle, and that two
 notices keep their durable state across fresh client views for

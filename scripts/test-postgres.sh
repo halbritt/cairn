@@ -64,6 +64,11 @@ crash_dsn="host=$test_root/socket dbname=cairn_panel_process_crash_child sslmode
 CAIRN_DATABASE_URL="$crash_dsn" "$test_root/cairn" migrate
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$crash_dsn" CAIRN_DATABASE_URL="$crash_dsn" \
     python3 scripts/check_panel_process_crash_child.py "$test_root/cairn"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_panel_stale_journal
+stale_journal_dsn="host=$test_root/socket dbname=cairn_panel_stale_journal sslmode=disable"
+CAIRN_DATABASE_URL="$stale_journal_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$stale_journal_dsn" CAIRN_DATABASE_URL="$stale_journal_dsn" \
+    python3 scripts/check_panel_stale_journal.py "$test_root/cairn"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_native_notice_batch
 notice_batch_dsn="host=$test_root/socket dbname=cairn_native_notice_batch sslmode=disable"
 CAIRN_DATABASE_URL="$notice_batch_dsn" "$test_root/cairn" migrate
