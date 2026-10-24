@@ -187,6 +187,194 @@ class InboxRecallBridgeTests(unittest.TestCase):
     def memory_ledger(self):
         return json.loads((self.root/'memory'/f'{SESSION}.memory-budget.json').read_text())
 
+    def unfinished_checkpoint(self, *, title='Fixture repair', version=1, required='Current required rule.'):
+        workstream = memory.workstream_prefix(self.event) + title
+        body = workstream + '\nNext: finish the exact fixture verification. 日本語 condition.'
+        state_path = Path(self.mc['state_dir']) / (SESSION + '.json')
+        state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        memory.save_state(state_path, dict(binding=[None, ''], seen={}, workstream=workstream))
+        self.mc['context_lifecycle'] = 'compact/1'
+        self.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+        self.fixture['search']['page'] = dict(offset=0, next_offset=None)
+        self.fixture['search']['index'] = [dict(record_id=AGENT, version=version, kind='note', **{'class': 'A'},
+            summary=body, body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+            pull_arguments=dict(receipt_id=EXEC, handle=AGENT, request_id=ATTEMPT))]
+        self.fixture['pull'] = dict(selection=dict(record=dict(record_id=AGENT, version=version, body=body)),
+                                    credits_remaining=3)
+        self.freeze()
+        return state_path, body
+
+    def test_compaction_before_optional_grant_restores_whole_unfinished_checkpoint(self):
+        state_path, body = self.unfinished_checkpoint()
+        result = self.memory_main(self.compact_event())
+        self.assertEqual(result['code'], 0, result)
+        text = json.loads(result['stdout'])['hookSpecificOutput']['additionalContext']
+        checkpoint = json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])
+        self.assertEqual(checkpoint['body'], body)
+        self.assertEqual(checkpoint['source_extent'], 'whole')
+        self.assertEqual([call['op'] for call in self.calls()], ['search', 'search', 'pull'])
+        grant = self.memory_ledger()['pending']
+        required_cost = memory.codex_hook_cost(self.compact_event(), memory.render_recall(self.fixture['search']['selected'], []))
+        self.assertEqual(grant['required_refresh_bytes'], required_cost)
+        self.assertEqual(grant['required_refresh_bytes'] + grant['checkpoint_refresh_bytes'], len(result['stdout'].encode()))
+        self.assertEqual(grant['emitted_hook_bytes'], 0)
+        self.assertFalse(grant['granted'])
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'restored')
+
+    def test_compaction_before_inbox_source_read_keeps_exact_active_delivery(self):
+        self.unfinished_checkpoint()
+        self.assertEqual(self.memory_main(self.compact_event())['code'], 0)
+        self.assertEqual([call['op'] for call in self.calls()], ['search', 'search', 'pull'])
+        self.assertEqual(self.state['inbox_attempt']['delivery']['state'], 'leased')
+        delivery = self.invoke()
+        text = delivery['hookSpecificOutput']['additionalContext']
+        self.assertIn(self.body, text)
+        self.assertEqual([call['op'] for call in self.calls()][-4:], ['search', 'history', 'search', 'pull'])
+        persisted = json.loads(coord.state_path(self.cc, SESSION).read_text())
+        self.assertEqual(persisted['inbox_attempt']['attempt_id'], ATTEMPT)
+        self.assertEqual(persisted['inbox_attempt']['delivery']['lease_id'], ATTEMPT)
+
+    def test_compaction_after_settled_delivery_restores_checkpoint_without_old_source(self):
+        state_path, body = self.unfinished_checkpoint()
+        self.invoke()
+        before_history = [call['op'] for call in self.calls()].count('history')
+        self.state.pop('inbox_attempt')
+        self.state.pop('inbox_intent')
+        coord.write_state(coord.state_path(self.cc, SESSION), self.state)
+        result = self.memory_main(self.compact_event())
+        self.assertEqual(result['code'], 0, result)
+        text = json.loads(result['stdout'])['hookSpecificOutput']['additionalContext']
+        checkpoint = json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])
+        self.assertEqual(checkpoint['body'], body)
+        self.assertNotIn(self.body, text)
+        self.assertEqual([call['op'] for call in self.calls()].count('history'), before_history)
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], 'restored')
+
+    def test_compaction_between_completion_and_reply_preserves_exact_pending_intent(self):
+        self.unfinished_checkpoint()
+        self.invoke()
+        context_path = Path(self.cc['state_dir']) / 'inbox' / (ATTEMPT + '.json')
+        context = json.loads(context_path.read_text())
+        result_ref = dict(record_id=RECORD, version=1)
+        completion = dict(kind='complete', request_id=context['request_ids']['completion'],
+                          argv=context['commands']['complete'], input='Selected fixture result',
+                          status='committed', code='OK', result=result_ref)
+        finish_reply = dict(argv=context['commands']['respond'],
+                            request_id=context['request_ids']['response'])
+        journal_path = coord.intent_path(self.cc['state_dir'], ATTEMPT)
+        coord.write_state(journal_path, dict(schema='cairn.inbox-intent/1', attempt_id=ATTEMPT,
+                                             delivery_id=DELIVERY, kind='request',
+                                             completion=completion, finish_reply=finish_reply))
+
+        compacted = self.memory_main(self.compact_event())
+        self.assertEqual(compacted['code'], 0, compacted)
+        self.assertIn('cairn.checkpoint-refresh/1', compacted['stdout'])
+        persisted = json.loads(coord.state_path(self.cc, SESSION).read_text())
+        self.assertEqual(persisted['inbox_attempt']['attempt_id'], ATTEMPT)
+        self.assertEqual(persisted['inbox_attempt']['delivery']['lease_id'], ATTEMPT)
+        sent = []
+
+        def replay(slot, timeout):
+            sent.append(dict(slot))
+            self.assertEqual(slot['kind'], 'respond')
+            self.assertEqual(slot['request_id'], context['request_ids']['response'])
+            if len(sent) == 2:
+                slot.update(status='committed', code='OK', result=None)
+            else:
+                slot['code'] = 'API_UNAVAILABLE'
+
+        with patch.object(coord, 'send_intent', side_effect=replay):
+            self.assertFalse(coord.flush_inbox_intents(self.cc, persisted))
+            partial = json.loads(journal_path.read_text())
+            self.assertEqual(partial['completion'], completion)
+            self.assertEqual(partial['response']['status'], 'pending')
+            self.assertEqual(partial['response']['argv'][-3:], ['--version', '1', RECORD])
+            self.assertTrue(coord.flush_inbox_intents(self.cc, persisted))
+        settled = json.loads(journal_path.read_text())
+        self.assertEqual(settled['completion'], completion)
+        self.assertEqual(settled['response']['status'], 'committed')
+        self.assertEqual(sent[0]['request_id'], sent[1]['request_id'])
+        self.assertNotIn('acknowledgement', settled)
+
+    def test_compact_resume_refuses_stale_execution_before_source_or_memory_read(self):
+        self.state['agent']['execution_id'] = AGENT
+        self.freeze()
+        refused = self.invoke(main=True)
+        self.assertEqual(refused['code'], 2)
+        self.assertEqual(refused['stdout'], '')
+        self.assertEqual(self.calls(), [])
+        self.state['agent']['execution_id'] = EXEC
+        self.freeze()
+        current = self.invoke()
+        self.assertIn(self.body, current['hookSpecificOutput']['additionalContext'])
+        self.assertEqual([call['op'] for call in self.calls()], ['search', 'history', 'search', 'pull'])
+
+    def test_compact_checkpoint_partial_forgotten_and_api_failure_never_become_whole(self):
+        state_path, body = self.unfinished_checkpoint()
+        entry = self.fixture['search']['index'][0]
+        for failure, expected in (('partial', 'not_whole'), ('forgotten', 'unavailable'),
+                                  ('api', 'unavailable'), ('stale_version', 'unavailable')):
+            with self.subTest(failure=failure):
+                self.fixture['pull'].pop('source_extent', None)
+                self.fixture['pull'].pop('span', None)
+                self.fixture.pop('fail_pull', None)
+                self.fixture['pull']['selection']['record']['version'] = entry['version']
+                if failure == 'partial':
+                    self.fixture['pull'].update(source_extent='partial_span', span=dict(body=body[:20]))
+                elif failure in ('forgotten', 'api'):
+                    self.fixture['fail_pull'] = 'PAYLOAD_UNAVAILABLE' if failure == 'forgotten' else 'API_UNAVAILABLE'
+                else:
+                    self.fixture['pull']['selection']['record']['version'] = entry['version'] + 1
+                self.freeze()
+                before = self.memory_ledger()['pending'] if (self.root/'memory'/f'{SESSION}.memory-budget.json').exists() else {}
+                old_required = before.get('required_refresh_bytes', 0)
+                old_checkpoint = before.get('checkpoint_refresh_bytes', 0)
+                result = self.memory_main(self.compact_event())
+                self.assertEqual(result['code'], 0, result)
+                self.assertNotIn('cairn.checkpoint-refresh/1', result['stdout'])
+                self.assertIn('not restored', result['stdout'])
+                self.assertEqual(json.loads(state_path.read_text())['last_recall']['checkpoint_refresh'], expected)
+                grant = self.memory_ledger()['pending']
+                self.assertEqual((grant['required_refresh_bytes'] - old_required) +
+                                 (grant['checkpoint_refresh_bytes'] - old_checkpoint), len(result['stdout'].encode()))
+                self.assertEqual(grant['emitted_hook_bytes'], 0)
+        corrected = entry['summary'].split('\n', 1)[0] + '\nNext: verify the corrected current source.'
+        entry.update(version=2, summary=corrected, body_sha256=hashlib.sha256(corrected.encode()).hexdigest())
+        self.fixture['pull']['selection']['record'].update(version=2, body=corrected)
+        self.fixture.pop('fail_pull', None)
+        self.freeze()
+        restored = self.memory_main(self.compact_event())
+        text = json.loads(restored['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertEqual(json.loads(text[text.index('{"schema":"cairn.checkpoint-refresh/1"'):])['body'], corrected)
+
+    def test_required_api_failure_then_full_rollback_keeps_current_rule_and_bytes(self):
+        self.unfinished_checkpoint(required='Original required rule.')
+        self.assertEqual(self.memory_main(self.compact_event())['code'], 0)
+        before = self.memory_ledger()['pending']
+        self.fixture['search']['selected'][0]['record']['body'] = 'Corrected current required rule.'
+        self.fixture['fail_search'] = 'API_UNAVAILABLE'
+        self.freeze()
+        refused = self.memory_main(self.compact_event())
+        self.assertEqual(refused['code'], 0, refused)
+        self.assertIs(json.loads(refused['stdout'])['continue'], False)
+        failed = self.memory_ledger()['pending']
+        self.assertTrue(failed['required']['pending'])
+        self.assertEqual(failed['required_refresh_bytes'], before['required_refresh_bytes'])
+        self.assertEqual(failed['checkpoint_refresh_bytes'], before['checkpoint_refresh_bytes'])
+        self.fixture.pop('fail_search')
+        self.mc['context_lifecycle'] = 'full'
+        self.freeze()
+        recovered = self.memory_main(self.compact_event())
+        self.assertEqual(recovered['code'], 0, recovered)
+        text = json.loads(recovered['stdout'])['hookSpecificOutput']['additionalContext']
+        self.assertIn('Corrected current required rule.', text)
+        self.assertNotIn('cairn.checkpoint-refresh/1', text)
+        after = self.memory_ledger()['pending']
+        self.assertFalse(after['required']['pending'])
+        self.assertEqual(after['checkpoint_refresh_bytes'], before['checkpoint_refresh_bytes'])
+        self.assertEqual(after['required_refresh_bytes'], before['required_refresh_bytes'])
+        self.assertEqual(after['emitted_hook_bytes'], len(recovered['stdout'].encode()))
+
     def test_same_delivery_contains_exact_task_and_checked_memory_without_selector(self):
         self.assertEqual(memory.handle(self.mc,self.event),{})
         self.assertEqual(self.calls(),[])

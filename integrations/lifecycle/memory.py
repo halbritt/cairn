@@ -1945,7 +1945,10 @@ def codex_agent_context(memory, event, result, budget, status, deadline, state):
             if bound and selected:
                 raise RequiredContextRefused("current required delivery status could not be persisted") from exc
             raise
-    refresh = bound and event["hook_event_name"] == "SessionStart" and (grant["granted"] or emitted > 0)
+    checkpoint_reset = (memory.config.get("context_lifecycle", "full") == "compact/1"
+                        and event.get("source") in ("compact", "resume")
+                        and isinstance(state.get("workstream"), str))
+    refresh = bound and event["hook_event_name"] == "SessionStart" and (grant["granted"] or emitted > 0 or checkpoint_reset)
     if bound:
         destination = result.get("destination", {})
         if destination.get("name") != "hosted" or destination.get("allow_local") is not False:
