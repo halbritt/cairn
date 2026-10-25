@@ -403,3 +403,16 @@ more finely from this run. Source review confirms the hook passes the selected
 source-supported fixture correction yet. Focused tests and `make check` pass
 for the diagnostic instrumentation; no second full run was made. This remains
 unaccepted and establishes neither source read nor handled outcome.
+
+One further bounded run used the landed fixed per-field trace. It reached the
+same exact-source guard with a native tool-result row. The private trace records
+`source_record_match=false`, `source_version_match=true`, and
+`source_body_match=false`. It therefore returned no matching selected record
+or requested source body; the numeric version match does not establish a read.
+The raw tool result was not retained, so whether the command failed or the tool
+returned a different payload remains unknown. No acknowledgement was issued;
+the delivery stayed leased with one attempt. The run ID is
+`d761c6c6b1c74191889768c08c5e55f0`, with the owner-only trace at
+`~/.cache/cairn-220-native-wake-proof/script-stage-d761c6c6b1c74191889768c08c5e55f0.jsonl`.
+No fixture correction is supported by this evidence and no further full run was
+made.
