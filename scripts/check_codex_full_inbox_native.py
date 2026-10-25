@@ -89,6 +89,28 @@ def _exec_tool(call_id, command):
                 namespace="functions", call_id=call_id, input=code)
 
 
+def _wait_for_registration_hook(stop_complete_path, turn_id, timeout=30):
+    """Wait for the registration turn's Stop hook to finish before querying state.
+
+    Codex can report turn/completed before its command hook has exited. The
+    marker is written by record_codex_hook_metadata.py only after the Stop
+    hook returns, so it provides the ordering boundary needed by the fixture.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            completed = json.loads(Path(stop_complete_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            time.sleep(0.05)
+            continue
+        if completed.get("event") != "Stop" or completed.get("turn_id") != turn_id:
+            raise AssertionError("registration Stop hook marker does not match the registration turn")
+        if completed.get("exit_code") != 0:
+            raise AssertionError("registration Stop hook returned nonzero")
+        return completed
+    raise TimeoutError("registration Stop hook did not complete before fixture lookup")
+
+
 def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
           turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
           scenario="single", diagnostic_output=None, api_role="bob"):
@@ -584,6 +606,11 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             if notification.get("method") == "turn/completed" and current == registration_id:
                 registration_completed = True
         assert registration_completed, "native session registration turn did not complete"
+
+        # turn/completed can arrive before Codex's Stop command hook exits.
+        # Do not tear down app-server or inspect the agent list until the
+        # wrapper has recorded that hook's completion.
+        _wait_for_registration_hook(stop_complete_path, registration_id, timeout=turn_timeout)
 
         agents = api_call("bob", "agents", "list", "--harness", "codex")["agents"]
         target = next(row for row in agents if row["native_session_id"] == native_id)

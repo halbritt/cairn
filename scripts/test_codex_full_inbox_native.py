@@ -3,6 +3,8 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +20,28 @@ META_SPEC.loader.exec_module(hook_metadata)
 
 
 class FullInboxFixtureTests(unittest.TestCase):
+    def test_registration_waits_for_matching_stop_hook_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "stop.json"
+            def write_marker():
+                time.sleep(0.05)
+                marker.write_text(json.dumps(dict(event="Stop", turn_id="turn-1", exit_code=0)))
+            writer = threading.Thread(target=write_marker)
+            writer.start()
+            result = fixture._wait_for_registration_hook(marker, "turn-1", timeout=1)
+            writer.join()
+        self.assertEqual(result["turn_id"], "turn-1")
+
+    def test_registration_rejects_unrelated_or_failed_stop_hook(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "stop.json"
+            marker.write_text(json.dumps(dict(event="Stop", turn_id="other", exit_code=0)))
+            with self.assertRaisesRegex(AssertionError, "does not match"):
+                fixture._wait_for_registration_hook(marker, "turn-1", timeout=1)
+            marker.write_text(json.dumps(dict(event="Stop", turn_id="turn-1", exit_code=1)))
+            with self.assertRaisesRegex(AssertionError, "returned nonzero"):
+                fixture._wait_for_registration_hook(marker, "turn-1", timeout=1)
+
     def test_actor_export_contains_task_and_notice_but_not_grade(self):
         data = {"cases": [{"id": "single_notice",
             "actor_task": "Process the single routine build notice for Cairn and record its exact disposition.",

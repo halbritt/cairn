@@ -200,19 +200,20 @@ settlement, or advance occurred. The revised trace writer now also records a
 fixed fixture exception class on future failures. No further actor run was
 made.
 
-Source explains how the scripted registration response coexists with an empty
-agent list: the fixture's `verify()` sends a registration prompt and the local
-Responses handler returns a canned message, then it queries the API for a
-native agent. Actual agent creation happens in the lifecycle hook path through
-`agent-register` when a normalized `SessionStart`/turn observation reaches
-`integrations/lifecycle/coordination.py`. The absent hook file and zero agents
-show that this native registration path had not run before the fixture's
-lookup. The evidence does not show why Codex 0.164.0 did not invoke the loaded
-hook in this app-server setup; that cause remains unknown.
+Source comparison with `scripts/check_codex_compact_native.py` identified a
+fixture race in the registration-only stop boundary. The full-inbox fixture
+waited for the registration turn's `turn/completed` notification and queried
+the agent list immediately. The compact fixture instead waits for the
+registration turn's wrapper-written Stop completion marker before inspecting
+registered state. The metadata wrapper writes that marker only after the Stop
+hook command returns. Since the latest trace had no hook metadata and the
+fixture ended directly after the registration response, the supported
+explanation is that the fixture advanced/cleaned up before the hook completion
+boundary; it does not identify a Codex hook invocation failure.
 
-These attempts verify only the runner's API argument fix and its isolated
-diagnostic boundary. They do not establish why Codex's registration hook did
-not create an agent row, native actor continuation, three dispositions, or an
-accepted task outcome. The next useful work is a source-level hook registration
-diagnosis, followed by a new bounded attempt only after that path is testable.
-CAIRN-221 remains In Progress.
+The full-inbox fixture now waits for a matching successful Stop marker before
+querying the native agent. Focused tests cover delayed completion, wrong turn,
+and nonzero hook exit. This source-level correction has not been exercised by
+another actor attempt; the retained trace remains evidence of the old race, not
+of the corrected path. No batch continuation or accepted task outcome is
+claimed. CAIRN-221 remains In Progress.
