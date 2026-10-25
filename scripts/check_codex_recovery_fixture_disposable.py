@@ -101,11 +101,33 @@ def check(candidate_root, codex_binary):
         report = fixture.get("recovery_report")
         if (fixture.get("result") != "PASS" or fixture.get("model") != "gpt-6-luna" or
                 fixture.get("provider_call") is not False or
-                not isinstance(report, dict) or report.get("schema") != "cairn.recovery-model-report/3" or
-                report.get("provider_turn") != dict(status="not_observed", responses=None, usage=None)):
-            raise AssertionError("Codex fixture did not produce the bounded unknown-usage recovery report")
+                fixture.get("notice_pending_before_and_after_compact") is not True or
+                fixture.get("source_read_after_compact") is not True or
+                fixture.get("settlement_after_compact") is not True or
+                fixture.get("loopback_response_requests") != 5):
+            raise AssertionError("Codex fixture did not produce the bounded provider-free compaction receipt")
+        hooks = fixture.get("observed_hook_events", [])
+        precompact = next((row for row in hooks if row.get("phase") == "exit"
+                           and row.get("event") == "PreCompact"), None)
+        compact_start = next((row for row in hooks if row.get("phase") == "exit"
+                              and row.get("event") == "SessionStart"
+                              and row.get("source") == "compact" and row.get("exit_code") == 0), None)
+        if (not precompact or precompact.get("exit_code") != 0 or not compact_start or
+                fixture.get("native_compact_terminal_notification") != "turn/completed" or
+                fixture.get("continuation_after_compact_completed") is not True):
+            raise AssertionError("Codex compact receipt omitted terminal hooks or continuation evidence")
         return dict(result="PASS", environment="disposable PostgreSQL and loopback Codex stub",
-                    model="gpt-6-luna", provider_call=False, recovery_report=report)
+                    model="gpt-6-luna", provider_call=False,
+                    native_compaction={key: fixture.get(key) for key in (
+                        "registration_turn_id", "native_manual_compact_turn_id",
+                        "native_compact_terminal_notification", "continuation_turn_id",
+                        "attempt_native_turn_id",
+                        "observed_hook_events", "loopback_response_requests",
+                        "notice_event_id", "notice_delivery_id",
+                        "attempt_id",
+                        "notice_pending_before_and_after_compact",
+                        "source_read_after_compact", "settlement_after_compact")},
+                    recovery_report=report)
     finally:
         if api is not None:
             api.terminate()

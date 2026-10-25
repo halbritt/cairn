@@ -116,6 +116,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
     if not codex:
         raise RuntimeError('Codex is required to register its hook definitions')
     messages = queue.Queue()
+    notifications = queue.Queue()
     with tempfile.TemporaryDirectory(prefix='cairn-hook-review-') as cwd:
         process = subprocess.Popen([codex, 'app-server', '--stdio'], cwd=cwd,
             env=dict(os.environ, CODEX_HOME=str(config_home)), stdin=subprocess.PIPE,
@@ -123,7 +124,9 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
         def receive():
             try:
                 for line in process.stdout:
-                    messages.put(json.loads(line))
+                    value = json.loads(line)
+                    target = notifications if 'method' in value and 'id' not in value else messages
+                    target.put(value)
             except ValueError:
                 messages.put({'transport_error': 'invalid JSON'})
             finally:
@@ -146,6 +149,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
                 if 'error' in value:
                     raise RuntimeError(f"Codex {method} refused: {value['error']}")
                 return value['result']
+        rpc.next_notification = lambda timeout=15: notifications.get(timeout=timeout)
         try:
             rpc('initialize', dict(clientInfo=dict(name='cairn-hook-installer', version='1'), capabilities=dict(experimentalApi=True)))
             process.stdin.write(json.dumps(dict(method='initialized')) + '\n')

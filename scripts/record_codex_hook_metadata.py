@@ -24,6 +24,7 @@ def main():
     event = json.loads(payload)
     row = dict(event=event.get("hook_event_name"),
                turn_id=event.get("turn_id"),
+               source=event.get("source"),
                keys=sorted(event.keys()))
     args.metadata.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -32,6 +33,10 @@ def main():
     result = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=14)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
+    row.update(exit_code=result.returncode)
+    fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as stream:
+        stream.write(json.dumps(dict(**row, phase="exit"), sort_keys=True) + "\n")
     if row["event"] == "Stop":
         try:
             output = json.loads(result.stdout)
