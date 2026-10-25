@@ -67,6 +67,18 @@ def _load_installer():
     return module
 
 
+def _stage_hook_metadata_wrapper(profile):
+    """Stage the wrapper and its diagnostic helper into the isolated profile."""
+    source_dir = Path(__file__).resolve().parent
+    wrapper = Path(profile) / "record_codex_hook_metadata.py"
+    helper = Path(profile) / "codex_fixture_diagnostic.py"
+    shutil.copyfile(source_dir / wrapper.name, wrapper)
+    shutil.copyfile(source_dir / helper.name, helper)
+    wrapper.chmod(0o600)
+    helper.chmod(0o600)
+    return wrapper
+
+
 def _fixture_task_and_notice(scenario="single"):
     if scenario == "batch":
         return ("Process the first three already-waiting routine notices in this turn. "
@@ -384,9 +396,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                           codex_root=codex_root, extra_binds=binds)
     setup_done()
 
-    metadata_wrapper = profile / "record_codex_hook_metadata.py"
-    shutil.copyfile(Path(__file__).with_name("record_codex_hook_metadata.py"), metadata_wrapper)
-    metadata_wrapper.chmod(0o600)
+    metadata_wrapper = _stage_hook_metadata_wrapper(profile)
     hook_settings = json.loads(settings.read_text(encoding="utf-8"))
     for groups in hook_settings.get("hooks", {}).values():
         for group in groups:

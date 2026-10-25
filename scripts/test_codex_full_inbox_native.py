@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -123,6 +124,27 @@ class FullInboxFixtureTests(unittest.TestCase):
     def test_fixture_refuses_direct_codex_without_bwrap_auth_fixture(self):
         with self.assertRaisesRegex(RuntimeError, "explicit Node Codex entry"):
             fixture.check("/bin/false", "/tmp/not-created", {}, lambda *_args, **_kwargs: None)
+
+    def test_staged_stop_wrapper_runs_without_repository_import_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary) / ".codex"
+            profile.mkdir(mode=0o700)
+            wrapper = fixture._stage_hook_metadata_wrapper(profile)
+            metadata = profile / "hook-metadata.jsonl"
+            stop_marker = profile / "stop-complete.json"
+            payload = json.dumps({"hook_event_name": "Stop", "session_id": "synthetic",
+                                  "turn_id": "turn", "cwd": temporary, "model": "fixture"})
+            result = subprocess.run(
+                [sys.executable, str(wrapper), "--metadata", str(metadata),
+                 "--stop-complete", str(stop_marker), "--", "/usr/bin/true"],
+                input=payload, text=True, capture_output=True, timeout=10,
+                cwd=temporary, env={"PATH": "/usr/bin:/bin"})
+            stages = [json.loads(line)["probe_stage"] for line in metadata.read_text().splitlines()
+                      if "probe_stage" in json.loads(line)]
+            marker_created = stop_marker.exists()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(stages, ["wrapper_entry", "payload_valid", "command_start", "command_complete"])
+        self.assertTrue(marker_created)
 
     def test_hook_error_diagnostic_is_allowlisted_and_discards_raw_text(self):
         tags = hook_metadata.safe_stderr_tags(

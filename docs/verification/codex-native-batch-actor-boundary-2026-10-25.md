@@ -341,10 +341,11 @@ entry omits `async`, and pinned Codex 0.164.0 defaults that field to `false`
 and awaits synchronous Stop handlers before emitting turn completion. This run
 observed no wrapper entry despite matching `turn/completed`. A separate
 provider-free, no-turn app-server probe below confirms the same fixture profile
-loads the trusted Stop handler at the actor workspace CWD. The actor run
-therefore narrows to a dispatch or command-launch/entry boundary; the exact
-cause remains unknown because its app-server log and runtime hook listing were
-not retained. No hook invocation failure, batch continuation, or accepted task
+loads the trusted Stop handler at the actor workspace CWD. A separate direct
+command probe found a wrapper dependency missing from the isolated profile; it
+now verifies command viability after that staging fix. The failed actor run
+still has no app-server log or runtime hook listing, so whether Codex dispatched
+the command remains unknown. No hook invocation failure, batch continuation, or accepted task
 outcome is inferred. No further actor attempt was made; CAIRN-221 remains In
 Progress.
 
@@ -363,8 +364,8 @@ mutation, or loopback request. The private mode-0600 summary is
 
 This establishes registry discovery and configuration for the recreated
 profile at the actor CWD. It does not show whether the failed actor turn
-dispatched the handler or launched the wrapper. That runtime boundary remains
-unresolved; no actor rerun followed. CAIRN-221 remains In Progress.
+dispatched the handler. That runtime boundary remains unresolved; no actor
+rerun followed.
 
 ### Pinned turn-stop path and fixture response
 
@@ -390,3 +391,32 @@ Stop handler because the assistant response used no native tool call. Source
 therefore provides no explanation for the absent wrapper entry. Registry
 discovery is confirmed, but dispatch, process launch, or wrapper entry during
 the failed actor turn remains unknown. No actor rerun followed.
+
+
+## Synthetic Stop command viability
+
+A direct command probe used the trusted command from the isolated registry with
+a synthetic valid Stop payload, empty fake auth, `bwrap --unshare-net`, a fresh
+disposable PostgreSQL/API, and a loopback-only Responses endpoint. It did not
+start a Codex actor turn or create a notice. Before the fix, the command exited
+nonzero before the wrapper wrote any entry stage. The isolated profile contained
+`record_codex_hook_metadata.py` but not its imported
+`codex_fixture_diagnostic.py` dependency; the app-server sandbox exposes the
+profile and does not expose repository `scripts/` on Python's import path. The
+first process error text was not retained.
+
+The fixture now stages both private mode-0600 Python files into the Codex
+profile. A focused test runs the staged wrapper with a minimal child command
+and no repository import path. A fresh post-fix direct invocation of the exact
+trusted command reached `wrapper_entry`, `payload_valid`, `command_start`, and
+`command_complete`, exited zero, and wrote its Stop completion marker. The
+owner-only fixed summary is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/stop-command-summary-20261025.json`
+(mode `0600`); it retains only stage, exit, and bounded error classes. No
+loopback request or provider call occurred, and the disposable API/cluster were
+removed.
+
+This proves the wrapper and coordination command can run in isolation after
+its helper is staged. It does not establish that Codex dispatched the command
+in the failed actor turn. No actor rerun followed; CAIRN-221 remains In
+Progress.
