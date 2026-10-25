@@ -24,6 +24,9 @@ CORRECTION = dict(memories=[dict(record_id=None, kind="preference", title="Migra
                                  body="Use the corrected endpoint for the migration.")],
                   workstream=None, checkpoint=None)
 HANDOFF = dict(memories=[], workstream="Migration", checkpoint="The migration remains unfinished.")
+CHANGED_DECISION = dict(memories=[dict(record_id=None, kind="decision", title="Migration endpoint",
+                                       body="Use the replacement endpoint; the earlier choice is superseded.")],
+                        workstream=None, checkpoint=None)
 BASE = [dict(role="user", text="Plan the migration."),
         dict(role="assistant", text="I recorded the plan.")]
 
@@ -48,10 +51,10 @@ def wake():
         delivery_id="33333333-3333-4333-8333-333333333333"))
 
 
-def run_case(event, confirmed, addition, selector, *, source_failure=False):
+def run_case(event, confirmed, addition, selector, *, source_failure=False, hook_event=None):
     memory = LocalMemory()
     state = copy.deepcopy(confirmed)
-    event = dict(event, messages=BASE + addition)
+    event = dict(event, hook_event_name=hook_event or event["hook_event_name"], messages=BASE + addition)
     calls, saved = [], []
 
     def choose(*_args, **_kwargs):
@@ -59,7 +62,7 @@ def run_case(event, confirmed, addition, selector, *, source_failure=False):
         if selector == "quota_failure":
             raise hook.HookError("synthetic quota refusal", code="API_UNAVAILABLE")
         return dict(structured_output={"empty": EMPTY, "correction": CORRECTION,
-                                       "handoff": HANDOFF}[selector])
+                                       "handoff": HANDOFF, "changed_decision": CHANGED_DECISION}[selector])
 
     def source(*_args):
         if source_failure:
@@ -102,14 +105,22 @@ def evaluate():
             "transport_only": run_case(event, confirmed, [notification], "empty"),
             "owner_correction": run_case(event, confirmed, [notification,
                 dict(role="user", text="Correction: use the new endpoint.")], "correction"),
+            "changed_decision": run_case(event, confirmed, [notification,
+                dict(role="assistant", text="I handled the notice."),
+                dict(role="user", text="I changed the decision: use the replacement endpoint."),
+                dict(role="assistant", text="I will use the replacement endpoint.")], "changed_decision"),
             "unfinished_handoff": run_case(event, confirmed, [
                 dict(role="user", text="The migration is unfinished; preserve the handoff.")], "handoff"),
+            "unfinished_handoff_at_session_end": run_case(event, confirmed, [
+                dict(role="user", text="The migration is unfinished; preserve the handoff.")], "handoff",
+                hook_event="SessionEnd"),
             "status_only": run_case(event, confirmed, [
                 dict(role="user", text="Any status?")], "empty"),
             "quota_failure": run_case(event, confirmed, [notification], "quota_failure"),
             "source_failure": run_case(event, confirmed, [notification], "empty", source_failure=True),
         }
-        required = ("owner_correction", "unfinished_handoff")
+        required = ("owner_correction", "changed_decision", "unfinished_handoff",
+                    "unfinished_handoff_at_session_end")
         uncertain = ("quota_failure", "source_failure")
         return dict(schema="cairn.capture-admission-fixture/1", fixture_count=len(cases), cases=cases,
                     comparison=dict(unchanged_selector_calls=sum(v["selector_calls"] for v in cases.values()),
