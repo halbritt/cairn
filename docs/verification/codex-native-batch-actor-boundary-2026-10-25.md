@@ -217,3 +217,21 @@ and nonzero hook exit. This source-level correction has not been exercised by
 another actor attempt; the retained trace remains evidence of the old race, not
 of the corrected path. No batch continuation or accepted task outcome is
 claimed. CAIRN-221 remains In Progress.
+
+## One bounded attempt after the Stop-marker correction
+
+One fresh fixture invocation used newly generated synthetic `agent/alice` and
+`agent/carol` identities, a new disposable PostgreSQL/API, empty fake Codex
+auth, Codex 0.164.0 and an outer `bwrap --unshare-net` namespace. The namespace
+inode differed from the host, and a synthetic TEST-NET connection was denied.
+The corrected batch fixture call stopped with `FileNotFoundError` before its
+diagnostic writer created the fixed trace file. The runner catches that
+exception around the child `check(...)` invocation; it does not arise while the
+host runner reads a missing trace. The exact setup substage was not retained.
+
+Read-only aggregate Store counts in that fresh database were zero for
+`agent_session`, `agent_event`, and `agent_delivery`. No hook metadata or actor
+turn was observed, and no fixed response/stage rows were produced. This is an
+unclassified fixture setup failure, not evidence of native Codex behavior or a
+registration failure. No retry followed. Batch continuation and accepted task
+outcome remain unverified; CAIRN-221 remains In Progress.
