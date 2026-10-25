@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Forward a Codex hook while retaining only event and turn identifiers."""
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -69,6 +70,48 @@ def safe_output_tags(stdout):
                 re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) else None)
 
 
+def post_hook_admission_observation(command, event):
+    """Read fixture state and pending counts, returning only fixed booleans."""
+    unavailable = dict(state_read="unavailable", agent_registered=None, inbox_intent=None,
+        active_attempt=None, delivery_latch=None, pending_query="unavailable", eligible_pending=None)
+    try:
+        index = command.index("--config")
+        config = json.loads(Path(command[index + 1]).read_text(encoding="utf-8"))
+        native = event.get("session_id")
+        if not isinstance(native, str) or not native:
+            return unavailable
+        key = hashlib.sha256((config["binding"] + "\0" + native).encode()).hexdigest()
+        state_path = Path(config["state_dir"]) / (key + ".json")
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        agent = state.get("agent") or {}
+        result = dict(state_read="observed", agent_registered=bool(agent),
+            inbox_intent=bool(state.get("inbox_intent")),
+            active_attempt=bool(state.get("inbox_attempt")),
+            delivery_latch=bool(state.get("delivered_since_idle")),
+            pending_query="unavailable", eligible_pending=None)
+        if not agent.get("agent_id") or not agent.get("execution_id"):
+            return result
+        request = json.dumps(dict(agent_id=agent["agent_id"], execution_id=agent["execution_id"]))
+        query = subprocess.run([config["cairn"], "agent", "--socket", config["socket"],
+            "--token-file", config["token_file"], "session-inbox-pending"], input=request,
+            text=True, capture_output=True, timeout=2)
+        if query.returncode != 0 or len(query.stdout.encode()) > 16_384:
+            return result
+        envelope = json.loads(query.stdout)
+        data = envelope.get("data") if envelope.get("status") == "OK" else None
+        if not isinstance(data, dict):
+            return result
+        counts = [data.get(name) for name in ("requests", "notices", "responses")]
+        if any(type(count) is not int or count < 0 for count in counts):
+            return result
+        result["pending_query"] = "observed"
+        result["eligible_pending"] = sum(counts) > 0
+        return result
+    except (OSError, ValueError, KeyError, IndexError, TypeError,
+            subprocess.SubprocessError, json.JSONDecodeError):
+        return unavailable
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata", required=True, type=Path)
@@ -110,6 +153,8 @@ def main():
             exit_seen=True, exit_code=result.returncode,
             stderr_code=row.get("stderr_code"), stderr_class=row.get("stderr_class"),
             **safe_output_tags(result.stdout)))
+        update_fixture_diagnostic(args.diagnostic_summary, "post_hook_admission",
+                                  post_hook_admission_observation(command, event))
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:
         stream.write(json.dumps(dict(**row, phase="exit"), sort_keys=True) + "\n")

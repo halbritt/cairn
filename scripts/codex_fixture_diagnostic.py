@@ -12,6 +12,8 @@ OWNER_CLASSES = {"not_observed", "configured_name_match", "none", "not_applicabl
 HOOK_FIELDS = {"entry_seen", "exit_seen", "observation_count", "owner_process_class", "exit_code",
                "stderr_code", "stderr_class", "output_status", "output_code"}
 CONTEXT_FIELDS = {"stage", "context_files", "matching_contexts", "result"}
+ADMISSION_FIELDS = {"state_read", "agent_registered", "inbox_intent", "active_attempt",
+                    "delivery_latch", "pending_query", "eligible_pending"}
 STAGES = {"not_reached", "batch_context", "auto_context", "notice_context"}
 RESULTS = {"not_observed", "matched", "missing", "ambiguous"}
 
@@ -22,11 +24,15 @@ def _initial():
             observation_count=0, owner_process_class="not_observed", exit_code=None, stderr_code=None,
             stderr_class=None, output_status=None, output_code=None),
         context_lookup=dict(stage="not_reached", context_files=None,
-            matching_contexts=None, result="not_observed"))
+            matching_contexts=None, result="not_observed"),
+        post_hook_admission=dict(state_read="not_observed", agent_registered=None,
+            inbox_intent=None, active_attempt=None, delivery_latch=None,
+            pending_query="not_observed", eligible_pending=None))
 
 
 def _validate_values(section, values):
-    allowed = HOOK_FIELDS if section == "user_prompt_submit" else CONTEXT_FIELDS
+    allowed = (HOOK_FIELDS if section == "user_prompt_submit" else
+               CONTEXT_FIELDS if section == "context_lookup" else ADMISSION_FIELDS)
     if not isinstance(values, dict) or not set(values) <= allowed:
         raise ValueError("invalid fixture diagnostic fields")
     if section == "user_prompt_submit":
@@ -49,18 +55,25 @@ def _validate_values(section, values):
             if key in values and values[key] is not None and not re.fullmatch(
                     r"[A-Za-z][A-Za-z0-9_]{0,63}", values[key]):
                 raise ValueError("invalid hook status")
-    else:
+    elif section == "context_lookup":
         if values.get("stage") not in STAGES or values.get("result") not in RESULTS:
             raise ValueError("invalid context diagnostic classification")
         for key in ("context_files", "matching_contexts"):
             value = values.get(key)
             if value is not None and (type(value) is not int or not 0 <= value <= 1000):
                 raise ValueError("invalid context diagnostic count")
+    else:
+        if values.get("state_read") not in ("observed", "unavailable") or values.get("pending_query") not in (
+                "observed", "unavailable"):
+            raise ValueError("invalid admission observation status")
+        for key in ("agent_registered", "inbox_intent", "active_attempt", "delivery_latch", "eligible_pending"):
+            if key in values and values[key] is not None and type(values[key]) is not bool:
+                raise ValueError("invalid admission observation flag")
 
 
 def update(path, section, values, *, increment=()):
     """Merge one fixed metadata section and atomically replace the bounded file."""
-    if section not in ("user_prompt_submit", "context_lookup"):
+    if section not in ("user_prompt_submit", "context_lookup", "post_hook_admission"):
         raise ValueError("invalid fixture diagnostic section")
     _validate_values(section, values)
     if increment and (any(key != "observation_count" for key in increment) or

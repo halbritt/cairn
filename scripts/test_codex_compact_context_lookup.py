@@ -62,7 +62,23 @@ class ContextLookupTests(unittest.TestCase):
                 owner_process_class="configured_name_match", exit_code=1,
                 stderr_code="NATIVE_TURN_MISMATCH", stderr_class=None,
                 output_status=None, output_code=None))
-            self.assertEqual(set(data), {"schema", "user_prompt_submit", "context_lookup"})
+            update_diagnostic(diagnostic, "post_hook_admission", dict(state_read="observed",
+                agent_registered=True, inbox_intent=False, active_attempt=False, delivery_latch=False,
+                pending_query="observed", eligible_pending=True))
+            self.assertEqual(data["context_lookup"]["result"], "missing")
+            self.assertEqual(set(data), {"schema", "user_prompt_submit", "context_lookup", "post_hook_admission"})
+
+    def test_admission_observation_requires_fixed_flags_and_statuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            diagnostic = Path(directory) / "summary.json"
+            with self.assertRaisesRegex(ValueError, "invalid admission observation flag"):
+                update_diagnostic(diagnostic, "post_hook_admission", dict(
+                    state_read="observed", agent_registered=True, inbox_intent=False,
+                    active_attempt=False, delivery_latch=False, pending_query="observed",
+                    eligible_pending="delivery-id"))
+            with self.assertRaisesRegex(ValueError, "invalid admission observation status"):
+                update_diagnostic(diagnostic, "post_hook_admission", dict(
+                    state_read="observed", pending_query="not-known"))
 
     def test_each_user_prompt_entry_replaces_previous_result(self):
         with tempfile.TemporaryDirectory() as directory:
