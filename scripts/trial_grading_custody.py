@@ -2,7 +2,7 @@
 import json
 import re
 
-from trial_paired_request import FILE_LIMIT, Refusal, canonical_sha, need, shape
+from trial_paired_request import FILE_LIMIT, Refusal, canonical_sha, capacity_name, need, shape
 from trial_provider_mapping import original_plan
 
 
@@ -109,7 +109,12 @@ def _legacy_schedule(bundle):
     for field in ('agent_sha256', 'plan_sha256', 'request_sha256', 'schedule_sha256'):
         _digest(pair_binding[field])
     _digest(pin['sha256'])
-    shape(observed, 'agent_sha256 plan_file_sha256 conversion_receipt_sha256 distractors positions', 'legacy_observed')
+    assignment_fields = {'account_assignment_sha256', 'run_accounts'}
+    has_assignment = bool(set(observed) & assignment_fields)
+    observed_fields = 'agent_sha256 plan_file_sha256 conversion_receipt_sha256 distractors positions'
+    if has_assignment:
+        observed_fields += ' account_assignment_sha256 run_accounts'
+    shape(observed, observed_fields, 'legacy_observed')
     for field in ('agent_sha256', 'plan_file_sha256', 'conversion_receipt_sha256'):
         _digest(observed[field])
     # Declared values must match what was observed and what the join binds.
@@ -120,17 +125,38 @@ def _legacy_schedule(bundle):
              for field in ('request_id', 'request_sha256', 'campaign_id', 'occurrence_id', 'schedule_sha256')),
          'legacy_pair_binding_mismatch')
     expected = {(case, seed, arm) for case in plan['cases'] for seed in plan['seeds'] for arm in LEGACY_ARMS}
+    account_by_run = None
+    if has_assignment:
+        _digest(observed['account_assignment_sha256'])
+        account_rows = observed['run_accounts']
+        need(type(account_rows) is list and len(account_rows) == 126,
+             'legacy_account_assignment_mismatch')
+        expected_run_ids = {f'{case}.{arm}.s{seed}' for case, seed, arm in expected}
+        account_by_run = {}
+        for row in account_rows:
+            shape(row, 'run_id account_id', 'legacy_account_assignment_mismatch')
+            _name(row['run_id'])
+            need(capacity_name(row['account_id']), 'legacy_account_assignment_mismatch')
+            need(row['run_id'] in expected_run_ids and row['run_id'] not in account_by_run,
+                 'legacy_account_assignment_mismatch')
+            account_by_run[row['run_id']] = row['account_id']
+        need(set(account_by_run) == expected_run_ids, 'legacy_account_assignment_mismatch')
     schedule = bundle['schedule']
     need(type(schedule) is list and len(schedule) == 126, 'grading_schedule_coverage')
     observed_runs = set()
     for run in schedule:
-        shape(run, 'run_id case arm seed', 'grading_run')
+        shape(run, 'run_id case arm seed account_id' if has_assignment else 'run_id case arm seed', 'grading_run')
         key = (*_pair(run), run['arm'])
         need(key in expected and key not in observed_runs
              and run['run_id'] == f"{run['case']}.{run['arm']}.s{run['seed']}", 'grading_schedule_coverage')
+        if has_assignment:
+            need(capacity_name(run['account_id']), 'legacy_account_assignment_mismatch')
+            need(run['account_id'] == account_by_run.get(run['run_id']),
+                 'legacy_account_assignment_mismatch')
         observed_runs.add(key)
     need(observed_runs == expected and schedule == sorted(schedule, key=lambda r: r['run_id']),
          'grading_schedule_coverage')
+    need(canonical_sha(schedule) == pair_binding['schedule_sha256'], 'legacy_bundle_schedule_mismatch')
     # Each retained attempt must carry the exact planned run identity.
     planned = {(run['case'], run['seed'], run['arm']): run['run_id'] for run in schedule}
     need(type(bundle['inventory']) is list and all(

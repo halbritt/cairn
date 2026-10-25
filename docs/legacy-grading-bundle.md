@@ -77,8 +77,12 @@ The legacy bundle has the same top-level fields and the same closed binding.
 Each field hash in the binding is still `canonical_sha` of its section, so
 any change to any field breaks the binding.
 
-- **`schedule`** is exactly the runner's planned-identity list. Its
-  canonical hash is `binding.schedule_sha256`. It must equal the declared
+- **`schedule`** is exactly the runner's planned-identity list. For a
+  Codex account-assigned run, each row also carries `account_id` from the
+  pinned plan's `run_accounts`; the adapter checks that map against the
+  account IDs on every attempt and retains it in the private observed plan.
+  The join checks the observed map against every schedule row. Its canonical
+  hash is `binding.schedule_sha256`. It must equal the declared
   pair binding's `schedule_sha256`, which is the value the converter put in
   every blind `pair_key`. The delivery plan's occurrence check therefore
   holds unchanged. There must be 126 rows covering cases x seeds x arms

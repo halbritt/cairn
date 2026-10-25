@@ -45,6 +45,54 @@ def full_run(root, state_of, *, arms=('CURRENT', 'CAND'), schedule=True):
     return f, existing(root/'conversion/receipt.json')
 
 
+def full_account_assigned_run(root, *, mismatched_record=False):
+    outcomes = {(case, seed): ('correct', 'correct') for case in SHAPE_TASKS for seed in range(3)}
+    first_case = sorted(SHAPE_TASKS)[0]
+    outcomes[first_case, 0] = ('correct', 'mistake')
+    f = Fixture(root/'account-run', outcomes=outcomes, tasks=SHAPE_TASKS, arms=('CURRENT', 'CAND'))
+    f.save()
+
+    plan_path = f.run/'plan.json'
+    plan = json.loads(plan_path.read_bytes())
+    account_ids = ('codex-account-a', 'codex-account-b', 'codex-account-c')
+    run_accounts = [dict(run_id=record['run_id'], account_id=account_ids[i % len(account_ids)])
+                    for i, record in enumerate(sorted(f.records, key=lambda row: row['run_id']))]
+    assignment_sha256 = hashlib.sha256(C(run_accounts)).hexdigest()
+    plan['run_accounts'] = run_accounts
+    plan['account_assignment_sha256'] = assignment_sha256
+    plan_pin = pin(plan_path, json.dumps(plan, indent=2).encode())
+    f.request['plan'] = plan_pin
+
+    agent_path = f.run/'agent.json'
+    agent = json.loads(agent_path.read_bytes())
+    account_by_run = {row['run_id']: row['account_id'] for row in run_accounts}
+    agent['account_assignment_sha256'] = assignment_sha256
+    for index, record in enumerate(agent['records']):
+        assigned = account_by_run[record['run_id']]
+        if mismatched_record and index == 0:
+            assigned = account_ids[(account_ids.index(assigned) + 1) % len(account_ids)]
+        record['account_id'] = assigned
+        result_path = f.run/'runs'/record['run_id']/'result.json'
+        result_path.write_text(json.dumps(record, indent=2))
+    agent_pin = pin(agent_path, json.dumps(agent, indent=2).encode())
+    f.request['agent'] = agent_pin
+
+    binding_pin = f.request['binding']
+    binding_path = Path(binding_pin['path'])
+    binding = json.loads(binding_path.read_bytes())
+    planned = [dict(run_id=f'{row[0]}.{row[1]}.s{row[2]}', case=row[0], arm=row[1], seed=row[2],
+                    account_id=account_by_run[f'{row[0]}.{row[1]}.s{row[2]}']) for row in plan['runs']]
+    planned.sort(key=lambda row: row['run_id'])
+    binding.update(agent_sha256=agent_pin['sha256'], plan_sha256=plan_pin['sha256'],
+                   schedule_sha256=paired.canonical_sha(planned))
+    f.request['binding'] = pin(binding_path, C(binding))
+
+    request_pin = f.resave_request()
+    output = root/'account-conversion'
+    legacy.convert(request_pin, output)
+    return f, existing(output/'receipt.json')
+
+
 def draft(f, receipt_pin):
     receipt = json.loads(Path(receipt_pin['path']).read_bytes())
     subject = packet.approval_subject(receipt['selection'])
@@ -145,6 +193,34 @@ class IndeterminateTests(Case):
 
 
 class ChangedPairTests(Case):
+    def test_account_assigned_runner_plan_binds_schedule_and_changed_packet(self):
+        f, receipt = full_account_assigned_run(self.root)
+        draft_receipt, _ = draft(f, receipt)
+        bundle, result = adapter.build(receipt, POLICY, draft_receipt=draft_receipt)
+
+        self.assertEqual(result['status'], 'awaiting_grades')
+        self.assertEqual(len(result['delivery_pairs']), 1)
+        observed = bundle['plan']['observed']
+        self.assertEqual(len(observed['run_accounts']), 126)
+        self.assertEqual(len(bundle['schedule']), 126)
+        account_by_run = {row['run_id']: row['account_id'] for row in observed['run_accounts']}
+        self.assertEqual(len(account_by_run), 126)
+        self.assertEqual({row['run_id']: row['account_id'] for row in bundle['schedule']}, account_by_run)
+        self.assertEqual(paired.canonical_sha(bundle['schedule']),
+                         bundle['plan']['declared']['pair_binding']['schedule_sha256'])
+
+        altered = copy.deepcopy(bundle)
+        altered['plan']['observed']['run_accounts'][0]['account_id'] = 'wrong-codex-account'
+        altered['plan']['sha256'] = paired.canonical_sha(
+            {k: v for k, v in altered['plan'].items() if k != 'sha256'})
+        altered['binding']['plan_sha256'] = paired.canonical_sha(altered['plan'])
+        with self.assertRaisesRegex(paired.Refusal, '^legacy_account_assignment_mismatch$'):
+            custody.join_results(altered, [], [])
+
+        _, bad_receipt = full_account_assigned_run(self.root/'mismatched-record', mismatched_record=True)
+        with self.assertRaisesRegex(paired.Refusal, '^legacy_bundle_account_assignment_mismatch$'):
+            adapter.build(bad_receipt, POLICY)
+
     def deliver(self):
         """Changed pairs through the unchanged delivery plan, dispatch and collect."""
         f, receipt = full_run(self.root, lambda i, s: CHANGED.get((i, s), ('correct', 'correct')))

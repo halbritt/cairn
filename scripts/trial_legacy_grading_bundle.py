@@ -19,6 +19,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 
 import trial_blind_packet_draft as blind
@@ -42,9 +43,40 @@ def _read(reference, code='legacy_bundle_pin_mismatch'):
     return content
 
 
-def _planned(plan):
+def _account_assignment(plan, agent, records):
+    assignment_sha256 = plan.get('account_assignment_sha256')
+    assignments = plan.get('run_accounts')
+    need(agent.get('account_assignment_sha256') == assignment_sha256,
+         'legacy_bundle_account_assignment_mismatch')
+    if assignment_sha256 is None:
+        need(assignments is None and all('account_id' not in record for record in records),
+             'legacy_bundle_account_assignment_mismatch')
+        return None, None
+    need(type(assignment_sha256) is str and re.fullmatch('[0-9a-f]{64}', assignment_sha256) and
+         type(assignments) is list and len(assignments) == 126,
+         'legacy_bundle_account_assignment_mismatch')
+    run_ids = {f'{case}.{arm}.s{seed}' for case, arm, seed, _ in plan['runs']}
+    account_by_run = {}
+    for row in assignments:
+        need(type(row) is dict and set(row) == {'run_id', 'account_id'} and
+             type(row['run_id']) is str and row['run_id'] in run_ids and row['run_id'] not in account_by_run and
+             paired.capacity_name(row['account_id']),
+             'legacy_bundle_account_assignment_mismatch')
+        account_by_run[row['run_id']] = row['account_id']
+    need(set(account_by_run) == run_ids and all(
+        record.get('account_id') == account_by_run.get(record['run_id']) for record in records),
+        'legacy_bundle_account_assignment_mismatch')
+    return account_by_run, sorted(assignments, key=lambda row: row['run_id'])
+
+
+def _planned(plan, account_by_run=None):
     """The runner's exact planned identities (trial_weekly_run spec 'planned')."""
-    rows = [dict(run_id=f'{case}.{arm}.s{seed}', case=case, arm=arm, seed=seed) for case, arm, seed, _ in plan['runs']]
+    rows = []
+    for case, arm, seed, _ in plan['runs']:
+        row = dict(run_id=f'{case}.{arm}.s{seed}', case=case, arm=arm, seed=seed)
+        if account_by_run is not None:
+            row['account_id'] = account_by_run[row['run_id']]
+        rows.append(row)
     return sorted(rows, key=lambda r: r['run_id'])
 
 
@@ -119,21 +151,26 @@ def _build(receipt_pin, policy, draft_pin):
     request = blind._json(_read(receipt['request']))
     need(pair_binding['arm_roles'] == {arm: arm for arm in ARMS} and agent['arms'] == plan['arms']
          and set(agent['arms']) == set(ARMS), 'legacy_bundle_arm_roles')
-    planned = _planned(plan)
-    need(paired.canonical_sha(planned) == pair_binding['schedule_sha256'], 'legacy_bundle_schedule_mismatch')
     records = sorted(agent['records'], key=lambda r: r['run_id'])
+    account_by_run, run_accounts = _account_assignment(plan, agent, records)
+    planned = _planned(plan, account_by_run)
+    need(paired.canonical_sha(planned) == pair_binding['schedule_sha256'], 'legacy_bundle_schedule_mismatch')
     need([r['run_id'] for r in records] == [r['run_id'] for r in planned], 'legacy_bundle_attempt_identity')
+    observed = dict(agent_sha256=sources['agent']['sha256'],
+                    plan_file_sha256=sources['plan']['sha256'],
+                    conversion_receipt_sha256=receipt_pin['sha256'],
+                    distractors=agent.get('distractors'),
+                    positions=sorted((dict(case=case, seed=seed, arm=arm, position=position)
+                                      for case, arm, seed, position in plan['runs']),
+                                     key=lambda r: (r['case'], r['seed'], r['arm'])))
+    if account_by_run is not None:
+        observed.update(account_assignment_sha256=plan['account_assignment_sha256'],
+                        run_accounts=run_accounts)
     legacy_plan = dict(schema=custody.LEGACY_PLAN, cases=sorted({r['case'] for r in planned}), arms=list(ARMS),
                        seeds=sorted({r['seed'] for r in planned}), attempts=len(planned),
                        pairs=receipt['pairs']['total'], distractors=1900,
                        declared=dict(pair_binding=pair_binding, pair_binding_pin=sources['binding']),
-                       observed=dict(agent_sha256=sources['agent']['sha256'],
-                                     plan_file_sha256=sources['plan']['sha256'],
-                                     conversion_receipt_sha256=receipt_pin['sha256'],
-                                     distractors=agent.get('distractors'),
-                                     positions=sorted((dict(case=case, seed=seed, arm=arm, position=position)
-                                                       for case, arm, seed, position in plan['runs']),
-                                                      key=lambda r: (r['case'], r['seed'], r['arm']))))
+                       observed=observed)
     legacy_plan['sha256'] = paired.canonical_sha(legacy_plan)
     packets, delivery_pairs = _packets(receipt, draft_pin)
     blind_policy = request['policy']
