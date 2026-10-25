@@ -46,7 +46,7 @@ def without_descriptions(value):
 
 
 def capture(claude, cairn, root, profile):
-    label = "compact" if profile else "full"
+    label = profile.replace("/", "-") if profile else "full"
     area = root / label
     area.mkdir(mode=0o700)
     home, config_home, work = (area / name for name in ("home", "config", "work"))
@@ -66,10 +66,12 @@ def capture(claude, cairn, root, profile):
     rendered = subprocess.run(flags, text=True, capture_output=True,
                               check=True, timeout=10).stdout
     config = json.loads(rendered)["mcpServers"]["cairn"]
+    profile_values = [config["args"][index + 1]
+                      for index, value in enumerate(config["args"][:-1])
+                      if value == "--tool-profile"]
     require(config["type"] == "stdio" and config["command"] == str(cairn)
             and config["args"][0] == "mcp"
-            and config["args"].count("--tool-profile") == (1 if profile else 0)
-            and ("compact/1" in config["args"]) is bool(profile)
+            and profile_values == ([profile] if profile else [])
             and "--search-view" not in config["args"],
             "generated MCP configuration changed profile or view")
     config_file = area / "mcp.json"

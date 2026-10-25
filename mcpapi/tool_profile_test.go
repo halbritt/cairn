@@ -91,10 +91,98 @@ func TestCompactToolProfilePreservesRetrievalArgumentContract(t *testing.T) {
 	}
 }
 
+func TestCompactAllToolProfilePreservesFullMCPContract(t *testing.T) {
+	full, compact := allDeclarations(t, ""), allDeclarations(t, "compact/2")
+	if len(full) != 10 || len(compact) != len(full) {
+		t.Fatalf("profile changed tool availability: full=%d compact=%d", len(full), len(compact))
+	}
+	fullBytes, compactBytes := 0, 0
+	for name, previous := range full {
+		current, ok := compact[name]
+		if !ok {
+			t.Fatalf("compact profile hid %s", name)
+		}
+		if !reflect.DeepEqual(previous.Annotations, current.Annotations) {
+			t.Fatalf("%s changed annotations", name)
+		}
+		oldJSON, err := json.Marshal(previous.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newJSON, err := json.Marshal(current.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var oldSchema, newSchema any
+		if err = json.Unmarshal(oldJSON, &oldSchema); err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal(newJSON, &newSchema); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(withoutDescriptions(oldSchema), withoutDescriptions(newSchema)) {
+			t.Fatalf("%s changed input validation schema", name)
+		}
+		if len(current.Description) == 0 || len(current.Description) >= len(previous.Description) {
+			t.Fatalf("%s description did not shrink: %d/%d", name, len(previous.Description), len(current.Description))
+		}
+		oldTool, _ := json.Marshal(previous)
+		newTool, _ := json.Marshal(current)
+		fullBytes += len(oldTool)
+		compactBytes += len(newTool)
+	}
+	if compactBytes >= fullBytes {
+		t.Fatalf("compact tool set did not shrink: %d/%d", fullBytes, compactBytes)
+	}
+}
+
+func TestCompactAllToolProfileLeavesUnknownToolsFull(t *testing.T) {
+	full := "A future tool keeps its complete operator-authored description."
+	tool := profiledTool("compact/2", &mcp.Tool{Name: "cairn_future_tool", Description: full})
+	if tool.Description != full {
+		t.Fatalf("unknown tool description changed: %q", tool.Description)
+	}
+}
+
+func TestCompactV1LeavesOtherToolDeclarationsUnchanged(t *testing.T) {
+	full, compact := allDeclarations(t, ""), allDeclarations(t, "compact/1")
+	if len(full) != 10 || len(compact) != len(full) {
+		t.Fatalf("profile changed tool availability: full=%d compact=%d", len(full), len(compact))
+	}
+	for name, previous := range full {
+		if name == "cairn_search" || name == "cairn_pull" {
+			continue
+		}
+		if current, ok := compact[name]; !ok || !reflect.DeepEqual(previous, current) {
+			t.Fatalf("compact/1 changed non-retrieval declaration %s", name)
+		}
+	}
+}
+
+func allDeclarations(t *testing.T, profile string) map[string]mcp.Tool {
+	t.Helper()
+	server, err := NewServer(nil, Config{
+		Scope:           core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
+		AvailableTokens: 32000, ToolProfile: profile,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := connect(t, context.Background(), server).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(map[string]mcp.Tool, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		result[tool.Name] = *tool
+	}
+	return result
+}
+
 func TestCompactToolProfileRejectsUnknownVersion(t *testing.T) {
 	_, err := NewReadOnlyServer(compactSearchBackend{}, Config{
 		Scope:           core.Scope{Repo: "repo", TaskID: "task", RunID: "run"},
-		AvailableTokens: 32000, ToolProfile: "compact/2",
+		AvailableTokens: 32000, ToolProfile: "compact/3",
 	})
 	if err == nil {
 		t.Fatal("unknown tool profile accepted")
@@ -102,25 +190,27 @@ func TestCompactToolProfileRejectsUnknownVersion(t *testing.T) {
 }
 
 func TestCompactToolProfileIsReportedByClientInfo(t *testing.T) {
-	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: "compact/1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := connect(t, context.Background(), server).CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_client_info", Arguments: map[string]any{}})
-	if err != nil || result.IsError {
-		t.Fatalf("client info: %+v %v", result, err)
-	}
-	var info clientInfoResult
-	if err = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &info); err != nil {
-		t.Fatal(err)
-	}
-	if info.Facade.ToolProfile != "compact/1" || info.API.ToolProfile != "" {
-		t.Fatalf("tool profile declaration: %+v", info)
+	for _, profile := range []string{"compact/1", "compact/2"} {
+		server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, ToolProfile: profile})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := connect(t, context.Background(), server).CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_client_info", Arguments: map[string]any{}})
+		if err != nil || result.IsError {
+			t.Fatalf("client info: %+v %v", result, err)
+		}
+		var info clientInfoResult
+		if err = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &info); err != nil {
+			t.Fatal(err)
+		}
+		if info.Facade.ToolProfile != profile || info.API.ToolProfile != "" {
+			t.Fatalf("tool profile declaration for %q: %+v", profile, info)
+		}
 	}
 }
 
 func TestCompactToolProfileUsesUnchangedSearchHandler(t *testing.T) {
-	for _, profile := range []string{"", "compact/1"} {
+	for _, profile := range []string{"", "compact/1", "compact/2"} {
 		server, err := NewReadOnlyServer(compactSearchBackend{index: core.IndexResult{
 			Package: core.Package{ReceiptID: "receipt", Semantic: core.SemanticPackage{
 				Schema: "cairn.semantic/19", Status: "READY", Selected: []core.Selection{},

@@ -34,9 +34,9 @@ Everyday commands:
   clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
   opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--recent-files] [--replace]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
-  codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required]
-  claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
-  mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N] [--search-view compact/1] [--tool-profile compact/1]
+  codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--tool-profile compact/1|compact/2]
+  claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--tool-profile compact/1|compact/2]
+  mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N] [--search-view compact/1] [--tool-profile compact/1|compact/2]
   claude-channel --directory ABS_PRIVATE_DIR (local MCP stdio channel bridge for one Claude process)
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   agent [--token-file FILE] [--socket PATH] evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]

@@ -135,6 +135,25 @@ These are serialized declarations, not provider tokens or measured task savings.
 The profile is not enabled on existing bindings, and its effect on discovery,
 help calls, task outcomes and cache accounting still needs a paired trial.
 
+The separate opt-in `--tool-profile compact/2` shortens all ten MCP tool
+descriptions. It retains the full profile by default and keeps compact/1's
+search/pull descriptions. Tool names, availability, annotations, handlers and
+all non-description schema fields are unchanged; only description strings
+differ. Unlisted future tools keep their full description until explicitly
+reviewed for this profile. Codex and Claude configuration generators pass the
+selected profile to their MCP command; this flag does not change OpenCode's
+native tool profile.
+
+A Claude Code 2.1.310 loopback request fixture prepared one local request for
+each profile. The canonical declaration array measured 25,139 bytes / 5,032
+`o200k_base` proxy tokens for full, 20,500 / 4,175 for compact/1, and 17,707 /
+3,674 for compact/2. Thus compact/2 reduced the full declaration array by 7,432
+bytes / 1,358 proxy tokens (29.6% / 27.0%), with all ten tools and per-tool
+validation schema hashes unchanged. These are local declaration-shape results;
+the proxy tokenizer is not verified for Claude, and the fixture did not measure
+provider cache/usage, tool-selection quality, or accepted task outcomes. See
+the [full per-tool comparison](verification/claude-compact-all-tools-2026-10-25.md).
+
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
 It requires an explicit memory cap and must be between 1 and the smaller of

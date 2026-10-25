@@ -3,8 +3,20 @@ package main
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 )
+
+func TestCodexConfigPassesCompactAllToolProfileToMCP(t *testing.T) {
+	args := []string{"--socket", "/api.sock", "--token-file", "/agent.token", "--repo", "repo", "--codex-thread", "--tool-profile", "compact/2"}
+	var out bytes.Buffer
+	if err := writeCodexConfig(&out, args, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"--tool-profile", "compact/2"`) {
+		t.Fatalf("generated Codex config omitted selected tool profile: %s", out.String())
+	}
+}
 
 func TestCodexConfigRejectsInvalidInputBeforeOutput(t *testing.T) {
 	base := []string{"--socket", "/missing.sock", "--token-file", "/missing.token", "--repo", "repo", "--codex-thread"}
