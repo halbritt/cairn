@@ -182,7 +182,7 @@ before relying on claims outside that passage.
 """
 
 
-HOOK_ERROR_CODES = frozenset({"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED", "AUTHORITY_DENIED", "NOT_FOUND",
+HOOK_ERROR_CODES = frozenset({"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED", "AUTHORITY_DENIED", "NOT_FOUND", "STALE_HANDLE",
                               "PAYLOAD_UNAVAILABLE", "OPEN_CONFLICT", "POLICY_UNENFORCEABLE"})
 # Which local check failed, chosen at the raise site. It is never a provider status.
 HOOK_ERROR_REASONS = frozenset({"NONZERO_EXIT", "INVALID_JSON", "OUTPUT_LIMIT", "START_FAILED", "NOT_CONFIRMED",
@@ -1447,9 +1447,18 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         except ContextRefused:
             inspection["refusals"]["whole_context_budget"] = 1
             trace_observe(memory, 'route', 'whole_context_budget', group)
-        except HookError:
-            inspection["refusals"]["whole_pull_unavailable"] = 1
-            trace_observe(memory, 'route', 'whole_pull_unavailable', group)
+        except HookError as exc:
+            if (exc.code == "STALE_HANDLE"
+                    and memory.config.get("recall_view", "full") == "compact/1"):
+                # This receipt-scoped handle cannot be revived by switching from
+                # a whole pull to a span pull. Preserve the actionable refusal
+                # in the opt-in compact view and leave re-search as the next
+                # operation. The legacy full view keeps its existing category.
+                inspection["refusals"]["stale_handle"] = 1
+                trace_observe(memory, 'route', 'stale_handle', group)
+            else:
+                inspection["refusals"]["whole_pull_unavailable"] = 1
+                trace_observe(memory, 'route', 'whole_pull_unavailable', group)
             break
         entry = group[0]
         if (len(group) != 1 or entry.get("class") not in ("A", "B")

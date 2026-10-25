@@ -15,6 +15,24 @@ provider route, production receipt, or database was changed.
 | UTF-8 and budgets | MCP whole-source fixture uses Japanese text and checks the final escaped tool envelope at its exact bound and one byte below. Both profiles refuse oversized Unicode output. A bound native compact fixture fits whole Unicode source, current required context, known-zero diagnostics and a later refusal under 9,500 serialized bytes, with one search and one pull. | The fixture does not measure provider context retention, token charges, or accepted task outcomes. |
 | Compatibility and reads | Default MCP search remains byte-equivalent to the existing full projection; the compact response keeps receipt ID, source seal, versioned handles, paging and complete pull arguments. The native compact bound fixture needs no extra read for the whole source or its omission state. | A paired relevant-source task panel across ordinary and inbox paths remains required. |
 
+## Native compact stale-handle follow-up
+
+The native eager-candidate path now preserves the fixed `STALE_HANDLE` refusal
+class in compact/1 as `candidate_inspection.refusals.stale_handle`. Before this
+correction, the public hook surfaced the same response only as
+`whole_pull_unavailable`, which erased the re-search cue. A local public-hook
+fixture verifies a compact response with the original complete
+`pull_arguments`, no candidate body, one pull attempt, and the exact stale-handle
+refusal. The paired full/default run retains its previous
+`whole_pull_unavailable` category. Neither view exposes the refusal's private
+message or any source body. No retry is made against that same receipt-scoped
+stale handle; callers must search for a fresh handle.
+
+The focused Python tests (`test_optional_search_view` and
+`test_agent_tool_recall`) pass: 23 tests, no skips. This closes the provider-free
+native stale-handle presentation gap only; complete workflow acceptance and
+provider-backed usefulness remain open.
+
 The concrete correction was in the native opt-in renderer. It previously
 removed an explicitly returned integer-zero omission count, making it
 indistinguishable from an absent reason. `compact/1` now carries the original

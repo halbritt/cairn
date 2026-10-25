@@ -139,6 +139,34 @@ class OptionalSearchViewTests(unittest.TestCase):
         self.assertEqual([call['op'] for call in case.calls()], ['search', 'pull'])
         self.assertLessEqual(len(out['stdout'].encode()) + shown['remaining_memory_bytes'], 9500)
 
+    def test_compact_native_stale_handle_is_reported_without_repeating_the_dead_handle(self):
+        for recall_view, refusal, schema in (
+                ('compact/1', 'stale_handle', 'cairn.hook-recall-compact/1'),
+                ('full', 'whole_pull_unavailable', None)):
+            with self.subTest(recall_view=recall_view):
+                case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                case.mc['recall_view'] = recall_view
+                entry = case.fixture['search']['index'][0]
+                entry.update(body_sha256=hashlib.sha256(b'Current candidate body.').hexdigest(),
+                             **{'class': 'A'}, kind='note', summary_span=dict(offset=0, length=12))
+                case.fixture['search']['selected'] = []
+                case.fixture['fail_pull'] = 'STALE_HANDLE'
+                case.freeze()
+
+                out = case.memory_main(dict(case.event, prompt='Inspect the current candidate.'))
+
+                self.assertEqual(out['code'], 0, out)
+                text = json.loads(out['stdout'])['hookSpecificOutput']['additionalContext']
+                shown = view(text)
+                if schema is None:
+                    self.assertNotIn('schema', shown)
+                else:
+                    self.assertEqual(shown['schema'], schema)
+                self.assertEqual(shown['index'][0]['pull_arguments'], entry['pull_arguments'])
+                self.assertEqual(shown['candidate_inspection']['refusals'], {refusal: 1})
+                self.assertEqual(shown['candidate_bodies'], [])
+                self.assertEqual([call['op'] for call in case.calls()], ['search', 'pull'])
+
 
 if __name__ == '__main__':
     unittest.main()
