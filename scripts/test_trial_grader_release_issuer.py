@@ -121,6 +121,13 @@ class ReleaseIssuerTests(unittest.TestCase):
                          [row['route_sha256'] for row in self.instruction['recipients']])
         self.assertEqual(self.directory.lookups, [row['agent_id'] for row in self.plan['sessions']['slots']])
 
+    def test_directory_accepts_host_offset_timestamps(self):
+        self.directory = Directory({row['agent_id']: self.live_row(row) for row in self.plan['sessions']['slots']})
+        for live in self.directory.rows.values():
+            live['last_seen'] = '2026-10-15T04:59:30-07:00'
+            live['expires_at'] = '2026-10-15T05:01:00-07:00'
+        self.assertEqual(len(self.issue()['recipients']), 2)
+
     def test_issued_authority_passes_delivery_preflight_and_uses_exact_sessions(self):
         authority = self.issue()
         authority_path = self.root/'authority.json'

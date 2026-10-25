@@ -128,10 +128,18 @@ def _check_presence(directory, recipient, repo, now):
                 row.get('online') is True and row.get('stopped') is False and
                 row.get('metadata_source') == 'reported', 'grader_session_not_live')
     try:
-        last_seen, expires = paired.utc(row['last_seen']), paired.utc(row['expires_at'])
+        # Cairn directory timestamps may use the host's non-UTC offset.
+        # Release instructions and plan timestamps retain their UTC-only contract.
+        def directory_time(value):
+            parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            paired.need(parsed.tzinfo is not None and parsed.utcoffset() is not None,
+                        'grader_session_not_live')
+            return parsed.astimezone(dt.timezone.utc)
+
+        last_seen, expires = directory_time(row['last_seen']), directory_time(row['expires_at'])
         paired.need(last_seen <= now and now - last_seen <= dt.timedelta(seconds=90) and now < expires,
                     'grader_session_not_live')
-    except (KeyError, TypeError):
+    except (AttributeError, KeyError, TypeError, ValueError):
         raise paired.Refusal('grader_session_not_live') from None
     metadata = row.get('metadata')
     paired.need(isinstance(metadata, dict) and metadata.get('model') == recipient['model'] and
