@@ -91,12 +91,13 @@ def check(candidate_root, codex_binary):
             "codex_recovery_fixture", ROOT / "scripts/check_codex_compact_native.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        diagnostic_path = candidate_root / "fixture-context-lookup.json"
         config = dict(cairn=str(binary), socket=str(root / "api.sock"),
                       token_file=str(root / "alice.token"), repo=repo)
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             module.check(codex_binary, root / "native-codex-notice", config,
-                         api_call, candidate_root, scenario="notice")
+                         api_call, candidate_root, scenario="notice", diagnostic_path=diagnostic_path)
         fixture = json.loads(output.getvalue())
         report = fixture.get("recovery_report")
         if (fixture.get("result") != "PASS" or fixture.get("model") != "gpt-6-luna" or
@@ -119,7 +120,7 @@ def check(candidate_root, codex_binary):
         claimed_output = io.StringIO()
         with contextlib.redirect_stdout(claimed_output):
             module.check(codex_binary, root / "native-codex-claimed", config,
-                         api_call, candidate_root, scenario="claimed-before-compact")
+                         api_call, candidate_root, scenario="claimed-before-compact", diagnostic_path=diagnostic_path)
         claimed_fixture = json.loads(claimed_output.getvalue())
         if (claimed_fixture.get("result") != "PASS" or
                 claimed_fixture.get("provider_call") is not False or
@@ -137,7 +138,7 @@ def check(candidate_root, codex_binary):
         automatic_output = io.StringIO()
         with contextlib.redirect_stdout(automatic_output):
             module.check(codex_binary, root / "native-codex-auto-in-turn", config,
-                         api_call, candidate_root, scenario="auto-in-turn-claimed")
+                         api_call, candidate_root, scenario="auto-in-turn-claimed", diagnostic_path=diagnostic_path)
         automatic_fixture = json.loads(automatic_output.getvalue())
         if (automatic_fixture.get("result") != "PASS" or
                 automatic_fixture.get("native_automatic_compaction") is not True or

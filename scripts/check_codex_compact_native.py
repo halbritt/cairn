@@ -69,7 +69,44 @@ def _exec_tool(call_id, command):
                 namespace="functions", call_id=call_id, input=code)
 
 
-def check(binary, root, config, api_call, candidate_root, scenario="notice"):
+def _context_for_event(inbox_dir, event_id, stage, diagnostic_path=None):
+    """Select one fixture context and optionally retain bounded lookup metadata."""
+    if stage not in {"batch_context", "auto_context", "notice_context"}:
+        raise ValueError("invalid fixture context lookup stage")
+    inbox_dir = Path(inbox_dir)
+    paths = list(inbox_dir.glob("*.json"))
+    matches = []
+    for path in paths:
+        try:
+            if json.loads(path.read_text()).get("event_id") == event_id:
+                matches.append(path)
+        except (OSError, ValueError, TypeError):
+            continue
+    result = "matched" if len(matches) == 1 else "missing" if not matches else "ambiguous"
+    if diagnostic_path is not None:
+        payload = json.dumps(dict(schema="cairn.codex-fixture-context-lookup/1", stage=stage,
+            context_files=min(len(paths), 1000), matching_contexts=min(len(matches), 1000),
+            result=result), sort_keys=True).encode() + b"\n"
+        target = Path(diagnostic_path)
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        parent = target.parent.stat()
+        if (target.parent.is_symlink() or parent.st_uid != os.getuid() or parent.st_mode & 0o077):
+            raise PermissionError("fixture diagnostic directory must be owner-only")
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "wb", closefd=False) as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(fd)
+        finally:
+            os.close(fd)
+    if len(matches) != 1:
+        raise LookupError("fixture_context_" + result + ":" + stage)
+    return matches[0]
+
+
+def check(binary, root, config, api_call, candidate_root, scenario="notice", diagnostic_path=None):
     if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact",
                         "auto-in-turn-claimed"):
         raise ValueError("unsupported compact fixture scenario")
@@ -252,8 +289,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 if scenario == "batch-admission" and event is not None:
                     assert native_turn_ready.wait(15), "native batch admission turn ID was not published to fixture"
                     first = batch_events[0]
-                    context_path = next(path for path in (home / "coordination/state/codex-one/inbox").glob("*.json")
-                        if json.loads(path.read_text()).get("event_id") == first["event_id"])
+                    context_path = _context_for_event(home / "coordination/state/codex-one/inbox",
+                        first["event_id"], "batch_context", diagnostic_path)
                     context = json.loads(context_path.read_text())
                     attempt = context["attempt_id"]
                     attempt_id = attempt
@@ -297,8 +334,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                         content=[dict(type="output_text", text="Local fixture registration turn completed.", annotations=[])])
                 elif scenario == "auto-in-turn-claimed":
                     assert native_turn_ready.wait(15), "automatic-compaction turn ID was not published"
-                    context_path = next(path for path in (home / "coordination/state/codex-one/inbox").glob("*.json")
-                        if json.loads(path.read_text()).get("event_id") == event["event_id"])
+                    context_path = _context_for_event(home / "coordination/state/codex-one/inbox",
+                        event["event_id"], "auto_context", diagnostic_path)
                     context = json.loads(context_path.read_text())
                     attempt_id = context["attempt_id"]
                     attempt_native_turn_id = context.get("native_turn_id")
@@ -399,9 +436,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     finished.set()
                 else:
                     assert native_turn_ready.wait(15), "native continuation turn ID was not published to fixture"
-                    context_paths = list((home / "coordination/state/codex-one/inbox").glob("*.json"))
-                    context_path = next(path for path in context_paths
-                        if json.loads(path.read_text()).get("event_id") == event["event_id"])
+                    context_path = _context_for_event(home / "coordination/state/codex-one/inbox",
+                        event["event_id"], "notice_context", diagnostic_path)
                     context = json.loads(context_path.read_text())
                     attempt = context["attempt_id"]
                     attempt_id = attempt
@@ -512,7 +548,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 body = response_stream("resp_" + str(len(requests)), item,
                     input_tokens=200 if scenario == "auto-in-turn-claimed" and
                     item.get("type") == "custom_tool_call" else 1)
-            except (AssertionError, KeyError, StopIteration, ValueError, TypeError) as exc:
+            except (AssertionError, KeyError, LookupError, StopIteration, ValueError, TypeError) as exc:
                 failures.append(type(exc).__name__ + ": " + str(exc))
                 self.send_error(500)
                 return
