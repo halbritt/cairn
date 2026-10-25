@@ -151,3 +151,75 @@ recovery outcomes, token savings, or full design acceptance. Migrations remain
 forward-only. Keep the previous binary for recovery, but do not treat a binary
 rollback as a schema rollback; use a forward fix or the documented restore and
 reconciliation procedure.
+
+## Schema 072 deployment — 2026-10-25
+
+The primary binary and production database now include migration 072 from
+`76bdaf8a9d662bd7a492e550dec20eb94831d0b8`. It extends the
+`capture_observation.admission_candidate` check to allow the shadow label
+`confirmed_duplicate` alongside `transport_only`. The capture hook records this
+classification when the current snapshot matches its previously captured
+digest. It remains observational: it does not skip capture or enable a
+token-efficiency optimization. Existing production observation rows were not
+changed by the migration; all seven have a null admission candidate. No
+token-efficiency opt-in or account configuration was changed, and CAIRN-227
+remains **Defer**.
+
+The candidate was built from clean `main` revision
+`76bdaf8a9d662bd7a492e550dec20eb94831d0b8`, with Go 1.25.0 and
+`vcs_modified=false`. Its SHA-256 is
+`66cf9b7f9bba6afe58978a8753f032d2ea64e44c18d147446efc4edcfb1242b6`.
+`make test-integration` passed against a disposable PostgreSQL cluster and
+`make check` passed before deployment. No production database was used for
+tests, and no model provider was called. The previous `6aec920` binary remains
+at `~/.local/bin/cairn-before-schema072-20261025`, SHA-256
+`ee3e8d7afa2eb4e864437456ebc9cfc764a8a2979937cc4f9f44750637971402`.
+
+Before the backup, production was at schema 71 with the exact 071 digest
+`e912563357774216fccd1980984133319c9be76133c71da9d27ab949e8b6cafb`;
+migration 072 was absent. There were zero unfinished wake attempts, zero
+unfinished session attempts, zero unexpired delivery leases, and seven capture
+observations. No idle-in-transaction sessions or locks on
+`capture_observation` were present at the pre-migration checks. The distinct
+`cairn267-distinct-api-4884f6a.service` was left running throughout deployment.
+
+A fresh pgBackRest differential completed as
+`20261025-010451F_20261025-024442D`, based on full backup
+`20261025-010451F`. It ran from 02:44:42 to 02:46:10 PDT, with start and stop
+WAL `00000001000001A100000084` and stop LSN `1A1/846BFA88`. The backup reported
+a 19.3 GB database delta and a 1.9 GB repository delta. The stop WAL was
+archived, stanza status was `ok`, and PostgreSQL archive failures remained at
+zero. Retention expired the older 2026-10-24 differential; the full backup and
+current differential remain in the restore chain. After backup,
+`/nvr/pg-backups` had 8.0 TB free and `/` had 398 GB free.
+
+The scheduler, seven wake workers, presence service and primary API were
+stopped; the separate distinct API remained active and was not restarted. The
+candidate migration ran as schema-owner role `halbritt` over the production
+PostgreSQL socket with a five-second `lock_timeout`. Production now records 72
+migrations. Migration 071 still matches the digest above, and migration 072
+matches source SHA-256
+`f06908576d17685db0d371aefae7c290e79126ce9ac1b46222beaeb01a7138fe`. The
+constraint allows exactly `transport_only` and `confirmed_duplicate` (while
+continuing to permit null). The capture row count remained seven. No production
+test data was created or removed.
+
+The candidate replaced the primary executable atomically. Authenticated client
+and server version checks both report `76bdaf8`, Go 1.25.0 and a clean VCS
+stamp. Authenticated search and exact pull succeeded; the pulled note body
+SHA-256 matched the search index. The read-only operator `coordination-review`
+/ `ReviewEvents` smoke returned one failed delivery with an empty
+`recovery_transitions` list. The effective-recall deployment inventory
+returned `ok=true`, four ordinary hooks, three existing inbox bindings, no
+issues and `live_observed=false`. Presence, scheduler, all seven wake workers,
+the primary API and the distinct API are active with `NRestarts=0`. Final
+read-only checks found 72 migrations, zero unfinished wake/session attempts,
+zero unexpired leases, zero archive failures, and latest archived WAL
+`00000001000001A100000085` at 09:47:57 UTC.
+
+This deployment makes the duplicate-capture label available for observation;
+it does not establish duplicate-admission usefulness, capture skipping, token
+savings, measured task quality, or full design acceptance. The CAIRN-227
+acceptance panel remains **Defer**. Migrations are forward-only. Keep the
+previous binary for recovery; use a forward fix or the documented restore and
+reconciliation procedure rather than attempting a schema downgrade.
