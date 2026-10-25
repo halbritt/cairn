@@ -1599,11 +1599,15 @@ def owner_process(config, event):
     for _ in range(128):
         if pid < 2:
             break
-        view = proc_view(pid)
+        try:
+            view = proc_view(pid)
+        except (FileNotFoundError, ProcessLookupError) as exc:
+            raise CoordinationError("INVALID_HOST", "native process exited during owner lookup") from exc
         if pid == declared:
             return view['ref']
         if declared is None and supervisor_role(view) is None and (
                 view['comm'] in config.get("process_names", []) or
+                (view['exe'] and Path(view['exe']).name in config.get("process_names", [])) or
                 (view['exe'] and any(Path(view['exe']).parent == d for d in exe_dirs))):
             return view['ref']
         pid = view['ref']["parent"]
