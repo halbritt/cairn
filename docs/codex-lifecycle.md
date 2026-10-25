@@ -53,6 +53,9 @@ place. The marker records an outstanding retry, not proof that the later
 transcript contains the dialogue from before compaction.
 When capture observations are enabled, this condition is reported as
 `transcript_unavailable` without a snapshot hash or selector outcome.
+The API accepts this outcome starting with schema migration 070. Upgrade the
+API before activating a hook version that can report it. Keep migration 070
+applied on rollback once rows with this outcome have been stored.
 
 Capture events serialize on a separate session `.capture.lock`. They hold the
 ordinary session lock only to snapshot state and commit capture metadata, so a
