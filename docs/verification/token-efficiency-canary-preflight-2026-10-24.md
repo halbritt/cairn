@@ -195,3 +195,34 @@ trial was attempted. CAIRN-227 remains **Defer** pending current candidate
 binary/API/disposable-schema compatibility, the deployment/quota admission
 gates above, and accepted paired task outcomes, usage, latency, and a live
 canary/rollback result.
+
+## Native actor shell approval and visibility probe, 2026-10-25
+
+A provider-free probe used installed Codex CLI 0.164.0, a fresh disposable
+`CODEX_HOME`, a loopback Responses stub, and a synthetic auth-marker file. The
+app-server client used `approvalPolicy="on-request"` and explicitly answered
+any `item/commandExecution/requestApproval` request with `{"decision":"decline"}`.
+The thread used `sandbox="read-only"`. The stub requested
+`functions.exec` to read the marker. No approval request was emitted; the shell
+tool executed, and its output contained the marker text. A second stub request
+attempted to create a file under the read-only workspace; no approval request
+was emitted and the file was not created. Thus the read-only policy blocked the
+write, while neither it nor on-request approval protected readable paths.
+
+A separate visibility probe under the same stock app-server settings found the
+synthetic auth-marker path, synthetic production-socket path, and disposable
+socket path all visible to `functions.exec`. This does not establish access to
+any real credential or production socket. Earlier wrapped-run evidence used an
+external bwrap namespace that hid paths it did not mount. That boundary is
+provided by the external wrapper, not by `sandbox="read-only"`. A subscribed
+app-server needs its selected `CODEX_HOME` to reach OAuth; if that home is
+mounted into an unwrapped actor shell namespace, this probe shows that its files
+are readable without a command-approval callback.
+
+No provider, real OAuth credential, production socket, Cairn API, or Store was
+used. The MCP child bwrap probe is separate and does not isolate the actor shell.
+Read-only decision MCP and controller settlement were not exercised in this
+bounded approval probe because the shell read already bypassed approval. No safe
+subscribed canary route is established. Keep CAIRN-227 deferred until a route
+can expose selected subscription auth to app-server while denying actor shell
+visibility, and independently prove the controller settlement boundary.
