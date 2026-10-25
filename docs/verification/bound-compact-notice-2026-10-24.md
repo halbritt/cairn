@@ -193,6 +193,28 @@ this staged compact case.
 
 This demonstrates native Codex app-server transport for one oversized notice
 and exact-source settlement. It does not measure actor comprehension,
-accepted-task utility, provider usage, latency, or cost savings. The fixture
-does not yet cover a causal response in Codex. Live canary, paired outcomes,
+accepted-task utility, provider usage, latency, or cost savings. The separate
+causal-response fixture below extends the source and settlement coverage.
+
+## Codex native compact causal response
+
+A second disposable app-server task covers a response. Alice publishes a
+request to Bob. Bob completes that request through the Store with the fixture's
+6,795-byte source. Bob then publishes a response to the registered Codex
+session using the original request event ID as `causation_id`; the response
+references the exact committed completion result. This request completion is
+a deterministic fixture Store write, not a native actor's task execution.
+
+Codex receives the causally linked response with a compact handle, reads the
+whole result only through the handle, and explicitly settles it as handled.
+The fixture checks the exact event, response source/version, delivery, session
+and execution, and attempt identity. Store status reports one handled attempt
+and no result on the response settlement. Bob's event listing contains no
+event caused by the response, so the test detects no reply-to-response loop.
+The four bounded Responses exchanges use the local loopback server and the
+fixture model name `gpt-6-luna`; no subscription or external provider is used.
+
+This validates native transport, causation, source reading and settlement. It
+does not establish native actor comprehension, accepted-task utility, provider
+usage, latency, or cost savings. Live canary, paired outcomes,
 sender/recipient/capture usage, latency and rollback evidence remain open.

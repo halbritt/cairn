@@ -57,7 +57,9 @@ def _exec_tool(call_id, command):
                 namespace="functions", call_id=call_id, input=code)
 
 
-def check(binary, root, config, api_call, candidate_root):
+def check(binary, root, config, api_call, candidate_root, scenario="notice"):
+    if scenario not in ("notice", "response"):
+        raise ValueError("unsupported compact fixture scenario")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
     home = root / "home"
@@ -126,14 +128,32 @@ def check(binary, root, config, api_call, candidate_root):
     installed.write_text(json.dumps(binding, indent=2) + "\n", encoding="utf-8")
     installed.chmod(0o600)
 
-    source = api_call("alice", "create", raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
-        draft=dict(kind="note", body=SOURCE_BODY, sensitivity="shareable", claim_type="self",
-                   scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
+    causal_request = None
+    if scenario == "notice":
+        source = api_call("alice", "create", raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
+            draft=dict(kind="note", body=SOURCE_BODY, sensitivity="shareable", claim_type="self",
+                       scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
+    else:
+        request_source = api_call("alice", "create", raw=True, body=json.dumps(dict(
+            request_id=str(uuid.uuid4()), draft=dict(kind="note", body="Native Codex causal task request",
+            sensitivity="shareable", claim_type="self", scope=dict(repo=config["repo"],
+            task_id="*", run_id="*")))))
+        causal_request = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+            "--to", "agent/bob", "--kind", "request", "--version", str(request_source["version"]),
+            request_source["record_id"])
+        request_delivery = api_call("bob", "inbox")["delivery"]
+        assert request_delivery and request_delivery["event"]["event_id"] == causal_request["event_id"]
+        completion = api_call("bob", "complete", "--request-id", str(uuid.uuid4()),
+            "--lease", request_delivery["lease_id"], "--shareable", "--stdin",
+            request_delivery["delivery_id"], body=SOURCE_BODY)
+        assert completion["state"] == "handled" and completion["result"]["version"] == 1
+        source = completion["result"]
     native_id = None
     event = None
     delivery_id = None
     requests, failures, results = [], [], {}
     finished = threading.Event()
+    event_owner = "alice" if scenario == "notice" else "bob"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -154,9 +174,18 @@ def check(binary, root, config, api_call, candidate_root):
                     agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
                     target = next(row for row in agents if row["native_session_id"] == native_id)
                     assert target["metadata"]["state"] == "busy", "native Codex session was not busy"
-                    event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
-                        "--to", target["inbox"], "--kind", "notice", "--version", "1", source["record_id"])
-                    delivery_id = api_call("alice", "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
+                    if scenario == "notice":
+                        event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                            "--to", target["inbox"], "--kind", "notice", "--version",
+                            str(source["version"]), source["record_id"])
+                    else:
+                        event = api_call("bob", "publish", "--request-id", str(uuid.uuid4()),
+                            "--to", target["inbox"], "--kind", "response", "--version",
+                            str(source["version"]), "--causation-id", causal_request["event_id"],
+                            source["record_id"])
+                        assert event["causation_id"] == causal_request["event_id"]
+                        assert event["ref"] == source
+                    delivery_id = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
                         content=[dict(type="output_text", text="Local fixture initial turn completed.", annotations=[])])
                 else:
@@ -170,6 +199,9 @@ def check(binary, root, config, api_call, candidate_root):
                     assert context["source"] == event["ref"], "compact context changed source reference"
                     assert event["ref"]["record_id"] == source["record_id"]
                     assert event["ref"]["version"] == source["version"]
+                    assert event["kind"] == scenario, "compact context changed notice/response kind"
+                    if scenario == "response":
+                        assert event["causation_id"] == causal_request["event_id"]
                     claimed = api_call("carol", "session-inbox-claim", raw=True,
                         body=json.dumps(dict(request_id=attempt, session=dict(
                             agent_id=context["agent_id"], execution_id=context["execution_id"]))))["attempt"]
@@ -196,8 +228,14 @@ def check(binary, root, config, api_call, candidate_root):
                     else:
                         settled = json.dumps(results["compact-settle"])
                         assert "handled" in settled and "attempts" in settled, "compact settlement did not confirm handled"
-                        current = api_call("alice", "event-status", event["event_id"])["deliveries"][0]
+                        current = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
                         assert current["state"] == "handled" and current["attempts"] == 1, "Store did not confirm one handled attempt"
+                        if scenario == "response":
+                            assert not current.get("result"), "response settlement falsely created a task result"
+                            visible_events = api_call("bob", "events", "--limit", "100")
+                            assert not visible_events.get("more")
+                            assert not any(row.get("causation_id") == event["event_id"]
+                                for row in visible_events["events"]), "settling response created a reply-to-response loop"
                         item = dict(type="message", id="msg_done", role="assistant", status="completed",
                             content=[dict(type="output_text", text="Compact notice handled.", annotations=[])])
                         finished.set()
@@ -240,7 +278,8 @@ def check(binary, root, config, api_call, candidate_root):
         installer.trust_codex_hooks(home, settings, command, verify=verify, codex_binary=binary)
         assert not failures, failures
         assert event is not None and len(requests) == 4
-        print(json.dumps(dict(result="PASS", native_session_registered=True, kind="notice",
+        print(json.dumps(dict(result="PASS", native_session_registered=True, scenario=scenario,
+            kind=event["kind"], causal_request_id=causal_request["event_id"] if causal_request else None,
             exact_source_bytes=len(SOURCE_BODY.encode()), exact_source_read=True,
             explicit_handled_settlement=True, attempt_count=1, model=MODEL,
             request_count=len(requests), provider="loopback_fixture", provider_call=False), sort_keys=True))
