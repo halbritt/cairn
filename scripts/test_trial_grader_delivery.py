@@ -304,8 +304,26 @@ class DispatchTests(Case):
             self.assertEqual(hashlib.sha256(request['comparison'].encode()).hexdigest(), request['packet_sha256'])
             self.assertEqual(request['response']['samples'], plan['pairs'][0]['samples'])
             self.assertEqual(request['response']['verdict_labels'], f.bundle['policy']['verdict_labels'])
+            self.assertEqual(set(request['response']['examples']), {'determinate', 'undetermined'})
             self.assertEqual(request['request_id'], row['publication_id'])
             self.assertEqual(row['request']['sha256'], sha(body))
+            self.assertIn('MUST be a JSON object keyed by every exact sample ID', request['instructions'])
+            self.assertIn('MUST be JSON null', request['instructions'])
+            for state, example in request['response']['examples'].items():
+                self.assertEqual(set(example), {'schema', 'request_id', 'pair_id', 'slot', 'packet_sha256',
+                                                'binding_sha256', 'state', 'verdicts', 'reason'})
+                self.assertEqual(example['state'], state)
+                if state == 'determinate':
+                    self.assertEqual(set(example['verdicts']), set(request['response']['samples']))
+                    self.assertTrue(all(label in request['response']['verdict_labels']
+                                        for label in example['verdicts'].values()))
+                else:
+                    self.assertIsNone(example['verdicts'])
+                self.assertEqual(grader._response(json.dumps(example), dict(publication_id=request['request_id']),
+                    dict(pair_id=request['pair_id'], samples=request['response']['samples']),
+                    dict(slot=request['slot'], packet_sha256=request['packet_sha256']),
+                    dict(binding_sha256=request['binding_sha256']), set(request['response']['verdict_labels'])),
+                    example)
         intent, _ = fabric.remembered[receipt['deliveries'][0]['source_request_id']]
         self.assertEqual(intent[1], 'coordination/'+receipt['deliveries'][0]['publication_id'])
         self.assertIs(intent[4], True)

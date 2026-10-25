@@ -198,6 +198,18 @@ verdicts), and a reason of at most 16 KiB. Any other body is retained as
 `invalid`. Echoed IDs alone do not establish custody. The delivery binding
 does.
 
+The rendered request includes complete `response.examples`. For a determinate
+response, `verdicts` is a JSON object whose keys are every exact sample ID from
+`response.samples` and whose values are strings from `response.verdict_labels`:
+
+```json
+"verdicts": {"<exact sample ID>": "<allowed label>"}
+```
+
+For an undetermined response, `verdicts` is JSON `null`. In both cases the
+response has exactly the fields shown by the corresponding example; do not
+return a list of sample objects or add fields.
+
 ## Agreement and disagreements
 
 Graded rows become join submissions, with the delivery UUID as submission ID.

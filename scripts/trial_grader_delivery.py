@@ -37,8 +37,10 @@ NAMESPACE = uuid.UUID('6f1d7c62-3a4e-5b0c-9d8e-0c1a2b3c4d5e')
 INSTRUCTIONS = (
     'Grade the two blind samples in `comparison` under the control in `control`. '
     'Reply only by completing this delivery with `cairn complete --stdin --shareable` and a JSON body '
-    'matching `response`: echo request_id, pair_id, slot, packet_sha256 and binding_sha256; set state to '
-    'determinate (one verdict per listed sample) or undetermined (verdicts null); give a short reason. '
+    'matching exactly one object in `response.examples`. Copy the response field names and values shown there. '
+    'For `determinate`, `verdicts` MUST be a JSON object keyed by every exact sample ID in `response.samples`, '
+    'with one allowed label string from `response.verdict_labels` for each key. For `undetermined`, `verdicts` '
+    'MUST be JSON null. Echo the request and binding identifiers exactly; add no fields. Give a short reason. '
     'Do not consult other graders, the arm mapping, or prior grades.')
 
 
@@ -203,6 +205,14 @@ def _render(plan, bundle, pair, delivery, publication_id, model):
     comparison = _read_pinned(delivery['comparison'])
     paired.need(_sha(comparison) == delivery['packet_sha256'], 'grader_plan_pin_mismatch')
     control = _read_pinned(delivery['control'])
+    response_fields = dict(schema=RESPONSE_SCHEMA, request_id=publication_id, pair_id=pair['pair_id'],
+        slot=delivery['slot'], packet_sha256=delivery['packet_sha256'], binding_sha256=plan['binding_sha256'])
+    samples = list(pair['samples'])
+    labels = list(bundle['policy']['verdict_labels'])
+    examples = dict(
+        determinate=dict(**response_fields, state='determinate',
+                         verdicts={sample: labels[0] for sample in samples}, reason='Short reason.'),
+        undetermined=dict(**response_fields, state='undetermined', verdicts=None, reason='Short reason.'))
     request = dict(schema=REQUEST_SCHEMA, request_id=publication_id, pair_id=pair['pair_id'], slot=delivery['slot'],
         recipient=dict(agent_id=delivery['agent_id'], session_id=delivery['session_id'],
                        execution_id=delivery['execution_id'], model=model),
@@ -210,9 +220,9 @@ def _render(plan, bundle, pair, delivery, publication_id, model):
         packet_sha256=delivery['packet_sha256'], comparison=comparison.decode('utf-8'),
         control=dict(encoding='base64', bytes=len(control), sha256=_sha(control),
                      data=base64.b64encode(control).decode('ascii')),
-        response=dict(schema=RESPONSE_SCHEMA, samples=list(pair['samples']),
-                      verdict_labels=list(bundle['policy']['verdict_labels']),
-                      states=['determinate', 'undetermined'], reason_limit_bytes=REASON_LIMIT),
+        response=dict(schema=RESPONSE_SCHEMA, samples=samples, verdict_labels=labels,
+                      states=['determinate', 'undetermined'], reason_limit_bytes=REASON_LIMIT,
+                      examples=examples),
         instructions=INSTRUCTIONS)
     body = C(request).decode('utf-8')
     _check_blind(body)
