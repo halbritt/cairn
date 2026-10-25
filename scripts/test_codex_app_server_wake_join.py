@@ -4,6 +4,7 @@ import unittest
 
 from check_codex_app_server_wake_join import (
     _ItemStartedObserver,
+    _scripted_inbox_tool,
     _attach_item_started_observer,
     _classify_thread_resume_refusal,
     _classify_missing_queue_trace,
@@ -38,6 +39,43 @@ class ItemStartedObserverSubscriptionTests(unittest.TestCase):
             ("observer_resume", "before", None),
             ("observer_resume", "after", None),
         ])
+
+
+class ScriptedHandledContinuationTests(unittest.TestCase):
+    def setUp(self):
+        self.context = {
+            "source": {"record_id": "record-1", "version": 3},
+            "read_input": {"record_id": "record-1", "version": 3},
+            "read": ["cairn", "agent", "history"],
+            "acknowledgement": ["coordination.py", "inbox", "--context", "private.json", "ack"],
+        }
+
+    def test_reads_exact_source_then_uses_native_acknowledgement_argv(self):
+        stage, tool = _scripted_inbox_tool({}, self.context, "source body")
+        self.assertEqual(stage, "source_read")
+        self.assertIn("history", tool["input"])
+        self.assertIn("record-1", tool["input"])
+
+        stage, tool = _scripted_inbox_tool({"source": {"call_id": "source",
+            "output": 'record-1 version 3: source body'}}, self.context, "source body")
+        self.assertEqual(stage, "acknowledgement")
+        self.assertIn("coordination.py", tool["input"])
+        self.assertIn("private.json", tool["input"])
+
+        stage, tool = _scripted_inbox_tool({"source": {"output": "record-1 version 3: source body"},
+            "acknowledgement": {"output": "handled"}}, self.context, "source body")
+        self.assertEqual(stage, "store_verification")
+        self.assertIsNone(tool)
+
+    def test_does_not_ack_missing_or_different_source(self):
+        with self.assertRaisesRegex(RuntimeError, "exact_source_read_not_observed"):
+            _scripted_inbox_tool({"source": {"output": "different record"}},
+                                 self.context, "source body")
+
+    def test_does_not_accept_non_handled_ack_result(self):
+        with self.assertRaisesRegex(RuntimeError, "native_acknowledgement_not_confirmed"):
+            _scripted_inbox_tool({"source": {"output": "record-1 source body"},
+                "acknowledgement": {"output": "pending"}}, self.context, "source body")
 
     def test_resume_is_not_attempted_when_metadata_check_fails(self):
         calls = []

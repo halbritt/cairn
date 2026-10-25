@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import shutil
 import stat
 import subprocess
@@ -27,6 +28,30 @@ VERSION = "codex-cli 0.164.0"
 MAX_STDERR = 4096
 _BOOTSTRAP_FD = None
 _BOOTSTRAP_PATH = None
+
+
+def _scripted_inbox_tool(results: dict, context: dict, source_body: str) -> tuple[str, dict | None]:
+    """Return one native tool action for exact source read, then notice ack."""
+    if "source" not in results:
+        command = ("printf %s " + shlex.quote(json.dumps(context["read_input"])) +
+                   " | " + shlex.join(context["read"]))
+        return "source_read", _exec_tool("source", command)
+    read_text = json.dumps(results["source"], sort_keys=True)
+    require(context["source"]["record_id"] in read_text and source_body in read_text,
+            "exact_source_read_not_observed")
+    if "acknowledgement" not in results:
+        return "acknowledgement", _exec_tool(
+            "acknowledgement", shlex.join(context["acknowledgement"]))
+    require("handled" in json.dumps(results["acknowledgement"], sort_keys=True),
+            "native_acknowledgement_not_confirmed")
+    return "store_verification", None
+
+
+def _exec_tool(call_id: str, command: str) -> dict:
+    code = "text(await tools.exec_command(" + json.dumps(dict(
+        cmd=command, max_output_tokens=2000)) + "));"
+    return dict(type="custom_tool_call", id="ctc_" + call_id, name="exec",
+                namespace="functions", call_id=call_id, input=code)
 
 sys.path.insert(0, str(REPO / "scripts/fixtures/cairn220_queue_trace"))
 from trace_io import append_trace, create_trace
@@ -784,7 +809,7 @@ def _run_postgres_preflight() -> dict:
             _BOOTSTRAP_FD = None
 
 
-def _inside(root_text: str) -> int:
+def _inside(root_text: str, scripted_handled: bool = False) -> int:
     sys.path.insert(0, "/repo/integrations/lifecycle")
     sys.path.insert(0, "/repo/scripts")
     import codex_queue
@@ -807,6 +832,23 @@ def _inside(root_text: str) -> int:
     requests = []
     response_event = threading.Event()
     item_observer = None
+    expected_event_id = None
+    source_read_confirmed = False
+    acknowledgement_confirmed = False
+    acknowledgement_tool_calls = 0
+    script_failure_code = None
+
+    def _context_for_event() -> tuple[Path, dict]:
+        matches = []
+        for path in (root / "engine" / "state" / "inbox").glob("*.json"):
+            try:
+                context = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if context.get("event_id") == expected_event_id:
+                matches.append((path, context))
+        require(len(matches) == 1, "native_inbox_context_not_unique")
+        return matches[0]
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -830,17 +872,50 @@ def _inside(root_text: str) -> int:
             if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or len(requests) >= 3:
                 self.send_error(413)
                 return
-            self.rfile.read(length)
+            request = json.loads(self.rfile.read(length))
             requests.append(("POST", "/v1/responses"))
-            body = response_stream("resp_cairn220", dict(
-                type="message", id="msg_cairn220", role="assistant", status="completed",
-                content=[dict(type="output_text", text="Synthetic local response.", annotations=[])]))
+            nonlocal source_read_confirmed, acknowledgement_confirmed
+            nonlocal acknowledgement_tool_calls, script_failure_code
+            if not scripted_handled:
+                item = dict(type="message", id="msg_cairn220", role="assistant", status="completed",
+                    content=[dict(type="output_text", text="Synthetic local response.", annotations=[])])
+            else:
+                try:
+                    results = {row["call_id"]: row for row in request.get("input", [])
+                               if row.get("type") == "custom_tool_call_output"}
+                    _context_path, context = _context_for_event()
+                    stage, item = _scripted_inbox_tool(
+                        results, context, "Synthetic CAIRN-220 watcher source")
+                    if stage == "acknowledgement":
+                        source_read_confirmed = True
+                        acknowledgement_tool_calls += 1
+                    elif stage == "store_verification":
+                        inspect = _api_call(binary, api, sender_token, "event-inspect",
+                                            {"event_id": expected_event_id}, socket_path=api_socket)
+                        delivery = next(row for row in inspect["deliveries"]
+                                        if row["delivery_id"] == context["delivery_id"])
+                        require(delivery.get("state") == "handled" and delivery.get("attempts") == 1
+                                and acknowledgement_tool_calls == 1,
+                                "store_handled_outcome_not_exactly_once")
+                        acknowledgement_confirmed = True
+                        item = dict(type="message", id="msg_cairn220_done", role="assistant",
+                            status="completed", content=[dict(type="output_text",
+                            text="Read the exact notice source and acknowledged it as handled.", annotations=[])])
+                        response_event.set()
+                except Exception as exc:
+                    allowed = {"native_inbox_context_not_unique", "exact_source_read_not_observed",
+                               "native_acknowledgement_not_confirmed", "store_handled_outcome_not_exactly_once"}
+                    script_failure_code = str(exc) if str(exc) in allowed else type(exc).__name__
+                    self.send_error(500)
+                    return
+            body = response_stream("resp_cairn220_" + str(len(requests)), item)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-            response_event.set()
+            if not scripted_handled:
+                response_event.set()
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -947,6 +1022,7 @@ def _inside(root_text: str) -> int:
             ref=dict(record_id=source["record_id"], version=source["version"]),
             destination=dict(type="agent", name=registered["inbox"])), socket_path=api_socket)
         event_id = event["event_id"]
+        expected_event_id = event_id
         status_before = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id},
                                    socket_path=api_socket)
         delivery = status_before["deliveries"][0]
@@ -984,10 +1060,10 @@ def _inside(root_text: str) -> int:
         intent = state.get("inbox_intent") or {}
         actual_delivery = ((attempt.get("delivery") or {}).get("delivery_id"))
         turn_id = attempt.get("native_turn_id") or intent.get("native_turn_id")
+        response_event.wait(10)
         event_after = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id},
                                 socket_path=api_socket)
         delivery_after = event_after["deliveries"][0]
-        response_event.wait(10)
         trace_rows = []
         summary = {
             "schema": "cairn.codex-app-server-wake-join/2",
@@ -1007,6 +1083,13 @@ def _inside(root_text: str) -> int:
             "native_turn_id_present": isinstance(turn_id, str) and bool(turn_id),
             "response_requests": sum(1 for method, _path in requests if method == "POST"),
             "model_list_requests": sum(1 for method, _path in requests if method == "GET"),
+            "scripted_handled_requested": scripted_handled,
+            "exact_source_read": source_read_confirmed,
+            "acknowledgement": "handled_confirmed" if acknowledgement_confirmed else "not_confirmed",
+            "acknowledgement_tool_calls": acknowledgement_tool_calls,
+            "script_failure_code": script_failure_code,
+            "settlement_exactly_once": acknowledgement_confirmed and acknowledgement_tool_calls == 1
+                and delivery_after.get("attempts") == 1,
             "hook_join": False,
         }
         if attempt:
@@ -1018,6 +1101,18 @@ def _inside(root_text: str) -> int:
         summary["queue_start"] = idle_wake.get("last_start", "not_retained")
         summary["hook_join"] = bool(attempt and actual_delivery == expected_delivery_id and
                                     attempt.get("session") == session and turn_id == intent.get("native_turn_id"))
+        if not scripted_handled:
+            summary["continuation_failure_stage"] = "not_requested"
+        elif script_failure_code:
+            summary["continuation_failure_stage"] = "script_" + script_failure_code
+        elif summary["user_prompt_submit"] != "observed":
+            summary["continuation_failure_stage"] = "native_hook_or_prompt_not_observed"
+        elif not source_read_confirmed:
+            summary["continuation_failure_stage"] = "exact_source_read_not_confirmed"
+        elif not acknowledgement_confirmed:
+            summary["continuation_failure_stage"] = "handled_ack_not_confirmed"
+        else:
+            summary["continuation_failure_stage"] = "handled_and_confirmed"
         try:
             with open(os.environ["CAIRN220_TRACE_TARGET"], encoding="utf-8") as stream:
                 trace_rows = [json.loads(line) for line in stream]
@@ -1111,7 +1206,7 @@ def _preflight_inner() -> int:
     return 0
 
 
-def run_once() -> dict:
+def run_once(scripted_handled: bool = False) -> dict:
     _private_trace_home()
     run_id = uuid.uuid4().hex
     trace_name = "run-queue-stage-" + run_id + ".jsonl"
@@ -1152,11 +1247,14 @@ def run_once() -> dict:
         context.update(binary=binary, root=root, profile=profile, repo=repo)
         fixture = {key: str(context[key]) for key in ("api", "profile", "binary")}
         fixture.update(repo=repo, trace_name=trace_name, run_id=run_id,
+                       scripted_handled=scripted_handled,
                        api_socket="/trace/" + socket_dir.name + "/api.sock")
         _write_private(root / "fixture.json", json.dumps(fixture, sort_keys=True))
         prefix = _sandbox_prefix(root, trace_name, preflight=False)
         command = prefix + ["--", "/usr/bin/python3", "/repo/scripts/check_codex_app_server_wake_join.py",
                             "--inside", "/fixture"]
+        if scripted_handled:
+            command.append("--scripted-handled")
         _PHASE = "watcher_bwrap"
         _bootstrap(_PHASE, "before")
         proc = subprocess.Popen(command, env={"PATH": "/usr/bin:/bin"},
@@ -1253,8 +1351,14 @@ def main() -> int:
         return _preflight_inner()
     if len(sys.argv) == 3 and sys.argv[1] == "--inside":
         return _inside(sys.argv[2])
+    if len(sys.argv) == 4 and sys.argv[1] == "--inside" and sys.argv[3] == "--scripted-handled":
+        return _inside(sys.argv[2], scripted_handled=True)
+    scripted_handled = len(sys.argv) == 2 and sys.argv[1] == "--scripted-handled"
+    if len(sys.argv) == 2 and not scripted_handled:
+        print(json.dumps({"result": "FAIL", "failure_code": "unsupported_argument"}, sort_keys=True))
+        return 1
     try:
-        report = run_once()
+        report = run_once(scripted_handled=scripted_handled)
     except Exception as exc:
         code = str(exc) if str(exc) in {
             "pinned_codex_missing", "pinned_codex_version_mismatch", "bwrap_missing",

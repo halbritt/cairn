@@ -346,3 +346,30 @@ This verifies the synthetic observer-to-Store join for this fixture run. It
 does not establish accepted task outcome, production behavior, usefulness, or
 full CAIRN-220 acceptance. The disposable root was removed; no delivery was
 replayed.
+
+## Scripted local continuation attempt
+
+The fixture was extended to optionally script a local Responses continuation
+through the existing native hook context. The script first invokes the exact
+whole-version history read, checks that the tool result contains the selected
+record and source body, then invokes that context's exact acknowledgement argv.
+It reports handled only after `event-inspect` confirms that delivery is
+`handled`, has one delivery attempt, and the script issued one acknowledgement
+tool call. The mode is opt-in with `--scripted-handled`; the default fixture
+still ends after the queue-to-Store join probe. Focused tests cover source
+identity, acknowledgement argv, and refusal of incomplete results.
+
+One fresh disposable run using the scripted path reached the correct
+`queue/add` receipt and matching `item/started`, but did not observe
+`UserPromptSubmit` or a Store attempt. Two Responses requests reached only the
+loopback stub; the exact source read and acknowledgement were not observed.
+The delivery remained leased with one attempt. The queue trace classified the
+explicit `queue/start` refusal as `submission_not_found` for the matching
+receipt, consistent with idle auto-dispatch, but does not explain the missing
+hook/Store state. The run's owner-only trace ID is `bb5058b5fe6d4945b517a1035c7bc7a1`.
+The retained trace does not identify which actor/hook boundary stopped the
+continuation, so no further full run was made. The later opt-in and strict
+failure-reporting edits were validated by focused tests and `make check` but
+were not exercised by another disposable run. No source read, acknowledgement,
+handled outcome, duplicate-effect claim, or CAIRN-220 acceptance is established
+by this attempt.
