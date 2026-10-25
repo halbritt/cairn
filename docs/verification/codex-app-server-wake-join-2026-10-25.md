@@ -276,3 +276,20 @@ subscription mechanism, but does not explain this refusal in the observed
 runtime. No concrete correction is proved, so no retry or delivery replay was
 made. Runtime notification observation, the queue receipt → item/started → hook
 → Store join, and CAIRN-220 acceptance remain unverified.
+
+## Bounded resume-refusal classification
+
+The observer trace now stores the integer JSON-RPC error code and a fixed
+allowlisted reason class for source-known `thread/resume` refusal branches.
+Classification uses only in-memory message matching; raw refusal text and any
+embedded identifiers or paths are not retained. Focused tests cover known
+source branches and verify that only the code and enum reach the trace.
+
+One new bounded fake-auth, `bwrap --unshare-net` disposable attempt again
+completed observer connection, initialization, and `thread/loaded/list`, then
+received `QueueRefused` from `thread/resume`. Its private 0600 item trace is
+`~/.cache/cairn-220-native-wake-proof/item-stage-92404c3c8b29472d8c606a55b7790d35.jsonl`.
+It records numeric code `-32600` and class `thread_resume_other`: none of the
+source-known refusal patterns matched. The watcher was not started; no queue
+trace, hook, Store attempt, or local Responses request exists. Cleanup
+completed. The exact refusal remains unknown. No retry or replay was made.

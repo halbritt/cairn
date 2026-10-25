@@ -542,7 +542,12 @@ def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
             result = rpc(method, params)
         except Exception as exc:
             if record:
-                record(stage, "failed", type(exc).__name__)
+                code = getattr(exc, "code", None)
+                flags = None
+                if method == "thread/resume" and type(exc).__name__ == "QueueRefused":
+                    flags = {"native_refusal_class": _classify_thread_resume_refusal(
+                        getattr(exc, "message", None))}
+                record(stage, "failed", type(exc).__name__, code=code, flags=flags)
             raise
         if record:
             record(stage, "after")
@@ -558,6 +563,33 @@ def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
         if record:
             record("observer_resume", "failed", "RuntimeError")
         raise RuntimeError("notification_observer_resume_mismatch")
+
+
+def _classify_thread_resume_refusal(message) -> str:
+    """Map pinned-source resume refusal text to a fixed enum without retaining it."""
+    if not isinstance(message, str):
+        return "thread_resume_other"
+    if (message.startswith("thread ") and " is closing; retry " in message and
+            (message.endswith("after the thread is closed") or
+             message.endswith("thread/resume after the thread is closed"))):
+        return "thread_closing"
+    if message.startswith("thread not found: "):
+        return "thread_not_found"
+    if (message.startswith("cannot resume thread ") and
+            message.endswith("with history while it is already running")):
+        return "history_already_running"
+    if (message.startswith("cannot resume running thread ") and
+            " with stale path: requested `" in message and ", active `" in message):
+        return "stale_rollout_path"
+    if message.startswith("cannot resume an unloaded multi-agent v2 sub-agent through its parent;"):
+        return "unloaded_v2_child"
+    if (message.startswith("failed to enqueue running thread resume for thread ") and
+            message.endswith(": thread listener is not running")):
+        return "resume_listener_not_running"
+    if (message.startswith("failed to enqueue running thread resume for thread ") and
+            message.endswith(": thread listener command channel is closed")):
+        return "resume_listener_channel_closed"
+    return "thread_resume_other"
 
 
 def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
@@ -617,8 +649,8 @@ class _ItemStartedObserver:
             try:
                 _attach_item_started_observer(
                     rpc, native_id,
-                    lambda stage, outcome, error=None: self._append(
-                        self._fd, stage, outcome, error=error))
+                    lambda stage, outcome, error=None, code=None, flags=None: self._append(
+                        self._fd, stage, outcome, error=error, code=code, flags=flags))
             except Exception as exc:
                 self._append(self._fd, "observer_subscription", "failed",
                              error=type(exc).__name__)

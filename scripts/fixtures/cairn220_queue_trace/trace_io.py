@@ -27,7 +27,12 @@ API_START_FAILURE_CLASSES = {"identity_config_invalid", "database_unavailable", 
                              "api_bind_failed", "api_socket_path_too_long", "runtime_configuration_invalid", "store_open_failed",
                              "unknown_json_refusal",
                              "unclassified_output", "output_truncated", "process_exit_no_output"}
-NATIVE_REFUSAL_CLASSES = {"busy", "submission_not_found", "invalid_request_other", "native_refusal_other"}
+NATIVE_REFUSAL_CLASSES = {
+    "busy", "submission_not_found", "invalid_request_other", "native_refusal_other",
+    "thread_closing", "thread_not_found", "history_already_running", "stale_rollout_path",
+    "unloaded_v2_child", "resume_listener_not_running", "resume_listener_channel_closed",
+    "thread_resume_other",
+}
 DIGEST_FIELDS = {"turn_id_sha256", "delivery_id_sha256", "receipt_id_sha256", "native_item_id_sha256"}
 BOOTSTRAP_STEPS = {"runner", "codex_version", "pg_config", "go_build", "pg_initdb",
                    "pg_start", "db_create", "migrate", "api_start", "api_ready",
