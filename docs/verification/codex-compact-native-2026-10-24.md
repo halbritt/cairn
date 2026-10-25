@@ -127,10 +127,29 @@ SessionStart hook input; it does not accept a caller-selected identity. On the
 pinned, patched source, all 184 `codex-hooks` tests passed, including the
 turn-ID-present/absent serializer tests, scoped input test, and generated
 schema fixture test. This establishes source and serializer behavior only.
-The patched app-server binary was not used in a native runtime fixture. A
-separate bounded rebuild of the patched app-server from this source tree was
-stopped at its 180-second timeout while compiling `codex-core`; it did not
-reach a build error or the V8 dependency. Thus compact callback propagation
-and continuation remain unverified. Cairn keeps
-the fail-closed `NATIVE_TURN_MISMATCH` behavior until that runtime boundary is
-verified; no task continuity or settlement is claimed here.
+A patched app-server was subsequently rebuilt from this commit and patch.
+The binary identified as Codex 0.164.0 and had SHA-256
+`b8ad1db40f7f547df6fc89190e3a1feb1355d438eca45678fddcafd746127235`. A
+provider-free fixture used that binary under `bwrap --unshare-net`, with
+synthetic principals, disposable PostgreSQL, and a loopback Responses stub.
+It stopped during native-session registration, before the compact scenario.
+
+The fixture's fixed diagnostic recorded `config_home_match=false` on
+coordination `SessionStart`, `UserPromptSubmit`, and `Stop`; coordination and
+lifecycle disabled flags and workspace exclusion were false, and the separate
+owner-process classification matched the configured name. The hooks exited 0,
+but no private hook state file or registered session appeared. The disposable
+`agents list` query succeeded and returned no matching native session; the
+registration Stop marker was observed. The active hook home value itself was
+not retained.
+
+Current `coordination.py` returns an empty success when the active
+`CODEX_HOME` differs from the hook configuration's `config_home`, before it
+looks up or registers the native session. This matches the recorded branch
+class and explains the absence of hook state despite zero exit codes. The
+fixture does not identify why the hook process's active home differed from
+its configured private home. It did not observe compact `SessionStart`, so
+patched turn-ID propagation, continuation, and settlement remain unverified.
+Cairn keeps the fail-closed `NATIVE_TURN_MISMATCH` behavior; no task continuity
+or settlement is claimed here. No external provider, real auth, production
+database, or OpenRouter was used.
