@@ -281,9 +281,10 @@ made. Runtime notification observation, the queue receipt → item/started → h
 
 The observer trace now stores the integer JSON-RPC error code and a fixed
 allowlisted reason class for source-known `thread/resume` refusal branches.
-Classification uses only in-memory message matching; raw refusal text and any
-embedded identifiers or paths are not retained. Focused tests cover known
-source branches and verify that only the code and enum reach the trace.
+Classification uses only in-memory message matching and emits no raw text. The
+separately requested, capped private-message trace field is described below.
+Focused tests cover known source branches and verify that only the code and
+enum reach the classification fields.
 
 One new bounded fake-auth, `bwrap --unshare-net` disposable attempt again
 completed observer connection, initialization, and `thread/loaded/list`, then
@@ -316,8 +317,32 @@ resume refusals remain failures. This avoids asking `thread/resume` to reload a
 thread before its first user turn has produced a stored rollout.
 
 Focused tests cover the private-message byte cap, fixed refusal classification,
-and fallback selection. The one permitted runtime run was used to identify the
-missing-rollout refusal before this correction; the corrected observer path has
-not been exercised in another disposable run. Queue receipt, native item start,
-hook, Store attempt, the exact end-to-end join, and CAIRN-220 acceptance remain
-unverified.
+and fallback selection.
+
+## Corrected observer path: one bounded join attempt
+
+One fresh fake-auth disposable run exercised the corrected same-connection
+observer fallback under `bwrap --unshare-net`, with the pinned Codex 0.164.0
+binary, isolated PostgreSQL/API, and loopback-only Responses stub. The private
+0600 item trace is
+`~/.cache/cairn-220-native-wake-proof/item-stage-33ac6fb190eb41cfaca35289c82dd2d5.jsonl`;
+the private 0600 queue trace is
+`~/.cache/cairn-220-native-wake-proof/run-queue-stage-33ac6fb190eb41cfaca35289c82dd2d5.jsonl`.
+
+Observed join: `queue/add` confirmed its receipt and the delivery ID matched;
+the same connection that `thread/start` had subscribed observed `item/started`
+with matching client ID and thread; `UserPromptSubmit` occurred; and the Store
+attempt's native turn hash matched the item notification. The fixture summary
+therefore reports `exact_queue_hook_store_join=true`. The expected
+missing-persisted-rollout resume refusal triggered the source-grounded fallback.
+The explicit `queue/start` then returned fixed class `submission_not_found`
+with the same receipt identifier, consistent with Codex's pinned idle
+`queue/add` auto-dispatch behavior. The delivery remained leased with one
+attempt; no settlement or completion is claimed. Exactly one local Responses
+request reached the stub and no model-list request or external provider call
+occurred.
+
+This verifies the synthetic observer-to-Store join for this fixture run. It
+does not establish accepted task outcome, production behavior, usefulness, or
+full CAIRN-220 acceptance. The disposable root was removed; no delivery was
+replayed.
