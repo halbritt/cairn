@@ -15,6 +15,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codex_recovery_fixture_report import compile_report as compile_recovery_report
+from codex_fixture_diagnostic import update as update_fixture_diagnostic
 
 
 MODEL = "gpt-6-luna"
@@ -84,23 +85,9 @@ def _context_for_event(inbox_dir, event_id, stage, diagnostic_path=None):
             continue
     result = "matched" if len(matches) == 1 else "missing" if not matches else "ambiguous"
     if diagnostic_path is not None:
-        payload = json.dumps(dict(schema="cairn.codex-fixture-context-lookup/1", stage=stage,
+        update_fixture_diagnostic(diagnostic_path, "context_lookup", dict(stage=stage,
             context_files=min(len(paths), 1000), matching_contexts=min(len(matches), 1000),
-            result=result), sort_keys=True).encode() + b"\n"
-        target = Path(diagnostic_path)
-        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        parent = target.parent.stat()
-        if (target.parent.is_symlink() or parent.st_uid != os.getuid() or parent.st_mode & 0o077):
-            raise PermissionError("fixture diagnostic directory must be owner-only")
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        try:
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "wb", closefd=False) as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(fd)
-        finally:
-            os.close(fd)
+            result=result))
     if len(matches) != 1:
         raise LookupError("fixture_context_" + result + ":" + stage)
     return matches[0]
@@ -158,10 +145,12 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 original = hook.get("command", "")
                 if ("coordination.py" in original or "memory.py" in original) and "--config" in original:
                     hook_kind = "coordination" if "coordination.py" in original else "memory"
-                    hook["command"] = shlex.join([sys.executable, str(metadata_wrapper),
+                    wrapped = [sys.executable, str(metadata_wrapper),
                         "--metadata", str(metadata_path), "--stop-complete",
-                        str(stop_complete_path), "--hook-kind", hook_kind,
-                        "--", *shlex.split(original)])
+                        str(stop_complete_path), "--hook-kind", hook_kind]
+                    if diagnostic_path is not None and hook_kind == "coordination":
+                        wrapped += ["--diagnostic-summary", str(diagnostic_path)]
+                    hook["command"] = shlex.join([*wrapped, "--", *shlex.split(original)])
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     settings_path.chmod(0o600)
 
