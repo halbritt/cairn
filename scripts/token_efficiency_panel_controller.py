@@ -84,6 +84,12 @@ CASE_ADAPTERS = {
         "events": [], "transitions": [], "publishers": {},
         "sessions": {"worker": "worker"},
     },
+    "semantic_unavailable": {
+        "sources": ["lexical_anchor"], "events": [],
+        "transitions": [{"phase": "before_search", "action": "disable_semantic",
+                          "target": "lexical_anchor"}],
+        "publishers": {}, "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -110,7 +116,7 @@ def case_name(workflow_id):
             and (parts[0] == "baseline" or
                  parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
                               "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group")
+                              "required_conflict_group", "semantic_unavailable")
                  and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
@@ -120,7 +126,8 @@ def database_name(workflow_id):
     case = case_name(workflow_id)
     return (f"cairn_panel_{workflow_id.replace('.', '_')}"
             if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
-                        "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group")
+                        "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group",
+                        "semantic_unavailable")
             else f"cairn_panel_{case}")
 
 
@@ -988,6 +995,16 @@ def materialize(args):
             source_preparation["unrun_transitions"] = [{
                 **transition, "status": "unrun"} for transition in setup["transitions"]]
             source_preparation["actor_acceptance"] = "unassessed"
+        if case == "semantic_unavailable":
+            require(setup["transitions"] == [{"phase": "before_search",
+                                               "action": "disable_semantic",
+                                               "target": "lexical_anchor"}],
+                    "frozen semantic-unavailable transition changed")
+            source_preparation["unrun_transitions"] = [{
+                **transition, "status": "unrun"} for transition in setup["transitions"]]
+            source_preparation["semantic_fallback"] = "unrun"
+            source_preparation["whole_source_pull"] = "unrun"
+            source_preparation["actor_acceptance"] = "unassessed"
     receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
@@ -1030,7 +1047,7 @@ def main():
     choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
                      for case in ("routine_burst_urgent_request", "wrong_project_memory",
                               "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group"))
+                              "required_conflict_group", "semantic_unavailable"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)

@@ -122,6 +122,12 @@ mark the verified lineage as source setup only and set the actor runtime
 transition to unrun. These are self-claimed A records; setup coverage does not
 authenticate the owner or grade project distinctions, current endpoints, or
 correction applicability.
+The controller also materializes the exact `lexical_anchor` for
+`semantic_unavailable` in all four arms. It verifies source identity and
+history, but carries `before_search/disable_semantic` as unrun and marks
+semantic fallback and whole-source pull unrun in those per-arm receipts. The
+separate local-worker probe below remains the only authenticated search/fallback
+and whole-pull evidence; neither setup establishes actor acceptance.
 For `unfinished_handoff`, the worker's registered session searches for the
 exact source, performs a whole-source pull, and reads its retained history.
 The receipt stores only record/version identifiers, hashes, extent, and writer

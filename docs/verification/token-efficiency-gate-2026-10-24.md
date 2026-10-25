@@ -240,6 +240,16 @@ the exact source; plain lexical search finds that source without another worker
 call. No semantic ranking, mandatory-context preservation, actor answer or task
 outcome is established by this source-only fixture.
 
+The authenticated panel controller now also materializes the frozen
+`lexical_anchor` in four separate disposable databases, one per baseline,
+envelope, batch, and combined arm. Each receipt verifies the exact source
+identity/hash and Store history. The fixture's `before_search/disable_semantic`
+transition is explicitly marked unrun in these arm receipts, as are semantic
+fallback, whole-source pull, and actor acceptance. This extends source setup
+coverage only; the standalone local-worker probe above remains the evidence for
+labelled lexical fallback and whole pull, and does not become a per-arm result.
+See [four-arm setup verification](panel-semantic-unavailable-arms-2026-10-24.md).
+
 The [memory lifecycle probe](panel-memory-lifecycle-2026-10-24.md) uses the
 frozen wrong-project, corrected-note and owner-correction A sources. It
 whole-pulls both project-labelled sources, ranks Cairn first for the Cairn

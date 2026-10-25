@@ -30,13 +30,13 @@ def check(binary, workflow_id):
                                 for case in ("routine_burst_urgent_request",
                                              "wrong_project_memory", "corrected_note",
                                              "meaningful_owner_correction", "unfinished_handoff",
-                                             "required_conflict_group")),
+                                             "required_conflict_group", "semantic_unavailable")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
     source_case = case in ("wrong_project_memory", "corrected_note",
                            "meaningful_owner_correction", "unfinished_handoff",
-                           "required_conflict_group")
+                           "required_conflict_group", "semantic_unavailable")
     label = workflow_id.replace(".", "-") if burst or source_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
@@ -273,7 +273,15 @@ def check(binary, workflow_id):
                                        "action": "pause_after_source_check",
                                        "target": "handoff_state", "status": "unrun"}],
                 "actor_acceptance": "unassessed",
-            } if case == "unfinished_handoff" else {}),
+                } if case == "unfinished_handoff" else {
+                    "unrun_transitions": [{"phase": "before_search",
+                                           "action": "disable_semantic",
+                                           "target": "lexical_anchor",
+                                           "status": "unrun"}],
+                    "semantic_fallback": "unrun",
+                    "whole_source_pull": "unrun",
+                    "actor_acceptance": "unassessed",
+                } if case == "semantic_unavailable" else {}),
                 "source preparation must not claim runtime transition or actor acceptance")
             require(receipt["task_outcome"] == "unassessed"
                     and receipt["provider_called"] is False
@@ -303,7 +311,8 @@ def check(binary, workflow_id):
                             for name in ("conflict_24", "conflict_48")),
                         "controller receipt contains required source text")
             require(sql("SELECT count(*) FROM cairn.memory_record") ==
-                    ("1" if case in ("corrected_note", "meaningful_owner_correction", "unfinished_handoff") else "2"),
+                    ("1" if case in ("corrected_note", "meaningful_owner_correction",
+                                     "unfinished_handoff", "semantic_unavailable") else "2"),
                     "source-only Store record count differs")
         expected_publishers = ({"request_decision": "sender", "response_a": "worker"}
                                if case == "actionable_response" else
