@@ -165,3 +165,21 @@ or installed canary behavior. The native case covers the saved selector path;
 unchanged/courtesy/no-selector and opt-out behavior remains covered by the
 separate model-free capture probe and unit tests, not by a second native
 session here. CAIRN-215 remains open.
+
+## Remaining live acceptance boundary
+
+The disposable API probe separately filters each synthetic outcome by the
+triggering session hash. Its provider-error and timeout cases retain
+`selector_outcome=error` or `timeout` with null usage and cost; the write-failure
+case retains the completed selector usage but reports `write_error`. The
+observation unit tests cover the same distinction. These checks establish
+local missing-usage and failed-selector attribution without a provider call.
+
+The native loopback fixture covers only a successful Claude selector response
+with complete synthetic usage. No native Codex capture fixture currently
+exercises that hook/report join. The still-unmeasured live boundary is a
+subscription-backed selector failure or response with incomplete usage,
+confirmed against the triggering private session without retaining its
+transcript or raw model output. Real subscription usage, billing, accepted-task
+utility, and net savings also remain unknown. Do not treat synthetic nulls or
+the loopback CLI's reported cost as evidence for those live quantities.
