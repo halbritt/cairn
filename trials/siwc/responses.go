@@ -41,6 +41,7 @@ type Result struct {
 	ServedModel string
 	ResponseIDs []string
 	Usage       Usage
+	ToolCalls   int
 }
 
 type ResponsesClient struct {
@@ -200,6 +201,7 @@ func (c *ResponsesClient) Run(ctx context.Context, model, prompt string, options
 			calls = append(calls, item)
 		}
 		for _, item := range calls {
+			result.ToolCalls++
 			var output json.RawMessage
 			var err error
 			switch item.Name {

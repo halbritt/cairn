@@ -75,6 +75,8 @@ type DirectAttemptReceipt struct {
 
 type SourceReceipt struct {
 	Label       string `json:"label"`
+	RecordID    string `json:"record_id,omitempty"`
+	Version     int    `json:"version,omitempty"`
 	Extent      string `json:"extent"`
 	Bytes       int    `json:"bytes"`
 	SHA256      string `json:"sha256"`

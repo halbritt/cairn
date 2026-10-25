@@ -5,13 +5,15 @@ This package is an offline-tested scaffold for a direct Sign in with ChatGPT
 dynamic-registration callback handling, token/ID-token validation, an
 account-scoped model catalog check, and streamed Responses function calling
 with only Cairn search and pull. Tests use local stub transports and generated
-test keys; they do not contact OpenAI or register an OAuth client.
+test keys; they do not contact OpenAI or register an OAuth client. The
+`cmd/auth_probe` command is offline by default. This task did not run its
+authorization or inference options.
 
 `TrialStoreTools` adapts one explicitly identified disposable task-eval store to
 the package's search/pull interface. It checks the hosted trial identity and
 destination, binds pulls to exact arguments and record/version/source digests
-returned by that store's search, refuses ineligible pulled or mandatory-selected
-sources, strips executable pull commands, and retains body-free extent/digest
+returned by that store's search, refuses ineligible or local-only sources,
+strips executable pull commands, and retains body-free extent/digest
 receipts. `scripts/test_siwc_trial_tools.py` runs that adapter against a
 synthetic store through `scripts/trial-task-eval.sh`; Go unit tests also use a
 fake CLI.
@@ -49,13 +51,30 @@ source/usage metadata at owner-only permissions; it never records source text,
 raw provider errors, or credentials. Successful synthetic responses remain
 unscored pending independent task review.
 
-This package still does not perform real registration or owner consent,
-establish a mapping between an SIWC `sub` and any Codex subscription
-profile/account, read quota status, provide a complete or admitted source-fit
-campaign, or grade the panel. An SIWC subject is an opaque OAuth identity.
-Until an owner-authorized identity mapping and a trustworthy direct-route
-capacity source exist, capacity is unknown and the panel must not run. Model
-catalog visibility alone does not establish Luna entitlement or quota.
+`RetrievalAttemptRunner` covers the `current`, `hints`, and `author_split`
+arms. It accepts the same frozen v1/v2 manifests, enables only Cairn search and
+pull through the concrete `TrialStoreTools` adapter, and checks every delivered
+source against the selected fixture's digest and whole-source byte extent.
+Partial, unknown, or local-only delivery, missing selected sources, provider or
+tool errors, invalid usage, and an answer containing the local-only sentinel
+fail the one attempt closed. Receipts retain source record IDs, versions,
+extents, digests and byte counts, plus the selected answer; source bodies and
+raw provider errors are not retained. Public construction keeps admission
+unavailable, so even a valid disposable-store setup cannot invoke Responses.
+The offline tests inject fake tools, transport, and admission only inside the
+package test suite.
+
+`cmd/auth_probe` performs no OAuth, browser, or provider request unless invoked
+with `--authorize --alias NAME`. That explicit option runs the loopback consent
+flow and account model-catalog check. Adding `--probe-entitlement` makes one
+bounded no-tool Luna Responses request after authorization. The command stores
+only an owner-only alias-to-SIWC-subject/client metadata binding; credentials
+remain in memory. These capabilities were not run here, and no live consent or
+entitlement proof was completed. Even a successful probe does not map an SIWC
+subject to a selected Codex subscription account or establish route quota or
+campaign capacity. The package still has no admitted source-fit run or task
+grading. Model-catalog visibility alone does not establish Luna entitlement
+or quota.
 
 Credentials are held in memory only. The access token is rejected after its
 expiry; this scaffold has no refresh flow or credential persistence. Responses
