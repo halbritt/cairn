@@ -102,3 +102,35 @@ That focused test and `make check` passed. This verifies the trace boundary
 only. No new disposable PostgreSQL/API/Codex watcher run or delivery-to-Store
 join was performed, so CAIRN-220 remains unaccepted and the queue failure's
 native cause remains unknown.
+
+## Reconstructed fixture attempt
+
+A provider-free runner was added at
+`scripts/check_codex_app_server_wake_join.py`. It has a separate preflight that
+executes the exact mounted runner path under `bwrap --unshare-net`, creates the
+observer trace at the exact mounted path with exclusive create, verifies owner
+and mode 0600, checks the single fixed startup row, and removes that preflight
+trace before the full attempt. Its fixture uses a fresh PostgreSQL cluster and
+local API, synthetic agent identities and fake Codex auth, the pinned Codex
+0.164 binary, and a loopback-only Responses stub. The observer is first on the
+watcher's `PYTHONPATH`; the full trace is outside the disposable fixture root.
+
+The first reconstructed full attempt exited during setup with a generic
+`CalledProcessError` and no watcher boundary report. A setup-only repetition of
+the PostgreSQL/API bootstrap passed. The one trace-driven full retry produced
+the private 0600 bootstrap trace
+`~/.cache/cairn-220-native-wake-proof/bootstrap-f69eab74388a4fbfbdafcd63f0a6e1ff.jsonl`.
+It records `pg_start` with exit code 1 after `pg_initdb`; the bwrap runner,
+Codex, watcher, queue, hook and Store were not reached. No raw PostgreSQL or
+watcher stderr was retained. The failed disposable root was removed, and a
+process check found no matching test server. No queue retry or replay occurred.
+
+The exact current diagnostic boundary is therefore PostgreSQL startup, before
+the watcher. This reconstructed full fixture has not established queue receipt,
+native item start, `UserPromptSubmit`, or a Store attempt. The prior uncertain
+delivery remains untouched, and CAIRN-220 remains unaccepted.
+
+After the retry, the strict path tests, mounted-path/trace preflight, focused
+observer test, and `make check` passed. The PostgreSQL startup failure-path
+cleanup also checks for a partial `postmaster.pid` before removing its root;
+that partial-start branch was not observed in this run.

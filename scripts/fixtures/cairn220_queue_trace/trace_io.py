@@ -1,0 +1,78 @@
+"""Secure private trace creation and fixed-code JSONL appends for CAIRN-220."""
+
+import json
+import os
+import re
+import stat
+
+
+ERROR_CLASSES = {
+    "QueueError", "QueueUnavailable", "QueueRefused", "OSError", "ValueError",
+    "KeyError", "TypeError", "WebSocketException", "ImportError",
+    "CalledProcessError", "TimeoutExpired",
+}
+STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start",
+          "native_item_started", "bootstrap"}
+OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
+BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
+                  "exit_zero"}
+DIGEST_FIELDS = {"turn_id_sha256", "delivery_id_sha256", "receipt_id_sha256"}
+BOOTSTRAP_STEPS = {"runner", "codex_version", "pg_config", "go_build", "pg_initdb",
+                   "pg_start", "db_create", "migrate", "api_start", "api_ready",
+                   "mounted_preflight", "watcher_bwrap"}
+
+
+def create_trace(path):
+    """Create an exclusive 0600 trace beneath an owner-only, non-symlink dir."""
+    if not isinstance(path, str) or not path.startswith("/") or "\0" in path:
+        raise ValueError("unsafe trace path")
+    parts = path.split("/")[1:]
+    if len(parts) < 2 or any(not part or part in (".", "..") for part in parts):
+        raise ValueError("unsafe trace path")
+    directory_parts, filename = parts[:-1], parts[-1]
+
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in directory_parts:
+            next_fd = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                              dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = next_fd
+        directory_stat = os.fstat(directory_fd)
+        if (directory_stat.st_uid != os.geteuid()
+                or stat.S_IMODE(directory_stat.st_mode) != 0o700):
+            raise ValueError("trace directory must be owner-only")
+        descriptor = os.open(filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                             os.O_APPEND | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+        file_stat = os.fstat(descriptor)
+        if (not stat.S_ISREG(file_stat.st_mode) or file_stat.st_uid != os.geteuid()
+                or stat.S_IMODE(file_stat.st_mode) != 0o600 or file_stat.st_nlink != 1):
+            os.close(descriptor)
+            raise ValueError("trace file must be exclusive owner-only regular file")
+        return descriptor
+    finally:
+        os.close(directory_fd)
+
+
+def append_trace(descriptor, stage, outcome, error=None, code=None, flags=None, digests=None,
+                 step=None):
+    if stage not in STAGES or outcome not in OUTCOMES:
+        raise ValueError("invalid trace event")
+    row = {"schema": "cairn.codex-queue-stage/1", "stage": stage, "outcome": outcome}
+    if error:
+        row["error_class"] = error if error in ERROR_CLASSES else "OtherError"
+    if type(code) is int and -32768 <= code <= 32767:
+        row["native_code"] = code
+    for key, value in (flags or {}).items():
+        if key in BOOLEAN_FIELDS and type(value) is bool:
+            row[key] = value
+    for key, value in (digests or {}).items():
+        if key in DIGEST_FIELDS and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+            row[key] = value
+    if stage == "bootstrap" and step in BOOTSTRAP_STEPS:
+        row["step"] = step
+    payload = (json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    view = memoryview(payload)
+    while view:
+        view = view[os.write(descriptor, view):]
+    os.fsync(descriptor)

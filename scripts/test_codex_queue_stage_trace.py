@@ -57,6 +57,31 @@ else:
         self.assertNotIn("PRIVATE WAKE TEXT", json.dumps(rows))
         self.assertFalse(any("message" in row for row in rows))
 
+    def test_trace_creation_rejects_symlink_paths_and_existing_targets(self):
+        sys.path.insert(0, str(OBSERVER))
+        try:
+            from trace_io import create_trace
+        finally:
+            sys.path.remove(str(OBSERVER))
+
+        with tempfile.TemporaryDirectory() as directory:
+            private = Path(directory) / "private"
+            private.mkdir(mode=0o700)
+            private.chmod(0o700)
+            target = private / "trace.jsonl"
+            descriptor = create_trace(str(target))
+            os.close(descriptor)
+            with self.assertRaises(FileExistsError):
+                create_trace(str(target))
+            linked_parent = Path(directory) / "linked"
+            linked_parent.symlink_to(private, target_is_directory=True)
+            with self.assertRaises(OSError):
+                create_trace(str(linked_parent / "other.jsonl"))
+            linked_target = private / "linked.jsonl"
+            linked_target.symlink_to(target)
+            with self.assertRaises(OSError):
+                create_trace(str(linked_target))
+
 
 if __name__ == "__main__":
     unittest.main()
