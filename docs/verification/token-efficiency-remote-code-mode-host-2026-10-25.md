@@ -89,3 +89,57 @@ with explicit read/write reconciliation, or an equivalent kernel-enforced
 inode/provenance boundary, and test concurrent source mutation, symlinks,
 hardlinks, descriptor inheritance, ordinary workspace reads/writes, and cleanup
 before reconsidering admission.
+
+## Codex 0.164 app-server tool-policy boundary
+
+Date: 2026-10-25. Source inspected: upstream tag `rust-v0.164.0`, commit
+`fe3b29455488c2e189e43ad5526a107900c5e1b7` in `~/git/codex-upstream`.
+Result: no supported app-server request can set the host's startup tool
+allowlist, so a retrieval-only actor cannot be established through the public
+app-server contract alone.
+
+The generated `ThreadStartParams` accepts `dynamicTools` and generic config
+overrides. It has no `toolPolicy`/`allowedTools` field. In the app-server
+implementation, `thread_processor.rs` constructs an empty `ExtensionDataInit`
+and inserts only selected capability roots before starting the thread. The
+core's `ToolPolicy` is an internal extension API value supplied through that
+init object; its `allowed_tools` is the startup allowlist, and the source
+explicitly says generated Code Mode `exec` and `wait` names must be included
+there too. `build_tool_router` applies this policy while registering tools;
+dynamic tools are registered through the same policy later in router assembly.
+An app-server client can therefore add its own dynamic declarations but cannot
+use `thread/start` to establish a restrictive registry policy.
+
+The app-server config override is not an equivalent complete control. Source
+shows `[features].shell_tool = false` omits `exec_command`/`write_stdin` from
+core registration. It does not provide an allowlist for the remaining built-in,
+hosted, MCP, extension, or generated tools, nor does it bind the selected
+retrieval tools to an authority-separated executor. A tool schema omission is
+also not a dispatch policy for arbitrary calls. This finding does not claim
+that every other built-in can execute a shell command; it identifies the
+missing host-level contract needed to attest the exact permitted registry and
+its execution path as one restricted actor.
+
+Relevant pinned source:
+
+- `codex-rs/app-server-protocol/src/protocol/v2/thread.rs`: `ThreadStartParams`
+  fields `config` and `dynamic_tools` (lines 90-151).
+- `codex-rs/app-server/src/request_processors/thread_processor.rs`: app-server
+  creates `ExtensionDataInit` and inserts only selected capability roots
+  (lines 1522-1525).
+- `codex-rs/ext/extension-api/src/tool_policy.rs`: `ToolPolicy`, its
+  `allowed_tools` semantics, and required generated Code Mode names (lines
+  1-20).
+- `codex-rs/core/src/tools/spec_plan.rs`: tool registry startup policy,
+  shell feature registration gate, and dynamic tool registration (lines
+  1177-1189, 1234-1260, 1571-1592).
+
+No app-server fixture was started: the source contract lacks the policy needed
+to claim the requested restricted actor, and configuring only a shell-feature
+toggle would test a weaker condition. No provider, real account, authentication
+material, or subscription path was used. Keep CAIRN-227 **Defer** and preserve
+the existing CAIRN-223 queue. Reconsider only after the app-server exposes a
+host-supplied, startup-fixed allowlist that covers generated and dynamic tools,
+and a provider-free fixture proves Cairn search/pull available while all
+process/filesystem execution paths are absent or denied without exposing auth
+to model-facing code.
