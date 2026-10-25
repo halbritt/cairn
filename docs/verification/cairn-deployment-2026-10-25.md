@@ -88,3 +88,66 @@ The database migrations are forward-only. The retained old binary is available
 for a binary rollback if needed; do not run its `migrate` command against schema
 070 or restore an older database without the restore-admission and recovery
 reconciliation procedure.
+
+## Schema 071 deployment — 2026-10-25
+
+The primary binary and production database now include the recovery-action
+observation slice from runtime commit `9cdc593`. The candidate was built from
+clean `main` revision `6aec920d9c5c9ec7b8253e9bcfd13c9cd10cec32`; after that
+build, `c4c192c` added a regression test only. Runtime and schema sources after
+`9cdc593` were unchanged. The installed binary reports Go 1.25.0, that exact
+clean VCS stamp, and SHA-256
+`ee3e8d7afa2eb4e864437456ebc9cfc764a8a2979937cc4f9f44750637971402`.
+The previous `99745c3` binary remains at
+`~/.local/bin/cairn-before-schema071-20261025`, with SHA-256
+`e3a4b3a552185c7e94ec99f22417ba24266c90a336a22368723b1ac074836fd4`.
+
+Before quiescing services, read-only production checks found schema 070, 70
+migration rows, zero active wake attempts, zero active session attempts, and
+zero unexpired delivery leases. The pgBackRest differential completed
+successfully as `20261025-010451F_20261025-020026D`, based on full backup
+`20261025-010451F`. It covered the full database, with WAL start/stop
+`00000001000001A100000074` and LSN start/stop `1A1/740000D8`–`1A1/74D814A0`.
+pgBackRest reported 19.2 GB database backup size and 1.9 GB repository size;
+the stop WAL was archived. The stanza remained `ok`. Retention expired the
+2026-10-23 differential; the current full and new differential remain in the
+restore chain. At verification, `/nvr/pg-backups` had 8.0 TB free and `/` had
+396 GB free.
+
+The scheduler and seven wake workers were stopped, then presence and the
+primary API. The separate `cairn267-distinct-api-4884f6a.service` stayed active
+and was not restarted. Before migration, `pg_stat_activity` and `pg_locks`
+showed no idle-in-transaction session or lock on `cairn.agent_delivery`; the
+old side API had no conflicting transaction. A five-second PostgreSQL
+`lock_timeout` bounded migration lock acquisition. The candidate migration
+completed successfully. Production now records 71 migrations; migration 071
+matches source SHA-256
+`e912563357774216fccd1980984133319c9be76133c71da9d27ab949e8b6cafb`. The
+`recovery_revision` column is `bigint NOT NULL DEFAULT 0`, both immutability
+triggers are enabled, and the new ledger has zero rows. Attempts and unexpired
+leases remained at zero after migration. No production test data was created
+or removed.
+
+The candidate replaced the primary executable atomically. Authenticated client
+and server version requests both report revision `6aec920`; authenticated
+search and exact pull succeeded, and the pulled note body SHA-256 matched the
+search index. The local operator `coordination-review` / `ReviewEvents` smoke
+read succeeded against an existing delivery and returned an empty
+`recovery_transitions` list for that delivery. This exercised the new review
+query without writing a transition or otherwise changing production data.
+Presence, scheduler and all seven wake workers were restarted and reported
+active with `NRestarts=0`. The existing distinct API also remained active with
+`NRestarts=0`. `pg_stat_archiver.failed_count` was zero; the latest archived WAL
+was `00000001000001A100000076` at 2026-10-25 09:04:44 UTC. Final read-only
+checks found 71 migrations, zero active wake/session attempts and zero
+unexpired delivery leases.
+
+The read-only effective-recall inventory returned `ok=true` with four ordinary
+hooks, three existing inbox bindings, no issues and `live_observed=false`. No
+token-efficiency opt-in or account configuration was changed; the CAIRN-227
+acceptance decision remains **Defer**. The runtime release installs schema 071
+and its metadata-only endpoint observations; it does not establish measured
+recovery outcomes, token savings, or full design acceptance. Migrations remain
+forward-only. Keep the previous binary for recovery, but do not treat a binary
+rollback as a schema rollback; use a forward fix or the documented restore and
+reconciliation procedure.
