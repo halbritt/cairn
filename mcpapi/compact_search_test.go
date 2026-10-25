@@ -101,6 +101,47 @@ func TestCompactSearchKeepsActionableContextAndOldView(t *testing.T) {
 	}
 }
 
+func TestCompactSearchPreservesAbsentAndDistinctMemoryDiagnostics(t *testing.T) {
+	zero := 0
+	for _, tc := range []struct {
+		name   string
+		budget *core.MemoryBudget
+		want   *core.MemoryBudget
+	}{
+		{name: "absent"},
+		{name: "zero-values", budget: &core.MemoryBudget{Schema: "cairn.memory-budget/3"}, want: &core.MemoryBudget{Schema: "cairn.memory-budget/3"}},
+		{name: "no-candidates", budget: &core.MemoryBudget{Schema: "cairn.memory-budget/3", InspectionPolicy: "first-fitting-whole/2", InspectionStatus: "no_candidates"}, want: &core.MemoryBudget{Schema: "cairn.memory-budget/3", InspectionPolicy: "first-fitting-whole/2", InspectionStatus: "no_candidates"}},
+		{name: "no-whole-fits", budget: &core.MemoryBudget{Schema: "cairn.memory-budget/3", InspectionPolicy: "first-fitting-whole/2", InspectionStatus: "no_whole_fits", SkippedUnits: 2}, want: &core.MemoryBudget{Schema: "cairn.memory-budget/3", InspectionPolicy: "first-fitting-whole/2", InspectionStatus: "no_whole_fits", SkippedUnits: 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			index := core.IndexResult{Package: core.Package{ReceiptID: uuid.NewString(), Seal: "seal", Semantic: core.SemanticPackage{
+				Schema: "cairn.semantic/19", Status: "READY", Omitted: map[string]int{"OPTIONAL_BUDGET": zero}, MemoryBudget: tc.budget,
+			}}}
+			view, _, err := searchView(index, searchArgs{RequestID: uuid.NewString()}, "compact/1", false, 9000, 9000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got compactSearchResult
+			if err := json.Unmarshal(encoded, &got); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.MemoryBudget, tc.want) {
+				t.Fatalf("memory diagnostic changed: got=%+v want=%+v", got.MemoryBudget, tc.want)
+			}
+			if got.Omitted["OPTIONAL_BUDGET"] != 0 {
+				t.Fatalf("known zero omission count changed: %+v", got.Omitted)
+			}
+			if _, present := got.Omitted["TOTAL_BUDGET"]; present {
+				t.Fatalf("absent omission reason became a known zero: %+v", got.Omitted)
+			}
+		})
+	}
+}
+
 func TestCompactSearchViewIsExplicitInClientInfo(t *testing.T) {
 	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: 32000, SearchView: "compact/1"})
 	if err != nil {
