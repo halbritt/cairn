@@ -2951,10 +2951,12 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
 
     # Deduplicate an unchanged recovery prompt, but allow changed actionable
     # instructions for the same attempt. Old attempt-only markers are retained
-    # conservatively because their former prompt revision is unknown.
+    # conservatively because their former prompt revision is unknown, except
+    # when compact source recovery now has an explicit failure settlement.
     prior = state.get('inbox_ack_reminder_revision')
     if state.get('inbox_ack_reminded') == attempt_id:
-        if not isinstance(prior, dict) or prior.get('attempt_id') != attempt_id:
+        if ((not isinstance(prior, dict) or prior.get('attempt_id') != attempt_id)
+                and not fallback):
             return ''
     revision = hashlib.sha256(json.dumps(
         dict(attempt_id=attempt_id, journal_state=journal_completion_state(config, attempt), reminder=reminder),

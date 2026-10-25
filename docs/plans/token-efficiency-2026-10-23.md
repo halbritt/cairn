@@ -469,10 +469,13 @@ Implemented offline slice (CAIRN-226): the native turn-end reminder records a
 revision hash over the exact rendered recovery instruction, attempt identity and
 journal state. Repeated identical reminders for the same attempt are suppressed;
 changed actionable instructions can be surfaced. Legacy attempt-only markers
-remain conservatively suppressed because their old instruction cannot be
-reconstructed. `scripts/test_inbox_recovery.py` covers identical and changed
-instructions plus legacy state. This bounds the reminder mechanism only; it
-does not measure model responses or token savings. Exact model-work attribution,
+remain conservatively suppressed for ordinary reminders because their old
+instruction cannot be reconstructed. An explicit compact-source failure
+settlement instruction supersedes that marker once, then uses the recorded
+revision to suppress repeats. `scripts/test_inbox_recovery.py` covers identical
+and changed instructions, legacy state, and the newly actionable failure path.
+This bounds the reminder mechanism only; it does not measure model responses
+or token savings. Exact model-work attribution,
 the cross-failure acceptance matrix and effective deployment verification still
 depend on CAIRN-214 and remain open.
 

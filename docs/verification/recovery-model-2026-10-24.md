@@ -105,7 +105,13 @@ settlement, and the absence of a reminder after a stale lease. It caught and
 fixed a reminder that previously suggested plain acknowledgement for the
 unavailable source. The original retry or failed-settlement instructions now
 appear in the single permitted reminder. Normal notice and response
-acknowledgements remain covered by the existing tests. There is no general
+acknowledgements remain covered by the existing tests. A regression now also
+covers an upgrade-state case: an attempt-only reminder marker still suppresses
+an ordinary repeat whose former wording is unknown, but an explicit
+`source_unavailable` failed-settlement instruction supersedes that marker once;
+the saved exact revision suppresses its next repeat. This preserves the
+actionable recovery command without retrying, replaying or changing attempt
+ownership. There is no general
 per-revision runtime policy: attempt source versions are pinned, and
 `state_revision` in the report is selected observation metadata. The relay
 and provider failure paths still need selected exact evidence. CAIRN-226

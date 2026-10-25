@@ -1125,6 +1125,31 @@ class InboxRecovery(unittest.TestCase):
             config, self.state, self.path, observation), '')
         self.assertNotIn('inbox_ack_reminder_revision', self.state)
 
+    def test_legacy_reminder_marker_allows_new_source_failure_instruction_once(self):
+        self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
+        context = self.context()
+        fallback = ('Source is unavailable; retry cairn-inbox read handle or explicitly settle this item '
+                    'with cairn-inbox settle handle failed --code source_unavailable.')
+        context['compact_source_unavailable'] = True
+        context['compact_fallback_control'] = fallback
+        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        target.write_text(json.dumps(context))
+        config = dict(self.config, remind_unacknowledged_turn_end=True)
+        observation = dict(event='Stop', phase='idle', native_turn_id='')
+        self.state['inbox_ack_reminded'] = ATTEMPT
+
+        with unittest.mock.patch.object(coordination, 'renew_inbox',
+                                        return_value=self.state['inbox_attempt']['delivery']) as renew:
+            reminder = coordination.unacknowledged_turn_end_reminder(
+                config, self.state, self.path, observation)
+            self.assertIn('failed --code source_unavailable', reminder)
+            self.assertNotIn(shlex.join(context['acknowledgement']), reminder)
+            self.assertIn(fallback, reminder)
+            self.assertEqual(self.state['inbox_ack_reminder_revision']['attempt_id'], ATTEMPT)
+            self.assertEqual(coordination.unacknowledged_turn_end_reminder(
+                config, self.state, self.path, observation), '')
+            self.assertEqual(renew.call_count, 1)
+
     def test_acknowledging_after_turn_end_reminder_completes_cleanly(self):
         self.state['inbox_attempt']['delivery']['event']['kind'] = 'notice'
         context = self.context()
