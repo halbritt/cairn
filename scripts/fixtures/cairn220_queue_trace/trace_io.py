@@ -16,10 +16,15 @@ STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start
 OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
 BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
                   "exit_zero"}
+PG_FAILURE_CLASSES = {"address_in_use", "socket_path_too_long", "permission_denied", "port_conflict",
+                      "invalid_configuration", "storage_or_filesystem",
+                      "data_directory_invalid", "diagnostic_log_unavailable", "unclassified"}
+API_FAILURE_CLASSES = {"invalid_json", "cli_exit", "envelope_not_object", "response_refused",
+                       "response_contract_mismatch", "server_process_exit", "socket_timeout"}
 DIGEST_FIELDS = {"turn_id_sha256", "delivery_id_sha256", "receipt_id_sha256"}
 BOOTSTRAP_STEPS = {"runner", "codex_version", "pg_config", "go_build", "pg_initdb",
                    "pg_start", "db_create", "migrate", "api_start", "api_ready",
-                   "mounted_preflight", "watcher_bwrap"}
+                   "mounted_preflight", "watcher_bwrap", "pg_cleanup"}
 
 
 def create_trace(path):
@@ -65,6 +70,10 @@ def append_trace(descriptor, stage, outcome, error=None, code=None, flags=None, 
         row["native_code"] = code
     for key, value in (flags or {}).items():
         if key in BOOLEAN_FIELDS and type(value) is bool:
+            row[key] = value
+        elif key == "pg_failure_class" and value in PG_FAILURE_CLASSES:
+            row[key] = value
+        elif key == "api_failure_class" and value in API_FAILURE_CLASSES:
             row[key] = value
     for key, value in (digests or {}).items():
         if key in DIGEST_FIELDS and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):

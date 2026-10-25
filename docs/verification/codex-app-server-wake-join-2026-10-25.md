@@ -134,3 +134,35 @@ After the retry, the strict path tests, mounted-path/trace preflight, focused
 observer test, and `make check` passed. The PostgreSQL startup failure-path
 cleanup also checks for a partial `postmaster.pid` before removing its root;
 that partial-start branch was not observed in this run.
+
+## Bounded PostgreSQL startup classification and retry
+
+The next inert PostgreSQL bootstrap preflight reproduced `pg_ctl start` exit 1.
+Its owner-only trace contained the fixed category `socket_path_too_long` and
+numeric exit code 1. The cause was the socket directory nested below the
+UUID-named fixture path: PostgreSQL appends a fixed socket filename, exceeding
+the Unix-domain socket path limit. The preflight and full setup now use a unique
+short socket directory under the existing owner-only trace directory, and both
+call the same `pg_ctl` command builder. The exact-command inert PostgreSQL
+preflight then passed. Startup stderr and `postgres.log` are read only in
+memory, classified against fixed categories, and discarded before cleanup.
+Failed shutdown records a fixed cleanup failure and preserves the disposable
+root if `postmaster.pid` remains.
+
+One provider-free full fixture attempt after that preflight passed PostgreSQL
+startup, database creation, migrations, and API process launch. It stopped at
+the next fixed boundary, `api_ready/server_process_exit`: the API process
+exited before its Unix socket appeared. The retry retained no server stderr.
+Source review found no proven fixture configuration omission: `serve` reads
+`CAIRN_HOME/identities.json`, the fixture writes that owner-only file with
+fields accepted by `localapi.ValidateIdentities`, and the process receives
+`CAIRN_HOME`, `CAIRN_DATABASE_URL`, and `CAIRN_TEST_DATABASE_URL`. Migrations
+also succeeded with the same database URL. Since the process exited before the
+socket appeared, the agent CLI envelope path was not reached. The API exit
+cause remains unknown; no further API or watcher run was made.
+
+The focused queue-stage trace suite passed (3 tests), `make check` passed, and
+`git diff --check` passed. The disposable API and PostgreSQL processes were
+cleaned up and the fixture root removed. No bwrap watcher, queue receipt,
+native item start, `UserPromptSubmit`, Store attempt, or delivery-to-Store join
+was observed. CAIRN-220 remains unaccepted.

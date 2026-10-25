@@ -16,7 +16,6 @@ import tempfile
 import threading
 import time
 import uuid
-import sys
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -84,12 +83,78 @@ def _checked_run(argv, *, env=None, timeout=30, cwd=None) -> subprocess.Complete
     return result
 
 
+def _pg_start_command(pg_bin: Path, data_dir: Path, socket_dir: Path,
+                      log_path: Path) -> list[str]:
+    return [str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-l", str(log_path),
+            "-o", f"-F -k {socket_dir} -c listen_addresses=''", "-w", "start"]
+
+
+def _short_socket_dir() -> Path:
+    path = TRACE_HOME / ("s-" + secrets.token_hex(4))
+    path.mkdir(mode=0o700)
+    return path
+
+
+def _classify_pg_start_failure(stdout: bytes, stderr: bytes, log_path: Path) -> str:
+    """Map transient PostgreSQL diagnostics to fixed codes; retain no text or paths."""
+    data = (stdout + b"\n" + stderr).decode("utf-8", "replace")
+    try:
+        data += "\n" + log_path.read_text(errors="replace")
+    except OSError:
+        return "diagnostic_log_unavailable"
+    lowered = data.lower()
+    patterns = (
+        ("address_in_use", ("address already in use", "could not bind")),
+        ("socket_path_too_long", ("unix-domain socket path", "too long")),
+        ("permission_denied", ("permission denied", "operation not permitted")),
+        ("port_conflict", ("lock file \"postmaster.pid\" already exists", "is another postmaster")),
+        ("invalid_configuration", ("unrecognized configuration parameter", "syntax error in file")),
+        ("storage_or_filesystem", ("no space left on device", "read-only file system", "input/output error")),
+        ("data_directory_invalid", ("is not a valid data directory", "database files are incompatible")),
+    )
+    for code, needles in patterns:
+        if any(needle in lowered for needle in needles):
+            return code
+    return "unclassified"
+
+
+def _start_disposable_postgres(pg_bin: Path, data_dir: Path, socket_dir: Path,
+                               log_path: Path) -> subprocess.CompletedProcess:
+    argv = _pg_start_command(pg_bin, data_dir, socket_dir, log_path)
+    _bootstrap("pg_start", "before")
+    try:
+        result = subprocess.run(argv, capture_output=True, timeout=30, check=False)
+    except subprocess.TimeoutExpired:
+        _bootstrap("pg_start", "failed", "TimeoutExpired")
+        raise RuntimeError("pg_start_timeout") from None
+    if result.returncode:
+        failure_class = _classify_pg_start_failure(result.stdout, result.stderr, log_path)
+        _bootstrap("pg_start", "failed", "CalledProcessError", result.returncode,
+                   flags={"pg_failure_class": failure_class})
+        raise RuntimeError("pg_start_failed")
+    _bootstrap("pg_start", "after")
+    return result
+
+
+def _stop_disposable_postgres(pg_bin: Path, data_dir: Path) -> bool:
+    if not (data_dir / "postmaster.pid").exists():
+        return True
+    try:
+        result = subprocess.run([str(pg_bin / "pg_ctl"), "-D", str(data_dir),
+                                 "-m", "immediate", "-w", "stop"],
+                                capture_output=True, timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and not (data_dir / "postmaster.pid").exists()
+
+
 _PHASE = "runner"
+_API_FAILURE_CLASS = None
 
 
-def _bootstrap(step: str, outcome: str, error=None, code=None) -> None:
+def _bootstrap(step: str, outcome: str, error=None, code=None, flags=None) -> None:
     if _BOOTSTRAP_FD is not None:
-        append_trace(_BOOTSTRAP_FD, "bootstrap", outcome, error, code, step=step)
+        append_trace(_BOOTSTRAP_FD, "bootstrap", outcome, error, code, flags=flags, step=step)
 
 
 def _api_call(binary: Path, api: Path, token_file: Path, operation: str,
@@ -104,9 +169,19 @@ def _api_call(binary: Path, api: Path, token_file: Path, operation: str,
     try:
         envelope = json.loads(result.stdout)
     except (TypeError, ValueError):
+        global _API_FAILURE_CLASS
+        _API_FAILURE_CLASS = "invalid_json"
         raise RuntimeError("api_response_invalid") from None
-    if result.returncode or not isinstance(envelope, dict) or envelope.get("ok") is not True:
+    if result.returncode:
+        _API_FAILURE_CLASS = "cli_exit"
         raise RuntimeError("api_operation_refused")
+    if not isinstance(envelope, dict):
+        _API_FAILURE_CLASS = "envelope_not_object"
+        raise RuntimeError("api_operation_refused")
+    if envelope.get("ok") is not True:
+        _API_FAILURE_CLASS = "response_refused" if envelope.get("status") != "OK" else "response_contract_mismatch"
+        raise RuntimeError("api_operation_refused")
+    _API_FAILURE_CLASS = None
     return envelope.get("data")
 
 
@@ -187,9 +262,8 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
     _checked_run(["go", "build", "-o", str(binary), "./cmd/cairn"], timeout=180, cwd=REPO)
     api = root / "api"
     api.mkdir(mode=0o700)
-    socket_dir = root / "pgsocket"
+    socket_dir = _short_socket_dir()
     data_dir = root / "pgdata"
-    socket_dir.mkdir(mode=0o700)
     api_process = None
     postgres_started = False
     try:
@@ -197,8 +271,7 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
         _checked_run([str(pg_bin / "initdb"), "-D", str(data_dir), "--auth-local=trust",
                       "--auth-host=reject", "--no-locale", "-E", "UTF8"], timeout=30)
         _PHASE = "pg_start"
-        _checked_run([str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-l", str(root / "postgres.log"),
-                      "-o", f"-F -k {socket_dir} -c listen_addresses=''", "-w", "start"], timeout=30)
+        _start_disposable_postgres(pg_bin, data_dir, socket_dir, root / "postgres.log")
         postgres_started = True
         _PHASE = "db_create"
         _checked_run([str(pg_bin / "createdb"), "-h", str(socket_dir), "cairn_wake_join"], timeout=10)
@@ -228,10 +301,19 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
         _bootstrap(_PHASE, "before")
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline and not (api / "api.sock").exists():
-            require(api_process.poll() is None, "disposable_api_start_failed")
+            if api_process.poll() is not None:
+                _bootstrap(_PHASE, "failed", "OtherError", flags={"api_failure_class": "server_process_exit"})
+                require(False, "disposable_api_start_failed")
             time.sleep(0.02)
-        require((api / "api.sock").exists(), "disposable_api_socket_missing")
-        _api_call(binary, api, Path(tokens["sender"]), "version", {})
+        if not (api / "api.sock").exists():
+            _bootstrap(_PHASE, "failed", "OtherError", flags={"api_failure_class": "socket_timeout"})
+            require(False, "disposable_api_socket_missing")
+        try:
+            _api_call(binary, api, Path(tokens["sender"]), "version", {})
+        except RuntimeError:
+            _bootstrap(_PHASE, "failed", "OtherError", flags={
+                "api_failure_class": _API_FAILURE_CLASS or "response_contract_mismatch"})
+            raise
         _bootstrap(_PHASE, "after")
         profile = root / "profile"
         profile.mkdir(mode=0o700)
@@ -239,7 +321,8 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
         # is unshared; the only route is the loopback Responses stub.
         _write_private(profile / "auth.json", '{"OPENAI_API_KEY":"sk-cairn220-fake"}\n')
         return pg_bin, binary, dict(api=api, api_process=api_process, dsn=dsn, repo=repo,
-                                    tokens=tokens, profile=profile, trace_path=trace_path)
+                                    tokens=tokens, profile=profile, trace_path=trace_path,
+                                    socket_dir=socket_dir)
     except Exception:
         if api_process is not None:
             api_process.terminate()
@@ -248,10 +331,58 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
             except subprocess.TimeoutExpired:
                 api_process.kill()
                 api_process.wait(timeout=5)
-        if postgres_started or (data_dir / "postmaster.pid").exists():
-            subprocess.run([str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-m", "immediate", "-w", "stop"],
-                           capture_output=True, timeout=20, check=False)
+        if (postgres_started or (data_dir / "postmaster.pid").exists()) and not _stop_disposable_postgres(pg_bin, data_dir):
+            _bootstrap("pg_cleanup", "failed", "OtherError")
+            raise RuntimeError("pg_cleanup_failed") from None
+        shutil.rmtree(socket_dir, ignore_errors=True)
         raise
+
+
+def _postgres_bootstrap_preflight(root: Path, pg_bin: Path) -> None:
+    """Exercise the exact startup command against an inert disposable cluster."""
+    data_dir = root / "pg-preflight-data"
+    # PostgreSQL appends a fixed socket suffix. Keep this path short enough for
+    # AF_UNIX even beneath the owner-only cache directory.
+    socket_dir = _short_socket_dir()
+    log_path = root / "pg-preflight.log"
+    _checked_run([str(pg_bin / "initdb"), "-D", str(data_dir), "--auth-local=trust",
+                  "--auth-host=reject", "--no-locale", "-E", "UTF8"], timeout=30)
+    started = False
+    try:
+        _start_disposable_postgres(pg_bin, data_dir, socket_dir, log_path)
+        started = True
+    finally:
+        if started or (data_dir / "postmaster.pid").exists():
+            if not _stop_disposable_postgres(pg_bin, data_dir):
+                _bootstrap("pg_cleanup", "failed", "OtherError")
+                raise RuntimeError("pg_cleanup_failed") from None
+        shutil.rmtree(socket_dir, ignore_errors=True)
+
+
+def _run_postgres_preflight() -> dict:
+    _private_trace_home()
+    run_id = uuid.uuid4().hex
+    root = Path(tempfile.mkdtemp(prefix="pg-preflight-" + run_id + "-", dir=TRACE_HOME))
+    root.chmod(0o700)
+    trace_path = TRACE_HOME / ("bootstrap-pg-preflight-" + run_id + ".jsonl")
+    global _BOOTSTRAP_FD, _BOOTSTRAP_PATH, _PHASE
+    _BOOTSTRAP_FD = create_trace(str(trace_path))
+    _BOOTSTRAP_PATH = trace_path
+    _PHASE = "pg_config"
+    keep_root = False
+    try:
+        pg_bin = Path(_checked_run(["pg_config", "--bindir"], timeout=5).stdout.decode().strip())
+        _postgres_bootstrap_preflight(root, pg_bin)
+        return {"result": "pg_start_preflight_passed", "startup_command": "shared_pg_ctl_start"}
+    finally:
+        if (root / "pg-preflight-data" / "postmaster.pid").exists():
+            keep_root = True
+            _bootstrap("pg_cleanup", "failed", "OtherError")
+        if not keep_root:
+            shutil.rmtree(root, ignore_errors=True)
+        if _BOOTSTRAP_FD is not None:
+            os.close(_BOOTSTRAP_FD)
+            _BOOTSTRAP_FD = None
 
 
 def _inside(root_text: str) -> int:
@@ -558,6 +689,7 @@ def run_once() -> dict:
     pg_bin = None
     postgres_started = False
     api_process = None
+    socket_dir = None
     try:
         require(NATIVE.is_file() and not NATIVE.is_symlink(), "pinned_codex_missing")
         _PHASE = "codex_version"
@@ -571,7 +703,10 @@ def run_once() -> dict:
         _bootstrap(_PHASE, "after")
         root = Path(tempfile.mkdtemp(prefix="fixture-" + run_id + "-", dir=TRACE_HOME))
         root.chmod(0o700)
+        pg_bin = Path(_checked_run(["pg_config", "--bindir"], timeout=5).stdout.decode().strip())
+        _postgres_bootstrap_preflight(root, pg_bin)
         pg_bin, binary, context = _host_setup(root, trace_path)
+        socket_dir = context["socket_dir"]
         api_process = context["api_process"]
         postgres_started = True
         profile = context["profile"]
@@ -605,6 +740,7 @@ def run_once() -> dict:
         _write_private(TRACE_HOME / ("summary-" + run_id + ".json"), json.dumps(report, sort_keys=True))
         return report
     finally:
+        cleanup_ok = True
         if api_process is not None:
             api_process.terminate()
             try:
@@ -613,9 +749,15 @@ def run_once() -> dict:
                 api_process.kill()
                 api_process.wait(timeout=5)
         if postgres_started and pg_bin and root is not None:
-            subprocess.run([str(pg_bin / "pg_ctl"), "-D", str(root / "pgdata"),
-                "-m", "immediate", "-w", "stop"], capture_output=True, timeout=20, check=False)
-        if root is not None:
+            cleanup_ok = _stop_disposable_postgres(pg_bin, root / "pgdata")
+            if not cleanup_ok:
+                _bootstrap("pg_cleanup", "failed", "OtherError")
+        if root is not None and (root / "pgdata" / "postmaster.pid").exists():
+            cleanup_ok = False
+            _bootstrap("pg_cleanup", "failed", "OtherError")
+        if socket_dir is not None and cleanup_ok:
+            shutil.rmtree(socket_dir, ignore_errors=True)
+        if root is not None and cleanup_ok:
             shutil.rmtree(root, ignore_errors=True)
         if _BOOTSTRAP_FD is not None:
             os.close(_BOOTSTRAP_FD)
@@ -623,6 +765,18 @@ def run_once() -> dict:
 
 
 def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--postgres-preflight":
+        try:
+            report = _run_postgres_preflight()
+        except Exception as exc:
+            code = str(exc) if str(exc) in {"pg_start_failed", "pg_start_timeout", "pg_cleanup_failed"} else type(exc).__name__
+            report = {"result": "FAIL", "failure_code": code}
+            if _BOOTSTRAP_PATH:
+                report["bootstrap_trace"] = _BOOTSTRAP_PATH.name
+            print(json.dumps(report, sort_keys=True))
+            return 1
+        print(json.dumps(report, sort_keys=True))
+        return 0
     if len(sys.argv) == 2 and sys.argv[1] == "--preflight-inner":
         return _preflight_inner()
     if len(sys.argv) == 3 and sys.argv[1] == "--inside":
@@ -636,6 +790,7 @@ def main() -> int:
             "mounted_path_preflight_failed", "mounted_path_preflight_report_invalid",
             "mounted_path_preflight_mismatch", "host_trace_preflight_mismatch",
             "trace_preflight_contents_mismatch", "trace_mode_or_owner_changed",
+            "pg_cleanup_failed",
         } or any(str(exc) == step + suffix for step in (
             "pg_config", "go_build", "pg_initdb", "pg_start", "db_create", "migrate",
             "api_start", "api_ready", "codex_version") for suffix in ("_failed", "_timeout")) else type(exc).__name__

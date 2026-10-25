@@ -15,6 +15,20 @@ LIFECYCLE = SCRIPTS.parent / "integrations" / "lifecycle"
 
 
 class CodexQueueStageTraceTests(unittest.TestCase):
+    def test_postgres_log_classifier_retains_only_fixed_category(self):
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            from check_codex_app_server_wake_join import _classify_pg_start_failure
+        finally:
+            sys.path.remove(str(SCRIPTS))
+
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "postgres.log"
+            log.write_text("could not create Unix-domain socket \"/private/path\": path too long\n")
+            category = _classify_pg_start_failure(b"waiting failed", b"", log)
+        self.assertEqual(category, "socket_path_too_long")
+        self.assertNotIn("private/path", category)
+
     def test_trace_is_private_fixed_code_and_excludes_refusal_text(self):
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "trace.jsonl"
