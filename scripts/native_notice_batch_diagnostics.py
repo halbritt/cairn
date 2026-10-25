@@ -47,7 +47,12 @@ _HOOK_ERROR_CODES = {
 }
 _HOOK_ERROR_CLASSES = {
     "CoordinationError", "ConnectionError", "FileNotFoundError", "KeyError", "OSError",
-    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TypeError", "ValueError",
+    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TimeoutExpired",
+    "TypeError", "ValueError",
+}
+_HOOK_PROBE_STAGES = {
+    "wrapper_entry", "payload_invalid", "payload_valid",
+    "command_start", "command_complete", "command_timeout", "command_error",
 }
 _PREFLIGHT_FIELDS = {
     "token_identity": {"matched", "mismatched", "unavailable"},
@@ -314,6 +319,18 @@ class AdvanceDiagnosticWriter:
             stderr_class = row.get("stderr_class")
             safe_code = stderr_code if isinstance(stderr_code, str) and stderr_code in _HOOK_ERROR_CODES else "none"
             safe_class = stderr_class if isinstance(stderr_class, str) and stderr_class in _HOOK_ERROR_CLASSES else "none"
+            probe_stage = row.get("probe_stage")
+            if probe_stage in _HOOK_PROBE_STAGES:
+                error_class = row.get("error_class")
+                safe_error_class = (error_class if isinstance(error_class, str)
+                                    and error_class in _HOOK_ERROR_CLASSES else "none")
+                probe_exit = row.get("exit_class")
+                if probe_exit not in {"not_applicable", "zero", "nonzero"}:
+                    probe_exit = "not_applicable"
+                self._write({"operation": "hook_probe", "event_class": event_class,
+                             "stage": probe_stage, "error_class": safe_error_class,
+                             "exit_class": probe_exit})
+                continue
             self._write({"operation": "hook", "event_class": event_class,
                          "phase": "exit" if exiting else "entry",
                          "exit_class": exit_class, "stderr_code": safe_code,

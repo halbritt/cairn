@@ -23,8 +23,35 @@ HOOK_ERROR_CODES = frozenset({
 })
 HOOK_ERROR_CLASSES = frozenset({
     "CoordinationError", "ConnectionError", "FileNotFoundError", "KeyError", "OSError",
-    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TypeError", "ValueError",
+    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TimeoutExpired",
+    "TypeError", "ValueError",
 })
+HOOK_PROBE_STAGES = frozenset({
+    "wrapper_entry", "payload_invalid", "payload_valid",
+    "command_start", "command_complete", "command_timeout", "command_error",
+})
+
+
+def record_probe(path, stage, event=None, error_class=None, exit_code=None):
+    """Persist only bounded wrapper progress classes in the private fixture file."""
+    stage = stage if stage in HOOK_PROBE_STAGES else "command_error"
+    event = (event if isinstance(event, str) and event in {
+        "SessionStart", "UserPromptSubmit", "Stop", "PreCompact", "Notification"
+    } else "other")
+    error_class = error_class if error_class in HOOK_ERROR_CLASSES else None
+    row = dict(probe_stage=stage, event=event, error_class=error_class,
+               exit_class=("not_applicable" if type(exit_code) is not int else
+                           "zero" if exit_code == 0 else "nonzero"))
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as stream:
+        stream.write(json.dumps(row, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def safe_stderr_tags(stderr):
@@ -178,10 +205,18 @@ def main():
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         raise SystemExit("hook command is required")
-    payload = sys.stdin.read(1_000_001)
-    if len(payload.encode("utf-8")) > 1_000_000:
-        raise SystemExit("hook payload exceeds fixture limit")
-    event = json.loads(payload)
+    record_probe(args.metadata, "wrapper_entry")
+    try:
+        payload = sys.stdin.read(1_000_001)
+        if len(payload.encode("utf-8")) > 1_000_000:
+            record_probe(args.metadata, "payload_invalid", error_class="ValueError")
+            raise SystemExit("hook payload exceeds fixture limit")
+        event = json.loads(payload)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        record_probe(args.metadata, "payload_invalid", error_class=type(exc).__name__)
+        raise
+    event_name = event.get("hook_event_name")
+    record_probe(args.metadata, "payload_valid", event=event_name)
     row = dict(event=event.get("hook_event_name"),
                turn_id=event.get("turn_id"),
                source=event.get("source"),
@@ -204,7 +239,19 @@ def main():
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:
         stream.write(json.dumps(row, sort_keys=True) + "\n")
-    result = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=14)
+    record_probe(args.metadata, "command_start", event=event_name)
+    try:
+        result = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=14)
+    except subprocess.TimeoutExpired as exc:
+        record_probe(args.metadata, "command_timeout", event=event_name,
+                     error_class=type(exc).__name__)
+        raise
+    except OSError as exc:
+        record_probe(args.metadata, "command_error", event=event_name,
+                     error_class=type(exc).__name__)
+        raise
+    record_probe(args.metadata, "command_complete", event=event_name,
+                 exit_code=result.returncode)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
     row.update(exit_code=result.returncode, **safe_stderr_tags(result.stderr))

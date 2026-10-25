@@ -1,7 +1,9 @@
 """Focused structural checks for the provider-free full inbox fixture."""
 import importlib.util
+import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import threading
 import time
@@ -17,6 +19,10 @@ META_SPEC = importlib.util.spec_from_file_location(
     "codex_hook_metadata", Path(__file__).with_name("record_codex_hook_metadata.py"))
 hook_metadata = importlib.util.module_from_spec(META_SPEC)
 META_SPEC.loader.exec_module(hook_metadata)
+DIAG_SPEC = importlib.util.spec_from_file_location(
+    "native_notice_batch_diagnostics", Path(__file__).with_name("native_notice_batch_diagnostics.py"))
+diagnostics = importlib.util.module_from_spec(DIAG_SPEC)
+DIAG_SPEC.loader.exec_module(diagnostics)
 
 
 class FullInboxFixtureTests(unittest.TestCase):
@@ -125,6 +131,43 @@ class FullInboxFixtureTests(unittest.TestCase):
         self.assertEqual(tags, {"stderr_code": "INVALID_HOST", "stderr_class": "FileNotFoundError"})
         self.assertNotIn("secret", json.dumps(tags))
         self.assertNotIn("aaaa", json.dumps(tags))
+
+    def test_stop_hook_probe_records_private_fixed_invocation_and_error_classes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            private = base / "private"
+            disposable = base / "disposable"
+            private.mkdir(mode=0o700)
+            disposable.mkdir(mode=0o700)
+            metadata = private / "hook-metadata.jsonl"
+            trace_path = private / "actor.jsonl"
+            payload = json.dumps({"hook_event_name": "Stop", "turn_id": "private-turn",
+                                  "token": "private-auth"})
+            argv = ["record_codex_hook_metadata.py", "--metadata", str(metadata),
+                    "--stop-complete", str(private / "stop.json"), "--", "/bin/true"]
+            with patch.object(hook_metadata.sys, "argv", argv), \
+                    patch("sys.stdin", io.StringIO(payload)), \
+                    patch.object(hook_metadata.subprocess, "run",
+                                 side_effect=subprocess.TimeoutExpired("/bin/true", 14)):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    hook_metadata.main()
+            rows = [json.loads(line) for line in metadata.read_text().splitlines()]
+            writer = diagnostics.AdvanceDiagnosticWriter(trace_path, disposable)
+            writer.record_hook_metadata(rows)
+            writer.close()
+            trace = trace_path.read_text()
+            trace_mode = trace_path.stat().st_mode & 0o777
+        probe_rows = [row for row in map(json.loads, trace.splitlines())
+                      if row["operation"] == "hook_probe"]
+        self.assertEqual([row["stage"] for row in probe_rows],
+                         ["wrapper_entry", "payload_valid", "command_start", "command_timeout"])
+        self.assertIn('"stage": "wrapper_entry"', trace)
+        self.assertIn('"stage": "command_timeout"', trace)
+        self.assertIn('"event_class": "Stop"', trace)
+        self.assertIn('"error_class": "TimeoutExpired"', trace)
+        self.assertNotIn("turn_id", trace)
+        self.assertNotIn("output", trace)
+        self.assertEqual(trace_mode, 0o600)
 
 
 if __name__ == "__main__":

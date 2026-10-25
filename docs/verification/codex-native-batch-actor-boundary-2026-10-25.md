@@ -292,3 +292,28 @@ Thus the registration turn did reach matching `turn/completed`; the following
 Stop-marker wait timed out. A Stop completion marker was expected after that
 turn, but no hook metadata was retained to establish whether Codex invoked the
 Stop hook or why its marker was absent.
+
+## Stop hook wrapper diagnostics
+
+A read-only source audit used the pinned Codex CLI 0.164.0 source tag
+`rust-v0.164.0` (commit `6aaac694803004a63c6f393d153c96d22521a6b9`). The fixture's
+hook wrapper is reached only after Codex starts its configured command. The
+wrapper previously wrote metadata only after reading and parsing its JSON
+stdin, and wrote its exit row only after `subprocess.run` returned. Therefore
+an absent metadata file could not distinguish no wrapper entry from wrapper
+input or command failure.
+
+The wrapper now flushes fixed diagnostic rows to its private mode-0600 metadata
+file at entry, after payload validation, before command launch, and after
+command completion or a bounded timeout/OS error. The external fixture trace
+copies only allowlisted event/stage/error/exit classes; turn IDs, paths, input,
+stdout/stderr, auth and raw exceptions are excluded. Tests cover entry and a
+Stop command timeout and assert the external trace contains only those classes.
+
+The same pinned source shows `run_turn_stop_hooks` runs in the turn path before
+completion, while the fixture's installed Stop hook is marked `"async": true`;
+the hook dispatcher schedules async commands without awaiting them. This
+confirms that `turn/completed` is not itself evidence that the wrapper started
+or finished. The prior run's missing hook metadata remains inconclusive. No
+fresh actor invocation followed this diagnostics change, and no batch
+continuation or accepted task outcome is established.
