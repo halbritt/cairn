@@ -131,3 +131,34 @@ by these attempts. The only established Store transition is the first handled
 notice followed by one lease of notice two. `make test-integration` failed at
 the native actor assertion; the isolated retry also failed at the same boundary.
 CAIRN-221 remains In Progress.
+
+## Network-isolated preflight and bounded attempt
+
+The earlier network-boundary statement above applies to the first three
+post-classifier attempts only. A later launcher preflight used an outer
+`bwrap --unshare-net` namespace and a nested Codex bwrap that inherited it.
+The parent and child network-namespace inode values matched; the child reached
+the fixture handler on loopback, while a connection to a synthetic TEST-NET
+address failed with `ENETUNREACH` (errno 101). The disposable API and PostgreSQL
+Unix sockets were mounted at the same short paths inside the namespace. The API
+socket directory was private and short enough for the platform Unix pathname
+limit. No provider endpoint was involved.
+
+One bounded Codex 0.164.0 batch actor invocation then reached only its
+registration message. Its fresh owner-only trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/direct-netns-yjVaWJ/actor-direct-ff0b288c-4a21-40df-8628-137d9fc4f9a7.jsonl`
+(mode `0600`); its sole row is `registration_message` at `registration`, with
+no tool result. The exact token bytes were hashed against the synthetic
+identity mapping before the disposable actor root was created; the API-only
+version preflight passed inside the same network namespace. The invocation did
+not reach notice publication, source read, settlement, or Store advance. No
+hook metadata or Store state from this fresh invocation was retained, so its
+post-registration stop cause cannot be classified further. The older retained
+disposable cluster belongs to an earlier run and does not contain this run's
+batch notices.
+
+This network-isolated attempt establishes loopback reachability and synthetic
+egress denial for the fixture boundary, but it does not establish batch actor
+continuation. No actor retry followed this registration-only result. All
+Codex-generated messages and tool behavior in this fixture remain scripted
+synthetic Responses, not accepted task outcomes. CAIRN-221 remains In Progress.
