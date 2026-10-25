@@ -14,7 +14,7 @@ ERROR_CLASSES = {
 STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start",
           "observer_subscription", "observer_loaded_list", "observer_resume",
           "observer_connection", "observer_initialize", "observer_initialized",
-          "watcher_start", "native_item_started", "bootstrap"}
+          "observer_fallback", "watcher_start", "native_item_started", "bootstrap"}
 OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
 BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
                   "exit_zero", "item_thread_matches", "item_is_user_message"}
@@ -31,8 +31,9 @@ NATIVE_REFUSAL_CLASSES = {
     "busy", "submission_not_found", "invalid_request_other", "native_refusal_other",
     "thread_closing", "thread_not_found", "history_already_running", "stale_rollout_path",
     "unloaded_v2_child", "resume_listener_not_running", "resume_listener_channel_closed",
-    "thread_resume_other",
+    "thread_no_persisted_rollout", "thread_resume_other",
 }
+MAX_PRIVATE_REFUSAL_MESSAGE_BYTES = 512
 DIGEST_FIELDS = {"turn_id_sha256", "delivery_id_sha256", "receipt_id_sha256", "native_item_id_sha256"}
 BOOTSTRAP_STEPS = {"runner", "codex_version", "pg_config", "go_build", "pg_initdb",
                    "pg_start", "db_create", "migrate", "api_start", "api_ready",
@@ -72,7 +73,7 @@ def create_trace(path):
 
 
 def append_trace(descriptor, stage, outcome, error=None, code=None, flags=None, digests=None,
-                 step=None):
+                 step=None, private_message=None):
     if stage not in STAGES or outcome not in OUTCOMES:
         raise ValueError("invalid trace event")
     row = {"schema": "cairn.codex-queue-stage/1", "stage": stage, "outcome": outcome}
@@ -94,6 +95,16 @@ def append_trace(descriptor, stage, outcome, error=None, code=None, flags=None, 
     for key, value in (digests or {}).items():
         if key in DIGEST_FIELDS and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
             row[key] = value
+    if stage == "observer_resume" and outcome == "failed" and isinstance(private_message, str):
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise ValueError("private refusal message requires an owner-only trace")
+        message_bytes = private_message.encode("utf-8", "replace")
+        bounded = message_bytes[:MAX_PRIVATE_REFUSAL_MESSAGE_BYTES]
+        row["private_refusal_message"] = bounded.decode("utf-8", "ignore")
+        if len(message_bytes) > MAX_PRIVATE_REFUSAL_MESSAGE_BYTES:
+            row["private_refusal_message_truncated"] = True
     if stage == "bootstrap" and step in BOOTSTRAP_STEPS:
         row["step"] = step
     payload = (json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n").encode()

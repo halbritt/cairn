@@ -293,3 +293,31 @@ It records numeric code `-32600` and class `thread_resume_other`: none of the
 source-known refusal patterns matched. The watcher was not started; no queue
 trace, hook, Store attempt, or local Responses request exists. Cleanup
 completed. The exact refusal remains unknown. No retry or replay was made.
+
+## Private refusal detail and source-grounded observer setup correction
+
+The next bounded fake-auth, `bwrap --unshare-net` disposable attempt retained
+the `thread/resume` JSON-RPC error message only in its owner-only 0600 local
+item trace, capped at 512 UTF-8 bytes. The trace is
+`~/.cache/cairn-220-native-wake-proof/item-stage-1db3ecc7b7cf4c7dba4842dedc169a23.jsonl`.
+The sanitized reason is that the just-started thread has no persisted rollout
+yet. No raw refusal text or thread identifier is copied into this document,
+source tree, or Plane. The watcher was not started; there is no queue trace,
+hook, Store attempt, or local Responses request.
+
+Pinned Codex 0.164 source maps a missing stored thread to this refusal in
+`thread_store_resume_read_error`; `read_stored_thread_for_resume` is called on
+the running-thread resume path before the app-server rejoins it. Separately,
+`thread_start_inner` automatically attaches the `thread/start` request's own
+connection through `ensure_conversation_listener`. The fixture now keeps that
+initialized connection open and uses it as the item observer only when the
+separate resume request matches the source-known missing-rollout refusal. Other
+resume refusals remain failures. This avoids asking `thread/resume` to reload a
+thread before its first user turn has produced a stored rollout.
+
+Focused tests cover the private-message byte cap, fixed refusal classification,
+and fallback selection. The one permitted runtime run was used to identify the
+missing-rollout refusal before this correction; the corrected observer path has
+not been exercised in another disposable run. Queue receipt, native item start,
+hook, Store attempt, the exact end-to-end join, and CAIRN-220 acceptance remain
+unverified.

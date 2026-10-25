@@ -15,6 +15,46 @@ LIFECYCLE = SCRIPTS.parent / "integrations" / "lifecycle"
 
 
 class CodexQueueStageTraceTests(unittest.TestCase):
+    def test_private_resume_message_is_capped_and_confined_to_resume_failure_row(self):
+        sys.path.insert(0, str(OBSERVER))
+        try:
+            from trace_io import append_trace, create_trace, MAX_PRIVATE_REFUSAL_MESSAGE_BYTES
+        finally:
+            sys.path.remove(str(OBSERVER))
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            fd = create_trace(str(trace))
+            try:
+                append_trace(fd, "observer_resume", "failed", error="QueueRefused",
+                             code=-32600, private_message="x" * (MAX_PRIVATE_REFUSAL_MESSAGE_BYTES + 20))
+                append_trace(fd, "observer_subscription", "failed",
+                             private_message="MUST NOT BE RETAINED")
+            finally:
+                os.close(fd)
+            rows = [json.loads(line) for line in trace.read_text().splitlines()]
+            mode = trace.stat().st_mode & 0o777
+
+        self.assertEqual(mode, 0o600)
+        self.assertEqual(len(rows[0]["private_refusal_message"].encode("utf-8")),
+                         MAX_PRIVATE_REFUSAL_MESSAGE_BYTES)
+        self.assertTrue(rows[0]["private_refusal_message_truncated"])
+        self.assertEqual(rows[1], {"schema": "cairn.codex-queue-stage/1",
+                                  "stage": "observer_subscription", "outcome": "failed"})
+        self.assertNotIn("MUST NOT BE RETAINED", json.dumps(rows))
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            fd = create_trace(str(trace))
+            os.fchmod(fd, 0o640)
+            try:
+                with self.assertRaisesRegex(ValueError, "owner-only trace"):
+                    append_trace(fd, "observer_resume", "failed",
+                                 private_message="MUST NOT BE WRITTEN")
+            finally:
+                os.close(fd)
+            self.assertEqual(trace.read_text(), "")
+
     def test_postgres_log_classifier_retains_only_fixed_category(self):
         sys.path.insert(0, str(SCRIPTS))
         try:

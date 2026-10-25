@@ -547,7 +547,11 @@ def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
                 if method == "thread/resume" and type(exc).__name__ == "QueueRefused":
                     flags = {"native_refusal_class": _classify_thread_resume_refusal(
                         getattr(exc, "message", None))}
-                record(stage, "failed", type(exc).__name__, code=code, flags=flags)
+                private_message = (getattr(exc, "message", None)
+                                   if method == "thread/resume" and
+                                   type(exc).__name__ == "QueueRefused" else None)
+                record(stage, "failed", type(exc).__name__, code=code, flags=flags,
+                       private_message=private_message)
             raise
         if record:
             record(stage, "after")
@@ -566,9 +570,11 @@ def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
 
 
 def _classify_thread_resume_refusal(message) -> str:
-    """Map pinned-source resume refusal text to a fixed enum without retaining it."""
+    """Map pinned-source resume refusal text to a fixed enum."""
     if not isinstance(message, str):
         return "thread_resume_other"
+    if message.startswith("no rollout found for thread id "):
+        return "thread_no_persisted_rollout"
     if (message.startswith("thread ") and " is closing; retry " in message and
             (message.endswith("after the thread is closed") or
              message.endswith("thread/resume after the thread is closed"))):
@@ -592,6 +598,12 @@ def _classify_thread_resume_refusal(message) -> str:
     return "thread_resume_other"
 
 
+def _is_missing_rollout_resume_refusal(exc) -> bool:
+    return (type(exc).__name__ == "QueueRefused" and
+            _classify_thread_resume_refusal(getattr(exc, "message", None)) ==
+            "thread_no_persisted_rollout")
+
+
 def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
     outcomes = {(row.get("stage"), row.get("outcome")) for row in item_rows}
     if ("watcher_start", "before") in outcomes and ("watcher_start", "after") not in outcomes:
@@ -605,6 +617,8 @@ def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
             return stage + "_failed"
     if ("observer_subscription", "failed") in outcomes:
         return "observer_subscription_failed"
+    if ("observer_fallback", "observed") in outcomes:
+        return "watcher_not_started_after_native_subscription_fallback"
     if ("observer_subscription", "after") in outcomes:
         return "watcher_not_started_after_observer_setup"
     if ("observer_subscription", "before") in outcomes:
@@ -613,10 +627,10 @@ def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
 
 
 class _ItemStartedObserver:
-    """Observe only fixed item/started identifiers on a separate app-server connection."""
+    """Observe item/started on a resumed or already-subscribed connection."""
 
     def __init__(self, queue_module, endpoint: str, process: dict, native_id: str,
-                 trace_path: str):
+                 trace_path: str, fallback_connection):
         from trace_io import append_trace, create_trace
 
         self._append = append_trace
@@ -627,6 +641,7 @@ class _ItemStartedObserver:
         self._delivery_id = None
         self._native_id = native_id
         self._append(self._fd, "trace", "started")
+        native_connection = fallback_connection
         def stage_call(stage, operation):
             self._append(self._fd, stage, "before")
             try:
@@ -649,13 +664,28 @@ class _ItemStartedObserver:
             try:
                 _attach_item_started_observer(
                     rpc, native_id,
-                    lambda stage, outcome, error=None, code=None, flags=None: self._append(
-                        self._fd, stage, outcome, error=error, code=code, flags=flags))
+                    lambda stage, outcome, error=None, code=None, flags=None,
+                    private_message=None: self._append(
+                        self._fd, stage, outcome, error=error, code=code, flags=flags,
+                        private_message=private_message))
             except Exception as exc:
-                self._append(self._fd, "observer_subscription", "failed",
-                             error=type(exc).__name__)
-                raise
+                if _is_missing_rollout_resume_refusal(exc):
+                    try:
+                        self._connection.close(timeout=0)
+                    except Exception:
+                        pass
+                    self._connection = native_connection
+                    native_connection = None
+                    self._append(self._fd, "observer_fallback", "observed",
+                                 flags={"native_refusal_class": "thread_no_persisted_rollout"})
+                else:
+                    self._append(self._fd, "observer_subscription", "failed",
+                                 error=type(exc).__name__)
+                    raise
             self._append(self._fd, "observer_subscription", "after")
+            if native_connection is not None:
+                native_connection.close(timeout=0)
+                native_connection = None
             self._connection.settimeout(0.25)
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -663,6 +693,11 @@ class _ItemStartedObserver:
             if self._connection is not None:
                 try:
                     self._connection.close(timeout=0)
+                except Exception:
+                    pass
+            if native_connection is not None:
+                try:
+                    native_connection.close(timeout=0)
                 except Exception:
                     pass
             os.close(self._fd)
@@ -858,6 +893,7 @@ def _inside(root_text: str) -> int:
 
     stderr_thread = threading.Thread(target=drain_stderr, daemon=True)
     stderr_thread.start()
+    connection = None
     try:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and child.poll() is None and not socket_path.exists():
@@ -865,32 +901,29 @@ def _inside(root_text: str) -> int:
         require(child.poll() is None and socket_path.exists(), "app_server_socket_not_ready")
         process = coordination.process_reference(child.pid)
         connection, _websocket, _peer = codex_queue._open(str(socket_path), process, "process")
-        try:
-            rpc = codex_queue._Rpc(connection, time.monotonic() + 15)
-            rpc("initialize", dict(clientInfo=dict(name="cairn-220-disposable-fixture", version="1"),
-                                   capabilities=dict(experimentalApi=True)))
-            connection.send(json.dumps(dict(method="initialized")))
-            listed = rpc("hooks/list", dict(cwds=[str(workspace)]))
-            selected = [hook for entry in listed.get("data", []) for hook in entry.get("hooks", [])
-                        if hook.get("sourcePath") == str(profile / "hooks.json")
-                        and hook.get("command") == command]
-            require(len(selected) == 6, "codex_hook_definitions_missing")
-            for hook in selected:
-                rpc("config/value/write", dict(filePath=str(profile / "config.toml"),
-                    keyPath="hooks.state." + json.dumps(hook["key"]) + ".trusted_hash",
-                    value=hook["currentHash"], mergeStrategy="replace"))
-            verified = rpc("hooks/list", dict(cwds=[str(workspace)]))
-            loaded = [hook for entry in verified.get("data", []) for hook in entry.get("hooks", [])
-                      if hook.get("key") in {item["key"] for item in selected}]
-            require(len(loaded) == 6 and all(hook.get("enabled") and hook.get("trustStatus") == "trusted"
-                                             for hook in loaded), "codex_hooks_not_trusted")
-            started = rpc("thread/start", dict(cwd=str(workspace), model=MODEL,
-                approvalPolicy="never", sandbox="read-only"))
-            native_id = started["thread"]["id"]
-            thread_page = rpc("thread/loaded/list", dict(limit=100))
-            require(native_id in thread_page.get("data", []), "thread_not_loaded")
-        finally:
-            connection.close(timeout=0)
+        rpc = codex_queue._Rpc(connection, time.monotonic() + 15)
+        rpc("initialize", dict(clientInfo=dict(name="cairn-220-disposable-fixture", version="1"),
+                               capabilities=dict(experimentalApi=True)))
+        connection.send(json.dumps(dict(method="initialized")))
+        listed = rpc("hooks/list", dict(cwds=[str(workspace)]))
+        selected = [hook for entry in listed.get("data", []) for hook in entry.get("hooks", [])
+                    if hook.get("sourcePath") == str(profile / "hooks.json")
+                    and hook.get("command") == command]
+        require(len(selected) == 6, "codex_hook_definitions_missing")
+        for hook in selected:
+            rpc("config/value/write", dict(filePath=str(profile / "config.toml"),
+                keyPath="hooks.state." + json.dumps(hook["key"]) + ".trusted_hash",
+                value=hook["currentHash"], mergeStrategy="replace"))
+        verified = rpc("hooks/list", dict(cwds=[str(workspace)]))
+        loaded = [hook for entry in verified.get("data", []) for hook in entry.get("hooks", [])
+                  if hook.get("key") in {item["key"] for item in selected}]
+        require(len(loaded) == 6 and all(hook.get("enabled") and hook.get("trustStatus") == "trusted"
+                                         for hook in loaded), "codex_hooks_not_trusted")
+        started = rpc("thread/start", dict(cwd=str(workspace), model=MODEL,
+            approvalPolicy="never", sandbox="read-only"))
+        native_id = started["thread"]["id"]
+        thread_page = rpc("thread/loaded/list", dict(limit=100))
+        require(native_id in thread_page.get("data", []), "thread_not_loaded")
 
         metadata = dict(harness="codex", model=MODEL, observed_model=MODEL,
                         project=workspace.name, workspace=str(workspace), state="idle",
@@ -904,7 +937,8 @@ def _inside(root_text: str) -> int:
         coordination.write_state(state_path, dict(agent=registered, process=process,
                                                     workspace=str(workspace)))
         item_observer = _ItemStartedObserver(codex_queue, str(socket_path), process, native_id,
-            os.environ["CAIRN220_ITEM_TRACE_TARGET"])
+            os.environ["CAIRN220_ITEM_TRACE_TARGET"], fallback_connection=connection)
+        connection = None
         source = _api_call(binary, api, sender_token, "create", dict(request_id=str(uuid.uuid4()), draft=dict(
             kind="note", body="Synthetic CAIRN-220 watcher source", scope=dict(repo=repo, task_id="*", run_id="*"),
             claim_type="self", sensitivity="shareable")), socket_path=api_socket)
@@ -1031,6 +1065,11 @@ def _inside(root_text: str) -> int:
     finally:
         if item_observer is not None:
             item_observer.close()
+        elif connection is not None:
+            try:
+                connection.close(timeout=0)
+            except Exception:
+                pass
         if child.poll() is None:
             child.terminate()
             try:

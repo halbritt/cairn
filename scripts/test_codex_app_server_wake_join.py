@@ -3,9 +3,11 @@
 import unittest
 
 from check_codex_app_server_wake_join import (
+    _ItemStartedObserver,
     _attach_item_started_observer,
     _classify_thread_resume_refusal,
     _classify_missing_queue_trace,
+    _is_missing_rollout_resume_refusal,
 )
 
 
@@ -86,6 +88,7 @@ class ItemStartedObserverSubscriptionTests(unittest.TestCase):
                 "stale_rollout_path",
             "cannot resume an unloaded multi-agent v2 sub-agent through its parent; resume the parent first, or use thread/read to inspect it":
                 "unloaded_v2_child",
+            "no rollout found for thread id fixture-thread": "thread_no_persisted_rollout",
             "failed to enqueue running thread resume for thread 01234567-89ab-cdef-0123-456789abcdef: thread listener is not running":
                 "resume_listener_not_running",
             "failed to enqueue running thread resume for thread 01234567-89ab-cdef-0123-456789abcdef: thread listener command channel is closed":
@@ -113,16 +116,92 @@ class ItemStartedObserverSubscriptionTests(unittest.TestCase):
                 return {"data": ["thread-1"]}
             raise QueueRefused("private message is never emitted")
 
-        def record(stage, outcome, error=None, code=None, flags=None):
-            rows.append((stage, outcome, error, code, flags))
+        def record(stage, outcome, error=None, code=None, flags=None, private_message=None):
+            rows.append((stage, outcome, error, code, flags, private_message))
 
         with self.assertRaises(QueueRefused):
             _attach_item_started_observer(rpc, "thread-1", record)
 
         self.assertEqual(calls, ["thread/loaded/list", "thread/resume"])
         self.assertEqual(rows[-1], ("observer_resume", "failed", "QueueRefused", -32600,
-                                    {"native_refusal_class": "thread_closing"}))
+                                    {"native_refusal_class": "thread_closing"},
+                                    QueueRefused.message))
         self.assertNotIn("private message", repr(rows))
+
+    def test_only_missing_rollout_refusal_selects_native_thread_start_connection(self):
+        class QueueRefused(Exception):
+            def __init__(self, message):
+                self.message = message
+
+        known = QueueRefused("no rollout found for thread id fixture-thread")
+        other = QueueRefused("different refusal")
+        self.assertTrue(_is_missing_rollout_resume_refusal(known))
+        self.assertFalse(_is_missing_rollout_resume_refusal(other))
+        self.assertFalse(_is_missing_rollout_resume_refusal(RuntimeError("not a JSON-RPC refusal")))
+
+    def test_observer_uses_thread_start_connection_for_missing_rollout_only(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        class Connection:
+            def __init__(self):
+                self.closed = False
+
+            def close(self, timeout=0):
+                self.closed = True
+
+            def settimeout(self, _value):
+                pass
+
+            def send(self, _value):
+                pass
+
+            def recv(self):
+                raise OSError("test observer shutdown")
+
+        class QueueRefused(Exception):
+            code = -32600
+            message = "no rollout found for thread id fixture-thread"
+
+        class QueueModule:
+            @staticmethod
+            def _open(_endpoint, _process, _mode):
+                return observer_connection, None, None
+
+            class _Rpc:
+                def __init__(self, _connection, _deadline):
+                    pass
+
+                def __call__(self, method, _params):
+                    if method == "initialize":
+                        return {}
+                    if method == "thread/loaded/list":
+                        return {"data": ["fixture-thread"]}
+                    if method == "thread/resume":
+                        raise QueueRefused("synthetic refusal")
+                    raise AssertionError(method)
+
+        observer_connection = Connection()
+        start_connection = Connection()
+        with tempfile.TemporaryDirectory() as directory:
+            trace_path = str(Path(directory) / "item.jsonl")
+            observer = _ItemStartedObserver(
+                QueueModule, "fixture-endpoint", {}, "fixture-thread", trace_path,
+                fallback_connection=start_connection)
+            observer.close()
+            rows = [json.loads(line) for line in Path(trace_path).read_text().splitlines()]
+
+        self.assertTrue(observer_connection.closed)
+        self.assertTrue(start_connection.closed)
+        self.assertEqual(next(row["native_refusal_class"] for row in rows
+                              if row["stage"] == "observer_resume" and
+                              "native_refusal_class" in row),
+                         "thread_no_persisted_rollout")
+        self.assertTrue(any(row["stage"] == "observer_fallback" and
+                            row["outcome"] == "observed" for row in rows))
+        self.assertEqual(next(row["private_refusal_message"] for row in rows
+                              if "private_refusal_message" in row), QueueRefused.message)
 
 
 if __name__ == "__main__":
