@@ -80,3 +80,25 @@ SHA-256 digest, so the native RPC/`QueueError` cause is unknown. No replay,
 settlement, or additional full run followed. The unverified harness was
 discarded; this note records the verified preflight and failure boundaries,
 not CAIRN-220 acceptance.
+
+## Queue-stage diagnostic preparation
+
+At commit `1140772`, the previous full-join harness is absent from the checkout
+and no runnable copy was present in the private trace directory. The prior
+uncertain delivery was not replayed. A new opt-in Python startup observer is
+available at `scripts/fixtures/cairn220_queue_trace/sitecustomize.py`. With
+that directory first on `PYTHONPATH`, `integrations/lifecycle` also on
+`PYTHONPATH`, and `CAIRN220_QUEUE_TRACE` set to a host-mounted private path, it
+records fixed stage transitions around production `codex_queue._open`,
+`_admit`, `thread/queue/add`, and `thread/queue/start`. Each append is fsynced
+to a mode-0600 trace before assertions. It keeps only allow-listed exception
+class names and bounded integer native refusal codes; it omits exception text,
+wake content, and tokens. The queue helper return values and decisions are
+unchanged.
+
+`python3 scripts/test_codex_queue_stage_trace.py` verifies the observer's
+pre-call/refusal trace, 0600 file mode, and omission of synthetic refusal text.
+That focused test and `make check` passed. This verifies the trace boundary
+only. No new disposable PostgreSQL/API/Codex watcher run or delivery-to-Store
+join was performed, so CAIRN-220 remains unaccepted and the queue failure's
+native cause remains unknown.
