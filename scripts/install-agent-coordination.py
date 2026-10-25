@@ -252,7 +252,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
         rpc.next_notification = next_notification
         def arm_turn_deadline(thread_id, turn_id, seconds):
             return ActiveTurnDeadline(seconds,
-                lambda: rpc('turn/cancel', dict(threadId=thread_id, turnId=turn_id), _timeout=2),
+                lambda: rpc('turn/interrupt', dict(threadId=thread_id, turnId=turn_id), _timeout=2),
                 stop_server).start()
         rpc.arm_turn_deadline = arm_turn_deadline
         try:

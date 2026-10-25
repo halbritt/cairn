@@ -65,7 +65,7 @@ process.stdin.on('data', chunk => {
     if (req.method === 'hooks/list') result = {data: []};
     else if (req.method === 'thread/start') result = {thread: {id: 'thread_fixture'}};
     else if (req.method === 'turn/start') result = {turn: {id: 'turn_fixture'}};
-    else if (req.method === 'turn/cancel') fs.writeFileSync('""" + str(cancel_marker) + """', 'cancel');
+    else if (req.method === 'turn/interrupt') fs.writeFileSync('""" + str(cancel_marker) + """', JSON.stringify(req.params));
     if (req.id !== undefined) console.log(JSON.stringify({id: req.id, result}));
   }
 });
@@ -91,7 +91,8 @@ process.stdin.on('data', chunk => {
                     verify=verify, codex_binary=str(launcher), expected=0)
             self.assertLess(time.monotonic() - began, 5)
             self.assertEqual(turn_result, dict(expired=True, cancel_error=None, stop_error=None))
-            self.assertEqual(cancel_marker.read_text(), "cancel")
+            self.assertEqual(json.loads(cancel_marker.read_text()),
+                {"threadId": "thread_fixture", "turnId": "turn_fixture"})
             child_pid = int(child_pid_file.read_text())
             deadline = time.monotonic() + 2
             while alive(child_pid) and time.monotonic() < deadline:
