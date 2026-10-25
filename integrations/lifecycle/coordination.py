@@ -3056,8 +3056,15 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         if opencode_replay and observation.get('native_turn_id'):
             replay_binding = dict(delivery_id=state['opencode_replay']['delivery_id'],
                                   native_turn_id=observation['native_turn_id'])
+        ordinary_codex_binding = {}
+        native_turn_id = observation.get('native_turn_id')
+        if (config.get('harness') == 'codex' and observation.get('event') == 'UserPromptSubmit' and
+                isinstance(native_turn_id, str) and native_turn_id.strip() and
+                len(native_turn_id.encode('utf-8')) <= 256 and
+                not any(ord(character) < 32 for character in native_turn_id)):
+            ordinary_codex_binding = dict(native_turn_id=native_turn_id)
         state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']),
-                                     **(wake_binding or replay_binding))
+                                     **(wake_binding or replay_binding or ordinary_codex_binding))
         state['inbox_result_policy'] = dict(claim_request_id=state['inbox_intent']['request_id'], version=1)
         write_state(path, state)
         recover_inbox(config, state, path)

@@ -571,6 +571,7 @@ class InboxRecovery(unittest.TestCase):
     def test_new_admission_pins_result_scope_before_claim(self):
         attempt = self.state.pop('inbox_attempt')
         self.state.pop('inbox_intent')
+        self.config['harness'] = 'codex'
         coordination.write_state(self.path, self.state)
         # The subprocess observes the persisted policy before it can answer
         # admission; response identity comes from that same request.
@@ -586,6 +587,8 @@ class InboxRecovery(unittest.TestCase):
                       'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
         observation = dict(event='UserPromptSubmit', phase='busy', native_turn_id='')
         coordination.inbox_context(self.config, self.state, self.path, observation)
+        claim = next(entry for entry in self.log() if entry['operation'] == 'session-inbox-claim')
+        self.assertNotIn('native_turn_id', json.loads(claim['input']))
         identity = self.state['inbox_attempt']['attempt_id']
         context = json.loads((self.root / 'state' / 'inbox' / (identity + '.json')).read_text())
         command = context['commands']['complete']
@@ -593,6 +596,42 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(command[command.index('--run') + 1], '*')
         self.assertNotIn('--task', context['commands']['ack'])
         self.assertNotIn('--task', context['commands']['respond'])
+
+    def test_codex_user_prompt_claim_pins_exact_turn_and_rejects_takeover(self):
+        delivery = self.state['inbox_attempt']['delivery']
+        session = self.state['inbox_intent']['session']
+        attempt = dict(attempt_id=ATTEMPT, session=session, native_turn_id='codex-turn-one',
+                       delivery=delivery)
+        self.state.pop('inbox_attempt')
+        self.state.pop('inbox_intent')
+        self.state['delivered_since_idle'] = False
+        self.config['harness'] = 'codex'
+        self.cairn.write_text(FAKE.replace("print(json.dumps(dict(schema='cairn.response/1', **reply)))",
+            "if operation == 'session-inbox-claim':\n"
+            "    request = json.loads(body)\n"
+            "    reply['data']['attempt']['attempt_id'] = request['request_id']\n"
+            "    reply['data']['attempt']['native_turn_id'] = request.get('native_turn_id', '')\n"
+            "print(json.dumps(dict(schema='cairn.response/1', **reply)))"))
+        self.replies({'session-inbox-claim': [dict(ok=True, status='OK', data=dict(attempt=attempt))],
+                      'event-renew': [dict(ok=True, status='OK', data=delivery)],
+                      'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
+
+        coordination.inbox_context(self.config, self.state, self.path,
+            dict(event='UserPromptSubmit', phase='busy', native_turn_id='codex-turn-one'))
+
+        claim = next(entry for entry in self.log() if entry['operation'] == 'session-inbox-claim')
+        self.assertEqual(json.loads(claim['input'])['native_turn_id'], 'codex-turn-one')
+        self.assertEqual(self.state['inbox_intent']['native_turn_id'], 'codex-turn-one')
+        self.assertEqual(self.state['inbox_attempt']['native_turn_id'], 'codex-turn-one')
+        identity = self.state['inbox_attempt']['attempt_id']
+        context = json.loads((self.root / 'state' / 'inbox' / (identity + '.json')).read_text())
+        self.assertEqual(context['native_turn_id'], 'codex-turn-one')
+
+        with self.assertRaises(coordination.CoordinationError) as raised:
+            coordination.inbox_context(self.config, self.state, self.path,
+                dict(event='UserPromptSubmit', phase='busy', native_turn_id='codex-turn-two'))
+        self.assertEqual(raised.exception.code, 'NATIVE_TURN_MISMATCH')
+        self.assertEqual(sum(entry['operation'] == 'session-inbox-claim' for entry in self.log()), 1)
 
     def test_lost_new_claim_recovers_persisted_policy_and_overwrites_stale_marker(self):
         attempt = self.state.pop('inbox_attempt')
