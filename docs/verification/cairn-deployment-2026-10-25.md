@@ -223,3 +223,43 @@ savings, measured task quality, or full design acceptance. The CAIRN-227
 acceptance panel remains **Defer**. Migrations are forward-only. Keep the
 previous binary for recovery; use a forward fix or the documented restore and
 reconciliation procedure rather than attempting a schema downgrade.
+
+## CAIRN-225 compact/2 runtime release — 2026-10-25
+
+The primary Cairn CLI/API was upgraded to clean source revision
+`ac705706bf654cd51a0d4531e48f046789abb8da` (Go 1.25.0,
+`vcs_modified=false`). The installed binary SHA-256 is
+`8ef43be1ae033f15d7bacf3a69508a097bf28359ea9d03ba85d78abd685d4d27`. The
+previous `76bdaf8` executable remains at
+`~/.local/bin/cairn-before-cairn225-20261025`, SHA-256
+`66cf9b7f9bba6afe58978a8753f032d2ea64e44c18d147446efc4edcfb1242b6`.
+
+This release adds the opt-in `compact/2` MCP tool-description profile. The
+runtime diff changes command and MCP API code; it adds no migration or schema
+change. Production remained at 72 migrations. The existing pgBackRest chain
+was healthy before the release: full `20261025-010451F` plus latest
+differential `20261025-010451F_20261025-024442D`, whose repository delta was
+1.9 GB. No new database backup was taken because this binary-only release made
+no database changes. Before stopping services, read-only checks found zero
+unfinished wake attempts, zero unfinished session attempts, zero unexpired
+delivery leases, and zero PostgreSQL archive failures.
+
+The scheduler, seven wake workers, presence service, and primary API were
+stopped. The separate `cairn267-distinct-api-4884f6a.service` stayed active and
+was not restarted. The candidate replaced the primary executable atomically.
+The first immediate authenticated version request raced API socket startup;
+after three seconds, client and server version checks both reported
+`ac705706bf654cd51a0d4531e48f046789abb8da` with a clean VCS stamp. Hosted
+search and exact pull succeeded for record
+`1d465a5a-193f-4ed3-b99f-a111dd324e5a`, version 8; the pulled body SHA-256
+`940aa636a9b17d693af72e8994a3f4c7850a0f29598b4d1fb9fc2acf1a776c06` matched
+the search result. Presence, scheduler, all seven wake workers, primary API,
+and distinct API returned active with `NRestarts=0`.
+
+Final read-only checks still found 72 migrations, zero unfinished wake/session
+attempts, zero unexpired leases, and zero archive failures. The latest archived
+WAL was `00000001000001A400000081` at 2026-10-25 12:39:47 UTC. No production
+database tests or model-provider calls were made. The compact profile remains
+opt-in; existing harness configurations were not changed. The local declaration
+fixture does not establish provider savings, accepted-task quality, or full
+design acceptance; CAIRN-227 remains **Defer**.
