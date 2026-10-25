@@ -79,6 +79,32 @@ class LifecycleTests(unittest.TestCase):
                                  stage="preview" if key == "preview_model" else "recall")
             call.assert_not_called()
 
+    def test_selector_invocation_disables_ambient_tools_and_settings(self):
+        commands = []
+
+        def local_selector(command, **kwargs):
+            commands.append((command, kwargs))
+            return {}
+
+        with patch.object(hook, "run_json", side_effect=local_selector):
+            hook.select_json(self.config, {"type": "object"}, "prompt", {"request": "fixture"})
+
+        self.assertEqual(len(commands), 1)
+        command, kwargs = commands[0]
+        self.assertIn("--no-session-persistence", command)
+        self.assertIn("--disable-slash-commands", command)
+        self.assertEqual(command[command.index("--setting-sources") + 1], "")
+        self.assertEqual(command[command.index("--settings") + 1], '{"disableAllHooks":true}')
+        self.assertIn("--strict-mcp-config", command)
+        self.assertEqual(command[command.index("--mcp-config") + 1], '{"mcpServers":{}}')
+        self.assertEqual(command[command.index("--tools") + 1], "")
+        self.assertEqual(command[command.index("--max-turns") + 1], "2")
+        self.assertNotIn("additional_tools", command)
+        self.assertNotIn("tool_choice", command)
+        self.assertEqual(kwargs["env"]["CAIRN_LIFECYCLE_CHILD"], "1")
+        self.assertNotIn("CLAUDECODE", kwargs["env"])
+        self.assertEqual(json.loads(kwargs["body"]), {"request": "fixture"})
+
     def test_installer_retains_optional_models_on_reinstall(self):
         settings = self.root / "settings.json"
         destination = self.root / "installed"
