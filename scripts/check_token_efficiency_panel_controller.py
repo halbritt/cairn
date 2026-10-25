@@ -29,12 +29,14 @@ def check(binary, workflow_id):
                                 ("baseline", "envelope", "batch", "combined")
                                 for case in ("routine_burst_urgent_request",
                                              "wrong_project_memory", "corrected_note",
-                                             "meaningful_owner_correction", "unfinished_handoff")),
+                                             "meaningful_owner_correction", "unfinished_handoff",
+                                             "required_conflict_group")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
     source_case = case in ("wrong_project_memory", "corrected_note",
-                           "meaningful_owner_correction", "unfinished_handoff")
+                           "meaningful_owner_correction", "unfinished_handoff",
+                           "required_conflict_group")
     label = workflow_id.replace(".", "-") if burst or source_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
@@ -229,10 +231,18 @@ def check(binary, workflow_id):
                         source["body"].encode()).hexdigest()
                     and observed["version"] == source["logical_version"]
                     and observed["operation"] == source["operation"]
-                    and observed["observed_writer"] == principals["sender"],
+                    and (observed["observed_writer"] == f"local-uid:{os.geteuid()}"
+                         if case == "required_conflict_group" else
+                         observed["observed_writer"] == principals["sender"]),
                     "durable source receipt differs from fixture")
-            exact = cli("sender", "agent", "history", body=json.dumps({
-                "record_id": observed["record_id"], "version": observed["version"]}))
+            ref = {"record_id": observed["record_id"], "version": observed["version"]}
+            if case == "required_conflict_group":
+                result = subprocess.run([str(binary), "history"], input=json.dumps(ref),
+                                        text=True, capture_output=True, env=env, timeout=20)
+                require(result.returncode == 0, "operator cannot inspect required source")
+                exact = json.loads(result.stdout)["data"]
+            else:
+                exact = cli("sender", "agent", "history", body=json.dumps(ref))
             versions = exact["versions"]
             require(len(versions) == 1 and versions[0]["body"] == source["body"]
                     and versions[0]["version"] == observed["version"],
@@ -283,6 +293,15 @@ def check(binary, workflow_id):
                         }, "authenticated handoff source read or unrun boundary differs")
                 require("Cairn handoff for" not in json.dumps(receipt),
                         "durable controller receipt contains handoff source text")
+            if case == "required_conflict_group":
+                require(receipt["conflict_read"] == {
+                    "reader_agent_id": receipt["sessions"]["worker"]["agent_id"],
+                    "index": "OPEN_CONFLICT", "search": "OPEN_CONFLICT",
+                    "delivered_source": "none", "actor_decision": "unassessed"},
+                    "required conflict was not refused for worker")
+                require(all(fixture["sources"][name]["body"] not in json.dumps(receipt)
+                            for name in ("conflict_24", "conflict_48")),
+                        "controller receipt contains required source text")
             require(sql("SELECT count(*) FROM cairn.memory_record") ==
                     ("1" if case in ("corrected_note", "meaningful_owner_correction", "unfinished_handoff") else "2"),
                     "source-only Store record count differs")

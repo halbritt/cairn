@@ -215,6 +215,16 @@ history reads both whole versions; authenticated agent index and search return
 refusal carries diagnostic metadata with `selected: null` and no index entry.
 No actor decided the threshold or ran a provider.
 
+The authenticated panel controller now repeats that frozen source setup in
+separate disposable databases for all four required-conflict arms. It obtains
+only the disposable operator-root grant, issues the two C sources with stable
+journaled request IDs, verifies whole operator history, and requires the
+registered worker's index and search to refuse `OPEN_CONFLICT` without either
+body. Its receipt retains IDs, hashes, refusal status and an explicitly
+unassessed actor decision. Four focused arm checks passed locally. The setup
+does not show how an actor responds to the refusal, complete a paired task, or
+establish any provider cost or production change.
+
 The separate [semantic-unavailable probe](../../scripts/check_panel_semantic_unavailable.py)
 uses the frozen RAVEN-42 source and an invoked, failing local semantic worker.
 Authenticated CLI search reports a labelled lexical fallback and whole-pulls

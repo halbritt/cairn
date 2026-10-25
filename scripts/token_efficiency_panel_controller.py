@@ -79,6 +79,11 @@ CASE_ADAPTERS = {
                           "target": "handoff_state"}],
         "publishers": {}, "sessions": {"worker": "worker"},
     },
+    "required_conflict_group": {
+        "sources": ["conflict_24", "conflict_48"],
+        "events": [], "transitions": [], "publishers": {},
+        "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -104,7 +109,8 @@ def case_name(workflow_id):
     require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
             and (parts[0] == "baseline" or
                  parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff")
+                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
+                              "required_conflict_group")
                  and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
@@ -114,7 +120,7 @@ def database_name(workflow_id):
     case = case_name(workflow_id)
     return (f"cairn_panel_{workflow_id.replace('.', '_')}"
             if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
-                        "meaningful_owner_correction", "unfinished_handoff")
+                        "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group")
             else f"cairn_panel_{case}")
 
 
@@ -255,6 +261,105 @@ def call(binary, socket, token, operation, args=(), body=None, session=None):
             and isinstance(result.get("data"), dict),
             f"Cairn {operation[-1]} refused: {result.get('status')}")
     return result["data"]
+
+
+def operator_call(binary, home, operation, payload):
+    """Use only the disposable API's operator root for class C setup."""
+    process = subprocess.run([str(binary), operation], input=json.dumps(payload),
+                             text=True, capture_output=True, timeout=20,
+                             env=dict(os.environ, CAIRN_HOME=str(home)))
+    require(len(process.stdout) <= 1_000_000 and len(process.stderr) <= 100_000,
+            "operator reply exceeds bound")
+    result = json.loads(process.stdout, object_pairs_hook=panel.pairs_unique)
+    require(process.returncode == 0 and result.get("schema") == "cairn.response/1"
+            and result.get("ok") is True and result.get("status") == "OK"
+            and isinstance(result.get("data"), dict),
+            f"disposable operator {operation} refused: {result.get('status')}")
+    return result["data"]
+
+
+def materialize_conflict_sources(binary, home, fixture_sources, names, intent, repo):
+    require(names == ["conflict_24", "conflict_48"], "conflict source order changed")
+    a, b = (fixture_sources[name] for name in names)
+    require(a["conflicts_with"] == [names[1]] and b["conflicts_with"] == [names[0]]
+            and a["body"] != b["body"], "required source conflict changed")
+    grant = operator_call(binary, home, "bootstrap", {
+        "request_id": intent["bootstrap_request_id"],
+        "reason": "Authorize frozen disposable conflict panel sources"})
+    records = {}
+    for name in names:
+        source = fixture_sources[name]
+        require(source["record_class"] == "C" and source["operation"] == "issue"
+                and source["logical_version"] == 1 and source["supersedes"] == []
+                and source["kind"] == "instruction" and source["claim_type"] == "self"
+                and source["sensitivity"] == "shareable"
+                and source["scope"] == {"repo": repo, "task_id": "*", "run_id": "*"}
+                and source["authority"] == {
+                    "grant": "disposable_operator_root", "mandatory": True,
+                    "requires_runtime": False, "category": "workflow",
+                    "policy_key": "synthetic-evacuation-threshold"},
+                "unsupported required source authority")
+        issued = operator_call(binary, home, "issue", {
+            "request_id": intent["source_request_ids"][name], "grant_id": grant["grant_id"],
+            "draft": {key: source[key] for key in
+                      ("kind", "body", "scope", "claim_type", "sensitivity")},
+            "mandatory": True, "requires_runtime": False, "category": "workflow",
+            "policy_key": "synthetic-evacuation-threshold",
+            "reason": "Materialize frozen paired conflict source"})
+        ref = {"record_id": issued.get("record_id"), "version": issued.get("version")}
+        require(issued.get("class") == "C" and ref["version"] == 1
+                and issued.get("body") == source["body"]
+                and issued.get("scope") == source["scope"],
+                "issued source differs from frozen authority")
+        require(issued.get("observed_writer") == f"local-uid:{os.geteuid()}",
+                "issued source lacks disposable operator attribution")
+        history = operator_call(binary, home, "history", ref)
+        versions = history.get("versions") or []
+        require(len(versions) == 1 and versions[0].get("body") == source["body"]
+                and versions[0].get("version") == 1,
+                "operator cannot inspect exact whole source")
+        records[name] = {"source_record_sha256": panel.sha(source),
+                         "source_body_sha256": hashlib.sha256(source["body"].encode()).hexdigest(),
+                         "record_id": ref["record_id"], "version": ref["version"],
+                         "record_family": source["record_family"], "operation": "issue",
+                         "observed_writer": issued["observed_writer"]}
+    require(records[names[0]]["record_id"] != records[names[1]]["record_id"],
+            "required conflict collapsed into one record")
+    return records
+
+
+def verify_required_conflict(binary, socket, token, session, repo, intent, actor, sources):
+    request = {"request_id": str(uuid.uuid5(uuid.UUID(intent["run_id"]), "conflict-index")),
+               "scope": {"repo": repo, "task_id": intent["run_id"],
+                         "run_id": intent["run_id"]},
+               "query": actor["task"], "purpose": "context",
+               "available_tokens": 32000, "context": {}}
+    forbidden = tuple(source["body"] for source in sources.values())
+    checks = (("index", json.dumps(request), []),
+              ("search", None, ["--repo", repo, "--task", intent["run_id"],
+                                "--run", intent["run_id"], "--request-id",
+                                str(uuid.uuid5(uuid.UUID(intent["run_id"]), "conflict-search")),
+                                actor["task"]]))
+    for command, body, args in checks:
+        argv = [str(binary), "agent", "--socket", str(socket), "--token-file", str(token),
+                "--agent-id", session["agent_id"], "--execution-id", session["execution_id"],
+                command, *args]
+        process = subprocess.run(argv, input=body, text=True, capture_output=True, timeout=20)
+        require(len(process.stdout) <= 1_000_000 and len(process.stderr) <= 100_000
+                and all(value not in process.stdout + process.stderr for value in forbidden),
+                "conflict response disclosed source text or exceeded bound")
+        result = json.loads(process.stdout, object_pairs_hook=panel.pairs_unique)
+        data = result.get("data")
+        require(process.returncode != 0 and result.get("schema") == "cairn.response/1"
+                and result.get("ok") is False and result.get("status") == "OPEN_CONFLICT"
+                and (data is None or isinstance(data, dict)),
+                f"{command} did not refuse required conflict")
+        if isinstance(data, dict):
+            require(data.get("selected") is None and not data.get("index"),
+                    "conflict refusal selected a source")
+    return {"reader_agent_id": session["agent_id"], "index": "OPEN_CONFLICT",
+            "search": "OPEN_CONFLICT", "delivered_source": "none",
+            "actor_decision": "unassessed"}
 
 
 def refused_readiness(binary, socket, token, session):
@@ -534,6 +639,8 @@ def materialize(args):
     require(set(event_ids).isdisjoint(source_ids), "source and event labels overlap")
     dynamic_keys = {"run_id", "register_request_ids", "source_request_ids",
                     "publication_request_ids"}
+    if case == "required_conflict_group":
+        dynamic_keys.add("bootstrap_request_id")
     if case == "small_request_result_reply":
         dynamic_keys |= {"settlement_request_ids", "synthetic_turn_id"}
     if intent_path.exists():
@@ -566,10 +673,13 @@ def materialize(args):
                 name: str(uuid.uuid4()) for name in
                 ("claim", "completion", "response_publication")}
             intent["synthetic_turn_id"] = f"panel-synthetic/{run_id}"
+        if case == "required_conflict_group":
+            intent["bootstrap_request_id"] = str(uuid.uuid4())
         write_new(intent_path, intent)
     for value in (intent["run_id"], *intent["register_request_ids"].values(),
                   *intent["source_request_ids"].values(),
                   *intent["publication_request_ids"].values(),
+                  *([intent["bootstrap_request_id"]] if case == "required_conflict_group" else []),
                   *intent.get("settlement_request_ids", {}).values()):
         require(str(uuid.UUID(value)) == value, "invalid intent UUID")
     if case == "small_request_result_reply":
@@ -622,9 +732,17 @@ def materialize(args):
         require(len(set(owners.values())) == 3 and
                 sessions["worker_a"]["inbox"] != sessions["worker_b"]["inbox"],
                 "distinct worker owners and inboxes required")
-    sources = materialize_memory_sources(binary, socket, tokens["sender"], fixture_sources,
-                                         source_ids, intent, owners["sender"], repo)
+    sources = (materialize_conflict_sources(binary, Path(args.home), fixture_sources,
+                                            source_ids, intent, repo)
+               if case == "required_conflict_group" else
+               materialize_memory_sources(binary, socket, tokens["sender"], fixture_sources,
+                                          source_ids, intent, owners["sender"], repo))
     handoff_read = None
+    conflict_read = None
+    if case == "required_conflict_group":
+        conflict_read = verify_required_conflict(
+            binary, socket, tokens["worker"], sessions["worker"], repo, intent, actor,
+            {name: fixture_sources[name] for name in source_ids})
     if case == "unfinished_handoff":
         require(source_ids == ["handoff_state"]
                 and setup["transitions"] == [{"phase": "before_resume",
@@ -885,6 +1003,8 @@ def materialize(args):
         receipt["source_preparation"] = source_preparation
     if handoff_read is not None:
         receipt["handoff_read"] = handoff_read
+    if conflict_read is not None:
+        receipt["conflict_read"] = conflict_read
     if readiness_snapshot is not None:
         receipt["readiness_snapshot"] = readiness_snapshot
         receipt["native_batch_transfer"] = "unrun"
@@ -909,7 +1029,8 @@ def main():
     choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
     choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
                      for case in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff"))
+                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
+                              "required_conflict_group"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)
