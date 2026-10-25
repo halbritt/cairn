@@ -1,4 +1,18 @@
-# Implementation status — 2026-09-25
+# Implementation status — 2026-10-25
+
+On 2026-10-25, the installed Cairn CLI and primary API were upgraded to clean
+revision `99745c35417c7467683329afcc4dcdd008aaa09a` (binary SHA-256
+`e3a4b3a552185c7e94ec99f22417ba24266c90a336a22368723b1ac074836fd4`). The
+operational PostgreSQL 17 store is at migration 070. The new migration set was
+applied after a successful pgBackRest differential backup; an earlier isolated
+restore rehearsal applied the same migrations to a clone.
+The deployed binary and schema do not mark token-efficiency work accepted:
+CAIRN-227 remains **Defer**, and the ordinary/inbox/MCP optimization opt-ins
+remain absent. Four ordinary hooks and three existing enabled inbox bindings
+still pass the read-only installed inventory; `live_observed=false` remains the
+scope of that report. See the [deployment verification](verification/cairn-deployment-2026-10-25.md).
+
+## Previous installed snapshot — 2026-09-25
 
 On 2026-09-25, `cairn version` and authenticated `cairn agent version` both
 reported clean installed CLI/API revision `9d171afdb45d441d1d7ab6d2da764336064f98bd`.
