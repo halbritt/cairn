@@ -55,7 +55,7 @@ func (req CaptureObservationRequest) validate() error {
 		return bad()
 	}
 	switch req.Outcome {
-	case "empty", "unchanged", "courtesy", "too_little_dialogue", "saved", "nothing_selected", "timeout", "error", "write_error", "state_commit_error":
+	case "empty", "unchanged", "courtesy", "too_little_dialogue", "transcript_unavailable", "saved", "nothing_selected", "timeout", "error", "write_error", "state_commit_error":
 	default:
 		return bad()
 	}

@@ -45,6 +45,13 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	if _, err := s.RecordCaptureObservation(ctx, skip); err != nil {
 		t.Fatal(err)
 	}
+	unavailable := skip
+	unavailable.RequestID = uuid.NewString()
+	unavailable.HookEvent = "PreCompact"
+	unavailable.Outcome = "transcript_unavailable"
+	if _, err := s.RecordCaptureObservation(ctx, unavailable); err != nil {
+		t.Fatalf("record explicit unavailable transcript outcome: %v", err)
+	}
 	report, err := s.CaptureObservations(ctx, CaptureObservationsRequest{Repo: base.Repo, SessionSHA256: base.SessionSHA256, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +65,13 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	}
 	if len(last.Rows) != 1 || last.More || last.Rows[0].Outcome != "unchanged" || last.Rows[0].InputTokens != nil || last.Rows[0].DurationMS != nil || last.Rows[0].AdmissionCandidate != nil {
 		t.Fatalf("second page: %+v", last)
+	}
+	third, err := s.CaptureObservations(ctx, CaptureObservationsRequest{Repo: base.Repo, SessionSHA256: base.SessionSHA256, Limit: 1, Offset: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(third.Rows) != 1 || third.Rows[0].Outcome != "transcript_unavailable" || third.Rows[0].SelectorOutcome != nil || third.Rows[0].SnapshotSHA256 != nil {
+		t.Fatalf("unavailable transcript report: %+v", third)
 	}
 	encoded, err := json.Marshal(last)
 	if err != nil {

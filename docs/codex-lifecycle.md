@@ -51,6 +51,8 @@ with a usable transcript retries that work; a pending Stop retry does not wait
 for six new messages. An empty later transcript leaves the pending state in
 place. The marker records an outstanding retry, not proof that the later
 transcript contains the dialogue from before compaction.
+When capture observations are enabled, this condition is reported as
+`transcript_unavailable` without a snapshot hash or selector outcome.
 
 Capture events serialize on a separate session `.capture.lock`. They hold the
 ordinary session lock only to snapshot state and commit capture metadata, so a

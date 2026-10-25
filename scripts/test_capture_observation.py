@@ -214,6 +214,20 @@ class CaptureObservationTests(unittest.TestCase):
                  dict(self.config, capture_observations=False))
         self.assertEqual(self.reports, [])
 
+    def test_codex_missing_transcript_reports_explicit_unavailable_outcome(self):
+        event = dict(self.event, hook_event_name="PreCompact", session_id="d2ca4711-4159-4d0c-95d5-c8cc174ad890",
+                     transcript_path=None)
+        event.pop("messages")
+        config = dict(self.config, harness="codex")
+        result = self.invoke(event, config)
+        self.assertIn("Cairn capture is pending", result["systemMessage"])
+        self.assertEqual(len(self.reports), 1)
+        report = self.reports[0]
+        self.assertEqual(report["outcome"], "transcript_unavailable")
+        self.assertNotIn("snapshot_sha256", report)
+        self.assertNotIn("selector_outcome", report)
+        self.assertEqual(self.model_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
