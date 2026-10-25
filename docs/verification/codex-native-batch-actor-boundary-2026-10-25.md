@@ -235,3 +235,29 @@ turn was observed, and no fixed response/stage rows were produced. This is an
 unclassified fixture setup failure, not evidence of native Codex behavior or a
 registration failure. No retry followed. Batch continuation and accepted task
 outcome remain unverified; CAIRN-221 remains In Progress.
+
+## Pre-setup fixed trace and bounded retry result
+
+The batch fixture now creates its owner-only mode-0600 trace before entering
+fixture setup. It records allowlisted start/completion stages and, on a setup
+exception, only its class and a filename role matched against known inputs; raw
+exception text and paths are never retained. Focused tests verify that a
+missing selected Codex path is attributed to `selected_codex` without recording
+the path.
+
+One fresh fake-auth attempt used a disposable database, new synthetic
+identities, outer `bwrap --unshare-net`, and confirmed synthetic egress denial.
+The durable trace
+`/home/halbritt/.cache/cairn-221-native-batch-actor/pretrace-634b1a77-8a9a-476e-86c3-c9c14671cbeb.jsonl`
+(mode `0600`) records successful Codex/candidate path checks and disposable DB
+presence, then stops at `verify_token_identity` with `RuntimeError` and
+`filename_role=unknown`. Source review identified the disposable runner's
+input mismatch: it wrote a trailing newline to `carol.token`, while its
+identity-map digest was computed over the token without that newline. The
+fixture hashes the token file bytes, so the principal match correctly failed
+before hook registration. This was not a Codex actor result.
+
+The fresh database remained empty: `agent_session`, `agent_event`, and
+`agent_delivery` counts were zero. No hooks, notices, or actor turn were
+observed. No retry followed. Focused fixture/diagnostic tests (18) and
+`make check` passed. CAIRN-221 remains In Progress.

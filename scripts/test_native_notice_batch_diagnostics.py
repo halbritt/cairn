@@ -8,11 +8,38 @@ from native_notice_batch_diagnostics import (
     AdvanceDiagnosticWriter,
     advance_tool_result_stage,
     classify_advance_tool_result,
+    classify_setup_filename,
     fixture_api_argv,
 )
 
 
 class AdvanceDiagnosticWriterTests(unittest.TestCase):
+    def test_setup_trace_records_allowlisted_stages_and_filename_role_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            disposable, private = base / "disposable", base / "private"
+            disposable.mkdir(mode=0o700)
+            private.mkdir(mode=0o700)
+            missing_codex = base / "secret-host-path" / "codex"
+            path = private / "setup.jsonl"
+            writer = AdvanceDiagnosticWriter(path, disposable)
+            self.assertTrue(path.exists())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            writer.record_setup_stage("validate_codex_paths", "start")
+            writer.record_setup_failure("FileNotFoundError",
+                classify_setup_filename(missing_codex, {"selected_codex": missing_codex}))
+            writer.close()
+
+            text = path.read_text()
+            rows = [json.loads(line) for line in text.splitlines()]
+            self.assertEqual(rows, [
+                {"operation": "setup_stage", "stage": "validate_codex_paths", "phase": "start"},
+                {"operation": "setup_failure", "stage": "validate_codex_paths",
+                 "exception_class": "FileNotFoundError", "filename_role": "selected_codex"},
+            ])
+            self.assertNotIn(str(missing_codex), text)
+            self.assertEqual(classify_setup_filename("/unmapped/private/path", {}), "unknown")
+
     def test_fixture_api_argv_matches_integration_harness_order(self):
         self.assertEqual(fixture_api_argv("cairn", "/api.sock", "/carol.token",
             "agents", "list", "--harness", "codex"),

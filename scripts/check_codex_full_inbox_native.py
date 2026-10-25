@@ -111,19 +111,55 @@ def _wait_for_registration_hook(stop_complete_path, turn_id, timeout=30):
     raise TimeoutError("registration Stop hook did not complete before fixture lookup")
 
 
-def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
-          turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
-          scenario="single", diagnostic_output=None, api_role="bob"):
+def _diagnostic_path_roles(binary, config, candidate_root, codex_entry, codex_root, root):
+    """Build private path-role inputs for filename classification only."""
+    config = config if isinstance(config, dict) else {}
+    root = Path(root)
+    token_file = config.get("token_file")
+    return {
+        "selected_codex": binary,
+        "codex_entry": codex_entry,
+        "codex_package": codex_root,
+        "candidate_root": candidate_root,
+        "cairn_binary": config.get("cairn"),
+        "api_socket": config.get("socket"),
+        "token_file": token_file,
+        "identity_file": (Path(token_file).parent / "identities.json"
+                          if isinstance(token_file, (str, os.PathLike)) else None),
+        "fixture_source": FIXTURE,
+        "coordination_source": Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
+        "hook_metadata_wrapper": Path(__file__).with_name("record_codex_hook_metadata.py"),
+        "actor_workspace": root / "workspace",
+        "profile_settings": root / "workspace" / ".codex" / "hooks.json",
+        "launcher": root / "codex-app-server-bwrap",
+    }
+
+
+def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
+                turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
+                scenario="single", diagnostic_output=None, api_role="bob",
+                preopened_trace=None):
     """Run one disposable native notice turn.
 
     ``binary`` is the selected Codex installation identity. It is never
     executed. The bwrap launcher is built only from explicit Node CLI entry
     and package-root paths; a synthetic empty auth object is used by default.
     """
+    trace = preopened_trace
+
+    def setup_stage(name):
+        if trace is not None and scenario == "batch":
+            trace.record_setup_stage(name, "start")
+
+    def setup_done():
+        if trace is not None and scenario == "batch":
+            trace.record_setup_stage(trace.setup_stage, "complete")
+
     if scenario not in ("single", "batch"):
         raise ValueError("scenario must be single or batch")
     if scenario == "batch" and diagnostic_output is None:
         raise ValueError("batch actor fixture requires a private diagnostic output path")
+    setup_stage("validate_codex_paths")
     if codex_entry is None or codex_root is None:
         raise RuntimeError("explicit Node Codex entry and package root are required for the bwrap fixture")
     selected_binary = Path(binary).resolve(strict=True)
@@ -133,16 +169,22 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         raise RuntimeError("selected Codex installation and Node entry must be regular files")
     if codex_entry.suffix not in (".js", ".mjs", ".cjs"):
         raise RuntimeError("Codex entry must be its Node CLI script, not an installed shell wrapper")
+    setup_done()
+    setup_stage("validate_candidate_paths")
     if candidate_root is None:
         raise RuntimeError("disposable candidate root is required")
     candidate_root = Path(candidate_root).resolve(strict=True)
     cairn_binary = Path(config["cairn"]).resolve(strict=True)
     if not cairn_binary.is_relative_to(candidate_root):
         raise RuntimeError("Cairn executable must come from the disposable candidate root")
+    setup_done()
+    setup_stage("verify_test_database")
     if not os.environ.get("CAIRN_TEST_DATABASE_URL"):
         raise RuntimeError("disposable integration database is required")
+    setup_done()
     token_identity_state = "unavailable"
     if scenario == "batch":
+        setup_stage("verify_token_identity")
         token_path = Path(config["token_file"]).resolve(strict=True)
         identity_path = token_path.parent / "identities.json"
         token_hash = hashlib.sha256(token_path.read_bytes()).hexdigest()
@@ -152,33 +194,50 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         if binding_principal != "agent/" + api_role:
             raise RuntimeError("native batch API role does not match binding token principal")
         token_identity_state = "matched"
+        setup_done()
+    setup_stage("load_actor_task")
     actor_task, notice_source = _fixture_task_and_notice(scenario)
     notice_body = notice_source[0] if scenario == "batch" else notice_source
     if not isinstance(turn_timeout, (int, float)) or turn_timeout <= 0:
         raise ValueError("turn_timeout must be positive seconds")
     if mode not in ("complete", "stall"):
         raise ValueError("mode must be complete or stall")
+    setup_done()
     root = Path(root).resolve()
-    root.mkdir(mode=0o700, parents=True, exist_ok=False)
+    if preopened_trace is None:
+        root.mkdir(mode=0o700, parents=True, exist_ok=False)
+    else:
+        if (not root.is_dir() or root.is_symlink() or
+                {path.name for path in root.iterdir()}):
+            raise RuntimeError("pre-created native fixture root must be an empty directory")
     diagnostic_path = Path(diagnostic_output) if diagnostic_output is not None else None
-    trace = None
     classify_advance_tool_result = None
     if diagnostic_path is not None:
         from native_notice_batch_diagnostics import (
             AdvanceDiagnosticWriter,
             advance_tool_result_stage,
             classify_advance_tool_result as classify,
+            classify_setup_filename,
         )
         classify_advance_tool_result_stage = advance_tool_result_stage
         classify_advance_tool_result = classify
-        trace = AdvanceDiagnosticWriter(diagnostic_path, root)
+        if trace is None:
+            trace = AdvanceDiagnosticWriter(diagnostic_path, root)
+        path_roles = _diagnostic_path_roles(binary, config, candidate_root, codex_entry,
+                                           codex_root, root)
         if scenario == "batch":
             trace.record_preflight("token_identity", token_identity_state)
+            setup_stage("verify_api")
             try:
                 socket_path = Path(config["socket"]).resolve(strict=True)
                 if not stat.S_ISSOCK(socket_path.stat().st_mode):
                     raise RuntimeError("unavailable")
                 trace.record_preflight("api_socket", "available")
+            except FileNotFoundError as exc:
+                trace.record_preflight("api_socket", "unavailable")
+                trace.record_setup_failure(type(exc).__name__,
+                    classify_setup_filename(exc.filename, path_roles))
+                raise RuntimeError("native batch API socket preflight failed") from None
             except (OSError, KeyError, TypeError):
                 trace.record_preflight("api_socket", "unavailable")
                 raise RuntimeError("native batch API socket preflight failed") from None
@@ -187,15 +246,26 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 if not isinstance(version, dict):
                     raise RuntimeError("unavailable")
                 trace.record_preflight("api_version", "authenticated")
+            except FileNotFoundError as exc:
+                trace.record_preflight("api_version", "unavailable")
+                trace.record_setup_failure(type(exc).__name__,
+                    classify_setup_filename(exc.filename, path_roles))
+                raise RuntimeError("native batch API identity preflight failed") from None
             except Exception:
                 trace.record_preflight("api_version", "unavailable")
                 raise RuntimeError("native batch API identity preflight failed") from None
+            setup_done()
+    setup_stage("create_actor_workspace")
     actor_root = root / "workspace"
     actor_root.mkdir(mode=0o700)
+    setup_done()
     if scenario == "batch":
+        setup_stage("copy_coordination")
         shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
                         actor_root / "coordination.py")
         (actor_root / "coordination.py").chmod(0o600)
+        setup_done()
+    setup_stage("configure_profile")
     profile = actor_root / ".codex"
     profile.mkdir(mode=0o700)
     if sandbox_auth_file is None:
@@ -226,6 +296,8 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     if scenario == "batch":
         native_config.update(compact_inbox_version=1, notice_batch_version=1)
     engine_root = profile / "coordination"
+    if scenario == "batch":
+        setup_stage("install_hooks")
     installed = installer.install(engine_root, settings, native_config)
     # The frozen check and fixture are outside the workspace. Only the actor
     # task and its private Codex profile are staged inside it.
@@ -233,6 +305,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     if scenario == "batch":
         expected_workspace_files.add("coordination.py")
     assert {path.name for path in actor_root.iterdir()} == expected_workspace_files
+    setup_done()
 
     state_dir = engine_root / "state/codex-full-inbox"
     metadata_path = profile / "hook-metadata.jsonl"
@@ -284,6 +357,8 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         batch_action = "await_" + action
         return _exec_tool(call_id, shlex.join(command))
 
+    if scenario == "batch":
+        setup_stage("build_sandbox_launcher")
     helper_spec = importlib.util.spec_from_file_location(
         "trial_codex_app_server_sandbox",
         Path(__file__).with_name("trial_codex_app_server_sandbox.py"))
@@ -307,6 +382,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     helper.write_launcher(launcher, workspace=actor_root, profile=profile,
                           codex_entry=codex_entry, selected_auth=auth_fixture,
                           codex_root=codex_root, extra_binds=binds)
+    setup_done()
 
     metadata_wrapper = profile / "record_codex_hook_metadata.py"
     shutil.copyfile(Path(__file__).with_name("record_codex_hook_metadata.py"), metadata_wrapper)
@@ -573,6 +649,8 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             self.end_headers()
             self.wfile.write(body)
 
+    if scenario == "batch":
+        setup_stage("configure_responses")
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -583,11 +661,14 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         'wire_api = "responses"\nrequires_openai_auth = false\n'
         'request_max_retries = 0\nstream_max_retries = 0\n', encoding="utf-8")
     (profile / "config.toml").chmod(0o600)
+    setup_done()
 
     def verify(rpc):
         nonlocal native_id, actor_turn_id, actor_turn_started, notice, source, delivery_id
         nonlocal actor_terminal_class
         nonlocal attempt_id, native_turn_id, timeout_evidence
+        if scenario == "batch":
+            setup_stage("registration_turn")
         started = rpc("thread/start", dict(cwd=str(actor_root), model=MODEL,
             approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
         native_id = started["thread"]["id"]
@@ -606,16 +687,21 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             if notification.get("method") == "turn/completed" and current == registration_id:
                 registration_completed = True
         assert registration_completed, "native session registration turn did not complete"
+        setup_done()
 
         # turn/completed can arrive before Codex's Stop command hook exits.
         # Do not tear down app-server or inspect the agent list until the
         # wrapper has recorded that hook's completion.
+        if scenario == "batch":
+            setup_stage("registration_hook_wait")
         _wait_for_registration_hook(stop_complete_path, registration_id, timeout=turn_timeout)
+        setup_done()
 
         agents = api_call("bob", "agents", "list", "--harness", "codex")["agents"]
         target = next(row for row in agents if row["native_session_id"] == native_id)
         assert target["metadata"]["state"] == "idle", "fixture notice must be published between turns"
         if scenario == "batch":
+            setup_stage("publish_notices")
             for body in BATCH_BODIES:
                 created = api_call("alice", "create", raw=True, body=json.dumps(dict(
                     request_id=str(uuid.uuid4()), draft=dict(kind="note", body=body,
@@ -633,6 +719,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 batch_notices.append(dict(event_id=event["event_id"], ref=ref,
                                           delivery_id=pending["delivery_id"]))
             notice, source, delivery_id = batch_notices[0], batch_sources[0], batch_notices[0]["delivery_id"]
+            setup_done()
         else:
             created = api_call("alice", "create", raw=True, body=json.dumps(dict(
                 request_id=str(uuid.uuid4()), draft=dict(kind="note", body=notice_body,
@@ -648,11 +735,16 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             assert pending["state"] == "pending" and pending["attempts"] == 0
             delivery_id = pending["delivery_id"]
 
+        if scenario == "batch":
+            setup_stage("actor_turn_start")
         actor_turn_started = True
+        if scenario == "batch":
+            trace.record_setup_complete()
         task_text = actor_task_path.read_text(encoding="utf-8").strip()
         turn = rpc("turn/start", dict(threadId=native_id,
             input=[dict(type="text", text=task_text, text_elements=[])]))
         turn_id = turn["turn"]["id"]
+        setup_done()
         actor_turn_id = turn_id
         observed_turn_ids.add(turn_id)
         active_deadline = rpc.arm_turn_deadline(native_id, turn_id, turn_timeout)
@@ -737,8 +829,13 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     def delivery_id_local_for(event):
         return api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
 
+    if scenario == "batch":
+        setup_stage("start_actor_server")
     thread.start()
+    setup_done()
     try:
+        if scenario == "batch":
+            setup_stage("register_hooks")
         installer.trust_codex_hooks(profile, settings, command, verify=verify,
                                     codex_binary=str(launcher), expected=6)
         assert not failures, failures
@@ -804,6 +901,12 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         if trace is not None:
             if scenario == "batch":
                 exception_type = sys.exc_info()[0]
+                exception = sys.exc_info()[1]
+                if (exception is not None and not trace.setup_finished
+                        and not trace.setup_failure_recorded):
+                    filename = exception.filename if isinstance(exception, FileNotFoundError) else None
+                    role = classify_setup_filename(filename, path_roles)
+                    trace.record_setup_failure(type(exception).__name__, role)
                 trace.record_fixture_failure(
                     exception_type.__name__ if exception_type is not None else None)
                 try:
@@ -835,4 +938,42 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                         trace.record_store_slot(slot + 1, status_class="unavailable",
                             observed=False)
                 trace.record_actor_terminal(actor_terminal_class)
+            trace.close()
+
+
+def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
+          turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
+          scenario="single", diagnostic_output=None, api_role="bob"):
+    """Prepare the private batch trace before running any fixture setup."""
+    if scenario != "batch" or diagnostic_output is None:
+        return _check_impl(binary, root, config, api_call, candidate_root,
+                           sandbox_auth_file, turn_timeout, codex_entry, codex_root,
+                           mode, scenario, diagnostic_output, api_role)
+    from native_notice_batch_diagnostics import (
+        AdvanceDiagnosticWriter,
+        classify_setup_filename,
+    )
+    root_path = Path(root).resolve()
+    root_path.mkdir(mode=0o700, parents=True, exist_ok=False)
+    trace = AdvanceDiagnosticWriter(diagnostic_output, root_path)
+    trace.record_setup_stage("create_trace_directory", "complete")
+    trace.record_setup_stage("check_entry", "start")
+    path_roles = _diagnostic_path_roles(binary, config, candidate_root, codex_entry,
+                                        codex_root, root_path)
+    try:
+        return _check_impl(binary, root_path, config, api_call, candidate_root,
+                           sandbox_auth_file, turn_timeout, codex_entry, codex_root,
+                           mode, scenario, diagnostic_output, api_role,
+                           preopened_trace=trace)
+    except BaseException as exc:
+        if (not trace.stream.closed and not trace.setup_finished
+                and not trace.setup_failure_recorded):
+            filename = exc.filename if isinstance(exc, FileNotFoundError) else None
+            trace.record_setup_failure(type(exc).__name__,
+                classify_setup_filename(filename, path_roles))
+        if not trace.stream.closed:
+            trace.close()
+        raise
+    finally:
+        if not trace.stream.closed:
             trace.close()

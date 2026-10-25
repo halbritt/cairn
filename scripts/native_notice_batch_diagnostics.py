@@ -58,6 +58,56 @@ _FIXTURE_FAILURE_CLASSES = {
     "AssertionError", "FileNotFoundError", "KeyError", "OSError", "RuntimeError",
     "StopIteration", "TimeoutError", "TypeError", "ValueError",
 }
+_SETUP_STAGES = {
+    "check_entry", "validate_codex_paths", "validate_candidate_paths",
+    "verify_test_database", "verify_token_identity", "load_actor_task",
+    "verify_api", "create_trace_directory",
+    "create_actor_workspace", "copy_coordination", "configure_profile",
+    "install_hooks", "build_sandbox_launcher", "configure_responses",
+    "start_actor_server", "register_hooks", "registration_turn",
+    "registration_hook_wait", "publish_notices", "actor_turn_start",
+}
+_SETUP_FAILURE_CLASSES = _FIXTURE_FAILURE_CLASSES | {"ImportError", "ModuleNotFoundError"}
+_FILENAME_ROLES = {
+    "selected_codex", "codex_entry", "codex_package", "candidate_root",
+    "cairn_binary", "api_socket", "token_file", "identity_file",
+    "fixture_source", "coordination_source", "hook_metadata_wrapper",
+    "actor_workspace", "profile_settings", "launcher", "shared_parent",
+    "ambiguous", "unknown",
+}
+
+
+def classify_setup_filename(filename, role_paths):
+    """Match an exception filename to caller-supplied roles without returning it."""
+    if not isinstance(filename, (str, bytes, os.PathLike)) or not isinstance(role_paths, dict):
+        return "unknown"
+    try:
+        observed = os.path.normcase(os.path.abspath(os.fsdecode(filename)))
+    except (OSError, TypeError, ValueError):
+        return "unknown"
+    exact, descendants = [], []
+    for role, candidate in role_paths.items():
+        if not isinstance(role, str) or role not in _FILENAME_ROLES - {"unknown"}:
+            continue
+        if not isinstance(candidate, (str, bytes, os.PathLike)):
+            continue
+        try:
+            expected = os.path.normcase(os.path.abspath(os.fsdecode(candidate)))
+        except (OSError, TypeError, ValueError):
+            continue
+        if observed == expected:
+            exact.append(role)
+        elif Path(expected).is_relative_to(Path(observed)):
+            descendants.append(role)
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return "ambiguous"
+    if len(descendants) == 1:
+        return descendants[0]
+    if len(descendants) > 1:
+        return "shared_parent"
+    return "unknown"
 
 
 def advance_tool_result_stage(tool_result):
@@ -177,6 +227,30 @@ class AdvanceDiagnosticWriter:
         fd = os.open(self.path, flags, 0o600)
         os.fchmod(fd, 0o600)
         self.stream = os.fdopen(fd, "w", encoding="utf-8")
+        self.setup_stage = "check_entry"
+        self.setup_finished = False
+        self.setup_failure_recorded = False
+
+    def record_setup_stage(self, stage, phase):
+        """Persist one allowlisted pre-actor setup boundary."""
+        safe_stage = stage if isinstance(stage, str) and stage in _SETUP_STAGES else "check_entry"
+        safe_phase = phase if phase in {"start", "complete"} else "start"
+        self.setup_stage = safe_stage
+        self._write({"operation": "setup_stage", "stage": safe_stage, "phase": safe_phase})
+
+    def record_setup_failure(self, exception_class, filename_role="unknown"):
+        """Persist a fixed setup failure class and sanitized filename role."""
+        safe_class = (exception_class if isinstance(exception_class, str)
+                      and exception_class in _SETUP_FAILURE_CLASSES else "other")
+        safe_role = (filename_role if isinstance(filename_role, str)
+                     and filename_role in _FILENAME_ROLES else "unknown")
+        self._write({"operation": "setup_failure", "stage": self.setup_stage,
+                     "exception_class": safe_class, "filename_role": safe_role})
+        self.setup_failure_recorded = True
+
+    def record_setup_complete(self):
+        self.setup_finished = True
+        self._write({"operation": "setup_complete"})
 
     def record_advance(self, response, returncode):
         response = response if isinstance(response, dict) else {}

@@ -74,6 +74,34 @@ class FullInboxFixtureTests(unittest.TestCase):
             fixture.check("/bin/false", "/tmp/not-created", {}, lambda *_args, **_kwargs: None,
                           scenario="batch")
 
+    def test_batch_trace_precedes_codex_path_setup_and_classifies_missing_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "actor-root"
+            private = base / "private"
+            private.mkdir(mode=0o700)
+            trace_path = private / "actor.jsonl"
+            absent_codex = base / "secret" / "codex"
+            with self.assertRaises(FileNotFoundError):
+                fixture.check(str(absent_codex), root, {"cairn": "/missing/cairn"},
+                    lambda *_args, **_kwargs: None, candidate_root=base,
+                    codex_entry="/missing/entry.js", codex_root="/missing/package",
+                    scenario="batch", diagnostic_output=trace_path)
+            rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
+            text = trace_path.read_text()
+            trace_mode = trace_path.stat().st_mode & 0o777
+        self.assertEqual(rows[0], {"operation": "setup_stage",
+            "stage": "create_trace_directory", "phase": "complete"})
+        self.assertEqual(rows[1], {"operation": "setup_stage",
+            "stage": "check_entry", "phase": "start"})
+        self.assertEqual(rows[-2], {"operation": "setup_stage",
+            "stage": "validate_codex_paths", "phase": "start"})
+        self.assertEqual(rows[-1], {"operation": "setup_failure",
+            "stage": "validate_codex_paths", "exception_class": "FileNotFoundError",
+            "filename_role": "selected_codex"})
+        self.assertNotIn(str(absent_codex), text)
+        self.assertEqual(trace_mode, 0o600)
+
     def test_fixture_exposes_only_actor_visible_fields(self):
         # The stream is line-oriented SSE; inspect its final response.completed record.
         records = [line[6:] for line in fixture.response_stream("resp-fixture", dict(
