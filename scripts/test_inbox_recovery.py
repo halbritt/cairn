@@ -299,6 +299,38 @@ class InboxRecovery(unittest.TestCase):
                         other_process.terminate()
                         other_process.wait(timeout=5)
 
+    def test_compact_handle_rejects_rebound_context_before_api_access(self):
+        context, _ = self.compact_context('notice', 'Exact source is bound to this delivery.')
+        context_path = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        original = json.loads(context_path.read_text())
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root))
+        source = dict(original['source'], record_id='0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617')
+        mutations = (
+            ('attempt_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'STALE_SESSION'),
+            ('agent_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'STALE_SESSION'),
+            ('execution_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'STALE_SESSION'),
+            ('delivery_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'INVALID_HOST'),
+            ('lease_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'INVALID_HOST'),
+            ('event_id', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617', 'INVALID_HOST'),
+            ('source', source, 'INVALID_HOST'),
+            ('kind', 'response', 'INVALID_HOST'),
+            ('sender', 'agent/another-sender', 'INVALID_HOST'),
+            ('native_turn_id', 'another-native-turn', 'INVALID_HOST'),
+        )
+        for field, value, expected in mutations:
+            for operation in ('read', 'settle'):
+                with self.subTest(field=field, operation=operation):
+                    coordination.write_state(context_path, dict(original, **{field: value}))
+                    command = [sys.executable, str(SCRIPT), 'inbox', 'compact', operation,
+                               context['compact_handle']]
+                    if operation == 'settle':
+                        command.append('handled')
+                    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(json.loads(result.stdout)['status'], expected)
+                    self.assertEqual(self.log(), [], 'rebound context must be rejected before Store access')
+                    coordination.write_state(context_path, original)
+
     def test_oversized_compact_source_requires_read_and_failed_settlement_is_idempotent(self):
         body = 'Important qualification. ' * 250
         context, rendered = self.compact_context('notice', body, disposition='failed')
