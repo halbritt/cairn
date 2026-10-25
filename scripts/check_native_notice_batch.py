@@ -71,6 +71,28 @@ def compact(script, root, env, native_session_id, operation, handle, disposition
     require(len(result.stdout) < 100_000 and len(result.stderr) < 100_000,
             "compact response too large")
     response = json.loads(result.stdout)
+    if operation == "advance":
+        # Keep the response contract observable even when a later fixture
+        # assertion fails. Never retain handles, source text, IDs, or stderr.
+        report_path = root / "advance-shape.json"
+        report = json.loads(report_path.read_text()) if report_path.exists() else {
+            "schema": "cairn.native-notice-batch-advance-shape/1",
+            "responses": []}
+        report["responses"].append({
+            "keys": sorted(response) if isinstance(response, dict) else [],
+            "schema": response.get("schema") if isinstance(response, dict) else None,
+            "ok": response.get("ok") if isinstance(response, dict) else None,
+            "status": response.get("status") if isinstance(response, dict) else None,
+            "next_type": ("null" if response.get("next") is None else
+                          "string" if isinstance(response.get("next"), str) else
+                          type(response.get("next")).__name__)
+                          if isinstance(response, dict) and "next" in response else "absent",
+            "remainder": response.get("remainder") if isinstance(response, dict) else None,
+            "batch_index": response.get("batch_index") if isinstance(response, dict) else None,
+            "batch_limit": response.get("batch_limit") if isinstance(response, dict) else None,
+            "returncode": result.returncode,
+        })
+        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     require(result.returncode == 0 and response.get("ok") is True,
             f"compact {operation}: {response.get('status')}: {response.get('message')}")
     return response
