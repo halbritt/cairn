@@ -1224,7 +1224,8 @@ def execution_failure(trace, code):
     return None
 
 
-def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None):
+def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None,
+                    include_home_go=True):
     """Mount system runtimes, not the host root or its application/service data.
 
     Network isolation is selected by the caller. Provider processes still need
@@ -1247,7 +1248,7 @@ def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None
         elif path.exists():
             command += ["--ro-bind", name, name]
     go = home / ".local/go"
-    if go.exists() and common_runtime is None:
+    if include_home_go and go.exists() and common_runtime is None:
         command += ["--ro-bind", str(go.resolve()), str(go)]
     if common_runtime is not None:
         from trial_task_runtime import runtime_mounts
@@ -1318,10 +1319,13 @@ def cmd_writer_preflight(args):
     return 0
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None, common_runtime=None, runtime_identity=None, credentials_readonly=None):
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *,
+                    native_executable=None, common_runtime=None, runtime_identity=None,
+                    credentials_readonly=None, include_home_go=True):
     """Add the chosen provider and owned trial paths to the runtime filesystem."""
     home = Path.home()
-    command = runtime_sandbox(common_runtime=common_runtime, runtime_identity=runtime_identity, writable=root)
+    command = runtime_sandbox(common_runtime=common_runtime, runtime_identity=runtime_identity,
+                              writable=root, include_home_go=include_home_go)
     if harness == "claude":
         claude = home / ".local/bin/claude"
         credentials = home / ".claude/.credentials.json"

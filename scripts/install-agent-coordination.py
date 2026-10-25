@@ -110,11 +110,24 @@ def install(root, settings, config):
     return config_path
 
 
-def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=6):
+def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=6,
+                      timeout=None):
     """Use the installed native protocol to trust only the reviewed Cairn commands."""
     codex = codex_binary or shutil.which('codex')
     if not codex:
         raise RuntimeError('Codex is required to register its hook definitions')
+    if timeout is not None and (type(timeout) not in (int, float) or timeout <= 0):
+        raise ValueError('Codex hook deadline must be positive')
+    overall_deadline = None if timeout is None else time.monotonic() + timeout
+
+    def remaining(default=15):
+        if overall_deadline is None:
+            return default
+        left = overall_deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError('Codex hook trial exceeded its active deadline')
+        return min(default, left)
+
     messages = queue.Queue()
     notifications = queue.Queue()
     with tempfile.TemporaryDirectory(prefix='cairn-hook-review-') as cwd:
@@ -139,9 +152,17 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             sequence += 1
             process.stdin.write(json.dumps(dict(id=sequence, method=method, params=params)) + '\n')
             process.stdin.flush()
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + remaining()
             while True:
-                value = messages.get(timeout=max(0, deadline - time.monotonic()))
+                left = min(deadline - time.monotonic(), remaining())
+                if left <= 0:
+                    raise TimeoutError('Codex hook RPC timed out')
+                try:
+                    value = messages.get(timeout=left)
+                except queue.Empty as exc:
+                    if overall_deadline is not None and time.monotonic() >= overall_deadline:
+                        raise TimeoutError('Codex hook trial exceeded its active deadline') from exc
+                    raise TimeoutError('Codex hook RPC timed out') from exc
                 if 'transport_error' in value:
                     raise RuntimeError(value['transport_error'])
                 if value.get('id') != sequence:
@@ -149,7 +170,14 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
                 if 'error' in value:
                     raise RuntimeError(f"Codex {method} refused: {value['error']}")
                 return value['result']
-        rpc.next_notification = lambda timeout=15: notifications.get(timeout=timeout)
+        def next_notification(timeout=15):
+            try:
+                return notifications.get(timeout=remaining(timeout))
+            except queue.Empty as exc:
+                if overall_deadline is not None and time.monotonic() >= overall_deadline:
+                    raise TimeoutError('Codex hook trial exceeded its active deadline') from exc
+                raise
+        rpc.next_notification = next_notification
         try:
             rpc('initialize', dict(clientInfo=dict(name='cairn-hook-installer', version='1'), capabilities=dict(experimentalApi=True)))
             process.stdin.write(json.dumps(dict(method='initialized')) + '\n')
@@ -168,14 +196,32 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             if len(selected) != expected or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
                 raise RuntimeError(f'Codex did not confirm the {expected} reviewed Cairn hooks are enabled')
             if verify is not None:
-                verify(rpc)
+                if overall_deadline is None:
+                    verify(rpc)
+                else:
+                    completed = threading.Event()
+                    result = []
+                    def verify_thread():
+                        try:
+                            verify(rpc)
+                        except BaseException as error:
+                            result.append(error)
+                        finally:
+                            completed.set()
+                    worker = threading.Thread(target=verify_thread, daemon=True)
+                    worker.start()
+                    if not completed.wait(remaining()):
+                        raise TimeoutError('Codex hook trial exceeded its active deadline')
+                    if result:
+                        raise result[0]
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
             reader.join(timeout=1)
 
 
