@@ -1,0 +1,52 @@
+{
+  "schema": "cairn.ordinary-recall-pair/1",
+  "frozen_at": "2026-10-25",
+  "purpose": "Provider-free ordinary Codex hook presentation fixture for CAIRN-219; no inference or provider usage.",
+  "model_request": {
+    "requested_model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "route": "local loopback Responses fixture only",
+    "task": "What is the retry policy for settlement writes? State the required precondition and what to do after an ambiguous transport result.",
+    "source": {
+      "record_id": "00000000-0000-4000-8000-000000000219",
+      "version": 7,
+      "kind": "note",
+      "class": "A",
+      "body": "Current settlement-write policy: Do not automatically retry after an ambiguous transport result. Inspect the operation status first. A retry is permitted only when the caller reuses the same stable request ID and submits the identical payload. Read operations may use up to two retries. This exception for reads does not apply to settlement writes.",
+      "extent": "whole source body; no excerpt or span"
+    }
+  },
+  "answer_rubric": {
+    "schema": "cairn.answer-rubric/1",
+    "required_facts": [
+      "Do not automatically retry a settlement write after an ambiguous transport result.",
+      "Inspect operation status first.",
+      "A permitted retry must reuse the same stable request ID and identical payload."
+    ],
+    "forbidden_error": "Apply the two-retry read policy to settlement writes.",
+    "grading": "Independent binary grade per required fact; accepted only if all three facts are correct and the forbidden error is absent."
+  },
+  "arms": ["full", "compact/1"],
+  "presentation_invariants": [
+    "same task text in both arms",
+    "same source ID and version in both arms",
+    "same complete source body and SHA-256 in both arms",
+    "same whole-source extent in both arms",
+    "no provider-backed inference in the fixture"
+  ],
+  "pilot_limits_proposal": {
+    "admission_status": "blocked_on_subscription_auth_isolation",
+    "blocking_reason": "The existing authenticated ~/.codex home is readable to the Codex process and may be reachable from model-facing shell/CodeMode tools. --ignore-user-config does not suppress hooks.json, and read-only sandbox mode does not prevent reads. No trusted app-server host currently keeps subscription auth outside a model-facing executor for this pilot.",
+    "resume_gate": "Use a trusted app-server host that holds subscription auth outside the model-facing executor, or prove an auth-correct isolated setup with hooks absent and shell/CodeMode disabled or strictly allowlisted. Do not copy raw auth into a model-readable home or sandbox.",
+    "account_home": "~/.codex",
+    "turns": 2,
+    "max_wall_seconds_per_turn": 180,
+    "stop_before_next_turn_at_primary_used_percent": 80,
+    "observed_usage_ceiling_per_turn": 125000,
+    "observed_usage_ceiling_total": 250000,
+    "hard_provider_token_cap": null,
+    "post_turn_overrun_risk": "Usage is observed after a completed response; the provider exposes no hard per-request cap, so an in-flight turn can exceed its telemetry ceiling before it is measured.",
+    "usage_join": "Deduplicate native usage by provider response ID. Keep missing response usage null. Report whole-turn aggregate separately if native per-response usage is unavailable.",
+    "route": "Codex ChatGPT subscription only; gpt-6-luna; medium reasoning; no API-key or OpenRouter fallback"
+  }
+}
