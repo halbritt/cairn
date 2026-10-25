@@ -339,9 +339,54 @@ read-only fresh-DB counts are `agent_session=0`, `agent_event=0`, and
 The fixture's installed Stop handler is synchronous: its generated command
 entry omits `async`, and pinned Codex 0.164.0 defaults that field to `false`
 and awaits synchronous Stop handlers before emitting turn completion. This run
-observed no wrapper entry despite matching `turn/completed`, pointing to a
-hook discovery, dispatch, configuration, or process-launch boundary. The exact
-cause remains unknown: no retained app-server hook log or runtime hook listing
-shows whether Codex discovered this handler or attempted to launch it. No hook
-invocation failure, batch continuation, or accepted task outcome is inferred.
-No further actor attempt was made; CAIRN-221 remains In Progress.
+observed no wrapper entry despite matching `turn/completed`. A separate
+provider-free, no-turn app-server probe below confirms the same fixture profile
+loads the trusted Stop handler at the actor workspace CWD. The actor run
+therefore narrows to a dispatch or command-launch/entry boundary; the exact
+cause remains unknown because its app-server log and runtime hook listing were
+not retained. No hook invocation failure, batch continuation, or accepted task
+outcome is inferred. No further actor attempt was made; CAIRN-221 remains In
+Progress.
+
+## Provider-free Stop registry probe
+
+A separate no-turn probe recreated the isolated fixture profile, including the
+empty synthetic auth file, loopback-only Responses endpoint configuration,
+`hooks.json` wrapper command, and `trust_codex_hooks` registration step. It
+then queried pinned Codex 0.164.0 `hooks/list` with the actor workspace as CWD
+inside `bwrap --unshare-net`. The response contained six fixture hooks and one
+Stop entry from the expected settings file with the exact wrapper command. The
+Stop entry was enabled, trusted, and synchronous (`async=false`); app-server
+reported zero discovery errors or warnings. There was no actor turn, Store
+mutation, or loopback request. The private mode-0600 summary is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/hook-discovery-summary-20261025.json`.
+
+This establishes registry discovery and configuration for the recreated
+profile at the actor CWD. It does not show whether the failed actor turn
+dispatched the handler or launched the wrapper. That runtime boundary remains
+unresolved; no actor rerun followed. CAIRN-221 remains In Progress.
+
+### Pinned turn-stop path and fixture response
+
+The fixture's registration response is a completed assistant message containing
+one `output_text` item and no `custom_tool_call` (`scripts/check_codex_full_inbox_native.py`,
+`response_stream` and the `msg_initial` branch). Pinned Codex 0.164.0
+`core/src/stream_events_utils.rs` routes a non-tool message through the
+`Ok(None)` branch and does not set `needs_follow_up`; its tool-call branch is
+the one that sets the flag. In pinned Codex, when `needs_follow_up` is false,
+`core/src/session/turn.rs` awaits
+`run_turn_stop_hooks` before the turn ends (around line 724). The only early
+return in `core/src/hook_runtime.rs`'s target selection for this case is an
+internal synthetic subagent; root turns select `Stop` (around lines 399-445).
+`hooks/src/events/stop.rs` selects handlers for Stop with no matcher input, and
+`hooks/src/engine/dispatcher.rs` does not apply a matcher condition to Stop.
+With the probed synchronous handler, dispatcher execution awaits the command
+(`dispatcher.rs`, around lines 117-151), and the task emits `TurnComplete`
+after turn-stop lifecycle handling (`core/src/tasks/mod.rs`, around line 865).
+
+The fixture creates a root thread with `thread/start`; it is not an internal
+subagent. The inspected path contains no condition that excludes the configured
+Stop handler because the assistant response used no native tool call. Source
+therefore provides no explanation for the absent wrapper entry. Registry
+discovery is confirmed, but dispatch, process launch, or wrapper entry during
+the failed actor turn remains unknown. No actor rerun followed.
