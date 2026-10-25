@@ -6,6 +6,7 @@ usage to Cairn. Evidence is an explicitly selected local metadata export.
 """
 import argparse
 import collections
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -80,7 +81,64 @@ def read_evidence(path, max_observations):
     return observations
 
 
-def compile_report(workflow_report, observations):
+def read_recovery_actions(path, max_actions=10000):
+    """Read a selected ReviewEvents recovery-transition projection.
+
+    This records only the two Store-instrumented endpoint actions. It does not
+    treat an action as a final task outcome or as evidence of model usage.
+    """
+    if path is None:
+        return []
+    source = json.loads(path.read_text())
+    if (source.get("schema") != "cairn.recovery-action-evidence/1" or
+            not isinstance(source.get("actions"), list)):
+        raise ValueError("unsupported recovery action evidence schema")
+    if len(source["actions"]) > max_actions:
+        raise ValueError("recovery action evidence exceeds max-actions")
+    actions, seen = [], set()
+    for item in source["actions"]:
+        if not isinstance(item, dict):
+            raise ValueError("invalid recovery action")
+        event = opaque(event_uuid(item.get("event_id")))
+        delivery = opaque(event_uuid(item.get("delivery_id")))
+        related = item.get("related_event_id")
+        related = opaque(event_uuid(related)) if related else None
+        raw_attempt = item.get("attempt_id")
+        attempt = attempt_ref(raw_attempt)
+        revision = item.get("revision")
+        action, outcome = item.get("action"), item.get("outcome")
+        before, after, observed = item.get("state_before"), item.get("state_after"), item.get("observed_at")
+        expected = {"native_hold_release": "hold_released", "event_reissue": "reissue_created"}
+        if (raw_attempt is not None and attempt is None or type(revision) is not int or revision < 1 or
+                action not in expected or expected[action] != outcome or
+                before not in ("pending", "leased", "failed", "handled", "ignored") or
+                after not in ("pending", "leased", "failed", "handled", "ignored") or
+                (action == "native_hold_release" and (attempt is None or related is not None)) or
+                (action == "event_reissue" and (attempt is not None or related is None)) or
+                not isinstance(observed, str)):
+            raise ValueError("invalid Store-observed recovery action")
+        try:
+            datetime.fromisoformat(observed.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid recovery action observation time") from exc
+        key = (event, delivery, revision)
+        if key in seen:
+            raise ValueError("duplicate recovery action identity")
+        seen.add(key)
+        request = opaque(event_uuid(item.get("request_id")))
+        actor = item.get("actor")
+        if not isinstance(actor, str) or not actor or len(actor) > 256:
+            raise ValueError("recovery action actor is required")
+        actions.append(dict(event=event, delivery=delivery, attempt=attempt,
+                            related_event=related, revision=revision,
+                            request=request, actor=opaque(actor), action=action,
+                            outcome=outcome, state_before=before, state_after=after,
+                            observed_at=datetime.fromisoformat(observed.replace("Z", "+00:00"))
+                            .isoformat().replace("+00:00", "Z")))
+    return actions
+
+
+def compile_report(workflow_report, observations, recovery_actions=None):
     if workflow_report.get("schema") != "cairn.workflow-model-report/1":
         raise ValueError("unsupported workflow report schema")
     events = {}
@@ -168,14 +226,35 @@ def compile_report(workflow_report, observations):
         summary["model_work_classes"] = dict(summary["model_work_classes"])
         summary["operator_actions"] = dict(summary["operator_actions"])
         summary["recovery_states"] = dict(summary["recovery_states"])
-    return dict(schema="cairn.recovery-model-report/2", coverage=dict(coverage),
+    action_rows = []
+    action_coverage = collections.Counter()
+    for action in recovery_actions or []:
+        workflow = events.get(action["event"])
+        candidates = ([row for row in workflow["deliveries"] if row["delivery"] == action["delivery"]]
+                      if workflow else [])
+        matches = [row for row in candidates if action["attempt"] is not None
+                   and row.get("attempt") == action["attempt"]]
+        if len(matches) > 1:
+            raise ValueError("ambiguous recovery action delivery and attempt identity")
+        attempt_join = ("not_applicable" if action["attempt"] is None else
+                        "matched" if matches else "mismatch" if candidates else "missing")
+        row = dict(action=action, workflow_present=workflow is not None,
+                   delivery_join="matched" if candidates else "missing",
+                   attempt_join=attempt_join)
+        action_rows.append(row)
+        action_coverage[row["delivery_join"]] += 1
+        action_coverage["attempt_" + attempt_join] += 1
+    return dict(schema="cairn.recovery-model-report/3", coverage=dict(coverage),
                 phases=dict(sorted(by_phase.items())),
+                recovery_action_coverage=dict(action_coverage),
+                recovery_actions=action_rows,
                 repeated_emitted_reminder_revisions=sum(n - 1 for n in reminder_keys.values() if n > 1),
                 observations=rows,
                 limitations=["Selected classifications do not prove an unobserved model turn was free.",
                              "Provider response counts belong to whole native turns, not marginal recovery cost.",
                              "A delivery join without the same exact attempt cannot attribute model work.",
                              "A repeated reminder revision is a diagnostic; it does not prove duplicate model ingestion.",
+                             "Store recovery actions describe committed endpoint mutations, not accepted outcomes or provider usage.",
                              "Unselected failure paths, operator actions and relay outcomes remain unknown."])
 
 
@@ -183,13 +262,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workflow-report", type=Path, required=True)
     parser.add_argument("--recovery-evidence", type=Path, required=True)
+    parser.add_argument("--recovery-actions", type=Path,
+                        help="optional private projection of Store ReviewEvents recovery_transitions")
     parser.add_argument("--max-observations", type=int, default=10000)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.max_observations < 1:
         parser.error("max-observations must be positive")
     report = compile_report(json.loads(args.workflow_report.read_text()),
-                            read_evidence(args.recovery_evidence, args.max_observations))
+                            read_evidence(args.recovery_evidence, args.max_observations),
+                            read_recovery_actions(args.recovery_actions, args.max_observations))
     descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         json.dump(report, stream, indent=2)

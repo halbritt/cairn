@@ -51,6 +51,39 @@ class RecoveryModelReportTests(unittest.TestCase):
         self.assertNotIn(DELIVERY_ONE, json.dumps(result))
         self.assertNotIn(ATTEMPT, json.dumps(result))
 
+    def test_store_recovery_actions_join_exact_delivery_and_attempt_without_claiming_outcome(self):
+        path = self.root / "actions.json"
+        path.write_text(json.dumps(dict(schema="cairn.recovery-action-evidence/1", actions=[
+            dict(event_id=EVENT, delivery_id=DELIVERY_ONE, attempt_id=ATTEMPT,
+                 related_event_id=None, revision=1, request_id="55555555-5555-4555-8555-555555555555",
+                 actor="operator:local", action="native_hold_release", outcome="hold_released",
+                 state_before="leased", state_after="failed", observed_at="2026-10-25T10:00:00Z"),
+            dict(event_id=EVENT, delivery_id=DELIVERY_TWO, attempt_id=None,
+                 related_event_id="66666666-6666-4666-8666-666666666666", revision=1,
+                 request_id="77777777-7777-4777-8777-777777777777", actor="operator:local",
+                 action="event_reissue", outcome="reissue_created", state_before="failed",
+                 state_after="failed", observed_at="2026-10-25T10:01:00Z")])))
+        actions = recovery.read_recovery_actions(path)
+        result = recovery.compile_report(self.workflow(), self.evidence([]), actions)
+        self.assertEqual(result["recovery_action_coverage"],
+                         {"matched": 2, "attempt_matched": 1, "attempt_not_applicable": 1})
+        self.assertEqual(result["recovery_actions"][0]["action"]["outcome"], "hold_released")
+        self.assertNotIn("task_outcome", result["recovery_actions"][0]["action"])
+        self.assertNotIn("operator:local", json.dumps(result))
+        actions[0]["attempt"] = opaque(DELIVERY_TWO)
+        result = recovery.compile_report(self.workflow(), self.evidence([]), actions)
+        self.assertEqual(result["recovery_actions"][0]["attempt_join"], "mismatch")
+
+    def test_store_recovery_action_schema_rejects_unobserved_final_outcome(self):
+        path = self.root / "actions.json"
+        path.write_text(json.dumps(dict(schema="cairn.recovery-action-evidence/1", actions=[
+            dict(event_id=EVENT, delivery_id=DELIVERY_ONE, attempt_id=ATTEMPT,
+                 revision=1, request_id=EVENT, actor="operator:local",
+                 action="native_hold_release", outcome="accepted", state_before="leased",
+                 state_after="handled", observed_at="2026-10-25T10:00:00Z")])))
+        with self.assertRaisesRegex(ValueError, "Store-observed"):
+            recovery.read_recovery_actions(path)
+
     def test_pre_model_refusal_stays_unknown_without_a_matched_delivery(self):
         item = self.observation()
         item.update(phase="before_admission", outcome="refused", delivery_id=None,

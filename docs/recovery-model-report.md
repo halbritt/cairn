@@ -2,7 +2,7 @@
 
 `scripts/recovery_model_report.py` joins a local
 `cairn.workflow-model-report/1` file with selected, payload-free recovery
-observations. The `cairn.recovery-model-report/2` result requires exact event,
+observations. The `cairn.recovery-model-report/3` result requires exact event,
 delivery **and attempt** identity to join a provider turn, and counts a joined
 turn once per phase even when multiple observations share it. Missing provider
 evidence remains unknown. The report does not infer a failure from a log substring,
@@ -26,6 +26,49 @@ python3 -B scripts/select_refused_recovery_evidence.py \
 
 The output directory must be private and the output file must not exist yet.
 Use a current-format workflow report with attempt references before joining.
+
+## Store-observed recovery actions
+
+The optional `--recovery-actions` input accepts a private
+`cairn.recovery-action-evidence/1` projection of `ReviewEvents` rows. Include
+only the selected `recovery_transitions` fields: `event_id`, `delivery_id`,
+`related_event_id`, `attempt_id`, `request_id`, `actor`, `action`, `outcome`,
+`state_before`, `state_after`, `revision`, and `observed_at`. The report
+validates action-specific identity (native hold release has its exact attempt;
+event reissue is delivery-scoped and has a related event), hashes all UUIDs and
+the actor, then joins to workflow event/delivery and attempt identities. Keep
+the input local and private. It does not verify a hand-built file's provenance;
+the projection must come from an authorized local operator `ReviewEvents` read.
+Flatten each selected transition with its containing delivery's `delivery_id`
+into this envelope, then pass it with `--recovery-actions`:
+
+```json
+{
+  "schema": "cairn.recovery-action-evidence/1",
+  "actions": [
+    {
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "delivery_id": "22222222-2222-4222-8222-222222222222",
+      "related_event_id": null,
+      "attempt_id": "33333333-3333-4333-8333-333333333333",
+      "request_id": "44444444-4444-4444-8444-444444444444",
+      "actor": "operator:local",
+      "action": "native_hold_release",
+      "outcome": "hold_released",
+      "state_before": "leased",
+      "state_after": "failed",
+      "revision": 1,
+      "observed_at": "2026-10-25T10:00:00Z"
+    }
+  ]
+}
+```
+
+These rows establish only committed Store endpoint mutations. A reissue's
+null attempt stays unjoined at the attempt level; the report never borrows an
+attempt from prior history. Recovery-action rows are reported separately from
+recipient model usage and accepted task outcomes. The two instrumented actions
+do not cover manual/off-band work or every delivery lifecycle transition.
 
 Prepare a private `cairn.recovery-evidence/1` JSON file from an authorized
 exact operation, attempt, and state observation. For example:
