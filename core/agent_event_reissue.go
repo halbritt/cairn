@@ -98,7 +98,6 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		if alreadyReissued {
 			return AgentEvent{}, failure("VERSION_CONFLICT", "delivery already reissued")
 		}
-
 		var currentSensitivity string
 		err = tx.QueryRow(ctx, `SELECT m.sensitivity FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL FOR SHARE OF m`, recordID, version, req.Repo).Scan(&currentSensitivity)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -151,7 +150,13 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		if err != nil {
 			return AgentEvent{}, err
 		}
-
+		if err = tx.QueryRow(ctx, `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1`, req.DeliveryID).Scan(&state); err != nil {
+			return AgentEvent{}, err
+		}
+		if err = recordRecoveryTransition(ctx, tx, s, req.DeliveryID, eventID, newEventID, nil, req.RequestID,
+			"event_reissue", "reissue_created", state, state); err != nil {
+			return AgentEvent{}, err
+		}
 		return s.readEvent(ctx, tx, newEventID, Destination{Name: "local", AllowLocal: true})
 	})
 }

@@ -43,27 +43,44 @@ type ReviewReissue struct {
 	Reason             string    `json:"reason"`
 }
 
+// RecoveryTransition is a Store-observed action, not a final workflow outcome.
+// Revision orders only the recovery actions currently instrumented by Cairn.
+type RecoveryTransition struct {
+	Revision       int64     `json:"revision"`
+	EventID        string    `json:"event_id"`
+	RelatedEventID string    `json:"related_event_id,omitempty"`
+	AttemptID      string    `json:"attempt_id,omitempty"`
+	RequestID      string    `json:"request_id"`
+	Actor          string    `json:"actor"`
+	Action         string    `json:"action"`
+	Outcome        string    `json:"outcome"`
+	StateBefore    string    `json:"state_before"`
+	StateAfter     string    `json:"state_after"`
+	ObservedAt     time.Time `json:"observed_at"`
+}
+
 type ReviewDelivery struct {
-	Control      *WorkControl      `json:"control,omitempty"`
-	ReissuedAs   *ReviewReissue    `json:"reissued_as,omitempty"`
-	ReissuedFrom *ReviewReissue    `json:"reissued_from,omitempty"`
-	Position     int64             `json:"position"`
-	DeliveryID   string            `json:"delivery_id"`
-	Consumer     string            `json:"consumer"`
-	State        string            `json:"state"`
-	Attempts     int               `json:"attempts"`
-	AvailableAt  time.Time         `json:"available_at"`
-	CompletedAt  *time.Time        `json:"completed_at,omitempty"`
-	Code         string            `json:"code,omitempty"`
-	Result       *RecordVersionRef `json:"result,omitempty"`
-	Late         bool              `json:"late,omitempty"`
-	Event        AgentEvent        `json:"event"`
-	Held         bool              `json:"held"`
-	Execution    string            `json:"execution"`
-	TaskOutcome  string            `json:"reported_task_outcome"`
-	Assessment   *Assessment       `json:"assessment,omitempty"`
-	LatestWake   *ReviewAttempt    `json:"latest_wake,omitempty"`
-	LatestNative *ReviewAttempt    `json:"latest_native,omitempty"`
+	Control             *WorkControl         `json:"control,omitempty"`
+	RecoveryTransitions []RecoveryTransition `json:"recovery_transitions"`
+	ReissuedAs          *ReviewReissue       `json:"reissued_as,omitempty"`
+	ReissuedFrom        *ReviewReissue       `json:"reissued_from,omitempty"`
+	Position            int64                `json:"position"`
+	DeliveryID          string               `json:"delivery_id"`
+	Consumer            string               `json:"consumer"`
+	State               string               `json:"state"`
+	Attempts            int                  `json:"attempts"`
+	AvailableAt         time.Time            `json:"available_at"`
+	CompletedAt         *time.Time           `json:"completed_at,omitempty"`
+	Code                string               `json:"code,omitempty"`
+	Result              *RecordVersionRef    `json:"result,omitempty"`
+	Late                bool                 `json:"late,omitempty"`
+	Event               AgentEvent           `json:"event"`
+	Held                bool                 `json:"held"`
+	Execution           string               `json:"execution"`
+	TaskOutcome         string               `json:"reported_task_outcome"`
+	Assessment          *Assessment          `json:"assessment,omitempty"`
+	LatestWake          *ReviewAttempt       `json:"latest_wake,omitempty"`
+	LatestNative        *ReviewAttempt       `json:"latest_native,omitempty"`
 	// Diagnosis is the store-computed stage plus any applicable host-reported
 	// observation, for every event kind. It is diagnostic, not authority.
 	Diagnosis *DeliveryDiagnosis `json:"diagnosis,omitempty"`
@@ -111,7 +128,8 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
   AND NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id)
  ) THEN 'never_launched' ELSE 'may_have_executed' END,
  w.detail,n.detail,a.detail,reissued.detail,origin.detail,
- CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code,'reason',d.control_reason) END
+ CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code,'reason',d.control_reason) END,
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('revision',t.revision,'event_id',t.event_id,'related_event_id',t.related_event_id,'attempt_id',t.attempt_id,'request_id',t.request_id,'actor',t.actor,'action',t.action_kind,'outcome',t.observed_outcome,'state_before',t.state_before,'state_after',t.state_after,'observed_at',t.observed_at) ORDER BY t.revision) FROM cairn.agent_recovery_transition t WHERE t.delivery_id=d.delivery_id),'[]'::jsonb)
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  CROSS JOIN LATERAL (SELECT NOT (`+wakeHold+`) OR NOT (`+sessionInboxHold+`) AS held) flags
  LEFT JOIN LATERAL (SELECT w.receipt_id,jsonb_build_object('attempt_id',w.attempt_id,'state',w.state,'created_at',w.created_at,'finished_at',w.finished_at,'receipt_id',COALESCE(w.receipt_id::text,''),'process_state',w.process_state,'reason',w.reason,'provider_failure',w.provider_failure,'session',CASE WHEN w.agent_id IS NOT NULL THEN jsonb_build_object('agent_id',w.agent_id,'execution_id',w.execution_id) END) AS detail FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id ORDER BY w.created_at DESC,w.attempt_id DESC LIMIT 1) w ON true
@@ -135,7 +153,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		var resultVersion *int
 		fields := []any{&d.Position, &d.DeliveryID, &d.Consumer, &d.State, &d.Attempts, &d.AvailableAt, &d.CompletedAt, &d.Code, &resultID, &resultVersion, &d.Late}
 		fields = append(fields, eventScanFields(&d.Event)...)
-		fields = append(fields, &d.Held, &d.Execution, &d.LatestWake, &d.LatestNative, &d.Assessment, &d.ReissuedAs, &d.ReissuedFrom, &d.Control)
+		fields = append(fields, &d.Held, &d.Execution, &d.LatestWake, &d.LatestNative, &d.Assessment, &d.ReissuedAs, &d.ReissuedFrom, &d.Control, &d.RecoveryTransitions)
 		if err = rows.Scan(fields...); err != nil {
 			return out, err
 		}

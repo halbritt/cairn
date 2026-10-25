@@ -96,6 +96,16 @@ func TestReissueEventAttributionAndCausation(t *testing.T) {
 	if newConsumer != b.channel.Principal || newState != "pending" {
 		t.Fatalf("new delivery: consumer=%s state=%s", newConsumer, newState)
 	}
+	var revision int64
+	var transitionEvent, relatedEvent, transitionRequest, actor, action, outcome, before, after string
+	var transitionAttempt *string
+	err = op.pool.QueryRow(ctx, `SELECT revision,event_id::text,related_event_id::text,attempt_id::text,request_id::text,actor,action_kind,observed_outcome,state_before,state_after FROM cairn.agent_recovery_transition WHERE delivery_id=$1`, delivery.DeliveryID).Scan(
+		&revision, &transitionEvent, &relatedEvent, &transitionAttempt, &transitionRequest, &actor, &action, &outcome, &before, &after)
+	if err != nil || revision != 1 || transitionEvent != pubEvent.EventID || relatedEvent != reissued.EventID || transitionAttempt != nil ||
+		transitionRequest != reqID || actor != op.channel.Principal || action != "event_reissue" || outcome != "reissue_created" || before != "failed" || after != "failed" {
+		t.Fatalf("recovery transition: revision=%d event=%s related=%s attempt=%v request=%s actor=%s action=%s outcome=%s state=%s->%s err=%v",
+			revision, transitionEvent, relatedEvent, transitionAttempt, transitionRequest, actor, action, outcome, before, after, err)
+	}
 }
 
 func TestReissueEventSourceVersionUnavailable(t *testing.T) {

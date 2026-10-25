@@ -65,12 +65,13 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 			return out, err
 		}
 		var repo string
+		var eventID string
 		var finished *time.Time
 		var live bool
-		err := tx.QueryRow(ctx, `SELECT n.agent_id::text,n.execution_id::text,n.delivery_id::text,n.finished_at,a.repo,
+		err := tx.QueryRow(ctx, `SELECT n.agent_id::text,n.execution_id::text,n.delivery_id::text,n.finished_at,a.repo,e.event_id::text,
  NOT a.stopped AND a.expires_at>clock_timestamp()
- FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) WHERE n.attempt_id=$1 FOR UPDATE OF n`, req.AttemptID).Scan(
-			&out.Session.AgentID, &out.Session.ExecutionID, &out.DeliveryID, &finished, &repo, &live)
+ FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) JOIN cairn.agent_delivery d USING(delivery_id) JOIN cairn.agent_event e USING(event_id) WHERE n.attempt_id=$1 FOR UPDATE OF n`, req.AttemptID).Scan(
+			&out.Session.AgentID, &out.Session.ExecutionID, &out.DeliveryID, &finished, &repo, &eventID, &live)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return out, failure("NOT_FOUND", "native attempt not found")
 		}
@@ -89,6 +90,7 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 		if err = tx.QueryRow(ctx, `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1 FOR UPDATE`, out.DeliveryID).Scan(&out.DeliveryState); err != nil {
 			return out, err
 		}
+		stateBefore := out.DeliveryState
 		if out.DeliveryState == "pending" || out.DeliveryState == "leased" {
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_released',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1`, out.DeliveryID, s.channel.Principal, req.Reason); err != nil {
 				return out, err
@@ -99,6 +101,11 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 		}
 		out.AttemptID = req.AttemptID
 		err = tx.QueryRow(ctx, `SELECT state,code FROM cairn.agent_delivery WHERE delivery_id=$1`, out.DeliveryID).Scan(&out.DeliveryState, &out.Code)
-		return out, err
+		if err != nil {
+			return out, err
+		}
+		attemptID := req.AttemptID
+		return out, recordRecoveryTransition(ctx, tx, s, out.DeliveryID, eventID, "", &attemptID, req.RequestID,
+			"native_hold_release", "hold_released", stateBefore, out.DeliveryState)
 	})
 }

@@ -186,15 +186,34 @@ func TestNativeHoldReleaseRequiresOperatorOfflineSessionAndAcceptance(t *testing
 	review, err := f.op.ReviewEvents(ctx, EventReviewRequest{Repo: f.repo, DeliveryID: f.delivery})
 	if err != nil || len(review.Deliveries) != 1 || review.Deliveries[0].Held || review.Deliveries[0].LatestNative == nil ||
 		review.Deliveries[0].LatestNative.Reason != "operator_released" || review.Deliveries[0].LatestNative.ReleasedBy != f.op.channel.Principal ||
-		review.Deliveries[0].Control == nil {
+		review.Deliveries[0].Control == nil || len(review.Deliveries[0].RecoveryTransitions) != 1 {
 		t.Fatalf("review after release: %+v %v", review, err)
+	}
+	transition := review.Deliveries[0].RecoveryTransitions[0]
+	if transition.Revision != 1 || transition.EventID != f.event || transition.AttemptID != f.attempt ||
+		transition.RequestID != request || transition.Actor != f.op.channel.Principal || transition.Action != "native_hold_release" ||
+		transition.Outcome != "hold_released" || transition.StateBefore != "leased" || transition.StateAfter != "failed" {
+		t.Fatalf("release transition: %+v", transition)
 	}
 	// The returning host is told its result was not accepted.
 	_, err = f.complete(uuid.NewString())
 	requireCode(t, err, "HOLD_RELEASED")
 	// With no hold left, the operator may reissue as before.
-	if _, err = f.op.ReissueEvent(ctx, ReissueEventRequest{RequestID: uuid.NewString(), Repo: f.repo, DeliveryID: f.delivery, Reason: "Reviewed the lost host; repeat the request", AcceptUncertainEffects: true}); err != nil {
+	reissueRequest := uuid.NewString()
+	reissued, err := f.op.ReissueEvent(ctx, ReissueEventRequest{RequestID: reissueRequest, Repo: f.repo, DeliveryID: f.delivery, Reason: "Reviewed the lost host; repeat the request", AcceptUncertainEffects: true})
+	if err != nil {
 		t.Fatal(err)
+	}
+	review, err = f.op.ReviewEvents(ctx, EventReviewRequest{Repo: f.repo, DeliveryID: f.delivery})
+	if err != nil || len(review.Deliveries) != 1 || len(review.Deliveries[0].RecoveryTransitions) != 2 {
+		t.Fatalf("review after reissue: %+v %v", review, err)
+	}
+	reissueTransition := review.Deliveries[0].RecoveryTransitions[1]
+	if reissueTransition.Revision != 2 || reissueTransition.EventID != f.event || reissueTransition.RelatedEventID != reissued.EventID ||
+		reissueTransition.AttemptID != "" || reissueTransition.RequestID != reissueRequest || reissueTransition.Actor != f.op.channel.Principal ||
+		reissueTransition.Action != "event_reissue" || reissueTransition.Outcome != "reissue_created" ||
+		reissueTransition.StateBefore != "failed" || reissueTransition.StateAfter != "failed" {
+		t.Fatalf("reissue transition: %+v", reissueTransition)
 	}
 	// A registration can resume the conversation once the hold is closed.
 	if _, err = f.receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-recovery", NativeSessionID: "native-recovery", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, f.dest); err != nil {

@@ -92,6 +92,38 @@ journal does not establish those facts. Reproduce with the frozen private
 manifest and commands in `docs/workflow-model-report.md`, then run the selector
 and `docs/recovery-model-report.md` command with fresh private output names.
 
+## Store-owned recovery-action observations, 2026-10-25
+
+Migration `071_agent_recovery_transition.sql` adds an immutable, metadata-only
+ledger for two existing Cairn-mediated actions: native-hold release and failed
+request reissue. The Store writes each row in the same transaction as the
+action, using its authenticated channel principal and request ID. Rows link the
+source event and delivery, store the observed before/after delivery state and
+time, and assign a per-delivery recovery-action revision. A native-hold release
+also links its exact endpoint attempt ID. Reissue remains delivery-scoped, so
+its attempt ID is null; the ledger does not infer which historical attempt
+motivated a reissue. Its related event ID identifies the new request event.
+
+`recovery_revision` counts only rows in this ledger. It is not a revision of
+every delivery lifecycle change. The local operator `ReviewEvents` response
+exposes these rows under the existing operator-only authorization. The ledger
+contains no reason text, source payload, or caller-supplied outcome. Its outcome
+labels describe only the committed endpoint action (`hold_released` or
+`reissue_created`); they do not claim accepted final settlement, eventual
+recovery, or any off-band/manual action. Missing transitions and those final
+outcomes remain unknown. Failed or refused mutations roll back without a row,
+and an idempotent replay returns the original result without adding a revision.
+The database permits at most one transition of each current action kind per
+delivery, bounding the inline review history at two rows. This matches the
+existing lifecycle: release closes its exact unfinished attempt and leaves the
+delivery terminal; another attempt requires a fresh delivery. Reissue is also
+already unique per source delivery.
+
+Focused Store integration coverage verifies the native-release and reissue
+joins, state observations, operator identity, replay idempotency, and revision
+ordering. This is an initial observation seam, not the full final-outcome or
+failure-phase acceptance matrix.
+
 ## Acceptance still open
 
 The panel uses synthetic selected classifications. It does not join real
