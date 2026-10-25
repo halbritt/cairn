@@ -59,7 +59,7 @@ func (req CaptureObservationRequest) validate() error {
 	default:
 		return bad()
 	}
-	if req.AdmissionCandidate != "" && req.AdmissionCandidate != "transport_only" {
+	if req.AdmissionCandidate != "" && req.AdmissionCandidate != "transport_only" && req.AdmissionCandidate != "confirmed_duplicate" {
 		return bad()
 	}
 	switch req.SelectorOutcome {

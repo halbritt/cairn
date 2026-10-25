@@ -82,7 +82,8 @@ def run_case(event, confirmed, addition, selector, *, source_failure=False, hook
             hook.capture(memory, event, state)
         except hook.HookError as exc:
             outcome = exc.code or "error"
-    return dict(candidate=memory.capture_observation.get("admission_candidate") == "transport_only",
+    return dict(candidate=memory.capture_observation.get("admission_candidate") is not None,
+                candidate_kind=memory.capture_observation.get("admission_candidate"),
                 selector_calls=len(calls), selected_writes=len(saved), outcome=outcome,
                 confirmed=bool(confirmed.get("captured_digest")),
                 marker_advanced=state.get("captured_digest") != confirmed.get("captured_digest"))

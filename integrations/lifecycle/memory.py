@@ -787,8 +787,8 @@ def report_capture(memory, event, elapsed):
                     outcome=observed.get("outcome", "error"), duration_ms=whole_ms(elapsed))
         if observed.get("snapshot_sha256"):
             body["snapshot_sha256"] = observed["snapshot_sha256"]
-        if observed.get("admission_candidate") == "transport_only":
-            body["admission_candidate"] = "transport_only"
+        if observed.get("admission_candidate") in ("transport_only", "confirmed_duplicate"):
+            body["admission_candidate"] = observed["admission_candidate"]
         if observed.get("selector_outcome"):
             body["selector_outcome"] = observed["selector_outcome"]
             for source, target in (("requested_model", "requested_model"),
@@ -3159,6 +3159,7 @@ def capture(memory, event, state=None):
     digest = fingerprint(messages)
     memory.capture_observation["snapshot_sha256"] = digest
     if state.get("captured_digest") == digest:
+        memory.capture_observation["admission_candidate"] = "confirmed_duplicate"
         record_capture_status(state, "unchanged")
         return {}
     previous_count = state.get("captured_messages", 0)

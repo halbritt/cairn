@@ -3,7 +3,8 @@
   "fixture_count": 9,
   "cases": {
     "same_snapshot": {
-      "candidate": false,
+      "candidate": true,
+      "candidate_kind": "confirmed_duplicate",
       "selector_calls": 0,
       "selected_writes": 0,
       "outcome": "completed",
@@ -12,6 +13,7 @@
     },
     "transport_only": {
       "candidate": true,
+      "candidate_kind": "transport_only",
       "selector_calls": 1,
       "selected_writes": 0,
       "outcome": "completed",
@@ -20,6 +22,7 @@
     },
     "owner_correction": {
       "candidate": false,
+      "candidate_kind": null,
       "selector_calls": 1,
       "selected_writes": 1,
       "outcome": "completed",
@@ -28,6 +31,7 @@
     },
     "changed_decision": {
       "candidate": false,
+      "candidate_kind": null,
       "selector_calls": 1,
       "selected_writes": 1,
       "outcome": "completed",
@@ -36,6 +40,7 @@
     },
     "unfinished_handoff": {
       "candidate": false,
+      "candidate_kind": null,
       "selector_calls": 1,
       "selected_writes": 1,
       "outcome": "completed",
@@ -44,6 +49,7 @@
     },
     "unfinished_handoff_at_session_end": {
       "candidate": false,
+      "candidate_kind": null,
       "selector_calls": 1,
       "selected_writes": 1,
       "outcome": "completed",
@@ -52,6 +58,7 @@
     },
     "status_only": {
       "candidate": false,
+      "candidate_kind": null,
       "selector_calls": 1,
       "selected_writes": 0,
       "outcome": "completed",
@@ -60,6 +67,7 @@
     },
     "quota_failure": {
       "candidate": true,
+      "candidate_kind": "transport_only",
       "selector_calls": 1,
       "selected_writes": 0,
       "outcome": "API_UNAVAILABLE",
@@ -68,6 +76,7 @@
     },
     "source_failure": {
       "candidate": true,
+      "candidate_kind": "transport_only",
       "selector_calls": 0,
       "selected_writes": 0,
       "outcome": "PAYLOAD_UNAVAILABLE",
@@ -77,7 +86,7 @@
   },
   "comparison": {
     "unchanged_selector_calls": 7,
-    "candidate_cases": 3,
+    "candidate_cases": 4,
     "candidate_selector_calls": 2,
     "required_selected_writes": 4,
     "candidate_required_misses": 0,

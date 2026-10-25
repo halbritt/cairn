@@ -15,19 +15,20 @@ by `API_UNAVAILABLE`, not evidence of a live provider quota response.
 
 | Case | Shadow candidate | Unchanged selector calls | Selected writes | Capture marker advanced | What a gate must preserve |
 | --- | --- | ---: | ---: | --- | --- |
-| Same snapshot | no | 0 | 0 | no | Existing digest deduplication |
-| Exact transport wake | yes | 1 | 0 | yes | Current source and settlement still handled by the inbox route |
-| Owner correction after wake | no | 1 | 1 | yes | Corrected preference |
-| Superseding decision | no | 1 | 1 | yes | New decision replaces the earlier choice |
-| Unfinished handoff | no | 1 | 1 | yes | Recoverable checkpoint |
-| Unfinished handoff at SessionEnd | no | 1 | 1 | yes | Recoverable checkpoint at the terminal capture boundary |
-| Status-only turn | no | 1 | 0 | yes | One empty capture call remains |
-| Synthetic quota refusal after wake | yes | 1 | 0 | no | Failure and retry state remain visible |
-| Source refusal after wake | yes | 0 | 0 | no | Source failure must not become false completion |
+| Same snapshot | `confirmed_duplicate` | 0 | 0 | no | Existing digest deduplication |
+| Exact transport wake | `transport_only` | 1 | 0 | yes | Current source and settlement still handled by the inbox route |
+| Owner correction after wake | — | 1 | 1 | yes | Corrected preference |
+| Superseding decision | — | 1 | 1 | yes | New decision replaces the earlier choice |
+| Unfinished handoff | — | 1 | 1 | yes | Recoverable checkpoint |
+| Unfinished handoff at SessionEnd | — | 1 | 1 | yes | Recoverable checkpoint at the terminal capture boundary |
+| Status-only turn | — | 1 | 0 | yes | One empty capture call remains |
+| Synthetic quota refusal after wake | `transport_only` | 1 | 0 | no | Failure and retry state remain visible |
+| Source refusal after wake | `transport_only` | 0 | 0 | no | Source failure must not become false completion |
 
 Across nine cases, unchanged capture calls the selector seven times. The
-candidate appears in three cases and intersects two selector calls, but only
-one has an empty stub selection. The owner correction, superseding decision,
+candidate appears in four cases (`confirmed_duplicate` once and `transport_only`
+three times) and intersects two selector calls, but only one has an empty stub
+selection. The owner correction, superseding decision,
 unfinished handoff and SessionEnd handoff produce four required writes, all
 outside the candidate, so the **fixture miss count is zero**. Two candidate cases have
 unresolved failure outcomes; a gate that simply treats every candidate as a

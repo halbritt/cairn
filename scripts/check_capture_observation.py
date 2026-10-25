@@ -164,6 +164,7 @@ def check(binary, directory):
         invoke("saved", "saved")
         unchanged = rows("saved")[-1]
         assert unchanged["outcome"] == "unchanged" and unchanged["selector_outcome"] is None, unchanged
+        assert unchanged["admission_candidate"] == "confirmed_duplicate", unchanged
         assert unchanged["input_tokens"] is None and unchanged["cost_usd"] is None
         assert state("saved")["captured_digest"] == saved_state["captured_digest"]
 
@@ -204,6 +205,7 @@ def check(binary, directory):
         invoke("report_failure", "saved_report_failure")
         retry, = rows("report_failure")
         assert retry["outcome"] == "unchanged" and retry["input_tokens"] is None
+        assert retry["admission_candidate"] == "confirmed_duplicate", retry
         assert state("report_failure")["captured_digest"] == confirmed["captured_digest"]
         assert state("report_failure")["last_capture"]["records"] == [], "unchanged retry rewrote the selected note"
 

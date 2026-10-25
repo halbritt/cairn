@@ -74,6 +74,7 @@ class CaptureObservationTests(unittest.TestCase):
         self.assertEqual(first["reported_model"], "claude-sonnet")
         self.assertEqual(first["session_sha256"], skip["session_sha256"])
         self.assertEqual(first["snapshot_sha256"], skip["snapshot_sha256"])
+        self.assertEqual(skip["admission_candidate"], "confirmed_duplicate")
         self.assertNotIn("input_tokens", skip)
         self.assertNotIn("selector_outcome", skip)
         self.assertNotIn("messages", json.dumps(self.reports))

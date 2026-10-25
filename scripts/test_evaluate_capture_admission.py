@@ -12,7 +12,7 @@ class CaptureAdmissionEvaluationTests(unittest.TestCase):
                                       "changed_decision", "unfinished_handoff",
                                       "unfinished_handoff_at_session_end", "status_only",
                                       "quota_failure", "source_failure"})
-        self.assertEqual(comparison, dict(unchanged_selector_calls=7, candidate_cases=3,
+        self.assertEqual(comparison, dict(unchanged_selector_calls=7, candidate_cases=4,
                                           candidate_selector_calls=2, required_selected_writes=4,
                                           candidate_required_misses=0, candidate_uncertain_cases=2,
                                           unchanged_empty_status_calls=1))
@@ -24,6 +24,9 @@ class CaptureAdmissionEvaluationTests(unittest.TestCase):
         self.assertEqual(cases["unfinished_handoff_at_session_end"]["selected_writes"], 1)
         self.assertEqual(cases["transport_only"]["selector_calls"], 1,
                          "shadow candidate suppressed the selector")
+        self.assertEqual(cases["same_snapshot"]["candidate_kind"], "confirmed_duplicate")
+        self.assertEqual(cases["same_snapshot"]["selector_calls"], 0)
+        self.assertEqual(cases["transport_only"]["candidate_kind"], "transport_only")
         self.assertFalse(cases["quota_failure"]["marker_advanced"])
         self.assertFalse(cases["source_failure"]["marker_advanced"])
         self.assertEqual(cases["source_failure"]["outcome"], "PAYLOAD_UNAVAILABLE")

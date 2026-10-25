@@ -45,6 +45,12 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	if _, err := s.RecordCaptureObservation(ctx, skip); err != nil {
 		t.Fatal(err)
 	}
+	duplicate := skip
+	duplicate.RequestID = uuid.NewString()
+	duplicate.AdmissionCandidate = "confirmed_duplicate"
+	if _, err := s.RecordCaptureObservation(ctx, duplicate); err != nil {
+		t.Fatalf("record confirmed duplicate shadow candidate: %v", err)
+	}
 	unavailable := skip
 	unavailable.RequestID = uuid.NewString()
 	unavailable.HookEvent = "PreCompact"
@@ -70,8 +76,15 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(third.Rows) != 1 || third.Rows[0].Outcome != "transcript_unavailable" || third.Rows[0].SelectorOutcome != nil || third.Rows[0].SnapshotSHA256 != nil {
-		t.Fatalf("unavailable transcript report: %+v", third)
+	if len(third.Rows) != 1 || third.Rows[0].Outcome != "unchanged" || third.Rows[0].AdmissionCandidate == nil || *third.Rows[0].AdmissionCandidate != "confirmed_duplicate" || third.Rows[0].SelectorOutcome != nil {
+		t.Fatalf("confirmed duplicate report: %+v", third)
+	}
+	fourth, err := s.CaptureObservations(ctx, CaptureObservationsRequest{Repo: base.Repo, SessionSHA256: base.SessionSHA256, Limit: 1, Offset: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fourth.Rows) != 1 || fourth.Rows[0].Outcome != "transcript_unavailable" || fourth.Rows[0].SelectorOutcome != nil || fourth.Rows[0].SnapshotSHA256 != nil {
+		t.Fatalf("unavailable transcript report: %+v", fourth)
 	}
 	encoded, err := json.Marshal(last)
 	if err != nil {
