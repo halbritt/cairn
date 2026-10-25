@@ -310,12 +310,13 @@ copies only allowlisted event/stage/error/exit classes; turn IDs, paths, input,
 stdout/stderr, auth and raw exceptions are excluded. Tests cover entry and a
 Stop command timeout and assert the external trace contains only those classes.
 
-The same pinned source shows `run_turn_stop_hooks` runs in the turn path before
-completion, while the fixture's installed Stop hook is marked `"async": true`;
-the hook dispatcher schedules async commands without awaiting them. This
-confirms that `turn/completed` is not itself evidence that the wrapper started
-or finished. The prior run's missing hook metadata remains inconclusive; the
-following section records the first run with these diagnostics.
+The fixture installs Stop as a command handler without an `async` field. In
+pinned Codex 0.164.0, that field defaults to `false`; synchronous Stop handlers
+are awaited by `run_turn_stop_hooks` before turn completion. Therefore a
+matching `turn/completed` after this configuration is not explained by the
+async-dispatch path. The prior run retained no hook metadata, so it remains
+inconclusive about whether Codex discovered or launched the wrapper; the
+following section records the first run with wrapper-stage diagnostics.
 
 ## One fresh run with wrapper-stage diagnostics
 
@@ -335,9 +336,12 @@ notice slots are `not_created`, the actor terminal is `not_started`, and
 read-only fresh-DB counts are `agent_session=0`, `agent_event=0`, and
 `agent_delivery=0`.
 
-This run did not observe the async Stop wrapper entering or completing. It
-narrows the missing marker to before the wrapper's first persisted stage, but
-does not distinguish Codex not dispatching the configured async command from a
-failure to launch or enter the wrapper process. No hook invocation failure,
-batch continuation, or accepted task outcome is inferred. No further actor
-attempt was made; CAIRN-221 remains In Progress.
+The fixture's installed Stop handler is synchronous: its generated command
+entry omits `async`, and pinned Codex 0.164.0 defaults that field to `false`
+and awaits synchronous Stop handlers before emitting turn completion. This run
+observed no wrapper entry despite matching `turn/completed`, pointing to a
+hook discovery, dispatch, configuration, or process-launch boundary. The exact
+cause remains unknown: no retained app-server hook log or runtime hook listing
+shows whether Codex discovered this handler or attempted to launch it. No hook
+invocation failure, batch continuation, or accepted task outcome is inferred.
+No further actor attempt was made; CAIRN-221 remains In Progress.
