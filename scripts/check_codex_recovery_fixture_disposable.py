@@ -16,6 +16,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
+from codex_fixture_diagnostic import turn_join_observation, update as update_fixture_diagnostic
 
 
 def check(candidate_root, codex_binary):
@@ -157,6 +158,7 @@ def check(candidate_root, codex_binary):
                 automatic_fixture.get("compact_sessionstart_outcomes", {}).get("memory") !=
                     {"exit_code": 0, "error_code": None}):
             raise AssertionError("automatic in-turn compaction did not preserve the claimed Store attempt")
+        update_fixture_diagnostic(diagnostic_path, "turn_join", turn_join_observation(automatic_fixture))
         return dict(result="PASS", environment="disposable PostgreSQL and loopback Codex stub",
                     model="gpt-6-luna", provider_call=False,
                     native_compaction={key: fixture.get(key) for key in (

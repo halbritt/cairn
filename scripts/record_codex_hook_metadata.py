@@ -10,7 +10,8 @@ import re
 import subprocess
 import sys
 
-from codex_fixture_diagnostic import update as update_fixture_diagnostic
+from codex_fixture_diagnostic import append_ready_observation, update as update_fixture_diagnostic
+from codex_fixture_diagnostic import READY_SCENARIOS
 
 
 HOOK_ERROR_CODES = frozenset({
@@ -112,6 +113,60 @@ def post_hook_admission_observation(command, event):
         return unavailable
 
 
+def ready_window_observation(command, event, diagnostic_path):
+    """Compare the read-only ready hint with one private fixture expectation."""
+    unavailable = dict(_scenario=None, response_class="unavailable", ready_delivery_present=None,
+        event_delivery_match=None, session_identity_match=None)
+    scenario = None
+    try:
+        index = command.index("--config")
+        config = json.loads(Path(command[index + 1]).read_text(encoding="utf-8"))
+        native = event.get("session_id")
+        if not isinstance(native, str) or not native:
+            return unavailable
+        expected_path = Path(diagnostic_path).with_suffix(".ready-window.expected.json")
+        if not expected_path.exists():
+            return dict(_scenario=None, response_class="not_observed", ready_delivery_present=None,
+                event_delivery_match=None, session_identity_match=None)
+        expected = json.loads(expected_path.read_text(encoding="utf-8"))
+        scenario = expected.get("scenario")
+        if scenario not in READY_SCENARIOS:
+            return unavailable
+        key = hashlib.sha256((config["binding"] + "\0" + native).encode()).hexdigest()
+        state = json.loads((Path(config["state_dir"]) / (key + ".json")).read_text(encoding="utf-8"))
+        agent = state.get("agent") or {}
+        identity_match = (native == expected.get("native_session_id") and
+            agent.get("agent_id") == expected.get("agent_id") and
+            agent.get("execution_id") == expected.get("execution_id"))
+        if not agent.get("agent_id") or not agent.get("execution_id"):
+            return dict(_scenario=scenario, response_class="unavailable", ready_delivery_present=None,
+                event_delivery_match=None, session_identity_match=identity_match)
+        request = json.dumps(dict(agent_id=agent["agent_id"], execution_id=agent["execution_id"]))
+        query = subprocess.run([config["cairn"], "agent", "--socket", config["socket"],
+            "--token-file", config["token_file"], "session-inbox-ready"], input=request,
+            text=True, capture_output=True, timeout=2)
+        if len(query.stdout.encode()) > 16_384:
+            return dict(unavailable, _scenario=scenario)
+        envelope = json.loads(query.stdout)
+        if query.returncode != 0 or not isinstance(envelope, dict) or envelope.get("status") != "OK":
+            return dict(_scenario=scenario, response_class="error", ready_delivery_present=None,
+                event_delivery_match=None, session_identity_match=identity_match)
+        data = envelope.get("data")
+        if not isinstance(data, dict):
+            return dict(unavailable, _scenario=scenario)
+        delivery_id, event_id = data.get("delivery_id"), data.get("event_id")
+        present = isinstance(delivery_id, str) and bool(delivery_id)
+        exact = (present and isinstance(event_id, str) and bool(event_id) and
+                 delivery_id == expected.get("delivery_id") and event_id == expected.get("event_id"))
+        return dict(_scenario=scenario, response_class="ok", ready_delivery_present=present,
+            event_delivery_match=bool(exact), session_identity_match=bool(identity_match))
+    except subprocess.TimeoutExpired:
+        return dict(unavailable, _scenario=scenario)
+    except (OSError, ValueError, KeyError, IndexError, TypeError,
+            subprocess.SubprocessError, json.JSONDecodeError):
+        return dict(unavailable, _scenario=scenario)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata", required=True, type=Path)
@@ -140,6 +195,11 @@ def main():
             entry_seen=True, exit_seen=False, exit_code=None, stderr_code=None, stderr_class=None,
             output_status=None, output_code=None,
             owner_process_class=owner_process_class(command, event)), increment=("observation_count",))
+        ready_before = ready_window_observation(command, event, args.diagnostic_summary)
+        if ready_before["_scenario"] is not None:
+            scenario = ready_before.pop("_scenario")
+            append_ready_observation(Path(args.diagnostic_summary).with_name("fixture-ready-window.jsonl"),
+                scenario, "before", ready_before)
     args.metadata.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:
@@ -155,6 +215,12 @@ def main():
             **safe_output_tags(result.stdout)))
         update_fixture_diagnostic(args.diagnostic_summary, "post_hook_admission",
                                   post_hook_admission_observation(command, event))
+        ready_after = ready_window_observation(command, event, args.diagnostic_summary)
+        if ready_after["_scenario"] is not None:
+            scenario = ready_after.pop("_scenario")
+            append_ready_observation(Path(args.diagnostic_summary).with_name("fixture-ready-window.jsonl"),
+                scenario, "after", ready_after)
+            Path(args.diagnostic_summary).with_suffix(".ready-window.expected.json").unlink(missing_ok=True)
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:
         stream.write(json.dumps(dict(**row, phase="exit"), sort_keys=True) + "\n")

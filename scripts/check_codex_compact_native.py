@@ -93,6 +93,36 @@ def _context_for_event(inbox_dir, event_id, stage, diagnostic_path=None):
     return matches[0]
 
 
+def _write_ready_expectation(path, config, native_id, event_id, delivery_id, scenario):
+    """Keep exact fixture identities private while the hook compares ready output."""
+    key = hashlib.sha256((config["binding"] + "\0" + native_id).encode()).hexdigest()
+    state_path = Path(config["state_dir"]) / (key + ".json")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    agent = state.get("agent") or {}
+    scenario_label = {"batch-admission": "batch_admission",
+        "claimed-before-compact": "claimed_before_compact",
+        "auto-in-turn-claimed": "auto_in_turn_claimed"}.get(scenario, scenario)
+    expected = dict(scenario=scenario_label, native_session_id=native_id, agent_id=agent.get("agent_id"),
+        execution_id=agent.get("execution_id"), event_id=event_id, delivery_id=delivery_id)
+    if any(not isinstance(value, str) or not value for value in expected.values()):
+        raise AssertionError("fixture ready expectation lacks an exact registered identity")
+    target = Path(path).with_suffix(".ready-window.expected.json")
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(expected, sort_keys=True))
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    return target
+
+
 def check(binary, root, config, api_call, candidate_root, scenario="notice", diagnostic_path=None):
     if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact",
                         "auto-in-turn-claimed"):
@@ -625,6 +655,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
         before_compact = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
         assert before_compact["delivery_id"] == delivery_id and before_compact["state"] == "pending" \
             and before_compact["attempts"] == 0, "notice was not pending before compaction"
+        if diagnostic_path is not None:
+            _write_ready_expectation(diagnostic_path, coordination, native_id,
+                                     event["event_id"], delivery_id, scenario)
 
         if scenario == "claimed-before-compact":
             preturn = rpc("turn/start", dict(threadId=native_id,
@@ -962,6 +995,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
             provider_usage_observed=False, provider="loopback_fixture", provider_call=False,
             recovery_report=native_report), sort_keys=True))
     finally:
+        if diagnostic_path is not None:
+            Path(diagnostic_path).with_suffix(".ready-window.expected.json").unlink(missing_ok=True)
         if previous_inbox_root is None:
             os.environ.pop("CAIRN_INBOX_ROOT", None)
         else:
