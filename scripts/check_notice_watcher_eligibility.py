@@ -130,7 +130,8 @@ def check(binary, real_clock_pilot=False):
         session = {key: registered[key] for key in ("agent_id", "execution_id")}
         require(registered["inbox"] == "agent/" + session["agent_id"],
                 "registered inbox differs")
-        owner = subprocess.Popen(["sleep", "90"], env=env, stdout=subprocess.DEVNULL,
+        owner_lifetime = "240" if os.environ.get("CAIRN_MULTI_ARRIVAL_PILOT") == "1" else "90"
+        owner = subprocess.Popen(["sleep", owner_lifetime], env=env, stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
         engine, script = coordinator()
         root = cluster / "notice-watcher-coordination"
@@ -386,6 +387,7 @@ def check(binary, real_clock_pilot=False):
                 "watcher claimed a notice without a native transport")
 
         natural_report = None
+        multi_arrival_report = None
         if real_clock_pilot:
             # This opt-in leg is separate from the default deterministic
             # integration path. It measures one natural deadline and cannot
@@ -451,6 +453,168 @@ def check(binary, real_clock_pilot=False):
                 "native_wakes_accepted": 0, "native_transport": "unavailable",
                 "provider_calls": 0,
             }
+            if os.environ.get("CAIRN_MULTI_ARRIVAL_PILOT") == "1":
+                # Clear the single-notice fixture so it cannot mask the arrival
+                # comparison. Settlement is synthetic cleanup, not actor work.
+                natural_claim = call(binary, home, env, "worker", "session-inbox-claim", {
+                    "request_id": str(uuid.uuid4()), "session": session,
+                    "delivery_id": natural_delivery["delivery_id"],
+                    "native_turn_id": "synthetic-natural-pilot-cleanup", "turn_exclusive": True})["attempt"]
+                require(natural_claim is not None, "natural pilot notice could not be cleaned up")
+                call(binary, home, env, "worker", "event-complete", {
+                    "request_id": str(uuid.uuid4()), "delivery_id": natural_delivery["delivery_id"],
+                    "lease_id": natural_claim["delivery"]["lease_id"],
+                    "disposition": "failed", "code": "processing_failed"}, session=session)
+                call(binary, home, env, "worker", "session-inbox-reconcile", {
+                    "request_id": str(uuid.uuid4()), "session": session,
+                    "attempt_id": natural_claim["attempt_id"], "reason": "delivery_completed"})
+
+                def publish_notice(policy):
+                    published = call(binary, home, env, "sender", "event-publish", {
+                        "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+                        "destination": {"type": "agent", "name": registered["inbox"]},
+                        "notice_policy": policy})
+                    delivery = call(binary, home, env, "sender", "event-inspect",
+                                    {"event_id": published["event_id"]})["deliveries"][0]
+                    return published, delivery
+
+                def settle_fixture(delivery_id, turn_id):
+                    attempt = call(binary, home, env, "worker", "session-inbox-claim", {
+                        "request_id": str(uuid.uuid4()), "session": session,
+                        "delivery_id": delivery_id, "native_turn_id": turn_id,
+                        "turn_exclusive": True})["attempt"]
+                    require(attempt is not None, "synthetic baseline delivery could not be claimed")
+                    call(binary, home, env, "worker", "event-complete", {
+                        "request_id": str(uuid.uuid4()), "delivery_id": delivery_id,
+                        "lease_id": attempt["delivery"]["lease_id"],
+                        "disposition": "failed", "code": "processing_failed"}, session=session)
+                    call(binary, home, env, "worker", "session-inbox-reconcile", {
+                        "request_id": str(uuid.uuid4()), "session": session,
+                        "attempt_id": attempt["attempt_id"], "reason": "delivery_completed"})
+
+                # Immediate baseline: arrivals are 5 seconds apart; advance the
+                # disposable head between samples so each event receives its own
+                # real watcher eligibility decision.
+                baseline = []
+                for index in range(3):
+                    created_at = utc_now()
+                    event, delivery = publish_notice({"version": 1, "urgency": "routine",
+                                                      "defer_seconds": 0})
+                    cycle = watch()
+                    observed = (cycle.get("delivery_observation") or {}).get("value") or {}
+                    refusal = cycle.get("wake_refusal") or {}
+                    require(observed.get("condition") == "native_transport_unavailable"
+                            and observed.get("delivery_id") == delivery["delivery_id"]
+                            and refusal.get("delivery_id") == delivery["delivery_id"],
+                            "immediate baseline watcher decision changed event identity")
+                    baseline.append({"event_id": event["event_id"],
+                                     "delivery_id": delivery["delivery_id"],
+                                     "created_at": event["created_at"],
+                                     "available_at": delivery["available_at"],
+                                     "observed_at": cycle["_pilot_watch_timing"]["finished_at"],
+                                     "arrival_to_observed_eligibility_ms": round(
+                                         (parse_time(cycle["_pilot_watch_timing"]["finished_at"])
+                                          - parse_time(event["created_at"])).total_seconds() * 1000, 3)})
+                    settle_fixture(delivery["delivery_id"], f"synthetic-baseline-{index}")
+                    if index < 2:
+                        time.sleep(5)
+
+                # Treatment arrivals retain separate events and deliveries.
+                # Their publisher-owned flushes share the first arrival's fixed
+                # 50-second release point, within the 60-second policy bound.
+                treatment = []
+                release_at = None
+                for index in range(3):
+                    event, delivery = publish_notice({"version": 1, "urgency": "routine",
+                                                      "defer_seconds": 60})
+                    if index == 0:
+                        release_at = parse_time(event["created_at"]) + timedelta(seconds=50)
+                    treatment.append({"event_id": event["event_id"],
+                                      "delivery_id": delivery["delivery_id"],
+                                      "created_at": event["created_at"],
+                                      "deadline_at": delivery["available_at"]})
+                    if index < 2:
+                        time.sleep(5)
+                treatment_pre_release_cycles = 0
+                while datetime.now(timezone.utc) < release_at:
+                    cycle = watch()
+                    observation = (cycle.get("delivery_observation") or {}).get("value") or {}
+                    treatment_ids = {x["delivery_id"] for x in treatment}
+                    refusal = cycle.get("wake_refusal") or {}
+                    require(not (observation.get("condition") == "native_transport_unavailable"
+                                 and observation.get("delivery_id") in treatment_ids)
+                            and refusal.get("delivery_id") not in treatment_ids,
+                            "deferred treatment became eligible before publisher release")
+                    treatment_pre_release_cycles += 1
+                    time.sleep(min(5, max(0.05, (release_at - datetime.now(timezone.utc)).total_seconds())))
+                released_at = utc_now()
+                for item in treatment:
+                    flushed = call(binary, home, env, "sender", "event-notice-flush", {
+                        "request_id": str(uuid.uuid4()), "event_id": item["event_id"]})
+                    require(flushed["released"] == 1 and flushed["flushed_by"] == principals["sender"],
+                            "publisher did not release treatment event")
+                    require(parse_time(flushed["flushed_at"]) < parse_time(item["deadline_at"]),
+                            "publisher released treatment after its own 60-second deadline")
+                    item["released_at"] = flushed["flushed_at"]
+                    released_delivery = call(binary, home, env, "sender", "event-inspect",
+                                             {"event_id": item["event_id"]})["deliveries"][0]
+                    require(item["delivery_id"] == released_delivery["delivery_id"]
+                            and released_delivery["available_at"] == flushed["flushed_at"]
+                            and released_delivery["state"] == "pending"
+                            and released_delivery["attempts"] == 0,
+                            "publisher flush changed treatment delivery identity")
+                    item["available_at"] = released_delivery["available_at"]
+                    item["arrival_to_release_ms"] = round(
+                        (parse_time(flushed["flushed_at"]) - parse_time(item["created_at"])).total_seconds() * 1000, 3)
+                treatment_decisions = []
+                for index, item in enumerate(treatment):
+                    cycle = watch()
+                    observation = (cycle.get("delivery_observation") or {}).get("value") or {}
+                    refusal = cycle.get("wake_refusal") or {}
+                    require(observation.get("condition") == "native_transport_unavailable"
+                            and observation.get("delivery_id") == item["delivery_id"]
+                            and refusal.get("delivery_id") == item["delivery_id"],
+                            "treatment watcher did not identify the next original ready delivery")
+                    item["observed_at"] = cycle["_pilot_watch_timing"]["finished_at"]
+                    item["arrival_to_observed_eligibility_ms"] = round(
+                        (parse_time(item["observed_at"]) - parse_time(item["created_at"])).total_seconds() * 1000, 3)
+                    current = call(binary, home, env, "sender", "event-inspect",
+                                   {"event_id": item["event_id"]})["deliveries"][0]
+                    require(current["delivery_id"] == item["delivery_id"]
+                            and current["state"] == "pending" and current["attempts"] == 0,
+                            "treatment event changed before its eligibility observation")
+                    treatment_decisions.append({"event_id": item["event_id"],
+                                                "delivery_id": item["delivery_id"],
+                                                "observed_at": item["observed_at"]})
+                    # Advance only this disposable queue, explicitly recording
+                    # synthetic failed cleanup so the next ready head can be
+                    # observed. This is not actor work or a successful ack.
+                    settle_fixture(item["delivery_id"], f"synthetic-treatment-{index}")
+                    settled = call(binary, home, env, "sender", "event-inspect",
+                                    {"event_id": item["event_id"]})["deliveries"][0]
+                    require(settled["delivery_id"] == item["delivery_id"]
+                            and settled["state"] == "failed" and settled["attempts"] == 1,
+                            "synthetic treatment cleanup did not retain its explicit failed outcome")
+                    item["fixture_cleanup"] = "explicit_failed_settlement_after_observation"
+                multi_arrival_report = {
+                    "arrivals_per_arm": 3,
+                    "arrival_spacing_seconds": 5,
+                    "baseline_policy": "routine_immediate",
+                    "baseline_events": baseline,
+                    "baseline_watcher_eligibility_decisions": len(baseline),
+                    "treatment_policy": "publisher_owned_fixed_release_at_first_arrival_plus_50_seconds_within_60_second_bound",
+                    "treatment_events": treatment,
+                    "treatment_release_at": released_at,
+                    "treatment_pre_release_watcher_cycles": treatment_pre_release_cycles,
+                    "treatment_watcher_eligibility_decisions": len(treatment_decisions),
+                    "treatment_decisions": treatment_decisions,
+                    "decision_count_delta_treatment_minus_baseline": len(treatment_decisions) - len(baseline),
+                    "disposable_fixture_settlement": "explicit_failed_per_event_after_observation",
+                    "decision_count_interpretation": "matched_ready_head_observations_only_no_native_wake_savings_claim",
+                    "native_wakes_accepted": 0,
+                    "provider_calls": 0,
+                    "actionability": "unassessed_no_actor_or_task_grade",
+                }
         result = {"case": "routine_notice_watcher_eligibility", "store_api": "disposable",
                   "watcher_process": "real_once", "native_owner": "synthetic_live_child",
                   "defer_seconds": 30, "early_wake_attempt": False,
@@ -462,6 +626,8 @@ def check(binary, real_clock_pilot=False):
                   "task_outcome": "unassessed"}
         if natural_report is not None:
             result["real_clock_60_second_pilot"] = natural_report
+        if multi_arrival_report is not None:
+            result["real_clock_multi_arrival_pilot"] = multi_arrival_report
         print(json.dumps(result))
     finally:
         if owner is not None:
@@ -484,6 +650,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--real-clock-pilot", action="store_true",
                         help="also wait for and measure one natural 60-second notice deadline")
+    parser.add_argument("--multi-arrival-pilot", action="store_true",
+                        help="also compare three real-clock immediate arrivals with a shared publisher release")
     parser.add_argument("binary", type=Path)
     args = parser.parse_args()
-    check(args.binary, real_clock_pilot=args.real_clock_pilot)
+    if args.multi_arrival_pilot:
+        os.environ["CAIRN_MULTI_ARRIVAL_PILOT"] = "1"
+    check(args.binary, real_clock_pilot=args.real_clock_pilot or args.multi_arrival_pilot)

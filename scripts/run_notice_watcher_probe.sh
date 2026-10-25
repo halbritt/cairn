@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Run the disposable watcher probe; the 60-second leg is explicit opt-in.
+# Run the disposable watcher probe; real-clock legs are explicit opt-in.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python_args=()
 if [[ "${1:-}" == "--real-clock-pilot" ]]; then
     python_args+=(--real-clock-pilot)
+elif [[ "${1:-}" == "--multi-arrival-pilot" ]]; then
+    python_args+=(--multi-arrival-pilot)
 elif [[ $# -gt 0 ]]; then
-    echo "usage: run_notice_watcher_probe.sh [--real-clock-pilot]" >&2
+    echo "usage: run_notice_watcher_probe.sh [--real-clock-pilot|--multi-arrival-pilot]" >&2
     exit 2
 fi
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
