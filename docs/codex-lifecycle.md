@@ -47,10 +47,11 @@ not treated as a new boundary.
 Codex may provide a null `transcript_path`. Stop and PreCompact then save a
 pending `transcript_unavailable` capture state without advancing the transcript
 marker or guessing a path, and surface a short warning. The next capture event
-with a usable transcript retries that work; a pending Stop retry does not wait
-for six new messages. An empty later transcript leaves the pending state in
-place. The marker records an outstanding retry, not proof that the later
-transcript contains the dialogue from before compaction.
+with a usable transcript can retry that work; a pending Stop retry does not
+wait for six new messages. An empty later transcript leaves the pending state
+in place. The marker records an outstanding retry, not proof that a usable
+path will appear or that later transcript data contains dialogue from before
+compaction.
 When capture observations are enabled, this condition is reported as
 `transcript_unavailable` without a snapshot hash or selector outcome.
 The API accepts this outcome starting with schema migration 070. Upgrade the

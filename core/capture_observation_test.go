@@ -63,7 +63,7 @@ func TestCaptureObservationRetainsHistoryAndUnknowns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(last.Rows) != 1 || last.More || last.Rows[0].Outcome != "unchanged" || last.Rows[0].InputTokens != nil || last.Rows[0].DurationMS != nil || last.Rows[0].AdmissionCandidate != nil {
+	if len(last.Rows) != 1 || !last.More || last.NextOffset != 2 || last.Rows[0].Outcome != "unchanged" || last.Rows[0].InputTokens != nil || last.Rows[0].DurationMS != nil || last.Rows[0].AdmissionCandidate != nil {
 		t.Fatalf("second page: %+v", last)
 	}
 	third, err := s.CaptureObservations(ctx, CaptureObservationsRequest{Repo: base.Repo, SessionSHA256: base.SessionSHA256, Limit: 1, Offset: 2})

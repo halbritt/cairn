@@ -3382,7 +3382,7 @@ def capture_event(memory, event, path, lock_path, hook_started):
             memory.capture_observation["outcome"] = "transcript_unavailable"
             result = {"systemMessage":
                 "Cairn capture is pending because Codex supplied no transcript path. "
-                "It will retry when a later Stop or PreCompact hook provides one."}
+                "It can retry if a later Stop or PreCompact hook provides a valid path."}
         elif (event["hook_event_name"] == "Stop" and not state.get("capture_pending")
                 and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES):
             _trace_note(outcome="early_return:stop_too_little_dialogue")
