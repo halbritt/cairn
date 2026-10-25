@@ -11,6 +11,8 @@ class ActiveTurnDeadline:
         self.expired = threading.Event()
         self.cleaned = threading.Event()
         self.cancel_error = None
+        self.cancel_error_code = None
+        self.cancel_error_message = None
         self.stop_error = None
         self.timer = threading.Timer(seconds, self._expire)
         self.timer.daemon = True
@@ -25,6 +27,8 @@ class ActiveTurnDeadline:
             self.cancel_turn()
         except Exception as exc:
             self.cancel_error = type(exc).__name__
+            self.cancel_error_code = getattr(exc, "code", None)
+            self.cancel_error_message = getattr(exc, "safe_message", None)
         try:
             self.stop_server()
         except Exception as exc:

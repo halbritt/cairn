@@ -113,6 +113,23 @@ def install(root, settings, config):
     return config_path
 
 
+class CodexRPCError(RuntimeError):
+    """RPC refusal with only a redacted, bounded diagnostic retained."""
+    def __init__(self, method, error):
+        self.code = error.get('code') if isinstance(error, dict) else None
+        raw = error.get('message', '') if isinstance(error, dict) else ''
+        if not isinstance(raw, str):
+            raw = ''
+        safe = raw.lower()
+        safe = re.sub(r'(?i)(token|authorization|secret|api[_ -]?key)\s*[:=]\s*\S+',
+                      r'\1=<redacted>', safe)
+        safe = re.sub(r'\b[0-9a-f]{8}-[0-9a-f-]{27,}\b', '<uuid>', safe)
+        safe = re.sub(r'\b[a-z0-9_-]{32,}\b', '<id>', safe)
+        safe = re.sub(r'/(?:[^\s,;]+)', '<path>', safe)
+        self.safe_message = re.sub(r'\s+', ' ', safe).strip()[:160]
+        super().__init__(f"Codex {method} RPC refused")
+
+
 def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=6,
                       timeout=None):
     """Trust reviewed hooks with a deadline for app-server setup RPCs.
@@ -221,7 +238,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
                     if value.get('id') != request_id:
                         continue
                     if 'error' in value:
-                        raise RuntimeError(f"Codex {method} refused: {value['error']}")
+                        raise CodexRPCError(method, value['error'])
                     return value['result']
             finally:
                 rpc_lock.release()
