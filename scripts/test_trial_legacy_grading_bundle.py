@@ -85,6 +85,39 @@ class ZeroChangedTests(Case):
         self.assertEqual(rendered['campaign']['request_id'], 'request-A')
         self.assertIs(result['grades_created'], False)
 
+    def test_pinned_runner_plan_accepts_cold_readiness_diagnostic_floats(self):
+        outcomes = {(case, seed): ('correct', 'correct') for case in SHAPE_TASKS for seed in range(3)}
+        f = Fixture(self.root/'float-plan-run', outcomes=outcomes, tasks=SHAPE_TASKS,
+                    arms=('CURRENT', 'CAND'))
+        planned = sorted((dict(run_id=r['run_id'], case=r['case'], arm=r['arm'], seed=r['seed'])
+                          for r in f.records), key=lambda r: r['run_id'])
+        f.binding['schedule_sha256'] = paired.canonical_sha(planned)
+        f.save()
+
+        plan_path = f.run/'plan.json'
+        plan = json.loads(plan_path.read_bytes())
+        plan['memory_backends'] = {
+            'CURRENT': {'readiness': {'cold_seconds': 587.068}},
+            'CAND': {'readiness': {'cold_seconds': 616.543}},
+        }
+        plan_pin = pin(plan_path, json.dumps(plan, indent=2).encode())
+        f.request['plan'] = plan_pin
+
+        binding_pin = f.request['binding']
+        binding_path = Path(binding_pin['path'])
+        binding = json.loads(binding_path.read_bytes())
+        binding['plan_sha256'] = plan_pin['sha256']
+        f.request['binding'] = pin(binding_path, C(binding))
+
+        request_pin = f.resave_request()
+        output = self.root/'float-plan-conversion'
+        legacy.convert(request_pin, output)
+        receipt_pin = existing(output/'receipt.json')
+        bundle, result = adapter.build(receipt_pin, POLICY)
+
+        self.assertEqual(result['status'], 'no_grading_needed')
+        self.assertEqual(bundle['plan']['observed']['plan_file_sha256'], plan_pin['sha256'])
+
     def test_zero_changed_refuses_an_unexpected_draft(self):
         f, receipt = full_run(self.root, lambda i, s: ('correct', 'correct'))
         stray = pin(self.root/'stray.json', b'{}')

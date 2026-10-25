@@ -108,6 +108,12 @@ any change to any field breaks the binding.
 - **`packets`** contain one row per changed pair from the draft.
 - **`policy`** is the caller's grading policy.
 
+The pinned runner plan may include finite nonnegative decimal diagnostics at
+`memory_backends.{CURRENT,CAND}.readiness.cold_seconds`. The bundle preserves
+the exact plan digest and validates the rest of the plan in the strict JSON
+domain used for blinded documents. These readiness values are not copied into
+the bundle or used as grading evidence.
+
 The join checks consistency only. It performs no I/O, so the file pins are
 checked by `build`, not by the join. A matching hash is a declaration, not
 authenticated custody. The join's own `custody: unknown` and `admission:

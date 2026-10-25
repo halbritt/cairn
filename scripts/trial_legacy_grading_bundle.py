@@ -15,8 +15,10 @@ Nothing here grades, releases or delivers. No grade or disposition is ever
 created: a changed pair without returned grades stays awaiting grades, and
 disagreements stay unresolved for the owner.
 """
+import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import trial_blind_packet_draft as blind
@@ -44,6 +46,27 @@ def _planned(plan):
     """The runner's exact planned identities (trial_weekly_run spec 'planned')."""
     rows = [dict(run_id=f'{case}.{arm}.s{seed}', case=case, arm=arm, seed=seed) for case, arm, seed, _ in plan['runs']]
     return sorted(rows, key=lambda r: r['run_id'])
+
+
+def _runner_plan(content):
+    """Read the pinned runner plan while validating its non-diagnostic data."""
+    plan = legacy._json(content)
+    checked = copy.deepcopy(plan)
+    backends = checked.get('memory_backends') if isinstance(checked, dict) else None
+    if isinstance(backends, dict):
+        for arm in ARMS:
+            backend = backends.get(arm)
+            readiness = backend.get('readiness') if isinstance(backend, dict) else None
+            if isinstance(readiness, dict) and 'cold_seconds' in readiness:
+                seconds = readiness['cold_seconds']
+                need(type(seconds) is float and math.isfinite(seconds) and seconds >= 0,
+                     'legacy_bundle_readiness_diagnostic')
+                del readiness['cold_seconds']
+    # Keep the stricter blinded-document JSON domain for all remaining plan
+    # fields. The two omitted values are pinned runner readiness diagnostics;
+    # the converter has already bound the exact source bytes.
+    blind._structured(checked)
+    return plan
 
 
 def _packets(receipt, draft_pin):
@@ -90,8 +113,9 @@ def _build(receipt_pin, policy, draft_pin):
     need(legacy.convert(receipt['request'], output) == receipt, 'legacy_bundle_receipt')
     sources = receipt['sources']
     agent_bytes, plan_bytes, binding_bytes = (_read(sources[k]) for k in ('agent', 'plan', 'binding'))
-    agent, plan, pair_binding = (blind._json(c) if k != 'agent' else json.loads(c)
-                                 for k, c in (('agent', agent_bytes), ('plan', plan_bytes), ('binding', binding_bytes)))
+    agent = json.loads(agent_bytes)
+    plan = _runner_plan(plan_bytes)
+    pair_binding = blind._json(binding_bytes)
     request = blind._json(_read(receipt['request']))
     need(pair_binding['arm_roles'] == {arm: arm for arm in ARMS} and agent['arms'] == plan['arms']
          and set(agent['arms']) == set(ARMS), 'legacy_bundle_arm_roles')
