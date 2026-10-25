@@ -163,6 +163,164 @@ func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *test
 	}
 }
 
+func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, seed, dest := eventFixture(t)
+	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
+		Binding: "routine-pressure-overflow", NativeSessionID: "routine-pressure-overflow",
+		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
+			State: "idle", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	view, err := receiver.ForAgentSession(ref, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type item struct {
+		event      AgentEvent
+		deliveryID string
+		deadline   time.Time
+		source     RecordVersionRef
+	}
+	publishRoutine := func(index int) item {
+		t.Helper()
+		draft := projectNote(seed.Scope.Repo)
+		draft.Sensitivity = "shareable"
+		draft.Body = fmt.Sprintf("routine pressure source %03d", index)
+		source, err := sender.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sourceRef := RecordVersionRef{RecordID: source.RecordID, Version: source.Version}
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+			Ref: sourceRef, Destination: EventDestination{Type: "agent", Name: agent.Inbox},
+			NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+		if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].AvailableAt == nil ||
+			!status.Deliveries[0].AvailableAt.Equal(event.CreatedAt.Add(60*time.Second)) ||
+			status.Deliveries[0].State != "pending" || status.Deliveries[0].Attempts != 0 {
+			t.Fatalf("routine pressure item %d status: %+v %v", index, status, err)
+		}
+		return item{event: event, deliveryID: status.Deliveries[0].DeliveryID,
+			deadline: *status.Deliveries[0].AvailableAt, source: sourceRef}
+	}
+	settle := func(attempt *SessionInboxAttempt) {
+		t.Helper()
+		if _, err := view.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(),
+			DeliveryID: attempt.Delivery.DeliveryID, LeaseID: attempt.Delivery.LeaseID,
+			Disposition: "failed", Code: "processing_failed"}, dest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(),
+			Session: ref, AttemptID: attempt.ID, Reason: "delivery_completed"}, dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Keep an older routine item ineligible, then prove the immediate request
+	// bypasses it. This is the actual policy distinction: priority is explicit
+	// publication metadata/kind, never inferred from its source text.
+	items := make([]item, 0, 111)
+	first := publishRoutine(0)
+	items = append(items, first)
+	urgent, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request",
+		Ref: first.source, Destination: EventDestination{Type: "agent", Name: agent.Inbox}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	urgentStatus, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: urgent.EventID}, dest)
+	if err != nil || len(urgentStatus.Deliveries) != 1 || urgentStatus.Deliveries[0].AvailableAt != nil {
+		t.Fatalf("urgent request status: %+v %v", urgentStatus, err)
+	}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.EventID != urgent.EventID || ready.DeliveryID != urgentStatus.Deliveries[0].DeliveryID {
+		t.Fatalf("urgent request did not bypass deferred routine notice: %+v %v", ready, err)
+	}
+	urgentClaim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
+	if err != nil || urgentClaim.Attempt == nil || urgentClaim.Attempt.Delivery.Event.EventID != urgent.EventID {
+		t.Fatalf("urgent request claim: %+v %v", urgentClaim, err)
+	}
+	settle(urgentClaim.Attempt)
+
+	// 101 distinct routine publications exceed the pending cue's 100-item
+	// window. Each has its own source and fixed deadline; later arrivals must
+	// not move the first event's deadline.
+	for i := 1; i < 101; i++ {
+		items = append(items, publishRoutine(i))
+	}
+	firstStatus, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: first.event.EventID}, dest)
+	if err != nil || len(firstStatus.Deliveries) != 1 || firstStatus.Deliveries[0].AvailableAt == nil ||
+		!firstStatus.Deliveries[0].AvailableAt.Equal(first.deadline) {
+		t.Fatalf("later arrivals slid first deadline: %+v %v", firstStatus, err)
+	}
+	// No test clock is injected into PostgreSQL. Advance only this disposable
+	// fixture's availability rows to model the fixed deadlines expiring.
+	if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, first.deliveryID); err != nil {
+		t.Fatal(err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.EventID != first.event.EventID || ready.DeliveryID != first.deliveryID {
+		t.Fatalf("first expired deadline did not expose oldest original: %+v %v", ready, err)
+	}
+	pending, err := receiver.SessionInboxPending(ctx, ref, dest)
+	if err != nil || pending.Notices < 1 || pending.LatestPosition < first.event.Position {
+		t.Fatalf("first expired item missing from pending cue: %+v %v", pending, err)
+	}
+	if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE consumer=$1 AND delivery_id<>$2 AND event_id IN (SELECT event_id FROM cairn.agent_event WHERE repo=$3 AND kind='notice')`, agent.Inbox, first.deliveryID, seed.Scope.Repo); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = receiver.SessionInboxPending(ctx, ref, dest)
+	if err != nil || pending.Notices != sessionInboxPendingLimit || !pending.Truncated ||
+		pending.LatestPosition != items[len(items)-1].event.Position {
+		t.Fatalf("overflow hint did not report truncation/latest arrival: %+v %v", pending, err)
+	}
+
+	// Add arrivals while the finite original overflow is draining. They retain
+	// later positions and their own non-sliding deadlines; they cannot displace
+	// any of the 101 earlier eligible source/delivery identities.
+	pressure := make([]item, 0, 10)
+	for i := 0; i < len(items); i++ {
+		want := items[i]
+		ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+		if err != nil || ready.EventID != want.event.EventID || ready.DeliveryID != want.deliveryID {
+			t.Fatalf("overflow item %d was dropped/reordered: %+v %v", i, ready, err)
+		}
+		claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
+		if err != nil || claim.Attempt == nil || claim.Attempt.Delivery.Event.EventID != want.event.EventID ||
+			claim.Attempt.Delivery.DeliveryID != want.deliveryID || claim.Attempt.Delivery.Event.Ref != want.source {
+			t.Fatalf("overflow item %d source/delivery changed: %+v %v", i, claim, err)
+		}
+		settle(claim.Attempt)
+		if (i+1)%10 == 0 {
+			pressure = append(pressure, publishRoutine(101+len(pressure)))
+		}
+	}
+	for _, late := range pressure {
+		if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, late.deliveryID); err != nil {
+			t.Fatal(err)
+		}
+		ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+		if err != nil || ready.EventID != late.event.EventID || ready.DeliveryID != late.deliveryID {
+			t.Fatalf("late pressure item was dropped/reordered: %+v %v", ready, err)
+		}
+		claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
+		if err != nil || claim.Attempt == nil || claim.Attempt.Delivery.Event.EventID != late.event.EventID ||
+			claim.Attempt.Delivery.Event.Ref != late.source {
+			t.Fatalf("late pressure source changed: %+v %v", claim, err)
+		}
+		settle(claim.Attempt)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("pressure queue did not finitely drain: %+v %v", ready, err)
+	}
+}
+
 func TestNoticePolicyValidationAndImmediateDefault(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
