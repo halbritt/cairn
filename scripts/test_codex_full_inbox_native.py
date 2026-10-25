@@ -37,6 +37,19 @@ class FullInboxFixtureTests(unittest.TestCase):
         self.assertNotIn("HIDDEN_GRADE_SENTINEL", task + body)
         self.assertNotIn("HIDDEN_NEGATIVE_SENTINEL", task + body)
 
+    def test_batch_actor_exports_four_synthetic_notice_sources_only(self):
+        task, bodies = fixture._fixture_task_and_notice("batch")
+        self.assertEqual(bodies, fixture.BATCH_BODIES)
+        self.assertEqual(len(bodies), 4)
+        self.assertIn("first three", task)
+        self.assertIn("batch limit", task)
+        self.assertNotIn("acceptance_check", task)
+
+    def test_batch_actor_requires_trace_before_native_codex_setup(self):
+        with self.assertRaisesRegex(ValueError, "private diagnostic"):
+            fixture.check("/bin/false", "/tmp/not-created", {}, lambda *_args, **_kwargs: None,
+                          scenario="batch")
+
     def test_fixture_exposes_only_actor_visible_fields(self):
         # The stream is line-oriented SSE; inspect its final response.completed record.
         records = [line[6:] for line in fixture.response_stream("resp-fixture", dict(

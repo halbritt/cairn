@@ -17,6 +17,60 @@ _SAFE_STATUS = {
     "UNSUPPORTED_CONTROL",
 }
 _SAFE_REMAINDERS = {"batch_limit", "priority_waiting"}
+_ACTOR_RESPONSE_CLASSES = {
+    "registration_message", "read_notice", "settle_handled", "settle_failed",
+    "settle_ignored", "advance_successor", "advance_limit", "advance_priority",
+    "final_message", "unexpected",
+}
+_ACTOR_TOOL_RESULT_CLASSES = {
+    "none", "read_success", "read_unavailable", "settle_success", "settle_failure",
+    "advance_successor", "advance_limit", "advance_priority", "tool_error", "other",
+}
+_ACTOR_TRACE_STAGES = {
+    "registration", "context_lookup", "session_claim", "read_tool_call",
+    "read_tool_result", "settle_tool_call", "settle_tool_result",
+    "advance_tool_call", "advance_tool_result", "turn_terminal",
+    "handler_error", "unknown",
+}
+
+
+def classify_advance_tool_result(tool_result):
+    """Classify a nested Responses tool result without retaining its payload."""
+    if not isinstance(tool_result, dict) or tool_result.get("is_error") is True:
+        return "tool_error"
+    output = tool_result.get("output")
+    if isinstance(output, list):
+        output = "".join(item.get("text", "") for item in output
+                         if isinstance(item, dict) and isinstance(item.get("text"), str))
+    if not isinstance(output, str):
+        return "other"
+    try:
+        envelope = json.loads(output)
+    except (TypeError, ValueError):
+        return "other"
+    exit_code = envelope.get("exit_code") if isinstance(envelope, dict) else None
+    if type(exit_code) is int and exit_code != 0:
+        return "tool_error"
+    stdout = envelope.get("output") if isinstance(envelope, dict) else None
+    if not isinstance(stdout, str):
+        stdout = output
+    try:
+        response = json.loads(stdout)
+    except (TypeError, ValueError):
+        return "other"
+    if (not isinstance(response, dict) or response.get("schema") != _RESPONSE_SCHEMA or
+            response.get("ok") is not True):
+        return "tool_error"
+    next_value = response.get("next")
+    if (isinstance(next_value, str) and
+            _bounded_integer(response.get("batch_index"), 2, 3) is not None and
+            _bounded_integer(response.get("batch_limit"), 1, 3) == 3):
+        return "advance_successor"
+    if next_value is None and response.get("remainder") == "batch_limit":
+        return "advance_limit"
+    if next_value is None and response.get("remainder") == "priority_waiting":
+        return "advance_priority"
+    return "other"
 
 
 def _bounded_code(value, allowed):
@@ -72,6 +126,21 @@ class AdvanceDiagnosticWriter:
             "batch_limit": _bounded_integer(response.get("batch_limit"), 1, 3),
             "returncode": _bounded_integer(returncode, -128, 255),
         }
+        self.stream.write(json.dumps(row, sort_keys=True) + "\n")
+        self.stream.flush()
+        os.fsync(self.stream.fileno())
+
+    def record_actor_exchange(self, response_class, tool_result_classes, stage="unknown"):
+        """Persist bounded actor protocol classes without retaining payloads."""
+        response_class = (response_class if isinstance(response_class, str)
+                          and response_class in _ACTOR_RESPONSE_CLASSES else "unexpected")
+        if not isinstance(tool_result_classes, (list, tuple)):
+            tool_result_classes = ["other"]
+        classes = sorted({value if isinstance(value, str) and value in _ACTOR_TOOL_RESULT_CLASSES
+                          else "other" for value in tool_result_classes})
+        stage = stage if isinstance(stage, str) and stage in _ACTOR_TRACE_STAGES else "unknown"
+        row = {"operation": "actor_exchange", "response_class": response_class,
+               "tool_result_classes": classes, "stage": stage}
         self.stream.write(json.dumps(row, sort_keys=True) + "\n")
         self.stream.flush()
         os.fsync(self.stream.fileno())

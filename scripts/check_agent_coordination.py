@@ -5,6 +5,7 @@ import shlex
 import os
 import hashlib
 import shutil
+import stat
 from pathlib import Path
 import select
 import signal
@@ -886,6 +887,35 @@ def check(binary, root, repo, api_call):
                     assert stall_refusal["join_eligible"] is False
                     print("Single-notice stalled fixture bound to workflow gate and left unscored:",
                           json.dumps(stall_refusal, sort_keys=True))
+            if (not os.environ.get("CAIRN_COMPACT_STAGE") and
+                    os.environ.get("CAIRN_CODEX_ENTRY") and os.environ.get("CAIRN_CODEX_ROOT")):
+                from check_codex_full_inbox_native import check as check_codex_full_inbox_native
+                batch_candidate = root / "native-batch-candidate"
+                batch_bin = batch_candidate / "bin"
+                batch_bin.mkdir(parents=True, mode=0o700)
+                shutil.copyfile(Path(binary).resolve(strict=True), batch_bin / "cairn")
+                (batch_bin / "cairn").chmod(0o700)
+                route_config = dict(json.loads(config.read_text()),
+                    cairn=str(batch_bin / "cairn"), socket=str(root / "api.sock"),
+                    token_file=str(root / "carol.token"))
+                trace_dir = Path.home() / ".cache/cairn-221-native-batch-actor"
+                trace_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                trace_info = trace_dir.lstat()
+                assert stat.S_ISDIR(trace_info.st_mode) and trace_info.st_uid == os.getuid()
+                assert stat.S_IMODE(trace_info.st_mode) == 0o700, \
+                    "native batch actor trace directory must be private"
+                trace_path = trace_dir / ("actor-" + str(uuid.uuid4()) + ".jsonl")
+                batch_fixture = check_codex_full_inbox_native(
+                    binary=os.environ["CAIRN_CODEX_BINARY"],
+                    root=root / "native-batch-codex", config=route_config,
+                    api_call=api_call, candidate_root=batch_candidate,
+                    sandbox_auth_file=None, turn_timeout=120,
+                    codex_entry=os.environ["CAIRN_CODEX_ENTRY"],
+                    codex_root=os.environ["CAIRN_CODEX_ROOT"],
+                    scenario="batch", diagnostic_output=trace_path, api_role="carol")
+                assert batch_fixture["result"] == "PASS"
+                print("Three-notice native Codex fixture retained sanitized response/tool-result classes at:",
+                      str(trace_path))
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")

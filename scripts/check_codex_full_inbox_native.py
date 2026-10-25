@@ -5,6 +5,7 @@ messages, function calls, and usage are scripted; they are not actor decisions
 or provider measurements.
 """
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import hashlib
 import importlib.util
 import json
 import os
@@ -22,6 +23,12 @@ MODEL = "gpt-6-luna"
 REPORT_SCHEMA = "cairn.codex-full-inbox-native-fixture/1"
 FIXTURE = Path(__file__).resolve().parents[1] / "trials/token-efficiency/FIXTURE.json"
 SOURCE_BODY = "Build 81 completed; artifact checksum is 7b1a."
+BATCH_BODIES = (
+    "Batch notice 1: record alpha is ready.",
+    "Batch notice 2: record bravo is ready.",
+    "Batch notice 3: record charlie is ready.",
+    "Batch notice 4: remains pending after the bounded turn.",
+)
 
 
 def response_stream(ident, item):
@@ -59,7 +66,11 @@ def _load_installer():
     return module
 
 
-def _fixture_task_and_notice():
+def _fixture_task_and_notice(scenario="single"):
+    if scenario == "batch":
+        return ("Process the first three already-waiting routine notices in this turn. "
+                "Read each exact source, explicitly settle each as handled, and stop at the batch limit.",
+                BATCH_BODIES)
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     row = next(item for item in data["cases"] if item.get("id") == "single_notice")
     assert row["actor_task"] == "Process the single routine build notice for Cairn and record its exact disposition."
@@ -78,13 +89,18 @@ def _exec_tool(call_id, command):
 
 
 def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
-          turn_timeout=60, codex_entry=None, codex_root=None, mode="complete"):
+          turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
+          scenario="single", diagnostic_output=None, api_role="bob"):
     """Run one disposable native notice turn.
 
     ``binary`` is the selected Codex installation identity. It is never
     executed. The bwrap launcher is built only from explicit Node CLI entry
     and package-root paths; a synthetic empty auth object is used by default.
     """
+    if scenario not in ("single", "batch"):
+        raise ValueError("scenario must be single or batch")
+    if scenario == "batch" and diagnostic_output is None:
+        raise ValueError("batch actor fixture requires a private diagnostic output path")
     if codex_entry is None or codex_root is None:
         raise RuntimeError("explicit Node Codex entry and package root are required for the bwrap fixture")
     selected_binary = Path(binary).resolve(strict=True)
@@ -102,15 +118,36 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         raise RuntimeError("Cairn executable must come from the disposable candidate root")
     if not os.environ.get("CAIRN_TEST_DATABASE_URL"):
         raise RuntimeError("disposable integration database is required")
-    actor_task, notice_body = _fixture_task_and_notice()
+    if scenario == "batch":
+        token_path = Path(config["token_file"]).resolve(strict=True)
+        identity_path = token_path.parent / "identities.json"
+        token_hash = hashlib.sha256(token_path.read_bytes()).hexdigest()
+        identities = json.loads(identity_path.read_text(encoding="utf-8"))
+        binding_principal = next((row["principal"] for row in identities
+                                  if row.get("token_sha256") == token_hash), None)
+        if binding_principal != "agent/" + api_role:
+            raise RuntimeError("native batch API role does not match binding token principal")
+    actor_task, notice_source = _fixture_task_and_notice(scenario)
+    notice_body = notice_source[0] if scenario == "batch" else notice_source
     if not isinstance(turn_timeout, (int, float)) or turn_timeout <= 0:
         raise ValueError("turn_timeout must be positive seconds")
     if mode not in ("complete", "stall"):
         raise ValueError("mode must be complete or stall")
     root = Path(root).resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
+    diagnostic_path = Path(diagnostic_output) if diagnostic_output is not None else None
+    trace = None
+    classify_advance_tool_result = None
+    if diagnostic_path is not None:
+        from native_notice_batch_diagnostics import AdvanceDiagnosticWriter, classify_advance_tool_result as classify
+        classify_advance_tool_result = classify
+        trace = AdvanceDiagnosticWriter(diagnostic_path, root)
     actor_root = root / "workspace"
     actor_root.mkdir(mode=0o700)
+    if scenario == "batch":
+        shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
+                        actor_root / "coordination.py")
+        (actor_root / "coordination.py").chmod(0o600)
     profile = actor_root / ".codex"
     profile.mkdir(mode=0o700)
     if sandbox_auth_file is None:
@@ -138,11 +175,16 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     settings = profile / "hooks.json"
     native_config = dict(config, harness="codex", binding="codex-full-inbox",
                          process_names=["codex"], config_home=str(profile), native_delivery=True)
+    if scenario == "batch":
+        native_config.update(compact_inbox_version=1, notice_batch_version=1)
     engine_root = profile / "coordination"
     installed = installer.install(engine_root, settings, native_config)
     # The frozen check and fixture are outside the workspace. Only the actor
     # task and its private Codex profile are staged inside it.
-    assert {path.name for path in actor_root.iterdir()} == {"task.txt", ".codex"}
+    expected_workspace_files = {"task.txt", ".codex"}
+    if scenario == "batch":
+        expected_workspace_files.add("coordination.py")
+    assert {path.name for path in actor_root.iterdir()} == expected_workspace_files
 
     state_dir = engine_root / "state/codex-full-inbox"
     metadata_path = profile / "hook-metadata.jsonl"
@@ -164,6 +206,34 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     event_owner = "alice"
     attempt_claimed = False
     actor_turn_started = False
+    batch_item_index = 0
+    batch_action = "read"
+    batch_last_call_id = None
+    batch_call_index = 0
+    batch_notices = []
+    batch_sources = []
+    batch_root_attempt_id = None
+    batch_stage = "unknown"
+
+    def batch_context():
+        key = hashlib.sha256(("codex-full-inbox\0" + str(native_id)).encode()).hexdigest()
+        session_path = state_dir / (key + ".json")
+        current = json.loads(session_path.read_text(encoding="utf-8"))["inbox_attempt"]
+        context_path = state_dir / "inbox" / (current["attempt_id"] + ".json")
+        return current, json.loads(context_path.read_text(encoding="utf-8"))
+
+    def batch_exec(action, handle):
+        nonlocal batch_call_index, batch_last_call_id, batch_action
+        command = ["/usr/bin/env", "CAIRN_INBOX_ROOT=" + str(engine_root),
+                   "CODEX_THREAD_ID=" + str(native_id), "/usr/bin/python3",
+                   str(actor_root / "coordination.py"), "inbox", "compact", action, handle]
+        if action == "settle":
+            command.append("handled")
+        batch_call_index += 1
+        call_id = "batch_" + str(batch_call_index)
+        batch_last_call_id = call_id
+        batch_action = "await_" + action
+        return _exec_tool(call_id, shlex.join(command))
 
     helper_spec = importlib.util.spec_from_file_location(
         "trial_codex_app_server_sandbox",
@@ -216,10 +286,13 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             nonlocal notice, source, attempt_id, native_turn_id, delivery_id
             nonlocal source_read_confirmed, settlement_confirmed
             nonlocal attempt_claimed
+            nonlocal batch_item_index, batch_action, batch_last_call_id, batch_root_attempt_id
+            nonlocal batch_stage
             try:
                 assert self.path == "/v1/responses", "unexpected local Responses path"
                 size = int(self.headers.get("Content-Length", "0"))
-                assert 0 < size <= 2_000_000 and len(requests) < 8, "local Responses fixture bounds exceeded"
+                assert 0 < size <= 2_000_000 and len(requests) < (16 if scenario == "batch" else 8), \
+                    "local Responses fixture bounds exceeded"
                 request = json.loads(self.rfile.read(size))
                 requests.append(request)
                 results = {item["call_id"]: item for item in request.get("input", [])
@@ -298,6 +371,96 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 if not actor_turn_started:
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
                         content=[dict(type="output_text", text="Native fixture registration turn completed.", annotations=[])])
+                    if trace is not None:
+                        trace.record_actor_exchange("registration_message", ["none"], stage="registration")
+                elif scenario == "batch":
+                    response_class = "read_notice"
+                    result_classes = ["none"]
+                    if batch_last_call_id is None:
+                        batch_stage = "context_lookup"
+                        current, context = batch_context()
+                        attempt_id = current["attempt_id"]
+                        batch_root_attempt_id = attempt_id
+                        native_turn_id = current.get("native_turn_id")
+                        assert native_turn_id == actor_turn_id, "initial notice is not bound to the actor turn"
+                        assert current["delivery"]["event"]["ref"] == batch_sources[0]
+                        assert current["delivery"]["event"]["event_id"] == batch_notices[0]["event_id"]
+                        assert context["source"] == batch_sources[0]
+                        assert context["compact_handle"]
+                        if not attempt_claimed:
+                            batch_stage = "session_claim"
+                            claimed = api_call(api_role, "session-inbox-claim", raw=True,
+                                body=json.dumps(dict(request_id=attempt_id,
+                                    session={key: context[key] for key in ("agent_id", "execution_id")},
+                                    native_turn_id=native_turn_id)))["attempt"]
+                            assert claimed["attempt_id"] == attempt_id
+                            assert claimed["native_turn_id"] == native_turn_id
+                            assert claimed["delivery"]["delivery_id"] == batch_notices[0]["delivery_id"]
+                            attempt_claimed = True
+                        batch_stage = "read_tool_call"
+                        item = batch_exec("read", context["compact_handle"])
+                    else:
+                        result = results.get(batch_last_call_id)
+                        assert result is not None, "Codex omitted the previous batch tool result"
+                        result_text = json.dumps(result, sort_keys=True)
+                        current, context = batch_context()
+                        assert current.get("native_turn_id") == actor_turn_id
+                        assert (current.get("batch_root") or batch_root_attempt_id) == batch_root_attempt_id
+                        if batch_action == "await_read":
+                            batch_stage = "read_tool_result"
+                            expected_source = batch_sources[batch_item_index]
+                            assert BATCH_BODIES[batch_item_index] in result_text
+                            assert expected_source["record_id"] in result_text
+                            source_read_confirmed = True
+                            result_classes = ["read_success"]
+                            response_class = "settle_handled"
+                            batch_stage = "settle_tool_call"
+                            item = batch_exec("settle", context["compact_handle"])
+                        elif batch_action == "await_settle":
+                            batch_stage = "settle_tool_result"
+                            event = batch_notices[batch_item_index]
+                            delivery = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+                            assert delivery["state"] == "handled" and delivery["attempts"] == 1
+                            assert "handled" in result_text
+                            settlement_confirmed = True
+                            result_classes = ["settle_success"]
+                            response_class = "advance_successor"
+                            batch_stage = "advance_tool_call"
+                            item = batch_exec("advance", context["compact_handle"])
+                        elif batch_action == "await_advance":
+                            batch_stage = "advance_tool_result"
+                            advance_class = classify_advance_tool_result(result)
+                            if batch_item_index < 2:
+                                assert advance_class == "advance_successor"
+                                result_classes = ["advance_successor"]
+                                batch_item_index += 1
+                                next_attempt, next_context = batch_context()
+                                expected_source = batch_sources[batch_item_index]
+                                assert next_attempt["delivery"]["event"]["ref"] == expected_source
+                                assert next_attempt.get("batch_index") == batch_item_index + 1
+                                assert next_attempt.get("batch_root") == batch_root_attempt_id
+                                assert next_context["source"] == expected_source
+                                assert next_context.get("compact_handle")
+                                response_class = "read_notice"
+                                batch_stage = "read_tool_call"
+                                item = batch_exec("read", next_context["compact_handle"])
+                            else:
+                                assert advance_class == "advance_limit"
+                                result_classes = ["advance_limit"]
+                                pending = api_call(event_owner, "event-status",
+                                                   batch_notices[3]["event_id"])["deliveries"][0]
+                                assert pending["state"] == "pending" and pending["attempts"] == 0
+                                response_class = "final_message"
+                                batch_stage = "turn_terminal"
+                                item = dict(type="message", id="msg_batch_done", role="assistant",
+                                    status="completed", content=[dict(type="output_text",
+                                    text="Read and handled the first three notices; the fourth remains pending.",
+                                    annotations=[])])
+                                finished.set()
+                        else:
+                            raise AssertionError("unexpected batch tool result action")
+                    if trace is not None:
+                        trace.record_actor_exchange(response_class, result_classes, stage=batch_stage)
                 else:
                     assert notice is not None and source is not None, "notice must be published before the actor turn"
                     paths = list((state_dir / "inbox").glob("*.json"))
@@ -345,8 +508,10 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                             content=[dict(type="output_text", text="Build 81 completed; checksum 7b1a recorded.", annotations=[])])
                         finished.set()
                 body = response_stream("resp_" + str(len(requests)), item)
-            except (AssertionError, KeyError, StopIteration, ValueError, TypeError) as exc:
-                failures.append(type(exc).__name__ + ": " + str(exc))
+            except Exception as exc:
+                if trace is not None:
+                    trace.record_actor_exchange("unexpected", ["tool_error"], stage=batch_stage)
+                failures.append(type(exc).__name__)
                 self.send_error(500)
                 return
             self.send_response(200)
@@ -391,19 +556,38 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         agents = api_call("bob", "agents", "list", "--harness", "codex")["agents"]
         target = next(row for row in agents if row["native_session_id"] == native_id)
         assert target["metadata"]["state"] == "idle", "fixture notice must be published between turns"
-        created = api_call("alice", "create", raw=True, body=json.dumps(dict(
-            request_id=str(uuid.uuid4()), draft=dict(kind="note", body=notice_body,
-                sensitivity="shareable", claim_type="self",
-                scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
-        source = created
-        notice = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
-            "--to", target["inbox"], "--kind", "notice", "--version",
-            str(created["version"]), created["record_id"])
-        published = api_call(event_owner, "event-status", notice["event_id"])
-        assert len(published["deliveries"]) == 1, "fixture notice did not create exactly one delivery"
-        pending = published["deliveries"][0]
-        assert pending["state"] == "pending" and pending["attempts"] == 0
-        delivery_id = pending["delivery_id"]
+        if scenario == "batch":
+            for body in BATCH_BODIES:
+                created = api_call("alice", "create", raw=True, body=json.dumps(dict(
+                    request_id=str(uuid.uuid4()), draft=dict(kind="note", body=body,
+                        sensitivity="shareable", claim_type="self",
+                        scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
+                ref = dict(record_id=created["record_id"], version=created["version"])
+                event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                    "--to", target["inbox"], "--kind", "notice", "--version",
+                    str(created["version"]), created["record_id"])
+                published = api_call(event_owner, "event-status", event["event_id"])
+                assert len(published["deliveries"]) == 1
+                pending = published["deliveries"][0]
+                assert pending["state"] == "pending" and pending["attempts"] == 0
+                batch_sources.append(ref)
+                batch_notices.append(dict(event_id=event["event_id"], ref=ref,
+                                          delivery_id=pending["delivery_id"]))
+            notice, source, delivery_id = batch_notices[0], batch_sources[0], batch_notices[0]["delivery_id"]
+        else:
+            created = api_call("alice", "create", raw=True, body=json.dumps(dict(
+                request_id=str(uuid.uuid4()), draft=dict(kind="note", body=notice_body,
+                    sensitivity="shareable", claim_type="self",
+                    scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
+            source = created
+            notice = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                "--to", target["inbox"], "--kind", "notice", "--version",
+                str(created["version"]), created["record_id"])
+            published = api_call(event_owner, "event-status", notice["event_id"])
+            assert len(published["deliveries"]) == 1, "fixture notice did not create exactly one delivery"
+            pending = published["deliveries"][0]
+            assert pending["state"] == "pending" and pending["attempts"] == 0
+            delivery_id = pending["delivery_id"]
 
         actor_turn_started = True
         task_text = actor_task_path.read_text(encoding="utf-8").strip()
@@ -468,14 +652,23 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         active_deadline.disarm()
         assert terminal, "native Codex turn did not complete within its timeout"
         assert finished.is_set() and source_read_confirmed and settlement_confirmed, \
-            "native turn did not read and settle the one notice"
-        assert notice is not None and notice["ref"] == dict(record_id=source["record_id"], version=source["version"])
+            "native turn did not read and settle its notice work"
         assert native_turn_id in observed_turn_ids and native_turn_id in completed_turn_ids, \
             "attempt native turn did not have observed start and completion notifications"
-        event_status = api_call(event_owner, "event-status", notice["event_id"])
-        assert len(event_status["deliveries"]) == 1, "fixture event created more than one delivery"
-        state = event_status["deliveries"][0]
-        assert state["delivery_id"] == delivery_id_local_for(notice) and state["state"] == "handled" and state["attempts"] == 1
+        if scenario == "batch":
+            assert batch_item_index == 2 and len(requests) == 11
+            for event in batch_notices[:3]:
+                delivery = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+                assert delivery["delivery_id"] == event["delivery_id"]
+                assert delivery["state"] == "handled" and delivery["attempts"] == 1
+            pending = api_call(event_owner, "event-status", batch_notices[3]["event_id"])["deliveries"][0]
+            assert pending["state"] == "pending" and pending["attempts"] == 0
+        else:
+            assert notice is not None and notice["ref"] == dict(record_id=source["record_id"], version=source["version"])
+            event_status = api_call(event_owner, "event-status", notice["event_id"])
+            assert len(event_status["deliveries"]) == 1, "fixture event created more than one delivery"
+            state = event_status["deliveries"][0]
+            assert state["delivery_id"] == delivery_id_local_for(notice) and state["state"] == "handled" and state["attempts"] == 1
     # Helpers read the exact observed context rather than caller-selected IDs.
     def delivery_id_local_for(event):
         return api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
@@ -505,10 +698,26 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 settlement_performed=False, retry_performed=False)
             print(json.dumps(result, sort_keys=True))
             return result
-        final_state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
         metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
         assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id for row in metadata)
         assert any(row.get("event") == "Stop" and row.get("turn_id") == native_turn_id for row in metadata)
+        if scenario == "batch":
+            trace_rows = [json.loads(line) for line in diagnostic_path.read_text(encoding="utf-8").splitlines()]
+            actor_rows = [row for row in trace_rows if row.get("operation") == "actor_exchange"]
+            assert len(actor_rows) == 11
+            assert all(row.get("stage") in ("registration", "read_tool_call", "read_tool_result",
+                "settle_tool_call", "settle_tool_result", "advance_tool_call",
+                "advance_tool_result", "turn_terminal") for row in actor_rows)
+            result = dict(schema=REPORT_SCHEMA, result="PASS", workflow_id="native.notice_batch",
+                experimental_actor_fixture=True, task_outcome="unassessed",
+                verified_store_boundary="first_notice_handled_second_notice_leased",
+                native_hooks_registered=True, native_turn_joined=True,
+                scripted_response_count=len(actor_rows), diagnostic_rows=len(trace_rows),
+                provider="local_responses_stub", provider_call=False,
+                actor_decision="scripted_fixture_sequence")
+            print(json.dumps(result, sort_keys=True))
+            return result
+        final_state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
         assert final_state["state"] == "handled" and final_state["attempts"] == 1
         refs = dict(event_id=notice["event_id"], delivery_id=final_state["delivery_id"], attempt_id=attempt_id,
                     native_turn_id=native_turn_id, source=notice["ref"])
@@ -528,3 +737,5 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+        if trace is not None:
+            trace.close()
