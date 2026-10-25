@@ -835,6 +835,10 @@ def check(binary, root, repo, api_call):
                                    "--include-offline")["agents"]
                 assert stopped and stopped[0]["stopped"]
                 print("Staged compact Codex binding loaded and registered an actual native first turn against the disposable API; fixture provider only")
+                from check_codex_compact_native import check as check_codex_compact_native
+                check_codex_compact_native(os.environ["CAIRN_CODEX_BINARY"],
+                    root / "native-compact-codex-read-settle", json.loads(config.read_text()),
+                    api_call, candidate_root)
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")

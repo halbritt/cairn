@@ -170,3 +170,29 @@ They establish native compact read and settlement for one causal response,
 not actor understanding, accepted task outcome, provider usage or latency.
 CAIRN-216 remains open for paired task results, usage/latency, and live
 canary/rollback evidence.
+
+## Codex native compact oversized notice
+
+The staged Codex binding also completed one native app-server task against a
+local Responses fixture. The fixture copied the staged account into a private
+home, redirected the app-server to loopback, and pointed compact-handle lookup
+at that copied coordination root. The app-server used the model name
+`gpt-6-luna`; no subscription or external provider request was made.
+
+After the native session registered, the local fixture published one notice
+whose exact source was 6,795 bytes. The native compact context carried a short
+handle, while the full body was absent from the request before the read. Codex
+used its native `functions.exec` tool to run the compact read and then explicit
+`handled` settlement. The fixture checked that the copied context matched the
+event's source reference, delivery ID, attempt ID, session and execution; it
+reclaimed the same session attempt, verified the whole source and record ID in
+the read result, then confirmed Store state `handled` with exactly one
+attempt. Four bounded loopback Responses exchanges completed the task. The
+disposable integration run passed `scripts/check_agent_events.py`, including
+this staged compact case.
+
+This demonstrates native Codex app-server transport for one oversized notice
+and exact-source settlement. It does not measure actor comprehension,
+accepted-task utility, provider usage, latency, or cost savings. The fixture
+does not yet cover a causal response in Codex. Live canary, paired outcomes,
+sender/recipient/capture usage, latency and rollback evidence remain open.
