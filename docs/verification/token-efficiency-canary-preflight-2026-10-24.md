@@ -220,9 +220,41 @@ mounted into an unwrapped actor shell namespace, this probe shows that its files
 are readable without a command-approval callback.
 
 No provider, real OAuth credential, production socket, Cairn API, or Store was
-used. The MCP child bwrap probe is separate and does not isolate the actor shell.
-Read-only decision MCP and controller settlement were not exercised in this
-bounded approval probe because the shell read already bypassed approval. No safe
-subscribed canary route is established. Keep CAIRN-227 deferred until a route
-can expose selected subscription auth to app-server while denying actor shell
-visibility, and independently prove the controller settlement boundary.
+used in that app-server approval probe. The MCP child bwrap probe is separate and does not
+isolate the actor shell. Read-only decision MCP and controller settlement were
+not exercised here because the shell read already bypassed approval.
+
+### Scope correction and trial-runner boundary, 2026-10-25
+
+The previous proposed gate that required subscription auth to be hidden from the
+actor is superseded for this trial. CAIRN-227 does not state that requirement;
+the documented CAIRN-107 weekly runner mounts the selected `auth.json`
+read-only into the actor sandbox. Use that trust boundary: the selected account
+auth file may be readable by actor code, while no other account home, hidden
+rubric/controller files, or production Cairn socket, database, and config are
+mounted. The actor receives the disposable Store/socket and its task inputs.
+
+A provider-free probe through `scripts/trial_task_eval.py:sandbox_command`
+confirmed that boundary on this host. Inside its bwrap command, the selected
+`~/.codex/auth.json` was readable and an attempt to open it for writing failed;
+`~/.codex-harm`, `~/.local/share/cairn`, and a host-side hidden controller file
+were absent. The synthetic actor task and a disposable-store mount were
+present. The probe did not start Codex. It read the mounted auth bytes only to confirm
+readability, without retaining or printing them. It checked mount visibility only; it did not deliver a notice, call MCP, or
+settle an event.
+
+The native fixture checks separately establish source publication and pending
+single-notice delivery. Session-boundary Store tests exercise exact readiness,
+claim, source read, `handled` settlement with delivery and lease IDs, and
+attempt reconciliation. They do not run an actor. The one-workflow join helper
+requires an exact native event, workload, delivery attempt, turn join, response
+references, complete usage records, and committed settlement, but its limits
+check is post-turn. The existing native capture runner has an active timeout
+parameter; the one-workflow helper has no actor-launch command. These are
+separate provider-free source/test facts, not a live end-to-end route proof.
+
+CAIRN-227 remains **Defer** pending a reviewed one-account actor route with an
+active 120-second deadline, fixed trusted settlement, fresh status checks at
+admission, exact native usage join, independent task grade, accepted task
+outcome, remaining paired evidence, and rollback. Do not infer that hiding
+selected subscription auth is part of this gate.
