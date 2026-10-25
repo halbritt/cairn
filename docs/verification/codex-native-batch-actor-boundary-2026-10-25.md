@@ -162,3 +162,57 @@ egress denial for the fixture boundary, but it does not establish batch actor
 continuation. No actor retry followed this registration-only result. All
 Codex-generated messages and tool behavior in this fixture remain scripted
 synthetic Responses, not accepted task outcomes. CAIRN-221 remains In Progress.
+
+## Durable pre-notice diagnostic, 2026-10-25
+
+The direct runner now persists fixed hook entry/exit classes, four ordered
+Store slots as booleans, preflight classes, fixture exception class, and actor
+terminal class in its owner-only `0600` trace. It excludes hook turn IDs,
+source, token values, output and raw errors. Each trace row is flushed and
+synced before the fixture's assertion can unwind and before disposable cleanup.
+Focused tests exercise sanitization, fixed classification, and file mode.
+
+The first isolated direct attempt reached the registration response, then the
+controller's `agents list` call failed before notice publication. Read-only
+reproduction identified a controller argument-order error: it placed `list`
+after global flags, yielding `INVALID_REQUEST`; the integration harness places
+the subcommand before those flags. `fixture_api_argv()` now shares and tests
+that ordering. No notice was published in this first attempt.
+
+One targeted retry used a fresh disposable PostgreSQL/API, a new fake-auth
+profile, Codex CLI 0.164.0 through its explicit Node entry and package root,
+and the same outer `--unshare-net` boundary. The exact token bytes matched the
+`agent/carol` identity row before actor-root creation, the mounted short API
+socket authenticated, and the retry repeated the namespace preflight: its
+nested and parent namespace inode values matched and differed from the host;
+loopback reached the fixture handler; connection to synthetic TEST-NET failed
+with `ENETUNREACH`. The trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/retry-XEdC9u/actor.jsonl`
+(mode `0600`).
+
+The retry again stopped after the registration response, before the actor task
+turn. The fixture's next lookup found zero registered Codex agents and raised
+`StopIteration`. The hook metadata file was absent, the read-only API agent
+list contained zero rows, and read-only Store counts were zero for
+`agent_event`, `agent_delivery`, and `agent_session`. The trace records four
+`not_created` notice slots and actor terminal `not_started`; no source read,
+settlement, or advance occurred. The revised trace writer now also records a
+fixed fixture exception class on future failures. No further actor run was
+made.
+
+Source explains how the scripted registration response coexists with an empty
+agent list: the fixture's `verify()` sends a registration prompt and the local
+Responses handler returns a canned message, then it queries the API for a
+native agent. Actual agent creation happens in the lifecycle hook path through
+`agent-register` when a normalized `SessionStart`/turn observation reaches
+`integrations/lifecycle/coordination.py`. The absent hook file and zero agents
+show that this native registration path had not run before the fixture's
+lookup. The evidence does not show why Codex 0.164.0 did not invoke the loaded
+hook in this app-server setup; that cause remains unknown.
+
+These attempts verify only the runner's API argument fix and its isolated
+diagnostic boundary. They do not establish why Codex's registration hook did
+not create an agent row, native actor continuation, three dispositions, or an
+accepted task outcome. The next useful work is a source-level hook registration
+diagnosis, followed by a new bounded attempt only after that path is testable.
+CAIRN-221 remains In Progress.

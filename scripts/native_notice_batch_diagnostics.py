@@ -36,6 +36,28 @@ _ADVANCE_RESULT_STAGES = {
     "is_error", "outer_json_invalid", "exit_nonzero", "inner_json_invalid",
     "schema_or_ok_invalid", "success",
 }
+_HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "Stop", "PreCompact", "Notification"}
+_HOOK_ERROR_CODES = {
+    "API_UNAVAILABLE", "HANDLE_EXPIRED", "HOST_TARGET_GONE", "IDEMPOTENCY_CONFLICT",
+    "INBOX_ATTEMPT_MISMATCH", "INTENT_PENDING", "INVALID_CONFIG", "INVALID_HOST",
+    "INVALID_REQUEST", "NATIVE_ACTIVE", "NATIVE_PROMPT_REFUSED", "NATIVE_TURN_MISMATCH",
+    "NOT_FOUND", "NOT_THIS_SESSION", "REQUEST_CANCELLED", "SESSION_BUSY",
+    "SOURCE_UNAVAILABLE", "STALE_LEASE", "STALE_SESSION", "UNSUPPORTED_CONTROL",
+    "WAKE_UNAVAILABLE", "WAKE_UNCERTAIN",
+}
+_HOOK_ERROR_CLASSES = {
+    "CoordinationError", "ConnectionError", "FileNotFoundError", "KeyError", "OSError",
+    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TypeError", "ValueError",
+}
+_PREFLIGHT_FIELDS = {
+    "token_identity": {"matched", "mismatched", "unavailable"},
+    "api_socket": {"available", "unavailable"},
+    "api_version": {"authenticated", "unavailable"},
+}
+_FIXTURE_FAILURE_CLASSES = {
+    "AssertionError", "FileNotFoundError", "KeyError", "OSError", "RuntimeError",
+    "StopIteration", "TimeoutError", "TypeError", "ValueError",
+}
 
 
 def advance_tool_result_stage(tool_result):
@@ -119,6 +141,18 @@ def _bounded_integer(value, minimum, maximum):
     return None
 
 
+def fixture_api_argv(binary, socket, token_file, command, *args, raw=False):
+    """Build a fixture CLI command using the integration harness argument order."""
+    connection = ["--socket", str(socket), "--token-file", str(token_file)]
+    if raw:
+        return [str(binary), "agent", *connection, command, *args]
+    if command == "agents":
+        if not args:
+            raise ValueError("agents fixture command requires its subcommand")
+        return [str(binary), command, args[0], *connection, *args[1:]]
+    return [str(binary), command, *connection, *args]
+
+
 class AdvanceDiagnosticWriter:
     def __init__(self, path, disposable_root):
         self.path = Path(path)
@@ -187,6 +221,69 @@ class AdvanceDiagnosticWriter:
                  and result_stage in _ADVANCE_RESULT_STAGES else "other")
         self.stream.write(json.dumps({"operation": "advance_result_stage",
                                       "stage_code": stage}, sort_keys=True) + "\n")
+        self.stream.flush()
+        os.fsync(self.stream.fileno())
+
+    def record_hook_metadata(self, rows):
+        """Persist sanitized hook entry/exit classifications, never hook data or IDs."""
+        if not isinstance(rows, (list, tuple)):
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            event = row.get("event")
+            event_class = event if isinstance(event, str) and event in _HOOK_EVENTS else "other"
+            exiting = type(row.get("exit_code")) is int
+            code = row.get("exit_code")
+            exit_class = "not_applicable" if not exiting else "zero" if code == 0 else "nonzero"
+            stderr_code = row.get("stderr_code")
+            stderr_class = row.get("stderr_class")
+            safe_code = stderr_code if isinstance(stderr_code, str) and stderr_code in _HOOK_ERROR_CODES else "none"
+            safe_class = stderr_class if isinstance(stderr_class, str) and stderr_class in _HOOK_ERROR_CLASSES else "none"
+            self._write({"operation": "hook", "event_class": event_class,
+                         "phase": "exit" if exiting else "entry",
+                         "exit_class": exit_class, "stderr_code": safe_code,
+                         "stderr_class": safe_class})
+
+    def record_store_slot(self, slot, *, status_class, observed, pending=None, leased=None,
+                          handled=None, attempts_zero=None, attempted=None):
+        """Persist one ordered notice slot as booleans, without Store identifiers."""
+        slot = _bounded_integer(slot, 1, 4)
+        if slot is None:
+            slot = 0
+        status_class = (status_class if isinstance(status_class, str) and
+                        status_class in {"available", "not_created", "unavailable", "unexpected"}
+                        else "unexpected")
+        values = (observed, pending, leased, handled, attempts_zero, attempted)
+        values = [value if type(value) is bool else None for value in values]
+        self._write({"operation": "store_slot", "slot": slot, "status_class": status_class,
+                     "observed": values[0], "pending": values[1],
+                     "leased": values[2], "handled": values[3],
+                     "attempts_zero": values[4], "attempted": values[5]})
+
+    def record_actor_terminal(self, terminal_class):
+        allowed = {"completed", "failed", "cancelled", "not_observed", "not_started", "other"}
+        value = terminal_class if isinstance(terminal_class, str) and terminal_class in allowed else "other"
+        self._write({"operation": "actor_terminal", "terminal_class": value})
+
+    def record_fixture_failure(self, exception_class):
+        if exception_class is None:
+            value = "none"
+        elif isinstance(exception_class, str) and exception_class in _FIXTURE_FAILURE_CLASSES:
+            value = exception_class
+        else:
+            value = "other"
+        self._write({"operation": "fixture_failure", "exception_class": value})
+
+    def record_preflight(self, check, result):
+        allowed = _PREFLIGHT_FIELDS.get(check)
+        if allowed is None:
+            return
+        value = result if isinstance(result, str) and result in allowed else "unavailable"
+        self._write({"operation": "preflight", "check": check, "result": value})
+
+    def _write(self, row):
+        self.stream.write(json.dumps(row, sort_keys=True) + "\n")
         self.stream.flush()
         os.fsync(self.stream.fileno())
 

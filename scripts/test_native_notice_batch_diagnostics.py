@@ -8,10 +8,21 @@ from native_notice_batch_diagnostics import (
     AdvanceDiagnosticWriter,
     advance_tool_result_stage,
     classify_advance_tool_result,
+    fixture_api_argv,
 )
 
 
 class AdvanceDiagnosticWriterTests(unittest.TestCase):
+    def test_fixture_api_argv_matches_integration_harness_order(self):
+        self.assertEqual(fixture_api_argv("cairn", "/api.sock", "/carol.token",
+            "agents", "list", "--harness", "codex"),
+            ["cairn", "agents", "list", "--socket", "/api.sock",
+             "--token-file", "/carol.token", "--harness", "codex"])
+        self.assertEqual(fixture_api_argv("cairn", "/api.sock", "/carol.token",
+            "version", raw=True),
+            ["cairn", "agent", "--socket", "/api.sock", "--token-file",
+             "/carol.token", "version"])
+
     def test_classifies_nested_advance_tool_success_terminal_and_error_shapes(self):
         def wrapped(response, exit_code=0):
             execution = {"output": json.dumps(response), "exit_code": exit_code}
@@ -113,6 +124,63 @@ class AdvanceDiagnosticWriterTests(unittest.TestCase):
                 "response_class": "unexpected", "tool_result_classes": ["other"],
                 "stage": "unknown"})
             self.assertNotIn("secret", path.read_text())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_retains_hook_store_and_terminal_fixed_codes_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            disposable = base / "disposable"
+            private = base / "private"
+            disposable.mkdir(mode=0o700)
+            private.mkdir(mode=0o700)
+            path = private / "actor.jsonl"
+            writer = AdvanceDiagnosticWriter(path, disposable)
+            writer.record_preflight("token_identity", "matched")
+            writer.record_preflight("api_socket", "available")
+            writer.record_preflight("api_version", "authenticated")
+            writer.record_fixture_failure("StopIteration")
+            writer.record_hook_metadata([
+                {"event": "UserPromptSubmit", "turn_id": "secret-turn",
+                 "source": "secret-source", "keys": ["token"],
+                 "exit_code": 0, "stderr_code": "INVALID_HOST",
+                 "stderr_class": "FileNotFoundError"},
+                {"event": "UserPromptSubmit", "turn_id": "secret-turn"},
+                {"event": "not-an-event", "exit_code": 19,
+                 "stderr_code": "SECRET", "stderr_class": "SecretClass"},
+            ])
+            writer.record_store_slot(1, status_class="available", observed=True, pending=False, leased=True,
+                                     handled=False, attempts_zero=False, attempted=True)
+            writer.record_store_slot(4, status_class="not_created", observed=False)
+            writer.record_actor_terminal("not_observed")
+            writer.close()
+
+            text = path.read_text()
+            rows = [json.loads(line) for line in text.splitlines()]
+            self.assertEqual(rows[0], {"operation": "preflight", "check": "token_identity",
+                                      "result": "matched"})
+            self.assertEqual(rows[1], {"operation": "preflight", "check": "api_socket",
+                                      "result": "available"})
+            self.assertEqual(rows[2], {"operation": "preflight", "check": "api_version",
+                                      "result": "authenticated"})
+            self.assertEqual(rows[3], {"operation": "fixture_failure",
+                                      "exception_class": "StopIteration"})
+            self.assertEqual(rows[4], {"operation": "hook", "event_class": "UserPromptSubmit",
+                "phase": "exit", "exit_class": "zero", "stderr_code": "INVALID_HOST",
+                "stderr_class": "FileNotFoundError"})
+            self.assertEqual(rows[5]["phase"], "entry")
+            self.assertEqual(rows[6]["event_class"], "other")
+            self.assertEqual(rows[6]["stderr_code"], "none")
+            self.assertEqual(rows[7], {"operation": "store_slot", "slot": 1,
+                "status_class": "available",
+                "observed": True, "pending": False, "leased": True, "handled": False,
+                "attempts_zero": False, "attempted": True})
+            self.assertEqual(rows[8]["observed"], False)
+            self.assertEqual(rows[8]["status_class"], "not_created")
+            self.assertIsNone(rows[8]["pending"])
+            self.assertEqual(rows[9], {"operation": "actor_terminal",
+                                      "terminal_class": "not_observed"})
+            for forbidden in ("secret-turn", "secret-source", "secret-token-value", "SecretClass"):
+                self.assertNotIn(forbidden, text)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_failing_advance_class_keeps_stage_row_before_assertion(self):

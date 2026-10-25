@@ -14,6 +14,7 @@ import queue
 import shlex
 import shutil
 import stat
+import sys
 import threading
 import time
 import uuid
@@ -118,6 +119,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         raise RuntimeError("Cairn executable must come from the disposable candidate root")
     if not os.environ.get("CAIRN_TEST_DATABASE_URL"):
         raise RuntimeError("disposable integration database is required")
+    token_identity_state = "unavailable"
     if scenario == "batch":
         token_path = Path(config["token_file"]).resolve(strict=True)
         identity_path = token_path.parent / "identities.json"
@@ -127,6 +129,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                                   if row.get("token_sha256") == token_hash), None)
         if binding_principal != "agent/" + api_role:
             raise RuntimeError("native batch API role does not match binding token principal")
+        token_identity_state = "matched"
     actor_task, notice_source = _fixture_task_and_notice(scenario)
     notice_body = notice_source[0] if scenario == "batch" else notice_source
     if not isinstance(turn_timeout, (int, float)) or turn_timeout <= 0:
@@ -147,6 +150,24 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         classify_advance_tool_result_stage = advance_tool_result_stage
         classify_advance_tool_result = classify
         trace = AdvanceDiagnosticWriter(diagnostic_path, root)
+        if scenario == "batch":
+            trace.record_preflight("token_identity", token_identity_state)
+            try:
+                socket_path = Path(config["socket"]).resolve(strict=True)
+                if not stat.S_ISSOCK(socket_path.stat().st_mode):
+                    raise RuntimeError("unavailable")
+                trace.record_preflight("api_socket", "available")
+            except (OSError, KeyError, TypeError):
+                trace.record_preflight("api_socket", "unavailable")
+                raise RuntimeError("native batch API socket preflight failed") from None
+            try:
+                version = api_call(api_role, "version", raw=True)
+                if not isinstance(version, dict):
+                    raise RuntimeError("unavailable")
+                trace.record_preflight("api_version", "authenticated")
+            except Exception:
+                trace.record_preflight("api_version", "unavailable")
+                raise RuntimeError("native batch API identity preflight failed") from None
     actor_root = root / "workspace"
     actor_root.mkdir(mode=0o700)
     if scenario == "batch":
@@ -219,6 +240,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     batch_sources = []
     batch_root_attempt_id = None
     batch_stage = "unknown"
+    actor_terminal_class = "not_started"
 
     def batch_context():
         key = hashlib.sha256(("codex-full-inbox\0" + str(native_id)).encode()).hexdigest()
@@ -542,6 +564,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
 
     def verify(rpc):
         nonlocal native_id, actor_turn_id, actor_turn_started, notice, source, delivery_id
+        nonlocal actor_terminal_class
         nonlocal attempt_id, native_turn_id, timeout_evidence
         started = rpc("thread/start", dict(cwd=str(actor_root), model=MODEL,
             approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
@@ -623,6 +646,11 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 completed_turn_ids.add(current)
                 if current == turn_id or current == native_turn_id:
                     terminal = True
+                    actor_terminal_class = "completed"
+            elif current == turn_id and notification.get("method") in (
+                    "turn/failed", "turn/cancelled", "turn/canceled"):
+                actor_terminal_class = ("failed" if notification["method"] == "turn/failed"
+                                        else "cancelled")
         if active_deadline.expired.is_set():
             cleanup_finished = active_deadline.wait_cleanup(5)
             release_stall.set()
@@ -747,4 +775,37 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         server.server_close()
         thread.join(timeout=5)
         if trace is not None:
+            if scenario == "batch":
+                exception_type = sys.exc_info()[0]
+                trace.record_fixture_failure(
+                    exception_type.__name__ if exception_type is not None else None)
+                try:
+                    hook_rows = ([json.loads(line) for line in metadata_path.read_text(
+                        encoding="utf-8").splitlines()] if metadata_path.exists() else [])
+                except (OSError, ValueError):
+                    hook_rows = []
+                trace.record_hook_metadata(hook_rows)
+                for slot in range(4):
+                    if slot >= len(batch_notices):
+                        trace.record_store_slot(slot + 1, status_class="not_created",
+                            observed=False)
+                        continue
+                    try:
+                        deliveries = api_call(event_owner, "event-status",
+                                              batch_notices[slot]["event_id"]).get("deliveries", [])
+                        delivery = deliveries[0] if len(deliveries) == 1 else None
+                        if delivery is None:
+                            trace.record_store_slot(slot + 1, status_class="unexpected",
+                                observed=False)
+                            continue
+                        state = delivery.get("state")
+                        attempts = delivery.get("attempts")
+                        trace.record_store_slot(slot + 1, status_class="available",
+                            observed=True, pending=state == "pending", leased=state == "leased",
+                            handled=state == "handled", attempts_zero=attempts == 0,
+                            attempted=(attempts > 0 if type(attempts) is int and attempts >= 0 else None))
+                    except Exception:
+                        trace.record_store_slot(slot + 1, status_class="unavailable",
+                            observed=False)
+                trace.record_actor_terminal(actor_terminal_class)
             trace.close()
