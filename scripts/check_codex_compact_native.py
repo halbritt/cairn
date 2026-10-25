@@ -93,6 +93,12 @@ def _context_for_event(inbox_dir, event_id, stage, diagnostic_path=None):
     return matches[0]
 
 
+def compact_sessionstart_turn_id_matches(hook_rows, active_turn_id):
+    compact_rows = [row for row in hook_rows if row.get("event") == "SessionStart" and
+                    row.get("source") == "compact" and row.get("phase") == "exit"]
+    return bool(compact_rows) and all(row.get("turn_id") == active_turn_id for row in compact_rows)
+
+
 def _write_ready_expectation(path, config, native_id, event_id, delivery_id, scenario):
     """Keep exact fixture identities private while the hook compares ready output."""
     key = hashlib.sha256((config["binding"] + "\0" + native_id).encode()).hexdigest()
@@ -123,10 +129,13 @@ def _write_ready_expectation(path, config, native_id, event_id, delivery_id, sce
     return target
 
 
-def check(binary, root, config, api_call, candidate_root, scenario="notice", diagnostic_path=None):
+def check(binary, root, config, api_call, candidate_root, scenario="notice", diagnostic_path=None,
+          expect_compact_turn_id=False):
     if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact",
                         "auto-in-turn-claimed"):
         raise ValueError("unsupported compact fixture scenario")
+    if expect_compact_turn_id and scenario != "auto-in-turn-claimed":
+        raise ValueError("compact turn-ID expectation applies only to automatic in-turn compaction")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
     home = root / "home"
@@ -758,19 +767,26 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
             compact_resume_indices = [i for i, row in enumerate(hook_rows)
                 if row.get("event") == "SessionStart" and row.get("source") == "compact" and
                 row.get("phase") == "exit"]
-            assert compact_resume_indices and all(hook_rows[i].get("turn_id") is None
-                for i in compact_resume_indices), \
-                "automatic compact SessionStart unexpectedly carried a native turn id"
+            compact_sessionstart_turn_id_matches_active = compact_sessionstart_turn_id_matches(
+                hook_rows, native_turn_id)
+            if expect_compact_turn_id:
+                assert compact_sessionstart_turn_id_matches_active, \
+                    "automatic compact SessionStart did not carry the active native turn id"
+            else:
+                assert compact_resume_indices and all(hook_rows[i].get("turn_id") is None
+                    for i in compact_resume_indices), \
+                    "automatic compact SessionStart unexpectedly carried a native turn id"
             if compact_resume_indices:
                 assert precompact_index < compact_resume_indices[0] < stop_index, \
                     "automatic compact SessionStart did not occur between PreCompact and Stop"
                 compact_outcomes = {row.get("hook_kind"): row for row in hook_rows
                     if row.get("event") == "SessionStart" and row.get("source") == "compact" and
                     row.get("phase") == "exit"}
+                expected_coordination = (0, None) if expect_compact_turn_id else (1, "NATIVE_TURN_MISMATCH")
                 assert set(compact_outcomes) == {"coordination", "memory"} and \
                     compact_outcomes["memory"].get("exit_code") == 0 and \
-                    compact_outcomes["coordination"].get("exit_code") == 1 and \
-                    compact_outcomes["coordination"].get("stderr_code") == "NATIVE_TURN_MISMATCH", \
+                    (compact_outcomes["coordination"].get("exit_code"),
+                     compact_outcomes["coordination"].get("stderr_code")) == expected_coordination, \
                     "automatic compact hook outcomes changed: " + json.dumps({kind: {
                         "exit_code": row.get("exit_code"), "stderr_code": row.get("stderr_code")}
                         for kind, row in compact_outcomes.items()})
@@ -798,6 +814,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 final_delivery_state=final_state["state"], final_delivery_code=final_state.get("code"),
                 final_attempts=final_state["attempts"], false_settlement=False,
                 compact_sessionstart_observed=bool(compact_resume_indices),
+                compact_sessionstart_turn_id_matches_active=compact_sessionstart_turn_id_matches_active,
                 compact_sessionstart_outcomes={kind: {"exit_code": row.get("exit_code"),
                     "error_code": row.get("stderr_code")} for kind, row in compact_outcomes.items()}
                     if compact_resume_indices else {},

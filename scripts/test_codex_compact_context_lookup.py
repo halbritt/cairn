@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from check_codex_compact_native import _context_for_event
+from check_codex_compact_native import _context_for_event, compact_sessionstart_turn_id_matches
 from codex_fixture_diagnostic import append_ready_observation, turn_join_observation, update as update_diagnostic
 from record_codex_hook_metadata import owner_process_class, ready_window_observation, safe_output_tags
 
@@ -17,6 +17,13 @@ EVENT = "11111111-1111-4111-8111-111111111111"
 
 
 class ContextLookupTests(unittest.TestCase):
+    def test_patched_compact_sessionstart_must_match_the_active_turn(self):
+        rows = [dict(event="SessionStart", source="startup", phase="exit", turn_id="other"),
+                dict(event="SessionStart", source="compact", phase="exit", turn_id="active")]
+        self.assertTrue(compact_sessionstart_turn_id_matches(rows, "active"))
+        self.assertFalse(compact_sessionstart_turn_id_matches(rows, "other"))
+        self.assertFalse(compact_sessionstart_turn_id_matches(rows[:1], "active"))
+
     def test_missing_context_writes_fixed_stage_diagnostic_without_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
