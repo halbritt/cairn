@@ -77,7 +77,7 @@ def _exec_tool(call_id, command):
 
 
 def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
-          turn_timeout=60, codex_entry=None, codex_root=None):
+          turn_timeout=60, codex_entry=None, codex_root=None, mode="complete"):
     """Run one disposable native notice turn.
 
     ``binary`` is the selected Codex installation identity. It is never
@@ -104,6 +104,8 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     actor_task, notice_body = _fixture_task_and_notice()
     if not isinstance(turn_timeout, (int, float)) or turn_timeout <= 0:
         raise ValueError("turn_timeout must be positive seconds")
+    if mode not in ("complete", "stall"):
+        raise ValueError("mode must be complete or stall")
     root = Path(root).resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     actor_root = root / "workspace"
@@ -155,6 +157,9 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     completed_turn_ids = set()
     source_read_confirmed = settlement_confirmed = False
     finished = threading.Event()
+    stalled = threading.Event()
+    release_stall = threading.Event()
+    timeout_evidence = None
     event_owner = "alice"
     attempt_claimed = False
     actor_turn_started = False
@@ -165,7 +170,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     helper = importlib.util.module_from_spec(helper_spec)
     helper_spec.loader.exec_module(helper)
     binds = []
-    for field, mode in (("cairn", "ro"), ("socket", "rw"), ("token_file", "ro")):
+    for field, bind_mode in (("cairn", "ro"), ("socket", "rw"), ("token_file", "ro")):
         original_path = Path(config[field])
         if original_path.is_symlink():
             raise RuntimeError(f"required disposable {field} path is unavailable")
@@ -175,7 +180,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 raise RuntimeError("API endpoint must be a disposable Unix socket")
         elif not path.is_file():
             raise RuntimeError(f"required disposable {field} path is not a regular file")
-        binds.append((str(path), str(path), mode))
+        binds.append((str(path), str(path), bind_mode))
     launcher = root / "codex-app-server-bwrap"
     if not codex_entry.is_relative_to(codex_root):
         raise RuntimeError("Codex Node entry must be inside the read-only package root")
@@ -218,6 +223,10 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 requests.append(request)
                 results = {item["call_id"]: item for item in request.get("input", [])
                            if item.get("type") == "custom_tool_call_output"}
+                if actor_turn_started and mode == "stall":
+                    stalled.set()
+                    release_stall.wait(turn_timeout + 10)
+                    return
                 if not actor_turn_started:
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
                         content=[dict(type="output_text", text="Native fixture registration turn completed.", annotations=[])])
@@ -291,6 +300,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
 
     def verify(rpc):
         nonlocal native_id, actor_turn_id, actor_turn_started, notice, source, delivery_id
+        nonlocal attempt_id, native_turn_id, timeout_evidence
         started = rpc("thread/start", dict(cwd=str(actor_root), model=MODEL,
             approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
         native_id = started["thread"]["id"]
@@ -334,9 +344,11 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         turn_id = turn["turn"]["id"]
         actor_turn_id = turn_id
         observed_turn_ids.add(turn_id)
-        deadline = time.monotonic() + turn_timeout
+        active_deadline = rpc.arm_turn_deadline(native_id, turn_id, turn_timeout)
+        deadline = time.monotonic() + turn_timeout + 5
         terminal = False
-        while time.monotonic() < deadline and not (terminal and finished.is_set()):
+        while (time.monotonic() < deadline and not active_deadline.expired.is_set()
+               and not (terminal and finished.is_set())):
             assert not failures, failures
             try:
                 notification = rpc.next_notification(timeout=min(1, max(.1, deadline - time.monotonic())))
@@ -350,6 +362,39 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 completed_turn_ids.add(current)
                 if current == turn_id or current == native_turn_id:
                     terminal = True
+        if active_deadline.expired.is_set():
+            cleanup_finished = active_deadline.wait_cleanup(5)
+            release_stall.set()
+            if mode != "stall":
+                raise TimeoutError("native task turn exceeded its active deadline")
+            assert cleanup_finished, "active timeout did not finish owned app-server cleanup"
+            assert active_deadline.stop_error is None, active_deadline.stop_error
+            assert stalled.is_set(), "stalled local Responses handler was not reached before timeout"
+            assert notice is not None
+            contexts = [json.loads(path.read_text(encoding="utf-8"))
+                        for path in (state_dir / "inbox").glob("*.json")]
+            context = next(row for row in contexts if row.get("event_id") == notice["event_id"])
+            attempt_id = context["attempt_id"]
+            native_turn_id = context.get("native_turn_id")
+            assert native_turn_id == actor_turn_id
+            claimed = api_call("bob", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                request_id=attempt_id,
+                session={key: context[key] for key in ("agent_id", "execution_id")},
+                native_turn_id=native_turn_id)))['attempt']
+            assert claimed["attempt_id"] == attempt_id and claimed["native_turn_id"] == native_turn_id
+            assert claimed["delivery"]["delivery_id"] == delivery_id
+            event_status = api_call(event_owner, "event-status", notice["event_id"])
+            assert len(event_status["deliveries"]) == 1
+            state = event_status["deliveries"][0]
+            assert state["state"] == "leased" and state["attempts"] == 1, state
+            timeout_evidence = dict(event_id=notice["event_id"], delivery_id=delivery_id,
+                attempt_id=attempt_id, native_turn_id=native_turn_id,
+                source=notice["ref"], delivery_state=state["state"], attempts=state["attempts"],
+                settlement="not_performed", retry="not_attempted", outcome="unscored",
+                cancel_error=active_deadline.cancel_error, stop_error=active_deadline.stop_error,
+                owned_app_server_group_stopped=True)
+            return
+        active_deadline.disarm()
         assert terminal, "native Codex turn did not complete within its timeout"
         assert finished.is_set() and source_read_confirmed and settlement_confirmed, \
             "native turn did not read and settle the one notice"
@@ -369,6 +414,25 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         installer.trust_codex_hooks(profile, settings, command, verify=verify,
                                     codex_binary=str(launcher), expected=6)
         assert not failures, failures
+        if mode == "stall":
+            assert timeout_evidence is not None
+            final_status = api_call(event_owner, "event-status", timeout_evidence["event_id"])
+            assert len(final_status["deliveries"]) == 1
+            final_delivery = final_status["deliveries"][0]
+            assert final_delivery["delivery_id"] == timeout_evidence["delivery_id"]
+            assert final_delivery["state"] == "leased" and final_delivery["attempts"] == 1, final_delivery
+            timeout_evidence["delivery_state_after_app_server_cleanup"] = final_delivery["state"]
+            timeout_evidence["attempts_after_app_server_cleanup"] = final_delivery["attempts"]
+            timeout_evidence["cancel_confirmed"] = timeout_evidence["cancel_error"] is None
+            print(json.dumps(dict(result="PASS", workflow_id="baseline.single_notice",
+                mode="stall", native_hooks_registered=True, native_turn_joined=True,
+                timeout_receipt=timeout_evidence, provider="local_responses_stub",
+                provider_call=False, actor_decision="no_completed_actor_response",
+                hidden_grade_exposed=False, outcome="unscored", runtime_timeout_proven=True,
+                cancellation_confirmed=timeout_evidence["cancel_confirmed"],
+                owned_app_server_group_stopped=True,
+                settlement_performed=False, retry_performed=False), sort_keys=True))
+            return
         final_state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
         metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
         assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id for row in metadata)
@@ -386,6 +450,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             actor_workspace_files=["task.txt", ".codex"], runtime_timeout_proven=False,
             cancellation_confirmed=False, descendant_cleanup_confirmed=False), sort_keys=True))
     finally:
+        release_stall.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
