@@ -26,6 +26,29 @@ scripts/trial-task-eval.sh -- python3 -B scripts/test_siwc_trial_tools.py \
   "$HOME/.cache/cairn-source-fit/cairn"
 ```
 
+`DirectAttemptRunner` is a separate direct-arm-only orchestration slice. It
+accepts only the pinned source-fit v1 or v2 manifest hashes, an explicit case,
+`arm=direct`, model `gpt-6-luna`, and medium reasoning. It builds the prompt
+from that case's eligible `source_labels` in manifest order; the inaccessible
+case has no source labels, so its context is task-only. Direct arms expose no
+Cairn tools. The runner applies a 180-second context deadline and checks
+completed answer/model/response count and reported usage afterward; SIWC preview
+does not accept `max_output_tokens`, so these are local post-run checks, not a
+provider-side token cap.
+
+The public constructor still uses a permanently unavailable admission gate.
+Without independently verified mapping from the SIWC subject to the selected
+subscription account, quota/capacity evidence, and direct-route proof, `Run`
+records `not_attempted_unscored` and does not invoke Responses. Package-local
+offline tests substitute a private fake gate and loopback transport; they do
+not establish live route readiness. Before an admitted attempt, the runner
+creates an owner-only exclusive claim under an output directory outside any
+Git checkout, rejecting symlink ancestors. The claim blocks a second run even
+after a restart. Its receipt retains only the selected answer and body-free
+source/usage metadata at owner-only permissions; it never records source text,
+raw provider errors, or credentials. Successful synthetic responses remain
+unscored pending independent task review.
+
 This package still does not perform real registration or owner consent,
 establish a mapping between an SIWC `sub` and any Codex subscription
 profile/account, read quota status, provide a complete or admitted source-fit
