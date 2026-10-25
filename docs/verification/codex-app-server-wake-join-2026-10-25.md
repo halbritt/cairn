@@ -251,9 +251,28 @@ subscription path is implemented in the fixture, but runtime notification
 observation and the exact queue-receipt → item-start → hook → Store join remain
 unverified. CAIRN-220 remains unaccepted.
 
-The runner now records separate fixed before/after/failure rows for the loaded
+The runner records separate fixed before/after/failure rows for the loaded
 metadata request and resume subscription, plus watcher start. It checks whether
 the queue-stage trace exists before reading it; a missing artifact is reported
-with a fixed failure stage derived from the private observer trace. This
-diagnostic change was covered by focused tests, but no second disposable run
-was made because the first run did not identify a specific setup correction.
+with a fixed failure stage derived from the private observer trace. The initial
+diagnostic change had not yet been exercised in a disposable run.
+
+## Bounded observer-setup diagnosis
+
+The next single fake-auth, `bwrap --unshare-net` disposable run added fixed
+stage rows around the observer connection, initialize handshake, initialized
+notification, loaded-thread query, and resume request. Its owner-only item trace
+is `~/.cache/cairn-220-native-wake-proof/item-stage-92cb0ce3925447fe9ca716b76404bbca.jsonl`.
+Connection setup, initialization, and `thread/loaded/list` all completed;
+`thread/resume` was refused with the fixed exception class `QueueRefused`.
+The watcher was not started, so no queue trace, hook, Store attempt, or local
+Responses request exists for this run. Cleanup completed. The fixture does not
+retain the native refusal message or code, so the exact server-side reason is
+still unknown.
+
+This localizes the prior boundary to the resume RPC rather than an earlier
+observer setup step. The pinned source audit establishes that resume is the
+subscription mechanism, but does not explain this refusal in the observed
+runtime. No concrete correction is proved, so no retry or delivery replay was
+made. Runtime notification observation, the queue receipt → item/started → hook
+→ Store join, and CAIRN-220 acceptance remain unverified.

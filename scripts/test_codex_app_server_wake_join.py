@@ -62,6 +62,15 @@ class ItemStartedObserverSubscriptionTests(unittest.TestCase):
             {"stage": "observer_subscription", "outcome": "after"},
             {"stage": "watcher_start", "outcome": "before"},
         ]), "watcher_start_incomplete")
+        self.assertEqual(_classify_missing_queue_trace([
+            {"stage": "observer_subscription", "outcome": "before"},
+            {"stage": "observer_subscription", "outcome": "failed",
+             "error_class": "TypeError"},
+        ]), "observer_subscription_failed")
+        self.assertEqual(_classify_missing_queue_trace([
+            {"stage": "observer_initialize", "outcome": "failed",
+             "error_class": "TimeoutExpired"},
+        ]), "observer_initialize_failed")
 
 
 if __name__ == "__main__":

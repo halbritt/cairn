@@ -568,6 +568,11 @@ def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
         return "observer_resume_failed"
     if ("observer_loaded_list", "failed") in outcomes:
         return "observer_loaded_list_failed"
+    for stage in ("observer_connection", "observer_initialize", "observer_initialized"):
+        if (stage, "failed") in outcomes:
+            return stage + "_failed"
+    if ("observer_subscription", "failed") in outcomes:
+        return "observer_subscription_failed"
     if ("observer_subscription", "after") in outcomes:
         return "watcher_not_started_after_observer_setup"
     if ("observer_subscription", "before") in outcomes:
@@ -590,17 +595,34 @@ class _ItemStartedObserver:
         self._delivery_id = None
         self._native_id = native_id
         self._append(self._fd, "trace", "started")
+        def stage_call(stage, operation):
+            self._append(self._fd, stage, "before")
+            try:
+                result = operation()
+            except Exception as exc:
+                self._append(self._fd, stage, "failed", error=type(exc).__name__)
+                raise
+            self._append(self._fd, stage, "after")
+            return result
         try:
-            self._connection, _websocket, _peer = queue_module._open(endpoint, process, "process")
+            self._connection, _websocket, _peer = stage_call(
+                "observer_connection", lambda: queue_module._open(endpoint, process, "process"))
             rpc = queue_module._Rpc(self._connection, time.monotonic() + 5)
-            rpc("initialize", dict(clientInfo=dict(name="cairn220-item-observer", version="1"),
-                                   capabilities=dict(experimentalApi=True)))
-            self._connection.send(json.dumps(dict(method="initialized")))
+            stage_call("observer_initialize", lambda: rpc("initialize", dict(
+                clientInfo=dict(name="cairn220-item-observer", version="1"),
+                capabilities=dict(experimentalApi=True))))
+            stage_call("observer_initialized", lambda: self._connection.send(
+                json.dumps(dict(method="initialized"))))
             self._append(self._fd, "observer_subscription", "before")
-            _attach_item_started_observer(
-                rpc, native_id,
-                lambda stage, outcome, error=None: self._append(
-                    self._fd, stage, outcome, error=error))
+            try:
+                _attach_item_started_observer(
+                    rpc, native_id,
+                    lambda stage, outcome, error=None: self._append(
+                        self._fd, stage, outcome, error=error))
+            except Exception as exc:
+                self._append(self._fd, "observer_subscription", "failed",
+                             error=type(exc).__name__)
+                raise
             self._append(self._fd, "observer_subscription", "after")
             self._connection.settimeout(0.25)
             self._thread = threading.Thread(target=self._run, daemon=True)
