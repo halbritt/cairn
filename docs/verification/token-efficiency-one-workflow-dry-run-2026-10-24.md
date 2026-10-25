@@ -38,3 +38,46 @@ change `scripts/token_efficiency_gate.py`; CAIRN-227 still requires the full
 failure and latency evidence, effective candidate deployment pins, and an
 exercised rollback before release review. No provider model task was run for
 this implementation.
+
+## Provider-free native fixture bridge, 2026-10-25
+
+`check_agent_coordination.py` now sends the full-inbox fixture's returned report
+through `provider_free_fixture_refusal` in
+`token_efficiency_single_workflow.py`. The bridge binds the report to the
+`baseline.single_notice.recipient` identity from a fixture/controller manifest.
+It accepts only the local Responses stub's completed or stalled fixture shapes.
+For completion, it requires the report's event, delivery, attempt, native-turn,
+and source references plus the one-event/one-delivery/one-attempt assertion.
+For a stall, it requires the retained lease, one attempt, and no settlement or
+retry after cleanup.
+Its receipt marks fixture transport facts separately from actor decision and
+provider usage, records `freeze_status=not_frozen` and
+`capacity_status=not_sampled`, and sets `join_eligible=false`. The existing
+native join still requires `state=observed`, so this refusal cannot become a
+provider observation or task grade.
+
+The manifest used in this disposable fixture path is an identity manifest, not
+the owner-only live freeze receipt. This path creates no account-capacity sample
+and authorizes no live task. The env-gated integration call is wired to the
+disposable API and PostgreSQL runner; it was not exercised here because
+`CAIRN_CODEX_BINARY`, `CAIRN_CODEX_ENTRY`, and `CAIRN_CODEX_ROOT` were unset.
+The focused Python tests cover the identity binding, completion and stall
+refusals, rejection of provider activity and the live join's refusal of a
+refusal-shaped observation. `make check` passed.
+
+No reusable live native-actor launcher is established by this slice. The
+existing Codex weekly task evaluator runs `codex exec` under its external bwrap
+launcher and captures JSONL usage, but its run path does not create a Cairn
+single-notice delivery or join that delivery's attempt and native turn to the
+same response usage. The full-inbox fixture does create and settle a disposable
+notice, but uses scripted Responses. A prior direct app-server experiment with
+the external bwrap launcher did not dispatch model-facing `functions.exec`.
+Codex 0.164 also exposes an app-server `--code-mode-host` endpoint and packages
+`codex-code-mode-host`; this separate-host boundary is a candidate, not yet
+verified as an actor tool route or as part of the one-workflow delivery/attempt/
+turn/usage join. It needs a provider-free dispatch and isolation proof, then an
+integration proof with the disposable notice and owned-process timeout before
+live admission can be considered. A root-reviewed one-run admission packet,
+exact selected account and fresh capacity at freeze and launch are also absent.
+No freeze, capacity status read, selected auth mount, provider task, production
+database or installed setting was used for this change.

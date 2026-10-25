@@ -134,6 +134,106 @@ def fixture_manifest(fixture_path, controller_path, *, case, arm):
     }
 
 
+def provider_free_fixture_refusal(manifest, fixture_report):
+    """Bind the native stub fixture to the workflow identity without grading it.
+
+    The fixture exercises the disposable Store/API and external bwrap launcher,
+    but its local Responses server scripts every model answer and usage record.
+    Keep that evidence in a refusal-shaped receipt that cannot be mistaken for
+    an observation accepted by ``verify_native_join``.
+    """
+    require(isinstance(manifest, dict) and manifest.get("schema") == WORKFLOW_SCHEMA,
+            "single-workflow manifest required")
+    require(manifest.get("case") == "single_notice" and manifest.get("arm") == "baseline"
+            and manifest.get("workflow_id") == "baseline.single_notice"
+            and manifest.get("stage_id") == "baseline.single_notice.recipient",
+            "fixture must bind to the baseline single_notice recipient identity")
+    require(manifest.get("model") == {"harness": "codex", "account": ACCOUNT,
+                                       "id": MODEL, "effort": EFFORT,
+                                       "route": "subscription"},
+            "single-workflow model identity mismatch")
+    require(isinstance(fixture_report, dict)
+            and fixture_report.get("schema") == "cairn.codex-full-inbox-native-fixture/1"
+            and fixture_report.get("workflow_id") == manifest["workflow_id"],
+            "native fixture report does not match the selected workflow")
+    require(fixture_report.get("result") == "PASS"
+            and fixture_report.get("provider_call") is False
+            and fixture_report.get("provider") == "local_responses_stub"
+            and fixture_report.get("hidden_grade_exposed") is False,
+            "provider-free fixture report is invalid or contains provider activity")
+
+    mode = fixture_report.get("mode", "complete")
+    if mode == "complete":
+        refs = fixture_report.get("response_refs")
+        require(isinstance(refs, dict)
+                and set(refs) == {"event_id", "delivery_id", "attempt_id",
+                                  "native_turn_id", "source"}
+                and all(isinstance(refs.get(key), str) and refs[key]
+                        for key in ("event_id", "delivery_id", "attempt_id", "native_turn_id"))
+                and isinstance(refs.get("source"), dict)
+                and set(refs["source"]) == {"record_id", "version"}
+                and isinstance(refs["source"].get("record_id"), str)
+                and type(refs["source"].get("version")) is int
+                and refs["source"]["version"] > 0,
+                "complete fixture event/delivery/attempt/turn/source references are incomplete")
+        require(fixture_report.get("actor_decision") == "scripted_fixture_sequence"
+                and fixture_report.get("synthetic_usage", {}).get("label") == "scripted_fixture_only"
+                and fixture_report.get("native_turn_joined") is True
+                and fixture_report.get("one_event_one_delivery_one_attempt") is True
+                and fixture_report.get("exact_full_source_read") is True
+                and fixture_report.get("explicit_handled_settlement") is True
+                and fixture_report.get("runtime_timeout_proven") is False,
+                "complete provider-free fixture evidence is incomplete")
+        refusal = "provider_free_fixture_has_no_actor_decision_or_provider_usage"
+        evidence = {"native_turn_joined": "fixture_observed",
+                    "exact_full_source_read": "fixture_observed",
+                    "explicit_handled_settlement": "fixture_observed",
+                    "actor_decision": "scripted_fixture_sequence",
+                    "provider_usage": "unobserved"}
+    elif mode == "stall":
+        timeout = fixture_report.get("timeout_receipt")
+        require(isinstance(timeout, dict)
+                and all(isinstance(timeout.get(key), str) and timeout[key]
+                        for key in ("event_id", "delivery_id", "attempt_id", "native_turn_id"))
+                and isinstance(timeout.get("source"), dict)
+                and timeout.get("settlement") == "not_performed"
+                and timeout.get("retry") == "not_attempted"
+                and timeout.get("delivery_state_after_app_server_cleanup") == "leased"
+                and timeout.get("attempts_after_app_server_cleanup") == 1,
+                "stalled fixture join and no-settlement evidence are incomplete")
+        require(fixture_report.get("actor_decision") == "no_completed_actor_response"
+                and fixture_report.get("outcome") == "unscored"
+                and fixture_report.get("runtime_timeout_proven") is True
+                and fixture_report.get("settlement_performed") is False
+                and fixture_report.get("retry_performed") is False,
+                "stalled provider-free fixture evidence is incomplete")
+        refusal = "provider_free_timeout_is_unscored_and_has_no_provider_usage"
+        evidence = {"runtime_timeout": "fixture_observed",
+                    "settlement": "not_performed",
+                    "retry": "not_attempted",
+                    "actor_decision": "no_completed_actor_response",
+                    "provider_usage": "unobserved"}
+    else:
+        raise ValueError("unsupported provider-free fixture mode")
+
+    return {
+        "schema": "cairn.token-efficiency-single-workflow-fixture-refusal/1",
+        "workflow_id": manifest["workflow_id"],
+        "stage_id": manifest["stage_id"],
+        "state": "refused",
+        "refusal_code": refusal,
+        "workflow_identity_source": "fixture_manifest",
+        "freeze_status": "not_frozen",
+        "capacity_status": "not_sampled",
+        "evidence": evidence,
+        "provider_call_observed": False,
+        "provider_task_started": False,
+        "live_admission_authorized": False,
+        "join_eligible": False,
+        "independent_task_acceptance": "unassessed",
+    }
+
+
 def validate_stage_capacity(evidence, policy, *, workflow_id, stage_id, now=None):
     now = now or datetime.now(timezone.utc)
     gate.validate_utilization_evidence(

@@ -79,6 +79,81 @@ class SingleWorkflowTests(unittest.TestCase):
             single.select_workflow(self.fixture_path, self.controller_path,
                                    case="single_notice", arm="combined")
 
+    def test_provider_free_native_fixture_is_bound_but_refused_by_live_join_gate(self):
+        manifest = single.fixture_manifest(self.fixture_path, self.controller_path,
+                                           case="single_notice", arm="baseline")
+        report = {
+            "schema": "cairn.codex-full-inbox-native-fixture/1",
+            "result": "PASS", "workflow_id": "baseline.single_notice",
+            "mode": "complete", "native_turn_joined": True,
+            "one_event_one_delivery_one_attempt": True,
+            "exact_full_source_read": True, "explicit_handled_settlement": True,
+            "response_refs": {"event_id": "event", "delivery_id": "delivery",
+                              "attempt_id": "attempt", "native_turn_id": "turn",
+                              "source": {"record_id": "record", "version": 1}},
+            "synthetic_usage": {"label": "scripted_fixture_only",
+                                "per_response": {"input_tokens": 1, "output_tokens": 1,
+                                                 "total_tokens": 2},
+                                "response_count": 4},
+            "provider_call": False, "actor_decision": "scripted_fixture_sequence",
+            "provider": "local_responses_stub", "runtime_timeout_proven": False,
+            "hidden_grade_exposed": False,
+        }
+
+        receipt = single.provider_free_fixture_refusal(manifest, report)
+
+        self.assertEqual(receipt["state"], "refused")
+        self.assertEqual(receipt["workflow_id"], manifest["workflow_id"])
+        self.assertEqual(receipt["stage_id"], manifest["stage_id"])
+        self.assertEqual(receipt["refusal_code"],
+                         "provider_free_fixture_has_no_actor_decision_or_provider_usage")
+        self.assertEqual(receipt["evidence"]["provider_usage"], "unobserved")
+        self.assertFalse(receipt["provider_call_observed"])
+        self.assertFalse(receipt["live_admission_authorized"])
+        self.assertFalse(receipt["join_eligible"])
+        self.assertEqual(receipt["freeze_status"], "not_frozen")
+        self.assertEqual(receipt["capacity_status"], "not_sampled")
+        self.assertNotIn("synthetic_usage", receipt)
+
+        observation = {"schema": single.OBSERVATION_SCHEMA,
+                       "workflow_id": receipt["workflow_id"], "case": "single_notice",
+                       "arm": "baseline", "state": receipt["state"]}
+        with self.assertRaisesRegex(ValueError, "observed native turn required"):
+            single.verify_native_join(manifest, observation,
+                                      {"schema": "cairn.workflow-model-report/1",
+                                       "workflows": []}, pins={})
+
+    def test_provider_free_refusal_has_explicit_stall_state_and_rejects_identity_drift(self):
+        manifest = single.fixture_manifest(self.fixture_path, self.controller_path,
+                                           case="single_notice", arm="baseline")
+        report = {"schema": "cairn.codex-full-inbox-native-fixture/1",
+                  "result": "PASS", "workflow_id": manifest["workflow_id"],
+                  "mode": "stall", "provider_call": False,
+                  "provider": "local_responses_stub",
+                  "actor_decision": "no_completed_actor_response",
+                  "hidden_grade_exposed": False, "outcome": "unscored",
+                  "timeout_receipt": {"event_id": "event", "delivery_id": "delivery",
+                                      "attempt_id": "attempt", "native_turn_id": "turn",
+                                      "source": {"record_id": "record", "version": 1},
+                                      "settlement": "not_performed", "retry": "not_attempted",
+                                      "delivery_state_after_app_server_cleanup": "leased",
+                                      "attempts_after_app_server_cleanup": 1},
+                  "runtime_timeout_proven": True, "settlement_performed": False,
+                  "retry_performed": False}
+        receipt = single.provider_free_fixture_refusal(manifest, report)
+        self.assertEqual(receipt["refusal_code"],
+                         "provider_free_timeout_is_unscored_and_has_no_provider_usage")
+        self.assertEqual(receipt["evidence"]["settlement"], "not_performed")
+        self.assertEqual(receipt["evidence"]["provider_usage"], "unobserved")
+
+        report["workflow_id"] = "baseline.actionable_response"
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            single.provider_free_fixture_refusal(manifest, report)
+        report["workflow_id"] = manifest["workflow_id"]
+        report["provider_call"] = True
+        with self.assertRaisesRegex(ValueError, "invalid or contains provider activity"):
+            single.provider_free_fixture_refusal(manifest, report)
+
     def test_output_parent_symlink_cannot_resolve_into_repository(self):
         repo_alias = self.root / "repo-alias"
         repo_alias.symlink_to(single.ROOT, target_is_directory=True)

@@ -19,6 +19,7 @@ import uuid
 
 
 MODEL = "gpt-6-luna"
+REPORT_SCHEMA = "cairn.codex-full-inbox-native-fixture/1"
 FIXTURE = Path(__file__).resolve().parents[1] / "trials/token-efficiency/FIXTURE.json"
 SOURCE_BODY = "Build 81 completed; artifact checksum is 7b1a."
 
@@ -494,15 +495,16 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             timeout_evidence["delivery_state_after_app_server_cleanup"] = final_delivery["state"]
             timeout_evidence["attempts_after_app_server_cleanup"] = final_delivery["attempts"]
             timeout_evidence["cancel_confirmed"] = timeout_evidence["cancel_error"] is None
-            print(json.dumps(dict(result="PASS", workflow_id="baseline.single_notice",
+            result = dict(schema=REPORT_SCHEMA, result="PASS", workflow_id="baseline.single_notice",
                 mode="stall", native_hooks_registered=True, native_turn_joined=True,
                 timeout_receipt=timeout_evidence, provider="local_responses_stub",
                 provider_call=False, actor_decision="no_completed_actor_response",
                 hidden_grade_exposed=False, outcome="unscored", runtime_timeout_proven=True,
                 cancellation_confirmed=timeout_evidence["cancel_confirmed"],
                 owned_app_server_group_stopped=True,
-                settlement_performed=False, retry_performed=False), sort_keys=True))
-            return
+                settlement_performed=False, retry_performed=False)
+            print(json.dumps(result, sort_keys=True))
+            return result
         final_state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
         metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
         assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id for row in metadata)
@@ -510,7 +512,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         assert final_state["state"] == "handled" and final_state["attempts"] == 1
         refs = dict(event_id=notice["event_id"], delivery_id=final_state["delivery_id"], attempt_id=attempt_id,
                     native_turn_id=native_turn_id, source=notice["ref"])
-        print(json.dumps(dict(result="PASS", workflow_id="baseline.single_notice",
+        result = dict(schema=REPORT_SCHEMA, result="PASS", workflow_id="baseline.single_notice",
             native_hooks_registered=True, exact_full_source_read=True, explicit_handled_settlement=True,
             one_event_one_delivery_one_attempt=True, native_turn_joined=True, response_refs=refs,
             synthetic_usage=dict(label="scripted_fixture_only", per_response=dict(input_tokens=1,
@@ -518,7 +520,9 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
             provider="local_responses_stub", provider_call=False,
             actor_decision="scripted_fixture_sequence", hidden_grade_exposed=False,
             actor_workspace_files=["task.txt", ".codex"], runtime_timeout_proven=False,
-            cancellation_confirmed=False, descendant_cleanup_confirmed=False), sort_keys=True))
+            cancellation_confirmed=False, descendant_cleanup_confirmed=False)
+        print(json.dumps(result, sort_keys=True))
+        return result
     finally:
         release_stall.set()
         server.shutdown()

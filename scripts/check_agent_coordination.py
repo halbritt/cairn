@@ -844,22 +844,48 @@ def check(binary, root, repo, api_call):
                 codex_root = os.environ.get("CAIRN_CODEX_ROOT")
                 if codex_entry and codex_root:
                     from check_codex_full_inbox_native import check as check_codex_full_inbox_native
+                    from preflight_token_efficiency_panel import manifest as panel_manifest, read_fixture
+                    from token_efficiency_single_workflow import (
+                        fixture_manifest as single_workflow_manifest,
+                        provider_free_fixture_refusal,
+                    )
                     route_config = dict(json.loads(config.read_text()),
                         cairn=str(candidate_root / "bin/cairn"),
                         socket=str(root / "api.sock"), token_file=str(root / "carol.token"))
-                    check_codex_full_inbox_native(
+                    fixture_data, fixture_hash = read_fixture()
+                    controller_path = root / "native-single-notice-controller.json"
+                    with controller_path.open("x", encoding="utf-8") as stream:
+                        json.dump(panel_manifest(fixture_data, fixture_hash), stream,
+                                  ensure_ascii=False)
+                        stream.write("\n")
+                    controller_path.chmod(0o600)
+                    workflow_manifest = single_workflow_manifest(
+                        Path(__file__).resolve().parents[1] / "trials/token-efficiency/FIXTURE.json",
+                        controller_path, case="single_notice", arm="baseline")
+                    complete_fixture = check_codex_full_inbox_native(
                         binary=os.environ["CAIRN_CODEX_BINARY"],
                         root=root / "native-full-inbox-codex",
                         config=route_config, api_call=api_call,
                         candidate_root=candidate_root, sandbox_auth_file=None,
                         turn_timeout=120, codex_entry=codex_entry, codex_root=codex_root)
-                    check_codex_full_inbox_native(
+                    complete_refusal = provider_free_fixture_refusal(
+                        workflow_manifest, complete_fixture)
+                    assert complete_refusal["state"] == "refused"
+                    assert complete_refusal["join_eligible"] is False
+                    print("Single-notice native fixture bound to workflow gate and refused for live usage:",
+                          json.dumps(complete_refusal, sort_keys=True))
+                    stall_fixture = check_codex_full_inbox_native(
                         binary=os.environ["CAIRN_CODEX_BINARY"],
                         root=root / "native-full-inbox-codex-stall",
                         config=route_config, api_call=api_call,
                         candidate_root=candidate_root, sandbox_auth_file=None,
                         turn_timeout=2, codex_entry=codex_entry, codex_root=codex_root,
                         mode="stall")
+                    stall_refusal = provider_free_fixture_refusal(workflow_manifest, stall_fixture)
+                    assert stall_refusal["state"] == "refused"
+                    assert stall_refusal["join_eligible"] is False
+                    print("Single-notice stalled fixture bound to workflow gate and left unscored:",
+                          json.dumps(stall_refusal, sort_keys=True))
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")
