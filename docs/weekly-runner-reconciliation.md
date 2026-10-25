@@ -162,11 +162,31 @@ capacity as unverified and does not establish acceptance or runtime admission.
 | Provider-cap stop | f376915; `:913-925,1656` | Yes | `provider_cap_stop`; a started slot never runs again. Any row with a provider failure is never complete |
 | Comparable whole-run usage pre-check | CAIRN-107 Proposal 2: estimate from the last run and refuse unless the remaining budget covers the whole run | Not part of the harness | `capacity_gate` over existing `trial_capacity_adapter` evidence (see below) |
 | Absolute allowance units | `trial_capacity_adapter.py:76` (current implementation) | n/a | A constraint of the current implementation, not an original acceptance requirement. The adapter refuses percentage units; a calibrated comparable estimate would need its own adapter change |
+| Post-run account usage observation | CAIRN-107 follow-up, 2026-10-25 | Not retained by the first occurrence | After the executor exits, Codex accounts receive one status-only `account/rateLimits/read`; the receipt stores selected identity, observation time and normalized primary/secondary windows. A read or identity failure stores `status: null` with a fixed error. It never changes run status, acceptance, or capacity admission |
 | Dedicated account | CAIRN-107 Notes | By explicit selection (blocker 2 closed in source); dedication is declared | `account.config_home` bound by reference; `account_id` must equal the capacity account binding |
 | Valid outcomes: snapshot integrity | `:667,1303` | Addressed by the retained pre-actor baseline (86298af, e83914b) | The runner verifies every attempt's baseline (5b52a0f) |
 | Subscription-only routing, no OpenRouter | `AGENTS.md` Model routing | Yes: `claude -p` under `bwrap --clearenv` (`:1012,1089`) | The executor also strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `OPENAI_*` and `OPENROUTER_*` |
 | Six review dispositions | `docs/candidate-paired-request.md:82,148-149` | Not in the original issue | Optional; not on the runner path |
 | Physical RSS, SDK selected-input custody | `docs/sdk-native-launch.md:75-80` | Not applicable to the CLI route | Not runner gates. Their figures describe the SDK path and are not live legacy blockers |
+
+## Capacity evidence follow-up (2026-10-25)
+
+The completed 2026-10-24 occurrence retained preflight percentages and window
+reset anchors, but no post-run `account/rateLimits/read` snapshot. Its token
+counters do not establish quota units, request costs, or rounding behavior.
+The issue audit's separate aggregate percentage comparison lacks matching
+per-account reset anchors in the private receipt. Neither source supports a
+conservative whole-run percentage threshold. `trial_capacity_adapter` therefore
+continues to refuse percentage-only evidence. The next occurrence remains
+gated on authoritative whole-run capacity evidence; the previous one-run
+override is occurrence-specific.
+
+The new postflight observation is calibration evidence only. It captures one
+read per selected account after the actor process exits, including handled
+executor failures. It does not retry the read, restart the actor, or affect the
+terminal receipt status. A stored receipt is replayed as-is, so existing
+occurrences remain unchanged. See
+[`CAIRN-107 postflight calibration evidence`](verification/CAIRN-107-postflight-calibration-2026-10-25.md).
 
 ## sdk-weekly-compatibility defects against current legacy source
 

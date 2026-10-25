@@ -6,6 +6,7 @@ import select
 import stat
 import subprocess
 import time
+import datetime as dt
 from pathlib import Path
 
 import trial_paired_request as paired
@@ -117,6 +118,102 @@ def subscription_preflight(account, provider, model, *, timeout=30):
                 used_percent=primary['usedPercent'], window_duration_mins=primary['windowDurationMins'],
                 resets_at=primary.get('resetsAt'), secondary_present=limits.get('secondary') is not None,
                 catalog_model_present=True, absolute_allowance_observed=False)
+
+
+def subscription_postflight(account, provider, *, timeout=30):
+    """Best-effort read-only quota observation; never returns auth or raw RPC data."""
+    checked_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    result = dict(account_id=account.get('account_id') if isinstance(account, dict) else None,
+                  checked_at=checked_at, status=None, error='codex_subscription_status_unavailable')
+    try:
+        rate = _read_rate_limits(account, provider, timeout=timeout)
+        result['checked_at'] = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+        if not isinstance(rate, dict):
+            return result
+        # Some app-server builds include the account identity in this response. If
+        # present it must bind to the already selected auth home before attribution.
+        response_id = rate.get('accountId')
+        if response_id is not None and response_id != account['account_id']:
+            return result
+        limits = rate.get('rateLimits')
+        if not isinstance(limits, dict) or limits.get('limitId') != 'codex':
+            return result
+        status = dict(ordinary_usage_allowed=(rate.get('ordinaryUsageAllowed')
+                     if type(rate.get('ordinaryUsageAllowed')) is bool else None),
+                      response_account_id_observed=response_id is not None,
+                      primary=_postflight_window(limits.get('primary')),
+                      secondary=_postflight_window(limits.get('secondary')))
+        if (status['primary'] is None or
+                (limits.get('secondary') is not None and status['secondary'] is None)):
+            return result
+        result.update(status=status, error=None)
+        return result
+    except Exception:
+        return result
+
+
+def _postflight_window(window):
+    if window is None:
+        return None
+    if not isinstance(window, dict):
+        return None
+    used = window.get('usedPercent')
+    duration = window.get('windowDurationMins')
+    reset = window.get('resetsAt')
+    if type(used) is not int or not 0 <= used <= 100 or type(duration) is not int or duration <= 0:
+        return None
+    if reset is not None and type(reset) not in (str, int):
+        return None
+    return dict(used_percent=used, window_duration_mins=duration, resets_at=reset)
+
+
+def _read_rate_limits(account, provider, *, timeout):
+    """Read only one account's quota snapshot through its pinned Codex installation."""
+    auth = verify_auth_file(account['auth_file'], account['auth_sha256'],
+                            expected_account_id=account['account_id'])
+    paired.shape(provider, 'path sha256', 'codex_provider_pin_invalid')
+    binary = Path(provider['path']).resolve(strict=True)
+    paired.need(hashlib.sha256(binary.read_bytes()).hexdigest() == provider['sha256'],
+                'codex_provider_pin_changed')
+    paired.need(Path(account['config_home']).resolve(strict=True) == auth.parent,
+                'codex_account_home_mismatch')
+    env = dict(os.environ, CODEX_HOME=str(auth.parent))
+    for name in ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL'):
+        env.pop(name, None)
+    process = None
+    try:
+        process = subprocess.Popen([str(binary), 'app-server', '--listen', 'stdio://'], stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
+        _write_rpc(process, dict(id=1, method='initialize', params={
+            'clientInfo': dict(name='cairn-weekly-capacity-postflight', version='1.0.0')}))
+        _rpc_response(process, 1, timeout)
+        process.stdin.write(b'{"method":"initialized","params":{}}\n')
+        process.stdin.flush()
+        _write_rpc(process, dict(id=2, method='account/rateLimits/read', params={}))
+        rate = _rpc_response(process, 2, timeout)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, TimeoutError):
+        raise paired.Refusal('codex_subscription_status_unavailable') from None
+    finally:
+        if process is not None:
+            try:
+                process.stdin.close()
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            except OSError:
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+            finally:
+                process.stdout.close()
+    verify_auth_file(account['auth_file'], account['auth_sha256'], expected_account_id=account['account_id'])
+    paired.need(hashlib.sha256(binary.read_bytes()).hexdigest() == provider['sha256'],
+                'codex_provider_pin_changed')
+    return rate
 
 
 def _write_rpc(process, request):

@@ -176,6 +176,15 @@ class CodexWeeklyContractTests(unittest.TestCase):
                                                          dt.datetime(2026,10,24,tzinfo=dt.timezone.utc))
             self.assertEqual(read.call_count,3)
             self.assertEqual(len(statuses),3)
+            postflight_rows=[dict(account_id=account['account_id'],checked_at='2026-10-25T00:00:00Z',
+                                  status=dict(primary=dict(used_percent=40,window_duration_mins=10080,
+                                                           resets_at='2026-10-31T00:00:00Z')),
+                                  error=None) for account in accounts]
+            with patch.object(weekly.codex_account,'subscription_postflight',side_effect=postflight_rows) as read:
+                observed=executor.subscription_postflight(dict(original_execution=fragment))
+            self.assertEqual(read.call_count,3)
+            self.assertEqual([row['account_id'] for row in observed], [a['account_id'] for a in accounts])
+            self.assertEqual(observed,postflight_rows)
             harness=root/'harness';(harness/'scripts').mkdir(parents=True)
             (harness/'scripts/trial-task-eval.sh').write_text('#!/bin/sh\nexit 0\n')
             run_dir=root/'run';run_dir.mkdir();controls=root/'controls.json';controls.write_text('{}')

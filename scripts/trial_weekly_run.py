@@ -253,6 +253,19 @@ class CodexWeeklyExecutor:
                         account, provider, fragment['model']), observed_at=observed_at)
                 for account in self.account_assignment['document']['accounts']]
 
+    def subscription_postflight(self, spec):
+        """Capture one read-only usage snapshot per selected account after actor execution."""
+        if self.account_assignment is None:
+            return []
+        rows = []
+        for account in self.account_assignment['document']['accounts']:
+            try:
+                provider = spec['original_execution']['provider']
+                rows.append(codex_account.subscription_postflight(account, provider))
+            except Exception:
+                rows.append(_unavailable_account_postflight(account.get('account_id')))
+        return rows
+
     def execute(self,spec,run_dir):
         output=Path(run_dir)/'agent'
         fragment=spec['original_execution']
@@ -604,14 +617,35 @@ def _execute(profile, slot, claim, plan, executor, repo, compiler):
     try:
         executed = executor.execute(spec, slot)
     except (paired.Refusal, OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
-        return _finish(slot, claim, status='incomplete', code='executor_failed')
+        postflight = _account_postflight(executor, spec)
+        return _finish(slot, claim, status='incomplete', code='executor_failed', account_postflight=postflight)
+    postflight = _account_postflight(executor, spec)
     result = _agent_result(Path(executed['agent']), spec)
     if executed['exit_code'] not in (0, 2) and result['status'] == 'complete':
         result.update(status='incomplete', code='harness_exit_unexpected')
     plan = result.pop('plan', None)
     if result['status'] == 'complete':
         result['pair_binding'] = _pair_binding(slot, spec, profile['campaign_id'], result['agent'], plan)
-    return _finish(slot, claim, harness_exit_code=executed['exit_code'], **result)
+    return _finish(slot, claim, harness_exit_code=executed['exit_code'], account_postflight=postflight, **result)
+
+
+def _unavailable_account_postflight(account_id):
+    checked_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    return dict(account_id=account_id, checked_at=checked_at, status=None,
+                error='codex_subscription_status_unavailable')
+
+
+def _account_postflight(executor, spec):
+    if not isinstance(executor, CodexWeeklyExecutor):
+        return None
+    try:
+        rows = executor.subscription_postflight(spec)
+        if isinstance(rows, list) and len(rows) == len(executor.account_ids):
+            return rows
+    except Exception:
+        pass
+    # Postflight is best-effort and cannot prevent the actor's terminal receipt.
+    return [_unavailable_account_postflight(account_id) for account_id in executor.account_ids]
 
 
 def _stored_slot(runs, slot_id, current, cand):
@@ -938,7 +972,7 @@ def _pair_binding(slot, spec, campaign_id, agent, plan):
 
 
 def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exit_code=None, pair_binding=None,
-            limit_assessment=None, baseline_custody=None, original_execution=None):
+            limit_assessment=None, baseline_custody=None, original_execution=None, account_postflight=None):
     receipt = dict(claim, schema=RECEIPT_SCHEMA, status=status, code=code, agent=agent, attempts=attempts,
                    harness_exit_code=harness_exit_code, pair_binding=pair_binding, limit_assessment=limit_assessment,
                    baseline_custody=baseline_custody,
@@ -947,6 +981,8 @@ def _finish(slot, claim, *, status, code, agent=None, attempts=None, harness_exi
                    pair_identity=None if pair_binding is None else 'declared_binding',
                    report_input=None if agent is None else dict(schema='cairn.task-eval.agent/1', agent=agent),
                    runtime_admission=False)
+    if account_postflight is not None:
+        receipt['account_postflight'] = account_postflight
     if claim.get('capacity', {}).get('mode') == 'manual_one_run_override':
         receipt.update(capacity_status='capacity_unverified', accepted=False)
     paired.write_selected(slot / 'receipt.json', receipt)

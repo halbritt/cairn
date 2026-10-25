@@ -759,6 +759,48 @@ class WeeklyRunTests(unittest.TestCase):
         self.assertEqual(self.run_weekly(now=later), dict(first, replayed=True))
         self.assertEqual(len(self.executor.executed), 1)
 
+    def test_optional_postflight_is_passive_and_replayed_byte_for_byte(self):
+        first = self.run_weekly()
+        slot = self.runs / first['slot_id']
+        claim = paired.read_json(slot / 'claim.json')
+        observation = [dict(account_id='codex-A', checked_at='2026-10-25T00:00:00Z',
+                            status=dict(primary=dict(used_percent=41, window_duration_mins=10080,
+                                                     resets_at='2026-10-30T22:43:17Z')),
+                            error=None),
+                       dict(account_id='codex-B', checked_at='2026-10-25T00:00:00Z',status=None,
+                            error='codex_subscription_status_unavailable')]
+        (slot / 'receipt.json').unlink()
+        receipt = weekly._finish(slot, claim, status='incomplete', code='synthetic_failure',
+                                 account_postflight=observation)
+        self.assertEqual((receipt['status'], receipt['code']), ('incomplete', 'synthetic_failure'))
+        self.assertEqual(receipt['account_postflight'], observation)
+        stored, retry, _ = weekly._stored_slot(self.runs, first['slot_id'],
+                                               claim['current']['commit'], claim['candidate']['commit'])
+        self.assertFalse(retry)
+        self.assertEqual(stored, dict(receipt, replayed=True))
+
+    def test_unexpected_postflight_exception_keeps_terminal_receipt_durable(self):
+        original = self.run_weekly()
+        slot = self.runs / original['slot_id']
+        claim = paired.read_json(slot / 'claim.json')
+        executor = object.__new__(weekly.CodexWeeklyExecutor)
+        executor.account_ids = ('codex-A', 'codex-B', 'codex-C')
+        with unittest.mock.patch.object(weekly.CodexWeeklyExecutor, 'subscription_postflight',
+                                        side_effect=RuntimeError('must not escape')):
+            rows = weekly._account_postflight(executor, {})
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(row['status'] is None for row in rows))
+        (slot / 'receipt.json').unlink()
+        terminal = weekly._finish(
+            slot, claim, status=original['status'], code=original['code'], agent=original['agent'],
+            attempts=original['attempts'], harness_exit_code=original['harness_exit_code'],
+            pair_binding=original['pair_binding'], limit_assessment=original['limit_assessment'],
+            baseline_custody=original['baseline_custody'], original_execution=original['original_execution'],
+            account_postflight=rows)
+        for field in ('status', 'code', 'accepted', 'runtime_admission', 'pair_binding'):
+            self.assertEqual(terminal.get(field), original.get(field))
+        self.assertEqual(json.loads((slot / 'receipt.json').read_text()), terminal)
+
     def test_slot_used_by_another_pair_refuses(self):
         self.run_weekly()
         git(self.repo.path, 'checkout', '-q', 'candidate')

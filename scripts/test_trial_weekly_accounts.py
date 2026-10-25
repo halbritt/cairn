@@ -144,6 +144,59 @@ class WeeklyAccountAssignmentTests(unittest.TestCase):
                 with self.assertRaisesRegex(paired.Refusal, code):
                     codex_accounts.subscription_preflight(account, provider, 'gpt-6-luna')
 
+    def test_subscription_postflight_reads_only_rate_limits_and_retains_normalized_snapshot(self):
+        account = self.accounts[0]
+        auth = Path(account['auth_file'])
+        auth.write_text(json.dumps(dict(auth_mode='chatgpt', tokens=dict(account_id='account-A'))))
+        account['auth_sha256'] = hashlib.sha256(auth.read_bytes()).hexdigest()
+        server = self.root/'fake-codex-postflight'
+        server.write_text('#!/usr/bin/env python3\nimport json,sys\n'
+                          'for line in sys.stdin:\n'
+                          ' r=json.loads(line); i=r.get("id")\n'
+                          ' if i==1: v={}\n'
+                          ' elif i==2: v={"accountId":"account-A","ordinaryUsageAllowed":True,"rateLimits":{'
+                          '"limitId":"codex","primary":{"usedPercent":41,"windowDurationMins":10080,'
+                          '"resetsAt":"2026-10-30T22:43:17Z"},"secondary":None}}\n'
+                          ' else: continue\n'
+                          ' print(json.dumps({"id":i,"result":v}),flush=True)\n')
+        server.chmod(0o700)
+        provider = dict(path=str(server), sha256=hashlib.sha256(server.read_bytes()).hexdigest())
+        snapshot = codex_accounts.subscription_postflight(account, provider)
+        self.assertEqual(snapshot['account_id'], 'account-A')
+        self.assertIsNone(snapshot['error'])
+        self.assertTrue(snapshot['status']['response_account_id_observed'])
+        self.assertEqual(snapshot['status']['primary'], dict(used_percent=41, window_duration_mins=10080,
+                                                            resets_at='2026-10-30T22:43:17Z'))
+        self.assertIsNone(snapshot['status']['secondary'])
+        self.assertNotIn('token', json.dumps(snapshot).lower())
+
+    def test_subscription_postflight_returns_null_without_raw_error_when_identity_or_read_fails(self):
+        account = self.accounts[0]
+        auth = Path(account['auth_file'])
+        auth.write_text(json.dumps(dict(auth_mode='chatgpt', tokens=dict(account_id='account-A'))))
+        account['auth_sha256'] = hashlib.sha256(auth.read_bytes()).hexdigest()
+        for response, returns in ((dict(accountId='other-account', rateLimits=dict(limitId='codex',
+                                primary=dict(usedPercent=20, windowDurationMins=10080))), True),
+                                  ({}, False)):
+            with self.subTest(returns=returns):
+                server = self.root/'fake-codex-postflight'
+                if returns:
+                    server.write_text('#!/usr/bin/env python3\nimport json,sys\n'
+                                      f'print(json.dumps({{"id":1,"result":{{}}}}),flush=True)\n'
+                                      f'print(json.dumps({{"id":2,"result":{json.dumps(response)}}}),flush=True)\n'
+                                      'for line in sys.stdin: pass\n')
+                else:
+                    server.write_text('#!/usr/bin/env python3\nimport json,sys\n'
+                                      'for line in sys.stdin:\n'
+                                      ' r=json.loads(line); i=r.get("id")\n'
+                                      ' if i in (1,2): print(json.dumps({"id":i,"error":{"message":"private"}}),flush=True)\n')
+                server.chmod(0o700)
+                provider = dict(path=str(server), sha256=hashlib.sha256(server.read_bytes()).hexdigest())
+                snapshot = codex_accounts.subscription_postflight(account, provider, timeout=1)
+                self.assertIsNone(snapshot['status'])
+                self.assertEqual(snapshot['error'], 'codex_subscription_status_unavailable')
+                self.assertNotIn('private', json.dumps(snapshot))
+
 
 if __name__ == '__main__':
     unittest.main()
