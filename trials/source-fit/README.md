@@ -51,3 +51,9 @@ The 2026-10-24 bounded trial has stopped. See
 `docs/verification/source-fit-2026-10-24.md` for the observed outcomes and
 remaining acceptance work. Do not replay it as a continuation or treat its
 unrun arms as passed.
+
+The proposed native Codex/Luna route is separately assessed in
+`docs/verification/source-fit-codex-route-2026-10-24.md`. Existing Codex usage
+and source-delivery readers are reusable, but no Codex source-fit runner or
+model-verified native tool stream was established, so no Codex panel copy was
+frozen and no provider was contacted.

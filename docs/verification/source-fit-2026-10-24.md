@@ -167,3 +167,7 @@ retrieval-change claim is made.
 No fresh provider run is authorized or performed by this record. Subscription
 behavior, model-initiated whole-source recovery, independent task acceptance,
 paired cost, and any retrieval-change benefit remain unproved.
+
+The provider-free assessment of the requested Codex/Luna route is recorded in
+[`source-fit-codex-route-2026-10-24.md`](source-fit-codex-route-2026-10-24.md).
+It leaves this stopped Claude pilot and its frozen panel unchanged.
