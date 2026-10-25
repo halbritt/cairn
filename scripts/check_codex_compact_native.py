@@ -69,7 +69,7 @@ def _exec_tool(call_id, command):
 
 
 def check(binary, root, config, api_call, candidate_root, scenario="notice"):
-    if scenario not in ("notice", "response"):
+    if scenario not in ("notice", "response", "batch-admission"):
         raise ValueError("unsupported compact fixture scenario")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
@@ -91,6 +91,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     config_home=str(home))
         if rel.startswith("ordinary/"):
             data["claude"] = str(selector_path)
+        elif scenario == "batch-admission":
+            data["notice_batch_version"] = 1
         data["state_dir"] = str(home / ("ordinary/state" if rel.startswith("ordinary/")
                                          else "coordination/state/codex-one"))
         data["inbox_recall_binding"] = str(home / "binding.json")
@@ -142,6 +144,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     coordination = json.loads(coordination_path.read_text(encoding="utf-8"))
     bridge.validate_binding(memory, require_enabled=True)
     bridge.validate_binding(coordination, require_enabled=True)
+    if scenario == "batch-admission":
+        assert coordination.get("compact_inbox_version") == 1
+        assert coordination.get("notice_batch_version") == 1
 
     installer = _module(Path(__file__).with_name("install-agent-coordination.py"),
                         "codex_compact_installer")
@@ -159,7 +164,15 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     installed.chmod(0o600)
 
     causal_request = None
-    if scenario == "notice":
+    batch_sources = []
+    if scenario == "batch-admission":
+        for body in ("Log rotation finished.", "Cache warmed.", "Index refreshed."):
+            batch_sources.append(api_call("alice", "create", raw=True, body=json.dumps(dict(
+                request_id=str(uuid.uuid4()), draft=dict(kind="note", body=body,
+                    sensitivity="shareable", claim_type="self",
+                    scope=dict(repo=config["repo"], task_id="*", run_id="*"))))))
+        source = batch_sources[0]
+    elif scenario == "notice":
         source = api_call("alice", "create", raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
             draft=dict(kind="note", body=SOURCE_BODY, sensitivity="shareable", claim_type="self",
                        scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
@@ -185,6 +198,10 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     native_turn_id = None
     attempt_native_turn_id = None
     event = None
+    batch_events = []
+    admission_checked = threading.Event()
+    admission_requests = 0
+    admission_states = None
     delivery_id = None
     attempt_id = None
     requests, failures, results = [], [], {}
@@ -194,7 +211,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     compact_in_progress = False
     source_read_confirmed = False
     settlement_confirmed = False
-    event_owner = "alice" if scenario == "notice" else "bob"
+    event_owner = "alice" if scenario in ("notice", "batch-admission") else "bob"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -203,6 +220,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         def do_POST(self):
             nonlocal event, delivery_id, attempt_id, failed_completion, attempt_native_turn_id
             nonlocal source_read_confirmed, settlement_confirmed
+            nonlocal admission_requests
+            nonlocal admission_states
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 assert self.path == "/v1/responses" and 0 < size <= 4_000_000, "unexpected request path or size"
@@ -211,6 +230,49 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 requests.append(request)
                 results.update({item["call_id"]: item for item in request.get("input", [])
                                 if item.get("type") == "custom_tool_call_output"})
+
+                if scenario == "batch-admission" and event is not None:
+                    assert native_turn_ready.wait(15), "native batch admission turn ID was not published to fixture"
+                    first = batch_events[0]
+                    context_path = next(path for path in (home / "coordination/state/codex-one/inbox").glob("*.json")
+                        if json.loads(path.read_text()).get("event_id") == first["event_id"])
+                    context = json.loads(context_path.read_text())
+                    attempt = context["attempt_id"]
+                    attempt_id = attempt
+                    attempt_native_turn_id = context.get("native_turn_id")
+                    assert attempt_native_turn_id == native_turn_id, "batch admission lost native-turn binding"
+                    hook_rows = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
+                    assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id
+                               for row in hook_rows), "admission was not joined to the pinned UserPromptSubmit turn"
+                    assert context.get("batch_advance_request_id"), "batch-enabled binding did not journal advance identity"
+                    assert context["source"] == first["ref"] and context["delivery_id"] == \
+                        api_call("alice", "event-status", first["event_id"])["deliveries"][0]["delivery_id"]
+                    claimed = api_call("carol", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                        request_id=attempt, session=dict(agent_id=context["agent_id"],
+                            execution_id=context["execution_id"]), native_turn_id=native_turn_id)))
+                    assert claimed["attempt"]["attempt_id"] == attempt
+                    assert claimed["attempt"]["native_turn_id"] == native_turn_id
+                    assert claimed["attempt"]["delivery"]["delivery_id"] == context["delivery_id"]
+                    handle = context.get("compact_handle")
+                    serialized = json.dumps(request.get("input"))
+                    assert isinstance(handle, str) and handle in serialized, "first batch handle absent from native request"
+                    assert batch_sources[0]["body"] in serialized, "first batch source is absent from native request"
+                    assert "cairn-inbox advance " + handle in serialized and "up to three total" in serialized, \
+                        "native request did not load the bounded batch continuation cue"
+                    states = [api_call("alice", "event-status", item["event_id"])["deliveries"][0]
+                              for item in batch_events]
+                    assert states[0]["state"] == "leased" and states[0]["attempts"] == 1, \
+                        "first routine notice was not admitted exactly once"
+                    assert all(row["state"] == "pending" and row["attempts"] == 0 for row in states[1:]), \
+                        "a batch neighbor was claimed before explicit actor advance"
+                    assert not any(item.get("type") == "custom_tool_call" for item in request.get("input", [])), \
+                        "fixture actor input already contains a tool action"
+                    admission_requests += 1
+                    if admission_states is None:
+                        admission_states = states
+                    admission_checked.set()
+                    self.send_error(503, "fixture stopped before inference")
+                    return
 
                 if event is None or compact_in_progress:
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
@@ -380,7 +442,13 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
         target = next((row for row in agents if row["native_session_id"] == native_id), None)
         assert target is not None, "Codex native session was not registered"
-        if scenario == "notice":
+        if scenario == "batch-admission":
+            for batch_source in batch_sources:
+                batch_events.append(api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                    "--to", target["inbox"], "--kind", "notice", "--version",
+                    str(batch_source["version"]), batch_source["record_id"]))
+            event = batch_events[0]
+        elif scenario == "notice":
             event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
                 "--to", target["inbox"], "--kind", "notice", "--version",
                 str(source["version"]), source["record_id"])
@@ -395,6 +463,15 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         before_compact = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
         assert before_compact["delivery_id"] == delivery_id and before_compact["state"] == "pending" \
             and before_compact["attempts"] == 0, "notice was not pending before compaction"
+
+        if scenario == "batch-admission":
+            continuation = rpc("turn/start", dict(threadId=native_id,
+                input=[dict(type="text", text="Observe the staged batch admission fixture.", text_elements=[])]))
+            continuation_turn_id = continuation["turn"]["id"]
+            native_turn_id = continuation_turn_id
+            native_turn_ready.set()
+            assert admission_checked.wait(30), "staged Codex did not reach batch-enabled first admission"
+            return
 
         compact_in_progress = True
         compact_response = rpc("thread/compact/start", dict(threadId=native_id))
@@ -494,6 +571,21 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         installer.trust_codex_hooks(home, settings, hook_commands["memory"],
                                     verify=verify, codex_binary=binary, expected=4)
         assert not failures, failures
+        if scenario == "batch-admission":
+            assert admission_checked.is_set() and admission_requests >= 1, \
+                "readiness run did not stop at the first native batch admission"
+            final_states = [api_call("alice", "event-status", item["event_id"])["deliveries"][0]
+                            for item in batch_events]
+            assert admission_states and admission_states[0]["state"] == "leased"
+            assert all(row["state"] == "pending" and row["attempts"] == 0 for row in admission_states[1:])
+            assert all(row["state"] == "pending" and row["attempts"] == 0 for row in final_states[1:])
+            assert final_states[0]["state"] in ("leased", "failed")
+            assert not source_read_confirmed and not settlement_confirmed
+            print(json.dumps(dict(result="PASS", scenario=scenario, staged_batch_config=True,
+                exact_first_admission=True, pending_neighbors=2, settlement="not_performed",
+                admission_requests=admission_requests, first_item_after_fixture_stop=final_states[0]["state"],
+                provider="local_fixture_refused_before_inference")))
+            return
         assert event is not None and len(requests) == 5
         hook_metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines() if line]
         assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id

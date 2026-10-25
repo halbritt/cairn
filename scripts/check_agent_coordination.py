@@ -836,7 +836,7 @@ def check(binary, root, repo, api_call):
                 assert stopped and stopped[0]["stopped"]
                 print("Staged compact Codex binding loaded and registered an actual native first turn against the disposable API; fixture provider only")
                 from check_codex_compact_native import check as check_codex_compact_native
-                for scenario in ("notice", "response"):
+                for scenario in ("notice", "response", "batch-admission"):
                     check_codex_compact_native(os.environ["CAIRN_CODEX_BINARY"],
                         root / ("native-compact-codex-" + scenario), json.loads(config.read_text()),
                         api_call, candidate_root, scenario=scenario)

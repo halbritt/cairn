@@ -37,3 +37,30 @@ attempts; final reconciliation closes only the explicitly handled attempt.
 This closes the source-fixture gap for mid-batch urgent preemption through the
 authenticated API/helper path. It remains a synthetic native owner without a
 provider turn or accepted task outcome.
+
+## Staged Codex first-admission readiness
+
+The Codex staged-candidate fixture also has a `batch-admission` scenario. It
+copies the disabled, full-profile candidate into a private test home, enables
+its batch manifest only in that copy, and registers a real native Codex thread
+against a disposable PostgreSQL/API fixture. It publishes the same three
+routine bodies used by `routine_burst_urgent_request`, then starts a fresh
+`UserPromptSubmit` turn. The loopback Responses endpoint refuses the first
+request with HTTP 503 before returning model output or tool calls.
+
+The probe verifies the copied binding pins compact inbox and notice batch v1;
+the first admitted delivery, exact source and compact handle; the request's
+native turn ID against the observed `UserPromptSubmit` hook; and the presence
+of that item's durable advance request ID and bounded continuation cue. At
+admission, only the first notice is leased (attempt 1); the two neighbors stay
+pending with zero attempts. No actor tool call, source read or disposition is
+scripted. After the fixture refused the request and stopped, the first delivery
+was `failed` and both neighbors remained pending. That state is not an
+actor-selected per-item outcome.
+
+This closes only the staged binding and first-admission readiness check. The
+compact-resume `SessionStart` path has no native turn ID, so it does not qualify
+for this batch admission; the probe deliberately starts a fresh prompt turn.
+The fixture provides no actor choice to advance, accepted task grade, provider
+usage, response reduction, latency result or live deployment observation.
+CAIRN-221 remains open for those acceptance gates and a canary.
