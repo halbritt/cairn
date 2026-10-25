@@ -391,7 +391,10 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 attempt_id=attempt_id, native_turn_id=native_turn_id,
                 source=notice["ref"], delivery_state=state["state"], attempts=state["attempts"],
                 settlement="not_performed", retry="not_attempted", outcome="unscored",
-                cancel_error=active_deadline.cancel_error, stop_error=active_deadline.stop_error,
+                cancel_error=active_deadline.cancel_error,
+                cancel_error_code=active_deadline.cancel_error_code,
+                cancel_error_message=active_deadline.cancel_error_message,
+                stop_error=active_deadline.stop_error,
                 owned_app_server_group_stopped=True)
             return
         active_deadline.disarm()
