@@ -59,6 +59,9 @@ Allowed phases are `before_admission`, `admission`, `grant`, `source`, `tool`,
 (`none`, `manual_retry`, `self_drain`, `intervention`, or `unknown`). A reminder
 observation needs its exact attempt ID and observed state revision. A repeated
 emission for one attempt, revision and reminder kind is reported as a diagnostic.
+Different reminder kinds may be retained as separate observations for the same
+event, delivery, attempt, phase, and revision; repeating the same kind at that
+identity is still rejected as a duplicate.
 `model_invocation` describes the recipient native model turn for this exact
 attempt, not any sender work. It is an explicit selected observation: `not_started`,
 `started`, or `unknown` (the default). Only `not_started` with an observed

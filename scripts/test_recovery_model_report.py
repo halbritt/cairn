@@ -126,6 +126,23 @@ class RecoveryModelReportTests(unittest.TestCase):
         result = recovery.compile_report(self.workflow(), self.evidence([first, second]))
         self.assertEqual(result["repeated_emitted_reminder_revisions"], 0)
 
+    def test_distinct_reminder_kinds_share_one_state_revision_without_colliding(self):
+        first = self.observation()
+        first.update(reminder_emitted=True, reminder_kind="turn_end")
+        second = self.observation()
+        second.update(reminder_emitted=True, reminder_kind="waiting_work")
+
+        observations = self.evidence([first, second])
+        result = recovery.compile_report(self.workflow(), observations)
+
+        self.assertEqual(len(observations), 2)
+        self.assertEqual(result["repeated_emitted_reminder_revisions"], 0)
+        self.assertEqual(result["phases"]["settlement"]["provider_turns"], 1)
+        self.assertEqual(result["phases"]["settlement"]["observed_responses"], 3)
+
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self.evidence([first, dict(first)])
+
     def test_duplicate_provider_response_identity_blocks_response_total(self):
         workflow = self.workflow()
         workflow["workflows"][0]["deliveries"][0]["provider"]["duplicate_response_id"] = True

@@ -64,7 +64,11 @@ def read_evidence(path, max_observations):
             raise ValueError("unknown reminder kind")
         if reminder is not None and (attempt is None or revision is None):
             raise ValueError("reminder evidence requires attempt and state revision")
-        key = (event, delivery, attempt, phase, revision)
+        # Distinct reminder kinds can be emitted for the same attempt and
+        # observed revision. Keep those observations separate, while exact
+        # duplicate emissions of one kind remain invalid.
+        reminder_identity = reminder_kind if reminder is True else None
+        key = (event, delivery, attempt, phase, revision, reminder_identity)
         if key in seen:
             raise ValueError("duplicate recovery observation identity")
         seen.add(key)
