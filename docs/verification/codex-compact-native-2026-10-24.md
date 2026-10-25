@@ -153,3 +153,32 @@ patched turn-ID propagation, continuation, and settlement remain unverified.
 Cairn keeps the fail-closed `NATIVE_TURN_MISMATCH` behavior; no task continuity
 or settlement is claimed here. No external provider, real auth, production
 database, or OpenRouter was used.
+
+## Patched Codex compact callback serializer probe (2026-10-25)
+
+A separate serializer-only runtime probe used the rebuilt pinned app-server
+binary identified above (SHA-256
+`b8ad1db40f7f547df6fc89190e3a1feb1355d438eca45678fddcafd746127235`). It
+used a private `CODEX_HOME`, one trusted minimal `SessionStart` hook that
+retained only source and SHA-256 hashes of session/turn IDs, and a loopback
+Responses server. Its scripted turn followed the compact fixture's shape: a
+1,000-token context window, 50-token compaction threshold, and a custom tool
+call response reporting 200 input tokens. The app-server emitted native
+`contextCompaction` item start and completion notifications, and the active
+turn completed.
+
+The private hook recorded `source=compact`, `turn_id_present=true`, and
+turn-ID SHA-256
+`30706ca6ac7f239b86643c57f76840acd330aab39c8171d0df72e193d966de9`. This
+matches the active `turn/start` response's turn-ID SHA-256. The compact hook
+also recorded session-ID SHA-256
+`1218bc01aafc6e7ff4e7ffc11d571641e2c96e32dbdc198463d3065f8cbf8e40`. The
+single run used four loopback requests, with no external provider call. This
+proves that this patched app-server build serialized the active turn ID into
+its automatic compact `SessionStart` callback in this fixture.
+
+This is a Codex callback serializer/runtime result only. It did not register a
+Cairn session or use the Cairn Store, inbox, or coordination hook, and it does
+not prove Cairn continuity, safe attempt recovery, accepted task outcome,
+provider usage, or measured usefulness. The earlier full Cairn fixture's
+registration boundary remains separate and unresolved.
