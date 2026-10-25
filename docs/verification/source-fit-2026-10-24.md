@@ -74,3 +74,60 @@ source bodies. Unsupported or malformed result shapes remain `unknown`; native
 tool failures remain errors with no source items. This improves provenance for
 future admitted runs but does not fill the unrun arms, score task outcomes, or
 establish subscription behavior.
+
+## Gate for another provider run
+
+Do not resume or rewrite the stopped output, and do not reuse this panel's
+manifest as a new run. The six source-qualified cases already cover buried
+whole-source qualifications, wrong-project terminology, current corrections,
+required conflicts, semantic-unavailable lexical fallback, and local-only
+exclusion. The current and direct arms provide the control; hints and the
+author-maintained split are separately declared diagnostics. Copying these
+fixtures into another file without a changed acceptance contract would duplicate
+the same panel.
+
+Before another provider admission, freeze a new run identity and manifest that
+pins this case set, the current source/tool-delivery code, the model and effort,
+the subscription route, the run and token ceilings, and the scoring rubric.
+Keep the original 15-arm manifest and its failed/unrun denominator immutable.
+The current runner is pinned to `trials/source-fit/FROZEN.json`; a separately
+frozen run must be wired to an independently named manifest and checked by the
+same validator before it can be admitted. The proposal in the old manifest is
+not itself authorization to run.
+
+The existing runner supplies these admission and stop checks:
+
+- It accepts only the declared Claude subscription route (`claude.ai`) and
+  checks login/subscription status before each arm. It removes Anthropic API
+  credentials and base URL, the OpenRouter key, and alternate cloud-provider
+  variables from the child environment; it has no OpenRouter fallback. It does
+  not query account utilization or provider quota headroom.
+- Before each arm it requires `reported_tokens + next_run_reserve` to fit the
+  panel ceiling. The reserve is at least 32,000 reported tokens, or 2,000 over
+  the largest observed run, whichever is larger. It also enforces the arm
+  count, per-run wall time, campaign wall time and output-token limits.
+- Missing or malformed usage, a native error, an unavailable subscription
+  route, a model change, or a crossed limit stops admission. Keep the attempted
+  arm as failed, unscored or unknown; do not silently retry it in the same
+  denominator. The reserve reduces predictable overruns but is not a provider
+  hard cap on one native response or a live quota pre-check.
+- Keep output directories private and outside the repository. Retain sanitized
+  source-delivery metadata and selected answer/usage locally; do not retain or
+  commit raw native streams, credentials or private sessions.
+
+Provider task acceptance requires all planned arms to have an explicit outcome
+or a retained stopped/unrun status. In particular: the buried-source answer
+must use the live 512 KiB value and identify 2048 KiB as offline history; a
+partial span with unread middle does not count as complete-source support. The
+Cairn Atlas answer must exclude Trail's 90-day setting. The export answer must
+prefer `/v2/export` and label `/v1/export` historical. Conflicting required
+thresholds must remain unresolved. The lexical recovery case must work without
+semantic service. The local-only phrase must not appear in hosted or direct
+context. The model must successfully recover a complete source through the
+allowed Cairn tools when context is insufficient. An independent reviewer must
+score final answers against these source and task checks before any savings or
+retrieval-change claim is made.
+
+No fresh provider run is authorized or performed by this record. Subscription
+behavior, model-initiated whole-source recovery, independent task acceptance,
+paired cost, and any retrieval-change benefit remain unproved.
