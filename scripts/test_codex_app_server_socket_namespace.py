@@ -55,6 +55,14 @@ class CodexAppServerSocketNamespaceTests(unittest.TestCase):
         self.assertLessEqual(len(report.get("outer_bwrap_stderr", "").encode()), probe.MAX_STDERR)
         self.assertNotIn(str(Path.home()), str(report))
 
+class ProbeFailureRedactionTests(unittest.TestCase):
+    def test_failure_codes_do_not_retain_exception_or_refusal_text(self):
+        self.assertEqual(probe._failure_code("app_server_socket_not_ready"),
+                         "app_server_socket_not_ready")
+        self.assertEqual(probe._failure_code("/private/path sk-secret-value"), "other")
+        self.assertEqual(probe._native_refusal_code("STALE_SESSION"), "STALE_SESSION")
+        self.assertEqual(probe._native_refusal_code("Bearer sk-secret-value"), "other")
+
 
 if __name__ == "__main__":
     unittest.main()

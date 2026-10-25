@@ -27,6 +27,21 @@ MAX_STDERR = 4096
 STARTUP_SECONDS = 8
 READY_SECONDS = 20
 MODEL = "gpt-6-astra"
+_FAILURE_CODES = {
+    "app_server_socket_not_ready", "socket_peer_credential_mismatch",
+    "new_thread_missing_from_loaded_list", "queue_add_response_mismatch",
+    "app_server_exited_after_queue_add", "host_socket_observation_timeout",
+    "app_server_exited_before_cleanup",
+}
+
+
+def _failure_code(value: object) -> str:
+    """Keep fixture failure output independent of exception payloads."""
+    return value if isinstance(value, str) and value in _FAILURE_CODES else "other"
+
+
+def _native_refusal_code(value: object) -> str:
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", value) else "other"
 
 
 def _read_bounded(stream: BinaryIO, result: dict[str, object]) -> None:
@@ -209,9 +224,9 @@ def _inside(root_text: str) -> int:
             raise RuntimeError("app_server_exited_before_cleanup")
     except Exception as exc:
         failure = {"schema": "cairn.codex-app-server-socket-probe/1",
-                   "error_class": type(exc).__name__, "error_code": str(exc)[:120]}
+                   "error_class": type(exc).__name__, "error_code": _failure_code(str(exc))}
         if isinstance(exc, codex_queue.QueueRefused):
-            failure["native_refusal"] = {"code": exc.code, "message": exc.message[:160]}
+            failure["native_refusal"] = {"code": _native_refusal_code(exc.code)}
         ready.write_text(json.dumps(failure, sort_keys=True) + "\n", encoding="utf-8")
         return 1
     finally:
