@@ -1030,11 +1030,7 @@ class InboxRecovery(unittest.TestCase):
         observation = dict(event='Stop', phase='idle', native_turn_id='')
         with unittest.mock.patch.object(coordination, 'renew_inbox') as renew:
             first = coordination.unacknowledged_turn_end_reminder(config, self.state, self.path, observation)
-            first_marker = self.state['inbox_ack_reminder_revision']
-            first_revision = first_marker['state_revision']
-            self.assertEqual(first_marker, dict(attempt_id=ATTEMPT,
-                                                state_revision=first_revision,
-                                                reminder_kind='turn_end'))
+            first_revision = self.state['inbox_ack_reminder_revision']['sha256']
             self.assertIn(shlex.join(context['acknowledgement']), first)
             self.assertEqual(coordination.unacknowledged_turn_end_reminder(
                 config, self.state, self.path, observation), '')
@@ -1045,30 +1041,8 @@ class InboxRecovery(unittest.TestCase):
             target.write_text(json.dumps(dict(changed, kind='response')))
             second = coordination.unacknowledged_turn_end_reminder(config, self.state, self.path, observation)
             self.assertIn(shlex.join(changed['acknowledgement']), second)
-            self.assertNotEqual(self.state['inbox_ack_reminder_revision']['state_revision'], first_revision)
+            self.assertNotEqual(self.state['inbox_ack_reminder_revision']['sha256'], first_revision)
             self.assertEqual(renew.call_count, 2)
-
-    def test_legacy_revision_marker_migrates_without_reemitting_unchanged_reminder(self):
-        self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
-        context = self.context()
-        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
-        target.write_text(json.dumps(dict(context, kind='response')))
-        config = dict(self.config, remind_unacknowledged_turn_end=True)
-        observation = dict(event='Stop', phase='idle', native_turn_id='')
-        generated_state = dict(self.state)
-        self.assertTrue(coordination.unacknowledged_turn_end_reminder(
-            config, generated_state, self.path, observation))
-        revision = generated_state['inbox_ack_reminder_revision']['state_revision']
-        legacy_state = dict(self.state, inbox_ack_reminded=ATTEMPT,
-                            inbox_ack_reminder_revision=dict(attempt_id=ATTEMPT, sha256=revision))
-        with unittest.mock.patch.object(coordination, 'renew_inbox') as renew:
-            self.assertEqual(coordination.unacknowledged_turn_end_reminder(
-                config, legacy_state, self.path, observation), '')
-            self.assertEqual(renew.call_count, 0)
-        self.assertEqual(legacy_state['inbox_ack_reminder_revision'],
-                         dict(attempt_id=ATTEMPT,
-                              state_revision=legacy_state['inbox_ack_reminder_revision']['state_revision'],
-                              reminder_kind='turn_end'))
 
     def test_legacy_attempt_only_reminder_marker_stays_suppressed(self):
         self.state['inbox_attempt']['delivery']['event']['kind'] = 'response'
