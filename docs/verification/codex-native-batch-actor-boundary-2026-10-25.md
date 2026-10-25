@@ -91,8 +91,12 @@ enabled; it is separate from this experimental actor result.
 
 The first post-classifier run was launched once through `make test-integration`
 with Codex 0.164.0, fake local identities, a fresh disposable PostgreSQL/API,
-`bwrap --unshare-net`, and a loopback Responses endpoint with
-`requires_openai_auth = false`. Its owner-only trace is
+and a loopback Responses endpoint with `requires_openai_auth = false`. A later
+source audit corrected an earlier network-boundary description: the fixture's
+nested bwrap confined its filesystem and IPC, but this launcher did not pass
+`--unshare-net`; the Codex process shared the host network namespace. No
+provider request was observed, but that run did not establish network isolation.
+Its owner-only trace is
 `/home/halbritt/.cache/cairn-221-native-batch-actor/actor-9b9201b2-bc7b-4428-939a-b9e667ee4963.jsonl`
 (0600). It records registration, exact-source read, handled settlement, and an
 advance tool call; the next fixed class is `tool_error` at
@@ -107,7 +111,8 @@ was classified. The retained Codex SQLite logs did not contain a uniquely
 identifiable advance tool-result object for local reclassification.
 
 One targeted provider-free retry used a fresh disposable PostgreSQL/API and the
-same pinned, network-isolated Codex fixture. Its private trace again reached
+same pinned fixture with filesystem/IPC isolation but no separate network
+namespace. Its private trace again reached
 `advance_tool_result` with `tool_error`; it did not retain a parse-stage code.
 That trace is
 `/home/halbritt/.cache/cairn-221-native-batch-actor/actor-targeted-fa642378-55d8-4027-a30d-5c43742d5b50.jsonl`
