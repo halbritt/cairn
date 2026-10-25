@@ -18,15 +18,18 @@ by `API_UNAVAILABLE`, not evidence of a live provider quota response.
 | Same snapshot | no | 0 | 0 | no | Existing digest deduplication |
 | Exact transport wake | yes | 1 | 0 | yes | Current source and settlement still handled by the inbox route |
 | Owner correction after wake | no | 1 | 1 | yes | Corrected preference |
+| Superseding decision | no | 1 | 1 | yes | New decision replaces the earlier choice |
 | Unfinished handoff | no | 1 | 1 | yes | Recoverable checkpoint |
+| Unfinished handoff at SessionEnd | no | 1 | 1 | yes | Recoverable checkpoint at the terminal capture boundary |
 | Status-only turn | no | 1 | 0 | yes | One empty capture call remains |
 | Synthetic quota refusal after wake | yes | 1 | 0 | no | Failure and retry state remain visible |
 | Source refusal after wake | yes | 0 | 0 | no | Source failure must not become false completion |
 
-Across seven cases, unchanged capture calls the selector five times. The
+Across nine cases, unchanged capture calls the selector seven times. The
 candidate appears in three cases and intersects two selector calls, but only
-one has an empty stub selection. Both required writes remain outside the
-candidate, so the **fixture miss count is zero**. Two candidate cases have
+one has an empty stub selection. The owner correction, superseding decision,
+unfinished handoff and SessionEnd handoff produce four required writes, all
+outside the candidate, so the **fixture miss count is zero**. Two candidate cases have
 unresolved failure outcomes; a gate that simply treats every candidate as a
 confirmed skip would hide those failure paths. The status-only case adds one
 empty selector call that the exact-wake candidate does not cover. These counts
@@ -39,7 +42,7 @@ state-commit failure, source/write failure, and concurrent capture separately.
 This evaluation does not join an observed candidate to accepted owner task
 outcomes or measure the auxiliary model's true cost. It does not simulate
 append during selection, state-commit races, exclusions, or a real quota error.
-No production gate is justified by these seven cases; the shadow-only path
+No production gate is justified by these nine cases; the shadow-only path
 remains in place.
 
 ## Reachable hook boundary
@@ -123,9 +126,10 @@ wake followed by correction/handoff capture.
 
 ## Native taskless-wake acceptance boundary
 
-The seven-case panel is not a native-hook evaluation: it calls the capture
+The nine-case panel is not a native-hook evaluation: it calls the capture
 function with synthetic dialogue and a local selector stub. Its correction,
-unfinished-handoff, unchanged-snapshot, quota-refusal, and source-refusal rows
+superseding-decision, unfinished-handoff at both PreCompact and SessionEnd,
+unchanged-snapshot, quota-refusal, and source-refusal rows
 are regression controls for candidate classification and failure preservation;
 they do not show what an installed agent does after a taskless wake. Likewise,
 `test_stop_ignores_exact_wake_then_captures_later_correction_and_handoff`

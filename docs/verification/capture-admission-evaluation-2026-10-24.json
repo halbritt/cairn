@@ -1,6 +1,6 @@
 {
   "schema": "cairn.capture-admission-fixture/1",
-  "fixture_count": 7,
+  "fixture_count": 9,
   "cases": {
     "same_snapshot": {
       "candidate": false,
@@ -26,7 +26,23 @@
       "confirmed": true,
       "marker_advanced": true
     },
+    "changed_decision": {
+      "candidate": false,
+      "selector_calls": 1,
+      "selected_writes": 1,
+      "outcome": "completed",
+      "confirmed": true,
+      "marker_advanced": true
+    },
     "unfinished_handoff": {
+      "candidate": false,
+      "selector_calls": 1,
+      "selected_writes": 1,
+      "outcome": "completed",
+      "confirmed": true,
+      "marker_advanced": true
+    },
+    "unfinished_handoff_at_session_end": {
       "candidate": false,
       "selector_calls": 1,
       "selected_writes": 1,
@@ -60,10 +76,10 @@
     }
   },
   "comparison": {
-    "unchanged_selector_calls": 5,
+    "unchanged_selector_calls": 7,
     "candidate_cases": 3,
     "candidate_selector_calls": 2,
-    "required_selected_writes": 2,
+    "required_selected_writes": 4,
     "candidate_required_misses": 0,
     "candidate_uncertain_cases": 2,
     "unchanged_empty_status_calls": 1
