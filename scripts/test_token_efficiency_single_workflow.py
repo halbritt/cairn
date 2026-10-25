@@ -114,6 +114,8 @@ class SingleWorkflowTests(unittest.TestCase):
     def test_native_join_requires_exact_workload_event_attempt_and_pin(self):
         manifest = single.fixture_manifest(self.fixture_path, self.controller_path,
                                            case="single_notice", arm="baseline")
+        manifest["limits"] = {"elapsed_seconds": 10, "input_tokens": 1000,
+                              "output_tokens": 100}
         now = datetime.now(timezone.utc)
         event, attempt = "a" * 24, "b" * 24
         provider = {
@@ -126,6 +128,8 @@ class SingleWorkflowTests(unittest.TestCase):
             "usage": {"observed_responses": 1, "usage_records": 1,
                       "tokens": {field: {"total": 1} for field in gate.TOKEN_FIELDS}},
         }
+        provider["usage"]["tokens"]["input"]["total"] = 1000
+        provider["usage"]["tokens"]["cached"]["total"] = 1000
         capacity = {
             "schema": "cairn.provider-capacity-evidence/1", "provider": "openai",
             "route": "subscription", "harness": "codex", "account": "codex-home:.codex",
@@ -180,18 +184,59 @@ class SingleWorkflowTests(unittest.TestCase):
                             "settlement": {"status": "committed"}, "provider": provider}],
         }]}
         pins = {"api": "api-pin", "ordinary": "ordinary-pin", "inbox": "inbox-pin", "client": "client-pin"}
-        result = single.verify_native_join(manifest, observation, native, pins=pins,
-                                           now=now, capacity_policy={"purpose": "task",
-                                                                       "ceiling_used_percent": 20,
-                                                                       "reserve_percentage_points": 1})
+
+        def verify():
+            return single.verify_native_join(
+                manifest, observation, native, pins=pins, now=now,
+                capacity_policy={"purpose": "task", "ceiling_used_percent": 20,
+                                 "reserve_percentage_points": 1})
+
+        result = verify()
         self.assertTrue(result["exact_native_join"])
         self.assertEqual(result["independent_task_acceptance"], "unassessed")
+        self.assertEqual(result["observed_limits"]["input_tokens"], 1000)
+        self.assertEqual(result["observed_limits"]["output_tokens"], 1)
+        self.assertEqual(result["observed_limits"]["elapsed_seconds"], 1.0)
+        self.assertFalse(result["provider_hard_cap"])
+        limits = manifest.pop("limits")
+        with self.assertRaisesRegex(ValueError, "frozen native elapsed and token ceilings"):
+            verify()
+        manifest["limits"] = limits
+        provider["usage"]["tokens"]["input"]["total"] = 1001
+        with self.assertRaisesRegex(ValueError, "input token ceiling"):
+            verify()
+        provider["usage"]["tokens"]["input"]["total"] = 1000
+        provider["usage"]["tokens"]["output"]["total"] = 101
+        with self.assertRaisesRegex(ValueError, "output token ceiling"):
+            verify()
+        provider["usage"]["tokens"]["output"]["total"] = None
+        with self.assertRaisesRegex(ValueError, "output token usage unavailable"):
+            verify()
+        provider["usage"]["tokens"]["output"]["total"] = 1
+        started_at = provider["started_at"]
+        provider["started_at"] = (now - timedelta(seconds=12)).isoformat()
+        with self.assertRaisesRegex(ValueError, "elapsed ceiling"):
+            verify()
+        provider["started_at"] = started_at
+        provider["usage"]["tokens"]["input"]["total"] = None
+        with self.assertRaisesRegex(ValueError, "input token usage unavailable"):
+            verify()
+        provider["usage"]["tokens"]["input"]["total"] = 1000
+        usage_records = provider["usage"].pop("usage_records")
+        with self.assertRaisesRegex(ValueError, "usage records incomplete"):
+            verify()
+        provider["usage"]["usage_records"] = usage_records
+        started_at = provider.pop("started_at")
+        with self.assertRaises(ValueError):
+            verify()
+        provider["started_at"] = started_at
+        ended_at = provider.pop("ended_at")
+        with self.assertRaises(ValueError):
+            verify()
+        provider["ended_at"] = ended_at
         native["workflows"][0]["workload"] = "baseline.actionable_response"
         with self.assertRaisesRegex(ValueError, "workload mismatch"):
-            single.verify_native_join(manifest, observation, native, pins=pins,
-                                      now=now, capacity_policy={"purpose": "task",
-                                                                  "ceiling_used_percent": 20,
-                                                                  "reserve_percentage_points": 1})
+            verify()
 
     def test_freeze_writes_admission_evidence_without_starting_a_provider_task(self):
         now = datetime.now(timezone.utc)
@@ -247,6 +292,13 @@ class SingleWorkflowTests(unittest.TestCase):
         self.assertEqual(manifest["runtime_pin_closure"]["installed"]["cairn_api_revision"], "8" * 40)
         self.assertEqual(manifest["runtime_pin_closure"]["installed"]["cairn_cli_revision"], "9" * 40)
         self.assertEqual((self.root / "dry-run/manifest.json").stat().st_mode & 0o777, 0o600)
+        malformed = copy.deepcopy(manifest)
+        malformed["limits"]["retry_count"] = 0
+        unsigned = dict(malformed)
+        unsigned.pop("manifest_sha256")
+        malformed["manifest_sha256"] = gate.sha(unsigned)
+        with self.assertRaisesRegex(ValueError, "elapsed and token ceilings"):
+            single.verify_frozen_manifest(malformed)
         manifest["release_decision"] = "ship"
         with self.assertRaisesRegex(ValueError, "manifest hash mismatch"):
             single.verify_frozen_manifest(manifest)

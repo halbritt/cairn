@@ -142,6 +142,40 @@ def validate_stage_capacity(evidence, policy, *, workflow_id, stage_id, now=None
     )
 
 
+def validate_native_limits(provider, started, ended, limits):
+    """Fail closed when whole-turn timing or usage exceeds its frozen stop limits."""
+    require(isinstance(limits, dict) and set(limits) == {
+        "elapsed_seconds", "input_tokens", "output_tokens"},
+        "frozen native elapsed and token ceilings required")
+    require(all(type(limits[key]) is int and limits[key] > 0 for key in limits),
+            "frozen native elapsed and token ceilings must be positive integers")
+    elapsed = (ended - started).total_seconds()
+    require(elapsed <= limits["elapsed_seconds"], "native elapsed ceiling exceeded")
+
+    usage = provider.get("usage")
+    require(isinstance(usage, dict), "native whole-turn token usage unavailable")
+    response_count = usage.get("observed_responses")
+    require(type(response_count) is int and response_count > 0,
+            "native response usage count unavailable")
+    require(type(usage.get("usage_records")) is int
+            and usage["usage_records"] == response_count,
+            "native whole-turn usage records incomplete")
+    token_fields = usage.get("tokens")
+    require(isinstance(token_fields, dict), "native whole-turn token usage unavailable")
+    totals = {}
+    for field in ("input", "output"):
+        record = token_fields.get(field)
+        require(isinstance(record, dict) and type(record.get("total")) is int
+                and record["total"] >= 0,
+                f"native {field} token usage unavailable")
+        totals[field] = record["total"]
+    # Input includes cached tokens; output includes its reasoning-token subset.
+    require(totals["input"] <= limits["input_tokens"], "native input token ceiling exceeded")
+    require(totals["output"] <= limits["output_tokens"], "native output token ceiling exceeded")
+    return {"elapsed_seconds": elapsed, "input_tokens": totals["input"],
+            "output_tokens": totals["output"]}
+
+
 def verify_native_join(manifest, observation, native_report, *, pins, now=None,
                        capacity_policy=None):
     """Verify one exact recipient stage against the payload-free workflow report."""
@@ -190,6 +224,7 @@ def verify_native_join(manifest, observation, native_report, *, pins, now=None,
     started = gate._utc_timestamp(provider.get("started_at"), "native started_at")
     ended = gate._utc_timestamp(provider.get("ended_at"), "native ended_at")
     require(ended >= started, "native turn end precedes start")
+    observed_limits = validate_native_limits(provider, started, ended, manifest.get("limits"))
     refs = provider.get("response_refs")
     require(isinstance(refs, list) and refs and all(gate.OPAQUE.fullmatch(x) for x in refs)
             and len(refs) == len(set(refs)), "native response references missing or duplicated")
@@ -217,6 +252,9 @@ def verify_native_join(manifest, observation, native_report, *, pins, now=None,
         "attempt": attempt,
         "turn_join": delivery["turn_join"],
         "response_refs": refs,
+        "observed_limits": observed_limits,
+        "limits_enforced_post_turn": True,
+        "provider_hard_cap": False,
         "exact_native_join": True,
         "independent_task_acceptance": "unassessed",
         "provider_call_observed": True,
@@ -572,8 +610,9 @@ def verify_frozen_manifest(manifest):
     require(manifest["pins"] == gate_pins_from_runtime(manifest["runtime_pin_closure"]),
             "gate pins do not match the separate source/client/API closure")
     limits = manifest.get("limits") or {}
-    require(all(type(limits.get(key)) is int and limits[key] > 0
-                for key in ("elapsed_seconds", "input_tokens", "output_tokens")),
+    require(isinstance(limits, dict)
+            and set(limits) == {"elapsed_seconds", "input_tokens", "output_tokens"}
+            and all(type(limits[key]) is int and limits[key] > 0 for key in limits),
             "frozen elapsed and token ceilings required")
     policy_rows = (manifest.get("capacity_admission") or {}).get("accounts") or []
     require(len(policy_rows) == 1 and policy_rows[0].get("purpose") == "task"
