@@ -236,6 +236,28 @@ unclassified fixture setup failure, not evidence of native Codex behavior or a
 registration failure. No retry followed. Batch continuation and accepted task
 outcome remain unverified; CAIRN-221 remains In Progress.
 
+## Corrected synthetic token and one final bounded run
+
+The disposable runner was corrected to write the synthetic token without a
+newline and hash those exact file bytes for the identity binding. One fresh run
+then passed the token identity, API socket and authenticated API version
+preflights; it also completed candidate/path checks, task loading, workspace
+creation, coordination copy, hook installation, sandbox launcher build, and
+local Responses server setup. `bwrap --unshare-net` isolation and denial of a
+synthetic TEST-NET connection were confirmed.
+
+The fixed trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/posttrace-ecb1a835-883f-4b93-9a3d-f256ca3c4f5c.jsonl`
+(mode `0600`). Codex returned the scripted `registration_message`, and the
+fixture then timed out at `registration_hook_wait` awaiting the matching Stop
+completion marker. The trace has no hook metadata rows, four notice slots
+`not_created`, and actor terminal `not_started`. Fresh disposable Store counts
+for `agent_session`, `agent_event`, and `agent_delivery` were zero. This shows
+that the Stop marker was not observed before timeout; it does not establish
+why, or prove a Codex hook invocation failure. No further actor run followed.
+Batch continuation and accepted task outcome remain unverified; CAIRN-221
+remains In Progress.
+
 ## Pre-setup fixed trace and bounded retry result
 
 The batch fixture now creates its owner-only mode-0600 trace before entering
@@ -261,3 +283,12 @@ The fresh database remained empty: `agent_session`, `agent_event`, and
 `agent_delivery` counts were zero. No hooks, notices, or actor turn were
 observed. No retry followed. Focused fixture/diagnostic tests (18) and
 `make check` passed. CAIRN-221 remains In Progress.
+
+The fixture did not retain the raw app-server notification stream. Its fixed
+`registration_turn` completion row is nevertheless written only after the
+verification loop observes `turn/completed` whose turn ID matches the
+registration `turn/start` response, then passes the completion assertion.
+Thus the registration turn did reach matching `turn/completed`; the following
+Stop-marker wait timed out. A Stop completion marker was expected after that
+turn, but no hook metadata was retained to establish whether Codex invoked the
+Stop hook or why its marker was absent.
