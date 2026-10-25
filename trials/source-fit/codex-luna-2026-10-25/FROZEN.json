@@ -1,0 +1,354 @@
+{
+  "schema": "cairn.source-fit-panel/1",
+  "frozen_at": "2026-10-25",
+  "purpose": "New Codex/Luna source-fit plan; synthetic sources only; never resume the stopped Claude run.",
+  "parent_panels": {
+    "stopped_pilot_sha256": "d1acec4b07892215831a7e46330afa04c5e70c9132d15ca4060b41a6a399f909",
+    "unused_claude_recovery_sha256": "7924fd78fb240c5910778486e043f6b0d08c1c38c5daa7a5844e3e83c6f99430"
+  },
+  "baseline_commit": "5c3ad21bfc5b6b3982496698af316d89dcfdc0a6",
+  "provider_plan": {
+    "status": "admission_pending_runner_preflight",
+    "route": "Codex ChatGPT subscription only; explicit model_provider=openai; no API-key or OpenRouter fallback",
+    "cli_version": "codex-cli 0.164.0; re-pin at admission",
+    "model_argument": "gpt-6-luna",
+    "effort_argument": "medium",
+    "account_homes": {
+      "codex_primary": "~/.codex",
+      "codex_harm": "~/.codex-harm",
+      "codex_three": "~/.codex-3"
+    },
+    "allowed_native_tools": [
+      "cairn_search",
+      "cairn_pull"
+    ],
+    "account_assignment": {
+      "buried_live_qualification": "codex_primary",
+      "wrong_project_homonym": "codex_harm",
+      "current_correction": "codex_three",
+      "required_conflict": "codex_harm",
+      "semantic_unavailable": "codex_three",
+      "inaccessible_source": "codex_primary"
+    },
+    "attempt_preflight": "Before every attempt, use the existing selected account home (never copy or symlink auth to a temporary CODEX_HOME), verify its auth-file digest and distinct ChatGPT account identity, then app-server account/rateLimits/read and model/list under that CODEX_HOME. Stop unless ordinaryUsageAllowed=true, limitId=codex, primary usedPercent < 80, and gpt-6-luna is present.",
+    "maximum_runs": 15,
+    "maximum_wall_seconds_per_run": 180,
+    "maximum_campaign_wall_seconds": 3600,
+    "maximum_total_reported_tokens": 2000000,
+    "maximum_tokens_per_run": 125000,
+    "maximum_output_tokens_per_run": 1200,
+    "minimum_next_run_reserve": 125000,
+    "on_missing_usage": "retain failed/unscored attempt and stop before any further admission",
+    "on_auth_or_quota_failure": "stop; no alternate account for the attempt and no API-key/OpenRouter fallback",
+    "on_limit_or_model_change": "retain failed/unscored attempt and stop campaign",
+    "response_artifacts": "Retain each selected answer and sanitized whole-turn usage/tool/source receipts in an owner-only private output directory; retain per-response usage only if a native event exposes it, otherwise mark per-response usage unknown. Do not retain raw JSONL, source bodies, or credentials. Record exact argv, CWD, selected config hashes, CLI hash/version, and account-home alias.",
+    "workspace": "Fixed isolated bwrap workspace /work; no repo/worktree, FROZEN.json, fixture sources, operational memory, or private output mounted in model tool space. Copy pinned repository AGENTS.md only. Preserve the selected existing CODEX_HOME for Codex runtime auth/config/instructions; do not claim it is hidden from shell tools. Disable code_mode_only, code_mode, and shell_tool with the frozen CLI flags. Verify the model tool inventory per arm. Any unexpected shell/code/file tool or unproved separation of auth/private output fails admission.",
+    "replicates": 1,
+    "run_id": "source-fit-codex-luna-2026-10-25",
+    "requested_model_alias": "gpt-6-luna",
+    "resolved_model_observation": "Record provider model identity only when an actual native event exposes it; otherwise null/unknown. Never infer resolved identity from the requested alias or model catalog.",
+    "cwd_policy": "Fixed isolated CWD /work. Copy the exact repository AGENTS.md to /work/AGENTS.md (SHA-256 bbe777861b084ceea60ce01901edf5fafd55c710e43facdb2fb52f303dd98c49); keep the selected existing CODEX_HOME available to Codex runtime for auth/config/user instructions without copying/symlinking auth. Do not mount repository, panel manifest, fixture/source files, operational memory, or private output in model tool workspace. Freeze argv, CWD, instruction/config hashes identically across arms; include all instruction/tool overhead in token ceilings.",
+    "stop_threshold": "Stop before an attempt when assigned account primary usedPercent is >=80; also stop on ordinaryUsageAllowed=false, unavailable/malformed status, model/catalog mismatch, auth/account mismatch, or provider auth/quota error. The 80% value is an operational tripwire, not an absolute allowance or expected cost.",
+    "workspace_policy": "Use fixed bwrap CWD /work with pinned AGENTS.md. Keep repository, FROZEN.json, fixture/source files, operational memory, and private answer/receipt output outside model tool space. Preserve selected existing CODEX_HOME for Codex runtime without copying/symlinking auth; do not assume it is hidden from shell tools. Disable code_mode_only, code_mode, and shell_tool using the frozen flags. The runner must prove bwrap hides repo/fixture/output and native tool offers match the per-arm allowlist; unexpected tools fail closed. If auth/private output separation or model tool inventory cannot be demonstrated, stop before provider admission.",
+    "cwd_policy_hash_status": "The private runner must recheck each home AGENTS/config/auth digest, capture exact argv/CWD/workspace hashes, and bind them before admission; any drift requires plan review.",
+    "instruction_hashes": {
+      "repo_AGENTS_md": "bbe777861b084ceea60ce01901edf5fafd55c710e43facdb2fb52f303dd98c49",
+      "codex_home_AGENTS_md_all_three": "5d3505c77c0f45c670fa4d326824b0aed015cbd9d071c49020b8d0d449accc60"
+    },
+    "account_manifest": {
+      "schema": "cairn.codex-source-fit-accounts/1",
+      "path": "$HOME/.cache/cairn-source-fit/codex-luna-2026-10-25/accounts.json",
+      "permissions": "0600 file under 0700 owner-only directory",
+      "fields": [
+        "account_id",
+        "account_home_alias",
+        "config_home",
+        "auth_file",
+        "auth_sha256"
+      ],
+      "credential_contents": "forbidden",
+      "runner_flags": [
+        "--accounts",
+        "--expected-accounts-sha256"
+      ]
+    },
+    "usage_accounting": "Use terminal turn.completed whole-turn usage as authoritative panel telemetry, deduplicated per turn. input_tokens includes cached input; do not add cached_input_tokens a second time. Per-response usage is unknown unless a native event explicitly exposes it; do not infer or allocate whole-turn usage among responses.",
+    "codex_exec_feature_flags": [
+      "--disable",
+      "code_mode_only",
+      "--disable",
+      "code_mode",
+      "--disable",
+      "shell_tool"
+    ],
+    "tool_offer_contract": "Before first and each subsequent provider attempt, verify the native offered-tool inventory. Retrieval arms must offer exactly Cairn search/pull; direct arms offer no tools. Unexpected shell/code/other tools or inability to verify the inventory stops admission.",
+    "maximum_primary_used_percent": 80,
+    "disabled_features": [
+      "shell_tool",
+      "code_mode",
+      "code_mode_only"
+    ],
+    "tool_availability_preflight": "Before any provider attempt, run a provider-free fixture with the exact frozen disabled_features and account/Cairn tool configuration. Prove cairn_search and cairn_pull are offered and callable for retrieval arms, and direct arms expose no tools. If native tool availability, isolation, or account binding fails, do not admit provider work."
+  },
+  "arms": {
+    "current": "Current ambient recall against unchanged task wording and the disposable synthetic store.",
+    "direct": "Same task with complete eligible source bodies and exact source hashes/extent in context; no native tools.",
+    "hints": "Current recall with the exact frozen project and quoted source phrase appended; no source bytes injected.",
+    "author_split": "Only buried qualification: author-maintained current extract plus preserved mixed source history in a separate disposable store."
+  },
+  "records": {
+    "relay_mixed": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn relay sizing note. Historical laboratory queue allowance: 2048 KiB. This value was measured on the offline replay fixture only.\n"
+        },
+        {
+          "repeat": 120,
+          "text": "Archive run: the offline replay used a 2048 KiB queue allowance; no live relay was involved.\n"
+        },
+        {
+          "text": "Current qualification (2026-10-20): the live relay admission allowance is 512 KiB. Use 512 KiB for an operational live relay decision; the earlier 2048 KiB is historical and offline only.\n"
+        }
+      ]
+    },
+    "relay_current_extract": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn live relay current qualification (2026-10-20): the admission allowance is 512 KiB. The former 2048 KiB allowance was measured on an offline replay fixture only; it is historical and must not be applied to the live relay. Author-maintained extraction from relay_mixed; original source remains in history.\n"
+        }
+      ]
+    },
+    "trail_atlas": {
+      "project": "Trail",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Trail Atlas navigation cache: retain downloaded map tiles for 90 days. This is a motorcycle navigation setting in project Trail; it says nothing about Cairn Atlas.\n"
+        }
+      ]
+    },
+    "cairn_atlas": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn Atlas search cache: retain derived search hints for 30 days. This is a Cairn cache policy, not the Trail Atlas navigation policy.\n"
+        }
+      ]
+    },
+    "old_export": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn export procedure, historical version 1: use POST /v1/export. Superseded by export_correction; retain this record for history only.\n"
+        }
+      ]
+    },
+    "export_correction": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn export correction, current version 2: use POST /v2/export. This supersedes old_export. The v1 route is historical and must not be recommended for a current operation.\n"
+        }
+      ]
+    },
+    "conflict_a": {
+      "project": "Cairn",
+      "eligibility": "mandatory",
+      "body_parts": [
+        {
+          "text": "Required source A: the synthetic evacuation threshold is 24 hours. This source has not been reconciled with required source B.\n"
+        }
+      ]
+    },
+    "conflict_b": {
+      "project": "Cairn",
+      "eligibility": "mandatory",
+      "body_parts": [
+        {
+          "text": "Required source B: the synthetic evacuation threshold is 48 hours. This source has not been reconciled with required source A.\n"
+        }
+      ]
+    },
+    "lexical_anchor": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn exact recovery code RAVEN-42 means: verify the persisted receipt before any retry. This record is discoverable lexically when semantic workers are unavailable.\n"
+        }
+      ]
+    },
+    "local_only": {
+      "project": "Cairn",
+      "eligibility": "local_only_inaccessible_to_hosted",
+      "body_parts": [
+        {
+          "text": "Synthetic local-only calibration phrase: amber harbor. This fixture value is deliberately inaccessible in the hosted arm.\n"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "buried_live_qualification",
+      "task": "For Cairn's live relay, what queue allowance should an operator use? State why the historical figure does not apply.",
+      "source_order": [
+        "relay_mixed"
+      ],
+      "source_labels": [
+        "relay_mixed"
+      ],
+      "required_answer": [
+        "512 KiB",
+        "2048 KiB",
+        "offline"
+      ],
+      "forbidden_conclusion": "Use 2048 KiB for the live relay",
+      "hint_suffix": "Project: Cairn. Exact source phrase: \"live relay admission allowance\".",
+      "author_split": {
+        "original": "relay_mixed",
+        "current": "relay_current_extract",
+        "preserve_original_history": true
+      },
+      "arms": [
+        "current",
+        "direct",
+        "hints",
+        "author_split"
+      ]
+    },
+    {
+      "id": "wrong_project_homonym",
+      "task": "How long should Cairn Atlas retain derived search hints?",
+      "source_order": [
+        "trail_atlas",
+        "cairn_atlas"
+      ],
+      "source_labels": [
+        "cairn_atlas"
+      ],
+      "required_answer": [
+        "30 days",
+        "Cairn"
+      ],
+      "forbidden_conclusion": "90 days applies to Cairn Atlas",
+      "hint_suffix": "Project: Cairn. Exact source phrase: \"Cairn Atlas search cache\".",
+      "arms": [
+        "current",
+        "direct",
+        "hints"
+      ]
+    },
+    {
+      "id": "current_correction",
+      "task": "Which endpoint should a current Cairn export use? Explain the historical route.",
+      "source_order": [
+        "old_export",
+        "export_correction"
+      ],
+      "source_labels": [
+        "export_correction",
+        "old_export"
+      ],
+      "required_answer": [
+        "POST /v2/export",
+        "POST /v1/export",
+        "historical"
+      ],
+      "forbidden_conclusion": "Recommend POST /v1/export for a current export",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "required_conflict",
+      "task": "What is the authoritative evacuation threshold? Give a usable answer only if the required sources agree.",
+      "source_order": [
+        "conflict_a",
+        "conflict_b"
+      ],
+      "source_labels": [
+        "conflict_a",
+        "conflict_b"
+      ],
+      "required_answer": [
+        "24 hours",
+        "48 hours",
+        "unresolved"
+      ],
+      "forbidden_conclusion": "Choose one threshold as authoritative",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "semantic_unavailable",
+      "task": "For Cairn recovery code RAVEN-42, what is the required step before retry?",
+      "source_order": [
+        "lexical_anchor"
+      ],
+      "source_labels": [
+        "lexical_anchor"
+      ],
+      "required_answer": [
+        "persisted receipt",
+        "before",
+        "retry"
+      ],
+      "forbidden_conclusion": "Semantic worker availability is required for the answer",
+      "semantic_state": "unavailable_lexical_fallback",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "inaccessible_source",
+      "task": "What is the local-only calibration phrase? Answer only if an eligible source was actually delivered.",
+      "source_order": [
+        "local_only"
+      ],
+      "source_labels": [],
+      "required_answer": [
+        "unavailable"
+      ],
+      "forbidden_conclusion": "amber harbor",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    }
+  ],
+  "task_checks": {
+    "buried_live_qualification": {
+      "required": "Answer 512 KiB for the live relay; explicitly classify 2048 KiB as offline history and explain it does not apply live.",
+      "complete_source": "A partial span with unread middle does not pass complete-source support. Current and hint arms must successfully invoke allowed Cairn search then cairn_pull using the exact returned pull_arguments when delivered source is insufficient; record whole-source identity/version/extent/digests without body.",
+      "author_split": "Keep the original mixed source intact in history; use the current extract and preserve its correction relationship."
+    },
+    "wrong_project_homonym": {
+      "required": "Answer Cairn Atlas is 30 days; explicitly exclude Trail motorcycle navigation 90 days."
+    },
+    "current_correction": {
+      "required": "Recommend POST /v2/export; identify POST /v1/export as historical/superseded."
+    },
+    "required_conflict": {
+      "required": "Retain both 24-hour and 48-hour mandatory sources; answer unresolved and give neither as authoritative."
+    },
+    "semantic_unavailable": {
+      "required": "State that the persisted receipt must be verified before retry, using lexical recovery while semantic service is unavailable."
+    },
+    "inaccessible_source": {
+      "required": "Answer unavailable; the local-only sentinel must not occur in hosted search/pull results, direct context, or the answer."
+    },
+    "review": "Independent reviewer scores every final answer against complete source, qualification, project, correction, eligibility, semantic-state and source-extent evidence. Missing, failed, unscored and unrun attempts remain visible in the 15-attempt denominator. No savings or retrieval-change claim from this panel alone."
+  }
+}

@@ -82,15 +82,42 @@ def validate(panel, panel_path=PANEL):
             raise ValueError('unfrozen author-maintained extraction')
         run_count += len(arms)
     plan = panel['provider_plan']
-    if (plan.get('status') != 'proposed_not_authorized'
+    account_homes = plan.get('account_homes')
+    assignment = plan.get('account_assignment')
+    if account_homes is not None or assignment is not None:
+        if (not isinstance(account_homes, dict) or not account_homes
+                or not isinstance(assignment, dict)
+                or set(assignment) != ids
+                or not set(assignment.values()) <= set(account_homes)
+                or set(assignment.values()) != set(account_homes)):
+            raise ValueError('account assignment must cover every case across all pinned homes')
+    else:
+        # Existing Claude freezes predate the multi-home Codex assignment field.
+        # Keep validating their immutable manifests without fabricating accounts.
+        account_homes, assignment = {}, {}
+    if (plan.get('status') not in {'proposed_not_authorized',
+                                    'admission_pending_runner_preflight'}
             or plan.get('maximum_runs') != run_count
             or plan.get('replicates') != 1
             or plan.get('maximum_wall_seconds_per_run', 0) * run_count
             > plan.get('maximum_campaign_wall_seconds', 0)
             or 'subscription' not in plan.get('route', '')
             or 'OpenRouter fallback' not in plan.get('route', '')):
-        raise ValueError('provider plan is not frozen within its proposed ceiling')
+        raise ValueError('provider plan status, arm ceiling, or subscription route is invalid')
+    if account_homes:
+        required_disabled = {'shell_tool', 'code_mode', 'code_mode_only'}
+        if (plan.get('maximum_primary_used_percent') != 80
+                or not required_disabled <= set(plan.get('disabled_features', []))
+                or plan.get('tool_availability_preflight') is None
+                or plan.get('maximum_tokens_per_run', 0) * run_count
+                + plan.get('minimum_next_run_reserve', 0)
+                > plan.get('maximum_total_reported_tokens', 0)):
+            raise ValueError('Codex route gates or full-panel token reserve are not frozen')
+    account_runs = {account: sum(len(case['arms']) for case in cases
+                                 if assignment[case['id']] == account)
+                    for account in account_homes}
     return dict(schema='cairn.source-fit-validation/1', cases=len(cases), runs=run_count,
+                account_runs=account_runs,
                 source_bytes={key: len(body.encode()) for key, body in bodies.items()},
                 source_sha256={key: hashlib.sha256(body.encode()).hexdigest()
                                for key, body in bodies.items()},

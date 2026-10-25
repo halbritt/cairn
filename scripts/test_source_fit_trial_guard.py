@@ -14,6 +14,27 @@ from run_source_fit import can_admit_next, direct_context, next_run_reserve, par
 class SourceFitTrialGuardTests(unittest.TestCase):
     PLAN = dict(maximum_runs=15, maximum_total_reported_tokens=100000)
 
+    def test_legacy_claude_panels_without_account_maps_still_validate(self):
+        recovery = PANEL.parent / 'recovery-2026-10-24' / 'FROZEN.json'
+        for path in (PANEL, recovery):
+            with self.subTest(panel=path.name):
+                manifest = validate(json.loads(path.read_text()), path)
+                self.assertEqual((manifest['cases'], manifest['runs']), (6, 15))
+                self.assertEqual(manifest['account_runs'], {})
+
+    def test_codex_plan_requires_complete_three_home_case_assignment(self):
+        codex_panel = PANEL.parent / 'codex-luna-2026-10-25' / 'FROZEN.json'
+        panel = json.loads(codex_panel.read_text())
+        manifest = validate(panel, codex_panel)
+        self.assertEqual(manifest['account_runs'], dict(
+            codex_primary=6, codex_harm=5, codex_three=4))
+        self.assertEqual(panel['provider_plan']['maximum_primary_used_percent'], 80)
+        self.assertEqual(set(panel['provider_plan']['disabled_features']),
+                         {'shell_tool', 'code_mode', 'code_mode_only'})
+        panel['provider_plan']['account_assignment'].pop('inaccessible_source')
+        with self.assertRaisesRegex(ValueError, 'account assignment'):
+            validate(panel, codex_panel)
+
     def test_separate_recovery_panel_has_its_own_bounded_freeze(self):
         recovery = PANEL.parent / 'recovery-2026-10-24' / 'FROZEN.json'
         panel = json.loads(recovery.read_text())
