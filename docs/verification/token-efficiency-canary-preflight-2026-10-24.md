@@ -141,3 +141,57 @@ pin, and quota-admission requirements still apply.
 - The installed CLI/API revision and hook/bridge/coordination bytes lack the candidate capabilities. A deployable reviewed build, managed-store migration and service rollout are still required; the managed schema version and backup/restore readiness were not read or tested. The disposable 68-migration check does not test that upgrade.
 - The installed Codex ordinary config and inbox manifest are shared, as is the Claude MCP wrapper. **Toggling any shared file does not select one account and blocks canary admission.** A disabled offline Codex-only staging mode is now available, but no selected account has installed isolated config paths or an effective candidate pin set. Fresh-session loading and active-callback boundaries have not been observed.
 - The `.codex` subscription route was probed successfully for `gpt-6-luna`, but no absolute allowance or quota reserve is known. There is no frozen real paired ledger, independent task grader, complete approved budget, or live rollback result. `live_observed=false` in the inventory. The dated release decision remains **Defer**.
+
+## 2026-10-24 follow-up: one-account offline readiness
+
+At source `3b1b03c5eaa16cd6145534bccb3d4c644608d9bf`, a fresh read-only
+`check_effective_recall_deployment.py --compact` pass returned
+`installed_verified=true`, `read_only_verified=true`, four ordinary hooks,
+three enabled inbox bindings, no issues, and `live_observed=false`. The user
+service is active at
+`/home/halbritt/.config/systemd/user/cairn-api.service`. Read-only `cairn
+version` and authenticated agent version both identify installed client and
+server build `19f39f9426725ce91d2928ff5e871ddfebb6aefb` (protocol 2), an
+ancestor of the inspected source. No database URL, schema state, or production
+database was queried.
+
+The existing stager accepted one disabled `.codex` compact-inbox candidate
+under the private cache using `--codex-only --snapshot-current-codex-config
+--profile compact-inbox`. The invocation home matched `/home/halbritt/.codex`;
+the `.codex/config.toml` snapshot matched before and after. The stager verified
+the unchanged `.codex-harm` and `.codex-3` peers and post-checked the selected
+ordinary config plus `codex-one`, `codex-two`, and `codex-three` coordination
+pins. The resulting profile opted into only `capture_observations` and
+`compact_inbox_version=1`. Its binding manifest was disabled. Staged hook
+settings redirected 4 ordinary and 6 coordination event commands to the
+private candidate; the selected MCP candidate changed only
+`mcp_servers.cairn.command` and `.args`. The candidate settings SHA-256 was
+`d23f841b09c22173206e0b7ec59bb87f1a5746a9aebe8d38c71ca82144167a9d`, the
+disabled binding manifest hash was
+`d4dc35de8de3338c704298c0f4735e70f7ccce12c68c56a549c358aeaa4d8fa1`, its
+pin-closure hash was
+`1d0d43a52138c84f7caceb8e389547bb374d754fc90118c0a279bed7131bfde9`, and the
+candidate MCP config hash was
+`98ab0f54ee52476ac0d24d8ffc337718d8ddff56274af394a6f1be3d5faed863`. The
+MCP baseline matched the installed config hash
+`167d663e27bef76e0ab532360a841a7246eef00eabcf9f218d2f353bbb31d84e`.
+
+The private stage and its temporary reports were deleted after hash review.
+Selected and peer installed Codex settings and coordination files retained
+their verified hashes. No installed hook/config, account, service, grant,
+store, or provider route was changed; no provider request or activation
+occurred. This gives a practical staging rollback: delete the private candidate
+before activation; since activation never occurred, no installed-file restore
+was needed.
+
+This pass did not build a candidate binary. The stage report explicitly marked
+the candidate binary absent and did not query the installed API. The separately
+observed API is on ancestor `19f39f9`, so compatibility of the `3b1b03c`
+candidate with that API or any managed schema remains **unassessed**. Existing
+disposable migration/API evidence in this document refers to its recorded
+older source revision and is not upgraded by this offline stage. No managed
+database, schema migration, backup, service restart, native turn, or rollback
+trial was attempted. CAIRN-227 remains **Defer** pending current candidate
+binary/API/disposable-schema compatibility, the deployment/quota admission
+gates above, and accepted paired task outcomes, usage, latency, and a live
+canary/rollback result.
