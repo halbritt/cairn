@@ -37,7 +37,8 @@ def _scripted_inbox_tool(results: dict, context: dict, source_body: str) -> tupl
                    " | " + shlex.join(context["read"]))
         return "source_read", _exec_tool("source", command)
     read_text = json.dumps(results["source"], sort_keys=True)
-    require(context["source"]["record_id"] in read_text and source_body in read_text,
+    require(context["source"]["record_id"] in read_text and
+            str(context["source"]["version"]) in read_text and source_body in read_text,
             "exact_source_read_not_observed")
     if "acknowledgement" not in results:
         return "acknowledgement", _exec_tool(
@@ -52,6 +53,16 @@ def _exec_tool(call_id: str, command: str) -> dict:
         cmd=command, max_output_tokens=2000)) + "));"
     return dict(type="custom_tool_call", id="ctc_" + call_id, name="exec",
                 namespace="functions", call_id=call_id, input=code)
+
+
+def _source_result_matches(result: dict, context: dict, source_body: str) -> dict[str, bool]:
+    """Classify exact source identity without retaining the returned payload."""
+    serialized = json.dumps(result, sort_keys=True)
+    return {
+        "source_record_match": context["source"]["record_id"] in serialized,
+        "source_version_match": str(context["source"]["version"]) in serialized,
+        "source_body_match": source_body in serialized,
+    }
 
 sys.path.insert(0, str(REPO / "scripts/fixtures/cairn220_queue_trace"))
 from trace_io import append_trace, create_trace
@@ -374,6 +385,8 @@ def _sandbox_prefix(root: Path, trace_name: str, *, preflight: bool) -> list[str
     if not preflight:
         item_trace_name = "item-stage-" + trace_name.removeprefix("run-queue-stage-")
         command += ["--setenv", "CAIRN220_ITEM_TRACE_TARGET", "/trace/" + item_trace_name]
+        script_trace_name = "script-stage-" + trace_name.removeprefix("run-queue-stage-")
+        command += ["--setenv", "CAIRN220_SCRIPT_TRACE_TARGET", "/trace/" + script_trace_name]
     command += ["--chdir", "/repo" if preflight else "/fixture"]
     return command
 
@@ -816,6 +829,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     import coordination
     from check_codex_inbox import response_stream
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from trace_io import append_trace, create_trace
 
     root = Path(root_text)
     fixture = json.loads((root / "fixture.json").read_text())
@@ -837,6 +851,16 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     acknowledgement_confirmed = False
     acknowledgement_tool_calls = 0
     script_failure_code = None
+    script_trace_fd = create_trace(os.environ["CAIRN220_SCRIPT_TRACE_TARGET"]) if scripted_handled else None
+    script_trace_lock = threading.Lock()
+    request_index = 0
+    pending_tool_role = None
+    state_path = None
+
+    def trace_script(stage, outcome, *, error=None, flags=None):
+        if script_trace_fd is not None:
+            with script_trace_lock:
+                append_trace(script_trace_fd, stage, outcome, error=error, flags=flags)
 
     def _context_for_event() -> tuple[Path, dict]:
         matches = []
@@ -849,6 +873,15 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                 matches.append((path, context))
         require(len(matches) == 1, "native_inbox_context_not_unique")
         return matches[0]
+
+    def _hook_state_presence() -> tuple[bool, bool]:
+        if state_path is None:
+            return False, False
+        try:
+            state = json.loads(state_path.read_text())
+        except (OSError, ValueError):
+            return False, False
+        return bool(state.get("inbox_intent")), bool(state.get("inbox_attempt"))
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -868,24 +901,72 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             self.wfile.write(body)
 
         def do_POST(self):
+            nonlocal request_index, pending_tool_role
             length = int(self.headers.get("Content-Length", "0"))
             if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or len(requests) >= 3:
                 self.send_error(413)
                 return
             request = json.loads(self.rfile.read(length))
             requests.append(("POST", "/v1/responses"))
+            request_index += 1
             nonlocal source_read_confirmed, acknowledgement_confirmed
             nonlocal acknowledgement_tool_calls, script_failure_code
             if not scripted_handled:
                 item = dict(type="message", id="msg_cairn220", role="assistant", status="completed",
                     content=[dict(type="output_text", text="Synthetic local response.", annotations=[])])
             else:
+                raw_input = request.get("input", [])
+                tool_results = [row for row in raw_input if row.get("type") == "custom_tool_call_output"]
+                trace_script("responses_request", "observed", flags={
+                    "step": "request", "request_index": request_index,
+                    "input_item_count": len(raw_input), "tool_result_count": len(tool_results),
+                    "has_input": bool(raw_input), "has_tools": any(
+                        row.get("type") == "additional_tools" for row in raw_input)})
                 try:
-                    results = {row["call_id"]: row for row in request.get("input", [])
-                               if row.get("type") == "custom_tool_call_output"}
-                    _context_path, context = _context_for_event()
+                    results = {row["call_id"]: row for row in tool_results
+                               if isinstance(row.get("call_id"), str)}
+                    trace_script("hook_context", "before", flags={"step": "context_lookup"})
+                    try:
+                        _context_path, context = _context_for_event()
+                    except Exception as exc:
+                        state_intent, state_attempt = _hook_state_presence()
+                        trace_script("hook_context", "failed", error=type(exc).__name__,
+                                     flags={"step": "context_lookup", "context_present": False,
+                                            "intent_present": state_intent, "attempt_present": state_attempt,
+                                            "failure_code": "context_not_found"})
+                        raise
+                    source_body = "Synthetic CAIRN-220 watcher source"
+                    state_intent, state_attempt = _hook_state_presence()
+                    trace_script("hook_context", "after", flags={"step": "context_lookup",
+                        "context_present": True, "intent_present": state_intent,
+                        "attempt_present": state_attempt})
+                    if pending_tool_role:
+                        result = results.get(pending_tool_role)
+                        if not result:
+                            trace_script("native_tool_result", "failed", error="RuntimeError", flags={
+                                "result_role": pending_tool_role, "result_class": "other",
+                                "failure_code": "native_tool_result_missing"})
+                            raise RuntimeError("native_tool_result_missing")
+                        result_text = json.dumps(result, sort_keys=True)
+                        if pending_tool_role == "source":
+                            source_matches = _source_result_matches(result, context, source_body)
+                            exact = all(source_matches.values())
+                            result_class = "source_exact" if exact else "source_mismatch"
+                            result_flags = {"result_role": pending_tool_role, "result_class": result_class,
+                                **source_matches}
+                        else:
+                            exact = "handled" in result_text
+                            result_class = "ack_handled" if exact else "ack_unconfirmed"
+                            result_flags = {"result_role": pending_tool_role, "result_class": result_class}
+                        trace_script("native_tool_result", "observed" if exact else "refused",
+                            flags=result_flags)
+                        require(exact, "source_read_mismatch" if pending_tool_role == "source"
+                                else "acknowledgement_not_confirmed")
+                        pending_tool_role = None
                     stage, item = _scripted_inbox_tool(
-                        results, context, "Synthetic CAIRN-220 watcher source")
+                        results, context, source_body)
+                    call_role = "source" if stage == "source_read" else (
+                        "acknowledgement" if stage == "acknowledgement" else None)
                     if stage == "acknowledgement":
                         source_read_confirmed = True
                         acknowledgement_tool_calls += 1
@@ -902,10 +983,27 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                             status="completed", content=[dict(type="output_text",
                             text="Read the exact notice source and acknowledged it as handled.", annotations=[])])
                         response_event.set()
+                        call_role = None
+                    if call_role:
+                        pending_tool_role = call_role
+                        trace_script("native_tool_call", "observed", flags={
+                            "step": stage, "tool_name": item.get("name", "other"),
+                            "tool_namespace": item.get("namespace", "other"),
+                            "call_role": item.get("call_id", "other")
+                                if item.get("call_id") in ("source", "acknowledgement") else "other"})
+                    trace_script("responses_response", "before", flags={
+                        "response_item_type": item.get("type", "other")})
                 except Exception as exc:
-                    allowed = {"native_inbox_context_not_unique", "exact_source_read_not_observed",
-                               "native_acknowledgement_not_confirmed", "store_handled_outcome_not_exactly_once"}
-                    script_failure_code = str(exc) if str(exc) in allowed else type(exc).__name__
+                    failure_codes = {"native_inbox_context_not_unique": "context_not_found",
+                        "native_tool_result_missing": "native_tool_result_missing",
+                        "source_read_mismatch": "source_read_mismatch",
+                        "exact_source_read_not_observed": "source_read_mismatch",
+                        "native_acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
+                        "acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
+                        "store_handled_outcome_not_exactly_once": "store_handled_not_confirmed"}
+                    script_failure_code = failure_codes.get(str(exc), "other")
+                    trace_script("responses_response", "failed", error=type(exc).__name__, flags={
+                        "failure_code": script_failure_code})
                     self.send_error(500)
                     return
             body = response_stream("resp_cairn220_" + str(len(requests)), item)
@@ -914,6 +1012,9 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            if scripted_handled:
+                trace_script("responses_response", "after", flags={
+                    "response_item_type": item.get("type", "other")})
             if not scripted_handled:
                 response_event.set()
 
@@ -1177,6 +1278,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         server_thread.join(timeout=2)
         stderr_thread.join(timeout=2)
         child.stderr.close()
+        if script_trace_fd is not None:
+            os.close(script_trace_fd)
 
 
 def _failure_stage(summary: dict, trace_rows: list[dict]) -> str:
@@ -1262,6 +1365,7 @@ def run_once(scripted_handled: bool = False) -> dict:
         stdout, stderr = proc.communicate(timeout=90)
         _bootstrap(_PHASE, "after", flags={"exit_zero": proc.returncode == 0})
         item_trace_path = TRACE_HOME / ("item-stage-" + run_id + ".jsonl")
+        script_trace_path = TRACE_HOME / ("script-stage-" + run_id + ".jsonl")
         item_trace_rows = []
         item_trace_present = item_trace_path.exists() or item_trace_path.is_symlink()
         if item_trace_present:
@@ -1271,6 +1375,15 @@ def run_once(scripted_handled: bool = False) -> dict:
                     and stat.S_IMODE(item_trace_info.st_mode) == 0o600,
                     "item_trace_mode_or_owner_changed")
             item_trace_rows = [json.loads(line) for line in item_trace_path.read_text().splitlines()]
+        script_trace_present = script_trace_path.exists() or script_trace_path.is_symlink()
+        script_trace_rows = []
+        if script_trace_present:
+            script_trace_info = script_trace_path.stat(follow_symlinks=False)
+            require(not stat.S_ISLNK(script_trace_info.st_mode) and stat.S_ISREG(script_trace_info.st_mode)
+                    and script_trace_info.st_uid == os.geteuid()
+                    and stat.S_IMODE(script_trace_info.st_mode) == 0o600,
+                    "script_trace_mode_or_owner_changed")
+            script_trace_rows = [json.loads(line) for line in script_trace_path.read_text().splitlines()]
         trace_present = trace_path.exists() or trace_path.is_symlink()
         if trace_present:
             trace_stat = trace_path.stat(follow_symlinks=False)
@@ -1291,6 +1404,11 @@ def run_once(scripted_handled: bool = False) -> dict:
         report["bootstrap_trace"] = bootstrap_path.name
         report["queue_trace_present"] = trace_present
         report["item_trace_present"] = item_trace_present
+        report["script_trace_present"] = script_trace_present if scripted_handled else False
+        report["script_trace_rows"] = len(script_trace_rows)
+        report["script_trace_name"] = script_trace_path.name if script_trace_present else None
+        if scripted_handled and not script_trace_present:
+            report["continuation_failure_stage"] = "script_trace_missing"
         if not trace_present:
             report["failure_stage"] = _classify_missing_queue_trace(item_trace_rows)
             report["failure_code"] = "queue_trace_missing"

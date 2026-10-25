@@ -15,6 +15,45 @@ LIFECYCLE = SCRIPTS.parent / "integrations" / "lifecycle"
 
 
 class CodexQueueStageTraceTests(unittest.TestCase):
+    def test_scripted_continuation_trace_keeps_only_fixed_schema_tool_and_error_fields(self):
+        sys.path.insert(0, str(OBSERVER))
+        try:
+            from trace_io import append_trace, create_trace
+        finally:
+            sys.path.remove(str(OBSERVER))
+
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            fd = create_trace(str(trace))
+            try:
+                append_trace(fd, "responses_request", "observed", flags={
+                    "step": "request", "request_index": 2, "input_item_count": 4,
+                    "tool_result_count": 1, "has_input": True, "has_tools": True,
+                    "raw_prompt": "PRIVATE PROMPT"})
+                append_trace(fd, "native_tool_call", "observed", flags={
+                    "step": "acknowledgement", "tool_name": "exec",
+                    "tool_namespace": "functions", "call_role": "acknowledgement",
+                    "command": "PRIVATE COMMAND"})
+                append_trace(fd, "native_tool_result", "refused", flags={
+                    "result_role": "source", "result_class": "source_mismatch",
+                    "source_record_match": True, "source_version_match": False,
+                    "source_body_match": True, "raw_output": "PRIVATE OUTPUT"})
+                append_trace(fd, "responses_response", "failed", error="RuntimeError",
+                             flags={"failure_code": "native_tool_result_missing"})
+            finally:
+                os.close(fd)
+            rows = [json.loads(line) for line in trace.read_text().splitlines()]
+            mode = trace.stat().st_mode & 0o777
+
+        self.assertEqual(mode, 0o600)
+        self.assertEqual(rows[0]["request_index"], 2)
+        self.assertEqual(rows[1]["tool_name"], "exec")
+        self.assertEqual(rows[2]["source_version_match"], False)
+        self.assertEqual(rows[3]["failure_code"], "native_tool_result_missing")
+        self.assertNotIn("PRIVATE", json.dumps(rows))
+        self.assertFalse(any(key in row for row in rows for key in
+                             ("raw_prompt", "command", "output", "message", "body", "raw_output")))
+
     def test_private_resume_message_is_capped_and_confined_to_resume_failure_row(self):
         sys.path.insert(0, str(OBSERVER))
         try:

@@ -5,6 +5,7 @@ import unittest
 from check_codex_app_server_wake_join import (
     _ItemStartedObserver,
     _scripted_inbox_tool,
+    _source_result_matches,
     _attach_item_started_observer,
     _classify_thread_resume_refusal,
     _classify_missing_queue_trace,
@@ -67,6 +68,20 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertEqual(stage, "store_verification")
         self.assertIsNone(tool)
 
+    def test_source_result_diagnostic_separates_identity_version_and_body(self):
+        expected = {"record_id": "record-1", "version": 3, "body": "source body"}
+        self.assertEqual(_source_result_matches(expected, self.context, "source body"), {
+            "source_record_match": True, "source_version_match": True, "source_body_match": True})
+        self.assertEqual(_source_result_matches({"record_id": "record-1", "version": 2,
+            "body": "source body"}, self.context, "source body"), {
+            "source_record_match": True, "source_version_match": False, "source_body_match": True})
+        self.assertEqual(_source_result_matches({"record_id": "other", "version": 3,
+            "body": "source body"}, self.context, "source body"), {
+            "source_record_match": False, "source_version_match": True, "source_body_match": True})
+        self.assertEqual(_source_result_matches({"record_id": "record-1", "version": 3,
+            "body": "different"}, self.context, "source body"), {
+            "source_record_match": True, "source_version_match": True, "source_body_match": False})
+
     def test_does_not_ack_missing_or_different_source(self):
         with self.assertRaisesRegex(RuntimeError, "exact_source_read_not_observed"):
             _scripted_inbox_tool({"source": {"output": "different record"}},
@@ -74,7 +89,7 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
 
     def test_does_not_accept_non_handled_ack_result(self):
         with self.assertRaisesRegex(RuntimeError, "native_acknowledgement_not_confirmed"):
-            _scripted_inbox_tool({"source": {"output": "record-1 source body"},
+            _scripted_inbox_tool({"source": {"output": "record-1 version 3 source body"},
                 "acknowledgement": {"output": "pending"}}, self.context, "source body")
 
     def test_resume_is_not_attempted_when_metadata_check_fails(self):

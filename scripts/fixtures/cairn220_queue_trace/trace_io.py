@@ -9,15 +9,30 @@ import stat
 ERROR_CLASSES = {
     "QueueError", "QueueUnavailable", "QueueRefused", "OSError", "ValueError",
     "KeyError", "TypeError", "WebSocketException", "ImportError", "FileNotFoundError",
-    "CalledProcessError", "TimeoutExpired",
+    "CalledProcessError", "TimeoutExpired", "RuntimeError", "AssertionError",
 }
 STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start",
           "observer_subscription", "observer_loaded_list", "observer_resume",
           "observer_connection", "observer_initialize", "observer_initialized",
-          "observer_fallback", "watcher_start", "native_item_started", "bootstrap"}
+          "observer_fallback", "watcher_start", "native_item_started", "bootstrap",
+          "responses_request", "responses_response", "native_tool_call",
+          "native_tool_result", "hook_context"}
 OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
 BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
-                  "exit_zero", "item_thread_matches", "item_is_user_message"}
+                  "exit_zero", "item_thread_matches", "item_is_user_message",
+                  "has_input", "has_tools", "context_present", "intent_present", "attempt_present",
+                  "source_record_match", "source_version_match", "source_body_match"}
+CONTINUATION_FIELDS = {
+    "response_item_type": {"message", "custom_tool_call", "other"},
+    "tool_name": {"exec", "other"},
+    "tool_namespace": {"functions", "other"},
+    "call_role": {"source", "acknowledgement", "other"},
+    "result_role": {"source", "acknowledgement", "other"},
+    "result_class": {"source_exact", "source_mismatch", "ack_handled", "ack_unconfirmed", "other"},
+    "step": {"request", "context_lookup", "source_read", "acknowledgement", "store_verification"},
+    "failure_code": {"context_not_found", "native_tool_result_missing", "source_read_mismatch",
+                      "acknowledgement_not_confirmed", "store_handled_not_confirmed", "other"},
+}
 PG_FAILURE_CLASSES = {"address_in_use", "socket_path_too_long", "permission_denied", "port_conflict",
                       "invalid_configuration", "storage_or_filesystem",
                       "data_directory_invalid", "diagnostic_log_unavailable", "unclassified"}
@@ -83,6 +98,10 @@ def append_trace(descriptor, stage, outcome, error=None, code=None, flags=None, 
         row["native_code"] = code
     for key, value in (flags or {}).items():
         if key in BOOLEAN_FIELDS and type(value) is bool:
+            row[key] = value
+        elif key in ("request_index", "input_item_count", "tool_result_count") and type(value) is int and 0 <= value <= 64:
+            row[key] = value
+        elif key in CONTINUATION_FIELDS and value in CONTINUATION_FIELDS[key]:
             row[key] = value
         elif key == "pg_failure_class" and value in PG_FAILURE_CLASSES:
             row[key] = value

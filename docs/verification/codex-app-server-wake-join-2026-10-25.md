@@ -373,3 +373,33 @@ failure-reporting edits were validated by focused tests and `make check` but
 were not exercised by another disposable run. No source read, acknowledgement,
 handled outcome, duplicate-effect claim, or CAIRN-220 acceptance is established
 by this attempt.
+
+## Scripted continuation boundary trace
+
+The next single fake-auth `--unshare-net` disposable run added an owner-only
+0600 continuation trace. It records each Responses request count/schema
+indicators, whether the hook context and inbox intent/attempt existed, the
+fixed native tool name/namespace and tool role, and fixed response/result
+classes. It retains no prompt, request body, tool command, tool output, source
+body or token.
+
+The trace locates the run boundary precisely: Responses request 1 arrived with
+tools, and the exact hook context plus inbox intent and attempt were present.
+The fixture returned its `functions.exec` source-read call. Responses request
+2 carried one native tool result. That result failed the exact-source check
+(`source_mismatch`), so the fixture stopped before invoking acknowledgement;
+no handled settlement occurred. The delivery remained leased with one attempt.
+Queue/add and matching `item/started` were observed; `queue/start` returned
+`submission_not_found` for the matching receipt, as in the previous run. The
+private trace is
+`~/.cache/cairn-220-native-wake-proof/script-stage-1129fcd42a0d4c7a85d27098a4bd5423.jsonl`.
+
+The trace from this run classifies the failed predicate group but not whether
+the returned tool result omitted the record ID, version or body individually;
+those booleans were added to the trace schema afterward and have not been run.
+No raw tool result was retained, so the source mismatch cannot be diagnosed
+more finely from this run. Source review confirms the hook passes the selected
+`record_id` and `version` to the existing `agent history` command. There is no
+source-supported fixture correction yet. Focused tests and `make check` pass
+for the diagnostic instrumentation; no second full run was made. This remains
+unaccepted and establishes neither source read nor handled outcome.
