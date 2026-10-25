@@ -42,5 +42,41 @@ unredacted stderr. Keep the trace under
 repository.
 
 No real provider, provider authentication, OpenRouter, production database,
-held-work replay, or acceptance claim was used or established. The probe remains
-incomplete after the one targeted fix; no further run was made.
+held-work replay, or acceptance claim was used or established. The follow-up
+below records the later bounded retry; CAIRN-220 remains unaccepted.
+
+## Bounded follow-up
+
+An inert bwrap preflight read the checker at the exact mounted path
+`/repo/scripts/check_codex_app_server_wake_join.py`. It returned exit 0 with
+empty stderr. The 0600 traces are
+`~/.cache/cairn-220-native-wake-proof/preflight-path-retry-4ed24111fb6e44c3b753b44bef8a665a.json`
+and, after the targeted import-path edit,
+`~/.cache/cairn-220-native-wake-proof/preflight-path-retry-662fc1003a1f472581a49337cc6bbfed.json`.
+
+The first full run reached the isolated Codex app-server, then stopped before
+the watcher. Its 0600 trace
+`~/.cache/cairn-220-native-wake-proof/run-full-join-retry-78ecc6b9f98a4a078057e8a5ac5f9b1e.json`
+records `ModuleNotFoundError`, no queue/hook/Store observations, and empty
+outer stderr. Static review localized this to the inner runner importing
+`codex_queue` without `/repo/integrations/lifecycle` on `sys.path`. One
+targeted fix added that path; missing-module diagnostics were constrained to a
+fixed allow-list.
+
+The single full retry reached the actual production watcher with the pinned
+Codex 0.164.0 binary, fake Codex auth, `--unshare-net`, a local Responses stub,
+and the disposable API/PostgreSQL cluster. The watcher exited 0 and retained a
+pre-claim `codex-queue` wake marker with `status=uncertain` and no
+`queued_submission_id`. The queue observer recorded no receipt or item; no
+`UserPromptSubmit`, Store attempt, or local Responses request was observed. A
+`SessionEnd` hook row appeared only during app-server cleanup, after the
+boundary report had been written. The 0600 trace is
+`~/.cache/cairn-220-native-wake-proof/run-full-join-retry-bef463c04fbe41e69dc022021e4c34c2.json`.
+
+The retained session state supports only the fixed classification
+`queue_outcome_uncertain_no_receipt`: an uncertain wake marker exists, but no
+queue receipt or attempt was observed. Watcher stderr was retained only as a
+SHA-256 digest, so the native RPC/`QueueError` cause is unknown. No replay,
+settlement, or additional full run followed. The unverified harness was
+discarded; this note records the verified preflight and failure boundaries,
+not CAIRN-220 acceptance.
