@@ -35,6 +35,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata", required=True, type=Path)
     parser.add_argument("--stop-complete", required=True, type=Path)
+    parser.add_argument("--hook-kind", choices=("coordination", "memory"))
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -48,6 +49,8 @@ def main():
                turn_id=event.get("turn_id"),
                source=event.get("source"),
                keys=sorted(event.keys()))
+    if args.hook_kind:
+        row["hook_kind"] = args.hook_kind
     args.metadata.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:

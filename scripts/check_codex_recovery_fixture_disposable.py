@@ -134,6 +134,28 @@ def check(candidate_root, codex_binary):
             raise AssertionError("claimed-attempt compact receipt omitted the turn-end failure boundary")
         if claimed_fixture.get("attempt_native_turn_id") != claimed_fixture.get("precompact_read_turn_id"):
             raise AssertionError("compaction changed the pre-compaction attempt's native turn binding")
+        automatic_output = io.StringIO()
+        with contextlib.redirect_stdout(automatic_output):
+            module.check(codex_binary, root / "native-codex-auto-in-turn", config,
+                         api_call, candidate_root, scenario="auto-in-turn-claimed")
+        automatic_fixture = json.loads(automatic_output.getvalue())
+        if (automatic_fixture.get("result") != "PASS" or
+                automatic_fixture.get("native_automatic_compaction") is not True or
+                automatic_fixture.get("exact_source_read") is not True or
+                automatic_fixture.get("delivery_state_during_compaction") != "leased" or
+                automatic_fixture.get("attempts_during_compaction") != 1 or
+                automatic_fixture.get("delivery_state_after_compact_sessionstart") != "leased" or
+                automatic_fixture.get("attempts_after_compact_sessionstart") != 1 or
+                automatic_fixture.get("final_delivery_state") != "failed" or
+                automatic_fixture.get("final_delivery_code") != "processing_failed" or
+                automatic_fixture.get("false_settlement") is not False or
+                automatic_fixture.get("precompact_before_stop") is not True or
+                automatic_fixture.get("compact_sessionstart_observed") is not True or
+                automatic_fixture.get("compact_sessionstart_outcomes", {}).get("coordination") !=
+                    {"exit_code": 1, "error_code": "NATIVE_TURN_MISMATCH"} or
+                automatic_fixture.get("compact_sessionstart_outcomes", {}).get("memory") !=
+                    {"exit_code": 0, "error_code": None}):
+            raise AssertionError("automatic in-turn compaction did not preserve the claimed Store attempt")
         return dict(result="PASS", environment="disposable PostgreSQL and loopback Codex stub",
                     model="gpt-6-luna", provider_call=False,
                     native_compaction={key: fixture.get(key) for key in (
@@ -153,6 +175,7 @@ def check(candidate_root, codex_binary):
                         "precompact_delivery_state", "precompact_delivery_code", "failed_delivery_persisted_after_compact",
                         "native_stop_preceded_compact",
                         "attempt_count", "loopback_response_requests")},
+                    automatic_in_turn_compaction=automatic_fixture,
                     recovery_report=report)
     finally:
         if api is not None:

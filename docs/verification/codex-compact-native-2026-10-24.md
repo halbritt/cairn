@@ -66,4 +66,38 @@ delivery/attempt; it is not an automatic replay. See
 fixture verifies transport, exact source identity, native hook order, and Store
 state only. It uses a scripted loopback Responses server with disposable
 PostgreSQL and no external provider; it does not test task acceptance, provider
-usage, automatic compaction, or canary/rollback.
+usage, or canary/rollback. Automatic compaction is characterized separately
+below.
+
+## Automatic in-turn compaction with a claimed source (2026-10-25)
+
+The disposable runner now also has an `auto-in-turn-claimed` scenario in
+[`check_codex_compact_native.py`](../../scripts/check_codex_compact_native.py).
+It sets a private Codex configuration with a 1,000-token context window and a
+50-token automatic-compaction threshold. On the same active native turn that
+claims a notice, a scripted loopback Responses response reports 200 input tokens
+and returns a tool call that reads the exact Store source. Codex executes the
+read, then reports a native `contextCompaction` item start and completion. The
+matching `PreCompact` hook carries the active turn ID and exits 0 before Stop.
+The exact source was read before that hook; the request did not inline it first.
+
+The same event, delivery, source ref, Store attempt and original native turn
+binding remain unchanged. Store status is `leased` with one attempt both at
+PreCompact and after automatic compact SessionStart. The memory SessionStart
+hook exits 0. The coordination SessionStart hook exits 1 with
+`NATIVE_TURN_MISMATCH`: that hook has no `turn_id`, while the live attempt is
+bound to the active turn. The fixture records this as an unsupported refresh
+boundary; it does not clear, rebind, settle or replay the attempt. The native
+turn later reaches Stop, which exits 0 and records the still-unsettled delivery
+as `failed` / `processing_failed` with one attempt. No false handled outcome or
+automatic replay occurs.
+
+This is a provider-free transport and Store result, not accepted model work.
+The threshold and usage are scripted; no external provider or provider usage
+was observed. It proves that Codex 0.164.0 can automatically compact during a
+live turn, and characterizes the current coordination hook refusal when the
+compact SessionStart lacks a turn ID. It does not prove that a same-turn owner
+binding can be recovered unambiguously from that callback, nor that the task
+continues successfully after it. Keep CAIRN-224 open for a safe correlation
+contract, paired accepted-task/provider-usage evidence, and effective
+canary/rollback.

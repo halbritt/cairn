@@ -27,7 +27,7 @@ print(json.dumps(dict(type='result', is_error=False,
 '''
 
 
-def response_stream(ident, item):
+def response_stream(ident, item, *, input_tokens=1):
     response = dict(id=ident, object="response", created_at=0, status="in_progress",
                     output=[], model=MODEL)
     events = [dict(type="response.created", response=response),
@@ -48,7 +48,8 @@ def response_stream(ident, item):
     events += [dict(type="response.output_item.done", output_index=0, item=item),
                dict(type="response.completed", response=dict(
                    response, status="completed", output=[item],
-                   usage=dict(input_tokens=1, output_tokens=1, total_tokens=2)))]
+                   usage=dict(input_tokens=input_tokens, output_tokens=1,
+                              total_tokens=input_tokens + 1)))]
     return "".join("event: " + event["type"] + "\ndata: " +
                    json.dumps(dict(event, sequence_number=i)) + "\n\n"
                    for i, event in enumerate(events)).encode()
@@ -69,7 +70,8 @@ def _exec_tool(call_id, command):
 
 
 def check(binary, root, config, api_call, candidate_root, scenario="notice"):
-    if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact"):
+    if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact",
+                        "auto-in-turn-claimed"):
         raise ValueError("unsupported compact fixture scenario")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
@@ -118,9 +120,11 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             for hook in group.get("hooks", []):
                 original = hook.get("command", "")
                 if ("coordination.py" in original or "memory.py" in original) and "--config" in original:
+                    hook_kind = "coordination" if "coordination.py" in original else "memory"
                     hook["command"] = shlex.join([sys.executable, str(metadata_wrapper),
                         "--metadata", str(metadata_path), "--stop-complete",
-                        str(stop_complete_path), "--", *shlex.split(original)])
+                        str(stop_complete_path), "--hook-kind", hook_kind,
+                        "--", *shlex.split(original)])
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     settings_path.chmod(0o600)
 
@@ -172,7 +176,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     sensitivity="shareable", claim_type="self",
                     scope=dict(repo=config["repo"], task_id="*", run_id="*"))))))
         source = batch_sources[0]
-    elif scenario in ("notice", "claimed-before-compact"):
+    elif scenario in ("notice", "claimed-before-compact", "auto-in-turn-claimed"):
         source = api_call("alice", "create", raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
             draft=dict(kind="note", body=SOURCE_BODY, sensitivity="shareable", claim_type="self",
                        scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
@@ -212,9 +216,16 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     compact_in_progress = False
     source_read_confirmed = False
     settlement_confirmed = False
-    event_owner = "alice" if scenario in ("notice", "batch-admission", "claimed-before-compact") else "bob"
+    event_owner = "alice" if scenario in ("notice", "batch-admission", "claimed-before-compact",
+                                           "auto-in-turn-claimed") else "bob"
     precompact_read_turn_id = None
     precompact_read_completed = threading.Event()
+    auto_read_tool_sent = False
+    auto_attempt_id = None
+    automatic_compaction_observed = False
+    automatic_compaction_source_order = []
+    automatic_compaction_store_state = None
+    automatic_compaction_after_sessionstart_state = None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -225,6 +236,10 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             nonlocal source_read_confirmed, settlement_confirmed
             nonlocal admission_requests
             nonlocal admission_states
+            nonlocal auto_read_tool_sent
+            nonlocal automatic_compaction_observed, automatic_compaction_store_state
+            nonlocal automatic_compaction_after_sessionstart_state
+            nonlocal auto_attempt_id
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 assert self.path == "/v1/responses" and 0 < size <= 4_000_000, "unexpected request path or size"
@@ -280,6 +295,98 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 if event is None or compact_in_progress:
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
                         content=[dict(type="output_text", text="Local fixture registration turn completed.", annotations=[])])
+                elif scenario == "auto-in-turn-claimed":
+                    assert native_turn_ready.wait(15), "automatic-compaction turn ID was not published"
+                    context_path = next(path for path in (home / "coordination/state/codex-one/inbox").glob("*.json")
+                        if json.loads(path.read_text()).get("event_id") == event["event_id"])
+                    context = json.loads(context_path.read_text())
+                    attempt_id = context["attempt_id"]
+                    attempt_native_turn_id = context.get("native_turn_id")
+                    delivery_id = context["delivery_id"]
+                    assert context.get("source") == event["ref"], \
+                        "automatic-compaction context changed the exact source ref"
+                    if auto_attempt_id is None:
+                        auto_attempt_id = attempt_id
+                    assert attempt_id == auto_attempt_id, \
+                        "automatic compaction changed the admitted Store attempt identity"
+                    assert attempt_native_turn_id == native_turn_id, "automatic claim lost native turn binding"
+                    claimed = api_call("carol", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                        request_id=attempt_id, session=dict(agent_id=context["agent_id"],
+                            execution_id=context["execution_id"]), native_turn_id=native_turn_id)))
+                    store_attempt = claimed["attempt"]
+                    assert store_attempt["attempt_id"] == attempt_id and \
+                        store_attempt["native_turn_id"] == native_turn_id and \
+                        store_attempt["delivery"]["delivery_id"] == delivery_id, \
+                        "Store claim no longer identifies the same automatic-compaction attempt"
+                    state = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+                    assert state["delivery_id"] == delivery_id and state["state"] == "leased" \
+                        and state["attempts"] == 1, "automatic path did not start with one live claim"
+                    for call_id, output in results.items():
+                        if call_id.startswith("auto-read"):
+                            serialized_output = json.dumps(output)
+                            assert SOURCE_BODY in serialized_output and source["record_id"] in serialized_output, \
+                                "automatic path did not read the exact Store source"
+                            source_read_confirmed = True
+                            if "exact_source_read" not in automatic_compaction_source_order:
+                                automatic_compaction_source_order.append("exact_source_read")
+                    hook_rows = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
+                    compact_session_exits = [row for row in hook_rows if row.get("event") == "SessionStart" and
+                        row.get("source") == "compact" and row.get("phase") == "exit"]
+                    if compact_session_exits:
+                        assert {row.get("hook_kind") for row in compact_session_exits} >= \
+                            {"coordination", "memory"}, "compact SessionStart did not run both hook families"
+                        compact_outcomes = {row.get("hook_kind"): row for row in compact_session_exits}
+                        assert compact_outcomes["memory"].get("exit_code") == 0, \
+                            "automatic compact memory refresh failed: " + json.dumps(compact_outcomes["memory"])
+                        assert compact_outcomes["coordination"].get("exit_code") == 1 and \
+                            compact_outcomes["coordination"].get("stderr_code") == "NATIVE_TURN_MISMATCH", \
+                            "automatic compact coordination boundary changed unexpectedly: " + \
+                            json.dumps({key: row.get(key) for key, row in compact_outcomes.items()})
+                    compact_rows = [row for row in hook_rows if row.get("event") == "PreCompact" and
+                                    row.get("phase") == "exit" and row.get("exit_code") == 0]
+                    compact_resume = compact_session_exits
+                    if compact_rows and not automatic_compaction_observed:
+                        automatic_compaction_observed = True
+                        automatic_compaction_source_order.append("PreCompact")
+                        automatic_compaction_store_state = state
+                        assert state["state"] == "leased" and state["attempts"] == 1, \
+                            "PreCompact changed the claimed delivery before settlement: " + \
+                            json.dumps({key: state.get(key) for key in
+                                ("delivery_id", "state", "attempts", "code")})
+                    if compact_resume and "SessionStart(compact)" not in automatic_compaction_source_order:
+                        automatic_compaction_source_order.append("SessionStart(compact)")
+                    if automatic_compaction_observed and compact_resume and source_read_confirmed:
+                        automatic_compaction_after_sessionstart_state = state
+                        assert state["state"] == "leased" and state["attempts"] == 1, \
+                            "compact SessionStart changed the claimed delivery before settlement: " + \
+                            json.dumps({key: state.get(key) for key in
+                                ("delivery_id", "state", "attempts", "code")})
+                        item = dict(type="message", id="msg_auto_compact_done", role="assistant",
+                            status="completed", content=[dict(type="output_text",
+                                text="The exact notice source was read across automatic compaction.", annotations=[])])
+                        finished.set()
+                    elif automatic_compaction_observed and compact_rows and not compact_resume:
+                        # A model response to this request supplies the native
+                        # compact summary. Keep the same turn open for its
+                        # compact SessionStart continuation.
+                        item = dict(type="message", id="msg_auto_compact_summary", role="assistant",
+                            status="completed", content=[dict(type="output_text",
+                                text="The compacted state preserves the active claimed notice.", annotations=[])])
+                    elif automatic_compaction_observed and not source_read_confirmed:
+                        command = shlex.join([str(home / "coordination/coordination.py"),
+                            "inbox", "compact", "read", context["compact_handle"]])
+                        item = _exec_tool("auto-read-after-compact", command)
+                        auto_read_tool_sent = True
+                    elif not auto_read_tool_sent:
+                        serialized = json.dumps(request.get("input"))
+                        assert context["compact_handle"] in serialized
+                        assert SOURCE_BODY not in serialized, "exact source was inlined before explicit read"
+                        command = shlex.join([str(home / "coordination/coordination.py"),
+                            "inbox", "compact", "read", context["compact_handle"]])
+                        item = _exec_tool("auto-read", command)
+                        auto_read_tool_sent = True
+                    else:
+                        item = _exec_tool("auto-followup", "true")
                 elif scenario == "claimed-before-compact" and compact_turn_id is not None:
                     current = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
                     assert current["state"] == "failed" and current["attempts"] == 1 and \
@@ -402,7 +509,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                         item = dict(type="message", id="msg_done", role="assistant", status="completed",
                             content=[dict(type="output_text", text="Compact notice handled.", annotations=[])])
                         finished.set()
-                body = response_stream("resp_" + str(len(requests)), item)
+                body = response_stream("resp_" + str(len(requests)), item,
+                    input_tokens=200 if scenario == "auto-in-turn-claimed" and
+                    item.get("type") == "custom_tool_call" else 1)
             except (AssertionError, KeyError, StopIteration, ValueError, TypeError) as exc:
                 failures.append(type(exc).__name__ + ": " + str(exc))
                 self.send_error(500)
@@ -417,7 +526,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     (home / "config.toml").write_text(
         'model = "gpt-6-luna"\nmodel_provider = "fixture"\n'
-        '[model_providers.fixture]\nname = "Loopback fixture"\n'
+        + ('model_context_window = 1000\nmodel_auto_compact_token_limit = 50\n'
+           if scenario == "auto-in-turn-claimed" else '')
+        + '[model_providers.fixture]\nname = "Loopback fixture"\n'
         f'base_url = "http://127.0.0.1:{server.server_port}/v1"\n'
         'wire_api = "responses"\nrequires_openai_auth = false\n'
         'request_max_retries = 0\nstream_max_retries = 0\n', encoding="utf-8")
@@ -474,7 +585,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     "--to", target["inbox"], "--kind", "notice", "--version",
                     str(batch_source["version"]), batch_source["record_id"]))
             event = batch_events[0]
-        elif scenario in ("notice", "claimed-before-compact"):
+        elif scenario in ("notice", "claimed-before-compact", "auto-in-turn-claimed"):
             event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
                 "--to", target["inbox"], "--kind", "notice", "--version",
                 str(source["version"]), source["record_id"])
@@ -525,6 +636,117 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             native_turn_id = continuation_turn_id
             native_turn_ready.set()
             assert admission_checked.wait(30), "staged Codex did not reach batch-enabled first admission"
+            return
+
+        if scenario == "auto-in-turn-claimed":
+            auto_turn = rpc("turn/start", dict(threadId=native_id,
+                input=[dict(type="text", text=("Read the exact claimed notice, then continue the same "
+                    "turn until Codex automatically compacts its context."), text_elements=[])]))
+            native_turn_id = auto_turn["turn"]["id"]
+            native_turn_ready.set()
+            auto_completed = False
+            auto_notifications = []
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline and not auto_completed:
+                try:
+                    notification = rpc.next_notification(timeout=min(5, max(.1, deadline - time.monotonic())))
+                except queue.Empty:
+                    continue
+                params = notification.get("params", {})
+                turn = params.get("turn", {})
+                item = params.get("item", {})
+                auto_notifications.append(dict(method=notification.get("method"),
+                    turn_id=turn.get("id") or params.get("turnId"),
+                    item_type=item.get("type")))
+                if (notification.get("method") == "turn/completed" and
+                        params.get("threadId") == native_id and turn.get("id") == native_turn_id):
+                    auto_completed = True
+            assert auto_completed, "automatic-compaction turn did not reach matching turn/completed: " + \
+                json.dumps(auto_notifications)
+            assert automatic_compaction_observed, "high-usage tool follow-up did not trigger native PreCompact"
+            assert source_read_confirmed, "automatic-compaction fixture did not read the exact source"
+            assert automatic_compaction_source_order[0] == "exact_source_read" and \
+                automatic_compaction_source_order.index("exact_source_read") < \
+                automatic_compaction_source_order.index("PreCompact"), \
+                "claimed exact source was not read before automatic compaction: " + \
+                json.dumps(automatic_compaction_source_order)
+            assert automatic_compaction_store_state and automatic_compaction_store_state["state"] == "leased" \
+                and automatic_compaction_store_state["attempts"] == 1, \
+                "Store claim was not preserved as leased with one attempt through automatic compaction: " + \
+                json.dumps(dict(store_state=automatic_compaction_store_state,
+                    source_order=automatic_compaction_source_order,
+                    source_read_confirmed=source_read_confirmed,
+                    compact_observed=automatic_compaction_observed))
+            assert automatic_compaction_after_sessionstart_state and \
+                automatic_compaction_after_sessionstart_state["state"] == "leased" and \
+                automatic_compaction_after_sessionstart_state["attempts"] == 1, \
+                "compact SessionStart changed the exact delivery or attempt"
+            hook_rows = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines() if line]
+            precompact_index = next(i for i, row in enumerate(hook_rows)
+                if row.get("event") == "PreCompact" and row.get("phase") == "exit" and row.get("exit_code") == 0)
+            stop_candidates = [i for i, row in enumerate(hook_rows)
+                if row.get("event") == "Stop" and row.get("phase", "entry") == "entry" and
+                row.get("turn_id") == native_turn_id]
+            assert stop_candidates, "native Stop hook for automatic turn missing: " + json.dumps(dict(
+                native_turn_id=native_turn_id,
+                hooks=[{key: row.get(key) for key in ("event", "turn_id", "source", "phase", "exit_code",
+                                                        "stderr_code", "stderr_class")}
+                       for row in hook_rows]))
+            stop_index = stop_candidates[0]
+            assert precompact_index < stop_index, "automatic PreCompact did not occur before turn-end Stop"
+            precompact_row = hook_rows[precompact_index]
+            assert precompact_row.get("turn_id") == native_turn_id, \
+                "automatic PreCompact was not bound to the active native turn"
+            compact_resume_indices = [i for i, row in enumerate(hook_rows)
+                if row.get("event") == "SessionStart" and row.get("source") == "compact" and
+                row.get("phase") == "exit"]
+            assert compact_resume_indices and all(hook_rows[i].get("turn_id") is None
+                for i in compact_resume_indices), \
+                "automatic compact SessionStart unexpectedly carried a native turn id"
+            if compact_resume_indices:
+                assert precompact_index < compact_resume_indices[0] < stop_index, \
+                    "automatic compact SessionStart did not occur between PreCompact and Stop"
+                compact_outcomes = {row.get("hook_kind"): row for row in hook_rows
+                    if row.get("event") == "SessionStart" and row.get("source") == "compact" and
+                    row.get("phase") == "exit"}
+                assert set(compact_outcomes) == {"coordination", "memory"} and \
+                    compact_outcomes["memory"].get("exit_code") == 0 and \
+                    compact_outcomes["coordination"].get("exit_code") == 1 and \
+                    compact_outcomes["coordination"].get("stderr_code") == "NATIVE_TURN_MISMATCH", \
+                    "automatic compact hook outcomes changed: " + json.dumps({kind: {
+                        "exit_code": row.get("exit_code"), "stderr_code": row.get("stderr_code")}
+                        for kind, row in compact_outcomes.items()})
+            context_compaction_items = [row for row in auto_notifications
+                if row.get("item_type") == "contextCompaction"]
+            assert {row.get("method") for row in context_compaction_items} >= {"item/started", "item/completed"}, \
+                "app-server did not report matching automatic contextCompaction item start/completion"
+            final_state = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+            assert final_state["delivery_id"] == delivery_id and final_state["attempts"] == 1 and \
+                final_state["state"] == "failed" and final_state.get("code") == "processing_failed", \
+                "unsettled attempt was falsely settled or replayed after automatic compaction and Stop"
+            stop_row = next(row for row in hook_rows if row.get("event") == "Stop" and
+                row.get("phase") == "exit" and row.get("turn_id") == native_turn_id)
+            assert stop_row.get("exit_code") == 0, "automatic-compaction turn Stop hook failed"
+            print(json.dumps(dict(result="PASS", scenario=scenario,
+                native_automatic_compaction=True, native_turn_id=native_turn_id,
+                event_id=event["event_id"], delivery_id=delivery_id, attempt_id=attempt_id,
+                attempt_native_turn_id=attempt_native_turn_id,
+                source_ref=event["ref"], exact_source_read=source_read_confirmed,
+                source_order=automatic_compaction_source_order,
+                delivery_state_during_compaction=automatic_compaction_store_state["state"],
+                attempts_during_compaction=automatic_compaction_store_state["attempts"],
+                delivery_state_after_compact_sessionstart=automatic_compaction_after_sessionstart_state["state"],
+                attempts_after_compact_sessionstart=automatic_compaction_after_sessionstart_state["attempts"],
+                final_delivery_state=final_state["state"], final_delivery_code=final_state.get("code"),
+                final_attempts=final_state["attempts"], false_settlement=False,
+                compact_sessionstart_observed=bool(compact_resume_indices),
+                compact_sessionstart_outcomes={kind: {"exit_code": row.get("exit_code"),
+                    "error_code": row.get("stderr_code")} for kind, row in compact_outcomes.items()}
+                    if compact_resume_indices else {},
+                precompact_turn_id=precompact_row.get("turn_id"),
+                precompact_before_stop=True, loopback_response_requests=len(requests),
+                response_notifications=auto_notifications, provider_call=False,
+                provider_usage_observed=False), sort_keys=True))
             return
 
         compact_in_progress = True
@@ -633,6 +855,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         installer.trust_codex_hooks(home, settings, hook_commands["memory"],
                                     verify=verify, codex_binary=binary, expected=4)
         assert not failures, failures
+        if scenario == "auto-in-turn-claimed":
+            assert automatic_compaction_observed and source_read_confirmed
+            return
         if scenario == "batch-admission":
             assert admission_checked.is_set() and admission_requests >= 1, \
                 "readiness run did not stop at the first native batch admission"
