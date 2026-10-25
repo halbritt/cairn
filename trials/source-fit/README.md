@@ -57,3 +57,14 @@ The proposed native Codex/Luna route is separately assessed in
 and source-delivery readers are reusable, but no Codex source-fit runner or
 model-verified native tool stream was established, so no Codex panel copy was
 frozen and no provider was contacted.
+
+The landed Codex/Luna panel v1 is documented in
+`docs/verification/source-fit-codex-luna-plan-2026-10-25.md`. Its tool
+preflight claims were corrected in the distinct v2 manifest at
+`trials/source-fit/codex-luna-2026-10-25-v2/FROZEN.json`; v1 remains unchanged.
+V2 preserves the same 15 arms and remains
+`admission_pending_runner_preflight`. A provider-free fake-auth loopback
+request declares generic exec, while its attempted fake call fails closed with
+`code_mode_host=false`; that result does not prove subscribed-provider tool
+offers. See `docs/verification/source-fit-codex-luna-v2-2026-10-25.md` for the
+revised effective-feature, bwrap, and per-attempt tool gates.
