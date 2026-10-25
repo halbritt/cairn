@@ -90,6 +90,16 @@ CASE_ADAPTERS = {
                           "target": "lexical_anchor"}],
         "publishers": {}, "sessions": {"worker": "worker"},
     },
+    "source_forgotten_before_read": {
+        "sources": [],
+        "events": [{"id": "request_missing_source", "kind": "request",
+                    "recipient": "worker"}],
+        "transitions": [{"phase": "after_admission_before_read",
+                          "action": "remove_source",
+                          "target": "request_missing_source"}],
+        "publishers": {"request_missing_source": "sender"},
+        "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -116,7 +126,8 @@ def case_name(workflow_id):
             and (parts[0] == "baseline" or
                  parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
                               "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group", "semantic_unavailable")
+                              "required_conflict_group", "semantic_unavailable",
+                              "source_forgotten_before_read")
                  and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
@@ -127,7 +138,7 @@ def database_name(workflow_id):
     return (f"cairn_panel_{workflow_id.replace('.', '_')}"
             if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
                         "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group",
-                        "semantic_unavailable")
+                        "semantic_unavailable", "source_forgotten_before_read")
             else f"cairn_panel_{case}")
 
 
@@ -251,7 +262,8 @@ def instant(value):
     return parsed
 
 
-def call(binary, socket, token, operation, args=(), body=None, session=None):
+def call(binary, socket, token, operation, args=(), body=None, session=None,
+         expected_status="OK", forbidden=None):
     connection = ["--socket", str(socket), "--token-file", str(token)]
     if session is not None:
         connection += ["--agent-id", session["agent_id"],
@@ -263,16 +275,23 @@ def call(binary, socket, token, operation, args=(), body=None, session=None):
     process = subprocess.run(command, input=body, text=True, capture_output=True, timeout=20)
     require(len(process.stdout) <= 1_000_000, "Cairn API reply exceeds bound")
     result = json.loads(process.stdout, object_pairs_hook=panel.pairs_unique)
-    require(process.returncode == 0 and result.get("schema") == "cairn.response/1"
-            and result.get("ok") is True and result.get("status") == "OK"
-            and isinstance(result.get("data"), dict),
+    require(forbidden is None or (forbidden not in process.stdout and
+                                  forbidden not in process.stderr),
+            "Cairn response disclosed forbidden source body")
+    succeeded = expected_status == "OK"
+    require((process.returncode == 0) == succeeded
+            and result.get("schema") == "cairn.response/1"
+            and result.get("ok") is succeeded
+            and result.get("status") == expected_status
+            and (isinstance(result.get("data"), dict) if succeeded else True),
             f"Cairn {operation[-1]} refused: {result.get('status')}")
-    return result["data"]
+    return result["data"] if succeeded else result
 
 
-def operator_call(binary, home, operation, payload):
-    """Use only the disposable API's operator root for class C setup."""
-    process = subprocess.run([str(binary), operation], input=json.dumps(payload),
+def operator_call(binary, home, operation, payload=None, args=()):
+    """Use only the disposable API's operator root for fixture setup."""
+    process = subprocess.run([str(binary), operation, *args],
+                             input=json.dumps(payload) if payload is not None else None,
                              text=True, capture_output=True, timeout=20,
                              env=dict(os.environ, CAIRN_HOME=str(home)))
     require(len(process.stdout) <= 1_000_000 and len(process.stderr) <= 100_000,
@@ -608,6 +627,107 @@ def settle_small_request(binary, socket, tokens, repo, actor, setup, intent, ses
             "response_state": "pending", "response_attempts": 0}
 
 
+def exercise_source_forgotten_before_read(binary, socket, home, tokens, repo,
+                                          event_spec, event, session, intent):
+    """Forget the admitted source before the receiver's first exact read."""
+    require(event_spec == {"id": "request_missing_source", "kind": "request",
+                           "recipient": "worker",
+                           "body": "Read source SRC-7 and summarize it."},
+            "frozen source-loss request changed")
+    transition = {"phase": "after_admission_before_read", "action": "remove_source",
+                  "target": event_spec["id"]}
+    source_body = event_spec["body"]
+    source_ref = event["source_ref"]
+    delivery_id = event["delivery_id"]
+    ids = intent["source_loss_request_ids"]
+    session_ref = {key: session[key] for key in ("agent_id", "execution_id")}
+    claim_body = {"request_id": ids["claim"], "session": session_ref,
+                  "delivery_id": delivery_id,
+                  "native_turn_id": intent["synthetic_turn_id"],
+                  "turn_exclusive": False}
+    claimed = call(binary, socket, tokens["worker"],
+                   ("agent", "session-inbox-claim"), body=json.dumps(claim_body))
+    attempt = claimed.get("attempt")
+    require(attempt is not None and attempt["delivery"]["event"]["ref"] == source_ref
+            and attempt["delivery"]["delivery_id"] == delivery_id
+            and isinstance(attempt["delivery"].get("lease_id"), str)
+            and attempt["delivery"]["lease_id"],
+            "native admission did not pin exact source")
+    require(source_body not in json.dumps(attempt),
+            "claim disclosed source before scoped read")
+
+    grant = operator_call(binary, home, "bootstrap", {
+        "request_id": ids["bootstrap"],
+        "reason": "Authorize frozen disposable source-forgetting panel"})
+    preview = operator_call(binary, home, "preview-delete", args=(source_ref["record_id"],))
+    require(preview.get("record_id") == source_ref["record_id"],
+            "operator preview targeted another source")
+    forgotten = operator_call(binary, home, "forget", {
+        "request_id": ids["forget"], "record_id": source_ref["record_id"],
+        "expected_version": source_ref["version"], "grant_id": grant["grant_id"],
+        "preview_id": preview["preview_id"]})
+    require(forgotten.get("record_id") == source_ref["record_id"],
+            "authorized forgetting targeted another source")
+
+    read = call(binary, socket, tokens["worker"], ("agent", "history"),
+                body=json.dumps({"repo": repo, **source_ref}),
+                expected_status="PAYLOAD_UNAVAILABLE", forbidden=source_body)
+    require(read.get("status") == "PAYLOAD_UNAVAILABLE",
+            "first exact scoped read did not fail after forgetting")
+    inspect = call(binary, socket, tokens["sender"], ("agent", "event-inspect"),
+                   body=json.dumps({"event_id": event["event_id"]}), forbidden=source_body)
+    delivery = (inspect.get("deliveries") or [None])[0]
+    require(inspect.get("event", {}).get("ref") == source_ref and delivery is not None
+            and delivery.get("delivery_id") == delivery_id
+            and delivery.get("state") == "leased" and delivery.get("attempts") == 1
+            and delivery.get("result") is None,
+            "forgotten source removed or changed admitted communication")
+
+    ack_args = ("--request-id", ids["ack"], "--lease", attempt["delivery"]["lease_id"],
+                "--disposition", "failed", "--code", "source_unavailable", delivery_id)
+    failed = call(binary, socket, tokens["worker"], ("ack",), args=ack_args,
+                  session=session, forbidden=source_body)
+    replay = call(binary, socket, tokens["worker"], ("ack",), args=ack_args,
+                  session=session, forbidden=source_body)
+    require(replay == failed and failed.get("state") == "failed"
+            and failed.get("code") == "source_unavailable" and failed.get("result") is None,
+            "source-unavailable settlement replay changed or disclosed a result")
+    closed = call(binary, socket, tokens["worker"],
+                  ("agent", "session-inbox-reconcile"),
+                  body=json.dumps({"request_id": ids["reconcile"], "session": session_ref,
+                                   "attempt_id": attempt["attempt_id"],
+                                   "reason": "delivery_completed"}))
+    require(closed.get("finished_at") is not None
+            and closed.get("delivery", {}).get("state") == "failed",
+            "source-loss attempt did not close")
+    final = call(binary, socket, tokens["sender"], ("agent", "event-inspect"),
+                 body=json.dumps({"event_id": event["event_id"]}), forbidden=source_body)
+    final_deliveries = final.get("deliveries") or []
+    require(final.get("event", {}).get("ref") == source_ref
+            and len(final_deliveries) == 1
+            and final_deliveries[0].get("delivery_id") == delivery_id
+            and final_deliveries[0].get("state") == "failed"
+            and final_deliveries[0].get("code") == "source_unavailable"
+            and final_deliveries[0].get("attempts") == 1
+            and final_deliveries[0].get("result") is None,
+            "durable source-loss outcome differs")
+    return {"transition": transition | {"status": "verified"},
+            "event_id": event["event_id"], "delivery_id": delivery_id,
+            "source_ref": source_ref,
+            "attempt_id": attempt["attempt_id"],
+            "synthetic_turn_id": intent["synthetic_turn_id"],
+            "claim_request_id": ids["claim"],
+            "source_read_status": "PAYLOAD_UNAVAILABLE",
+            "forget_request_id": ids["forget"],
+            "settlement": "failed/source_unavailable",
+            "settlement_request_id": ids["ack"],
+            "settlement_replay_identical": True,
+            "reconcile_request_id": ids["reconcile"],
+            "final_attempts": 1, "result_ref": None,
+            "actor_task": "unrun", "requester_explanation": "unrun",
+            "actor_acceptance": "unassessed"}
+
+
 def materialize(args):
     root, socket, export, run_dir = disposable_inputs(args)
     case = case_name(args.workflow_id)
@@ -650,6 +770,8 @@ def materialize(args):
         dynamic_keys.add("bootstrap_request_id")
     if case == "small_request_result_reply":
         dynamic_keys |= {"settlement_request_ids", "synthetic_turn_id"}
+    if case == "source_forgotten_before_read":
+        dynamic_keys |= {"source_loss_request_ids", "synthetic_turn_id"}
     if intent_path.exists():
         private_file(intent_path)
         intent = read_json(intent_path)
@@ -660,7 +782,10 @@ def materialize(args):
                 and set(intent["publication_request_ids"]) == set(event_ids)
                 and (case != "small_request_result_reply" or
                      set(intent["settlement_request_ids"]) ==
-                     {"claim", "completion", "response_publication"}),
+                     {"claim", "completion", "response_publication"})
+                and (case != "source_forgotten_before_read" or
+                     set(intent["source_loss_request_ids"]) ==
+                     {"claim", "bootstrap", "forget", "ack", "reconcile"}),
                 "prior intent differs from frozen setup")
     else:
         run_id = str(uuid.uuid4())
@@ -680,6 +805,11 @@ def materialize(args):
                 name: str(uuid.uuid4()) for name in
                 ("claim", "completion", "response_publication")}
             intent["synthetic_turn_id"] = f"panel-synthetic/{run_id}"
+        if case == "source_forgotten_before_read":
+            intent["source_loss_request_ids"] = {
+                name: str(uuid.uuid4()) for name in
+                ("claim", "bootstrap", "forget", "ack", "reconcile")}
+            intent["synthetic_turn_id"] = f"panel-synthetic-source-loss/{run_id}"
         if case == "required_conflict_group":
             intent["bootstrap_request_id"] = str(uuid.uuid4())
         write_new(intent_path, intent)
@@ -687,11 +817,18 @@ def materialize(args):
                   *intent["source_request_ids"].values(),
                   *intent["publication_request_ids"].values(),
                   *([intent["bootstrap_request_id"]] if case == "required_conflict_group" else []),
-                  *intent.get("settlement_request_ids", {}).values()):
+                  *intent.get("settlement_request_ids", {}).values(),
+                  *intent.get("source_loss_request_ids", {}).values()):
         require(str(uuid.UUID(value)) == value, "invalid intent UUID")
     if case == "small_request_result_reply":
         require(intent["synthetic_turn_id"] == f'panel-synthetic/{intent["run_id"]}',
                 "synthetic turn label differs from journal")
+    if case == "source_forgotten_before_read":
+        require(intent["synthetic_turn_id"] ==
+                f'panel-synthetic-source-loss/{intent["run_id"]}'
+                and set(intent["source_loss_request_ids"]) ==
+                {"claim", "bootstrap", "forget", "ack", "reconcile"},
+                "source-loss attempt identity differs from journal")
     for event in setup["events"]:
         if "idempotency_key" in event:
             expected_id = str(uuid.uuid5(uuid.UUID(intent["run_id"]),
@@ -780,12 +917,13 @@ def materialize(args):
                 and source.get("observed_writer") == owners[publisher_role],
                 "stored source does not match fixture or publisher")
         recipient_token = tokens[adapter["sessions"][recipient]]
-        history = call(binary, socket, recipient_token, ("agent", "history"),
-                       body=json.dumps(ref))
-        versions = history.get("versions") or []
-        require(len(versions) == 1 and versions[0].get("body") == event_spec["body"]
-                and versions[0].get("observed_writer") == owners[publisher_role],
-                "recipient cannot read exact source version")
+        if case != "source_forgotten_before_read":
+            history = call(binary, socket, recipient_token, ("agent", "history"),
+                           body=json.dumps(ref))
+            versions = history.get("versions") or []
+            require(len(versions) == 1 and versions[0].get("body") == event_spec["body"]
+                    and versions[0].get("observed_writer") == owners[publisher_role],
+                    "recipient cannot read exact source version")
         causation = ""
         publisher_session = None
         if "causation" in event_spec:
@@ -887,6 +1025,21 @@ def materialize(args):
                                     "retry_event_id": repeated["event_id"],
                                     "delivery_id": deliveries[0]["delivery_id"]})
     readiness_snapshot = None
+    source_loss = None
+    if case == "source_forgotten_before_read":
+        require(len(setup["events"]) == 1 and len(setup["transitions"]) == 1
+                and setup["transitions"][0] == {
+                    "phase": "after_admission_before_read", "action": "remove_source",
+                    "target": "request_missing_source"},
+                "frozen source-loss transition changed")
+        event_spec = setup["events"][0]
+        source_loss = exercise_source_forgotten_before_read(
+            binary, socket, Path(args.home), tokens, repo, event_spec,
+            events[event_spec["id"]], sessions["worker"], intent)
+        events[event_spec["id"]]["delivery_state"] = "failed"
+        events[event_spec["id"]]["attempts"] = 1
+        events[event_spec["id"]]["failure_code"] = "source_unavailable"
+        transitions.append(source_loss["transition"])
     if case == "routine_burst_urgent_request":
         worker_session = sessions["worker"]
         selected = events["urgent_1" if intervention["routine_notice_policy"] else "routine_1"]
@@ -1030,6 +1183,8 @@ def materialize(args):
     if recipient_isolation is not None:
         receipt["recipient_isolation"] = recipient_isolation
         receipt["native_actor_concurrency"] = "unrun"
+    if source_loss is not None:
+        receipt["source_loss"] = source_loss
     output = run_dir / "materialization.json"
     if output.exists():
         private_file(output)
@@ -1047,7 +1202,8 @@ def main():
     choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
                      for case in ("routine_burst_urgent_request", "wrong_project_memory",
                               "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group", "semantic_unavailable"))
+                              "required_conflict_group", "semantic_unavailable",
+                              "source_forgotten_before_read"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)

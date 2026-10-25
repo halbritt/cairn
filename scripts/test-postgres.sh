@@ -57,7 +57,9 @@ for panel_workflow in baseline.single_notice baseline.actionable_response baseli
     baseline.required_conflict_group envelope.required_conflict_group \
     batch.required_conflict_group combined.required_conflict_group \
     baseline.semantic_unavailable envelope.semantic_unavailable \
-    batch.semantic_unavailable combined.semantic_unavailable; do
+    batch.semantic_unavailable combined.semantic_unavailable \
+    baseline.source_forgotten_before_read envelope.source_forgotten_before_read \
+    batch.source_forgotten_before_read combined.source_forgotten_before_read; do
     panel_case="${panel_workflow#*.}"
     panel_arm="${panel_workflow%%.*}"
     if [[ "$panel_case" == routine_burst_urgent_request ||
@@ -66,7 +68,8 @@ for panel_workflow in baseline.single_notice baseline.actionable_response baseli
           "$panel_case" == meaningful_owner_correction ||
           "$panel_case" == unfinished_handoff ||
           "$panel_case" == required_conflict_group ||
-          "$panel_case" == semantic_unavailable ]]; then
+          "$panel_case" == semantic_unavailable ||
+          "$panel_case" == source_forgotten_before_read ]]; then
         panel_database="cairn_panel_${panel_arm}_${panel_case}"
     else
         panel_database="cairn_panel_$panel_case"

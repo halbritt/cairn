@@ -213,8 +213,14 @@ handling and task acceptance remain unmeasured.
 
 The separate [source-forget probe](../../scripts/check_panel_source_forgotten.py)
 forgets an admitted source through the operator workflow after a synthetic
-claim and records one exact `source_unavailable` failed settlement. It did
-not run an actor task or requester explanation.
+claim and records one exact `source_unavailable` failed settlement. The
+authenticated controller now repeats that exact frozen transition in separate
+baseline, envelope, batch, and combined disposable databases. It skips a
+pre-admission worker history read, verifies the first scoped read fails after
+forgetting, and retries the failed settlement with the same request UUID. The
+controller receipt is body-free and explicitly marks actor acceptance
+unassessed. It did not run an actor task or requester explanation; see the
+[four-arm source-loss record](panel-source-forgotten-arms-2026-10-24.md).
 
 The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
 issues both frozen mandatory C sources in a disposable database. Operator

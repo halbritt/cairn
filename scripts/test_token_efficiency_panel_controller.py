@@ -26,6 +26,38 @@ class SemanticUnavailableControllerTests(unittest.TestCase):
                 databases.add(controller.database_name(workflow))
         self.assertEqual(len(databases), 4)
 
+    def test_source_forgotten_case_keeps_exact_post_admission_transition(self):
+        expected_setup = {
+            "sources": [],
+            "events": [{"id": "request_missing_source", "kind": "request",
+                        "recipient": "worker",
+                        "body": "Read source SRC-7 and summarize it."}],
+            "transitions": [{"phase": "after_admission_before_read",
+                             "action": "remove_source",
+                             "target": "request_missing_source"}],
+            "publishers": {"request_missing_source": "sender"},
+            "sessions": {"worker": "worker"},
+        }
+        expected_adapter = expected_setup | {
+            "events": [{"id": "request_missing_source", "kind": "request",
+                        "recipient": "worker"}],
+        }
+        fixture, _ = controller.panel.read_fixture()
+        row = next(case for case in fixture["cases"]
+                   if case["id"] == "source_forgotten_before_read")
+        self.assertEqual(row["setup"], {key: expected_setup[key]
+                                       for key in ("sources", "events", "transitions")})
+        databases = set()
+        for arm in ("baseline", "envelope", "batch", "combined"):
+            workflow = f"{arm}.source_forgotten_before_read"
+            with self.subTest(arm=arm):
+                self.assertEqual(controller.case_name(workflow),
+                                 "source_forgotten_before_read")
+                self.assertEqual(controller.CASE_ADAPTERS["source_forgotten_before_read"],
+                                 expected_adapter)
+                databases.add(controller.database_name(workflow))
+        self.assertEqual(len(databases), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -241,7 +241,13 @@ It does not redeliver the handled request or measure an actor task.
 The [source-forget probe](../../scripts/check_panel_source_forgotten.py)
 uses another disposable Store to forget an admitted source through the
 operator workflow after a synthetic claim, then settles that exact delivery
-as `source_unavailable`. A requester explanation and actor task remain unrun.
+as `source_unavailable`. The authenticated controller also executes the frozen
+sequence in four separate arm databases: it does not read source history
+before admission, forgets after claiming, verifies `PAYLOAD_UNAVAILABLE` on
+the first scoped read, and repeats the failed settlement under the same request
+UUID. Receipts retain no source body and mark actor acceptance unassessed. A
+requester explanation and actor task remain unrun. See the
+[four-arm source-loss verification](../../docs/verification/panel-source-forgotten-arms-2026-10-24.md).
 
 The [required conflict probe](../../scripts/check_panel_required_conflict_group.py)
 issues the exact `conflict_24` and `conflict_48` mandatory instructions through

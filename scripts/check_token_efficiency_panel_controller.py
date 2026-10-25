@@ -30,21 +30,23 @@ def check(binary, workflow_id):
                                 for case in ("routine_burst_urgent_request",
                                              "wrong_project_memory", "corrected_note",
                                              "meaningful_owner_correction", "unfinished_handoff",
-                                             "required_conflict_group", "semantic_unavailable")),
+                                             "required_conflict_group", "semantic_unavailable",
+                                             "source_forgotten_before_read")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
     source_case = case in ("wrong_project_memory", "corrected_note",
                            "meaningful_owner_correction", "unfinished_handoff",
                            "required_conflict_group", "semantic_unavailable")
-    label = workflow_id.replace(".", "-") if burst or source_case else case
+    per_arm_case = source_case or case == "source_forgotten_before_read"
+    label = workflow_id.replace(".", "-") if burst or per_arm_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
     require(root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700,
             "private cluster root")
     require((root / "data" / "PG_VERSION").is_file(), "cluster not initialized")
     require(binary == root / "cairn" and binary.is_file(), "disposable binary")
-    database = f"cairn_panel_{arm}_{case}" if burst or source_case else f"cairn_panel_{case}"
+    database = f"cairn_panel_{arm}_{case}" if burst or per_arm_case else f"cairn_panel_{case}"
     dsn = f"host={root / 'socket'} dbname={database} sslmode=disable"
     require(os.environ["CAIRN_TEST_DATABASE_URL"] == os.environ["CAIRN_DATABASE_URL"] == dsn,
             "dedicated database")
@@ -156,6 +158,38 @@ def check(binary, workflow_id):
         require(receipt["provider_called"] is False and receipt["native_turn_join"] == "unimplemented",
                 "no actor turn")
         require(receipt["task_outcome"] == "unassessed", "no task outcome")
+        if case == "source_forgotten_before_read":
+            loss = receipt.get("source_loss") or {}
+            event = receipt["events"].get("request_missing_source") or {}
+            fixture_event = next(row for row in fixture["cases"]
+                                 if row["id"] == case)["setup"]["events"][0]
+            intent = json.loads((root / f"panel-run-{label}" / "intent.json").read_text())
+            require(loss.get("transition") == {
+                "phase": "after_admission_before_read", "action": "remove_source",
+                "target": "request_missing_source", "status": "verified"}
+                and loss.get("source_ref") == event.get("source_ref")
+                and loss.get("event_id") == event.get("event_id")
+                and loss.get("delivery_id") == event.get("delivery_id")
+                and loss.get("attempt_id") and loss.get("synthetic_turn_id") ==
+                    intent["synthetic_turn_id"]
+                and loss.get("claim_request_id") ==
+                    intent["source_loss_request_ids"]["claim"]
+                and loss.get("source_read_status") == "PAYLOAD_UNAVAILABLE"
+                and loss.get("settlement") == "failed/source_unavailable"
+                and loss.get("settlement_request_id") ==
+                    intent["source_loss_request_ids"]["ack"]
+                and loss.get("settlement_replay_identical") is True
+                and loss.get("final_attempts") == 1
+                and loss.get("result_ref") is None
+                and loss.get("actor_task") == "unrun"
+                and loss.get("requester_explanation") == "unrun"
+                and loss.get("actor_acceptance") == "unassessed"
+                and receipt["provider_called"] is False
+                and receipt["native_turn_join"] == "unimplemented"
+                and receipt["task_outcome"] == "unassessed",
+                "authenticated source-loss transition or evidence limit differs")
+            require(fixture_event["body"] not in json.dumps(receipt),
+                    "source-loss receipt contains fixture body")
         if case == "concurrent_receivers":
             require(receipt["native_actor_concurrency"] == "unrun", "no concurrent actors")
         if burst:
@@ -202,8 +236,12 @@ def check(binary, workflow_id):
             deadline = datetime.fromisoformat(receipt["readiness_snapshot"]["earliest_routine_available_at"])
             now = datetime.fromisoformat(sql("SELECT clock_timestamp()"))
             time.sleep(max(0, (deadline - now).total_seconds()) + 0.2)
-        second = subprocess.run(command, text=True, capture_output=True, env=env, timeout=30)
-        require(second.returncode == 0 and json.loads(second.stdout) == receipt, second.stderr)
+        if case == "source_forgotten_before_read":
+            require(receipt.get("source_loss", {}).get("settlement_replay_identical") is True,
+                    "one-way source forgetting case lacks exact settlement replay")
+        else:
+            second = subprocess.run(command, text=True, capture_output=True, env=env, timeout=30)
+            require(second.returncode == 0 and json.loads(second.stdout) == receipt, second.stderr)
         changed = list(command)
         changed[changed.index("--worker-token") + 1] = str(
             home / ("stranger.token" if case == "concurrent_receivers" else "other.token"))
@@ -212,6 +250,12 @@ def check(binary, workflow_id):
                 "changed worker identity accepted on retry")
         require(sql("SELECT count(*) FROM cairn.agent_session") == str(len(expected_sessions)),
                 "changed worker identity registered a session")
+        if case == "source_forgotten_before_read":
+            require(sql("SELECT count(*) FROM cairn.agent_event") == "1",
+                    "source-loss retry changed durable event count")
+            require(sql("SELECT count(*) FROM cairn.agent_session_attempt") == "1"
+                    and sql("SELECT count(*) FROM cairn.agent_session_poll") == "1",
+                    "source-loss acknowledgement replay duplicated native admission")
         if case == "concurrent_receivers":
             changed = list(command)
             changed[changed.index("--other-token") + 1] = str(home / "stranger.token")
@@ -325,8 +369,10 @@ def check(binary, workflow_id):
             require(event["observed_writer"] == principals[publisher], "source writer")
             require(event["source_body_sha256"] == hashlib.sha256(spec["body"].encode()).hexdigest(),
                     "source body hash")
-            expected_state = "handled" if case == "small_request_result_reply" else "pending"
-            expected_attempts = 1 if case == "small_request_result_reply" else 0
+            expected_state = ("handled" if case == "small_request_result_reply" else
+                              "failed" if case == "source_forgotten_before_read" else "pending")
+            expected_attempts = (1 if case in ("small_request_result_reply",
+                                                "source_forgotten_before_read") else 0)
             require(event["delivery_state"] == expected_state
                     and event["attempts"] == expected_attempts, "delivery state")
             require(event["recipient_inbox"] == receipt["sessions"][spec["recipient"]]["inbox"],
@@ -489,6 +535,9 @@ def check(binary, workflow_id):
                     and transition["first_event_id"] == transition["retry_event_id"]
                     == event["event_id"] and transition["delivery_id"] == event["delivery_id"],
                     "same native publication identity")
+        elif case == "source_forgotten_before_read":
+            require(receipt["transitions"] == [receipt["source_loss"]["transition"]],
+                    "source-loss transition identity differs")
         else:
             require(receipt["transitions"] == [], "unexpected transition")
         print(json.dumps({"workflow_id": workflow_id, "events": expected_events,
