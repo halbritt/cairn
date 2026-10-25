@@ -11,6 +11,9 @@ EVENT = "11111111-1111-4111-8111-111111111111"
 DELIVERY_ONE = "22222222-2222-4222-8222-222222222222"
 DELIVERY_TWO = "33333333-3333-4333-8333-333333333333"
 ATTEMPT = "44444444-4444-4444-8444-444444444444"
+RELATED_EVENT = "66666666-6666-4666-8666-666666666666"
+RELATED_DELIVERY = "88888888-8888-4888-8888-888888888888"
+RELATED_ATTEMPT = "99999999-9999-4999-8999-999999999999"
 
 
 class RecoveryModelReportTests(unittest.TestCase):
@@ -26,10 +29,12 @@ class RecoveryModelReportTests(unittest.TestCase):
         return recovery.read_evidence(path, 10)
 
     def observation(self, delivery_id=DELIVERY_ONE, **extra):
-        return dict(event_id=EVENT, delivery_id=delivery_id, attempt_id=ATTEMPT,
+        item = dict(event_id=EVENT, delivery_id=delivery_id, attempt_id=ATTEMPT,
                     phase="settlement", outcome="failed", recovery_state="retry_same_intent",
                     operator_action="manual_retry", code="API_CONNECTION_FAILED",
-                    state_revision=2, reminder_emitted=False, **extra)
+                    state_revision=2, reminder_emitted=False)
+        item.update(extra)
+        return item
 
     def workflow(self):
         provider = dict(usage=dict(observed_responses=3))
@@ -37,6 +42,19 @@ class RecoveryModelReportTests(unittest.TestCase):
                            provider=provider) for identity in (DELIVERY_ONE, DELIVERY_TWO)]
         return dict(schema="cairn.workflow-model-report/1",
                     workflows=[dict(event=opaque(EVENT), deliveries=deliveries)])
+
+    def reissue_action(self, related_event=RELATED_EVENT, delivery=DELIVERY_TWO):
+        return dict(event=opaque(EVENT), delivery=opaque(delivery), attempt=None,
+                    related_event=opaque(related_event), revision=1,
+                    request=opaque("55555555-5555-4555-8555-555555555555"),
+                    actor=opaque("operator:local"), action="event_reissue",
+                    outcome="reissue_created", state_before="failed", state_after="failed",
+                    observed_at="2026-10-25T10:01:00Z")
+
+    def followup_workflow(self, settlement_status="committed", assessment="accepted", attempt=RELATED_ATTEMPT):
+        item = dict(delivery=opaque(RELATED_DELIVERY), attempt=opaque(attempt) if attempt else None,
+                    settlement=dict(status=settlement_status), provider=None)
+        return dict(event=opaque(RELATED_EVENT), deliveries=[item], assessment=assessment)
 
     def test_shared_turn_is_counted_once_and_identifiers_are_opaque(self):
         observations = self.evidence([self.observation(), self.observation(delivery_id=DELIVERY_TWO)])
@@ -83,6 +101,56 @@ class RecoveryModelReportTests(unittest.TestCase):
                  state_after="handled", observed_at="2026-10-25T10:00:00Z")])))
         with self.assertRaisesRegex(ValueError, "Store-observed"):
             recovery.read_recovery_actions(path)
+
+    def test_reissue_links_exact_followup_delivery_and_keeps_settlement_separate_from_assessment(self):
+        workflow = self.workflow()
+        workflow["workflows"].append(self.followup_workflow())
+        item = self.observation(delivery_id=RELATED_DELIVERY, attempt_id=RELATED_ATTEMPT,
+                                event_id=RELATED_EVENT)
+        item.update(phase="settlement", outcome="recovered", recovery_state="committed",
+                    operator_action="manual_retry", model_invocation="unknown")
+        actions = [self.reissue_action()]
+        result = recovery.compile_report(workflow, self.evidence([item]), actions)
+        followup = result["recovery_actions"][0]["followup"]
+        self.assertEqual(followup["event_join"], "matched")
+        self.assertEqual(followup["deliveries"][0]["terminality"], "committed")
+        self.assertEqual(followup["deliveries"][0]["task_assessment"], "accepted")
+        self.assertEqual(followup["selected_recovery_outcomes"][0]["outcome"], "recovered")
+        self.assertNotIn(RELATED_EVENT, json.dumps(result))
+        self.assertNotIn(RELATED_DELIVERY, json.dumps(result))
+        self.assertNotIn(RELATED_ATTEMPT, json.dumps(result))
+
+    def test_reissue_wrong_related_event_stays_unmatched(self):
+        workflow = self.workflow()
+        workflow["workflows"].append(self.followup_workflow())
+        action = self.reissue_action(related_event="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        result = recovery.compile_report(workflow, self.evidence([]), [action])
+        self.assertEqual(result["recovery_actions"][0]["followup"]["event_join"], "missing")
+        self.assertEqual(result["recovery_actions"][0]["followup"]["deliveries"], [])
+
+    def test_duplicate_reissue_edges_are_ambiguous_and_do_not_duplicate_outcome(self):
+        workflow = self.workflow()
+        workflow["workflows"].append(self.followup_workflow())
+        result = recovery.compile_report(workflow, self.evidence([]),
+                                         [self.reissue_action(),
+                                          self.reissue_action(delivery=DELIVERY_ONE)])
+        for row in result["recovery_actions"]:
+            self.assertEqual(row["followup"]["event_join"], "ambiguous")
+            self.assertEqual(row["followup"]["deliveries"], [])
+
+    def test_followup_missing_attempt_and_partial_outcome_remain_distinct(self):
+        workflow = self.workflow()
+        workflow["workflows"].append(self.followup_workflow(settlement_status=None,
+                                                            assessment="accepted", attempt=None))
+        item = self.observation(delivery_id=RELATED_DELIVERY, attempt_id=RELATED_ATTEMPT,
+                                event_id=RELATED_EVENT)
+        item.update(phase="settlement", outcome="recovered", recovery_state="committed",
+                    operator_action="manual_retry", model_invocation="unknown")
+        result = recovery.compile_report(workflow, self.evidence([item]), [self.reissue_action()])
+        followup = result["recovery_actions"][0]["followup"]
+        self.assertEqual(followup["deliveries"][0]["terminality"], "unknown")
+        self.assertEqual(followup["deliveries"][0]["task_assessment"], "accepted")
+        self.assertEqual(followup["selected_recovery_outcomes"], [])
 
     def test_pre_model_refusal_stays_unknown_without_a_matched_delivery(self):
         item = self.observation()

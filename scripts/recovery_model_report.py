@@ -228,6 +228,8 @@ def compile_report(workflow_report, observations, recovery_actions=None):
         summary["recovery_states"] = dict(summary["recovery_states"])
     action_rows = []
     action_coverage = collections.Counter()
+    reissue_edges = collections.Counter(action["related_event"] for action in recovery_actions or []
+                                        if action["action"] == "event_reissue")
     for action in recovery_actions or []:
         workflow = events.get(action["event"])
         candidates = ([row for row in workflow["deliveries"] if row["delivery"] == action["delivery"]]
@@ -241,10 +243,51 @@ def compile_report(workflow_report, observations, recovery_actions=None):
         row = dict(action=action, workflow_present=workflow is not None,
                    delivery_join="matched" if candidates else "missing",
                    attempt_join=attempt_join)
+        if action["action"] == "event_reissue":
+            related = action["related_event"]
+            edge_count = reissue_edges[related]
+            followup = events.get(related)
+            if edge_count != 1:
+                row["followup"] = dict(event_join="ambiguous", deliveries=[],
+                                       selected_recovery_outcomes=[])
+            elif followup is None:
+                row["followup"] = dict(event_join="missing", deliveries=[],
+                                       selected_recovery_outcomes=[])
+            else:
+                followup_deliveries = []
+                exact_deliveries = set()
+                for item in followup["deliveries"]:
+                    settlement = item.get("settlement") or {}
+                    status = settlement.get("status")
+                    terminality = ("committed" if status == "committed" else
+                                   "failed" if status == "failed" else "unknown")
+                    delivery_row = dict(delivery=item["delivery"], attempt=item.get("attempt"),
+                                        terminality=terminality,
+                                        task_assessment=followup.get("assessment", "unknown"))
+                    followup_deliveries.append(delivery_row)
+                    if item.get("delivery"):
+                        exact_deliveries.add((item["delivery"], item.get("attempt")))
+                selected = []
+                for report_row in rows:
+                    observation = report_row["observation"]
+                    if (observation["event"] == related and observation["delivery"] is not None
+                            and report_row["workflow_present"]
+                            and report_row["delivery_join"] == "matched"
+                            and report_row["attempt_join"] == "matched"
+                            and (observation["delivery"], observation["attempt"]) in exact_deliveries):
+                        selected.append(dict(delivery=observation["delivery"],
+                                             attempt=observation["attempt"],
+                                             phase=observation["phase"],
+                                             outcome=observation["outcome"],
+                                             recovery_state=observation["recovery_state"]))
+                row["followup"] = dict(event_join="matched",
+                                       task_assessment=followup.get("assessment", "unknown"),
+                                       deliveries=followup_deliveries,
+                                       selected_recovery_outcomes=selected)
         action_rows.append(row)
         action_coverage[row["delivery_join"]] += 1
         action_coverage["attempt_" + attempt_join] += 1
-    return dict(schema="cairn.recovery-model-report/3", coverage=dict(coverage),
+    return dict(schema="cairn.recovery-model-report/4", coverage=dict(coverage),
                 phases=dict(sorted(by_phase.items())),
                 recovery_action_coverage=dict(action_coverage),
                 recovery_actions=action_rows,

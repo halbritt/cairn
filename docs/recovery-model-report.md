@@ -2,7 +2,7 @@
 
 `scripts/recovery_model_report.py` joins a local
 `cairn.workflow-model-report/1` file with selected, payload-free recovery
-observations. The `cairn.recovery-model-report/3` result requires exact event,
+observations. The `cairn.recovery-model-report/4` result requires exact event,
 delivery **and attempt** identity to join a provider turn, and counts a joined
 turn once per phase even when multiple observations share it. Missing provider
 evidence remains unknown. The report does not infer a failure from a log substring,
@@ -69,6 +69,20 @@ null attempt stays unjoined at the attempt level; the report never borrows an
 attempt from prior history. Recovery-action rows are reported separately from
 recipient model usage and accepted task outcomes. The two instrumented actions
 do not cover manual/off-band work or every delivery lifecycle transition.
+
+For a `event_reissue`, the report follows its exact `related_event_id` into the
+workflow report. It emits the follow-up event's delivery refs, each delivery's
+committed/failed/unknown settlement status, and the event's selected task
+assessment as separate fields. It also includes selected recovery observations
+only when their event, delivery and exact attempt all match that follow-up
+workflow. A missing event stays unmatched; if multiple reissue rows claim the
+same related event, the edge is ambiguous and no follow-up result is attributed.
+Missing attempt or settlement evidence remains unknown. A committed delivery
+settlement means the handler accepted the settlement command; it does not mean
+the task succeeded. The assessment and recovery observation are selected
+metadata, not independent proof of task quality. This link makes retained
+follow-up evidence visible; it does not measure production recovery prevalence,
+provider work or time-to-recovery.
 
 Prepare a private `cairn.recovery-evidence/1` JSON file from an authorized
 exact operation, attempt, and state observation. For example:
