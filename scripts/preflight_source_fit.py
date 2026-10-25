@@ -16,7 +16,14 @@ from check_note_transport import operator
 from trial_task_eval import TrialStore, TRIAL_REPO, load_hook
 
 
-def run_preflight(binary, provider_callback=None, *, panel_path=PANEL):
+def hook_configuration(active_store, state_dir, harness='claude'):
+    return dict(cairn=str(active_store.binary), socket=str(active_store.socket),
+                token_file=str(active_store.token_file), repo=TRIAL_REPO,
+                state_dir=str(state_dir), context_bytes=9500,
+                harness=harness, recall_mode='agent_tools', semantic_fallback=True)
+
+
+def run_preflight(binary, provider_callback=None, *, panel_path=PANEL, harness='claude'):
     panel_path = Path(panel_path)
     panel = json.loads(panel_path.read_text())
     manifest = validate(panel, panel_path)
@@ -39,11 +46,7 @@ def run_preflight(binary, provider_callback=None, *, panel_path=PANEL):
             def inspect(case, arm, active_store, prompt):
                 state = root / 'states' / case['id'] / arm
                 state.mkdir(parents=True)
-                config = dict(cairn=str(active_store.binary), socket=str(active_store.socket),
-                              token_file=str(active_store.token_file), repo=TRIAL_REPO,
-                              state_dir=str(state), context_bytes=9500,
-                              harness='claude', recall_mode='agent_tools',
-                              semantic_fallback=True)
+                config = hook_configuration(active_store, state, harness)
                 event = dict(hook_event_name='UserPromptSubmit', cwd=str(root),
                              session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()),
                              prompt=prompt)
