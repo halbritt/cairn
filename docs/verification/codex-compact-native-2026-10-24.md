@@ -94,10 +94,43 @@ automatic replay occurs.
 
 This is a provider-free transport and Store result, not accepted model work.
 The threshold and usage are scripted; no external provider or provider usage
-was observed. It proves that Codex 0.164.0 can automatically compact during a
-live turn, and characterizes the current coordination hook refusal when the
-compact SessionStart lacks a turn ID. It does not prove that a same-turn owner
+was observed. The run used the installed Codex 0.164.0 binary identified
+below; it demonstrates that this binary can automatically compact during a
+live turn and characterizes the coordination hook refusal when its compact
+SessionStart lacks a turn ID. It does not prove that a same-turn owner
 binding can be recovered unambiguously from that callback, nor that the task
 continues successfully after it. Keep CAIRN-224 open for a safe correlation
 contract, paired accepted-task/provider-usage evidence, and effective
 canary/rollback.
+
+## Turn-ID prototype attribution correction (2026-10-25)
+
+The missing-`turn_id` observation above came from the installed binary at
+`/home/halbritt/.local/bin/codex` (SHA-256
+`abab8f847d2e2013560057cbe224d5c09eca0b8e48a3065cfb9a7d9f2e3867b1`). It did
+not invoke the separate owner-only prototype wrapper at
+`/home/halbritt/.cache/codex-cairn224-artifact/codex` (SHA-256
+`7ab3733aab2739d529bed8f4d7b1037f60935df6aeedf832555e086227744429`). An
+earlier run of the prototype fixture stopped with `StopIteration` before
+`PreCompact`; that run therefore did not observe the prototype's compact
+SessionStart payload. The prior missing-ID observation must not be attributed
+to the prototype.
+
+The prototype patch targets pinned Codex source `rust-v0.164.0` at commit
+`6aaac694803004a63c6f393d153c96d22521a6b9` (patch SHA-256
+`68bf00cdb0873d08eeac459e762f3590abd79f5e134150dc08e131d3a47f81cd`). Static
+source tracing shows automatic compact SessionStart is queued from the active
+turn path, `run_pending_session_start_hooks` receives that existing
+`TurnContext`, and the hook dispatcher receives its internal `sub_id`. The
+patch serializes that dispatcher-provided value as optional `turn_id` in the
+SessionStart hook input; it does not accept a caller-selected identity. On the
+pinned, patched source, all 184 `codex-hooks` tests passed, including the
+turn-ID-present/absent serializer tests, scoped input test, and generated
+schema fixture test. This establishes source and serializer behavior only.
+The patched app-server binary was not used in a native runtime fixture. A
+separate bounded rebuild of the patched app-server from this source tree was
+stopped at its 180-second timeout while compiling `codex-core`; it did not
+reach a build error or the V8 dependency. Thus compact callback propagation
+and continuation remain unverified. Cairn keeps
+the fail-closed `NATIVE_TURN_MISMATCH` behavior until that runtime boundary is
+verified; no task continuity or settlement is claimed here.
