@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import re
+import signal
 import threading
 import time
 import tempfile
@@ -14,6 +15,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+
+from trial_codex_turn_deadline import ActiveTurnDeadline
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('coordination', ROOT / 'integrations/lifecycle/coordination.py')
@@ -137,7 +140,47 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
     with tempfile.TemporaryDirectory(prefix='cairn-hook-review-') as cwd:
         process = subprocess.Popen([codex, 'app-server', '--stdio'], cwd=cwd,
             env=dict(os.environ, CODEX_HOME=str(config_home)), stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
+            start_new_session=True)
+        stop_lock = threading.Lock()
+        server_stopped = False
+
+        def process_group_exists():
+            try:
+                os.killpg(process.pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
+
+        def stop_server():
+            nonlocal server_stopped
+            with stop_lock:
+                if server_stopped:
+                    return
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline and process_group_exists():
+                    time.sleep(.02)
+                if process_group_exists():
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=1)
+                finally:
+                    server_stopped = True
         def receive():
             try:
                 for line in process.stdout:
@@ -151,29 +194,37 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
         reader = threading.Thread(target=receive, daemon=True)
         reader.start()
         sequence = 0
-        def rpc(method, params):
+        rpc_lock = threading.Lock()
+        def rpc(method, params, _timeout=None):
             nonlocal sequence
-            sequence += 1
-            process.stdin.write(json.dumps(dict(id=sequence, method=method, params=params)) + '\n')
-            process.stdin.flush()
-            deadline = time.monotonic() + remaining()
-            while True:
-                left = min(deadline - time.monotonic(), remaining())
-                if left <= 0:
-                    raise TimeoutError('Codex hook RPC timed out')
-                try:
-                    value = messages.get(timeout=left)
-                except queue.Empty as exc:
-                    if overall_deadline is not None and time.monotonic() >= overall_deadline:
-                        raise TimeoutError('Codex hook trial exceeded its active deadline') from exc
-                    raise TimeoutError('Codex hook RPC timed out') from exc
-                if 'transport_error' in value:
-                    raise RuntimeError(value['transport_error'])
-                if value.get('id') != sequence:
-                    continue
-                if 'error' in value:
-                    raise RuntimeError(f"Codex {method} refused: {value['error']}")
-                return value['result']
+            wait_limit = remaining(_timeout or 15)
+            if not rpc_lock.acquire(timeout=wait_limit):
+                raise TimeoutError('Codex app-server RPC lock timed out')
+            try:
+                sequence += 1
+                request_id = sequence
+                process.stdin.write(json.dumps(dict(id=request_id, method=method, params=params)) + '\n')
+                process.stdin.flush()
+                deadline = time.monotonic() + min(wait_limit, remaining(wait_limit))
+                while True:
+                    left = min(deadline - time.monotonic(), remaining(wait_limit))
+                    if left <= 0:
+                        raise TimeoutError('Codex hook RPC timed out')
+                    try:
+                        value = messages.get(timeout=left)
+                    except queue.Empty as exc:
+                        if overall_deadline is not None and time.monotonic() >= overall_deadline:
+                            raise TimeoutError('Codex hook setup deadline expired') from exc
+                        raise TimeoutError('Codex hook RPC timed out') from exc
+                    if 'transport_error' in value:
+                        raise RuntimeError(value['transport_error'])
+                    if value.get('id') != request_id:
+                        continue
+                    if 'error' in value:
+                        raise RuntimeError(f"Codex {method} refused: {value['error']}")
+                    return value['result']
+            finally:
+                rpc_lock.release()
         def next_notification(timeout=15):
             try:
                 return notifications.get(timeout=remaining(timeout))
@@ -182,6 +233,11 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
                     raise TimeoutError('Codex hook trial exceeded its active deadline') from exc
                 raise
         rpc.next_notification = next_notification
+        def arm_turn_deadline(thread_id, turn_id, seconds):
+            return ActiveTurnDeadline(seconds,
+                lambda: rpc('turn/cancel', dict(threadId=thread_id, turnId=turn_id), _timeout=2),
+                stop_server).start()
+        rpc.arm_turn_deadline = arm_turn_deadline
         try:
             rpc('initialize', dict(clientInfo=dict(name='cairn-hook-installer', version='1'), capabilities=dict(experimentalApi=True)))
             process.stdin.write(json.dumps(dict(method='initialized')) + '\n')
@@ -202,13 +258,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             if verify is not None:
                 verify(rpc)
         finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            stop_server()
             reader.join(timeout=1)
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream is not None:
