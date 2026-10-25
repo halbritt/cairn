@@ -109,6 +109,11 @@ and canonical declaration sizes without saving the request body. This adds
 OpenCode request-shape evidence for that adapter build; it does not measure
 provider usage, compare profiles, or establish an accepted task benefit.
 
+A follow-up [OpenCode retry/resume probe](opencode-request-sequence-2026-10-24.md)
+observed the outgoing declaration set through a local tool error, retry, and
+same-session resume. Its usage fields came from a scripted loopback response;
+it does not establish provider cache accounting or successful task outcomes.
+
 Reproduce locally with the existing private manifest:
 
 ```sh
