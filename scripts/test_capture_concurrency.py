@@ -120,6 +120,30 @@ class CaptureConcurrencyTests(unittest.TestCase):
             self.assertEqual(self.selector_calls, 1)
         self.assertEqual(future.result(), {})
 
+    def test_transcript_append_during_selection_remains_for_next_stop(self):
+        original_size = self.transcript.stat().st_size
+        with self.selecting() as future:
+            appended = ''.join(json.dumps(dict(type='response_item', payload=dict(
+                type='message', role=role, content=[dict(
+                    type='input_text' if role == 'user' else 'output_text',
+                    text=f'Appended migration follow-up {role}.')]
+            ))) + '\n' for _ in range(3) for role in ('user', 'assistant'))
+            with self.transcript.open('a') as transcript:
+                transcript.write(appended)
+        self.assertEqual(future.result(), {})
+
+        state = json.loads(self.path.read_text())
+        self.assertEqual(state['codex_capture_marker']['offset'], original_size)
+        self.assertEqual(state['captured_messages'], 6)
+
+        with patch.object(memory, 'select_json', return_value=dict(structured_output=dict(
+                checkpoint=None, workstream=None, memories=[]))) as selector:
+            memory.handle(self.f.mc, self.stop)
+        self.assertEqual(selector.call_count, 1, 'the appended turn was skipped after capture')
+        state = json.loads(self.path.read_text())
+        self.assertEqual(state['codex_capture_marker']['offset'], self.transcript.stat().st_size)
+        self.assertEqual(state['captured_messages'], 12)
+
     def test_new_binding_refuses_stale_capture_commit(self):
         with self.selecting() as future:
             result = memory.handle(self.f.mc, dict(self.prompt, workstream='New task'))
