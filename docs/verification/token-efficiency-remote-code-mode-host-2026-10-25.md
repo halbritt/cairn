@@ -92,8 +92,10 @@ before reconsidering admission.
 
 ## Codex 0.164 app-server tool-policy boundary
 
-Date: 2026-10-25. Source inspected: upstream tag `rust-v0.164.0`, commit
-`fe3b29455488c2e189e43ad5526a107900c5e1b7` in `~/git/codex-upstream`.
+Date: 2026-10-25. Source inspected: upstream annotated tag `rust-v0.164.0` in
+`~/git/codex-upstream`. Tag object:
+`fe3b29455488c2e189e43ad5526a107900c5e1b7`; peeled source commit:
+`6aaac694803004a63c6f393d153c96d22521a6b9`.
 Result: no supported app-server request can set the host's startup tool
 allowlist, so a retrieval-only actor cannot be established through the public
 app-server contract alone.
