@@ -86,3 +86,43 @@ The trace writer tests cover allowlisting, fixed stage classes, exclusive
 creation, private mode and external placement. The broader disposable
 `make test-integration` suite passed before the standalone actor path was
 enabled; it is separate from this experimental actor result.
+
+## Post-classifier bounded attempts
+
+The first post-classifier run was launched once through `make test-integration`
+with Codex 0.164.0, fake local identities, a fresh disposable PostgreSQL/API,
+`bwrap --unshare-net`, and a loopback Responses endpoint with
+`requires_openai_auth = false`. Its owner-only trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/actor-9b9201b2-bc7b-4428-939a-b9e667ee4963.jsonl`
+(0600). It records registration, exact-source read, handled settlement, and an
+advance tool call; the next fixed class is `tool_error` at
+`advance_tool_result`. The integration command failed at the actor fixture
+assertion and is not a pass.
+
+The retained disposable Store was restarted only for read-only inspection. It
+showed notice one `handled`, attempts 1, batch index 1; notice two `leased`,
+attempts 1, batch index 2; notices three and four `pending`, attempts 0. Thus the
+advance command committed the lease for notice two before Codex's tool result
+was classified. The retained Codex SQLite logs did not contain a uniquely
+identifiable advance tool-result object for local reclassification.
+
+One targeted provider-free retry used a fresh disposable PostgreSQL/API and the
+same pinned, network-isolated Codex fixture. Its private trace again reached
+`advance_tool_result` with `tool_error`; it did not retain a parse-stage code.
+That trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/actor-targeted-fa642378-55d8-4027-a30d-5c43742d5b50.jsonl`
+(0600).
+Source inspection found that the diagnostic write occurred after assertions in
+the advance branch, so a failed classification could skip the parse-stage row.
+The writer now persists one allowlisted parse-stage code (`is_error`,
+`outer_json_invalid`, `exit_nonzero`, `inner_json_invalid`,
+`schema_or_ok_invalid`, or `success`) immediately after parsing and before any
+advance assertion. Focused tests verify that a failing advance class preserves
+the mode-0600 stage row. This diagnostic change has not had another actor run.
+
+No actor continuation, successor source read, second/third disposition, terminal
+batch-limit result, same-turn completion, or accepted task outcome is established
+by these attempts. The only established Store transition is the first handled
+notice followed by one lease of notice two. `make test-integration` failed at
+the native actor assertion; the isolated retry also failed at the same boundary.
+CAIRN-221 remains In Progress.

@@ -139,7 +139,12 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
     trace = None
     classify_advance_tool_result = None
     if diagnostic_path is not None:
-        from native_notice_batch_diagnostics import AdvanceDiagnosticWriter, classify_advance_tool_result as classify
+        from native_notice_batch_diagnostics import (
+            AdvanceDiagnosticWriter,
+            advance_tool_result_stage,
+            classify_advance_tool_result as classify,
+        )
+        classify_advance_tool_result_stage = advance_tool_result_stage
         classify_advance_tool_result = classify
         trace = AdvanceDiagnosticWriter(diagnostic_path, root)
     actor_root = root / "workspace"
@@ -376,6 +381,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 elif scenario == "batch":
                     response_class = "read_notice"
                     result_classes = ["none"]
+                    result_stage = None
                     if batch_last_call_id is None:
                         batch_stage = "context_lookup"
                         current, context = batch_context()
@@ -429,6 +435,9 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                             item = batch_exec("advance", context["compact_handle"])
                         elif batch_action == "await_advance":
                             batch_stage = "advance_tool_result"
+                            result_stage = classify_advance_tool_result_stage(result)
+                            if trace is not None:
+                                trace.record_advance_result_stage(result_stage)
                             advance_class = classify_advance_tool_result(result)
                             if batch_item_index < 2:
                                 assert advance_class == "advance_successor"

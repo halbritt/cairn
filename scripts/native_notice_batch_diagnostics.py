@@ -32,6 +32,42 @@ _ACTOR_TRACE_STAGES = {
     "advance_tool_call", "advance_tool_result", "turn_terminal",
     "handler_error", "unknown",
 }
+_ADVANCE_RESULT_STAGES = {
+    "is_error", "outer_json_invalid", "exit_nonzero", "inner_json_invalid",
+    "schema_or_ok_invalid", "success",
+}
+
+
+def advance_tool_result_stage(tool_result):
+    """Return a fixed parse-stage code for an advance tool result."""
+    if not isinstance(tool_result, dict):
+        return "outer_json_invalid"
+    if tool_result.get("is_error") is True:
+        return "is_error"
+    output = tool_result.get("output")
+    if isinstance(output, list):
+        output = "".join(item.get("text", "") for item in output
+                         if isinstance(item, dict) and isinstance(item.get("text"), str))
+    if not isinstance(output, str):
+        return "outer_json_invalid"
+    try:
+        envelope = json.loads(output)
+    except (TypeError, ValueError):
+        return "outer_json_invalid"
+    exit_code = envelope.get("exit_code") if isinstance(envelope, dict) else None
+    if type(exit_code) is int and exit_code != 0:
+        return "exit_nonzero"
+    stdout = envelope.get("output") if isinstance(envelope, dict) else None
+    if not isinstance(stdout, str):
+        stdout = output
+    try:
+        response = json.loads(stdout)
+    except (TypeError, ValueError):
+        return "inner_json_invalid"
+    if (not isinstance(response, dict) or response.get("schema") != _RESPONSE_SCHEMA or
+            response.get("ok") is not True):
+        return "schema_or_ok_invalid"
+    return "success"
 
 
 def classify_advance_tool_result(tool_result):
@@ -142,6 +178,15 @@ class AdvanceDiagnosticWriter:
         row = {"operation": "actor_exchange", "response_class": response_class,
                "tool_result_classes": classes, "stage": stage}
         self.stream.write(json.dumps(row, sort_keys=True) + "\n")
+        self.stream.flush()
+        os.fsync(self.stream.fileno())
+
+    def record_advance_result_stage(self, result_stage):
+        """Persist the fixed parser boundary before the caller asserts on it."""
+        stage = (result_stage if isinstance(result_stage, str)
+                 and result_stage in _ADVANCE_RESULT_STAGES else "other")
+        self.stream.write(json.dumps({"operation": "advance_result_stage",
+                                      "stage_code": stage}, sort_keys=True) + "\n")
         self.stream.flush()
         os.fsync(self.stream.fileno())
 
