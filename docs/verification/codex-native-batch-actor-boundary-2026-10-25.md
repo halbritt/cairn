@@ -314,6 +314,30 @@ The same pinned source shows `run_turn_stop_hooks` runs in the turn path before
 completion, while the fixture's installed Stop hook is marked `"async": true`;
 the hook dispatcher schedules async commands without awaiting them. This
 confirms that `turn/completed` is not itself evidence that the wrapper started
-or finished. The prior run's missing hook metadata remains inconclusive. No
-fresh actor invocation followed this diagnostics change, and no batch
-continuation or accepted task outcome is established.
+or finished. The prior run's missing hook metadata remains inconclusive; the
+following section records the first run with these diagnostics.
+
+## One fresh run with wrapper-stage diagnostics
+
+One fresh fixture run used new synthetic `agent/alice` and `agent/carol`
+identities, a new disposable PostgreSQL/API, empty synthetic Codex auth, and
+outer `bwrap --unshare-net`. The fixture proceeded only after confirming its
+network namespace differed from the host and a TEST-NET connection failed with
+`ENETUNREACH`. It passed token identity, API, hook registration, launcher, and
+local Responses setup, then received the scripted registration message and
+observed the matching registration `turn/completed`.
+
+The run timed out at `registration_hook_wait`. Its owner-only trace is
+`/home/halbritt/.cache/cairn-221-native-batch-actor/actor-stopdiag-1792944549-3887117.jsonl`
+(mode `0600`). The fixed trace contains no `hook_probe` rows and no hook
+metadata or Stop marker was present in the private Codex profile. All four
+notice slots are `not_created`, the actor terminal is `not_started`, and
+read-only fresh-DB counts are `agent_session=0`, `agent_event=0`, and
+`agent_delivery=0`.
+
+This run did not observe the async Stop wrapper entering or completing. It
+narrows the missing marker to before the wrapper's first persisted stage, but
+does not distinguish Codex not dispatching the configured async command from a
+failure to launch or enter the wrapper process. No hook invocation failure,
+batch continuation, or accepted task outcome is inferred. No further actor
+attempt was made; CAIRN-221 remains In Progress.
