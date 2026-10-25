@@ -80,6 +80,89 @@ func TestRoutineNoticePolicyDefersOnlyItsOwnWakeAndKeepsRetryDeadline(t *testing
 	}
 }
 
+func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
+		Binding: "routine-arrivals", NativeSessionID: "routine-arrivals",
+		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
+			State: "idle", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	view, err := receiver.ForAgentSession(ref, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type publishedNotice struct {
+		event    AgentEvent
+		delivery AgentDelivery
+		deadline time.Time
+	}
+	items := make([]publishedNotice, 0, 3)
+	for i := 0; i < 3; i++ {
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
+			Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+			Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
+			NoticePolicy: &NoticeWakePolicyRequest{Version: 1, Urgency: "routine", DeferSeconds: 60}}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+		if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].AvailableAt == nil {
+			t.Fatalf("routine arrival %d status: %+v %v", i, status, err)
+		}
+		delivery := status.Deliveries[0]
+		deadline := event.CreatedAt.Add(60 * time.Second)
+		if !delivery.AvailableAt.Equal(deadline) {
+			t.Fatalf("routine arrival %d deadline slid from its own publication: got=%s want=%s",
+				i, delivery.AvailableAt, deadline)
+		}
+		for prior, item := range items {
+			current, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: item.event.EventID}, dest)
+			if err != nil || len(current.Deliveries) != 1 || current.Deliveries[0].DeliveryID != item.delivery.DeliveryID ||
+				current.Deliveries[0].AvailableAt == nil || !current.Deliveries[0].AvailableAt.Equal(item.deadline) {
+				t.Fatalf("arrival %d moved earlier delivery %d: %+v %v", i, prior, current, err)
+			}
+		}
+		items = append(items, publishedNotice{event: event, delivery: delivery, deadline: deadline})
+	}
+	// Advance only these disposable deadlines to test queue behavior without a
+	// minute-long wait. Every original event and delivery must remain eligible
+	// in position order after the burst.
+	for _, item := range items {
+		if _, err := sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, item.delivery.DeliveryID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, item := range items {
+		ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+		if err != nil || ready.EventID != item.event.EventID || ready.DeliveryID != item.delivery.DeliveryID {
+			t.Fatalf("eligible burst item %d was lost or reordered: %+v %v", i, ready, err)
+		}
+		claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref,
+			DeliveryID: item.delivery.DeliveryID, NativeTurnID: fmt.Sprintf("routine-arrival-%d", i), TurnExclusive: true}, dest)
+		if err != nil || claim.Attempt == nil || claim.Attempt.Delivery.Event.EventID != item.event.EventID ||
+			claim.Attempt.Delivery.Event.Ref != item.event.Ref {
+			t.Fatalf("eligible burst item %d claim changed identity: %+v %v", i, claim, err)
+		}
+		if _, err := view.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(),
+			DeliveryID: item.delivery.DeliveryID, LeaseID: claim.Attempt.Delivery.LeaseID,
+			Disposition: "failed", Code: "processing_failed"}, dest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(),
+			Session: ref, AttemptID: claim.Attempt.ID, Reason: "delivery_completed"}, dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("burst queue retained an unexpected extra delivery: %+v %v", ready, err)
+	}
+}
+
 func TestNoticePolicyValidationAndImmediateDefault(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)
