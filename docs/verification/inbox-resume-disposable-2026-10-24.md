@@ -84,3 +84,27 @@ and `--resume` separately; the joined source/attempt sequence remains unverified
 The experimental harness changes were discarded. Keep the issue open until a
 bounded fixture can establish a leased attempt before compaction and carry its
 exact source/ref across native resume without synthetic callbacks.
+
+### Source-supported lease boundary diagnosis
+
+A later single bounded loopback run used the supported order of operations: an
+empty native session registered and exited, a notice was published to its
+inbox, and the same Claude session resumed with `/compact`. Both the real
+`PreCompact` hook and compact `SessionStart` marker appeared in the native
+output. The fixture then stopped at its Store identity assertion: after the
+`--print` compaction process exited, the event was no longer `leased` with the
+same delivery ID and one attempt. The actor had not read or settled the source
+in this phase. The retained failure receipt is this exact assertion mismatch;
+the disposable runner removed the database and did not retain raw streams or
+credentials.
+
+The process boundary explains why this sequence cannot preserve the same live
+lease: `coordination.py` maps `SessionEnd` to `leave`; `finish_presence` flushes
+journaled commands, reconciles/releases any inbox attempt, then retires the
+native session. A `--print` `/compact` invocation exits before a separate
+`--resume` process starts, so the lease is closed at that boundary. The
+source/ref can be re-fetched on a later attempt, but that is not the same
+attempt. The fixture did not read or settle the notice after compaction and
+makes no no-duplicate-settlement claim. A persistent interactive native
+process spanning compaction and resumed work needs a separate controlled plan;
+this probe stops here.
