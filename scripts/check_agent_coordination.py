@@ -840,6 +840,19 @@ def check(binary, root, repo, api_call):
                     check_codex_compact_native(os.environ["CAIRN_CODEX_BINARY"],
                         root / ("native-compact-codex-" + scenario), json.loads(config.read_text()),
                         api_call, candidate_root, scenario=scenario)
+                codex_entry = os.environ.get("CAIRN_CODEX_ENTRY")
+                codex_root = os.environ.get("CAIRN_CODEX_ROOT")
+                if codex_entry and codex_root:
+                    from check_codex_full_inbox_native import check as check_codex_full_inbox_native
+                    route_config = dict(json.loads(config.read_text()),
+                        cairn=str(candidate_root / "bin/cairn"),
+                        socket=str(root / "api.sock"), token_file=str(root / "carol.token"))
+                    check_codex_full_inbox_native(
+                        binary=os.environ["CAIRN_CODEX_BINARY"],
+                        root=root / "native-full-inbox-codex",
+                        config=route_config, api_call=api_call,
+                        candidate_root=candidate_root, sandbox_auth_file=None,
+                        turn_timeout=120, codex_entry=codex_entry, codex_root=codex_root)
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")
