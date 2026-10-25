@@ -9,6 +9,38 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestOrdinaryNativeTurnClaimBindsSelectedDelivery(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-prompt", NativeSessionID: "native-prompt", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := SessionInboxClaim{RequestID: uuid.NewString(), Session: ref, NativeTurnID: "ordinary-codex-turn"}
+	got, err := receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || got.Attempt == nil || got.Attempt.NativeTurnID != claim.NativeTurnID {
+		t.Fatalf("ordinary turn claim: %+v %v", got, err)
+	}
+	status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+	if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].DeliveryID != got.Attempt.Delivery.DeliveryID {
+		t.Fatalf("claim did not select queued delivery: %+v %v", status, err)
+	}
+	again, err := receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || again.Attempt == nil || again.Attempt.ID != got.Attempt.ID || again.Attempt.NativeTurnID != claim.NativeTurnID {
+		t.Fatalf("ordinary turn retry changed its binding: %+v %v", again, err)
+	}
+	exclusive := claim
+	exclusive.RequestID = uuid.NewString()
+	exclusive.TurnExclusive = true
+	_, err = receiver.ClaimSessionInbox(ctx, exclusive, dest)
+	requireCode(t, err, "INVALID_REQUEST")
+}
+
 func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)

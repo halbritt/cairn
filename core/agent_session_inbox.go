@@ -150,12 +150,13 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 	if validID(req.RequestID) != nil {
 		return out, failure("INVALID_REQUEST", "stable native inbox claim UUID required")
 	}
-	if (req.DeliveryID == "") != (req.NativeTurnID == "") ||
-		(req.DeliveryID != "" && (validID(req.DeliveryID) != nil || strings.TrimSpace(req.NativeTurnID) == "" || len(req.NativeTurnID) > 256 || strings.ContainsRune(req.NativeTurnID, 0))) {
-		return out, failure("INVALID_REQUEST", "a native wake claim requires both an exact delivery UUID and a bounded native turn ID")
+	if (req.DeliveryID != "" && validID(req.DeliveryID) != nil) ||
+		(req.NativeTurnID != "" && (strings.TrimSpace(req.NativeTurnID) == "" || len(req.NativeTurnID) > 256 || strings.ContainsRune(req.NativeTurnID, 0))) ||
+		(req.DeliveryID != "" && req.NativeTurnID == "") {
+		return out, failure("INVALID_REQUEST", "a native turn ID must be bounded, and an exact delivery claim requires its native turn ID")
 	}
-	if req.TurnExclusive && req.NativeTurnID == "" {
-		return out, failure("INVALID_REQUEST", "an exclusive turn binding requires the pinned native turn ID of a request-owned turn")
+	if req.TurnExclusive && (req.NativeTurnID == "" || req.DeliveryID == "") {
+		return out, failure("INVALID_REQUEST", "an exclusive turn binding requires an exact delivery and its native turn ID")
 	}
 	// A pinned-but-unproven turn keeps its 048 semantics: the binding is
 	// valid for delivery identity, but without an explicit exclusivity

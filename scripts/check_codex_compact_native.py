@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -65,6 +66,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     home = root / "home"
     root.mkdir(mode=0o700)
     shutil.copytree(source_home, home)
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
+                    home / "coordination/coordination.py")
 
     # All candidate bindings point into this private copy and disposable API.
     for rel in ("ordinary/config.json", "coordination/bindings/codex-one.json"):
@@ -90,6 +93,17 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             return {key: replace_paths(item) for key, item in value.items()}
         return value
     settings = replace_paths(settings)
+    metadata_path = root / "hook-metadata.jsonl"
+    stop_complete_path = root / "registration-stop-complete.json"
+    metadata_wrapper = Path(__file__).with_name("record_codex_hook_metadata.py").resolve()
+    for groups in settings.get("hooks", {}).values():
+        for group in groups:
+            for hook in group.get("hooks", []):
+                original = hook.get("command", "")
+                if "coordination.py" in original and "--config" in original:
+                    hook["command"] = shlex.join([sys.executable, str(metadata_wrapper),
+                        "--metadata", str(metadata_path), "--stop-complete",
+                        str(stop_complete_path), "--", *shlex.split(original)])
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     settings_path.chmod(0o600)
 
@@ -149,8 +163,11 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         assert completion["state"] == "handled" and completion["result"]["version"] == 1
         source = completion["result"]
     native_id = None
+    registration_turn_id = None
+    native_turn_id = None
     event = None
     delivery_id = None
+    attempt_id = None
     requests, failures, results = [], [], {}
     finished = threading.Event()
     event_owner = "alice" if scenario == "notice" else "bob"
@@ -160,7 +177,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             pass
 
         def do_POST(self):
-            nonlocal event, delivery_id
+            nonlocal event, delivery_id, attempt_id
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 assert self.path == "/v1/responses" and 0 < size <= 4_000_000, "unexpected request path or size"
@@ -171,29 +188,17 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                                 if item.get("type") == "custom_tool_call_output"})
 
                 if event is None:
-                    agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
-                    target = next(row for row in agents if row["native_session_id"] == native_id)
-                    assert target["metadata"]["state"] == "busy", "native Codex session was not busy"
-                    if scenario == "notice":
-                        event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
-                            "--to", target["inbox"], "--kind", "notice", "--version",
-                            str(source["version"]), source["record_id"])
-                    else:
-                        event = api_call("bob", "publish", "--request-id", str(uuid.uuid4()),
-                            "--to", target["inbox"], "--kind", "response", "--version",
-                            str(source["version"]), "--causation-id", causal_request["event_id"],
-                            source["record_id"])
-                        assert event["causation_id"] == causal_request["event_id"]
-                        assert event["ref"] == source
-                    delivery_id = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
-                        content=[dict(type="output_text", text="Local fixture initial turn completed.", annotations=[])])
+                        content=[dict(type="output_text", text="Local fixture registration turn completed.", annotations=[])])
                 else:
                     context_paths = list((home / "coordination/state/codex-one/inbox").glob("*.json"))
                     context_path = next(path for path in context_paths
                         if json.loads(path.read_text()).get("event_id") == event["event_id"])
                     context = json.loads(context_path.read_text())
                     attempt = context["attempt_id"]
+                    attempt_id = attempt
+                    assert context.get("native_turn_id") == native_turn_id, \
+                        "compact claim did not retain the exact app-server turn ID"
                     assert context["event_id"] == event["event_id"], "compact context changed event identity"
                     assert context["delivery_id"] == delivery_id, "compact context changed delivery identity"
                     assert context["source"] == event["ref"], "compact context changed source reference"
@@ -204,8 +209,11 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                         assert event["causation_id"] == causal_request["event_id"]
                     claimed = api_call("carol", "session-inbox-claim", raw=True,
                         body=json.dumps(dict(request_id=attempt, session=dict(
-                            agent_id=context["agent_id"], execution_id=context["execution_id"]))))["attempt"]
+                            agent_id=context["agent_id"], execution_id=context["execution_id"]),
+                            native_turn_id=native_turn_id)))["attempt"]
                     assert claimed["attempt_id"] == attempt, "session claim changed attempt identity"
+                    assert claimed.get("native_turn_id") == native_turn_id, \
+                        "Store claim did not retain the actual compact turn ID"
                     assert claimed["session"] == dict(agent_id=context["agent_id"],
                         execution_id=context["execution_id"]), "session claim changed session identity"
                     assert claimed["delivery"]["delivery_id"] == delivery_id, "session claim changed delivery identity"
@@ -260,16 +268,61 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         'request_max_retries = 0\nstream_max_retries = 0\n', encoding="utf-8")
     (home / "config.toml").chmod(0o600)
     def verify(rpc):
-        nonlocal native_id
+        nonlocal native_id, registration_turn_id, native_turn_id, event, delivery_id
         started = rpc("thread/start", dict(cwd=str(root), model=MODEL,
             approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
         native_id = started["thread"]["id"]
-        rpc("turn/start", dict(threadId=native_id,
+        registration_turn = rpc("turn/start", dict(threadId=native_id,
+            input=[dict(type="text", text="Register the native fixture session.", text_elements=[])]))
+        registration_turn_id = registration_turn["turn"]["id"]
+        registration_deadline = time.monotonic() + 30
+        target = None
+        while time.monotonic() < registration_deadline and not stop_complete_path.exists():
+            agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
+            target = next((row for row in agents if row["native_session_id"] == native_id), None)
+            time.sleep(.05)
+        assert stop_complete_path.exists(), "Codex registration Stop hook did not complete"
+        stop_metadata = json.loads(stop_complete_path.read_text(encoding="utf-8"))
+        assert stop_metadata["event"] == "Stop" and stop_metadata["turn_id"] == registration_turn_id, \
+            "completed Stop hook did not identify the registration turn"
+        assert stop_metadata.get("exit_code") == 0, \
+            "Codex registration Stop hook returned nonzero: " + json.dumps({
+                key: stop_metadata.get(key) for key in ("exit_code", "output_status", "output_code", "stderr_bytes", "stderr_code")})
+        agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
+        target = next((row for row in agents if row["native_session_id"] == native_id), None)
+        assert target is not None, "Codex native session was not registered"
+        if scenario == "notice":
+            event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                "--to", target["inbox"], "--kind", "notice", "--version",
+                str(source["version"]), source["record_id"])
+        else:
+            event = api_call("bob", "publish", "--request-id", str(uuid.uuid4()),
+                "--to", target["inbox"], "--kind", "response", "--version",
+                str(source["version"]), "--causation-id", causal_request["event_id"],
+                source["record_id"])
+            assert event["causation_id"] == causal_request["event_id"]
+            assert event["ref"] == source
+        delivery_id = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]["delivery_id"]
+        turn = rpc("turn/start", dict(threadId=native_id,
             input=[dict(type="text", text="Reply OK to begin local fixture.", text_elements=[])]))
+        native_turn_id = turn["turn"]["id"]
         deadline = time.monotonic() + 60
         while not finished.wait(.1):
             assert not failures, failures
             assert time.monotonic() < deadline, "Codex compact loopback did not read and settle"
+        terminal_deadline = time.monotonic() + 30
+        compact_stop = {}
+        while time.monotonic() < terminal_deadline:
+            if stop_complete_path.exists():
+                compact_stop = json.loads(stop_complete_path.read_text(encoding="utf-8"))
+                if compact_stop.get("turn_id") == native_turn_id:
+                    break
+            time.sleep(.05)
+        assert compact_stop.get("event") == "Stop" and compact_stop.get("turn_id") == native_turn_id, \
+            "Codex compact turn did not reach its observed native Stop boundary"
+        assert compact_stop.get("exit_code") == 0, \
+            "Codex compact Stop hook returned nonzero: " + json.dumps({
+                key: compact_stop.get(key) for key in ("exit_code", "output_status", "output_code", "stderr_bytes", "stderr_code")})
 
     thread.start()
     previous_inbox_root = os.environ.get("CAIRN_INBOX_ROOT")
@@ -278,11 +331,25 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         installer.trust_codex_hooks(home, settings, command, verify=verify, codex_binary=binary)
         assert not failures, failures
         assert event is not None and len(requests) == 4
+        hook_metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines() if line]
+        assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id
+                   for row in hook_metadata), "hook metadata did not observe the exact compact turn"
+        scripted_response_ids = ["resp_" + str(i) for i in range(1, len(requests) + 1)]
         print(json.dumps(dict(result="PASS", native_session_registered=True, scenario=scenario,
             kind=event["kind"], causal_request_id=causal_request["event_id"] if causal_request else None,
+            event_id=event["event_id"], delivery_id=delivery_id,
+            attempt_id=attempt_id, native_session_id=native_id,
+            registration_turn_id=registration_turn_id,
+            native_turn_id=native_turn_id, native_turn_joined=True,
+            registration_turn_terminal_observed=True,
+            compact_turn_terminal_observed=True,
             exact_source_bytes=len(SOURCE_BODY.encode()), exact_source_read=True,
             explicit_handled_settlement=True, attempt_count=1, model=MODEL,
-            request_count=len(requests), provider="loopback_fixture", provider_call=False), sort_keys=True))
+            request_count=len(requests), scripted_response_ids=scripted_response_ids,
+            model_decision="scripted fixture sequence",
+            compact_turn_hook_observed=True,
+            provider_response_ids_are_scripted=True,
+            provider_usage_observed=False, provider="loopback_fixture", provider_call=False), sort_keys=True))
     finally:
         if previous_inbox_root is None:
             os.environ.pop("CAIRN_INBOX_ROOT", None)
