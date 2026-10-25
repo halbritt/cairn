@@ -120,3 +120,28 @@ unfinished handoff at PreCompact. No suppression was added. The reachable
 PreCompact and SessionEnd recovery boundaries remain unchanged, and the existing
 Codex hook regression remains the only direct sequence evidence for an ignored
 wake followed by correction/handoff capture.
+
+## Native taskless-wake acceptance boundary
+
+The seven-case panel is not a native-hook evaluation: it calls the capture
+function with synthetic dialogue and a local selector stub. Its correction,
+unfinished-handoff, unchanged-snapshot, quota-refusal, and source-refusal rows
+are regression controls for candidate classification and failure preservation;
+they do not show what an installed agent does after a taskless wake. Likewise,
+`test_stop_ignores_exact_wake_then_captures_later_correction_and_handoff`
+drives the Codex hook handler with a temporary transcript. It verifies the
+transcript-filter and capture-state behavior, not an installed Codex wake or a
+provider-accepted correction.
+
+The missing live sequence is narrowly defined: in one native session, start
+from an actually confirmed capture; deliver a real taskless wake through the
+installed hook path; verify that no selector runs and the confirmed capture
+marker is unchanged; then deliver a real owner correction or unfinished
+handoff in that same session and verify that capture runs once and preserves
+the selected write/checkpoint. The native Claude fixture cannot currently
+produce this sequence: its supported local run reaches SessionEnd once, but
+does not provide a deterministic native PreCompact followed by continuation
+with the same transcript and session identity. A hand-built hook event or a
+seeded marker would fake the missing precondition. Until a host-supported
+native route exposes the sequence, the live taskless-wake acceptance criterion
+is unverified, runtime admission remains unchanged, and CAIRN-222 stays open.
