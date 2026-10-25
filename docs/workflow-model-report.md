@@ -21,6 +21,12 @@ recovery report requires the same event, delivery and attempt before joining
 model work. Older reports without attempt references remain usable for other
 dimensions but cannot prove that join.
 
+Each delivery also reports `intent_journal` as `present` or `missing`, with
+matching `coverage.intent_journal_present` and
+`coverage.intent_journal_missing` counts. A present journal with no completion
+data remains distinct from an absent journal; neither state supplies evidence
+of provider work or a zero-response turn.
+
 ```sh
 uv run --with tiktoken==0.12.0 python scripts/workflow_model_report.py \
   --since 2026-10-21T00:00:00Z --until 2026-10-24T00:00:00Z \

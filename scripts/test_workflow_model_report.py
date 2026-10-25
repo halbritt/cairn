@@ -108,6 +108,25 @@ class WorkflowReportTests(unittest.TestCase):
         self.assertIsNone(delivery["settlement"]["disposition"])
         self.assertEqual(result["workflows"][0]["assessment"], "unknown")
 
+    def test_absent_and_present_empty_intent_journals_are_distinguished(self):
+        absent_event = "11111111-1111-4111-8111-111111111111"
+        empty_event = "22222222-2222-4222-8222-222222222222"
+        self.context("absent", absent_event, "notice", turn="unretained-absent")
+        self.context("empty", empty_event, "notice", turn="unretained-empty")
+        (self.root / "binding/intents/empty.json").write_text("{}")
+
+        result = self.report.compile_report([], self.root)
+        deliveries = {row["event"]: row["deliveries"][0] for row in result["workflows"]}
+        absent = deliveries[self.report.opaque(absent_event)]
+        empty = deliveries[self.report.opaque(empty_event)]
+        self.assertEqual(absent["intent_journal"], "missing")
+        self.assertEqual(empty["intent_journal"], "present")
+        for delivery in (absent, empty):
+            self.assertIsNone(delivery["provider"])
+            self.assertIsNone(delivery["settlement"]["status"])
+        self.assertEqual(result["coverage"]["intent_journal_missing"], 1)
+        self.assertEqual(result["coverage"]["intent_journal_present"], 1)
+
     def test_selected_sender_metadata_joins_without_emitting_source_ids(self):
         event = "11111111-1111-4111-8111-111111111111"
         source = self.root / "links.json"

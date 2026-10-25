@@ -152,7 +152,9 @@ def matching_turn(context, index):
 
 def journal_for(path):
     journal_path = path.parent.parent / "intents" / (path.stem + ".json")
-    return json.loads(journal_path.read_text()) if journal_path.exists() else {}
+    if not journal_path.exists():
+        return {}, False
+    return json.loads(journal_path.read_text()), True
 
 
 def settlement(journal):
@@ -244,7 +246,8 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
         context["binding"] = path.parent.parent.name
         joined, join_basis = matching_turn(context, index)
         coverage["turn_" + join_basis] += 1
-        journal = journal_for(path)
+        journal, journal_present = journal_for(path)
+        coverage["intent_journal_present" if journal_present else "intent_journal_missing"] += 1
         source = context.get("source") or {}
         version = source.get("version")
         row = dict(delivery=opaque(context["delivery_id"]), attempt=attempt_ref(context.get("attempt_id")),
@@ -252,6 +255,7 @@ def compile_report(sessions, state_root, events=None, assessments=None, max_deli
                    admission="context_retained", turn_join=join_basis,
                    source=dict(record=opaque(source["record_id"]) if isinstance(source.get("record_id"), str) else None,
                                version=version if type(version) is int and version > 0 else None),
+                   intent_journal="present" if journal_present else "missing",
                    settlement=settlement(journal), provider=None)
         if joined:
             session, turn = joined
