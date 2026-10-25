@@ -12,6 +12,9 @@ import threading
 import time
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codex_recovery_fixture_report import compile_report as compile_recovery_report
+
 
 MODEL = "gpt-6-luna"
 SOURCE_BODY = "Codex compact notice exact source. " + ("retain this whole source. " * 260)
@@ -169,6 +172,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     delivery_id = None
     attempt_id = None
     requests, failures, results = [], [], {}
+    failed_completion = None
     finished = threading.Event()
     event_owner = "alice" if scenario == "notice" else "bob"
 
@@ -177,7 +181,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             pass
 
         def do_POST(self):
-            nonlocal event, delivery_id, attempt_id
+            nonlocal event, delivery_id, attempt_id, failed_completion
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 assert self.path == "/v1/responses" and 0 < size <= 4_000_000, "unexpected request path or size"
@@ -217,6 +221,25 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     assert claimed["session"] == dict(agent_id=context["agent_id"],
                         execution_id=context["execution_id"]), "session claim changed session identity"
                     assert claimed["delivery"]["delivery_id"] == delivery_id, "session claim changed delivery identity"
+                    if failed_completion is None:
+                        # Exercise a real, state-preserving Store refusal on the
+                        # claimed attempt. The valid compact settlement below
+                        # is the same-intent recovery path.
+                        refusal_request = str(uuid.uuid4())
+                        api_call("carol", "ack", "--request-id", refusal_request,
+                            "--agent-id", context["agent_id"], "--execution-id", context["execution_id"],
+                            "--lease", str(uuid.uuid4()), "--disposition", "handled",
+                            delivery_id, expected="STALE_LEASE")
+                        still_leased = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+                        assert still_leased["state"] == "leased" and still_leased["attempts"] == 1, \
+                            "refused completion changed the admitted delivery"
+                        failed_completion = dict(request_id=refusal_request,
+                            code="STALE_LEASE", delivery_id=delivery_id,
+                            event_id=event["event_id"], attempt_id=attempt,
+                            native_turn_id=native_turn_id,
+                            admission_state=claimed["delivery"]["state"],
+                            store_attempt_id=claimed["attempt_id"],
+                            store_attempt_native_turn_id=claimed.get("native_turn_id"))
                     serialized = json.dumps(request.get("input"))
                     handle = context.get("compact_handle")
                     assert isinstance(handle, str) and handle in serialized, "compact handle absent from native request"
@@ -335,6 +358,18 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         assert any(row.get("event") == "UserPromptSubmit" and row.get("turn_id") == native_turn_id
                    for row in hook_metadata), "hook metadata did not observe the exact compact turn"
         scripted_response_ids = ["resp_" + str(i) for i in range(1, len(requests) + 1)]
+        final_delivery = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+        native_report = compile_recovery_report(dict(schema="cairn.codex-recovery-probe/1",
+            refusal=failed_completion,
+            settlement=dict(event_id=event["event_id"], delivery_id=delivery_id,
+                attempt_id=attempt_id, native_turn_id=native_turn_id,
+                state=final_delivery["state"], attempts=final_delivery["attempts"],
+                code=final_delivery.get("code"))))
+        report_json = json.dumps(native_report)
+        assert native_report["provider_turn"] == dict(status="not_observed", responses=None, usage=None)
+        assert all(value not in report_json for value in
+                   (event["event_id"], delivery_id, attempt_id, native_turn_id)), \
+            "recovery report retained a raw Store or native-turn identifier"
         print(json.dumps(dict(result="PASS", native_session_registered=True, scenario=scenario,
             kind=event["kind"], causal_request_id=causal_request["event_id"] if causal_request else None,
             event_id=event["event_id"], delivery_id=delivery_id,
@@ -349,7 +384,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             model_decision="scripted fixture sequence",
             compact_turn_hook_observed=True,
             provider_response_ids_are_scripted=True,
-            provider_usage_observed=False, provider="loopback_fixture", provider_call=False), sort_keys=True))
+            provider_usage_observed=False, provider="loopback_fixture", provider_call=False,
+            recovery_report=native_report), sort_keys=True))
     finally:
         if previous_inbox_root is None:
             os.environ.pop("CAIRN_INBOX_ROOT", None)

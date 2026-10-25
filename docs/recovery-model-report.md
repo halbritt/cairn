@@ -94,3 +94,43 @@ run `uv run --with tiktoken==0.12.0 python scripts/eval_recovery_model_panel.py`
 It makes no provider call and does not claim that production reminders were
 deduplicated. CAIRN-226 still requires selected live failure evidence,
 state-aware runtime reminder verification and accepted recovery outcomes.
+
+`scripts/check_codex_compact_native.py` also emits a bounded
+`cairn.recovery-model-report/3` fixture report from a live disposable Store
+event. After the observed Codex turn claims the delivery, the fixture submits
+one acknowledgement with a deliberately invalid lease, verifies `STALE_LEASE`
+and confirms that the delivery remains leased with one attempt, then handles it
+through the valid compact handle. The adapter requires exact event, delivery,
+Store attempt and observed native-turn identity across refusal and settlement.
+It emits only opaque delivery/attempt/turn references, the bounded refusal
+code and final disposition. `provider_turn.responses` and usage are null:
+the Codex endpoint is a scripted loopback and does not establish provider
+usage. The wrong-lease call is a fencing control, not an incident sample or a
+measurement of recovery work. `scripts/test_codex_recovery_fixture_report.py`
+checks mismatch refusal and null provider accounting without retaining payloads.
+Reproduce it with a private, offline candidate stage and a disposable
+PostgreSQL cluster:
+
+```sh
+python3 scripts/stage_token_efficiency_canary.py \
+  --destination "$HOME/.cache/cairn-token-efficiency-stages/recovery-probe" \
+  --codex-only --profile compact-inbox --snapshot-current-codex-config
+python3 -B scripts/check_codex_recovery_fixture_disposable.py \
+  --candidate-root "$HOME/.cache/cairn-token-efficiency-stages/recovery-probe"
+```
+
+The runner binds PostgreSQL to a private Unix socket with TCP disabled and
+Codex to the loopback scripted Responses endpoint. It prints only the
+redacted report. This probe exercises refusal and same-attempt recovery in the
+Store and observes a real Codex turn boundary, but it does not make a provider
+call, measure model response count, sample an incident, or assess task outcome.
+Verified on 2026-10-24 with the installed Codex 0.164 app-server: the exact
+`STALE_LEASE` refusal left one leased Store attempt; the same attempt then
+settled handled once. The report contained the opaque join references and
+unknown provider response/usage fields described above.
+
+The broad `make test-integration` run did not pass: it stopped at or near the
+notice-watcher leg. The retained test root was gone before the exact assertion
+could be recovered, so the failure attribution remains unknown. That leg's
+unconditional 60-second routine-notice pilot is under correction in CAIRN-220;
+this CAIRN-226 result does not claim a broad integration pass.
