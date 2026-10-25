@@ -2949,24 +2949,39 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     else:
         return ''
 
-    # Deduplicate an unchanged recovery prompt, but allow changed actionable
-    # instructions for the same attempt. Old attempt-only markers are retained
-    # conservatively because their former prompt revision is unknown.
+    # Deduplicate by the exact attempt, actionable state revision, and reminder
+    # kind. Keep the digest input stable: existing installations persist it as
+    # `sha256`, and changing its meaning would re-emit an unchanged reminder on
+    # the first turn after upgrade. Old attempt-only markers remain suppressed
+    # conservatively because their former state revision is unknown.
+    reminder_kind = 'turn_end'
     prior = state.get('inbox_ack_reminder_revision')
     if state.get('inbox_ack_reminded') == attempt_id:
         if not isinstance(prior, dict) or prior.get('attempt_id') != attempt_id:
             return ''
-    revision = hashlib.sha256(json.dumps(
+    state_revision = hashlib.sha256(json.dumps(
         dict(attempt_id=attempt_id, journal_state=journal_completion_state(config, attempt), reminder=reminder),
         sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
-    if isinstance(prior, dict) and prior.get('attempt_id') == attempt_id and prior.get('sha256') == revision:
-        return ''
+    if isinstance(prior, dict) and prior.get('attempt_id') == attempt_id:
+        prior_revision = prior.get('state_revision', prior.get('sha256'))
+        prior_kind = prior.get('reminder_kind')
+        if prior_revision == state_revision:
+            if prior_kind == reminder_kind:
+                return ''
+            if prior_kind is None:
+                # Migrate the pre-kind marker without emitting a duplicate.
+                state['inbox_ack_reminder_revision'] = dict(
+                    attempt_id=attempt_id, state_revision=state_revision,
+                    reminder_kind=reminder_kind)
+                write_state(path, state)
+                return ''
 
     renew_inbox(config, state, path, attempt)
     if attempt.get('lease_lapsed'):
         return ''
     state['inbox_ack_reminded'] = attempt_id
-    state['inbox_ack_reminder_revision'] = dict(attempt_id=attempt_id, sha256=revision)
+    state['inbox_ack_reminder_revision'] = dict(
+        attempt_id=attempt_id, state_revision=state_revision, reminder_kind=reminder_kind)
     state['delivered_since_idle'] = True
     if config.get('harness') == 'claude' and observation.get('native_turn_id'):
         state['active_prompt'] = dict(id=observation['native_turn_id'])
