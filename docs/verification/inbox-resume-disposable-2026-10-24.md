@@ -39,3 +39,48 @@ retention or accepted task outcome.
 Validation: a fresh disposable PostgreSQL run of this probe, `make check`,
 and `bash -n scripts/test-postgres.sh` passed locally. The repository-wide
 `make test-integration` suite was not rerun for this test-only addition.
+
+## Native Claude compaction/resume boundary
+
+Source review found two complementary but unjoined local fixtures. The native
+Claude lifecycle check in [`check_claude_lifecycle.py`](../../scripts/check_claude_lifecycle.py)
+resumes a session, sends the real `/compact` command, observes `PreCompact` and
+`SessionStart:compact`, then verifies a later `--resume`. Its stored checkpoint
+is a lifecycle handoff; it does not include an outstanding agent delivery or
+attempt. The native compact-inbox check in
+[`check_claude_compact_native.py`](../../scripts/check_claude_compact_native.py)
+uses an exact Store-backed notice/response source and verifies native read and
+settlement, but it completes that path in one CLI run without issuing `/compact`
+while the delivery is leased.
+
+The disposable CAIRN-224 resume probe verifies an outstanding native attempt,
+current mandatory source and checkpoint across PreCompact/compact/resume hooks,
+but those callbacks are synthetic. None of these fixtures establishes all of
+those properties in one actual Claude compaction/resume sequence. No native
+provider request was started for this follow-up, and no source, attempt, or hook
+state was injected to simulate the missing join. The next useful fixture must
+start from the real local API/Store, leave a native attempt unresolved while
+Claude processes `/compact`, resume the same session, and verify the exact
+source ref and attempt settle at most once. CAIRN-224 remains open pending that
+joined evidence and accepted task/provider/canary results.
+
+### Bounded joined native attempt probe
+
+A loopback-only composition was attempted with Claude Code 2.1.310, fresh
+private hook configuration, fixture-only API identities, disposable PostgreSQL,
+and a scripted localhost Messages endpoint. The existing native notice and
+response compact-inbox scenarios passed. In the added sequence, the first
+bounded CLI run (`--max-turns 1`) exited with status 1 before the fixture could
+verify an outstanding attempt. A single adjusted run (`--max-turns 2`) exited
+normally, but the Store event did not satisfy the required `leased` plus one
+attempt precondition. The probe stopped there; it did not invoke `/compact`,
+resume, or settle that event. The disposable cluster and fixture configuration
+were removed by the runner. No provider route was contacted and no raw stream
+or credential was retained.
+
+This is an inconclusive joined-probe setup result, not evidence that native
+compaction cannot occur. The existing native lifecycle check exercises `/compact`
+and `--resume` separately; the joined source/attempt sequence remains unverified.
+The experimental harness changes were discarded. Keep the issue open until a
+bounded fixture can establish a leased attempt before compaction and carry its
+exact source/ref across native resume without synthetic callbacks.
