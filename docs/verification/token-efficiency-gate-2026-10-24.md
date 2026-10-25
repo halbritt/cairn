@@ -148,6 +148,16 @@ gate counts that skip but keeps it incomplete until a verifiable capture
 observation and ordinary actor turn can be joined. No caller-selected zero-call
 field substitutes for that join.
 
+For a repeat skip, `capture_observation_ref` is currently checked only for UUID
+syntax; the gate does not dereference it against the local-only retained capture
+history. It is therefore a selected hook claim, not proof that a row exists or
+matches the workflow. The skip branch always records the missing native
+observation join as an incomplete problem, so an arbitrary well-formed UUID
+cannot make the panel ready. The retained capture observations documented in
+the [hook probe](capture-observation-hook-2026-10-24.md) verify capture
+instrumentation and local persistence, but do not establish a paired actor
+outcome, subscription billing, or savings.
+
 `ready_for_human_grade` means the mechanical panel is complete enough for an
 independent task grader to review. It does **not** mean a task passed. The
 output always states `independent_task_acceptance=unassessed` and
