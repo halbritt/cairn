@@ -853,6 +853,13 @@ def check(binary, root, repo, api_call):
                         config=route_config, api_call=api_call,
                         candidate_root=candidate_root, sandbox_auth_file=None,
                         turn_timeout=120, codex_entry=codex_entry, codex_root=codex_root)
+                    check_codex_full_inbox_native(
+                        binary=os.environ["CAIRN_CODEX_BINARY"],
+                        root=root / "native-full-inbox-codex-stall",
+                        config=route_config, api_call=api_call,
+                        candidate_root=candidate_root, sandbox_auth_file=None,
+                        turn_timeout=2, codex_entry=codex_entry, codex_root=codex_root,
+                        mode="stall")
         print("Native coordination: process ownership, death, resume, fork, model/task context and transcript exclusion passed")
         if os.environ.get("CAIRN_CODEX_BINARY"):
             print("Installed Codex first-turn hooks registered the actual native thread with a fixture-only provider")
