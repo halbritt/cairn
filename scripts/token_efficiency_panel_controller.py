@@ -73,6 +73,12 @@ CASE_ADAPTERS = {
                                          "target": "owner_new"}],
         "publishers": {}, "sessions": {"worker": "worker"},
     },
+    "unfinished_handoff": {
+        "sources": ["handoff_state"], "events": [],
+        "transitions": [{"phase": "before_resume", "action": "pause_after_source_check",
+                          "target": "handoff_state"}],
+        "publishers": {}, "sessions": {"worker": "worker"},
+    },
     "routine_burst_urgent_request": {
         "events": [{"id": event_id, "kind": "notice", "recipient": "worker"}
                    for event_id in ("routine_1", "routine_2", "routine_3")]
@@ -98,7 +104,7 @@ def case_name(workflow_id):
     require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
             and (parts[0] == "baseline" or
                  parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note", "meaningful_owner_correction")
+                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff")
                  and parts[0] in ("envelope", "batch", "combined")),
             "unsupported workflow")
     return parts[1]
@@ -108,7 +114,7 @@ def database_name(workflow_id):
     case = case_name(workflow_id)
     return (f"cairn_panel_{workflow_id.replace('.', '_')}"
             if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
-                        "meaningful_owner_correction")
+                        "meaningful_owner_correction", "unfinished_handoff")
             else f"cairn_panel_{case}")
 
 
@@ -326,6 +332,47 @@ def materialize_memory_sources(binary, socket, token, fixture_sources, names, in
                          "observed_writer": owner}
         families[family] = {"name": name, **ref}
     return records
+
+
+def verify_handoff_read(binary, socket, token, session, record, source, intent, repo, actor):
+    """Exercise an authenticated reader's search, whole pull, and exact history."""
+    indexed = call(binary, socket, token, ("agent", "search"),
+                   ("--repo", repo, "--task", intent["run_id"], "--run", intent["run_id"],
+                    "--tokens", "64000", actor["task"]), session=session)
+    require(indexed.get("schema") == "cairn.agent-search/1"
+            and indexed.get("status") == "READY"
+            and indexed.get("destination") == {"name": "hosted", "allow_local": False}
+            and indexed.get("selected") == [], "handoff index authorization changed")
+    matches = [row for row in indexed.get("index", [])
+               if row.get("record_id") == record["record_id"]]
+    require(len(matches) == 1, "handoff source missing or duplicated in worker index")
+    entry = matches[0]
+    expected_body_hash = hashlib.sha256(source["body"].encode("utf-8")).hexdigest()
+    require(entry.get("version") == record["version"]
+            and entry.get("class") == "A"
+            and entry.get("body_sha256") == expected_body_hash,
+            "worker index does not identify the exact handoff source")
+    expanded = call(binary, socket, token, ("agent", "pull"), body=json.dumps(
+        entry["pull_arguments"]), session=session)
+    selected = (expanded.get("selection") or {}).get("record") or {}
+    require(selected.get("record_id") == record["record_id"]
+            and selected.get("version") == record["version"]
+            and selected.get("body") == source["body"]
+            and expanded.get("span") is None
+            and expanded.get("source_extent", "whole") == "whole",
+            "worker did not read the exact whole handoff source")
+    history = call(binary, socket, token, ("agent", "history"),
+                   body=json.dumps({"record_id": record["record_id"],
+                                    "version": record["version"]}), session=session)
+    versions = history.get("versions") or []
+    require(len(versions) == 1 and versions[0].get("version") == record["version"]
+            and versions[0].get("body") == source["body"]
+            and versions[0].get("observed_writer") == record["observed_writer"],
+            "worker history does not retain the exact handoff source")
+    return {"reader_agent_id": session["agent_id"], "record_id": record["record_id"],
+            "version": record["version"], "index_body_sha256": expected_body_hash,
+            "pull_extent": "whole", "history_versions": [record["version"]],
+            "observed_writer": record["observed_writer"]}
 
 
 def settle_small_request(binary, socket, tokens, repo, actor, setup, intent, sessions, events):
@@ -577,6 +624,16 @@ def materialize(args):
                 "distinct worker owners and inboxes required")
     sources = materialize_memory_sources(binary, socket, tokens["sender"], fixture_sources,
                                          source_ids, intent, owners["sender"], repo)
+    handoff_read = None
+    if case == "unfinished_handoff":
+        require(source_ids == ["handoff_state"]
+                and setup["transitions"] == [{"phase": "before_resume",
+                                              "action": "pause_after_source_check",
+                                              "target": "handoff_state"}],
+                "frozen handoff source or pause boundary changed")
+        handoff_read = verify_handoff_read(
+            binary, socket, tokens["worker"], sessions["worker"], sources["handoff_state"],
+            fixture_sources["handoff_state"], intent, repo, actor)
     events = {}
     transitions = []
     last_position = 0
@@ -809,6 +866,10 @@ def materialize(args):
             "corrections": corrections,
             "runtime_transition": "unrun",
         }
+        if case == "unfinished_handoff":
+            source_preparation["unrun_transitions"] = [{
+                **transition, "status": "unrun"} for transition in setup["transitions"]]
+            source_preparation["actor_acceptance"] = "unassessed"
     receipt = {"schema": "cairn.panel-materialization/2", "workflow_id": args.workflow_id,
                "run_id": intent["run_id"], "fixture_sha256": binding["fixture_sha256"],
                "actor_sha256": binding["actor_sha256"], "setup_sha256": binding["setup_sha256"],
@@ -822,6 +883,8 @@ def materialize(args):
     if source_ids:
         receipt["sources"] = sources
         receipt["source_preparation"] = source_preparation
+    if handoff_read is not None:
+        receipt["handoff_read"] = handoff_read
     if readiness_snapshot is not None:
         receipt["readiness_snapshot"] = readiness_snapshot
         receipt["native_batch_transfer"] = "unrun"
@@ -846,7 +909,7 @@ def main():
     choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
     choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
                      for case in ("routine_burst_urgent_request", "wrong_project_memory",
-                                  "corrected_note", "meaningful_owner_correction"))
+                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff"))
     parser.add_argument("--workflow-id", choices=choices,
                         required=True)
     parser.add_argument("--binary", type=Path, required=True)

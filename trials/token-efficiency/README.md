@@ -114,7 +114,7 @@ the `corrected_note` and `meaningful_owner_correction` edits. Project labels
 are fixture metadata, not Store-enforced project scope; actor decisions remain
 unrun.
 The disposable controller materializes `wrong_project_memory`,
-`corrected_note`, and `meaningful_owner_correction` in all four arms. It creates
+`corrected_note`, `meaningful_owner_correction`, and `unfinished_handoff` in all four arms. It creates
 the exact shareable sources through the authenticated API, applies each
 correction under the same Store record, verifies exact version history, and
 retains only source identities and hashes in its receipt. Correction receipts
@@ -122,9 +122,16 @@ mark the verified lineage as source setup only and set the actor runtime
 transition to unrun. These are self-claimed A records; setup coverage does not
 authenticate the owner or grade project distinctions, current endpoints, or
 correction applicability.
-A focused authenticated controller run passed all 12 memory-case/arm setups
-on fresh disposable databases. It launched no actor and no provider; the
-release gate remains deferred.
+For `unfinished_handoff`, the worker's registered session searches for the
+exact source, performs a whole-source pull, and reads its retained history.
+The receipt stores only record/version identifiers, hashes, extent, and writer
+identity. It explicitly marks the frozen `before_resume/pause_after_source_check`
+transition unrun and keeps actor acceptance unassessed. This prepares source
+authority and recall only; it does not pause or resume a native model turn or
+prove the remaining report was written.
+The four-arm `unfinished_handoff` source setup passed on fresh disposable
+databases ([verification record](../../docs/verification/panel-handoff-source-2026-10-24.md)).
+It launched no actor and no provider; the release gate remains deferred.
 
 `core/token_efficiency_panel_recovery_test.go` checks an expired lease under
 its current native hold, an offline presence with operator release and explicit
@@ -145,7 +152,7 @@ compaction hook. `core/token_efficiency_panel_memory_followup_test.go` stores
 and whole-pulls the historical and current relay sources with a pending
 request for `long_source`, and the exact saved source for
 `unfinished_handoff`. The 120-copy exposure and actor pause/resume transitions
-remain unrun.
+remain unrun; the controller source-read setup above does not exercise them.
 
 The [two-notice disposable probe](../../docs/verification/panel-compaction-settlement-2026-10-24.md)
 uses the actual bound hooks and compact helper around two synthetic compact

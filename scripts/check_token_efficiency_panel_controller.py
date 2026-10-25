@@ -29,12 +29,12 @@ def check(binary, workflow_id):
                                 ("baseline", "envelope", "batch", "combined")
                                 for case in ("routine_burst_urgent_request",
                                              "wrong_project_memory", "corrected_note",
-                                             "meaningful_owner_correction")),
+                                             "meaningful_owner_correction", "unfinished_handoff")),
             "unsupported workflow")
     arm, case = workflow_id.split(".", 1)
     burst = case == "routine_burst_urgent_request"
     source_case = case in ("wrong_project_memory", "corrected_note",
-                           "meaningful_owner_correction")
+                           "meaningful_owner_correction", "unfinished_handoff")
     label = workflow_id.replace(".", "-") if burst or source_case else case
     root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
@@ -258,13 +258,33 @@ def check(binary, workflow_id):
                       "fixture_action": None, "status": "source_setup_only"}]
                     if case == "corrected_note" else []),
                 "runtime_transition": "unrun",
-            }, "source preparation must not claim actor correction")
+            } | ({
+                "unrun_transitions": [{"phase": "before_resume",
+                                       "action": "pause_after_source_check",
+                                       "target": "handoff_state", "status": "unrun"}],
+                "actor_acceptance": "unassessed",
+            } if case == "unfinished_handoff" else {}),
+                "source preparation must not claim runtime transition or actor acceptance")
             require(receipt["task_outcome"] == "unassessed"
                     and receipt["provider_called"] is False
                     and receipt["native_turn_join"] == "unimplemented",
                     "source setup cannot establish actor acceptance")
+            if case == "unfinished_handoff":
+                read = receipt.get("handoff_read") or {}
+                require(receipt.get("transitions") == []
+                        and read == {
+                            "reader_agent_id": receipt["sessions"]["worker"]["agent_id"],
+                            "record_id": receipt["sources"]["handoff_state"]["record_id"],
+                            "version": 1,
+                            "index_body_sha256": hashlib.sha256(
+                                fixture["sources"]["handoff_state"]["body"].encode()).hexdigest(),
+                            "pull_extent": "whole", "history_versions": [1],
+                            "observed_writer": principals["sender"],
+                        }, "authenticated handoff source read or unrun boundary differs")
+                require("Cairn handoff for" not in json.dumps(receipt),
+                        "durable controller receipt contains handoff source text")
             require(sql("SELECT count(*) FROM cairn.memory_record") ==
-                    ("1" if case in ("corrected_note", "meaningful_owner_correction") else "2"),
+                    ("1" if case in ("corrected_note", "meaningful_owner_correction", "unfinished_handoff") else "2"),
                     "source-only Store record count differs")
         expected_publishers = ({"request_decision": "sender", "response_a": "worker"}
                                if case == "actionable_response" else

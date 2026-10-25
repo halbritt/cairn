@@ -51,13 +51,16 @@ for panel_workflow in baseline.single_notice baseline.actionable_response baseli
     baseline.corrected_note envelope.corrected_note \
     batch.corrected_note combined.corrected_note \
     baseline.meaningful_owner_correction envelope.meaningful_owner_correction \
-    batch.meaningful_owner_correction combined.meaningful_owner_correction; do
+    batch.meaningful_owner_correction combined.meaningful_owner_correction \
+    baseline.unfinished_handoff envelope.unfinished_handoff \
+    batch.unfinished_handoff combined.unfinished_handoff; do
     panel_case="${panel_workflow#*.}"
     panel_arm="${panel_workflow%%.*}"
     if [[ "$panel_case" == routine_burst_urgent_request ||
           "$panel_case" == wrong_project_memory ||
           "$panel_case" == corrected_note ||
-          "$panel_case" == meaningful_owner_correction ]]; then
+          "$panel_case" == meaningful_owner_correction ||
+          "$panel_case" == unfinished_handoff ]]; then
         panel_database="cairn_panel_${panel_arm}_${panel_case}"
     else
         panel_database="cairn_panel_$panel_case"
