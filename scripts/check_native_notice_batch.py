@@ -17,6 +17,8 @@ import sys
 import time
 import uuid
 
+from native_notice_batch_diagnostics import AdvanceDiagnosticWriter
+
 
 def require(value, message):
     if not value:
@@ -55,7 +57,8 @@ def operator(binary, env, operation, body=None, args=()):
     return envelope["data"]
 
 
-def compact(script, root, env, native_session_id, operation, handle, disposition=None, code=None):
+def compact(script, root, env, native_session_id, operation, handle, disposition=None, code=None,
+            diagnostic_writer=None):
     command = [sys.executable, str(script), "inbox", "compact", operation, handle]
     if disposition:
         command.append(disposition)
@@ -72,6 +75,8 @@ def compact(script, root, env, native_session_id, operation, handle, disposition
             "compact response too large")
     response = json.loads(result.stdout)
     if operation == "advance":
+        if diagnostic_writer is not None:
+            diagnostic_writer.record_advance(response, result.returncode)
         # Keep the response contract observable even when a later fixture
         # assertion fails. Never retain handles, source text, IDs, or stderr.
         report_path = root / "advance-shape.json"
@@ -108,7 +113,7 @@ def sql_count(dsn, table):
     return int(result.stdout.strip())
 
 
-def check(binary):
+def check(binary, diagnostic_output=None):
     cluster = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(cluster.parent == Path("/tmp") and cluster.name.startswith("cairn-postgres.")
             and cluster.stat().st_uid == os.getuid()
@@ -142,6 +147,8 @@ def check(binary):
     config_file.write_text(json.dumps(identities), encoding="utf-8")
     config_file.chmod(0o600)
     env = dict(os.environ, CAIRN_HOME=str(home))
+    diagnostic_writer = (AdvanceDiagnosticWriter(diagnostic_output, cluster)
+                         if diagnostic_output is not None else None)
     server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL)
     try:
@@ -282,7 +289,8 @@ def check(binary):
             require(settled["status"] == disposition and settled["attempts"] == 1,
                     "per-item settlement not confirmed")
             attempts.append(current)
-            handoff = compact(script, root, env, session_id, "advance", handle)
+            handoff = compact(script, root, env, session_id, "advance", handle,
+                              diagnostic_writer=diagnostic_writer)
             if index < 2:
                 require(handoff["batch_index"] == index + 2 and handoff["batch_limit"] == 3
                         and isinstance(handoff["next"], str),
@@ -368,7 +376,8 @@ def check(binary):
         settled_priority = compact(script, root, env, session_id, "settle", priority_handle, "handled")
         require(settled_priority["status"] == "handled" and settled_priority["attempts"] == 1,
                 "claimed routine item was not explicitly settled")
-        stopped = compact(script, root, env, session_id, "advance", priority_handle)
+        stopped = compact(script, root, env, session_id, "advance", priority_handle,
+                          diagnostic_writer=diagnostic_writer)
         require(stopped["next"] is None and stopped["remainder"] == "priority_waiting",
                 "urgent arrival failed to stop the native batch")
         for event in (routine_event, urgent_event):
@@ -396,8 +405,15 @@ def check(binary):
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=5)
+        if diagnostic_writer is not None:
+            diagnostic_writer.close()
 
 
 if __name__ == "__main__":
-    require(len(sys.argv) == 2, "usage: check_native_notice_batch.py BINARY")
-    check(Path(sys.argv[1]))
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("binary", type=Path)
+    parser.add_argument("--diagnostic-output", type=Path,
+                        help="new absolute JSONL path in an owner-only directory outside the disposable root")
+    args = parser.parse_args()
+    check(args.binary, args.diagnostic_output)
