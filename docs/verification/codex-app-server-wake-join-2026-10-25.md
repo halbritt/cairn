@@ -207,3 +207,53 @@ queue/start, but does not prove it. No delivery was replayed and no further full
 watcher run was made. The separate notification trace retained only fixed
 stages, booleans, and digests. The focused trace tests (5) and `make check`
 passed.
+
+## Pinned Codex 0.164 dispatch and observer source audit
+
+The local `rust-v0.164.0` source tag resolves to
+`6aaac694803004a63c6f393d153c96d22521a6b9`. In
+`codex-rs/ext/queue/src/service.rs`, `enqueue()` persists the queued item,
+emits the queue-changed event, and calls `wake_if_loaded()`. That idle lifecycle
+path reaches `dispatch_if_idle()`, which starts the first queued user input and
+deletes its queue row after `Started`. The pinned app-server integration test
+`idle_queue_dispatch_preserves_client_id` observes `item/started` immediately
+after `thread/queue/add` on the adding connection and confirms its user-message
+`client_id` matches the supplied client ID. This proves that queue/add can
+auto-dispatch while idle and retain the identifier in the native item.
+
+In the same service, `start()` searches the queue for the supplied submission
+ID and returns `InvalidRequest` with `queued submission not found: {id}` when
+the row is absent. Therefore the observed `submission_not_found` is consistent
+with auto-dispatch consuming the row before the explicit queue/start request;
+it does not establish that this occurred in the Cairn run by itself.
+
+The observer connection had only used `thread/loaded/list`, which is a metadata
+query and does not subscribe it. Pinned `thread_processor.rs` shows that
+`thread/resume` invokes `ensure_conversation_listener` for that request's
+connection. `thread_lifecycle.rs` delegates to
+`try_ensure_connection_subscribed`, which adds the connection to the thread's
+subscriber set. The queue integration tests also confirm that a cold-resume
+connection receives `item/started` for a queued item. The fixture now checks
+loaded metadata and then calls `thread/resume` on the observer's own connection
+before publishing the synthetic notice. A focused test verifies this order.
+
+One bounded provider-free disposable run after this fixture change reached
+`observer_subscription/before` after opening and initializing the separate
+app-server connection. The item trace has no after marker. The outer runner
+reported `FileNotFoundError` while reading the queue trace that the production
+watcher normally creates; the watcher was not invoked, so this is not
+classification of an app-server RPC refusal. The fixed item trace cannot tell
+whether `thread/loaded/list`, `thread/resume`, or intervening setup failed; the
+app-server/Python stderr was not retained. The watcher, queue/add, hook, Store
+attempt, and local Responses request were not observed. Disposable PostgreSQL
+and API cleanup completed. No second run was made. Thus the source-supported
+subscription path is implemented in the fixture, but runtime notification
+observation and the exact queue-receipt → item-start → hook → Store join remain
+unverified. CAIRN-220 remains unaccepted.
+
+The runner now records separate fixed before/after/failure rows for the loaded
+metadata request and resume subscription, plus watcher start. It checks whether
+the queue-stage trace exists before reading it; a missing artifact is reported
+with a fixed failure stage derived from the private observer trace. This
+diagnostic change was covered by focused tests, but no second disposable run
+was made because the first run did not identify a specific setup correction.

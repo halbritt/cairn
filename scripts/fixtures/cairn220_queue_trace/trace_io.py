@@ -8,11 +8,12 @@ import stat
 
 ERROR_CLASSES = {
     "QueueError", "QueueUnavailable", "QueueRefused", "OSError", "ValueError",
-    "KeyError", "TypeError", "WebSocketException", "ImportError",
+    "KeyError", "TypeError", "WebSocketException", "ImportError", "FileNotFoundError",
     "CalledProcessError", "TimeoutExpired",
 }
 STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start",
-          "native_item_started", "bootstrap"}
+          "observer_subscription", "observer_loaded_list", "observer_resume",
+          "watcher_start", "native_item_started", "bootstrap"}
 OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
 BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
                   "exit_zero", "item_thread_matches", "item_is_user_message"}

@@ -533,11 +533,53 @@ def _run_api_preflight() -> dict:
             raise RuntimeError("pg_cleanup_failed") from None
 
 
+def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
+    """Check loaded metadata, then attach this connection through thread/resume."""
+    def call(stage, method, params):
+        if record:
+            record(stage, "before")
+        try:
+            result = rpc(method, params)
+        except Exception as exc:
+            if record:
+                record(stage, "failed", type(exc).__name__)
+            raise
+        if record:
+            record(stage, "after")
+        return result
+
+    loaded = call("observer_loaded_list", "thread/loaded/list", dict(limit=100))
+    if native_id not in loaded.get("data", []):
+        if record:
+            record("observer_loaded_list", "failed", "RuntimeError")
+        raise RuntimeError("notification_observer_thread_not_loaded")
+    resumed = call("observer_resume", "thread/resume", dict(threadId=native_id))
+    if resumed.get("thread", {}).get("id") != native_id:
+        if record:
+            record("observer_resume", "failed", "RuntimeError")
+        raise RuntimeError("notification_observer_resume_mismatch")
+
+
+def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
+    outcomes = {(row.get("stage"), row.get("outcome")) for row in item_rows}
+    if ("watcher_start", "before") in outcomes and ("watcher_start", "after") not in outcomes:
+        return "watcher_start_incomplete"
+    if ("observer_resume", "failed") in outcomes:
+        return "observer_resume_failed"
+    if ("observer_loaded_list", "failed") in outcomes:
+        return "observer_loaded_list_failed"
+    if ("observer_subscription", "after") in outcomes:
+        return "watcher_not_started_after_observer_setup"
+    if ("observer_subscription", "before") in outcomes:
+        return "observer_setup_incomplete"
+    return "item_observer_not_started"
+
+
 class _ItemStartedObserver:
     """Observe only fixed item/started identifiers on a separate app-server connection."""
 
     def __init__(self, queue_module, endpoint: str, process: dict, native_id: str,
-                 delivery_id: str, trace_path: str):
+                 trace_path: str):
         from trace_io import append_trace, create_trace
 
         self._append = append_trace
@@ -545,7 +587,7 @@ class _ItemStartedObserver:
         self._stop = threading.Event()
         self._connection = None
         self._thread = None
-        self._delivery_id = delivery_id
+        self._delivery_id = None
         self._native_id = native_id
         self._append(self._fd, "trace", "started")
         try:
@@ -554,8 +596,12 @@ class _ItemStartedObserver:
             rpc("initialize", dict(clientInfo=dict(name="cairn220-item-observer", version="1"),
                                    capabilities=dict(experimentalApi=True)))
             self._connection.send(json.dumps(dict(method="initialized")))
-            loaded = rpc("thread/loaded/list", dict(limit=100))
-            require(native_id in loaded.get("data", []), "notification_observer_thread_not_loaded")
+            self._append(self._fd, "observer_subscription", "before")
+            _attach_item_started_observer(
+                rpc, native_id,
+                lambda stage, outcome, error=None: self._append(
+                    self._fd, stage, outcome, error=error))
+            self._append(self._fd, "observer_subscription", "after")
             self._connection.settimeout(0.25)
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
@@ -567,6 +613,16 @@ class _ItemStartedObserver:
                     pass
             os.close(self._fd)
             raise
+
+    def set_delivery_id(self, delivery_id: str) -> None:
+        require(isinstance(delivery_id, str) and bool(delivery_id),
+                "notification_observer_delivery_id_invalid")
+        self._delivery_id = delivery_id
+
+    def record_watcher_start(self, outcome: str, error: str | None = None,
+                             exit_zero: bool | None = None) -> None:
+        flags = {"exit_zero": exit_zero} if exit_zero is not None else None
+        self._append(self._fd, "watcher_start", outcome, error=error, flags=flags)
 
     def _run(self):
         from websocket import WebSocketTimeoutException, WebSocketException
@@ -793,6 +849,8 @@ def _inside(root_text: str) -> int:
         state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         coordination.write_state(state_path, dict(agent=registered, process=process,
                                                     workspace=str(workspace)))
+        item_observer = _ItemStartedObserver(codex_queue, str(socket_path), process, native_id,
+            os.environ["CAIRN220_ITEM_TRACE_TARGET"])
         source = _api_call(binary, api, sender_token, "create", dict(request_id=str(uuid.uuid4()), draft=dict(
             kind="note", body="Synthetic CAIRN-220 watcher source", scope=dict(repo=repo, task_id="*", run_id="*"),
             claim_type="self", sensitivity="shareable")), socket_path=api_socket)
@@ -805,16 +863,21 @@ def _inside(root_text: str) -> int:
                                    socket_path=api_socket)
         delivery = status_before["deliveries"][0]
         expected_delivery_id = delivery["delivery_id"]
-        item_observer = _ItemStartedObserver(codex_queue, str(socket_path), process, native_id,
-            expected_delivery_id, os.environ["CAIRN220_ITEM_TRACE_TARGET"])
+        item_observer.set_delivery_id(expected_delivery_id)
         # Keep environment minimal; only fake fixture paths and the dedicated trace pass in.
         watcher_env = {"PATH": "/usr/bin:/bin", "HOME": str(profile), "CODEX_HOME": str(profile),
                        "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
                        "PYTHONPATH": "/repo/scripts/fixtures/cairn220_queue_trace:/repo/integrations/lifecycle",
                        "CAIRN220_QUEUE_TRACE": os.environ["CAIRN220_TRACE_TARGET"]}
-        watcher = subprocess.run(["/usr/bin/python3", "/repo/integrations/lifecycle/coordination.py",
-            "watch", "--config-dir", str(bindings), "--once"], env=watcher_env,
-            capture_output=True, timeout=30, check=False)
+        item_observer.record_watcher_start("before")
+        try:
+            watcher = subprocess.run(["/usr/bin/python3", "/repo/integrations/lifecycle/coordination.py",
+                "watch", "--config-dir", str(bindings), "--once"], env=watcher_env,
+                capture_output=True, timeout=30, check=False)
+        except Exception as exc:
+            item_observer.record_watcher_start("failed", type(exc).__name__)
+            raise
+        item_observer.record_watcher_start("after", exit_zero=watcher.returncode == 0)
         watcher_stderr_sha256 = _digest(watcher.stderr)
         deadline = time.monotonic() + 25
         state = {}
@@ -1007,24 +1070,39 @@ def run_once() -> dict:
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate(timeout=90)
         _bootstrap(_PHASE, "after", flags={"exit_zero": proc.returncode == 0})
-        trace_rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
         item_trace_path = TRACE_HOME / ("item-stage-" + run_id + ".jsonl")
-        item_trace_info = item_trace_path.stat(follow_symlinks=False)
-        require(stat.S_ISREG(item_trace_info.st_mode) and item_trace_info.st_uid == os.geteuid()
-                and stat.S_IMODE(item_trace_info.st_mode) == 0o600 and not item_trace_path.is_symlink(),
-                "item_trace_mode_or_owner_changed")
+        item_trace_rows = []
+        item_trace_present = item_trace_path.exists() or item_trace_path.is_symlink()
+        if item_trace_present:
+            item_trace_info = item_trace_path.stat(follow_symlinks=False)
+            require(not stat.S_ISLNK(item_trace_info.st_mode) and stat.S_ISREG(item_trace_info.st_mode)
+                    and item_trace_info.st_uid == os.geteuid()
+                    and stat.S_IMODE(item_trace_info.st_mode) == 0o600,
+                    "item_trace_mode_or_owner_changed")
+            item_trace_rows = [json.loads(line) for line in item_trace_path.read_text().splitlines()]
+        trace_present = trace_path.exists() or trace_path.is_symlink()
+        if trace_present:
+            trace_stat = trace_path.stat(follow_symlinks=False)
+            require(not stat.S_ISLNK(trace_stat.st_mode) and stat.S_ISREG(trace_stat.st_mode)
+                    and trace_stat.st_uid == os.geteuid() and
+                    stat.S_IMODE(trace_stat.st_mode) == 0o600,
+                    "trace_mode_or_owner_changed")
+            trace_rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
+        else:
+            trace_rows = []
         result_path = root / "inside-result.json"
         report = json.loads(result_path.read_text()) if result_path.exists() else {}
-        trace_stat = trace_path.stat(follow_symlinks=False)
-        require(stat.S_ISREG(trace_stat.st_mode) and trace_stat.st_uid == os.geteuid() and
-                stat.S_IMODE(trace_stat.st_mode) == 0o600 and not trace_path.is_symlink(),
-                "trace_mode_or_owner_changed")
         report.update(run_id=run_id, runner_preflight=preflight,
                       outer_exit=proc.returncode, outer_stderr_sha256=_digest(stderr),
                       trace_mode="0600", trace_rows=len(trace_rows),
                       trace_error_classes=sorted({row.get("error_class") for row in trace_rows
                                                   if row.get("error_class")}))
         report["bootstrap_trace"] = bootstrap_path.name
+        report["queue_trace_present"] = trace_present
+        report["item_trace_present"] = item_trace_present
+        if not trace_present:
+            report["failure_stage"] = _classify_missing_queue_trace(item_trace_rows)
+            report["failure_code"] = "queue_trace_missing"
         _write_private(TRACE_HOME / ("summary-" + run_id + ".json"), json.dumps(report, sort_keys=True))
         return report
     finally:
