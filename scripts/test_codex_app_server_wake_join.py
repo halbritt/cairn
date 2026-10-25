@@ -1,11 +1,14 @@
 """Provider-free observer binding checks for the CAIRN-220 fixture."""
 
+import json
 import unittest
 
 from check_codex_app_server_wake_join import (
     _ItemStartedObserver,
     _scripted_inbox_tool,
+    _is_expected_source_read_tool_call,
     _source_result_matches,
+    _tool_result_diagnostics,
     _attach_item_started_observer,
     _classify_thread_resume_refusal,
     _classify_missing_queue_trace,
@@ -68,6 +71,12 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertEqual(stage, "store_verification")
         self.assertIsNone(tool)
 
+    def test_source_read_tool_call_matches_exact_native_history_command(self):
+        _stage, item = _scripted_inbox_tool({}, self.context, "source body")
+        self.assertTrue(_is_expected_source_read_tool_call(item, self.context, "source body"))
+        changed = dict(item, input=item["input"].replace("history", "search"))
+        self.assertFalse(_is_expected_source_read_tool_call(changed, self.context, "source body"))
+
     def test_source_result_diagnostic_separates_identity_version_and_body(self):
         expected = {"record_id": "record-1", "version": 3, "body": "source body"}
         self.assertEqual(_source_result_matches(expected, self.context, "source body"), {
@@ -81,6 +90,35 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertEqual(_source_result_matches({"record_id": "record-1", "version": 3,
             "body": "different"}, self.context, "source body"), {
             "source_record_match": True, "source_version_match": True, "source_body_match": False})
+
+    def test_tool_result_diagnostics_distinguish_api_response_and_shell_failure(self):
+        api_envelope = json.dumps({"schema": "cairn.response/1", "ok": True,
+                                   "status": "OK", "data": {"versions": []}})
+        success = _tool_result_diagnostics({"type": "custom_tool_call_output", "status": "completed",
+            "output": json.dumps({"exit_code": 0, "output": api_envelope})})
+        self.assertEqual(success["result_status"], "completed")
+        self.assertEqual(success["result_output_type"], "string")
+        self.assertEqual(success["exit_class"], "zero")
+        self.assertEqual(success["execution_error_class"], "none")
+        self.assertTrue(success["cairn_api_envelope_observed"])
+        self.assertEqual(success["api_read_status"], "success")
+        self.assertEqual(success["api_read_invocation"], "confirmed")
+
+        command_failure = _tool_result_diagnostics({"type": "custom_tool_call_output",
+            "output": json.dumps({"exit_code": 127,
+                                   "output": "/fixture/cairn: No such file or directory"})})
+        self.assertEqual(command_failure["exit_class"], "nonzero")
+        self.assertEqual(command_failure["execution_error_class"], "no_such_file")
+        self.assertEqual(command_failure["api_read_status"], "not_observed")
+        self.assertEqual(command_failure["api_read_invocation"], "not_observed")
+        self.assertFalse(command_failure["cairn_api_envelope_observed"])
+
+        tool_error = _tool_result_diagnostics({"type": "custom_tool_call_output", "isError": True,
+                                                "content": [{"type": "text", "text": "PRIVATE"}]})
+        self.assertEqual(tool_error["result_status"], "failed")
+        self.assertTrue(tool_error["result_error_present"])
+        self.assertEqual(tool_error["execution_error_class"], "tool_error")
+        self.assertNotIn("PRIVATE", json.dumps((success, command_failure, tool_error)))
 
     def test_does_not_ack_missing_or_different_source(self):
         with self.assertRaisesRegex(RuntimeError, "exact_source_read_not_observed"):

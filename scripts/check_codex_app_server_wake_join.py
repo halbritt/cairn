@@ -64,6 +64,90 @@ def _source_result_matches(result: dict, context: dict, source_body: str) -> dic
         "source_body_match": source_body in serialized,
     }
 
+
+def _tool_result_diagnostics(result: dict) -> dict:
+    """Reduce a custom tool result to fixed status, exit, and API-read classes."""
+    output = result.get("output", result.get("content"))
+    output_type = ("missing" if output is None else "string" if isinstance(output, str) else
+                   "array" if isinstance(output, list) else "object" if isinstance(output, dict) else "other")
+    status_value = result.get("status")
+    status = status_value if status_value in ("completed", "failed", "in_progress") else (
+        "failed" if result.get("isError") is True or result.get("is_error") is True else
+        "other" if status_value is not None else "missing")
+    error_present = (result.get("isError") is True or result.get("is_error") is True or
+                     bool(result.get("error")))
+
+    parsed = []
+    strings = []
+
+    def visit(value, depth=0):
+        if depth > 5:
+            return
+        if isinstance(value, dict):
+            parsed.append(value)
+            for key in ("output", "content", "text", "result", "data", "error"):
+                if key in value:
+                    visit(value[key], depth + 1)
+        elif isinstance(value, list):
+            for part in value[:64]:
+                visit(part, depth + 1)
+        elif isinstance(value, str):
+            strings.append(value[:2_000_000])
+            try:
+                decoded = json.loads(value)
+            except (ValueError, TypeError):
+                return
+            if not isinstance(decoded, str):
+                visit(decoded, depth + 1)
+
+    visit(result)
+    exit_code = next((node.get("exit_code") for node in parsed
+                      if type(node.get("exit_code")) is int), None)
+    exit_class = "unavailable" if exit_code is None else ("zero" if exit_code == 0 else "nonzero")
+    envelopes = [node for node in parsed if node.get("schema") == "cairn.response/1"]
+    cairn_envelope = bool(envelopes)
+    api_read_status = ("success" if any(node.get("ok") is True and node.get("status") == "OK"
+                                         for node in envelopes) else
+                       "refused" if envelopes else
+                       "not_observed" if exit_class == "nonzero" else "unknown")
+    api_read_invocation = ("confirmed" if cairn_envelope else
+                           "not_observed" if exit_class == "nonzero" else "unknown")
+    content = "\n".join(strings).lower()
+    error_classes = (
+        ("no_such_file", ("no such file or directory",)),
+        ("command_not_found", ("command not found", "not found")),
+        ("permission_denied", ("permission denied",)),
+        ("operation_not_permitted", ("operation not permitted",)),
+        ("connection_refused", ("connection refused", "api_connection_failed")),
+    )
+    execution_error = next((code for code, patterns in error_classes
+                            if any(pattern in content for pattern in patterns)), None)
+    if execution_error is None and envelopes and api_read_status == "refused":
+        execution_error = "cairn_refusal"
+    if execution_error is None and exit_class == "nonzero":
+        execution_error = "exit_nonzero"
+    if execution_error is None and error_present:
+        execution_error = "tool_error"
+    if execution_error is None:
+        execution_error = "none" if exit_class == "zero" else "unknown"
+    execution_observed = (exit_code is not None or status in ("completed", "failed") or error_present)
+    return {
+        "result_status": status,
+        "result_output_type": output_type,
+        "result_error_present": error_present,
+        "tool_execution_observed": execution_observed,
+        "exit_class": exit_class,
+        "execution_error_class": execution_error,
+        "cairn_api_envelope_observed": cairn_envelope,
+        "api_read_status": api_read_status,
+        "api_read_invocation": api_read_invocation,
+    }
+
+
+def _is_expected_source_read_tool_call(item: dict, context: dict, source_body: str) -> bool:
+    stage, expected = _scripted_inbox_tool({}, context, source_body)
+    return stage == "source_read" and item == expected
+
 sys.path.insert(0, str(REPO / "scripts/fixtures/cairn220_queue_trace"))
 from trace_io import append_trace, create_trace
 
@@ -856,6 +940,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     request_index = 0
     pending_tool_role = None
     state_path = None
+    expected_read_command_requested = False
 
     def trace_script(stage, outcome, *, error=None, flags=None):
         if script_trace_fd is not None:
@@ -901,7 +986,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             self.wfile.write(body)
 
         def do_POST(self):
-            nonlocal request_index, pending_tool_role
+            nonlocal request_index, pending_tool_role, expected_read_command_requested
             length = int(self.headers.get("Content-Length", "0"))
             if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or len(requests) >= 3:
                 self.send_error(413)
@@ -945,19 +1030,25 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                         if not result:
                             trace_script("native_tool_result", "failed", error="RuntimeError", flags={
                                 "result_role": pending_tool_role, "result_class": "other",
+                                "result_transport": "missing",
+                                "expected_read_command_requested": expected_read_command_requested,
                                 "failure_code": "native_tool_result_missing"})
                             raise RuntimeError("native_tool_result_missing")
+                        result_diagnostics = _tool_result_diagnostics(result)
                         result_text = json.dumps(result, sort_keys=True)
                         if pending_tool_role == "source":
                             source_matches = _source_result_matches(result, context, source_body)
                             exact = all(source_matches.values())
                             result_class = "source_exact" if exact else "source_mismatch"
                             result_flags = {"result_role": pending_tool_role, "result_class": result_class,
-                                **source_matches}
+                                "result_transport": "matched",
+                                "expected_read_command_requested": expected_read_command_requested,
+                                **source_matches, **result_diagnostics}
                         else:
                             exact = "handled" in result_text
                             result_class = "ack_handled" if exact else "ack_unconfirmed"
-                            result_flags = {"result_role": pending_tool_role, "result_class": result_class}
+                            result_flags = {"result_role": pending_tool_role, "result_class": result_class,
+                                "result_transport": "matched", **result_diagnostics}
                         trace_script("native_tool_result", "observed" if exact else "refused",
                             flags=result_flags)
                         require(exact, "source_read_mismatch" if pending_tool_role == "source"
@@ -986,11 +1077,16 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                         call_role = None
                     if call_role:
                         pending_tool_role = call_role
+                        expected_read_command_requested = False
+                        if call_role == "source":
+                            expected_read_command_requested = _is_expected_source_read_tool_call(
+                                item, context, source_body)
                         trace_script("native_tool_call", "observed", flags={
                             "step": stage, "tool_name": item.get("name", "other"),
                             "tool_namespace": item.get("namespace", "other"),
                             "call_role": item.get("call_id", "other")
-                                if item.get("call_id") in ("source", "acknowledgement") else "other"})
+                                if item.get("call_id") in ("source", "acknowledgement") else "other",
+                            "expected_read_command_requested": expected_read_command_requested})
                     trace_script("responses_response", "before", flags={
                         "response_item_type": item.get("type", "other")})
                 except Exception as exc:

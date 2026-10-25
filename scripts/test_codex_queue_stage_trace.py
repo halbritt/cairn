@@ -37,7 +37,14 @@ class CodexQueueStageTraceTests(unittest.TestCase):
                 append_trace(fd, "native_tool_result", "refused", flags={
                     "result_role": "source", "result_class": "source_mismatch",
                     "source_record_match": True, "source_version_match": False,
-                    "source_body_match": True, "raw_output": "PRIVATE OUTPUT"})
+                    "source_body_match": True, "result_transport": "matched",
+                    "result_status": "completed", "result_output_type": "string",
+                    "result_error_present": False, "tool_execution_observed": True,
+                    "exit_class": "nonzero", "execution_error_class": "no_such_file",
+                    "expected_read_command_requested": True,
+                    "cairn_api_envelope_observed": False, "api_read_status": "not_observed",
+                    "api_read_invocation": "not_observed",
+                    "raw_output": "PRIVATE OUTPUT"})
                 append_trace(fd, "responses_response", "failed", error="RuntimeError",
                              flags={"failure_code": "native_tool_result_missing"})
             finally:
@@ -49,6 +56,9 @@ class CodexQueueStageTraceTests(unittest.TestCase):
         self.assertEqual(rows[0]["request_index"], 2)
         self.assertEqual(rows[1]["tool_name"], "exec")
         self.assertEqual(rows[2]["source_version_match"], False)
+        self.assertEqual(rows[2]["execution_error_class"], "no_such_file")
+        self.assertEqual(rows[2]["api_read_status"], "not_observed")
+        self.assertEqual(rows[2]["api_read_invocation"], "not_observed")
         self.assertEqual(rows[3]["failure_code"], "native_tool_result_missing")
         self.assertNotIn("PRIVATE", json.dumps(rows))
         self.assertFalse(any(key in row for row in rows for key in

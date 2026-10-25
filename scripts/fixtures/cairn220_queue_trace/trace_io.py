@@ -21,7 +21,9 @@ OUTCOMES = {"started", "failed", "before", "after", "refused", "observed"}
 BOOLEAN_FIELDS = {"receipt_confirmed", "delivery_id_matches", "receipt_matches_start", "turn_started",
                   "exit_zero", "item_thread_matches", "item_is_user_message",
                   "has_input", "has_tools", "context_present", "intent_present", "attempt_present",
-                  "source_record_match", "source_version_match", "source_body_match"}
+                  "source_record_match", "source_version_match", "source_body_match",
+                  "result_error_present", "expected_read_command_requested",
+                  "cairn_api_envelope_observed", "tool_execution_observed"}
 CONTINUATION_FIELDS = {
     "response_item_type": {"message", "custom_tool_call", "other"},
     "tool_name": {"exec", "other"},
@@ -32,6 +34,15 @@ CONTINUATION_FIELDS = {
     "step": {"request", "context_lookup", "source_read", "acknowledgement", "store_verification"},
     "failure_code": {"context_not_found", "native_tool_result_missing", "source_read_mismatch",
                       "acknowledgement_not_confirmed", "store_handled_not_confirmed", "other"},
+    "result_status": {"completed", "failed", "in_progress", "other", "missing"},
+    "result_transport": {"matched", "missing", "malformed"},
+    "result_output_type": {"string", "array", "object", "missing", "other"},
+    "exit_class": {"zero", "nonzero", "unavailable"},
+    "execution_error_class": {"none", "no_such_file", "command_not_found", "permission_denied",
+                              "operation_not_permitted", "connection_refused", "cairn_refusal",
+                              "tool_error", "exit_nonzero", "other", "unknown"},
+    "api_read_status": {"success", "refused", "not_observed", "unknown"},
+    "api_read_invocation": {"confirmed", "not_observed", "unknown"},
 }
 PG_FAILURE_CLASSES = {"address_in_use", "socket_path_too_long", "permission_denied", "port_conflict",
                       "invalid_configuration", "storage_or_filesystem",

@@ -416,3 +416,34 @@ the delivery stayed leased with one attempt. The run ID is
 `~/.cache/cairn-220-native-wake-proof/script-stage-d761c6c6b1c74191889768c08c5e55f0.jsonl`.
 No fixture correction is supported by this evidence and no further full run was
 made.
+
+## Scripted tool-result transport classification
+
+After adding fixed result-shape, execution-status, exit-class and API-envelope
+classification, one fresh fake-auth `--unshare-net` disposable run reached the
+same source-read boundary. The fixture returned the expected `functions.exec`
+tool call, and the next Responses request contained one matching native tool
+result. The 0600 trace classifies the result as: transport `matched`, output
+type `array`, no top-level result status, tool execution observed, nonzero
+exit, execution error `connection_refused`, and no Cairn API response envelope.
+The exact expected history tool call was requested, but an API read was not
+observed. Thus the command did not return the selected record/body; no
+acknowledgement was issued, and the delivery remains leased with one attempt.
+
+The underlying connection refusal is not fully attributable from this
+allowlisted trace. It does not establish whether the shell's view of the
+temporary socket path or another fixture connection detail caused the refusal.
+The raw command output was intentionally not retained. No fixture correction
+is source-proved, and no second full run was made. Private trace:
+`~/.cache/cairn-220-native-wake-proof/script-stage-0eac3319932a4b0e961f633f6c96c0fd.jsonl`.
+
+Read-only path comparison confirms the generated `context.read` uses
+`--socket /trace/<short-socket-dir>/api.sock`; the API listener is created at
+`<TRACE_HOME>/<short-socket-dir>/api.sock`, and the outer bwrap bind maps that
+same `TRACE_HOME` to `/trace`. The app-server itself runs in this outer bwrap.
+The earlier CAIRN-227 probe established that `functions.exec` can be dispatched
+through a separate external code-mode host with a different mount view, but
+this fixture does not explicitly configure or inspect that host's namespace.
+Therefore a tool-shell namespace mismatch remains plausible, not established;
+the `connection_refused` class does not prove that the socket path was absent.
+No acknowledgement was issued and no handled outcome is claimed.
