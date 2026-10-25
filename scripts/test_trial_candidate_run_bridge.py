@@ -192,6 +192,30 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.run_bridge(), result)
         self.assertEqual(len(self.executor.executed), 1)
 
+    def test_branch_request_fixture_pins_the_manual_boundary_before_runner_bridge(self):
+        # The standing candidate profile creates the queued draft without a
+        # per-run request document. It intentionally does not choose the
+        # separately governed weekly runner selection or authorize execution.
+        entry = paired.read_json(self.entry/'entry.json')
+        self.assertEqual(entry['state'], 'queued_for_review')
+        self.assertEqual(entry['receipt']['status'], 'queued_for_review')
+        self.assertEqual(entry['receipt']['launch'],
+                         dict(status='refused', code='provider_execution_unavailable'))
+        self.assertNotIn('runner_profile', entry['receipt'])
+        self.assertFalse((self.entry/'runner-selection.json').exists())
+        self.assertEqual(candidate.launch_status(),
+                         dict(status='refused', code='provider_execution_unavailable'))
+
+        # This existing end-to-end test then supplies the reviewed preparation
+        # and the runner profile/selection assembled by its fixture setup. The
+        # fake executor exercises the real weekly admission and receipt join
+        # without starting an actor, provider, operational DB, or live campaign.
+        result = self.run_bridge()
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['runner']['attempts']['records'], 126)
+        self.assertEqual(result['binding']['candidate']['request_id'], entry['request_id'])
+        self.assertEqual(len(self.executor.executed), 1)
+
     def test_moved_candidate_ref_refuses_before_bridge_or_runner_writes(self):
         git(self.root/'repo', 'branch', '-f', 'feature/recall', self.harness)
         with self.assertRaisesRegex(paired.Refusal, '^bridge_ref_drift$'):
