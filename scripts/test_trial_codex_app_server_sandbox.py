@@ -87,6 +87,25 @@ console.log(JSON.stringify(report));
                 sandbox.write_launcher(root / "launcher", workspace=workspace,
                     profile=profile, codex_entry=codex, selected_auth=auth)
 
+    def test_extra_directory_mount_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "actor"
+            profile = workspace / ".codex"
+            profile.mkdir(parents=True)
+            auth = root / "auth"
+            auth.write_text("synthetic")
+            package = root / "package"
+            package.mkdir()
+            codex = package / "codex.js"
+            codex.write_text("")
+            hidden_dir = root / "controller"
+            hidden_dir.mkdir()
+            with self.assertRaisesRegex(ValueError, "individual files or Unix sockets"):
+                sandbox.write_launcher(root / "launcher", workspace=workspace,
+                    profile=profile, codex_entry=codex, selected_auth=auth,
+                    extra_binds=[(hidden_dir, "/tmp/controller", "ro")])
+
 
 if __name__ == "__main__":
     unittest.main()

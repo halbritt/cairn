@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import stat
 
 
 def write_launcher(path, *, workspace, profile, codex_entry, selected_auth,
@@ -17,6 +18,14 @@ def write_launcher(path, *, workspace, profile, codex_entry, selected_auth,
     codex_entry = Path(codex_entry).resolve(strict=True)
     codex_root = Path(codex_root or codex_entry.parent).resolve(strict=True)
     selected_auth = Path(selected_auth).resolve(strict=True)
+    if not codex_root.is_dir() or not codex_entry.is_file():
+        raise ValueError("Codex package root and entry must be a directory and file")
+    try:
+        codex_entry.relative_to(codex_root)
+    except ValueError as exc:
+        raise ValueError("Codex entry must be inside its package root") from exc
+    if not stat.S_ISREG(selected_auth.stat().st_mode):
+        raise ValueError("selected Codex auth must be a regular file")
     try:
         profile.relative_to(workspace)
     except ValueError as exc:
@@ -30,7 +39,10 @@ def write_launcher(path, *, workspace, profile, codex_entry, selected_auth,
         if not Path(target).is_absolute() or target in targets:
             raise ValueError("extra bind target must be absolute and unique")
         targets.add(target)
-        binds.append((Path(source).resolve(strict=True), str(target), mode))
+        source = Path(source).resolve(strict=True)
+        if not (stat.S_ISREG(source.stat().st_mode) or stat.S_ISSOCK(source.stat().st_mode)):
+            raise ValueError("extra binds must be individual files or Unix sockets")
+        binds.append((source, str(target), mode))
     payload = {
         "workspace": str(workspace), "profile": str(profile),
         "codex_entry": str(codex_entry), "binds": [
