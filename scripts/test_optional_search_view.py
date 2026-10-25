@@ -165,6 +165,15 @@ class OptionalSearchViewTests(unittest.TestCase):
                 self.assertEqual(shown['index'][0]['pull_arguments'], entry['pull_arguments'])
                 self.assertEqual(shown['candidate_inspection']['refusals'], {refusal: 1})
                 self.assertEqual(shown['candidate_bodies'], [])
+                self.assertNotIn('Current candidate body.', text)
+                if recall_view == 'compact/1':
+                    self.assertEqual(shown['candidate_recovery'],
+                        'This receipt-scoped handle is stale. Search again for a fresh handle '
+                        'and read its current source; do not retry this handle.')
+                    self.assertLessEqual(len(text.encode()) + shown['remaining_memory_bytes'],
+                                         case.mc['context_bytes'])
+                else:
+                    self.assertNotIn('candidate_recovery', shown)
                 self.assertEqual([call['op'] for call in case.calls()], ['search', 'pull'])
 
 

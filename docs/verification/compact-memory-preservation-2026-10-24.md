@@ -23,7 +23,10 @@ correction, the public hook surfaced the same response only as
 `whole_pull_unavailable`, which erased the re-search cue. A local public-hook
 fixture verifies a compact response with the original complete
 `pull_arguments`, no candidate body, one pull attempt, and the exact stale-handle
-refusal. The paired full/default run retains its previous
+refusal. The compact response also gives the next safe action: search again for
+a fresh handle and read its current source, without retrying the stale handle.
+This recovery cue is emitted only for the compact stale-handle refusal. The
+paired full/default run retains its previous
 `whole_pull_unavailable` category. Neither view exposes the refusal's private
 message or any source body. No retry is made against that same receipt-scoped
 stale handle; callers must search for a fresh handle.

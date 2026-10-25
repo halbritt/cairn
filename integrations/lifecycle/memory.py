@@ -1265,6 +1265,12 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
         if progress is not None:
             view.update(candidate_bodies=[optional_delivery_view(body) for body in supplied],
                         candidate_inspection=progress)
+            if (view_name == 'compact/1' and isinstance(progress, dict)
+                    and isinstance(progress.get('refusals'), dict)
+                    and progress['refusals'].get('stale_handle')):
+                view['candidate_recovery'] = (
+                    'This receipt-scoped handle is stale. Search again for a fresh handle '
+                    'and read its current source; do not retry this handle.')
         return cue + encoded(view)
 
     # Native choice gets half the total allowance when complete fixed context
