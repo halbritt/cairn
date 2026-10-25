@@ -65,13 +65,33 @@ increasing this probe's deadline to 30 seconds for extra concurrency margin, a
 fresh focused disposable-cluster run also passed. `make check` passed on the
 candidate branch after the code changes.
 
-## Real-clock arrival observation, 2026-10-24
+## Opt-in real-clock arrival observation, 2026-10-24
 
-The probe now adds one real-clock 60-second routine notice after the accelerated
-state-transition cases. It publishes to the same disposable PostgreSQL/API and
-uses a registered synthetic idle Codex owner plus the real `watch --once`
-process. It records each watcher cycle's UTC start/end, elapsed time, condition,
-and exact delivery ID. No database deadline is edited during this observation.
+The optional `--real-clock-pilot` leg adds one real-clock 60-second routine
+notice after the deterministic state-transition cases. It publishes to a fresh
+disposable PostgreSQL/API and uses a registered synthetic idle Codex owner plus
+the real `watch --once` process. It records each watcher cycle's UTC start/end,
+elapsed time, condition, and exact delivery ID. No database deadline is edited
+during this observation. The normal `make test-integration` path does not pass
+this flag and retains only the deterministic cases.
+
+Run the deterministic watcher probe by itself with:
+
+```sh
+bash scripts/run_notice_watcher_probe.sh
+```
+
+Opt into the additional 60-second wait with:
+
+```sh
+bash scripts/run_notice_watcher_probe.sh --real-clock-pilot
+```
+
+The wrapper creates and removes a private PostgreSQL cluster, applies migrations
+to its dedicated database, builds a local CLI, and invokes
+`check_notice_watcher_eligibility.py` with the matching optional flag. Without
+the flag, only deterministic checks run. Both modes make no provider call and
+change no production database or global setting.
 
 Observed example: the durable deadline was 60.000 seconds after `created_at`.
 The watcher recorded 12 pre-deadline cycles with no ready delivery, then observed
@@ -79,6 +99,18 @@ the original delivery 60.151 seconds after publication, 151 ms after its stored
 deadline. There was one eligible wake decision, zero accepted native wakes, zero
 provider calls, and no model turn. The source was synthetic and
 `actionability=unassessed_no_actor_or_task_grade`.
+
+The retained timestamps were `created_at=2026-10-24T19:33:45.94744-07:00`,
+`deadline_at=2026-10-24T19:34:45.94744-07:00`, and
+`observed_eligible_at=2026-10-25T02:34:46.098405Z`.
+
+After the real-clock leg became opt-in, a second standalone pilot run recorded
+`created_at=2026-10-24T19:39:33.535112-07:00`,
+`deadline_at=2026-10-24T19:40:33.535112-07:00`, and
+`observed_eligible_at=2026-10-25T02:40:33.657252Z`: 60.122 seconds from
+publication and 122 ms after the deadline. It again observed 12 pre-deadline
+cycles, one eligible decision, zero accepted native wakes, and zero provider
+calls; actionability remained unassessed.
 
 This is a timestamped arrival-to-eligibility latency sample for one notice. It
 does not compare a multi-arrival baseline with a treatment, and therefore does

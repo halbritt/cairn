@@ -76,7 +76,7 @@ def expire_disposable_deadline(dsn, delivery_id):
             "disposable deadline did not advance")
 
 
-def check(binary):
+def check(binary, real_clock_pilot=False):
     cluster = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
     require(cluster.parent == Path("/tmp") and cluster.name.startswith("cairn-postgres.")
             and cluster.stat().st_uid == os.getuid()
@@ -385,82 +385,84 @@ def check(binary):
                      {"event_id": delayed["event_id"]})["deliveries"][0]["attempts"] == 0,
                 "watcher claimed a notice without a native transport")
 
-        # A real-clock expiry is deliberately separate from the accelerated
-        # state-transition check above. This bounded single-notice run measures
-        # arrival-to-eligibility observation; it cannot establish fewer native
-        # wakes because the synthetic owner has no queue endpoint.
-        delayed_claim = call(binary, home, env, "worker", "session-inbox-claim", {
-            "request_id": str(uuid.uuid4()), "session": session,
-            "delivery_id": delayed_id, "native_turn_id": "synthetic-expired-cleanup",
-            "turn_exclusive": True})["attempt"]
-        require(delayed_claim is not None, "expired fixture notice could not be cleaned up")
-        call(binary, home, env, "worker", "event-complete", {
-            "request_id": str(uuid.uuid4()), "delivery_id": delayed_id,
-            "lease_id": delayed_claim["delivery"]["lease_id"],
-            "disposition": "failed", "code": "processing_failed"}, session=session)
-        call(binary, home, env, "worker", "session-inbox-reconcile", {
-            "request_id": str(uuid.uuid4()), "session": session,
-            "attempt_id": delayed_claim["attempt_id"], "reason": "delivery_completed"})
-        # The previous refusal and terminal cleanup belong to the settled
-        # delivery. Start this bounded observation with fresh synthetic watcher
-        # state while retaining the same registered owner and process.
-        engine.write_state(state_path, {"agent": registered, "workspace": str(cluster),
-                                        "process": engine.process_reference(owner.pid)})
-        natural = call(binary, home, env, "sender", "event-publish", {
-            "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
-            "destination": {"type": "agent", "name": registered["inbox"]},
-            "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
-        natural_created = parse_time(natural["created_at"])
-        natural_delivery = call(binary, home, env, "sender", "event-inspect",
-                                {"event_id": natural["event_id"]})["deliveries"][0]
-        natural_deadline = parse_time(natural_delivery["available_at"])
-        require(natural_deadline - natural_created == timedelta(seconds=60),
-                "real-clock pilot did not retain its 60-second deadline")
-        cycles = []
-        natural_observation = None
-        while datetime.now(timezone.utc) < natural_deadline:
+        natural_report = None
+        if real_clock_pilot:
+            # This opt-in leg is separate from the default deterministic
+            # integration path. It measures one natural deadline and cannot
+            # establish fewer native wakes because the synthetic owner has no
+            # queue endpoint.
+            delayed_claim = call(binary, home, env, "worker", "session-inbox-claim", {
+                "request_id": str(uuid.uuid4()), "session": session,
+                "delivery_id": delayed_id, "native_turn_id": "synthetic-expired-cleanup",
+                "turn_exclusive": True})["attempt"]
+            require(delayed_claim is not None, "expired fixture notice could not be cleaned up")
+            call(binary, home, env, "worker", "event-complete", {
+                "request_id": str(uuid.uuid4()), "delivery_id": delayed_id,
+                "lease_id": delayed_claim["delivery"]["lease_id"],
+                "disposition": "failed", "code": "processing_failed"}, session=session)
+            call(binary, home, env, "worker", "session-inbox-reconcile", {
+                "request_id": str(uuid.uuid4()), "session": session,
+                "attempt_id": delayed_claim["attempt_id"], "reason": "delivery_completed"})
+            engine.write_state(state_path, {"agent": registered, "workspace": str(cluster),
+                                            "process": engine.process_reference(owner.pid)})
+            natural = call(binary, home, env, "sender", "event-publish", {
+                "request_id": str(uuid.uuid4()), "kind": "notice", "ref": ref,
+                "destination": {"type": "agent", "name": registered["inbox"]},
+                "notice_policy": {"version": 1, "urgency": "routine", "defer_seconds": 60}})
+            natural_created = parse_time(natural["created_at"])
+            natural_delivery = call(binary, home, env, "sender", "event-inspect",
+                                    {"event_id": natural["event_id"]})["deliveries"][0]
+            natural_deadline = parse_time(natural_delivery["available_at"])
+            require(natural_deadline - natural_created == timedelta(seconds=60),
+                    "real-clock pilot did not retain its 60-second deadline")
+            cycles = []
+            natural_observation = None
+            while datetime.now(timezone.utc) < natural_deadline:
+                cycle = watch()
+                observation = (cycle.get("delivery_observation") or {}).get("value") or {}
+                cycles.append({"timing": cycle["_pilot_watch_timing"],
+                               "condition": observation.get("condition"),
+                               "delivery_id": observation.get("delivery_id")})
+                require(observation.get("delivery_id") is None,
+                        "routine notice became eligible before its real deadline")
+                time.sleep(min(5, max(0.05, (natural_deadline - datetime.now(timezone.utc)).total_seconds())))
             cycle = watch()
             observation = (cycle.get("delivery_observation") or {}).get("value") or {}
             cycles.append({"timing": cycle["_pilot_watch_timing"],
                            "condition": observation.get("condition"),
                            "delivery_id": observation.get("delivery_id")})
-            require(observation.get("delivery_id") is None,
-                    "routine notice became eligible before its real deadline")
-            time.sleep(min(5, max(0.05, (natural_deadline - datetime.now(timezone.utc)).total_seconds())))
-        cycle = watch()
-        observation = (cycle.get("delivery_observation") or {}).get("value") or {}
-        cycles.append({"timing": cycle["_pilot_watch_timing"],
-                       "condition": observation.get("condition"),
-                       "delivery_id": observation.get("delivery_id")})
-        if observation.get("delivery_id") == natural_delivery["delivery_id"]:
-            natural_observation = cycle["_pilot_watch_timing"]
-        require(natural_observation is not None
-                and observation.get("condition") == "native_transport_unavailable",
-                "real-clock watcher did not observe the original notice after its deadline")
-        natural_elapsed_ms = round((parse_time(natural_observation["finished_at"])
-                                    - natural_created).total_seconds() * 1000, 3)
-        natural_report = {
-            "event_id": natural["event_id"], "delivery_id": natural_delivery["delivery_id"],
-            "actionability": "unassessed_no_actor_or_task_grade",
-            "created_at": natural["created_at"], "deadline_at": natural_delivery["available_at"],
-            "eligible_at": natural_delivery["available_at"],
-            "observed_eligible_at": natural_observation["finished_at"],
-            "arrival_to_observed_eligibility_ms": natural_elapsed_ms,
-            "deadline_to_observed_eligibility_ms": round(
-                (parse_time(natural_observation["finished_at"]) - natural_deadline).total_seconds() * 1000, 3),
-            "watch_cycles": cycles, "eligible_wake_decisions": 1,
-            "native_wakes_accepted": 0, "native_transport": "unavailable",
-            "provider_calls": 0,
-        }
-        print(json.dumps({"case": "routine_notice_watcher_eligibility", "store_api": "disposable",
-                          "watcher_process": "real_once", "native_owner": "synthetic_live_child",
-                          "defer_seconds": 30, "early_wake_attempt": False,
-                          "urgent_request_observed": True, "urgent_notice_observed": True,
-                          "flush_released_original": True,
-                          "restart_preserved_deadline": True, "busy_owner_wake": False,
-                          "expired_notice_observed_after_idle": True,
-                          "native_transport": "unavailable", "model_wake": False,
-                          "task_outcome": "unassessed", "real_clock_60_second_pilot": natural_report}))
+            if observation.get("delivery_id") == natural_delivery["delivery_id"]:
+                natural_observation = cycle["_pilot_watch_timing"]
+            require(natural_observation is not None
+                    and observation.get("condition") == "native_transport_unavailable",
+                    "real-clock watcher did not observe the original notice after its deadline")
+            natural_elapsed_ms = round((parse_time(natural_observation["finished_at"])
+                                        - natural_created).total_seconds() * 1000, 3)
+            natural_report = {
+                "event_id": natural["event_id"], "delivery_id": natural_delivery["delivery_id"],
+                "actionability": "unassessed_no_actor_or_task_grade",
+                "created_at": natural["created_at"], "deadline_at": natural_delivery["available_at"],
+                "eligible_at": natural_delivery["available_at"],
+                "observed_eligible_at": natural_observation["finished_at"],
+                "arrival_to_observed_eligibility_ms": natural_elapsed_ms,
+                "deadline_to_observed_eligibility_ms": round(
+                    (parse_time(natural_observation["finished_at"]) - natural_deadline).total_seconds() * 1000, 3),
+                "watch_cycles": cycles, "eligible_wake_decisions": 1,
+                "native_wakes_accepted": 0, "native_transport": "unavailable",
+                "provider_calls": 0,
+            }
+        result = {"case": "routine_notice_watcher_eligibility", "store_api": "disposable",
+                  "watcher_process": "real_once", "native_owner": "synthetic_live_child",
+                  "defer_seconds": 30, "early_wake_attempt": False,
+                  "urgent_request_observed": True, "urgent_notice_observed": True,
+                  "flush_released_original": True,
+                  "restart_preserved_deadline": True, "busy_owner_wake": False,
+                  "expired_notice_observed_after_idle": True,
+                  "native_transport": "unavailable", "model_wake": False,
+                  "task_outcome": "unassessed"}
+        if natural_report is not None:
+            result["real_clock_60_second_pilot"] = natural_report
+        print(json.dumps(result))
     finally:
         if owner is not None:
             owner.terminate()
@@ -478,5 +480,10 @@ def check(binary):
 
 
 if __name__ == "__main__":
-    require(len(sys.argv) == 2, "usage: check_notice_watcher_eligibility.py BINARY")
-    check(Path(sys.argv[1]))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--real-clock-pilot", action="store_true",
+                        help="also wait for and measure one natural 60-second notice deadline")
+    parser.add_argument("binary", type=Path)
+    args = parser.parse_args()
+    check(args.binary, real_clock_pilot=args.real_clock_pilot)
