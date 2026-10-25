@@ -6,6 +6,13 @@ import { isAbsolute } from "node:path"
 import type { ZodRawShape } from "zod"
 
 const z = tool.schema
+const toolProfile = process.env.CAIRN_OPENCODE_TOOL_PROFILE ?? "full"
+if (toolProfile !== "full" && toolProfile !== "compact/1") {
+  throw new Error("CAIRN_OPENCODE_TOOL_PROFILE must be full or compact/1")
+}
+const profiledDescription = (full: string, compact: string) =>
+  toolProfile === "compact/1" ? compact : full
+
 function validatedTool<Args extends ZodRawShape>(definition: Parameters<typeof tool<Args>>[0]) {
   const schema = z.object(definition.args).strict()
   return tool({ ...definition, async execute(args, context) {
@@ -22,7 +29,7 @@ const contextFields = {
   binding_id: z.string().optional(), capability_id: z.string().optional(),
 }
 
-const entities = z.array(z.object({ kind: z.enum(["file", "symbol"]), name: z.string().min(1) }).strict()).max(16).optional().describe("Explicit file or symbol associations. File names are canonical repository-relative paths; symbols are qualified labels. Names are case-sensitive; no alias or rename resolution. Fallible relevance metadata, never authority or observed workspace state.")
+const entities = z.array(z.object({ kind: z.enum(["file", "symbol"]), name: z.string().min(1) }).strict()).max(16).optional().describe(profiledDescription("Explicit file or symbol associations. File names are canonical repository-relative paths; symbols are qualified labels. Names are case-sensitive; no alias or rename resolution. Fallible relevance metadata, never authority or observed workspace state.", "Optional exact repository-relative file or qualified symbol hints; fallible relevance metadata, not authority or observed workspace state."))
 
 const absolutePath = z.string().refine(isAbsolute, "Use an absolute installation path")
 const declaredScope = z.string().refine(value => value.trim() !== "" && value !== "*" &&
@@ -219,13 +226,13 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
 }
 
 export const search = validatedTool({
-  description: "Search repository memory in the host's configured task/run scope, defaulting to this OpenCode session, with a query or browse=true without a query. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
+  description: profiledDescription("Search repository memory in the host's configured task/run scope, defaulting to this OpenCode session, with a query or browse=true without a query. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.", "Search eligible memory in the configured scope. Read mandatory context and pull relevant sources with complete pull_arguments. Results are fallible; verify before use."),
   args: searchFields,
   async execute(args, context) { return executeSearch(args, context, false) },
 })
 
 export const prepare_note = validatedTool({
-  description: "Inspect possible predecessors before a separate explicit note save or correction. Supply a short subject query, not the draft body or secrets. Uses ordinary retrieval, current access/scope checks and complete pull handles; empty results or search failures are not clearance to save. No automatic writes, replacement inference or authority changes.",
+  description: profiledDescription("Inspect possible predecessors before a separate explicit note save or correction. Supply a short subject query, not the draft body or secrets. Uses ordinary retrieval, current access/scope checks and complete pull handles; empty results or search failures are not clearance to save. No automatic writes, replacement inference or authority changes.", "Search for possible predecessor notes before writing. Pull and compare full current sources; this tool never saves or authorizes a change."),
   args: {
     query: z.string().min(1).describe("Short subject query including project and known identifiers; no draft body or secrets."),
     entities: entities.describe("Explicit known file/symbol hints; not source identity or applicability proof. No automatic recent-file hints."),
@@ -243,7 +250,7 @@ export const prepare_note = validatedTool({
 })
 
 export const history = validatedTool({
-  description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
+  description: profiledDescription("Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.", "Read retained versions for comparison. Historical content does not establish current eligibility; use the current source before editing. Pages and spans are partial reads."),
   args: { record_id: z.string().uuid(), version: z.number().int().min(0).max(2147483647).optional(),
     available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room in conservative UTF-8 bytes. May exceed the default for a deliberate larger history read, up to the configured host ceiling. Omit for the default; count prior reads separately."),
     memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional output allowance for this history result: 256 through available_tokens or the configured default. Does not enlarge a receipt or change later reads."),
@@ -259,7 +266,7 @@ export const history = validatedTool({
 })
 
 export const assessments = validatedTool({
-  description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read before writing or interpreting an outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. The profile controls ownership, repository and destination. Returns no evidence bodies; at most 1000 versions, without pagination or silent truncation. The configured output budget applies.",
+  description: profiledDescription("Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read before writing or interpreting an outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. The profile controls ownership, repository and destination. Returns no evidence bodies; at most 1000 versions, without pagination or silent truncation. The configured output budget applies.", "Read assessment history for a receipt owned by this profile. No evidence bodies are returned; read before adding a review."),
   args: { receipt_id: z.string().uuid() },
   async execute(args, context) {
     const config = await settings("assessments", context)
@@ -273,7 +280,7 @@ const assessmentResult = z.object({
 })
 
 export const assess = validatedTool({
-  description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request.",
+  description: profiledDescription("Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request.", "Append a review to an owned receipt after reading its assessment history. Reuse the exact request UUID and arguments for retries; reviews are testimony."),
   args: {
     request_id: z.string().uuid(), receipt_id: z.string().uuid(),
     expected_version: z.number().int().min(0).max(2147483647),
@@ -293,7 +300,7 @@ export const assess = validatedTool({
 })
 
 export const pull = validatedTool({
-  description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. For receipts with source-opening binding enabled, partial reads can include a separate exact source_opening of up to 96 bytes. Binding is off by default for new receipts. Optional opening_bytes (1-768, requires span) overrides the prefix length; zero or omission uses the receipt policy. Pieces share the same source/version and budget and never overlap. An opening does not establish applicability. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range or opening size. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
+  description: profiledDescription("Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. For receipts with source-opening binding enabled, partial reads can include a separate exact source_opening of up to 96 bytes. Binding is off by default for new receipts. Optional opening_bytes (1-768, requires span) overrides the prefix length; zero or omission uses the receipt policy. Pieces share the same source/version and budget and never overlap. An opening does not establish applicability. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range or opening size. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.", "Pull a source with complete pull_arguments. Required and competing sources need whole reads; spans omit context. Stale handles require a fresh search."),
   args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional(),
     opening_bytes: z.number().int().min(0).max(768).optional().describe("Exact same-source prefix override; requires span; zero uses receipt policy") },
   async execute(args, context) {
@@ -303,7 +310,7 @@ export const pull = validatedTool({
 })
 
 export const pull_evidence = validatedTool({
-  description: "Pull evidence attached to an expanded memory. Use its evidence ID and full-object expected SHA256 with the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse the request UUID only for identical retries. Shares the expansion budget.",
+  description: profiledDescription("Pull evidence attached to an expanded memory. Use its evidence ID and full-object expected SHA256 with the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse the request UUID only for identical retries. Shares the expansion budget.", "Pull evidence from an expanded memory with its evidence ID and expected SHA-256. Optional spans are partial; reuse request IDs only for exact retries."),
   args: { ...pullArgs, evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
     span: z.object({ offset: z.number().int().min(0).max(1048575), length: z.number().int().min(1).max(1048576) }).strict().optional() },
   async execute(args, context) {
@@ -313,7 +320,7 @@ export const pull_evidence = validatedTool({
 })
 
 export const remember = validatedTool({
-  description: "Save explicitly selected knowledge as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
+  description: profiledDescription("Save explicitly selected knowledge as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.", "Save selected knowledge as ordinary testimony. Include source and verification context; never save raw sessions or secrets. Local is the default."),
   args: { scope: z.enum(["repository", "task", "run"]).optional().describe("Repository applies across tasks/runs. Task uses the host search task across runs; run uses its task and run. Labels come from settings or the native session. Choose explicitly; ordinary edits cannot change scope."), entities, request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
     pins: z.object({
       ...contextFields,
@@ -334,7 +341,7 @@ export const remember = validatedTool({
 })
 
 export const edit = validatedTool({
-  description: "Revise a pulled active A note. Supply exactly one of body (text only), append (verbatim suffix including separating whitespace; combined body maximum 65536 bytes), replace ({old_text, new_text}: old_text must match one unique exact passage; all other text is preserved; empty new_text removes the passage if the note remains nonblank), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
+  description: profiledDescription("Revise a pulled active A note. Supply exactly one of body (text only), append (verbatim suffix including separating whitespace; combined body maximum 65536 bytes), replace ({old_text, new_text}: old_text must match one unique exact passage; all other text is preserved; empty new_text removes the passage if the note remains nonblank), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.", "Revise a pulled active A note with exactly one change operation. Preserve unrelated content and reuse exact request arguments for retries; reconcile version conflicts."),
   args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), append: z.string().min(1).optional(), replace: z.object({ old_text: z.string().min(1), new_text: z.string() }).strict().optional(), draft: z.record(z.string(), z.unknown()).optional(),
     evidence_citations: z.array(z.object({ evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
       spans: z.array(z.object({ offset: z.number().int().min(0), length: z.number().int().positive() }).strict()).max(32).optional(),

@@ -30,11 +30,13 @@ schema exposure audit (`bbf3ce4b9a3c07c489da04d8bd82246b1925c71c1907b3f8bfaa1217
 
 The fixture returned scripted text and made no tool call. It opened no Cairn
 API or store, changed no installed account settings, and retained no raw
-request. No external provider or model inference occurred. This closes the
-local OpenCode outgoing-schema observation gap for this adapter build. It does
-not compare full and compact profiles, measure usage/cache or discovery-call
-cost, or establish a useful task outcome. CAIRN-225 remains open pending those
-paired workflow and acceptance measurements.
+request. No external provider or model inference occurred. This was the initial
+full-profile OpenCode observation. The later
+[full/compact comparison](opencode-compact-profile-2026-10-24.md) adds an
+opt-in compact description profile and measures its outgoing declaration
+shape. Neither probe measures provider usage/cache or discovery-call cost, or
+establishes a useful task outcome. CAIRN-225 remains open pending paired
+workflow and acceptance measurements.
 
 Reproduce with:
 

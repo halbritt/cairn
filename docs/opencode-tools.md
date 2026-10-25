@@ -91,6 +91,14 @@ explicit requests through the native permission context. Choose permissions for
 the intended task. These names differ from the `cairn_cairn_*` MCP names; an
 existing MCP-only permission entry does not automatically allow native tools.
 
+The default `full` profile keeps the detailed tool descriptions. To use shorter
+model-facing descriptions for one OpenCode process, launch it with
+`CAIRN_OPENCODE_TOOL_PROFILE=compact/1`. This changes descriptions only; the
+tool names, argument validation and execution behavior stay the same. An unknown
+profile value makes the adapter fail during load. The compact profile is opt-in
+and does not establish lower provider usage or equivalent task outcomes; compare
+actual workflows before adopting it.
+
 Use [cairn_history](record-history.md#native-tools) to compare earlier wording
 without shell access. It reads retained metadata or an exact historical body,
 with an optional byte `span` for a passage from a long earlier version;

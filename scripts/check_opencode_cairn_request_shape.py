@@ -32,7 +32,16 @@ def canonical(value):
                       separators=(",", ":")).encode("utf-8")
 
 
-def summarize_tools(request):
+def without_descriptions(value):
+    if isinstance(value, dict):
+        return {key: without_descriptions(item) for key, item in value.items()
+                if key != "description"}
+    if isinstance(value, list):
+        return [without_descriptions(item) for item in value]
+    return value
+
+
+def summarize_tools(request, profile):
     tools = request.get("tools")
     if not isinstance(tools, list):
         raise AssertionError("first tool request omitted its tool list")
@@ -63,12 +72,12 @@ def summarize_tools(request):
         complete_declarations[name] = declaration
         validation_shapes[name] = parameters
     validation_set_sha256 = hashlib.sha256(canonical(validation_shapes)).hexdigest()
-    if validation_set_sha256 != EXPECTED_VALIDATION_SET_SHA256:
+    if profile == "full" and validation_set_sha256 != EXPECTED_VALIDATION_SET_SHA256:
         raise AssertionError(
             "Cairn validation schema hash changed; review the request shape before updating the fixture"
         )
     declaration_set_sha256 = hashlib.sha256(canonical(complete_declarations)).hexdigest()
-    if declaration_set_sha256 != EXPECTED_DECLARATION_SET_SHA256:
+    if profile == "full" and declaration_set_sha256 != EXPECTED_DECLARATION_SET_SHA256:
         raise AssertionError(
             "Cairn declaration hash changed; review the request shape before updating the fixture"
         )
@@ -81,10 +90,15 @@ def summarize_tools(request):
         "declarations": declarations,
         "declaration_set_sha256": declaration_set_sha256,
         "validation_set_sha256": validation_set_sha256,
+        "argument_contract_set_sha256": hashlib.sha256(canonical(
+            {name: without_descriptions(schema) for name, schema in validation_shapes.items()}
+        )).hexdigest(),
+        "total_canonical_bytes": sum(item["canonical_json_utf8_bytes"]
+                                     for item in declarations.values()),
     }
 
 
-def check(binary, output):
+def check(binary, profile):
     binary = Path(binary).resolve(strict=True)
     adapter = Path(__file__).resolve().parents[1] / "integrations/opencode/cairn.ts"
     canary_requests = []
@@ -107,7 +121,7 @@ def check(binary, output):
                 canary_request_count += 1
                 if request.get("tools"):
                     try:
-                        canary_requests.append(summarize_tools(request))
+                        canary_requests.append(summarize_tools(request, profile))
                     except AssertionError as exc:
                         failures.append(str(exc))
                         self.send_error(400)
@@ -180,6 +194,8 @@ def check(binary, output):
             "OPENCODE_DISABLE_MODELS_FETCH": "true",
             "OPENCODE_DISABLE_DEFAULT_PLUGINS": "true",
         }
+        if profile == "compact/1":
+            env["CAIRN_OPENCODE_TOOL_PROFILE"] = profile
         version = subprocess.check_output([str(binary), "--version"], env=env,
                                           text=True, timeout=10).strip()
         thread.start()
@@ -209,7 +225,7 @@ def check(binary, output):
         if failures:
             raise AssertionError("; ".join(failures) + "\n" + stderr.decode("utf-8", errors="replace")[-3000:])
         report = {
-            "schema": "cairn.opencode-tool-request-shape/1",
+            "profile": profile,
             "opencode_version": version,
             "opencode_binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
             "adapter_sha256": hashlib.sha256(adapter.read_bytes()).hexdigest(),
@@ -229,16 +245,8 @@ def check(binary, output):
             "cairn_api_or_store_access": False,
             "raw_request_retained": False,
             "first_request": shape,
-            "limits": [
-                "Single current native adapter profile; no full-vs-compact comparison",
-                "Schema presence is not provider billing or accepted task evidence",
-                "No cold/retry/resume/cache accounting or task outcome",
-            ],
+            "limits": ["Local request shape is not provider billing, cache savings or task acceptance"],
         }
-        output = Path(output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(report, indent=2))
         return report
 
 
@@ -247,4 +255,35 @@ if __name__ == "__main__":
     parser.add_argument("--opencode", required=True)
     parser.add_argument("--output", required=True)
     arguments = parser.parse_args()
-    check(arguments.opencode, arguments.output)
+    full = check(arguments.opencode, "full")
+    compact = check(arguments.opencode, "compact/1")
+    full_shape = full["first_request"]
+    compact_shape = compact["first_request"]
+    if full_shape["cairn_tool_names"] != compact_shape["cairn_tool_names"]:
+        raise AssertionError("compact profile changed tool availability")
+    if full_shape["argument_contract_set_sha256"] != compact_shape["argument_contract_set_sha256"]:
+        raise AssertionError("compact profile changed argument validation contracts")
+    if full_shape["total_canonical_bytes"] <= compact_shape["total_canonical_bytes"]:
+        raise AssertionError("compact profile did not reduce declaration bytes")
+    report = {
+        "schema": "cairn.opencode-tool-profile-comparison/1",
+        "opencode_version": full["opencode_version"],
+        "opencode_binary_sha256": full["opencode_binary_sha256"],
+        "adapter_sha256": full["adapter_sha256"],
+        "route": "OpenCode native custom tool adapter to local OpenAI-compatible stub",
+        "same_tool_names": True,
+        "same_argument_validation_contracts": True,
+        "compact_profile_reduces_declaration_bytes": True,
+        "provider_called": False,
+        "model_inference": False,
+        "tool_execution": False,
+        "cairn_api_or_store_access": False,
+        "raw_request_retained": False,
+        "full": full["first_request"],
+        "compact": compact["first_request"],
+        "limits": ["Local request-shape reduction does not establish provider savings, cache effects or task acceptance"],
+    }
+    arguments.output = Path(arguments.output)
+    arguments.output.parent.mkdir(parents=True, exist_ok=True)
+    arguments.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
