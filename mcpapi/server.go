@@ -306,10 +306,10 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	}
 	index, err := t.retrieval.Search(ctx, compiled)
 	if err != nil {
-		return toolResult(nil, err, memoryRoom)
+		return t.retrievalToolResult(nil, err, memoryRoom)
 	}
 	view, memoryRoom, err := searchView(index, args, t.config.SearchView, prepare, memoryRoom, receiptRoom)
-	return toolResult(view, err, memoryRoom)
+	return t.retrievalToolResult(view, err, memoryRoom)
 }
 
 func searchView(index core.IndexResult, args searchArgs, presentation string, prepare bool, memoryRoom, receiptRoom int) (any, int, error) {
@@ -373,10 +373,10 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
 	if t.attempt != nil {
 		result, err := t.attempt.Pull(ctx, args)
-		return toolResult(result, err, t.config.maxTokens())
+		return t.retrievalToolResult(result, err, t.config.maxTokens())
 	}
 	result, err := t.retrieval.Pull(ctx, args)
-	return toolResult(result, err, t.config.maxTokens())
+	return t.retrievalToolResult(result, err, t.config.maxTokens())
 }
 
 func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args historyArgs) (*mcp.CallToolResult, any, error) {
@@ -423,7 +423,7 @@ func (t memoryTools) assess(ctx context.Context, _ *mcp.CallToolRequest, args co
 func (t memoryTools) pullEvidence(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandEvidenceRequest) (*mcp.CallToolResult, any, error) {
 	var result json.RawMessage
 	err := t.client.Call(ctx, "expand-evidence", args, &result)
-	return toolResult(result, err, t.config.maxTokens())
+	return t.retrievalToolResult(result, err, t.config.maxTokens())
 }
 
 // searchScope resolves the host's grouping labels, not an execution attestation.
@@ -550,6 +550,83 @@ func toolResult(value any, err error, room int) (*mcp.CallToolResult, any, error
 	}
 	result, _, err := encodeToolResult(value, room)
 	return result, nil, err
+}
+
+// retrievalToolResult measures the compact retrieval response after adding the
+// MCP fields the server will put on the wire. The legacy full view keeps its
+// existing encoding contract.
+func (t memoryTools) retrievalToolResult(value any, err error, room int) (*mcp.CallToolResult, any, error) {
+	if t.config.SearchView != "compact/1" {
+		return toolResult(value, err, room)
+	}
+	result, envelopeErr := retrievalResultEnvelope(t.facadeBuild)
+	if envelopeErr != nil {
+		return nil, nil, envelopeErr
+	}
+	if err != nil {
+		return boundedRetrievalError(result, retrievalErrorMessage(err), room)
+	}
+	result, _, err = encodeToolResultInto(result, value, room)
+	if err == nil {
+		return result, nil, nil
+	}
+	if strings.Contains(err.Error(), "BUDGET_REFUSED") {
+		refusal, envelopeErr := retrievalResultEnvelope(t.facadeBuild)
+		if envelopeErr != nil {
+			return nil, nil, envelopeErr
+		}
+		return boundedRetrievalError(refusal, "BUDGET_REFUSED: MCP tool result exceeds configured memory input room", room)
+	}
+	refusal, envelopeErr := retrievalResultEnvelope(t.facadeBuild)
+	if envelopeErr != nil {
+		return nil, nil, envelopeErr
+	}
+	return boundedRetrievalError(refusal, "MCP tool result could not be encoded", room)
+}
+
+func retrievalResultEnvelope(info buildinfo.Info) (*mcp.CallToolResult, error) {
+	result := new(mcp.CallToolResult)
+	if err := json.Unmarshal([]byte(`{"content":[],"resultType":"complete"}`), result); err != nil {
+		return nil, err
+	}
+	result.SetMeta(map[string]any{"io.modelcontextprotocol/serverInfo": &mcp.Implementation{
+		Name: "cairn", Version: info.Label(),
+	}})
+	return result, nil
+}
+
+func retrievalErrorMessage(err error) string {
+	var failure *core.Error
+	if errors.As(err, &failure) {
+		message := failure.Code + ": " + strings.TrimPrefix(failure.Message, failure.Code+": ")
+		if failure.RefusalID != "" {
+			message += "; refusal_id=" + failure.RefusalID
+		}
+		return message
+	}
+	return "Cairn operation failed; inspect the local API connection and service"
+}
+
+func boundedRetrievalError(result *mcp.CallToolResult, message string, room int) (*mcp.CallToolResult, any, error) {
+	result.SetError(errors.New(message))
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(encoded) <= room {
+		return result, nil, nil
+	}
+	result.Content = nil
+	result.IsError = false
+	result.SetError(errors.New("BUDGET_REFUSED: output exceeds configured room"))
+	encoded, err = json.Marshal(result)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(encoded) > room {
+		return nil, nil, errors.New("BUDGET_REFUSED: refusal exceeds configured memory input room")
+	}
+	return result, nil, nil
 }
 
 func encodeToolResult(value any, room int) (*mcp.CallToolResult, []byte, error) {

@@ -117,8 +117,10 @@ remain available for full retained receipt and candidate diagnostics under the
 same profile. Historical recompilation does not prove current eligibility; use
 a current search and pull before acting. This flag does not change the native
 hook's recall text or the SDK native adapter's source-authored search schema.
-The compact projection's final MCP envelope is checked against the configured
-input room, including JSON escaping. It has no accepted task-outcome or
+With the compact view enabled, search, body-pull and evidence-pull responses are
+checked as final MCP envelopes, including SDK metadata and JSON escaping. If a
+complete result does not fit, the facade returns a bounded `BUDGET_REFUSED`
+result; it does not clip source content. It has no accepted task-outcome or
 subscription-cost claim yet.
 
 `--tool-profile compact/1` is a separate opt-in MCP startup flag for shorter

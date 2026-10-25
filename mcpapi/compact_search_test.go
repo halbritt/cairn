@@ -197,6 +197,62 @@ func TestOptInReadOnlySearchReturnsCompactView(t *testing.T) {
 	}
 }
 
+func TestCompactSearchBudgetsFinalEscapedMCPEnvelope(t *testing.T) {
+	record, handle := uuid.NewString(), uuid.NewString()
+	index := core.IndexResult{Package: core.Package{ReceiptID: uuid.NewString(), Seal: "seal", Semantic: core.SemanticPackage{
+		Schema: "cairn.semantic/19", Status: "READY",
+		Index:    []core.IndexEntry{{RecordID: record, Version: 1, Summary: `quoted "\\"<& 日本語`}},
+		Selected: []core.Selection{}, Omitted: map[string]int{"OPTIONAL_BUDGET": 0},
+	}}, Handles: []core.IndexHandle{{RecordID: record, Version: 1, Handle: handle}}}
+	const requestID = "71f00b14-a92a-4c9b-8908-7c0286f2c0b3"
+	call := func(room int) *mcp.CallToolResult {
+		t.Helper()
+		server, err := NewReadOnlyServer(compactSearchBackend{index: index}, Config{
+			Scope: core.Scope{Repo: "repo", TaskID: "task", RunID: "run"}, AvailableTokens: room, SearchView: "compact/1",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := connect(t, context.Background(), server).CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "cairn_search", Arguments: map[string]any{"query": "quoted", "request_id": requestID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	initial := call(32000)
+	if initial.IsError {
+		t.Fatalf("search failed: %+v", initial)
+	}
+	wire, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `\\u003c`) || !strings.Contains(string(wire), `日本語`) {
+		t.Fatalf("fixture lacks escaped and UTF-8 content: %s", wire)
+	}
+
+	exact := call(len(wire))
+	exactWire, err := json.Marshal(exact)
+	if err != nil || exact.IsError || len(exactWire) != len(wire) {
+		t.Fatalf("exact final envelope budget refused: bytes=%d want=%d err=%v result=%+v", len(exactWire), len(wire), err, exact)
+	}
+
+	refused := call(len(wire) - 1)
+	refusalWire, err := json.Marshal(refused)
+	if err != nil || !refused.IsError || len(refusalWire) > len(wire)-1 || !strings.Contains(refused.Content[0].(*mcp.TextContent).Text, "BUDGET_REFUSED") {
+		t.Fatalf("final envelope refusal was not bounded/actionable: bytes=%d room=%d err=%v result=%+v", len(refusalWire), len(wire)-1, err, refused)
+	}
+
+	minimum := call(256)
+	minimumWire, err := json.Marshal(minimum)
+	if err != nil || !minimum.IsError || len(minimumWire) > 256 || !strings.Contains(minimum.Content[0].(*mcp.TextContent).Text, "BUDGET_REFUSED") {
+		t.Fatalf("minimum-room refusal exceeded its final envelope budget: bytes=%d room=256 err=%v result=%+v", len(minimumWire), err, minimum)
+	}
+}
+
 func TestOptInAttemptSearchPublishesExactCompactEnvelope(t *testing.T) {
 	var published string
 	backend := &publicationBackend{search: func(_ context.Context, _ core.CompileRequest) (core.IndexResult, SearchPublication, error) {
