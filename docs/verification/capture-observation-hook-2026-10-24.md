@@ -183,3 +183,53 @@ confirmed against the triggering private session without retaining its
 transcript or raw model output. Real subscription usage, billing, accepted-task
 utility, and net savings also remain unknown. Do not treat synthetic nulls or
 the loopback CLI's reported cost as evidence for those live quantities.
+
+## Native session attribution boundary (2026-10-25)
+
+The retained `session_sha256` is a correlation key, not an attestation that the
+native host invoked this hook for that session. The lifecycle hook computes the
+hash from `event.session_id` in
+[`integrations/lifecycle/memory.py`](../../integrations/lifecycle/memory.py)
+and submits it with the other hook-reported fields. The local API authenticates
+the configured Cairn profile; it does not authenticate the origin of the hook's
+stdin. The Store accordingly describes the request as bounded hook testimony
+and the history response explicitly says that it does not prove workflow
+association. A capture observation UUID lookup can establish that a row exists
+and inspect its contents, but cannot establish who supplied the session hash.
+
+The supported callback contracts do not supply a verifiable host credential.
+Codex command hooks receive JSON on stdin with `session_id`, `hook_event_name`,
+and other session fields ([Codex Hooks reference](https://learn.chatgpt.com/docs/hooks#common-input-fields)).
+Claude Code command hooks likewise receive event JSON on stdin, including
+`session_id` ([Claude Code Hooks reference](https://code.claude.com/docs/en/hooks#hook-input-and-output)).
+The separate Anthropic Inference Hooks endpoint calls Claude Code's
+`session_id` a best-effort, client-asserted identifier
+([Inference Hooks request fields](https://platform.claude.com/docs/en/manage-claude/inference-hooks-endpoint#the-prompt-frame)).
+Those interfaces provide useful correlation, but none of these fields is a
+signature, MAC, or credential that Cairn can verify as host-originated.
+
+A local wrapper or hook-generated nonce does not close this gap by itself. The
+wrapper receives the same caller-controlled session data, and any process
+able to invoke the hook under the same local profile can submit a fabricated
+callback. A wrapper could become a trust boundary only if it exclusively owned
+all native-host launches and the host supplied callback data to it over an
+integrity-protected channel; the current Codex and Claude hook interfaces do
+not provide that channel, and the installed sessions are not constrained to
+such a launcher. Looking up self-reported IDs, checking UUID syntax, hashing
+IDs, checking process ancestry without independent host session state, or
+minting a nonce after receiving hook stdin would only move the same testimony
+into another receipt.
+
+The minimum protocol needed to promote this to an authenticated join is a
+host-issued, verifiable, one-use callback receipt bound to the host session,
+callback/event identity, and a digest of the observed capture invocation. The
+host must deliver it through a channel the hook caller cannot forge; Cairn
+must verify its issuer, audience and bindings, reject replay, and consume it
+atomically with the observation. An equivalent trusted OS broker would need
+independent access to the host's session state and a protected way to identify
+the actual callback; a launcher that merely forwards stdin is not equivalent.
+No such attestation or broker exists in the current native hook paths. Until a
+host or trusted broker supplies that primitive, exact native-session capture
+joins are unavailable and CAIRN-215/227 must keep them incomplete. This is a
+boundary finding, not a defect in UUID lookup or a reason to reinterpret the
+existing correlation rows as authenticated evidence.
