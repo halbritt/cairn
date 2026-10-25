@@ -10,13 +10,17 @@ from workflow_model_report import attempt_ref, event_uuid, opaque
 
 
 PANEL = Path(__file__).resolve().parents[1] / 'trials/recovery-model/FROZEN.json'
+PANEL_V2 = Path(__file__).resolve().parents[1] / 'trials/recovery-model/FROZEN-v2.json'
 
 
-def evaluate(panel):
-    if panel.get('schema') != 'cairn.recovery-panel/1' or not isinstance(panel.get('cases'), list):
+def evaluate(panel, panel_path=None):
+    schema = panel.get('schema')
+    if schema not in ('cairn.recovery-panel/1', 'cairn.recovery-panel/2') or not isinstance(panel.get('cases'), list):
         raise ValueError('unsupported recovery panel')
     cases = panel['cases']
-    if len(cases) != 10 or len({case['id'] for case in cases}) != len(cases):
+    expected_case_count = panel.get('expected_case_count', 10 if schema == 'cairn.recovery-panel/1' else None)
+    if (type(expected_case_count) is not int or len(cases) != expected_case_count
+            or len({case['id'] for case in cases}) != len(cases)):
         raise ValueError('recovery panel cases changed')
     workflows = []
     for case in cases:
@@ -41,10 +45,29 @@ def evaluate(panel):
         evidence = Path(temporary) / 'evidence.json'
         evidence.write_text(json.dumps(dict(schema='cairn.recovery-evidence/1',
                                             observations=[case['observation'] for case in cases])))
-        observations = read_evidence(evidence, max_observations=10)
+        observations = read_evidence(evidence, max_observations=len(cases))
     report = compile_report(dict(schema='cairn.workflow-model-report/1', workflows=workflows), observations)
     failures = []
+    owner_prompt_turns = {}
     for case, row in zip(cases, report['observations'], strict=True):
+        owner_prompt = case.get('owner_prompt')
+        if owner_prompt is not None:
+            if not isinstance(owner_prompt, dict):
+                raise ValueError('invalid joined owner prompt evidence')
+            turn = opaque(event_uuid(owner_prompt.get('native_turn_id')))
+            responses = owner_prompt.get('provider_responses')
+            if (turn is None or (responses is not None
+                    and (type(responses) is not int or responses < 0))):
+                raise ValueError('invalid joined owner prompt identity or usage')
+            previous = owner_prompt_turns.setdefault(turn, responses)
+            if previous != responses:
+                raise ValueError('conflicting joined owner prompt usage')
+        for key, expected in case['observation'].items():
+            if key in ('event_id', 'delivery_id', 'attempt_id'):
+                continue  # Identifiers are intentionally represented only by opaque joins.
+            if key not in row['observation'] or row['observation'][key] != expected:
+                failures.append(dict(case=case['id'], field='observation.' + key,
+                                     expected=expected, observed=row['observation'].get(key)))
         for key, expected in case['expected'].items():
             if row[key] != expected:
                 failures.append(dict(case=case['id'], field=key, expected=expected, observed=row[key]))
@@ -60,8 +83,13 @@ def evaluate(panel):
             if report['phases'][phase][field] != expected:
                 failures.append(dict(phase=phase, field=field, expected=expected,
                                      observed=report['phases'][phase][field]))
-    return dict(schema='cairn.recovery-panel-result/1', cases=len(cases),
-                panel_sha256=hashlib.sha256(PANEL.read_bytes()).hexdigest(),
+    panel_path = panel_path or (PANEL if schema == 'cairn.recovery-panel/1' else PANEL_V2)
+    owner_responses = (None if any(value is None for value in owner_prompt_turns.values())
+                       else sum(owner_prompt_turns.values()))
+    return dict(schema='cairn.recovery-panel-result/1', panel_schema=schema, cases=len(cases),
+                joined_owner_prompt_native_turns=len(owner_prompt_turns),
+                joined_owner_prompt_responses=owner_responses,
+                panel_sha256=hashlib.sha256(panel_path.read_bytes()).hexdigest(),
                 passed=not failures, failures=failures,
                 repeated_emitted_reminder_revisions=report['repeated_emitted_reminder_revisions'],
                 phase_responses={name: summary['observed_responses']
@@ -74,7 +102,12 @@ def evaluate(panel):
 
 
 if __name__ == '__main__':
-    result = evaluate(json.loads(PANEL.read_text()))
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--panel', type=Path, default=PANEL_V2,
+                        help='versioned recovery panel (defaults to the current v2 panel)')
+    args = parser.parse_args()
+    result = evaluate(json.loads(args.panel.read_text()), panel_path=args.panel)
     print(json.dumps(result, sort_keys=True))
     if not result['passed']:
         raise SystemExit(1)

@@ -1,0 +1,357 @@
+{
+  "schema": "cairn.recovery-panel/2",
+  "frozen_at": "2026-10-25",
+  "purpose": "Superseding payload-free local classification and exact-attempt join controls; no provider calls",
+  "cases": [
+    {
+      "id": "refusal_before_admission",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000001",
+        "delivery_id": null,
+        "attempt_id": null,
+        "phase": "before_admission",
+        "outcome": "refused",
+        "code": "AUTH_REFUSED",
+        "recovery_state": "pending",
+        "operator_action": "intervention",
+        "model_invocation": "not_started"
+      },
+      "expected": {
+        "delivery_join": "not_applicable",
+        "attempt_join": "not_applicable",
+        "provider_join": "not_invoked",
+        "model_work_class": "observed_pre_model_refusal"
+      }
+    },
+    {
+      "id": "refusal_after_grant",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000002",
+        "delivery_id": "22222222-2222-4222-8222-222222222222",
+        "attempt_id": "11111111-1111-4111-8111-111111111112",
+        "phase": "grant",
+        "outcome": "refused",
+        "code": "GRANT_REFUSED",
+        "recovery_state": "held",
+        "operator_action": "intervention",
+        "model_invocation": "not_started",
+        "state_revision": 1
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111112"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "not_invoked",
+        "model_work_class": "observed_pre_model_refusal"
+      }
+    },
+    {
+      "id": "source_failure_model_turn",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000003",
+        "delivery_id": "22222222-2222-4222-8222-222222222223",
+        "attempt_id": "11111111-1111-4111-8111-111111111113",
+        "phase": "source",
+        "outcome": "failed",
+        "code": "SOURCE_UNAVAILABLE",
+        "recovery_state": "retry_same_intent",
+        "operator_action": "manual_retry",
+        "model_invocation": "started",
+        "state_revision": 1
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111113",
+        "provider_responses": 2
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "joined",
+        "model_work_class": "joined_model_turn"
+      }
+    },
+    {
+      "id": "stale_execution_different_attempt",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000004",
+        "delivery_id": "22222222-2222-4222-8222-222222222224",
+        "attempt_id": "11111111-1111-4111-8111-111111111114",
+        "phase": "tool",
+        "outcome": "held",
+        "code": "STALE_EXECUTION",
+        "recovery_state": "held",
+        "operator_action": "intervention",
+        "model_invocation": "unknown",
+        "state_revision": 2
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111119",
+        "provider_responses": 1
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "mismatch",
+        "provider_join": "unknown",
+        "model_work_class": "unknown"
+      }
+    },
+    {
+      "id": "turn_end_reminder_first",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000005",
+        "delivery_id": "22222222-2222-4222-8222-222222222225",
+        "attempt_id": "11111111-1111-4111-8111-111111111115",
+        "phase": "recovery",
+        "outcome": "held",
+        "code": "ACK_PENDING",
+        "recovery_state": "pending",
+        "operator_action": "none",
+        "model_invocation": "unknown",
+        "state_revision": 1,
+        "reminder_emitted": true,
+        "reminder_kind": "turn_end"
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111115"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "unknown",
+        "model_work_class": "unknown"
+      }
+    },
+    {
+      "id": "turn_end_reminder_repeat",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000006",
+        "delivery_id": "22222222-2222-4222-8222-222222222226",
+        "attempt_id": "11111111-1111-4111-8111-111111111115",
+        "phase": "recovery",
+        "outcome": "held",
+        "code": "ACK_PENDING",
+        "recovery_state": "pending",
+        "operator_action": "none",
+        "model_invocation": "unknown",
+        "state_revision": 1,
+        "reminder_emitted": true,
+        "reminder_kind": "turn_end"
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111115"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "unknown",
+        "model_work_class": "unknown"
+      }
+    },
+    {
+      "id": "new_revision_reminder",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000007",
+        "delivery_id": "22222222-2222-4222-8222-222222222227",
+        "attempt_id": "11111111-1111-4111-8111-111111111115",
+        "phase": "recovery",
+        "outcome": "held",
+        "code": "ACK_PENDING",
+        "recovery_state": "pending",
+        "operator_action": "none",
+        "model_invocation": "unknown",
+        "state_revision": 2,
+        "reminder_emitted": true,
+        "reminder_kind": "turn_end"
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111115"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "unknown",
+        "model_work_class": "unknown"
+      }
+    },
+    {
+      "id": "uncertain_relay_reply",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000008",
+        "delivery_id": "22222222-2222-4222-8222-222222222228",
+        "attempt_id": "11111111-1111-4111-8111-111111111118",
+        "phase": "reply",
+        "outcome": "failed",
+        "code": "RELAY_UNCERTAIN",
+        "recovery_state": "retry_same_intent",
+        "operator_action": "manual_retry",
+        "model_invocation": "started",
+        "state_revision": 1
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111118"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "unknown",
+        "model_work_class": "model_started_unjoined"
+      }
+    },
+    {
+      "id": "missing_ack_self_drain",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000009",
+        "delivery_id": "22222222-2222-4222-8222-222222222229",
+        "attempt_id": "drain-11111111-1111-4111-8111-111111111129",
+        "phase": "settlement",
+        "outcome": "recovered",
+        "code": "ACK_COMMITTED",
+        "recovery_state": "committed",
+        "operator_action": "self_drain",
+        "model_invocation": "started",
+        "state_revision": 3
+      },
+      "workflow": {
+        "attempt_id": "drain-11111111-1111-4111-8111-111111111129",
+        "provider_responses": 1
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "joined",
+        "model_work_class": "joined_model_turn"
+      }
+    },
+    {
+      "id": "expired_lease_hold",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000010",
+        "delivery_id": "22222222-2222-4222-8222-222222222230",
+        "attempt_id": "11111111-1111-4111-8111-111111111130",
+        "phase": "settlement",
+        "outcome": "held",
+        "code": "LEASE_EXPIRED",
+        "recovery_state": "held",
+        "operator_action": "intervention",
+        "model_invocation": "unknown",
+        "state_revision": 2
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111130"
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "unknown",
+        "model_work_class": "unknown"
+      }
+    },
+    {
+      "id": "transient_provider_failure_same_attempt",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000011",
+        "delivery_id": "22222222-2222-4222-8222-222222222231",
+        "attempt_id": "11111111-1111-4111-8111-111111111131",
+        "phase": "tool",
+        "outcome": "failed",
+        "code": "PROVIDER_TRANSIENT_FAILURE",
+        "recovery_state": "retry_same_intent",
+        "operator_action": "manual_retry",
+        "model_invocation": "started",
+        "state_revision": 3,
+        "reminder_emitted": false,
+        "reminder_kind": "recovery_failure"
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111131",
+        "provider_responses": 2
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "joined",
+        "model_work_class": "joined_model_turn"
+      }
+    },
+    {
+      "id": "joined_owner_prompt_refusal",
+      "observation": {
+        "event_id": "00000000-0000-4000-8000-000000000012",
+        "delivery_id": "22222222-2222-4222-8222-222222222232",
+        "attempt_id": "11111111-1111-4111-8111-111111111132",
+        "phase": "admission",
+        "outcome": "refused",
+        "code": "JOINED_OWNER_PROMPT",
+        "recovery_state": "pending",
+        "operator_action": "none",
+        "model_invocation": "not_started",
+        "state_revision": 1
+      },
+      "workflow": {
+        "attempt_id": "11111111-1111-4111-8111-111111111132"
+      },
+      "owner_prompt": {
+        "native_turn_id": "44444444-4444-4444-8444-444444444444",
+        "provider_responses": null
+      },
+      "expected": {
+        "delivery_join": "matched",
+        "attempt_join": "matched",
+        "provider_join": "not_invoked",
+        "model_work_class": "observed_pre_model_refusal"
+      }
+    }
+  ],
+  "expected_repeated_emitted_reminder_revisions": 1,
+  "expected_phase_responses": {
+    "before_admission": 0,
+    "grant": 0,
+    "source": 2,
+    "tool": null,
+    "recovery": null,
+    "reply": null,
+    "settlement": null,
+    "admission": 0
+  },
+  "expected_phase_provider_turns": {
+    "before_admission": 0,
+    "grant": 0,
+    "source": 1,
+    "tool": 1,
+    "recovery": 0,
+    "reply": 0,
+    "settlement": 1,
+    "admission": 0
+  },
+  "expected_phase_operator_actions": {
+    "before_admission": {
+      "intervention": 1
+    },
+    "grant": {
+      "intervention": 1
+    },
+    "source": {
+      "manual_retry": 1
+    },
+    "tool": {
+      "intervention": 1,
+      "manual_retry": 1
+    },
+    "recovery": {
+      "none": 3
+    },
+    "reply": {
+      "manual_retry": 1
+    },
+    "settlement": {
+      "self_drain": 1,
+      "intervention": 1
+    },
+    "admission": {
+      "none": 1
+    }
+  },
+  "expected_case_count": 12
+}

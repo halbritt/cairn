@@ -89,11 +89,23 @@ phase has unknown provider work; zero requires explicit no-model evidence or
 an exactly joined turn with zero responses. Compare matched attempts, operation identities,
 model route and task outcomes before making a cost or recovery-time claim.
 
-The frozen local classification panel is `trials/recovery-model/FROZEN.json`;
-run `uv run --with tiktoken==0.12.0 python scripts/eval_recovery_model_panel.py`.
-It makes no provider call and does not claim that production reminders were
-deduplicated. CAIRN-226 still requires selected live failure evidence,
-state-aware runtime reminder verification and accepted recovery outcomes.
+The historical v1 classification panel is `trials/recovery-model/FROZEN.json`;
+its bytes and hash are preserved for earlier receipts. The current v2 panel is
+`trials/recovery-model/FROZEN-v2.json`; run
+`uv run --with tiktoken==0.12.0 python scripts/eval_recovery_model_panel.py`.
+The evaluator accepts either version and checks that each exact failure code,
+recovery state, operator action and reminder observation survive into the
+report. V2 adds synthetic cases for a transient provider failure and a joined
+owner prompt. The provider-failure case exercises the exact synthetic
+event/delivery/attempt join and keeps its two synthetic responses associated
+with that attempt; its turn reference is a fixture value, not an observed native
+turn. The owner-prompt fixture counts a separate synthetic native-turn
+reference and leaves provider responses unknown, so it is not charged to the
+refused delivery. The panel's expected values are controls in the same fixture,
+not independent observations. Both versions make no provider call and do not
+measure production reminder deduplication or accepted recovery. CAIRN-226 still
+requires selected live failure evidence and the CAIRN-214 usage join before
+making model-work or token-savings claims.
 
 `scripts/check_codex_compact_native.py` also emits a bounded
 `cairn.recovery-model-report/3` fixture report from a live disposable Store
