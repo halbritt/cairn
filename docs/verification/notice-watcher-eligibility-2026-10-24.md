@@ -64,3 +64,26 @@ the race-enabled Store suite and the 10-second form of this probe. After
 increasing this probe's deadline to 30 seconds for extra concurrency margin, a
 fresh focused disposable-cluster run also passed. `make check` passed on the
 candidate branch after the code changes.
+
+## Real-clock arrival observation, 2026-10-24
+
+The probe now adds one real-clock 60-second routine notice after the accelerated
+state-transition cases. It publishes to the same disposable PostgreSQL/API and
+uses a registered synthetic idle Codex owner plus the real `watch --once`
+process. It records each watcher cycle's UTC start/end, elapsed time, condition,
+and exact delivery ID. No database deadline is edited during this observation.
+
+Observed example: the durable deadline was 60.000 seconds after `created_at`.
+The watcher recorded 12 pre-deadline cycles with no ready delivery, then observed
+the original delivery 60.151 seconds after publication, 151 ms after its stored
+deadline. There was one eligible wake decision, zero accepted native wakes, zero
+provider calls, and no model turn. The source was synthetic and
+`actionability=unassessed_no_actor_or_task_grade`.
+
+This is a timestamped arrival-to-eligibility latency sample for one notice. It
+does not compare a multi-arrival baseline with a treatment, and therefore does
+not demonstrate fewer wakeups. The synthetic owner has no native queue endpoint.
+Busy, idle, API restart, request bypass, urgent-notice bypass, and publisher
+flush remain covered by the earlier disposable state-transition probe.
+Focused-host behavior and starvation under sustained arrivals remain untested.
+CAIRN-220 stays open for arrival-based wake reduction and native-host outcomes.
