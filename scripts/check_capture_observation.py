@@ -34,7 +34,7 @@ if mode == "provider_error":
     print(json.dumps(dict(type="result", is_error=True, fixture_output="RAW_SELECTOR_SENTINEL")))
     sys.exit(0)
 selected = dict(memories=[], workstream=None, checkpoint=None)
-if mode in ("saved", "saved_report_failure", "write_failure"):
+if mode in ("saved", "saved_report_failure", "write_failure", "codex_native_saved"):
     selected["memories"] = [dict(record_id=None, kind="lesson", title=mode,
                                   body="Safe selected " + mode + " note")]
 print(json.dumps(dict(type="result", is_error=False, structured_output=selected,
@@ -227,6 +227,10 @@ def check(binary, directory):
         if claude:
             from check_claude_capture_observation_native import check as check_native_capture
             check_native_capture(claude, binary, root, repo, agent)
+        codex = os.environ.get("CAIRN_CODEX_BINARY")
+        if codex:
+            from check_codex_capture_observation_native import check as check_native_codex_capture
+            check_native_codex_capture(codex, binary, root, repo, agent, selector, shim)
         print("Capture hook/CLI/API metering: saved, no selection, skips, timeout, provider and write errors, unknown report; source/output excluded")
     finally:
         api.terminate()

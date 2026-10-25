@@ -175,14 +175,47 @@ case retains the completed selector usage but reports `write_error`. The
 observation unit tests cover the same distinction. These checks establish
 local missing-usage and failed-selector attribution without a provider call.
 
-The native loopback fixture covers only a successful Claude selector response
-with complete synthetic usage. No native Codex capture fixture currently
-exercises that hook/report join. The still-unmeasured live boundary is a
-subscription-backed selector failure or response with incomplete usage,
-confirmed against the triggering private session without retaining its
-transcript or raw model output. Real subscription usage, billing, accepted-task
-utility, and net savings also remain unknown. Do not treat synthetic nulls or
-the loopback CLI's reported cost as evidence for those live quantities.
+The native loopback fixture covers a successful Claude selector response with
+complete synthetic usage. A separate provider-free Codex fixture now exercises
+the native hook/report join; it does not call a provider. The still-unmeasured
+live boundary is a subscription-backed selector failure or response with
+incomplete usage, confirmed against the triggering private session without
+retaining its transcript or raw model output. Real subscription usage, billing,
+accepted-task utility, and net savings also remain unknown. Do not treat
+synthetic nulls or the loopback CLI's reported cost as evidence for those live
+quantities.
+
+## Native local Codex SessionEnd capture (2026-10-25)
+
+Codex CLI 0.164.0 ran with a fresh `HOME` and `CODEX_HOME`, an isolated config,
+and one explicitly trusted test-only `SessionEnd` handler. The app-server
+created a thread and archived it without starting a turn. The fixture seeded
+that native thread's rollout path with a valid `session_meta` header and two
+synthetic messages. It used the existing local selector script and configured
+the only model endpoint as a loopback guard. The guard recorded zero requests;
+no installed credentials or settings were available to the subprocess.
+
+Codex invoked the lifecycle hook on its native `SessionEnd` callback. The
+disposable API and PostgreSQL cluster recorded one `saved` observation with
+`selector_outcome=completed`. The session hash matched the UUID supplied in the
+callback. The snapshot hash matched both the expected digest of the synthetic
+messages and the committed capture state. Synthetic usage was 135 input, 20
+output, 7 cache-creation input, and 90 cache-read input tokens. The selector's
+synthetic reported cost was `$0.003`; it is test data, not provider billing.
+The fixture checked that raw dialogue and selector-output sentinels were absent
+from the observation, capture state, saved record, and PostgreSQL rows. It
+deletes its private rollout and temporary state after the check.
+
+The native case runs from `scripts/check_capture_observation.py` when
+`CAIRN_CODEX_BINARY` names the Codex executable; the disposable database probe
+was run directly on 2026-10-25. It is a synthetic callback and selector fixture,
+not a subscription-backed sample. The current Cairn Codex installer still does
+not install `SessionEnd` because Codex limits that synchronous hook to three
+seconds; this fixture installs a fast test handler only in its disposable home.
+It does not measure task usefulness, subscription usage, billing, or savings.
+The session UUID remains callback testimony, not authenticated host
+attribution, so the exact-session trust gap and CAIRN-215 acceptance remain
+open.
 
 ## Native session attribution boundary (2026-10-25)
 
