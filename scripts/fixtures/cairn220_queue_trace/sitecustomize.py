@@ -26,6 +26,18 @@ def _write(stage, outcome, error=None, code=None, flags=None, digests=None):
         append_trace(_TRACE_FD, stage, outcome, error, code, flags, digests)
 
 
+def _refusal_class(exc):
+    code = getattr(exc, "code", None)
+    message = getattr(exc, "message", None)
+    if code == -32600 and message == "thread already has an active or pending turn":
+        return "busy"
+    if code == -32600 and isinstance(message, str) and message.startswith("queued submission not found:"):
+        return "submission_not_found"
+    if code == -32600:
+        return "invalid_request_other"
+    return "native_refusal_other"
+
+
 if _TRACE:
     # Establish the private trace before startup assertions or queue work.
     _TRACE_FD = create_trace(_TRACE)
@@ -85,7 +97,14 @@ if _TRACE:
                 value = _original_rpc(self, method, params, *args, **kwargs)
             except BaseException as exc:
                 if stage:
-                    _write(stage, "refused", type(exc).__name__, getattr(exc, "code", None))
+                    flags = {}
+                    if stage == "queue_start":
+                        flags["receipt_matches_start"] = bool(
+                            isinstance(params, dict) and isinstance(params.get("queuedSubmissionId"), str)
+                            and params.get("queuedSubmissionId") == _LAST_RECEIPT_ID)
+                        if isinstance(exc, _queue.QueueRefused):
+                            flags["native_refusal_class"] = _refusal_class(exc)
+                    _write(stage, "refused", type(exc).__name__, getattr(exc, "code", None), flags=flags)
                 raise
             if stage:
                 flags = {}

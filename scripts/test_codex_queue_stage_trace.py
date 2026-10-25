@@ -71,6 +71,52 @@ else:
         self.assertNotIn("PRIVATE WAKE TEXT", json.dumps(rows))
         self.assertFalse(any("message" in row for row in rows))
 
+    def test_queue_start_refusal_records_fixed_class_and_receipt_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            env = dict(os.environ)
+            env.update(
+                CAIRN220_QUEUE_TRACE=str(trace),
+                PYTHONPATH=os.pathsep.join((str(OBSERVER), str(LIFECYCLE))),
+            )
+            code = r"""
+import json, time
+import codex_queue
+class Peer:
+    def settimeout(self, _value): pass
+    def send(self, _value): pass
+    def recv(self):
+        return json.dumps({"id": 1, "error": {"code": -32600, "message": "PRIVATE NATIVE DETAIL"}})
+rpc = codex_queue._Rpc(Peer(), time.monotonic() + 5)
+try:
+    rpc("thread/queue/start", {"threadId": "thread", "queuedSubmissionId": "receipt"}, busy_ok=True)
+except codex_queue.QueueRefused:
+    pass
+else:
+    raise AssertionError("the synthetic start refusal was not preserved")
+"""
+            completed = subprocess.run([sys.executable, "-c", code], env=env,
+                                       capture_output=True, text=True, check=False)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            rows = [json.loads(line) for line in trace.read_text().splitlines()]
+        refusal = rows[-1]
+        self.assertEqual((refusal["stage"], refusal["outcome"]), ("queue_start", "refused"))
+        self.assertEqual(refusal["native_refusal_class"], "invalid_request_other")
+        self.assertFalse(refusal["receipt_matches_start"])
+        self.assertNotIn("PRIVATE NATIVE DETAIL", json.dumps(rows))
+
+    def test_api_start_classifier_uses_only_fixed_path_category(self):
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            from check_codex_app_server_wake_join import _classify_api_start_output
+        finally:
+            sys.path.remove(str(SCRIPTS))
+        long_socket = Path("/fixture/" + "x" * 120 + "/api.sock")
+        envelope = b'{"ok":false,"status":"STORE_ERROR","message":"operation failed"}'
+        self.assertEqual(_classify_api_start_output(envelope, b"", truncated=False,
+                                                    socket_path=long_socket),
+                         "api_socket_path_too_long")
+
     def test_trace_creation_rejects_symlink_paths_and_existing_targets(self):
         sys.path.insert(0, str(OBSERVER))
         try:

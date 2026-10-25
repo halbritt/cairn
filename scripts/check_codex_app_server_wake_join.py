@@ -148,6 +148,129 @@ def _stop_disposable_postgres(pg_bin: Path, data_dir: Path) -> bool:
     return result.returncode == 0 and not (data_dir / "postmaster.pid").exists()
 
 
+class _OutputCapture:
+    def __init__(self, limit: int = 16_384):
+        self.limit = limit
+        self.kept = bytearray()
+        self.total = 0
+        self.enabled = True
+        self.lock = threading.Lock()
+
+    def drain(self, stream):
+        while True:
+            chunk = stream.read(2048)
+            if not chunk:
+                return
+            with self.lock:
+                if self.enabled:
+                    self.total += len(chunk)
+                    if len(self.kept) < self.limit:
+                        self.kept.extend(chunk[:self.limit - len(self.kept)])
+
+    def snapshot(self) -> tuple[bytes, bool]:
+        with self.lock:
+            return bytes(self.kept), self.total > len(self.kept)
+
+    def discard(self) -> None:
+        with self.lock:
+            self.enabled = False
+            self.kept.clear()
+            self.total = 0
+
+
+def _classify_api_start_output(stdout: bytes, stderr: bytes, *, truncated: bool,
+                               socket_path: Path | None = None) -> str:
+    """Classify transient serve output without retaining paths or error text."""
+    if truncated:
+        return "output_truncated"
+    try:
+        envelope = json.loads(stdout)
+    except (TypeError, ValueError):
+        envelope = None
+    if isinstance(envelope, dict) and envelope.get("ok") is False:
+        status = envelope.get("status")
+        message = envelope.get("message")
+        lower = message.lower() if isinstance(message, str) else ""
+        if status == "STORE_ERROR" and socket_path is not None and len(os.fsencode(socket_path)) >= 108:
+            return "api_socket_path_too_long"
+        if status in ("STORE_ERROR", "STORE_UNREACHABLE"):
+            return "store_open_failed"
+        if status == "INVALID_REQUEST" and "identity configuration" in lower:
+            return "identity_config_invalid"
+        if any(text in lower for text in ("connection refused", "no such file or directory",
+                                          "database does not exist", "authentication failed")):
+            return "database_unavailable"
+        if any(text in lower for text in ("socket directory", "socket lock", "api socket")):
+            return "socket_setup_refused"
+        if any(text in lower for text in ("unrecognized configuration", "invalid source-opening")):
+            return "runtime_configuration_invalid"
+        return "unknown_json_refusal"
+    combined = (stdout + b"\n" + stderr).lower()
+    if b"address already in use" in combined or b"bind: address" in combined:
+        return "api_bind_failed"
+    if b"identity configuration" in combined:
+        return "identity_config_invalid"
+    if b"connection refused" in combined or b"database does not exist" in combined:
+        return "database_unavailable"
+    if not combined.strip():
+        return "process_exit_no_output"
+    return "unclassified_output"
+
+
+def _launch_api(binary: Path, api: Path, server_env: dict, socket_path: Path,
+                *, timeout: float = 12):
+    """Start the local API, keeping only bounded in-memory stdout/stderr for classification."""
+    process = subprocess.Popen([str(binary), "serve", "--socket", str(socket_path)], env=server_env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout_capture = _OutputCapture()
+    stderr_capture = _OutputCapture()
+    readers = [threading.Thread(target=stdout_capture.drain, args=(process.stdout,), daemon=True),
+               threading.Thread(target=stderr_capture.drain, args=(process.stderr,), daemon=True)]
+    for reader in readers:
+        reader.start()
+    _bootstrap("api_start", "after")
+    _bootstrap("api_ready", "before")
+    deadline = time.monotonic() + timeout
+    socket_path = Path(socket_path)
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            for reader in readers:
+                reader.join(timeout=2)
+            stdout, out_truncated = stdout_capture.snapshot()
+            stderr, err_truncated = stderr_capture.snapshot()
+            category = _classify_api_start_output(stdout, stderr,
+                truncated=out_truncated or err_truncated, socket_path=socket_path)
+            stdout_capture.discard()
+            stderr_capture.discard()
+            _bootstrap("api_ready", "failed", "CalledProcessError", process.returncode,
+                       flags={"api_start_failure_class": category})
+            raise RuntimeError("disposable_api_start_failed")
+        if socket_path.exists():
+            # Successful startup is the diagnostic boundary. Discard all captured
+            # bytes now; reader threads continue draining without retaining output.
+            stdout_capture.discard()
+            stderr_capture.discard()
+            _bootstrap("api_ready", "after")
+            return process, readers
+        time.sleep(0.02)
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+    for reader in readers:
+        reader.join(timeout=2)
+    stdout, out_truncated = stdout_capture.snapshot()
+    stderr, err_truncated = stderr_capture.snapshot()
+    category = _classify_api_start_output(stdout, stderr,
+        truncated=out_truncated or err_truncated, socket_path=socket_path)
+    stdout_capture.discard()
+    stderr_capture.discard()
+    _bootstrap("api_ready", "failed", "TimeoutExpired", flags={"api_start_failure_class": category})
+    raise RuntimeError("disposable_api_socket_timeout")
+
+
 _PHASE = "runner"
 _API_FAILURE_CLASS = None
 
@@ -158,8 +281,9 @@ def _bootstrap(step: str, outcome: str, error=None, code=None, flags=None) -> No
 
 
 def _api_call(binary: Path, api: Path, token_file: Path, operation: str,
-              body: dict, session: dict | None = None) -> dict:
-    argv = [str(binary), "agent", "--socket", str(api / "api.sock"),
+              body: dict, session: dict | None = None,
+              socket_path: Path | str | None = None) -> dict:
+    argv = [str(binary), "agent", "--socket", str(socket_path or (api / "api.sock")),
             "--token-file", str(token_file)]
     if session:
         argv += ["--agent-id", session["agent_id"], "--execution-id", session["execution_id"]]
@@ -222,6 +346,9 @@ def _sandbox_prefix(root: Path, trace_name: str, *, preflight: bool) -> list[str
     ]
     command += ["--setenv", "CAIRN220_QUEUE_TRACE" if preflight else "CAIRN220_TRACE_TARGET",
                 "/trace/" + trace_name]
+    if not preflight:
+        item_trace_name = "item-stage-" + trace_name.removeprefix("run-queue-stage-")
+        command += ["--setenv", "CAIRN220_ITEM_TRACE_TARGET", "/trace/" + item_trace_name]
     command += ["--chdir", "/repo" if preflight else "/fixture"]
     return command
 
@@ -264,7 +391,9 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
     api.mkdir(mode=0o700)
     socket_dir = _short_socket_dir()
     data_dir = root / "pgdata"
+    api_socket = socket_dir / "api.sock"
     api_process = None
+    api_readers = []
     postgres_started = False
     try:
         _PHASE = "pg_initdb"
@@ -294,22 +423,10 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
         _write_private(api / "identities.json", json.dumps(identities))
         _PHASE = "api_start"
         _bootstrap(_PHASE, "before")
-        api_process = subprocess.Popen([str(binary), "serve"], env=server_env,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _bootstrap(_PHASE, "after")
+        api_process, api_readers = _launch_api(binary, api, server_env, api_socket)
         _PHASE = "api_ready"
-        _bootstrap(_PHASE, "before")
-        deadline = time.monotonic() + 12
-        while time.monotonic() < deadline and not (api / "api.sock").exists():
-            if api_process.poll() is not None:
-                _bootstrap(_PHASE, "failed", "OtherError", flags={"api_failure_class": "server_process_exit"})
-                require(False, "disposable_api_start_failed")
-            time.sleep(0.02)
-        if not (api / "api.sock").exists():
-            _bootstrap(_PHASE, "failed", "OtherError", flags={"api_failure_class": "socket_timeout"})
-            require(False, "disposable_api_socket_missing")
         try:
-            _api_call(binary, api, Path(tokens["sender"]), "version", {})
+            _api_call(binary, api, Path(tokens["sender"]), "version", {}, socket_path=api_socket)
         except RuntimeError:
             _bootstrap(_PHASE, "failed", "OtherError", flags={
                 "api_failure_class": _API_FAILURE_CLASS or "response_contract_mismatch"})
@@ -322,7 +439,8 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
         _write_private(profile / "auth.json", '{"OPENAI_API_KEY":"sk-cairn220-fake"}\n')
         return pg_bin, binary, dict(api=api, api_process=api_process, dsn=dsn, repo=repo,
                                     tokens=tokens, profile=profile, trace_path=trace_path,
-                                    socket_dir=socket_dir)
+                                    socket_dir=socket_dir, api_readers=api_readers,
+                                    api_socket=api_socket)
     except Exception:
         if api_process is not None:
             api_process.terminate()
@@ -331,6 +449,8 @@ def _host_setup(root: Path, trace_path: Path) -> tuple[Path, Path, dict]:
             except subprocess.TimeoutExpired:
                 api_process.kill()
                 api_process.wait(timeout=5)
+            for reader in api_readers:
+                reader.join(timeout=2)
         if (postgres_started or (data_dir / "postmaster.pid").exists()) and not _stop_disposable_postgres(pg_bin, data_dir):
             _bootstrap("pg_cleanup", "failed", "OtherError")
             raise RuntimeError("pg_cleanup_failed") from None
@@ -357,6 +477,140 @@ def _postgres_bootstrap_preflight(root: Path, pg_bin: Path) -> None:
                 _bootstrap("pg_cleanup", "failed", "OtherError")
                 raise RuntimeError("pg_cleanup_failed") from None
         shutil.rmtree(socket_dir, ignore_errors=True)
+
+
+def _run_api_preflight() -> dict:
+    """Run the exact disposable PG/API setup without entering bwrap or the watcher."""
+    _private_trace_home()
+    run_id = uuid.uuid4().hex
+    # Match run_once's root name so the default API socket path has identical length.
+    root = Path(tempfile.mkdtemp(prefix="fixture-" + run_id + "-", dir=TRACE_HOME))
+    root.chmod(0o700)
+    trace_path = TRACE_HOME / ("bootstrap-api-preflight-" + run_id + ".jsonl")
+    global _BOOTSTRAP_FD, _BOOTSTRAP_PATH
+    _BOOTSTRAP_FD = create_trace(str(trace_path))
+    _BOOTSTRAP_PATH = trace_path
+    _bootstrap("api_preflight", "before")
+    pg_bin = None
+    api_process = None
+    api_readers = []
+    socket_dir = None
+    cleanup_ok = True
+    try:
+        pg_bin, _binary, context = _host_setup(root, trace_path)
+        api_process = context["api_process"]
+        api_readers = context["api_readers"]
+        socket_dir = context["socket_dir"]
+        _bootstrap("api_preflight", "after")
+        return {"result": "api_start_preflight_passed", "watcher_started": False}
+    finally:
+        if api_process is not None and api_process.poll() is None:
+            api_process.terminate()
+            try:
+                api_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                api_process.kill()
+                api_process.wait(timeout=5)
+        for reader in api_readers:
+            reader.join(timeout=2)
+        if pg_bin is not None and (root / "pgdata" / "postmaster.pid").exists():
+            cleanup_ok = _stop_disposable_postgres(pg_bin, root / "pgdata")
+            if not cleanup_ok:
+                _bootstrap("pg_cleanup", "failed", "OtherError")
+        if (root / "pgdata" / "postmaster.pid").exists():
+            cleanup_ok = False
+            _bootstrap("pg_cleanup", "failed", "OtherError")
+        if socket_dir is not None and cleanup_ok:
+            shutil.rmtree(socket_dir, ignore_errors=True)
+        if cleanup_ok:
+            shutil.rmtree(root, ignore_errors=True)
+        else:
+            _bootstrap("pg_cleanup", "failed", "OtherError")
+        if _BOOTSTRAP_FD is not None:
+            os.close(_BOOTSTRAP_FD)
+            _BOOTSTRAP_FD = None
+        if not cleanup_ok:
+            raise RuntimeError("pg_cleanup_failed") from None
+
+
+class _ItemStartedObserver:
+    """Observe only fixed item/started identifiers on a separate app-server connection."""
+
+    def __init__(self, queue_module, endpoint: str, process: dict, native_id: str,
+                 delivery_id: str, trace_path: str):
+        from trace_io import append_trace, create_trace
+
+        self._append = append_trace
+        self._fd = create_trace(trace_path)
+        self._stop = threading.Event()
+        self._connection = None
+        self._thread = None
+        self._delivery_id = delivery_id
+        self._native_id = native_id
+        self._append(self._fd, "trace", "started")
+        try:
+            self._connection, _websocket, _peer = queue_module._open(endpoint, process, "process")
+            rpc = queue_module._Rpc(self._connection, time.monotonic() + 5)
+            rpc("initialize", dict(clientInfo=dict(name="cairn220-item-observer", version="1"),
+                                   capabilities=dict(experimentalApi=True)))
+            self._connection.send(json.dumps(dict(method="initialized")))
+            loaded = rpc("thread/loaded/list", dict(limit=100))
+            require(native_id in loaded.get("data", []), "notification_observer_thread_not_loaded")
+            self._connection.settimeout(0.25)
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        except Exception:
+            if self._connection is not None:
+                try:
+                    self._connection.close(timeout=0)
+                except Exception:
+                    pass
+            os.close(self._fd)
+            raise
+
+    def _run(self):
+        from websocket import WebSocketTimeoutException, WebSocketException
+
+        seen = 0
+        while not self._stop.is_set() and seen < 32:
+            try:
+                message = json.loads(self._connection.recv())
+            except WebSocketTimeoutException:
+                continue
+            except (OSError, WebSocketException, ValueError, TypeError):
+                return
+            if not isinstance(message, dict) or message.get("method") != "item/started":
+                continue
+            params = message.get("params")
+            if not isinstance(params, dict):
+                continue
+            item = params.get("item")
+            if not isinstance(item, dict) or item.get("type") != "userMessage":
+                continue
+            seen += 1
+            client_id = item.get("clientId")
+            turn_id = params.get("turnId")
+            item_id = item.get("id")
+            client_digest = _digest(client_id.encode()) if isinstance(client_id, str) else None
+            turn_digest = _digest(turn_id.encode()) if isinstance(turn_id, str) else None
+            item_digest = _digest(item_id.encode()) if isinstance(item_id, str) else None
+            self._append(self._fd, "native_item_started", "observed",
+                flags={"delivery_id_matches": client_id == self._delivery_id,
+                       "item_thread_matches": params.get("threadId") == self._native_id,
+                       "item_is_user_message": True},
+                digests={"delivery_id_sha256": client_digest, "turn_id_sha256": turn_digest,
+                         "native_item_id_sha256": item_digest})
+
+    def close(self):
+        self._stop.set()
+        if self._connection is not None:
+            try:
+                self._connection.close(timeout=0)
+            except Exception:
+                pass
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        os.close(self._fd)
 
 
 def _run_postgres_preflight() -> dict:
@@ -394,6 +648,8 @@ def _inside(root_text: str) -> int:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     root = Path(root_text)
+    fixture = json.loads((root / "fixture.json").read_text())
+    api_socket = fixture["api_socket"]
     api = root / "api"
     profile = root / "profile"
     workspace = root / "workspace"
@@ -405,6 +661,7 @@ def _inside(root_text: str) -> int:
     repo = "fixture:cairn-220-wake-join"
     requests = []
     response_event = threading.Event()
+    item_observer = None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -460,7 +717,7 @@ def _inside(root_text: str) -> int:
     state_dir.mkdir(mode=0o700)
     binding = "codex-wake-join"
     config_path = bindings / (binding + ".json")
-    config_data = dict(cairn=str(binary), socket=str(api / "api.sock"),
+    config_data = dict(cairn=str(binary), socket=api_socket,
         token_file=str(worker_token), state_dir=str(state_dir), binding=binding,
         harness="codex", repo=repo, model=MODEL, native_delivery=True,
         idle_wakeup="/bin/false", process_names=["codex"], config_home=str(profile))
@@ -530,7 +787,7 @@ def _inside(root_text: str) -> int:
                         delivery_mode="existing-session")
         registered = _api_call(binary, api, worker_token, "agent-register", dict(
             request_id=str(uuid.uuid4()), repo=repo, binding=binding,
-            native_session_id=native_id, metadata=metadata))
+            native_session_id=native_id, metadata=metadata), socket_path=api_socket)
         session = {key: registered[key] for key in ("agent_id", "execution_id")}
         state_path = coordination.state_path(config_data, native_id)
         state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -538,15 +795,18 @@ def _inside(root_text: str) -> int:
                                                     workspace=str(workspace)))
         source = _api_call(binary, api, sender_token, "create", dict(request_id=str(uuid.uuid4()), draft=dict(
             kind="note", body="Synthetic CAIRN-220 watcher source", scope=dict(repo=repo, task_id="*", run_id="*"),
-            claim_type="self", sensitivity="shareable")))
+            claim_type="self", sensitivity="shareable")), socket_path=api_socket)
         event = _api_call(binary, api, sender_token, "event-publish", dict(
             request_id=str(uuid.uuid4()), kind="notice",
             ref=dict(record_id=source["record_id"], version=source["version"]),
-            destination=dict(type="agent", name=registered["inbox"])))
+            destination=dict(type="agent", name=registered["inbox"])), socket_path=api_socket)
         event_id = event["event_id"]
-        status_before = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id})
+        status_before = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id},
+                                   socket_path=api_socket)
         delivery = status_before["deliveries"][0]
         expected_delivery_id = delivery["delivery_id"]
+        item_observer = _ItemStartedObserver(codex_queue, str(socket_path), process, native_id,
+            expected_delivery_id, os.environ["CAIRN220_ITEM_TRACE_TARGET"])
         # Keep environment minimal; only fake fixture paths and the dedicated trace pass in.
         watcher_env = {"PATH": "/usr/bin:/bin", "HOME": str(profile), "CODEX_HOME": str(profile),
                        "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
@@ -573,7 +833,8 @@ def _inside(root_text: str) -> int:
         intent = state.get("inbox_intent") or {}
         actual_delivery = ((attempt.get("delivery") or {}).get("delivery_id"))
         turn_id = attempt.get("native_turn_id") or intent.get("native_turn_id")
-        event_after = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id})
+        event_after = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id},
+                                socket_path=api_socket)
         delivery_after = event_after["deliveries"][0]
         response_event.wait(10)
         trace_rows = []
@@ -619,12 +880,31 @@ def _inside(root_text: str) -> int:
         summary["queue_start_rpc"] = queue_start.get("outcome", "not_observed")
         summary["start_matches_receipt"] = queue_start.get("receipt_matches_start", False)
         summary["native_turn_started"] = queue_start.get("turn_started", False)
-        summary["item_started"] = "observed" if any(row.get("stage") == "native_item_started"
-                                                      for row in trace_rows) else "not_observed"
+        item_trace_rows = []
+        try:
+            with open(os.environ["CAIRN220_ITEM_TRACE_TARGET"], encoding="utf-8") as stream:
+                item_trace_rows = [json.loads(line) for line in stream]
+        except (OSError, ValueError):
+            pass
+        observed_items = [row for row in item_trace_rows
+            if row.get("stage") == "native_item_started" and row.get("outcome") == "observed"
+            and row.get("delivery_id_matches") and row.get("item_thread_matches")]
+        started_item = observed_items[-1] if observed_items else {}
+        summary["item_started"] = "observed" if started_item else "not_observed"
+        summary["item_notification_trace_rows"] = len(item_trace_rows)
+        summary["queue_receipt_to_item_started"] = bool(
+            summary["receipt_confirmed"] and summary["delivery_id_matches_receipt"] and started_item
+            and started_item.get("delivery_id_sha256") == queue_add.get("delivery_id_sha256"))
         summary["native_turn_hash_matches_store_attempt"] = bool(
-            queue_start.get("turn_id_sha256") and turn_id and
-            queue_start.get("turn_id_sha256") == _digest(turn_id.encode()))
-        summary["failure_stage"] = _failure_stage(summary, trace_rows)
+            started_item.get("turn_id_sha256") and turn_id and
+            started_item.get("turn_id_sha256") == _digest(turn_id.encode()))
+        summary["exact_queue_hook_store_join"] = bool(
+            summary["queue_receipt_to_item_started"] and summary["hook_join"] and
+            summary["native_turn_hash_matches_store_attempt"])
+        if summary["exact_queue_hook_store_join"]:
+            summary["failure_stage"] = "joined"
+        else:
+            summary["failure_stage"] = _failure_stage(summary, trace_rows)
         result_path = root / "inside-result.json"
         _write_private(result_path, json.dumps(summary, sort_keys=True))
         # A local Responses request can only be served from loopback in this net namespace.
@@ -632,6 +912,8 @@ def _inside(root_text: str) -> int:
             return 0 if summary["hook_join"] else 1
         return 0 if summary["failure_stage"] else 1
     finally:
+        if item_observer is not None:
+            item_observer.close()
         if child.poll() is None:
             child.terminate()
             try:
@@ -713,7 +995,8 @@ def run_once() -> dict:
         repo = context["repo"]
         context.update(binary=binary, root=root, profile=profile, repo=repo)
         fixture = {key: str(context[key]) for key in ("api", "profile", "binary")}
-        fixture.update(repo=repo, trace_name=trace_name, run_id=run_id)
+        fixture.update(repo=repo, trace_name=trace_name, run_id=run_id,
+                       api_socket="/trace/" + socket_dir.name + "/api.sock")
         _write_private(root / "fixture.json", json.dumps(fixture, sort_keys=True))
         prefix = _sandbox_prefix(root, trace_name, preflight=False)
         command = prefix + ["--", "/usr/bin/python3", "/repo/scripts/check_codex_app_server_wake_join.py",
@@ -725,6 +1008,11 @@ def run_once() -> dict:
         stdout, stderr = proc.communicate(timeout=90)
         _bootstrap(_PHASE, "after", flags={"exit_zero": proc.returncode == 0})
         trace_rows = [json.loads(line) for line in trace_path.read_text().splitlines()]
+        item_trace_path = TRACE_HOME / ("item-stage-" + run_id + ".jsonl")
+        item_trace_info = item_trace_path.stat(follow_symlinks=False)
+        require(stat.S_ISREG(item_trace_info.st_mode) and item_trace_info.st_uid == os.geteuid()
+                and stat.S_IMODE(item_trace_info.st_mode) == 0o600 and not item_trace_path.is_symlink(),
+                "item_trace_mode_or_owner_changed")
         result_path = root / "inside-result.json"
         report = json.loads(result_path.read_text()) if result_path.exists() else {}
         trace_stat = trace_path.stat(follow_symlinks=False)
@@ -765,6 +1053,19 @@ def run_once() -> dict:
 
 
 def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--api-preflight":
+        try:
+            report = _run_api_preflight()
+        except Exception as exc:
+            code = str(exc) if str(exc) in {"disposable_api_start_failed", "disposable_api_socket_timeout",
+                                            "pg_cleanup_failed"} else type(exc).__name__
+            report = {"result": "FAIL", "failure_code": code, "watcher_started": False}
+            if _BOOTSTRAP_PATH:
+                report["bootstrap_trace"] = _BOOTSTRAP_PATH.name
+            print(json.dumps(report, sort_keys=True))
+            return 1
+        print(json.dumps(report, sort_keys=True))
+        return 0
     if len(sys.argv) == 2 and sys.argv[1] == "--postgres-preflight":
         try:
             report = _run_postgres_preflight()

@@ -166,3 +166,44 @@ The focused queue-stage trace suite passed (3 tests), `make check` passed, and
 cleaned up and the fixture root removed. No bwrap watcher, queue receipt,
 native item start, `UserPromptSubmit`, Store attempt, or delivery-to-Store join
 was observed. CAIRN-220 remains unaccepted.
+
+## API socket startup preflight and bounded watcher retry
+
+The API-only disposable preflight used the same compiled Cairn binary, migrated
+PostgreSQL DSN, `CAIRN_HOME`, owner-only `identities.json`, and environment as
+the watcher fixture. It initially recorded fixed status `STORE_ERROR`. Source
+inspection showed the default API socket lived at `api/api.sock` under
+`fixture-<uuid>-<mkdtemp suffix>`; a same-prefix disposable path measurement
+returned 112 bytes, longer than Linux AF_UNIX's 107-byte pathname limit.
+Cairn's API startup error wrapper sanitized
+the bind message, so the startup preflight itself retained only the fixed
+`STORE_ERROR` status; the length measurement and `listenPrivateUnix` source
+inspection established the path cause. Passing `--socket` into the existing
+short owner-only runtime socket directory fixed the fixture. The API-only
+preflight then passed and confirmed its socket and version endpoint before
+cleanup.
+
+One provider-free full watcher run confirmed `queue/add`'s receipt, the exact
+delivery ID, `UserPromptSubmit`, and a Store attempt for that delivery. The
+watcher reached `thread/queue/start`, which refused with native code -32600.
+The trace-driven retry records the fixed refusal class
+`submission_not_found` and `receipt_matches_start=true`. A second app-server
+connection was initialized before delivery and monitored for `item/started`,
+keyed by the expected `clientUserMessageId`; it observed no matching
+notification. The Store attempt and hook intent share a turn ID, but no native
+item-start notification connects that turn to the confirmed queue receipt.
+The exact queue-receipt → item-start → hook → Store join is therefore not
+proven, and CAIRN-220 remains unaccepted.
+
+The pinned Codex 0.164 app-server JSON schema confirms the queue/add and
+queue/start parameter shapes, and defines `item/started` with `threadId`,
+`turnId`, and an item whose user-message variant has `clientId`. The schema does
+not document notification fanout or whether queue/add consumes a submission
+before queue/start; it includes `thread/unsubscribe` but no `thread/subscribe`
+request. The second initialized connection checked that the thread was loaded,
+but the schema does not establish that this subscribes it to notifications.
+The refusal is consistent with queue/add consuming a submission before
+queue/start, but does not prove it. No delivery was replayed and no further full
+watcher run was made. The separate notification trace retained only fixed
+stages, booleans, and digests. The focused trace tests (5) and `make check`
+passed.
