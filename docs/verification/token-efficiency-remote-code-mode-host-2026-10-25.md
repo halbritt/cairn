@@ -41,3 +41,51 @@ successful benign command, direct bwrap marker denial, marker exposure through
 `functions.exec`, native interruption, and owned process-group cleanup. A
 future supported isolated executor should replace the expected leak assertion
 with a denial assertion before any live canary admission.
+
+## Hardlink alias follow-up
+
+A path-only workspace bind does not close the synthetic app-home leak. A
+provider-free bwrap fixture placed `SYNTHETIC_HARDLINK_MARKER_ONLY` in a
+synthetic sibling app home, hardlinked it under the workspace, and confirmed
+both names had the same inode (`nlink=2`). The readonly workspace bind still
+returned the marker. A separate bwrap check with an absolute symlink to the
+sibling path returned `ENOENT`, which shows that this path was absent from that
+mount view; it does not address hardlinks.
+
+A timing check also replaced an ordinary workspace file with a hardlink to the
+synthetic marker **after** bwrap had established its readonly bind and while the
+sandboxed command was sleeping. The command then read
+`SYNTHETIC_RACE_MARKER` through the already mounted workspace path. The final
+inode comparison was equal and `nlink=2`. Thus preflight scanning for `st_nlink`
+or checking current directory entries cannot close this boundary when another
+same-UID process can mutate the source tree during execution. A readonly bind
+prevents the sandboxed process from making that mutation, but it does not freeze
+the host's underlying directory entries.
+
+The retained fixture also reports that `/proc/<host-pid>/fd` was not visible.
+A separate descriptor probe established that a descriptor explicitly passed to
+a child remains usable; seccomp denied creating another connection but did not
+revoke the inherited stream. This is a separate authority channel: a future
+launcher must close all unneeded descriptors and must never pass a credential-
+bearing or broadly capable descriptor to model-facing execution. Neither
+finding establishes that the current upstream nested executor can inherit a
+particular host descriptor.
+
+No safe workspace-preserving mitigation was established. Bind mounts preserve
+inode identity, so readonly/path allowlists cannot distinguish a workspace name
+from another hardlink to the same inode. Reflink/copy snapshots would break
+that identity but require a complete, race-safe copy and a defined writeback
+contract; they would also change live workspace visibility and filesystem
+semantics. No such executor was implemented or tested here. Rejecting hardlinks
+or scanning before launch is insufficient against the demonstrated race.
+
+Disposition remains **refused**. The concrete remaining boundary is any
+workspace bind whose source tree can acquire a hardlink to an out-of-view inode
+while execution is active. The nested-exec prototype has no accepted isolation
+claim, and the upstream build blocker (pinned `rusty_v8` v152.2.0 HTTP 404) means
+no new app-server runtime proof was obtained. Do not use this route for a live
+subscribed actor. A future candidate must provide a detached workspace view
+with explicit read/write reconciliation, or an equivalent kernel-enforced
+inode/provenance boundary, and test concurrent source mutation, symlinks,
+hardlinks, descriptor inheritance, ordinary workspace reads/writes, and cleanup
+before reconsidering admission.
