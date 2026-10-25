@@ -116,6 +116,24 @@ def check(candidate_root, codex_binary):
                 fixture.get("native_compact_terminal_notification") != "turn/completed" or
                 fixture.get("continuation_after_compact_completed") is not True):
             raise AssertionError("Codex compact receipt omitted terminal hooks or continuation evidence")
+        claimed_output = io.StringIO()
+        with contextlib.redirect_stdout(claimed_output):
+            module.check(codex_binary, root / "native-codex-claimed", config,
+                         api_call, candidate_root, scenario="claimed-before-compact")
+        claimed_fixture = json.loads(claimed_output.getvalue())
+        if (claimed_fixture.get("result") != "PASS" or
+                claimed_fixture.get("provider_call") is not False or
+                claimed_fixture.get("claimed_attempt_source_read_before_compact") is not True or
+                claimed_fixture.get("native_compact_terminal_notification") != "turn/completed" or
+                claimed_fixture.get("source_read_after_compact") is not False or
+                claimed_fixture.get("settlement_after_compact") is not False or
+                claimed_fixture.get("precompact_delivery_state") != "failed" or
+                claimed_fixture.get("precompact_delivery_code") != "processing_failed" or
+                claimed_fixture.get("failed_delivery_persisted_after_compact") is not True or
+                claimed_fixture.get("native_stop_preceded_compact") is not True):
+            raise AssertionError("claimed-attempt compact receipt omitted the turn-end failure boundary")
+        if claimed_fixture.get("attempt_native_turn_id") != claimed_fixture.get("precompact_read_turn_id"):
+            raise AssertionError("compaction changed the pre-compaction attempt's native turn binding")
         return dict(result="PASS", environment="disposable PostgreSQL and loopback Codex stub",
                     model="gpt-6-luna", provider_call=False,
                     native_compaction={key: fixture.get(key) for key in (
@@ -127,6 +145,14 @@ def check(candidate_root, codex_binary):
                         "attempt_id",
                         "notice_pending_before_and_after_compact",
                         "source_read_after_compact", "settlement_after_compact")},
+                    claimed_attempt_compaction={key: claimed_fixture.get(key) for key in (
+                        "registration_turn_id", "native_manual_compact_turn_id", "native_compact_terminal_notification",
+                        "precompact_read_turn_id", "continuation_turn_id", "attempt_native_turn_id",
+                        "event_id", "delivery_id", "attempt_id", "claimed_attempt_source_read_before_compact",
+                        "source_read_before_compact", "source_read_after_compact", "settlement_after_compact",
+                        "precompact_delivery_state", "precompact_delivery_code", "failed_delivery_persisted_after_compact",
+                        "native_stop_preceded_compact",
+                        "attempt_count", "loopback_response_requests")},
                     recovery_report=report)
     finally:
         if api is not None:

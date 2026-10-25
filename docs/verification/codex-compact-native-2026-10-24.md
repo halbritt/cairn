@@ -33,3 +33,37 @@ This result establishes native compact sequencing, lifecycle callbacks, and
 pending notice identity through compact completion in this fixture. It does
 not establish accepted model work, provider use or cost, broader memory value,
 or a canary and rollback. CAIRN-224 remains open for those acceptance claims.
+
+## Claimed source at the manual compact boundary (2026-10-25)
+
+The disposable runner now adds a second native sequence for the gap in
+[`check_codex_recovery_fixture_disposable.py`](../../scripts/check_codex_recovery_fixture_disposable.py).
+It registers a Codex app-server thread, admits a notice on a real
+`UserPromptSubmit` turn, reads the exact Store source through the compact read
+command, and leaves the attempt unsettled. The fixture waits for the matching
+native `turn/completed` and successful `Stop` hook before calling
+`thread/compact/start` on that same still-live app-server thread. The compact
+turn reaches its own `turn/completed` with `PreCompact`; the continuation has a
+different native turn ID and no turn ID on `SessionStart(source=compact)`.
+
+The Store observation after the source-reading turn is already `failed`, with
+one attempt and code `processing_failed`. The verified hook ordering is
+source-reading `Stop` exit before the compact turn's `PreCompact` entry. The
+same event and delivery remain failed after compact completion; the
+continuation does not claim or replay them. Thus the installed native
+manual-compact API exposes a between-turn boundary: an unsettled
+turn-bound attempt is reconciled before manual compaction starts. The same
+delivery/attempt cannot remain leased across this path, and the continuation
+cannot settle the original attempt. This does not establish whether automatic
+context compaction can run inside a still-active Codex turn.
+
+The safe recovery path is to inspect the failed delivery and any possible prior
+effects, reconcile outstanding host work, then use the existing explicit
+operator review and `event-reissue` workflow if the task should run again.
+Reissue creates a successor event with the exact source version and a fresh
+delivery/attempt; it is not an automatic replay. See
+[`event-recovery.md`](../event-recovery.md#reissue-a-failed-request). The
+fixture verifies transport, exact source identity, native hook order, and Store
+state only. It uses a scripted loopback Responses server with disposable
+PostgreSQL and no external provider; it does not test task acceptance, provider
+usage, automatic compaction, or canary/rollback.

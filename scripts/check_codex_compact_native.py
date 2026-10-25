@@ -69,7 +69,7 @@ def _exec_tool(call_id, command):
 
 
 def check(binary, root, config, api_call, candidate_root, scenario="notice"):
-    if scenario not in ("notice", "response", "batch-admission"):
+    if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact"):
         raise ValueError("unsupported compact fixture scenario")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
@@ -172,7 +172,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     sensitivity="shareable", claim_type="self",
                     scope=dict(repo=config["repo"], task_id="*", run_id="*"))))))
         source = batch_sources[0]
-    elif scenario == "notice":
+    elif scenario in ("notice", "claimed-before-compact"):
         source = api_call("alice", "create", raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
             draft=dict(kind="note", body=SOURCE_BODY, sensitivity="shareable", claim_type="self",
                        scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
@@ -198,6 +198,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     native_turn_id = None
     attempt_native_turn_id = None
     event = None
+    claimed_before_compact = None
     batch_events = []
     admission_checked = threading.Event()
     admission_requests = 0
@@ -211,7 +212,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     compact_in_progress = False
     source_read_confirmed = False
     settlement_confirmed = False
-    event_owner = "alice" if scenario in ("notice", "batch-admission") else "bob"
+    event_owner = "alice" if scenario in ("notice", "batch-admission", "claimed-before-compact") else "bob"
+    precompact_read_turn_id = None
+    precompact_read_completed = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -277,6 +280,16 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 if event is None or compact_in_progress:
                     item = dict(type="message", id="msg_initial", role="assistant", status="completed",
                         content=[dict(type="output_text", text="Local fixture registration turn completed.", annotations=[])])
+                elif scenario == "claimed-before-compact" and compact_turn_id is not None:
+                    current = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+                    assert current["state"] == "failed" and current["attempts"] == 1 and \
+                        current.get("code") == "processing_failed", \
+                        "compaction continuation unexpectedly replayed or changed the failed delivery"
+                    item = dict(type="message", id="msg_operator_recovery", role="assistant", status="completed",
+                        content=[dict(type="output_text", text=(
+                            "The prior attempt ended without settlement. Review prior effects, then explicitly reissue if needed."),
+                            annotations=[])])
+                    finished.set()
                 else:
                     assert native_turn_ready.wait(15), "native continuation turn ID was not published to fixture"
                     context_paths = list((home / "coordination/state/codex-one/inbox").glob("*.json"))
@@ -311,7 +324,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     assert context["source"] == event["ref"], "compact context changed source reference"
                     assert event["ref"]["record_id"] == source["record_id"]
                     assert event["ref"]["version"] == source["version"]
-                    assert event["kind"] == scenario, "compact context changed notice/response kind"
+                    assert event["kind"] == ("notice" if scenario == "claimed-before-compact" else scenario), \
+                        "compact context changed notice/response kind"
                     if scenario == "response":
                         assert event["causation_id"] == causal_request["event_id"]
                     claim = dict(request_id=attempt, session=dict(
@@ -353,6 +367,17 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                         command = shlex.join([str(home / "coordination/coordination.py"),
                             "inbox", "compact", "read", handle])
                         item = _exec_tool("compact-read", command)
+                    elif scenario == "claimed-before-compact" and not settlement_confirmed and compact_turn_id is None:
+                        read_result = results["compact-read"]
+                        output = json.dumps(read_result)
+                        assert SOURCE_BODY in output and source["record_id"] in output, \
+                            "pre-compaction read omitted exact Store source"
+                        source_read_confirmed = True
+                        if compact_in_progress:
+                            raise AssertionError("attempt was read only after compaction began")
+                        item = dict(type="message", id="msg_read_before_compact", role="assistant", status="completed",
+                            content=[dict(type="output_text", text="I read the exact notice source; continue after compaction.", annotations=[])])
+                        precompact_read_completed.set()
                     elif "compact-settle" not in results:
                         read_result = results["compact-read"]
                         output = json.dumps(read_result)
@@ -399,7 +424,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     (home / "config.toml").chmod(0o600)
     def verify(rpc):
         nonlocal native_id, registration_turn_id, compact_turn_id, continuation_turn_id
-        nonlocal native_turn_id, event, delivery_id, compact_in_progress
+        nonlocal native_turn_id, event, delivery_id, compact_in_progress, claimed_before_compact
+        nonlocal precompact_read_turn_id
         started = rpc("thread/start", dict(cwd=str(root), model=MODEL,
             approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
         native_id = started["thread"]["id"]
@@ -448,7 +474,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                     "--to", target["inbox"], "--kind", "notice", "--version",
                     str(batch_source["version"]), batch_source["record_id"]))
             event = batch_events[0]
-        elif scenario == "notice":
+        elif scenario in ("notice", "claimed-before-compact"):
             event = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
                 "--to", target["inbox"], "--kind", "notice", "--version",
                 str(source["version"]), source["record_id"])
@@ -463,6 +489,34 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
         before_compact = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
         assert before_compact["delivery_id"] == delivery_id and before_compact["state"] == "pending" \
             and before_compact["attempts"] == 0, "notice was not pending before compaction"
+
+        if scenario == "claimed-before-compact":
+            preturn = rpc("turn/start", dict(threadId=native_id,
+                input=[dict(type="text", text="Read the exact notice source, then wait for compaction.", text_elements=[])]))
+            precompact_read_turn_id = preturn["turn"]["id"]
+            native_turn_id = precompact_read_turn_id
+            native_turn_ready.set()
+            assert precompact_read_completed.wait(45), "native actor did not read the source before compaction"
+            preturn_terminal = False
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and not preturn_terminal:
+                notification = rpc.next_notification(timeout=min(5, max(.1, deadline - time.monotonic())))
+                params = notification.get("params", {})
+                if (notification.get("method") == "turn/completed" and params.get("threadId") == native_id
+                        and params.get("turn", {}).get("id") == precompact_read_turn_id):
+                    preturn_terminal = True
+            assert preturn_terminal, "source-read turn did not reach matching turn/completed"
+            preturn_hooks = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()
+                             if line]
+            assert any(row.get("event") == "Stop" and row.get("phase") == "exit"
+                       and row.get("turn_id") == precompact_read_turn_id and row.get("exit_code") == 0
+                       for row in preturn_hooks), "source-read turn did not finish its native Stop hook"
+            claimed_before_compact = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
+            assert claimed_before_compact["delivery_id"] == delivery_id and \
+                claimed_before_compact["state"] == "failed" and claimed_before_compact["attempts"] == 1 and \
+                claimed_before_compact.get("code") == "processing_failed", \
+                "native Stop did not reconcile the unfinished exact-source attempt before compaction: " + \
+                json.dumps(claimed_before_compact)
 
         if scenario == "batch-admission":
             continuation = rpc("turn/start", dict(threadId=native_id,
@@ -507,8 +561,13 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 loopback_requests=len(requests)))
         compact_in_progress = False
         after_compact = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
-        assert after_compact["delivery_id"] == delivery_id and after_compact["state"] == "pending" \
-            and after_compact["attempts"] == 0, "notice changed while native compaction was running"
+        if scenario == "claimed-before-compact":
+            assert after_compact["delivery_id"] == delivery_id and after_compact["state"] == "failed" \
+                and after_compact["attempts"] == 1 and after_compact.get("code") == "processing_failed", \
+                "failed delivery changed or auto-replayed while native compaction was running"
+        else:
+            assert after_compact["delivery_id"] == delivery_id and after_compact["state"] == "pending" \
+                and after_compact["attempts"] == 0, "notice changed while native compaction was running"
         compact_hook_metadata = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()
                                  if line]
         observed_hooks = [dict(event=row.get("event"), turn_id=row.get("turn_id"), source=row.get("source"))
@@ -547,7 +606,10 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                 hooks=observed_hooks, loopback_requests=len(requests)))
 
         assert event is not None and delivery_id is not None
-        assert before_compact["state"] == "pending" and after_compact["state"] == "pending"
+        if scenario == "claimed-before-compact":
+            assert before_compact["state"] == "pending" and after_compact["state"] == "failed"
+        else:
+            assert before_compact["state"] == "pending" and after_compact["state"] == "pending"
         terminal_deadline = time.monotonic() + 30
         compact_stop = {}
         while time.monotonic() < terminal_deadline:
@@ -592,10 +654,14 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
                    for row in hook_metadata), "hook metadata did not observe the exact compact turn"
         scripted_response_ids = ["resp_" + str(i) for i in range(1, len(requests) + 1)]
         final_delivery = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
-        assert source_read_confirmed and settlement_confirmed, \
-            "post-compaction source read and settlement were not both observed"
+        if scenario == "claimed-before-compact":
+            assert source_read_confirmed and not settlement_confirmed, \
+                "fixture did not preserve the pre-compaction read and turn-end failure boundary"
+        else:
+            assert source_read_confirmed and settlement_confirmed, \
+                "post-compaction source read and settlement were not both observed"
         native_report = None
-        if attempt_native_turn_id is not None:
+        if attempt_native_turn_id is not None and scenario != "claimed-before-compact":
             native_report = compile_recovery_report(dict(schema="cairn.codex-recovery-probe/1",
                 refusal=failed_completion,
                 settlement=dict(event_id=event["event_id"], delivery_id=delivery_id,
@@ -621,12 +687,19 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice"):
             continuation_after_compact_completed=True,
             continuation_turn_id=continuation_turn_id,
             attempt_native_turn_id=attempt_native_turn_id,
+            precompact_read_turn_id=precompact_read_turn_id,
             loopback_response_requests=len(requests),
-            notice_pending_before_and_after_compact=True,
+            notice_pending_before_and_after_compact=(scenario != "claimed-before-compact"),
+            claimed_attempt_source_read_before_compact=(scenario == "claimed-before-compact"),
+            precompact_delivery_state=(claimed_before_compact["state"] if scenario == "claimed-before-compact" else None),
+            precompact_delivery_code=(claimed_before_compact.get("code") if scenario == "claimed-before-compact" else None),
             notice_delivery_id=delivery_id,
             notice_event_id=event["event_id"],
-            source_read_after_compact=source_read_confirmed,
+            source_read_after_compact=(source_read_confirmed and scenario != "claimed-before-compact"),
+            source_read_before_compact=(source_read_confirmed and scenario == "claimed-before-compact"),
             settlement_after_compact=settlement_confirmed,
+            failed_delivery_persisted_after_compact=(scenario == "claimed-before-compact"),
+            native_stop_preceded_compact=(scenario == "claimed-before-compact"),
             observed_hook_events=[dict(phase=row.get("phase", "entry"), event=row.get("event"),
                 turn_id=row.get("turn_id"), source=row.get("source"), exit_code=row.get("exit_code"))
                 for row in hook_metadata],
