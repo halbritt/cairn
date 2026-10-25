@@ -68,11 +68,9 @@ def _exec_tool(call_id, command):
                 namespace="functions", call_id=call_id, input=code)
 
 
-def check(binary, root, config, api_call, candidate_root, scenario="notice", turn_timeout=120):
+def check(binary, root, config, api_call, candidate_root, scenario="notice"):
     if scenario not in ("notice", "response", "batch-admission"):
         raise ValueError("unsupported compact fixture scenario")
-    if type(turn_timeout) not in (int, float) or turn_timeout <= 0:
-        raise ValueError("native fixture deadline must be positive")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
     home = root / "home"
@@ -571,8 +569,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", tur
         installer.trust_codex_hooks(home, settings, hook_commands["coordination"],
                                     codex_binary=binary, expected=6)
         installer.trust_codex_hooks(home, settings, hook_commands["memory"],
-                                    verify=verify, codex_binary=binary, expected=4,
-                                    timeout=turn_timeout)
+                                    verify=verify, codex_binary=binary, expected=4)
         assert not failures, failures
         if scenario == "batch-admission":
             assert admission_checked.is_set() and admission_requests >= 1, \

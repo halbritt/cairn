@@ -112,7 +112,11 @@ def install(root, settings, config):
 
 def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=6,
                       timeout=None):
-    """Use the installed native protocol to trust only the reviewed Cairn commands."""
+    """Trust reviewed hooks with a deadline for app-server setup RPCs.
+
+    The timeout does not cancel or bound an active native turn. A caller that
+    supplies ``verify`` owns its turn and descendant cancellation policy.
+    """
     codex = codex_binary or shutil.which('codex')
     if not codex:
         raise RuntimeError('Codex is required to register its hook definitions')
@@ -196,24 +200,7 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             if len(selected) != expected or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
                 raise RuntimeError(f'Codex did not confirm the {expected} reviewed Cairn hooks are enabled')
             if verify is not None:
-                if overall_deadline is None:
-                    verify(rpc)
-                else:
-                    completed = threading.Event()
-                    result = []
-                    def verify_thread():
-                        try:
-                            verify(rpc)
-                        except BaseException as error:
-                            result.append(error)
-                        finally:
-                            completed.set()
-                    worker = threading.Thread(target=verify_thread, daemon=True)
-                    worker.start()
-                    if not completed.wait(remaining()):
-                        raise TimeoutError('Codex hook trial exceeded its active deadline')
-                    if result:
-                        raise result[0]
+                verify(rpc)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -223,6 +210,9 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
                     process.kill()
                     process.wait(timeout=5)
             reader.join(timeout=1)
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
 
 
 # Idle wakeup matches a native conversation through Herdr's own integration in

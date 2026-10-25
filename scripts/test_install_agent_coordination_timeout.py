@@ -1,10 +1,7 @@
-"""Controller deadline stops a native Codex app-server and its active turn."""
+"""App-server setup RPC deadlines are groundwork, not native turn cancellation."""
 import importlib.util
-import json
-import os
 from pathlib import Path
 import tempfile
-import threading
 import time
 import unittest
 
@@ -15,8 +12,8 @@ installer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(installer)
 
 
-class CodexTrustDeadlineTests(unittest.TestCase):
-    def test_deadline_terminates_app_server_while_verifier_is_blocked(self):
+class CodexSetupDeadlineTests(unittest.TestCase):
+    def test_blocked_setup_rpc_terminates_app_server_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             home = root / "codex-home"
@@ -24,28 +21,27 @@ class CodexTrustDeadlineTests(unittest.TestCase):
             (home / "config.toml").write_text("\n")
             settings = home / "hooks.json"
             settings.write_text("{}\n")
+            pid_file = root / "pid"
             fake_codex = root / "codex-fixture"
-            fake_codex.write_text("""#!/usr/bin/env python3
-import json, sys
+            fake_codex.write_text(f"""#!/usr/bin/env python3
+import json, os, sys, time
+open({str(pid_file)!r}, 'w').write(str(os.getpid()))
 for line in sys.stdin:
     request=json.loads(line)
-    result={'data': []} if request['method']=='hooks/list' else {}
-    if 'id' in request:
-        print(json.dumps({'id': request['id'], 'result': result}), flush=True)
+    if request.get('method') == 'hooks/list':
+        time.sleep(30)
 """)
             fake_codex.chmod(0o700)
             began = time.monotonic()
-            release = threading.Event()
-            try:
-                with self.assertRaisesRegex(TimeoutError, "deadline"):
-                    installer.trust_codex_hooks(
-                        home, settings, "fixture-hook", codex_binary=str(fake_codex),
-                        expected=0, timeout=0.2,
-                        verify=lambda _rpc: release.wait(30),
-                    )
-            finally:
-                release.set()
+            with self.assertRaisesRegex(TimeoutError, "deadline"):
+                installer.trust_codex_hooks(
+                    home, settings, "fixture-hook", codex_binary=str(fake_codex),
+                    expected=0, timeout=0.2,
+                )
             self.assertLess(time.monotonic() - began, 3)
+            pid = int(pid_file.read_text())
+            with self.assertRaises(ProcessLookupError):
+                __import__("os").kill(pid, 0)
 
 
 if __name__ == "__main__":
