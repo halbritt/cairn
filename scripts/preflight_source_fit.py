@@ -16,9 +16,10 @@ from check_note_transport import operator
 from trial_task_eval import TrialStore, TRIAL_REPO, load_hook
 
 
-def run_preflight(binary, provider_callback=None):
-    panel = json.loads(PANEL.read_text())
-    manifest = validate(panel)
+def run_preflight(binary, provider_callback=None, *, panel_path=PANEL):
+    panel_path = Path(panel_path)
+    panel = json.loads(panel_path.read_text())
+    manifest = validate(panel, panel_path)
     with tempfile.TemporaryDirectory(prefix='source-fit-preflight-') as temporary:
         root = Path(temporary)
         store = TrialStore(root / 'store', binary, 'source_fit')
@@ -133,8 +134,9 @@ def run_preflight(binary, provider_callback=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
+    parser.add_argument('--panel', default=str(PANEL))
     args = parser.parse_args()
-    print(json.dumps(run_preflight(args.binary), sort_keys=True))
+    print(json.dumps(run_preflight(args.binary, panel_path=args.panel), sort_keys=True))
 
 
 if __name__ == '__main__':

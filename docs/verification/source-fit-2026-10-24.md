@@ -81,19 +81,53 @@ Do not resume or rewrite the stopped output, and do not reuse this panel's
 manifest as a new run. The six source-qualified cases already cover buried
 whole-source qualifications, wrong-project terminology, current corrections,
 required conflicts, semantic-unavailable lexical fallback, and local-only
-exclusion. The current and direct arms provide the control; hints and the
-author-maintained split are separately declared diagnostics. Copying these
-fixtures into another file without a changed acceptance contract would duplicate
-the same panel.
+exclusion. The current arm is the baseline; direct whole-source access is the
+positive control. Hints and the author-maintained split are separately declared
+diagnostics. The recovery freeze reuses these case definitions under a new run
+identity and hash so its attempts have a separate denominator from the stopped
+pilot.
 
-Before another provider admission, freeze a new run identity and manifest that
-pins this case set, the current source/tool-delivery code, the model and effort,
-the subscription route, the run and token ceilings, and the scoring rubric.
-Keep the original 15-arm manifest and its failed/unrun denominator immutable.
-The current runner is pinned to `trials/source-fit/FROZEN.json`; a separately
-frozen run must be wired to an independently named manifest and checked by the
-same validator before it can be admitted. The proposal in the old manifest is
-not itself authorization to run.
+The separate recovery freeze is now
+[`trials/source-fit/recovery-2026-10-24/FROZEN.json`](../../trials/source-fit/recovery-2026-10-24/FROZEN.json),
+with SHA-256
+`7924fd78fb240c5910778486e043f6b0d08c1c38c5daa7a5844e3e83c6f99430`.
+It has six cases, 15 planned arms, one replicate, a 100,000 reported-token
+ceiling, 90 seconds per arm, 1,500 seconds total, and 1,200 output tokens per
+arm. It records the prior stopped panel hash as its parent and pins the source
+baseline to `06f96b23315d36e4d54ee2fffba03f0d182ed457`. The old manifest and
+its failed/unrun denominator remain unchanged.
+
+Both panel files pass the validator as six cases and 15 arms. The disposable
+PostgreSQL preflight ran against the new hash: it returned a partial span for
+the buried mixed note, kept Cairn and Trail Atlas sources distinct in the
+delivered set, refused the required conflict, and did not expose the local-only
+record. The author-maintained current extract arrived whole. This verifies the
+new panel selection through the local preflight only; it does not add provider
+task outcomes.
+
+The checker, disposable-store preflight and runner now accept an explicit
+`--panel` path. Validate the new freeze before any provider admission:
+
+```sh
+python3 -B scripts/check_source_fit_panel.py \
+  --panel trials/source-fit/recovery-2026-10-24/FROZEN.json
+```
+
+The provider entry point is pinned by the same hash and must write to a new
+private output directory outside the repository:
+
+```sh
+python3 -B scripts/run_source_fit.py --binary /path/to/bin/cairn \
+  --panel trials/source-fit/recovery-2026-10-24/FROZEN.json \
+  --expected-panel-sha256 7924fd78fb240c5910778486e043f6b0d08c1c38c5daa7a5844e3e83c6f99430 \
+  --output /path/to/private/new-run
+```
+
+The manifest is still `proposed_not_authorized`. Preparing it does not authorize
+the command above. Before a run, confirm the selected native subscription route,
+model/effort, and the stated per-run and total ceilings. Keep the old panel's
+result and every prior admitted run in the record; this new panel starts a
+separate denominator.
 
 The existing runner supplies these admission and stop checks:
 
@@ -101,7 +135,9 @@ The existing runner supplies these admission and stop checks:
   checks login/subscription status before each arm. It removes Anthropic API
   credentials and base URL, the OpenRouter key, and alternate cloud-provider
   variables from the child environment; it has no OpenRouter fallback. It does
-  not query account utilization or provider quota headroom.
+  not query account utilization or provider quota headroom. A native quota
+  error stops the run as an error; there is no pre-admission provider quota
+  measurement.
 - Before each arm it requires `reported_tokens + next_run_reserve` to fit the
   panel ceiling. The reserve is at least 32,000 reported tokens, or 2,000 over
   the largest observed run, whichever is larger. It also enforces the arm

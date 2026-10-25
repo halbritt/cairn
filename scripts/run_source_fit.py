@@ -14,7 +14,7 @@ import signal
 import subprocess
 import time
 
-from check_source_fit_panel import source_body
+from check_source_fit_panel import PANEL, source_body
 from preflight_source_fit import run_preflight
 from trial_task_eval import TRIAL_REPO
 from trial_source_delivery import native_delivery
@@ -287,6 +287,7 @@ def save(output, manifest, route, model, rows, tokens, status):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
+    parser.add_argument('--panel', default=str(PANEL))
     parser.add_argument('--expected-panel-sha256', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
@@ -300,7 +301,7 @@ def main():
             raise RuntimeError('frozen_panel_hash_changed')
         trial(panel, manifest, contexts, stores, preflight, output)
 
-    run_preflight(args.binary, admitted)
+    run_preflight(args.binary, admitted, panel_path=args.panel)
 
 
 if __name__ == '__main__':

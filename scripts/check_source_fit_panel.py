@@ -4,10 +4,10 @@ This checks fixture custody and the hosted source boundary. It does not score
 retrieval relevance or task outcomes; those require a separately admitted run.
 """
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
-import sys
 
 
 PANEL = Path(__file__).resolve().parents[1] / 'trials/source-fit/FROZEN.json'
@@ -34,7 +34,7 @@ def source_body(record):
     return body
 
 
-def validate(panel):
+def validate(panel, panel_path=PANEL):
     if panel.get('schema') != 'cairn.source-fit-panel/1':
         raise ValueError('unknown panel schema')
     records = panel['records']
@@ -94,14 +94,15 @@ def validate(panel):
                 source_bytes={key: len(body.encode()) for key, body in bodies.items()},
                 source_sha256={key: hashlib.sha256(body.encode()).hexdigest()
                                for key, body in bodies.items()},
-                panel_sha256=hashlib.sha256(PANEL.read_bytes()).hexdigest(),
+                panel_sha256=hashlib.sha256(Path(panel_path).read_bytes()).hexdigest(),
                 qualification='fixture and eligibility only; no provider or task outcome')
 
 
 def main():
-    if len(sys.argv) != 1:
-        raise SystemExit('usage: python3 scripts/check_source_fit_panel.py')
-    print(json.dumps(validate(json.loads(PANEL.read_text())), sort_keys=True))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--panel', default=str(PANEL))
+    panel_path = Path(parser.parse_args().panel)
+    print(json.dumps(validate(json.loads(panel_path.read_text()), panel_path), sort_keys=True))
 
 
 if __name__ == '__main__':

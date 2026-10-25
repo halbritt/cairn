@@ -7,12 +7,24 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from check_source_fit_panel import PANEL
+from check_source_fit_panel import PANEL, validate
 from run_source_fit import can_admit_next, direct_context, next_run_reserve, parse_stream, trial
 
 
 class SourceFitTrialGuardTests(unittest.TestCase):
     PLAN = dict(maximum_runs=15, maximum_total_reported_tokens=100000)
+
+    def test_separate_recovery_panel_has_its_own_bounded_freeze(self):
+        recovery = PANEL.parent / 'recovery-2026-10-24' / 'FROZEN.json'
+        panel = json.loads(recovery.read_text())
+        manifest = validate(panel, recovery)
+        old_manifest = validate(json.loads(PANEL.read_text()), PANEL)
+        self.assertEqual(panel['freeze_id'], 'source-fit-recovery-2026-10-24')
+        self.assertEqual(panel['parent_panel_sha256'], old_manifest['panel_sha256'])
+        self.assertNotEqual(manifest['panel_sha256'], old_manifest['panel_sha256'])
+        self.assertEqual((manifest['cases'], manifest['runs']), (6, 15))
+        self.assertEqual(panel['provider_plan']['status'], 'proposed_not_authorized')
+        self.assertEqual(panel['provider_plan']['maximum_total_reported_tokens'], 100000)
 
     def test_next_run_is_refused_before_reported_ceiling(self):
         rows = [dict(tokens=28115), *[dict(tokens=14000) for _ in range(2)]]

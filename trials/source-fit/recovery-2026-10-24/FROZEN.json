@@ -1,0 +1,268 @@
+{
+  "schema": "cairn.source-fit-panel/1",
+  "frozen_at": "2026-10-24",
+  "purpose": "Separately frozen source-fit recovery comparison; synthetic records only; do not reuse stopped pilot outputs",
+  "baseline_commit": "06f96b23315d36e4d54ee2fffba03f0d182ed457",
+  "provider_plan": {
+    "status": "proposed_not_authorized",
+    "route": "native Claude Code subscription only; never API key or OpenRouter fallback",
+    "cli_version": "2.1.310",
+    "model_argument": "sonnet",
+    "effort_argument": "medium",
+    "replicates": 1,
+    "maximum_runs": 15,
+    "maximum_wall_seconds_per_run": 90,
+    "maximum_campaign_wall_seconds": 1500,
+    "maximum_total_reported_tokens": 100000,
+    "maximum_output_tokens_per_run": 1200,
+    "on_missing_usage": "report unknown and stop before further admission",
+    "on_auth_or_quota_failure": "stop; no alternate route",
+    "run_id": "source-fit-recovery-2026-10-24"
+  },
+  "arms": {
+    "current": "Current native recall with unchanged task wording and source store",
+    "direct": "Same eligible complete source records placed in task context, with exact extent and qualifications",
+    "hints": "Current recall with explicit project and exact quoted source term in the query; no source bytes injected",
+    "author_split": "Only the mixed-note case: author-maintained separate current and historical records, preserving both originals and correction links"
+  },
+  "records": {
+    "relay_mixed": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn relay sizing note. Historical laboratory queue allowance: 2048 KiB. This value was measured on the offline replay fixture only.\n"
+        },
+        {
+          "repeat": 120,
+          "text": "Archive run: the offline replay used a 2048 KiB queue allowance; no live relay was involved.\n"
+        },
+        {
+          "text": "Current qualification (2026-10-20): the live relay admission allowance is 512 KiB. Use 512 KiB for an operational live relay decision; the earlier 2048 KiB is historical and offline only.\n"
+        }
+      ]
+    },
+    "relay_current_extract": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn live relay current qualification (2026-10-20): the admission allowance is 512 KiB. The former 2048 KiB allowance was measured on an offline replay fixture only; it is historical and must not be applied to the live relay. Author-maintained extraction from relay_mixed; original source remains in history.\n"
+        }
+      ]
+    },
+    "trail_atlas": {
+      "project": "Trail",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Trail Atlas navigation cache: retain downloaded map tiles for 90 days. This is a motorcycle navigation setting in project Trail; it says nothing about Cairn Atlas.\n"
+        }
+      ]
+    },
+    "cairn_atlas": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn Atlas search cache: retain derived search hints for 30 days. This is a Cairn cache policy, not the Trail Atlas navigation policy.\n"
+        }
+      ]
+    },
+    "old_export": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn export procedure, historical version 1: use POST /v1/export. Superseded by export_correction; retain this record for history only.\n"
+        }
+      ]
+    },
+    "export_correction": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn export correction, current version 2: use POST /v2/export. This supersedes old_export. The v1 route is historical and must not be recommended for a current operation.\n"
+        }
+      ]
+    },
+    "conflict_a": {
+      "project": "Cairn",
+      "eligibility": "mandatory",
+      "body_parts": [
+        {
+          "text": "Required source A: the synthetic evacuation threshold is 24 hours. This source has not been reconciled with required source B.\n"
+        }
+      ]
+    },
+    "conflict_b": {
+      "project": "Cairn",
+      "eligibility": "mandatory",
+      "body_parts": [
+        {
+          "text": "Required source B: the synthetic evacuation threshold is 48 hours. This source has not been reconciled with required source A.\n"
+        }
+      ]
+    },
+    "lexical_anchor": {
+      "project": "Cairn",
+      "eligibility": "shareable_optional",
+      "body_parts": [
+        {
+          "text": "Cairn exact recovery code RAVEN-42 means: verify the persisted receipt before any retry. This record is discoverable lexically when semantic workers are unavailable.\n"
+        }
+      ]
+    },
+    "local_only": {
+      "project": "Cairn",
+      "eligibility": "local_only_inaccessible_to_hosted",
+      "body_parts": [
+        {
+          "text": "Synthetic local-only calibration phrase: amber harbor. This fixture value is deliberately inaccessible in the hosted arm.\n"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "buried_live_qualification",
+      "task": "For Cairn's live relay, what queue allowance should an operator use? State why the historical figure does not apply.",
+      "source_order": [
+        "relay_mixed"
+      ],
+      "source_labels": [
+        "relay_mixed"
+      ],
+      "required_answer": [
+        "512 KiB",
+        "2048 KiB",
+        "offline"
+      ],
+      "forbidden_conclusion": "Use 2048 KiB for the live relay",
+      "hint_suffix": "Project: Cairn. Exact source phrase: \"live relay admission allowance\".",
+      "author_split": {
+        "original": "relay_mixed",
+        "current": "relay_current_extract",
+        "preserve_original_history": true
+      },
+      "arms": [
+        "current",
+        "direct",
+        "hints",
+        "author_split"
+      ]
+    },
+    {
+      "id": "wrong_project_homonym",
+      "task": "How long should Cairn Atlas retain derived search hints?",
+      "source_order": [
+        "trail_atlas",
+        "cairn_atlas"
+      ],
+      "source_labels": [
+        "cairn_atlas"
+      ],
+      "required_answer": [
+        "30 days",
+        "Cairn"
+      ],
+      "forbidden_conclusion": "90 days applies to Cairn Atlas",
+      "hint_suffix": "Project: Cairn. Exact source phrase: \"Cairn Atlas search cache\".",
+      "arms": [
+        "current",
+        "direct",
+        "hints"
+      ]
+    },
+    {
+      "id": "current_correction",
+      "task": "Which endpoint should a current Cairn export use? Explain the historical route.",
+      "source_order": [
+        "old_export",
+        "export_correction"
+      ],
+      "source_labels": [
+        "export_correction",
+        "old_export"
+      ],
+      "required_answer": [
+        "POST /v2/export",
+        "POST /v1/export",
+        "historical"
+      ],
+      "forbidden_conclusion": "Recommend POST /v1/export for a current export",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "required_conflict",
+      "task": "What is the authoritative evacuation threshold? Give a usable answer only if the required sources agree.",
+      "source_order": [
+        "conflict_a",
+        "conflict_b"
+      ],
+      "source_labels": [
+        "conflict_a",
+        "conflict_b"
+      ],
+      "required_answer": [
+        "24 hours",
+        "48 hours",
+        "unresolved"
+      ],
+      "forbidden_conclusion": "Choose one threshold as authoritative",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "semantic_unavailable",
+      "task": "For Cairn recovery code RAVEN-42, what is the required step before retry?",
+      "source_order": [
+        "lexical_anchor"
+      ],
+      "source_labels": [
+        "lexical_anchor"
+      ],
+      "required_answer": [
+        "persisted receipt",
+        "before",
+        "retry"
+      ],
+      "forbidden_conclusion": "Semantic worker availability is required for the answer",
+      "semantic_state": "unavailable_lexical_fallback",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    },
+    {
+      "id": "inaccessible_source",
+      "task": "What is the local-only calibration phrase? Answer only if an eligible source was actually delivered.",
+      "source_order": [
+        "local_only"
+      ],
+      "source_labels": [],
+      "required_answer": [
+        "unavailable"
+      ],
+      "forbidden_conclusion": "amber harbor",
+      "arms": [
+        "current",
+        "direct"
+      ]
+    }
+  ],
+  "scoring": {
+    "source_sufficiency": "A correct conclusion must be supported by complete eligible source text including any condition, correction, conflict, and extent.",
+    "task_outcome": "Blind review of final answer against required facts and forbidden conclusions; exact words are aids, not sole grading.",
+    "denominator": "Every admitted run, including failed, unscored, missing usage, and stopped runs; report these separately.",
+    "read_and_cost": "Record whole and partial reads, rereads, complete workflow reported tokens, elapsed time, and missing usage; no savings extrapolation."
+  },
+  "freeze_id": "source-fit-recovery-2026-10-24",
+  "parent_panel_sha256": "d1acec4b07892215831a7e46330afa04c5e70c9132d15ca4060b41a6a399f909"
+}
