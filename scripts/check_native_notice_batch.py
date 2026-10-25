@@ -43,6 +43,18 @@ def call(binary, home, env, role, operation, body):
     return envelope["data"]
 
 
+def operator(binary, env, operation, body=None, args=()):
+    result = subprocess.run([str(binary), operation, *args],
+                            input=json.dumps(body) if body is not None else None,
+                            text=True, capture_output=True, env=env, timeout=15)
+    require(len(result.stdout) < 100_000 and len(result.stderr) < 100_000,
+            "operator response too large")
+    envelope = json.loads(result.stdout)
+    require(result.returncode == 0 and envelope.get("status") == "OK",
+            f"operator {operation}: {envelope.get('status')}")
+    return envelope["data"]
+
+
 def compact(script, root, env, native_session_id, operation, handle, disposition=None, code=None):
     command = [sys.executable, str(script), "inbox", "compact", operation, handle]
     if disposition:
@@ -119,6 +131,9 @@ def check(binary):
         require(stat.S_ISSOCK((home / "api.sock").stat().st_mode), "local API socket missing")
         for role in ("sender", "worker"):
             call(binary, home, env, role, "version", {})
+        forget_grant = operator(binary, env, "bootstrap", {
+            "request_id": str(uuid.uuid4()),
+            "reason": "Authorize forgetting one source in a disposable native batch fixture"})
         session_id = f"synthetic-native-batch-{uuid.uuid4()}"
         registered = call(binary, home, env, "worker", "agent-register", {
             "request_id": str(uuid.uuid4()), "binding": session_id,
@@ -131,7 +146,8 @@ def check(binary):
                 "registered worker inbox differs")
         events = []
         for index in range(4):
-            body = f"Synthetic routine notice {index + 1}; exact source."
+            body = ("Synthetic oversized middle source. " + "qualification " * 2500
+                    if index == 1 else f"Synthetic routine notice {index + 1}; exact source.")
             source = call(binary, home, env, "sender", "create", {
                 "request_id": str(uuid.uuid4()),
                 "draft": {"kind": "note", "body": body,
@@ -192,7 +208,7 @@ def check(binary):
         leases = set()
         handles = set()
         for index, (disposition, code) in enumerate((("handled", None),
-                                                      ("failed", "processing_failed"),
+                                                      ("failed", "source_unavailable"),
                                                       ("ignored", "unsupported_kind"))):
             current = json.loads(state_path.read_text())["inbox_attempt"]
             context_path = state_dir / "inbox" / (current["attempt_id"] + ".json")
@@ -208,10 +224,38 @@ def check(binary):
                     "two batch items shared a lease")
             handles.add(handle)
             leases.add(current["delivery"]["lease_id"])
-            exact = compact(script, root, env, session_id, "read", handle)
-            require(exact["body"] == events[index]["body"]
-                    and exact["source"] == events[index]["ref"],
-                    "scoped helper read changed exact source")
+            if index == 1:
+                # The second delivery is admitted with its own lease before
+                # this authorized source removal. Its compact context is
+                # oversized, so the cue contains only the scoped handle.
+                require(events[index]["body"] not in handoff["next"],
+                        "oversized forgotten source leaked into the next cue")
+                preview = operator(binary, env, "preview-delete",
+                                   args=(events[index]["ref"]["record_id"],))
+                forgotten = operator(binary, env, "forget", {
+                    "request_id": str(uuid.uuid4()),
+                    "record_id": events[index]["ref"]["record_id"],
+                    "expected_version": events[index]["ref"]["version"],
+                    "grant_id": forget_grant["grant_id"],
+                    "preview_id": preview["preview_id"]})
+                require(forgotten["record_id"] == events[index]["ref"]["record_id"],
+                        "operator forgot a different batch source")
+                read_env = dict(env, CAIRN_INBOX_ROOT=str(root), CODEX_THREAD_ID=session_id)
+                read_env.pop("CLAUDE_SESSION_ID", None)
+                unavailable = subprocess.run(
+                    [sys.executable, str(script), "inbox", "compact", "read", handle],
+                    env=read_env, text=True, capture_output=True, timeout=30)
+                response = json.loads(unavailable.stdout)
+                require(unavailable.returncode != 0
+                        and response.get("status") == "PAYLOAD_UNAVAILABLE"
+                        and events[index]["body"] not in unavailable.stdout
+                        and events[index]["body"] not in unavailable.stderr,
+                        "forgotten source did not remain private and explicitly unavailable")
+            else:
+                exact = compact(script, root, env, session_id, "read", handle)
+                require(exact["body"] == events[index]["body"]
+                        and exact["source"] == events[index]["ref"],
+                        "scoped helper read changed exact source")
             settled = compact(script, root, env, session_id, "settle", handle, disposition, code)
             require(settled["status"] == disposition and settled["attempts"] == 1,
                     "per-item settlement not confirmed")
@@ -234,11 +278,15 @@ def check(binary):
                         "third item failed to enforce batch cap")
         require(sql_count(dsn, "agent_session_attempt") == 3,
                 "handoff retry created duplicate attempts")
+        expected_codes = (None, "source_unavailable", "unsupported_kind")
         for index, disposition in enumerate(("handled", "failed", "ignored")):
+            expected_code = expected_codes[index]
             delivery = call(binary, home, env, "sender", "event-inspect",
                             {"event_id": events[index]["event_id"]})["deliveries"][0]
             require(delivery["delivery_id"] == events[index]["delivery_id"]
                     and delivery["state"] == disposition and delivery["attempts"] == 1
+                    and (delivery.get("code") == expected_code if expected_code
+                         else delivery.get("code") is None)
                     and delivery.get("result") is None,
                     "per-item durable delivery outcome differs")
         fourth = call(binary, home, env, "sender", "event-inspect",
@@ -314,6 +362,7 @@ def check(binary):
         print(json.dumps({"case": "native_notice_batch", "store_api": "disposable",
                           "source_helper": "real", "items_in_one_synthetic_turn": 3,
                           "outcomes": ["handled", "failed", "ignored"],
+                          "forgotten_middle_source": "explicit_source_unavailable_neighbors_preserved",
                           "remainder": "batch_limit_fourth_pending",
                           "urgent_arrival": "stops_batch_without_claiming_neighbor",
                           "handoff_retry": "same_attempt_no_duplicate",
