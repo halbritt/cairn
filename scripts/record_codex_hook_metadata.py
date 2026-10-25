@@ -9,6 +9,28 @@ import subprocess
 import sys
 
 
+HOOK_ERROR_CODES = frozenset({
+    "API_UNAVAILABLE", "HANDLE_EXPIRED", "HOST_TARGET_GONE", "IDEMPOTENCY_CONFLICT",
+    "INBOX_ATTEMPT_MISMATCH", "INTENT_PENDING", "INVALID_CONFIG", "INVALID_HOST",
+    "INVALID_REQUEST", "NATIVE_ACTIVE", "NATIVE_PROMPT_REFUSED", "NATIVE_TURN_MISMATCH",
+    "NOT_FOUND", "NOT_THIS_SESSION", "REQUEST_CANCELLED", "SESSION_BUSY", "SOURCE_UNAVAILABLE",
+    "STALE_LEASE", "STALE_SESSION", "UNSUPPORTED_CONTROL", "WAKE_UNAVAILABLE", "WAKE_UNCERTAIN",
+})
+HOOK_ERROR_CLASSES = frozenset({
+    "CoordinationError", "ConnectionError", "FileNotFoundError", "KeyError", "OSError",
+    "PermissionError", "RuntimeError", "SubprocessError", "TimeoutError", "TypeError", "ValueError",
+})
+
+
+def safe_stderr_tags(stderr):
+    """Return only allowlisted error identifiers; never retain stderr text."""
+    tokens = re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", stderr)
+    match = re.search(r"Cairn coordination: ([A-Za-z][A-Za-z0-9_]+)(?::|;)", stderr)
+    return dict(
+        stderr_code=next((token for token in tokens if token in HOOK_ERROR_CODES), None),
+        stderr_class=(match.group(1) if match and match.group(1) in HOOK_ERROR_CLASSES else None))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata", required=True, type=Path)
@@ -33,7 +55,7 @@ def main():
     result = subprocess.run(command, input=payload, text=True, capture_output=True, timeout=14)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
-    row.update(exit_code=result.returncode)
+    row.update(exit_code=result.returncode, **safe_stderr_tags(result.stderr))
     fd = os.open(args.metadata, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a", encoding="utf-8") as stream:
         stream.write(json.dumps(dict(**row, phase="exit"), sort_keys=True) + "\n")

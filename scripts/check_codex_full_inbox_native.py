@@ -224,6 +224,73 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
                 results = {item["call_id"]: item for item in request.get("input", [])
                            if item.get("type") == "custom_tool_call_output"}
                 if actor_turn_started and mode == "stall":
+                    assert notice is not None and source is not None
+                    context = None
+                    context_deadline = time.monotonic() + min(0.75, turn_timeout / 2)
+                    while time.monotonic() < context_deadline:
+                        for path in (state_dir / "inbox").glob("*.json"):
+                            candidate = json.loads(path.read_text(encoding="utf-8"))
+                            if candidate.get("event_id") == notice["event_id"]:
+                                context = candidate
+                                break
+                        if context is not None:
+                            break
+                        time.sleep(0.02)
+                    if context is None:
+                        status = api_call(event_owner, "event-status", notice["event_id"])
+                        deliveries = status.get("deliveries", [])
+                        state = deliveries[0] if len(deliveries) == 1 else {}
+                        native_states = []
+                        ready_state = "unavailable"
+                        for path in state_dir.glob("*.json"):
+                            try:
+                                saved = json.loads(path.read_text(encoding="utf-8"))
+                            except (OSError, ValueError):
+                                continue
+                            native_states.append(dict(
+                                registered=bool(saved.get("agent")),
+                                state_keys=sorted(saved),
+                                inbox_intent=bool(saved.get("inbox_intent")),
+                                inbox_attempt=bool(saved.get("inbox_attempt")),
+                                active_prompt=bool(saved.get("active_prompt")),
+                                delivered_since_idle=bool(saved.get("delivered_since_idle")),
+                                state=saved.get("agent", {}).get("metadata", {}).get("state")))
+                            agent = saved.get("agent") or {}
+                            if agent.get("agent_id") and agent.get("execution_id"):
+                                try:
+                                    ready = api_call("bob", "session-inbox-ready", raw=True,
+                                        body=json.dumps(dict(agent_id=agent["agent_id"],
+                                                             execution_id=agent["execution_id"])))
+                                    ready_state = dict(ready=ready.get("ready"),
+                                                       delivery_id_present=bool(ready.get("delivery_id")))
+                                except Exception as exc:
+                                    ready_state = type(exc).__name__
+                        hook_meta = ([json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()]
+                                     if metadata_path.exists() else [])
+                        raise AssertionError("stall reached before exact inbox context; "
+                            f"delivery_state={state.get('state', 'missing')} "
+                            f"attempts={state.get('attempts', 'missing')} "
+                            f"ready={ready_state} "
+                            f"native_state={native_states} "
+                            f"hook_events={[{key: row.get(key) for key in ('event', 'turn_id', 'phase', 'exit_code', 'stderr_code', 'stderr_class')}
+                                           for row in hook_meta if row.get('phase') == 'exit']}")
+                    attempt_id = context["attempt_id"]
+                    native_turn_id = context.get("native_turn_id")
+                    assert native_turn_id == actor_turn_id, "stall attempt is not bound to this native turn"
+                    assert context["source"] == notice["ref"] == dict(
+                        record_id=source["record_id"], version=source["version"])
+                    claimed = api_call("bob", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                        request_id=attempt_id,
+                        session={key: context[key] for key in ("agent_id", "execution_id")},
+                        native_turn_id=native_turn_id)))["attempt"]
+                    assert claimed["attempt_id"] == attempt_id
+                    assert claimed["native_turn_id"] == native_turn_id
+                    assert claimed["delivery"]["delivery_id"] == delivery_id
+                    attempt_claimed = True
+                    status = api_call(event_owner, "event-status", notice["event_id"])
+                    assert len(status["deliveries"]) == 1
+                    delivery = status["deliveries"][0]
+                    assert delivery["state"] == "leased" and delivery["attempts"] == 1, delivery
                     stalled.set()
                     release_stall.wait(turn_timeout + 10)
                     return

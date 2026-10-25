@@ -11,6 +11,10 @@ SCRIPT = Path(__file__).with_name("check_codex_full_inbox_native.py")
 SPEC = importlib.util.spec_from_file_location("codex_full_inbox_fixture", SCRIPT)
 fixture = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(fixture)
+META_SPEC = importlib.util.spec_from_file_location(
+    "codex_hook_metadata", Path(__file__).with_name("record_codex_hook_metadata.py"))
+hook_metadata = importlib.util.module_from_spec(META_SPEC)
+META_SPEC.loader.exec_module(hook_metadata)
 
 
 class FullInboxFixtureTests(unittest.TestCase):
@@ -48,6 +52,14 @@ class FullInboxFixtureTests(unittest.TestCase):
     def test_fixture_refuses_direct_codex_without_bwrap_auth_fixture(self):
         with self.assertRaisesRegex(RuntimeError, "explicit Node Codex entry"):
             fixture.check("/bin/false", "/tmp/not-created", {}, lambda *_args, **_kwargs: None)
+
+    def test_hook_error_diagnostic_is_allowlisted_and_discards_raw_text(self):
+        tags = hook_metadata.safe_stderr_tags(
+            "Cairn coordination: FileNotFoundError; /secret/path/token UUID aaaa "
+            "INVALID_HOST: do not retain this detail")
+        self.assertEqual(tags, {"stderr_code": "INVALID_HOST", "stderr_class": "FileNotFoundError"})
+        self.assertNotIn("secret", json.dumps(tags))
+        self.assertNotIn("aaaa", json.dumps(tags))
 
 
 if __name__ == "__main__":
