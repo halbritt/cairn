@@ -44,6 +44,14 @@ the saved offset, counts all its dialogue as new. A failed capture leaves the ma
 it was, so the next Stop retries. A Stop continuation (`stop_hook_active`) is
 not treated as a new boundary.
 
+Codex may provide a null `transcript_path`. Stop and PreCompact then save a
+pending `transcript_unavailable` capture state without advancing the transcript
+marker or guessing a path, and surface a short warning. The next capture event
+with a usable transcript retries that work; a pending Stop retry does not wait
+for six new messages. An empty later transcript leaves the pending state in
+place. The marker records an outstanding retry, not proof that the later
+transcript contains the dialogue from before compaction.
+
 Capture events serialize on a separate session `.capture.lock`. They hold the
 ordinary session lock only to snapshot state and commit capture metadata, so a
 prompt can recall while background selection and note writes run. The commit

@@ -3137,14 +3137,17 @@ def capture(memory, event, state=None):
     elif codex:
         # One read yields both the excerpt and its end position, so dialogue
         # appended at any later moment stays uncaptured for the next Stop.
-        messages, offsets = conversation(event["transcript_path"], with_offsets=True)
+        transcript_path = codex_transcript_path(event)
+        if transcript_path is None:
+            raise HookError("Codex transcript is unavailable")
+        messages, offsets = conversation(transcript_path, with_offsets=True)
     else:
         messages = conversation(event["transcript_path"])
     if not messages:
         record_capture_status(state, "empty")
         return {}
     if codex:
-        state["capture_snapshot_marker"] = dict(path=str(Path(event["transcript_path"]).resolve()), offset=offsets[-1])
+        state["capture_snapshot_marker"] = dict(path=str(Path(transcript_path).resolve()), offset=offsets[-1])
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)
@@ -3213,12 +3216,22 @@ def codex_snapshot_marker(path):
     return dict(path=str(Path(path).resolve()), offset=offsets[-1] if offsets else 0)
 
 
+def codex_transcript_path(event) -> str | None:
+    """Return only a nonempty string path supplied by Codex, if available."""
+    path = event.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return None
+    return path
+
+
 def codex_new_messages(event, state):
     """Messages after the last captured position. Offsets in the append-only
     rollout stay distinct for repeated identical text and do not saturate with
     the bounded excerpt window. Another file, or one shorter than the saved
     offset, counts everything as new."""
-    path = event["transcript_path"]
+    path = codex_transcript_path(event)
+    if path is None:
+        raise HookError("Codex transcript is unavailable")
     messages, offsets = conversation(path, with_offsets=True)
     marker = state.get("codex_capture_marker")
     if (not isinstance(marker, dict) or marker.get("path") != str(Path(path).resolve())
@@ -3301,7 +3314,7 @@ def handle(config, event, *, _inbox_resolved=False):
 
 
 CAPTURE_STATE_FIELDS = ("captured_digest", "captured_messages", "capture_snapshot_marker",
-                        "codex_capture_marker", "last_capture")
+                        "codex_capture_marker", "capture_pending", "last_capture")
 CAPTURE_COMMIT_WAIT_SECONDS = 5
 CAPTURE_HOOK_SECONDS = 150  # installed Codex/Claude captures and Hermes/OpenCode adapters
 CAPTURE_COMMIT_MARGIN_SECONDS = 5
@@ -3359,7 +3372,19 @@ def capture_event(memory, event, path, lock_path, hook_started):
             _trace_note(stage="locked")
             original = json.loads(path.read_text()) if path.exists() else {}
             state = event_state(copy.deepcopy(original), event)
-        if event["hook_event_name"] == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
+        codex = memory.config.get("harness") == "codex"
+        transcript_path = codex_transcript_path(event) if codex else None
+        missing_codex_transcript = codex and transcript_path is None
+        if missing_codex_transcript:
+            pending = dict(reason="transcript_unavailable", hook_event=event["hook_event_name"])
+            state["capture_pending"] = pending
+            record_capture_status(state, "transcript_unavailable")
+            memory.capture_observation["outcome"] = "transcript_unavailable"
+            result = {"systemMessage":
+                "Cairn capture is pending because Codex supplied no transcript path. "
+                "It will retry when a later Stop or PreCompact hook provides one."}
+        elif (event["hook_event_name"] == "Stop" and not state.get("capture_pending")
+                and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES):
             _trace_note(outcome="early_return:stop_too_little_dialogue")
             memory.capture_observation["outcome"] = "too_little_dialogue"
             result = {}
@@ -3367,6 +3392,9 @@ def capture_event(memory, event, path, lock_path, hook_started):
             _trace_note(stage="capture")
             prior = state.pop("capture_snapshot_marker", None)
             result = capture(memory, event, state)
+            if state.get("last_capture", {}).get("outcome") in {
+                    "unchanged", "courtesy", "saved", "nothing_selected"}:
+                state.pop("capture_pending", None)
             memory.capture_observation["outcome"] = state["last_capture"]["outcome"]
             if memory.config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
                 state["codex_capture_marker"] = state["capture_snapshot_marker"]

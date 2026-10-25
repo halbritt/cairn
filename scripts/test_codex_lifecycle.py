@@ -183,6 +183,80 @@ class CodexHookTests(unittest.TestCase):
             hook.handle(self.config, dict(self.event, hook_event_name="PreCompact", trigger="auto"))
             self.assertEqual(calls, ["Stop", "PreCompact"], "compaction must always offer capture")
 
+    def test_missing_transcript_pends_capture_then_retries_on_later_stop(self):
+        state_path = Path(self.config["state_dir"]) / (SESSION + ".json")
+        state_path.parent.mkdir(parents=True)
+        prior_marker = dict(path=str(self.transcript), offset=17)
+        state_path.write_text(json.dumps(dict(binding=[None, ""], captured_digest="prior-digest",
+                                              captured_messages=3,
+                                              codex_capture_marker=prior_marker)))
+        unavailable = dict(self.event, hook_event_name="PreCompact", transcript_path=None)
+        with patch.object(hook, "capture", side_effect=AssertionError("capture ran without a transcript")):
+            result = hook.handle(self.config, unavailable)
+        self.assertIn("Cairn capture is pending", result["systemMessage"])
+        pending = json.loads(state_path.read_text())
+        self.assertEqual(pending["capture_pending"], dict(
+            reason="transcript_unavailable", hook_event="PreCompact"))
+        self.assertEqual(pending["last_capture"]["outcome"], "transcript_unavailable")
+        self.assertEqual(pending["codex_capture_marker"], prior_marker)
+        self.assertEqual(pending["captured_digest"], "prior-digest")
+        self.assertEqual(pending["captured_messages"], 3)
+
+        self.dialogue(1)  # Below the normal Stop threshold; pending work remains eligible.
+        stop = dict(self.event, hook_event_name="Stop")
+        with patch.object(hook, "capture", side_effect=lambda memory, event, state:
+                          considered(event, state)) as capture:
+            self.assertEqual(hook.handle(self.config, stop), {})
+            capture.assert_called_once()
+        settled = json.loads(state_path.read_text())
+        self.assertNotIn("capture_pending", settled)
+        self.assertEqual(settled["last_capture"]["outcome"], "nothing_selected")
+        self.assertEqual(settled["codex_capture_marker"], hook.codex_snapshot_marker(self.transcript))
+
+    def test_stop_without_transcript_keeps_pending_capture_state(self):
+        for shape in ("null", "missing"):
+            with self.subTest(shape=shape):
+                state_path = Path(self.config["state_dir"]) / (SESSION + ".json")
+                state_path.unlink(missing_ok=True)
+                event = dict(self.event, hook_event_name="Stop", transcript_path=None)
+                if shape == "missing":
+                    event.pop("transcript_path")
+                with patch.object(hook, "capture", side_effect=AssertionError(
+                        "capture ran without a transcript")):
+                    result = hook.handle(self.config, event)
+                self.assertIn("Cairn capture is pending", result["systemMessage"])
+                state = json.loads(state_path.read_text())
+                self.assertEqual(state["capture_pending"], dict(
+                    reason="transcript_unavailable", hook_event="Stop"))
+                self.assertNotIn("codex_capture_marker", state)
+
+    def test_empty_transcript_does_not_clear_pending_before_later_stop_retry(self):
+        with patch.object(hook, "capture", side_effect=AssertionError("capture ran without a transcript")):
+            hook.handle(self.config, dict(self.event, hook_event_name="PreCompact", transcript_path=None))
+
+        calls = []
+        def capture(memory, event, state):
+            calls.append(event["hook_event_name"])
+            if len(calls) == 1:
+                hook.record_capture_status(state, "empty")
+                return {}
+            return considered(event, state)
+
+        state_path = Path(self.config["state_dir"]) / (SESSION + ".json")
+        with patch.object(hook, "capture", side_effect=capture):
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+            self.assertEqual(calls, ["Stop"])
+            self.assertEqual(json.loads(state_path.read_text())["capture_pending"],
+                             dict(reason="transcript_unavailable", hook_event="PreCompact"))
+
+            self.dialogue(1)
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+
+        self.assertEqual(calls, ["Stop", "Stop"], "pending retry must bypass the normal Stop threshold")
+        state = json.loads(state_path.read_text())
+        self.assertNotIn("capture_pending", state)
+        self.assertEqual(state["last_capture"]["outcome"], "nothing_selected")
+
     def test_stop_threshold_does_not_saturate_on_long_sessions(self):
         calls = []
         with patch.object(hook, "capture", side_effect=lambda memory, event, state: calls.append(1) or considered(event, state)):
