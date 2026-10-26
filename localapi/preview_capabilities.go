@@ -1,7 +1,6 @@
 package localapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"sync"
@@ -16,32 +15,17 @@ type PreviewCapabilities struct {
 	EntitiesOmitted bool   `json:"entities_omitted"`
 }
 
+func ParsePreviewCapabilities(raw []byte) (PreviewCapabilities, bool) {
+	return decodeCapability(capabilityPreview, raw, func(schema string, flags map[string]bool) PreviewCapabilities {
+		return PreviewCapabilities{Schema: schema, EntitiesOmitted: flags["entities_omitted"]}
+	})
+}
+
 // RecognizesCompactPreviews accepts only an explicit, bounded declaration.
 // Missing, duplicate, malformed and future fields never opt a client in.
 func RecognizesCompactPreviews(raw json.RawMessage) bool {
-	if len(raw) == 0 || len(raw) > 256 {
-		return false
-	}
-	members, tail, ok := topLevelMembers(raw)
-	if !ok || len(bytes.TrimSpace(tail)) != 0 || len(members) != 2 {
-		return false
-	}
-	seen := map[string]bool{}
-	for _, member := range members {
-		if seen[member.key] {
-			return false
-		}
-		seen[member.key] = true
-	}
-	if !seen["schema"] || !seen["entities_omitted"] {
-		return false
-	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
-		return false
-	}
-	var schema string
-	return json.Unmarshal(fields["schema"], &schema) == nil && schema == PreviewCapabilitiesSchema && bytes.Equal(bytes.TrimSpace(fields["entities_omitted"]), []byte("true"))
+	cap, ok := ParsePreviewCapabilities(raw)
+	return ok && cap.EntitiesOmitted
 }
 
 // PreviewCapabilityChoice belongs to a marker-preserving adapter, never Client
@@ -87,17 +71,11 @@ func (c *PreviewCapabilityChoice) ResolveInputs(ctx context.Context, client *Cli
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.chosen {
-		var raw json.RawMessage
-		var version struct {
-			PreviewCapabilities json.RawMessage `json:"preview_capabilities"`
-		}
-		if err := client.Call(ctx, "version", struct{}{}, &raw); err != nil {
+		declarations, err := probeVersionDeclarations(ctx, client, capabilityPreview, capabilityQueryInput)
+		if err != nil {
 			return InputCapabilityChoice{}, err
 		}
-		if err := json.Unmarshal(raw, &version); err != nil {
-			return InputCapabilityChoice{}, err
-		}
-		c.choose(version.PreviewCapabilities, QueryInputDeclaration(raw))
+		c.choose(declarations[capabilityPreview], declarations[capabilityQueryInput])
 	}
 	return InputCapabilityChoice{c.compact, c.distinctCompile, c.distinctReplay}, nil
 }

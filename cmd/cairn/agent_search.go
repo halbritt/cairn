@@ -80,61 +80,44 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	}
 	query := strings.Join(f.Args(), " ")
 	fileSelected := false
+	var offset, memoryBudget, minPull *int
 	f.Visit(func(fl *flag.Flag) {
-		if fl.Name == "semantic-query-file" {
+		switch fl.Name {
+		case "semantic-query-file":
 			fileSelected = true
+		case "memory-budget-bytes":
+			memoryBudget = options.memory
+		case "min-pull-bytes":
+			minPull = options.minPull
+		case "offset":
+			offset = options.offset
 		}
 	})
 	semanticQuery, err := readSemanticQuery(query, *options.semanticFile, fileSelected, *options.semanticStdin, input)
 	if err != nil {
 		return agentSearchView{}, err
 	}
-	if semanticQuery != "" && (!*options.semantic || *options.browse || strings.TrimSpace(query) == "") {
-		return agentSearchView{}, invalid("distinct semantic input requires --semantic, a lexical query and no browsing")
-	}
-	if *options.semantic && *options.browse {
-		return agentSearchView{}, invalid("semantic discovery cannot be combined with browsing")
-	}
-	if strings.TrimSpace(*options.task) == "" || strings.TrimSpace(*options.run) == "" || *options.task == "*" || *options.run == "*" {
-		return agentSearchView{}, invalid("agent search requires explicit --task and --run")
-	}
-	if (*options.browse && (query != "" || *options.signature != "" || len(*options.entities) > 0)) || (!*options.browse && strings.TrimSpace(query) == "" && *options.signature == "" && len(*options.entities) == 0) {
-		return agentSearchView{}, invalid("agent search requires a query, entity hints, --error-signature-sha256, or --browse without search hints")
-	}
-	if *options.offset < 0 || *options.offset > 10000 {
-		return agentSearchView{}, invalid("offset must be 0-10000")
-	}
-	var browseOffset, pageOffset *int
-	var memoryBudget, minPull *int
-	f.Visit(func(fl *flag.Flag) {
-		if fl.Name == "memory-budget-bytes" {
-			memoryBudget = options.memory
-		}
-		if fl.Name == "min-pull-bytes" {
-			minPull = options.minPull
-		}
+	prepared, err := indexview.PrepareSearch(indexview.SearchInput{
+		Scope:                core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run},
+		RequireExplicitScope: true,
+		Query:                query,
+		Semantic:             *options.semantic,
+		SemanticQuery:        semanticQuery,
+		Browse:               *options.browse,
+		Offset:               offset,
+		AvailableTokens:      *options.tokens,
+		MemoryBudgetBytes:    memoryBudget,
+		MinPullBytes:         minPull,
+		InspectionPolicy:     *options.inspection,
+		AdvisoryConflicts:    *options.advisory,
+		Entities:             *options.entities,
+		ErrorSignature:       *options.signature,
+		Kinds:                options.kinds,
+		RequestID:            *options.request,
+		Context:              &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability},
 	})
-	room := *options.tokens
-	if memoryBudget != nil {
-		if *memoryBudget < 256 || *memoryBudget > room {
-			return agentSearchView{}, invalid("memory-budget-bytes must be between 256 and --tokens")
-		}
-		room = *memoryBudget
-	}
-	if minPull != nil && (memoryBudget == nil || *minPull < 1 || *minPull > min(24000, room)) {
-		return agentSearchView{}, invalid("min-pull-bytes requires --memory-budget-bytes and 1..min(24000, memory-budget-bytes)")
-	}
-	if *options.inspection != "" && ((*options.inspection != "first-fitting-whole/1" && *options.inspection != "first-fitting-whole/2") || memoryBudget == nil || minPull != nil) {
-		return agentSearchView{}, invalid("inspection-policy requires first-fitting-whole/1 or /2, --memory-budget-bytes and no --min-pull-bytes")
-	}
-	if *options.browse {
-		browseOffset = options.offset
-	} else {
-		f.Visit(func(fl *flag.Flag) {
-			if fl.Name == "offset" {
-				pageOffset = options.offset
-			}
-		})
+	if err != nil {
+		return agentSearchView{}, err
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -148,36 +131,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if err != nil {
 		return agentSearchView{}, err
 	}
-	choice, err := new(localapi.PreviewCapabilityChoice).ResolveInputs(ctx, client)
-	if err != nil {
-		return agentSearchView{}, err
-	}
-	if semanticQuery != "" {
-		if err = choice.RequireDistinctInput(false); err != nil {
-			return agentSearchView{}, err
-		}
-	}
-	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: choice.CompactPreview, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, InspectionPolicy: *options.inspection, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic, SemanticQuery: semanticQuery,
-		Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Query: query, Purpose: "context", AvailableTokens: *options.tokens,
-		Context: &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability}}, &result); err != nil {
-		return agentSearchView{}, err
-	}
-	if semanticQuery != "" {
-		if err = localapi.ConfirmDistinctQuerySchema(result.Package.Semantic.Schema); err != nil {
-			return agentSearchView{}, err
-		}
-	}
-	if minPull != nil {
-		room -= *minPull
-	}
-	if *options.inspection != "" {
-		room, err = indexview.InspectionViewRoom(result, *options.inspection, room, room)
-		if err != nil {
-			return agentSearchView{}, err
-		}
-	}
-	return presentAgentSearch(result, *options.request, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile}, room)
+	return indexview.RetrieveCLI(ctx, indexview.NewClientTransport(client, nil), prepared, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile})
 }
 
 func presentAgentSearch(result core.IndexResult, request string, command []string, room int) (agentSearchView, error) {

@@ -11,7 +11,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/internal/indexview"
@@ -148,10 +147,7 @@ type recordWriteResult struct {
 	RequestID string `json:"request_id"`
 }
 
-type searchEntry struct {
-	core.IndexEntry
-	PullArguments core.ExpandRequest `json:"pull_arguments"`
-}
+type searchEntry = indexview.Entry
 
 type searchResult struct {
 	core.SemanticPackage
@@ -234,81 +230,54 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 }
 
 func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.CallToolRequest, args searchArgs, prepare bool) (*mcp.CallToolResult, any, error) {
-	room, memoryRoom, err := t.config.readAllowance(args.AvailableTokens, args.MemoryBudgetBytes)
+	room, _, err := t.config.readAllowance(args.AvailableTokens, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	// The API measures a reserve against the receipt cap it is given. For
-	// preparation that is the caller's allowance less the guidance bytes, which
-	// the final result check below still charges once, with the reserve.
-	receiptRoom := memoryRoom
 	guidanceBytes := 0
 	if prepare {
-		var err error
 		guidanceBytes, err = preparationOverhead(preparationGuidance)
 		if err != nil {
 			return nil, nil, err
 		}
-		// Reserve space for the decision guidance without treating the smaller
-		// memory allowance as measured free input room. Final serialization is
-		// still checked by toolResult; required selections are never truncated.
-		receiptRoom -= guidanceBytes
-		if receiptRoom < 256 {
-			return nil, nil, errors.New("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
-		}
 	}
-	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, receiptRoom)) {
-		bound := "memory_budget_bytes"
-		if prepare {
-			bound = fmt.Sprintf("memory_budget_bytes-%d", guidanceBytes)
-		}
-		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, %s)", bound)
+	prepared, err := indexview.PrepareSearch(indexview.SearchInput{
+		Query:             args.Query,
+		Semantic:          args.Semantic,
+		SemanticQuery:     args.SemanticQuery,
+		Browse:            args.Browse,
+		Offset:            args.Offset,
+		AvailableTokens:   room,
+		MemoryBudgetBytes: args.MemoryBudgetBytes,
+		MinPullBytes:      args.MinPullBytes,
+		InspectionPolicy:  args.InspectionPolicy,
+		AdvisoryConflicts: args.AdvisoryConflicts,
+		Entities:          args.Entities,
+		ErrorSignature:    args.ErrorSignature,
+		Kinds:             args.Kinds,
+		RequestID:         args.RequestID,
+		FixedContext:      t.config.Context,
+		Context:           args.Context,
+		GuidanceBytes:     guidanceBytes,
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	if args.InspectionPolicy != "" && ((args.InspectionPolicy != "first-fitting-whole/1" && args.InspectionPolicy != "first-fitting-whole/2") || args.MemoryBudgetBytes == nil || args.MinPullBytes != nil) {
-		return nil, nil, errors.New("INVALID_REQUEST: inspection_policy requires first-fitting-whole/1 or /2, memory_budget_bytes and no min_pull_bytes")
-	}
-	if prepare {
-		args.MemoryBudgetBytes = &receiptRoom
-	}
-	if args.Semantic && args.Browse {
-		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
-	}
-	if (args.Browse && (args.Query != "" || args.ErrorSignature != "" || len(args.Entities) > 0)) || (!args.Browse && strings.TrimSpace(args.Query) == "" && args.ErrorSignature == "" && len(args.Entities) == 0) {
-		return nil, nil, errors.New("search requires a query, entities, error_signature_sha256, or browse=true without search hints")
-	}
-	if args.Offset != nil && (*args.Offset < 0 || *args.Offset > 10000) {
-		return nil, nil, errors.New("offset must be 0-10000")
-	}
-	var browseOffset, pageOffset *int
-	if args.Browse {
-		browseOffset = args.Offset
-		if browseOffset == nil {
-			browseOffset = new(int)
-		}
-	} else {
-		pageOffset = args.Offset
-	}
-
 	scope, err := t.searchScope(request)
 	if err != nil {
 		return nil, nil, err
 	}
-	if args.RequestID == "" {
-		args.RequestID = uuid.NewString()
-	}
-	declared, err := searchContext(t.config.Context, args.Context)
-	if err != nil {
-		return nil, nil, err
-	}
-	compiled := core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, SemanticQuery: args.SemanticQuery, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}
+	prepared.Request.Scope = scope
+	args.RequestID = prepared.Request.RequestID
+	args.MemoryBudgetBytes = prepared.Request.MemoryBudgetBytes
 	if t.attempt != nil {
-		return t.attemptSearch(ctx, compiled, args, memoryRoom, receiptRoom)
+		return t.attemptSearch(ctx, prepared.Request, args, prepared.MemoryRoom, prepared.ReceiptRoom)
 	}
-	index, err := t.retrieval.Search(ctx, compiled)
+	index, err := t.retrieval.Search(ctx, prepared.Request)
 	if err != nil {
-		return t.retrievalToolResult(nil, err, memoryRoom)
+		return t.retrievalToolResult(nil, err, prepared.MemoryRoom)
 	}
-	view, memoryRoom, err := searchView(index, args, t.config.SearchView, prepare, memoryRoom, receiptRoom)
+	view, memoryRoom, err := searchView(index, args, t.config.SearchView, prepare, prepared.MemoryRoom, prepared.ReceiptRoom)
 	return t.retrievalToolResult(view, err, memoryRoom)
 }
 
@@ -317,11 +286,8 @@ func searchView(index core.IndexResult, args searchArgs, presentation string, pr
 	if prepare {
 		view.Preparation = &notePreparation{NoteSaved: false, Guidance: preparationGuidance}
 	}
-	if err == nil && args.MinPullBytes != nil {
-		memoryRoom -= *args.MinPullBytes
-	}
-	if err == nil && args.InspectionPolicy != "" {
-		memoryRoom, err = indexview.InspectionViewRoom(index, args.InspectionPolicy, memoryRoom, receiptRoom)
+	if err == nil {
+		memoryRoom, err = indexview.ResolveViewRoom(index, args.MinPullBytes, args.InspectionPolicy, memoryRoom, receiptRoom)
 	}
 	if err == nil && presentation == "compact/1" {
 		return compactSearchResult{
@@ -340,34 +306,7 @@ func searchView(index core.IndexResult, args searchArgs, presentation string, pr
 }
 
 func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error) {
-	if supplied == nil {
-		return fixed, nil
-	}
-	merged := core.ContextPins{}
-	if fixed != nil {
-		merged = *fixed
-	}
-	for _, field := range []struct {
-		name   string
-		value  string
-		target *string
-	}{
-		{"revision", supplied.Revision, &merged.Revision},
-		{"workspace_sha256", supplied.WorkspaceSHA256, &merged.WorkspaceSHA256},
-		{"task_class", supplied.TaskClass, &merged.TaskClass},
-		{"task_phase", supplied.TaskPhase, &merged.TaskPhase},
-		{"binding_id", supplied.BindingID, &merged.BindingID},
-		{"capability_id", supplied.CapabilityID, &merged.CapabilityID},
-	} {
-		if field.value == "" {
-			continue
-		}
-		if *field.target != "" && *field.target != field.value {
-			return nil, fmt.Errorf("INVALID_REQUEST: context.%s conflicts with configured context", field.name)
-		}
-		*field.target = field.value
-	}
-	return &merged, nil
+	return indexview.MergeContextPins(fixed, supplied)
 }
 
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
@@ -391,21 +330,7 @@ func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args h
 
 // readAllowance keeps free context distinct from the caller's smaller memory allocation.
 func (c Config) readAllowance(available, memory *int) (room, allowance int, err error) {
-	room = c.AvailableTokens
-	if available != nil {
-		if *available < 256 || *available > c.maxTokens() {
-			return 0, 0, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", c.maxTokens())
-		}
-		room = *available
-	}
-	allowance = room
-	if memory != nil {
-		if *memory < 256 || *memory > room {
-			return 0, 0, fmt.Errorf("INVALID_REQUEST: memory_budget_bytes must be between 256 and available_tokens %d", room)
-		}
-		allowance = *memory
-	}
-	return room, allowance, nil
+	return indexview.ResolveAllowance(c.AvailableTokens, c.maxTokens(), available, memory)
 }
 
 func (t memoryTools) assessments(ctx context.Context, _ *mcp.CallToolRequest, args assessmentsArgs) (*mcp.CallToolResult, any, error) {
@@ -513,25 +438,21 @@ func (t memoryTools) edit(ctx context.Context, _ *mcp.CallToolRequest, args edit
 }
 
 func presentSearch(result core.IndexResult, requestID string) (searchResult, error) {
-	view := searchResult{SemanticPackage: result.Package.Semantic, Schema: "cairn.mcp-search/1", Index: []searchEntry{}, SourceSchema: result.Package.Semantic.Schema, SourceSeal: result.Package.Seal, ReceiptID: result.Package.ReceiptID, RequestID: requestID, ExpiresAt: result.ExpiresAt, CreditsRemaining: result.CreditsRemaining, BytesRemaining: result.BytesRemaining}
-	type versionKey struct {
-		id      string
-		version int
+	assembled, err := indexview.AssembleView(result, "cairn.mcp-search/1", requestID, nil)
+	view := searchResult{
+		SemanticPackage:  assembled.SemanticPackage,
+		Schema:           assembled.Schema,
+		Index:            assembled.Index,
+		SourceSchema:     assembled.SourceSchema,
+		SourceSeal:       assembled.SourceSeal,
+		ReceiptID:        assembled.ReceiptID,
+		RequestID:        assembled.RequestID,
+		ExpiresAt:        assembled.ExpiresAt,
+		CreditsRemaining: assembled.CreditsRemaining,
+		BytesRemaining:   assembled.BytesRemaining,
 	}
-	handles := map[versionKey]string{}
-	for _, h := range result.Handles {
-		key := versionKey{h.RecordID, h.Version}
-		if _, exists := handles[key]; exists || h.Handle == "" {
-			return view, errors.New("index has duplicate or empty handles")
-		}
-		handles[key] = h.Handle
-	}
-	for _, entry := range result.Package.Semantic.Index {
-		handle, ok := handles[versionKey{entry.RecordID, entry.Version}]
-		if !ok {
-			return view, errors.New("index has no handle for a record version")
-		}
-		view.Index = append(view.Index, searchEntry{entry, core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}})
+	if err != nil {
+		return view, errors.New(err.Error())
 	}
 	return view, nil
 }

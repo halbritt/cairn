@@ -7,6 +7,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/internal/indexview"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -55,26 +56,7 @@ type localRetrievalBackend struct {
 }
 
 func (b localRetrievalBackend) Search(ctx context.Context, request core.CompileRequest) (core.IndexResult, error) {
-	choice, err := b.previewChoice.ResolveInputs(ctx, b.client)
-	if err != nil {
-		return core.IndexResult{}, err
-	}
-	if request.SemanticQuery != "" {
-		if err = choice.RequireDistinctInput(false); err != nil {
-			return core.IndexResult{}, err
-		}
-	}
-	request.CompactPreviewEntities = choice.CompactPreview
-	var index core.IndexResult
-	if err = b.client.Call(ctx, "index", request, &index); err != nil {
-		return core.IndexResult{}, err
-	}
-	if request.SemanticQuery != "" {
-		if err = localapi.ConfirmDistinctQuerySchema(index.Package.Semantic.Schema); err != nil {
-			return core.IndexResult{}, err
-		}
-	}
-	return index, nil
+	return indexview.ExecuteSearch(ctx, indexview.NewClientTransport(b.client, b.previewChoice), request)
 }
 
 func (b localRetrievalBackend) Pull(ctx context.Context, request core.ExpandRequest) (core.Expansion, error) {

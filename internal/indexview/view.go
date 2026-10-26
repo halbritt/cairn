@@ -31,8 +31,8 @@ type View struct {
 	BytesRemaining   int       `json:"bytes_remaining"`
 }
 
-func Present(result core.IndexResult, request string, command []string, room int) (View, error) {
-	view := View{SemanticPackage: result.Package.Semantic, Schema: "cairn.agent-search/1",
+func AssembleView(result core.IndexResult, schema, request string, command []string) (View, error) {
+	view := View{SemanticPackage: result.Package.Semantic, Schema: schema,
 		SourceSchema: result.Package.Semantic.Schema, SourceSeal: result.Package.Seal, ReceiptID: result.Package.ReceiptID,
 		RequestID: request, Index: []Entry{}, ExpiresAt: result.ExpiresAt,
 		CreditsRemaining: result.CreditsRemaining, BytesRemaining: result.BytesRemaining}
@@ -44,14 +44,14 @@ func Present(result core.IndexResult, request string, command []string, room int
 	for _, handle := range result.Handles {
 		key := versionKey{handle.RecordID, handle.Version}
 		if _, exists := handles[key]; exists || handle.Handle == "" {
-			return View{}, invalid("index response has duplicate or empty handles")
+			return view, invalid("index response has duplicate or empty handles")
 		}
 		handles[key] = handle.Handle
 	}
 	for _, entry := range result.Package.Semantic.Index {
 		handle, exists := handles[versionKey{entry.RecordID, entry.Version}]
 		if !exists {
-			return View{}, invalid("index response has no handle for a record version")
+			return view, invalid("index response has no handle for a record version")
 		}
 		pull := core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}
 		var pullCommand string
@@ -60,6 +60,14 @@ func Present(result core.IndexResult, request string, command []string, room int
 			pullCommand = ShellCommand(argv)
 		}
 		view.Index = append(view.Index, Entry{entry, pullCommand, pull})
+	}
+	return view, nil
+}
+
+func Present(result core.IndexResult, request string, command []string, room int) (View, error) {
+	view, err := AssembleView(result, "cairn.agent-search/1", request, command)
+	if err != nil {
+		return View{}, err
 	}
 	encode := func() ([]byte, error) {
 		return json.Marshal(struct {
