@@ -51,7 +51,8 @@ class RequiredLookupRetryTests(unittest.TestCase):
 
     def test_repeated_transient_and_permanent_failures_never_grant_context(self):
         for failure, count in [('TIMEOUT', 2), ('API_UNAVAILABLE', 2),
-                               ('API_CONNECTION_FAILED', 2), ('AUTHORITY_DENIED', 1),
+                               ('API_CONNECTION_FAILED', 2), ('VERSION_CONFLICT', 2),
+                               ('IDEMPOTENCY_CONFLICT', 1), ('AUTHORITY_DENIED', 1),
                                ('OPEN_CONFLICT', 1), ('BUDGET_REFUSED', 1)]:
             with self.subTest(failure=failure):
                 case = fixtures.InboxRecallBridgeTests()
@@ -69,7 +70,7 @@ class RequiredLookupRetryTests(unittest.TestCase):
     def test_transient_required_lookup_preserves_whole_notice_context(self):
         for harness, failure in itertools.product(
                 (fixtures.InboxRecallBridgeTests, claude.ClaudeInboxRecallTests),
-                ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'process_timeout')):
+                ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'VERSION_CONFLICT', 'process_timeout')):
             with self.subTest(harness=harness.__name__, failure=failure):
                 case = harness()
                 case.setUp()

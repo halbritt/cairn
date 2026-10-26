@@ -3435,7 +3435,7 @@ def refusal_error_class(exc):
 RECALL_FAILURE_PHASES = frozenset(('required_search', 'task_source', 'optional_search'))
 RECALL_FAILURE_OPERATIONS = frozenset(('search', 'hosted', 'history'))
 CAUSE_CODES = frozenset(('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'AUTHORITY_DENIED', 'NOT_FOUND',
-                         'PAYLOAD_UNAVAILABLE', 'OPEN_CONFLICT', 'POLICY_UNENFORCEABLE'))
+                         'PAYLOAD_UNAVAILABLE', 'OPEN_CONFLICT', 'POLICY_UNENFORCEABLE', 'VERSION_CONFLICT'))
 CAUSE_REASONS = frozenset(('NONZERO_EXIT', 'INVALID_JSON', 'OUTPUT_LIMIT', 'START_FAILED', 'NOT_CONFIRMED',
                            'SEARCH_STATUS', 'NOT_HOSTED'))
 

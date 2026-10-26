@@ -699,9 +699,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 break
             except engine.HookError as exc:
                 # Retry the same read intent once, never the inbox claim or task.
+                # Search VERSION_CONFLICT means the store exhausted serialization
+                # retries; it is safe to retry this same read intent.
                 # The original deadline and permanent refusals still apply.
                 if (not retry_required or search_attempt or
-                        exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED')):
+                        exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED', 'VERSION_CONFLICT')):
                     failure_meta = dict(recall_phase='required_search', recall_operation='search',
                                         recall_attempts=search_attempt + 1, recall_max_attempts=max_search_attempts,
                                         deadline_remaining_ms=int(max(0, round((required_deadline - time.monotonic()) * 1000))))

@@ -152,6 +152,7 @@ class SettlementTests(Base):
             pass
         for code, reason, expected in (
                 ('TIMEOUT', 'NONZERO_EXIT', {'cause_code': 'TIMEOUT', 'cause_reason': 'NONZERO_EXIT'}),
+                ('VERSION_CONFLICT', 'NONZERO_EXIT', {'cause_code': 'VERSION_CONFLICT', 'cause_reason': 'NONZERO_EXIT'}),
                 ('private error text', 'private path', {}),
                 ({'secret': 'value'}, ['private'], {})):
             with self.subTest(code=code):

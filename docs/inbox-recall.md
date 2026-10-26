@@ -159,9 +159,11 @@ hook deadline. This is not a measured five-second end-to-end latency guarantee.
 The normal coordination hook must have enough timeout for admission and cleanup.
 
 With an engine advertising `INBOX_REQUIRED_SEARCH_RETRY_VERSION = 1`, the initial
-required lookup retries once after `TIMEOUT`, `API_UNAVAILABLE`, or
-`API_CONNECTION_FAILED`. Both calls use the same request UUID and query under the
-original deadline. The API's existing receipt idempotency and current-source
+required lookup retries once after `TIMEOUT`, `API_UNAVAILABLE`,
+`API_CONNECTION_FAILED`, or `VERSION_CONFLICT`. Search reports `VERSION_CONFLICT`
+when concurrent database updates exhaust its transaction retries; it is distinct
+from `IDEMPOTENCY_CONFLICT`, which remains a permanent refusal. Both calls use the
+same request UUID and query under the original deadline. The API's existing receipt idempotency and current-source
 checks still apply. The retry gains no work from a timed-out attempt: the API
 computes the search again before it matches the request ID to a stored receipt
 (a same-ID repeat measured as slow as the first call on 2026-10-21). This retries only a memory read, never an inbox claim or task.

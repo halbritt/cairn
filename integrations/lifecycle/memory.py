@@ -183,7 +183,7 @@ before relying on claims outside that passage.
 
 
 HOOK_ERROR_CODES = frozenset({"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED", "AUTHORITY_DENIED", "NOT_FOUND", "STALE_HANDLE",
-                              "PAYLOAD_UNAVAILABLE", "OPEN_CONFLICT", "POLICY_UNENFORCEABLE"})
+                              "PAYLOAD_UNAVAILABLE", "OPEN_CONFLICT", "POLICY_UNENFORCEABLE", "VERSION_CONFLICT"})
 # Which local check failed, chosen at the raise site. It is never a provider status.
 HOOK_ERROR_REASONS = frozenset({"NONZERO_EXIT", "INVALID_JSON", "OUTPUT_LIMIT", "START_FAILED", "NOT_CONFIRMED",
                                 "SEARCH_STATUS", "NOT_HOSTED"})
