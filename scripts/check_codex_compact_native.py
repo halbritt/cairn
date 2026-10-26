@@ -130,12 +130,14 @@ def _write_ready_expectation(path, config, native_id, event_id, delivery_id, sce
 
 
 def check(binary, root, config, api_call, candidate_root, scenario="notice", diagnostic_path=None,
-          expect_compact_turn_id=False):
+          expect_compact_turn_id=False, settle_after_auto_compact=False):
     if scenario not in ("notice", "response", "batch-admission", "claimed-before-compact",
                         "auto-in-turn-claimed"):
         raise ValueError("unsupported compact fixture scenario")
     if expect_compact_turn_id and scenario != "auto-in-turn-claimed":
         raise ValueError("compact turn-ID expectation applies only to automatic in-turn compaction")
+    if settle_after_auto_compact and not expect_compact_turn_id:
+        raise ValueError("post-compaction same-turn settlement requires expect_compact_turn_id")
     candidate_root = Path(candidate_root).resolve()
     source_home = candidate_root / "codex"
     home = root / "home"
@@ -384,7 +386,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                         store_attempt["delivery"]["delivery_id"] == delivery_id, \
                         "Store claim no longer identifies the same automatic-compaction attempt"
                     state = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
-                    assert state["delivery_id"] == delivery_id and state["state"] == "leased" \
+                    expected_live_states = ("leased", "handled") if (
+                        settle_after_auto_compact and "auto-settle" in results) else ("leased",)
+                    assert state["delivery_id"] == delivery_id and state["state"] in expected_live_states \
                         and state["attempts"] == 1, "automatic path did not start with one live claim"
                     for call_id, output in results.items():
                         if call_id.startswith("auto-read"):
@@ -403,8 +407,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                         compact_outcomes = {row.get("hook_kind"): row for row in compact_session_exits}
                         assert compact_outcomes["memory"].get("exit_code") == 0, \
                             "automatic compact memory refresh failed: " + json.dumps(compact_outcomes["memory"])
-                        assert compact_outcomes["coordination"].get("exit_code") == 1 and \
-                            compact_outcomes["coordination"].get("stderr_code") == "NATIVE_TURN_MISMATCH", \
+                        expected_coordination = (0, None) if expect_compact_turn_id else (1, "NATIVE_TURN_MISMATCH")
+                        assert (compact_outcomes["coordination"].get("exit_code"),
+                            compact_outcomes["coordination"].get("stderr_code")) == expected_coordination, \
                             "automatic compact coordination boundary changed unexpectedly: " + \
                             json.dumps({key: row.get(key) for key, row in compact_outcomes.items()})
                     compact_rows = [row for row in hook_rows if row.get("event") == "PreCompact" and
@@ -421,15 +426,27 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                     if compact_resume and "SessionStart(compact)" not in automatic_compaction_source_order:
                         automatic_compaction_source_order.append("SessionStart(compact)")
                     if automatic_compaction_observed and compact_resume and source_read_confirmed:
-                        automatic_compaction_after_sessionstart_state = state
-                        assert state["state"] == "leased" and state["attempts"] == 1, \
-                            "compact SessionStart changed the claimed delivery before settlement: " + \
-                            json.dumps({key: state.get(key) for key in
-                                ("delivery_id", "state", "attempts", "code")})
-                        item = dict(type="message", id="msg_auto_compact_done", role="assistant",
-                            status="completed", content=[dict(type="output_text",
-                                text="The exact notice source was read across automatic compaction.", annotations=[])])
-                        finished.set()
+                        if automatic_compaction_after_sessionstart_state is None:
+                            automatic_compaction_after_sessionstart_state = state
+                            assert state["state"] == "leased" and state["attempts"] == 1, \
+                                "compact SessionStart changed the claimed delivery before settlement: " + \
+                                json.dumps({key: state.get(key) for key in
+                                    ("delivery_id", "state", "attempts", "code")})
+                        if settle_after_auto_compact and "auto-settle" not in results:
+                            command = shlex.join([str(home / "coordination/coordination.py"),
+                                "inbox", "compact", "settle", context["compact_handle"], "handled"])
+                            item = _exec_tool("auto-settle", command)
+                        else:
+                            if settle_after_auto_compact:
+                                settled_output = json.dumps(results["auto-settle"])
+                                assert "handled" in settled_output, "post-compaction settle did not confirm handled"
+                                assert state["state"] == "handled" and state["attempts"] == 1, \
+                                    "Store did not confirm post-compaction handled settlement"
+                                settlement_confirmed = True
+                            item = dict(type="message", id="msg_auto_compact_done", role="assistant",
+                                status="completed", content=[dict(type="output_text",
+                                    text="The exact notice source was read across automatic compaction.", annotations=[])])
+                            finished.set()
                     elif automatic_compaction_observed and compact_rows and not compact_resume:
                         # A model response to this request supplies the native
                         # compact summary. Keep the same turn open for its
@@ -730,6 +747,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                     auto_completed = True
             assert auto_completed, "automatic-compaction turn did not reach matching turn/completed: " + \
                 json.dumps(auto_notifications)
+            assert not failures, failures
             assert automatic_compaction_observed, "high-usage tool follow-up did not trigger native PreCompact"
             assert source_read_confirmed, "automatic-compaction fixture did not read the exact source"
             assert automatic_compaction_source_order[0] == "exact_source_read" and \
@@ -795,9 +813,15 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
             assert {row.get("method") for row in context_compaction_items} >= {"item/started", "item/completed"}, \
                 "app-server did not report matching automatic contextCompaction item start/completion"
             final_state = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
-            assert final_state["delivery_id"] == delivery_id and final_state["attempts"] == 1 and \
-                final_state["state"] == "failed" and final_state.get("code") == "processing_failed", \
-                "unsettled attempt was falsely settled or replayed after automatic compaction and Stop"
+            if settle_after_auto_compact:
+                assert settlement_confirmed and final_state["delivery_id"] == delivery_id and \
+                    final_state["attempts"] == 1 and final_state["state"] == "handled" and \
+                    final_state.get("code") is None, \
+                    "same-turn settlement after automatic compaction did not produce one handled delivery"
+            else:
+                assert final_state["delivery_id"] == delivery_id and final_state["attempts"] == 1 and \
+                    final_state["state"] == "failed" and final_state.get("code") == "processing_failed", \
+                    "unsettled attempt was falsely settled or replayed after automatic compaction and Stop"
             stop_row = next(row for row in hook_rows if row.get("event") == "Stop" and
                 row.get("phase") == "exit" and row.get("turn_id") == native_turn_id)
             assert stop_row.get("exit_code") == 0, "automatic-compaction turn Stop hook failed"
@@ -806,6 +830,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 event_id=event["event_id"], delivery_id=delivery_id, attempt_id=attempt_id,
                 attempt_native_turn_id=attempt_native_turn_id,
                 source_ref=event["ref"], exact_source_read=source_read_confirmed,
+                settlement_after_auto_compact=settlement_confirmed,
                 source_order=automatic_compaction_source_order,
                 delivery_state_during_compaction=automatic_compaction_store_state["state"],
                 attempts_during_compaction=automatic_compaction_store_state["attempts"],

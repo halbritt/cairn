@@ -1,7 +1,10 @@
 # CAIRN-220 native wake join probe, 2026-10-25
 
-This probe did not establish the watcher-to-Store join. It must not be used as
-CAIRN-220 acceptance evidence.
+The initial runs below did not establish the watcher-to-Store join. The final
+section (`## Scripted continuation and handled settlement verified (2026-10-26)`)
+records the verified provider-free queue-to-Store join and `--scripted-handled`
+source-read and single-settlement proof. That fixture evidence remains separate
+from live provider/canary acceptance.
 
 ## Attempt record
 
@@ -447,3 +450,53 @@ this fixture does not explicitly configure or inspect that host's namespace.
 Therefore a tool-shell namespace mismatch remains plausible, not established;
 the `connection_refused` class does not prove that the socket path was absent.
 No acknowledgement was issued and no handled outcome is claimed.
+
+## Scripted continuation and handled settlement verified (2026-10-26)
+
+Source inspection of `scripts/check_codex_app_server_wake_join.py` identified four
+fixture-level causes of the scripted-continuation failures:
+
+1. `thread/start` passed `sandbox="read-only"` inside the outer `bwrap --unshare-net`
+   sandbox, which caused Codex's inner tool-shell sandbox to deny `connect()` to
+   `/trace/<short-socket-dir>/api.sock` during `functions.exec`. Passing
+   `sandbox="danger-full-access"` only when `scripted_handled=True` (while
+   keeping the outer `bwrap --unshare-net` confinement) allowed the inner tool
+   shell to reach the mounted disposable Unix socket.
+2. In Codex 0.164.0 `js_repl`, `text(await tools.exec_command(...))` returns a
+   formatted wrapper (`Chunk ID: ...\nWall time: ...\nProcess exited with code 0\nOriginal token count: ...\nOutput:\n<stdout>`).
+   `_tool_result_diagnostics` parsed the full wrapper text as JSON before
+   extracting the `\nOutput:\n` payload, reporting `cairn_api_envelope_observed=false`.
+   Unwrapping the `\nOutput:\n` segment when `payload` is not top-level JSON
+   restored exact envelope and source-field classification.
+3. After the final assistant message, Codex runs synchronous `Stop` hooks before
+   emitting `turn/completed`, which clears `inbox_attempt` and `inbox_intent` in
+   the coordination session file. `_wait_for_Wake` previously re-read that
+   session file after the turn completed instead of retaining the active-turn
+   observation captured before `Stop`.
+4. Codex 0.164.0 issues `GET /v1/models` on startup; capping `POST /v1/responses`
+   separately from `GET /v1/models` prevented the total HTTP counter from failing
+   the 3-turn scripted budget.
+
+Focused unit tests (`PYTHONPATH=scripts python3 -m unittest scripts/test_codex_app_server_wake_join.py`,
+13 tests) cover these four paths. Two fresh fake-auth `bwrap --unshare-net`
+disposable runs then verified both modes without any external provider call:
+
+- **Default leased-join mode** (run `6a0170cf7060402590bac188746c6d36`, private
+  0600 traces `~/.cache/cairn-220-native-wake-proof/{bootstrap,item-stage,run-queue-stage}-6a0170cf7060402590bac188746c6d36.jsonl`):
+  `exact_queue_hook_store_join=true`, `delivery_state="leased"`,
+  `delivery_attempts=1`, `response_requests=1`, `provider_call=false`.
+- **Opt-in `--scripted-handled` mode** (run `b195a7ea03b54868a319a10cbff1c1d1`,
+  private 0600 traces `~/.cache/cairn-220-native-wake-proof/{bootstrap,item-stage,run-queue-stage,script-stage}-b195a7ea03b54868a319a10cbff1c1d1.jsonl`):
+  `exact_queue_hook_store_join=true`, `exact_source_read=true`,
+  `acknowledgement="handled_confirmed"`, `acknowledgement_tool_calls=1`,
+  `continuation_failure_stage="handled_and_confirmed"`,
+  `delivery_state="handled"`, `delivery_attempts=1`,
+  `settlement_exactly_once=true`, `response_requests=3`, `provider_call=false`.
+  The continuation trace records `cairn_api_envelope_observed=true`,
+  `api_read_status="success"`, `api_read_invocation="confirmed"`, and
+  `exit_class="zero"` for both the `source` and `acknowledgement` tool results.
+
+This completes the provider-free native wake-to-Store join and scripted
+single-settlement fixture proof for CAIRN-220. Live provider wake reduction,
+latency distribution, and canary activation remain deferred under the
+[token-efficiency gate](token-efficiency-gate-2026-10-24.md).

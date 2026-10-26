@@ -104,6 +104,17 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertEqual(success["api_read_status"], "success")
         self.assertEqual(success["api_read_invocation"], "confirmed")
 
+        nested_exec_output = _tool_result_diagnostics({"type": "custom_tool_call_output",
+            "output": [{"type": "input_text", "text": json.dumps({
+                "output": "Chunk ID: 1\nProcess exited with code 0\nOutput:\n" + api_envelope,
+                "metadata": {"exit_code": 0}})}]})
+        self.assertEqual(nested_exec_output["result_output_type"], "array")
+        self.assertEqual(nested_exec_output["exit_class"], "zero")
+        self.assertEqual(nested_exec_output["execution_error_class"], "none")
+        self.assertTrue(nested_exec_output["cairn_api_envelope_observed"])
+        self.assertEqual(nested_exec_output["api_read_status"], "success")
+        self.assertEqual(nested_exec_output["api_read_invocation"], "confirmed")
+
         command_failure = _tool_result_diagnostics({"type": "custom_tool_call_output",
             "output": json.dumps({"exit_code": 127,
                                    "output": "/fixture/cairn: No such file or directory"})})

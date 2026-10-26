@@ -81,13 +81,12 @@ def _tool_result_diagnostics(result: dict) -> dict:
     strings = []
 
     def visit(value, depth=0):
-        if depth > 5:
+        if depth > 8:
             return
         if isinstance(value, dict):
             parsed.append(value)
-            for key in ("output", "content", "text", "result", "data", "error"):
-                if key in value:
-                    visit(value[key], depth + 1)
+            for child in value.values():
+                visit(child, depth + 1)
         elif isinstance(value, list):
             for part in value[:64]:
                 visit(part, depth + 1)
@@ -96,6 +95,24 @@ def _tool_result_diagnostics(result: dict) -> dict:
             try:
                 decoded = json.loads(value)
             except (ValueError, TypeError):
+                if "\nOutput:\n" in value:
+                    tail = value.split("\nOutput:\n", 1)[1].strip()
+                    try:
+                        tail_decoded = json.loads(tail)
+                    except (ValueError, TypeError):
+                        tail_decoded = None
+                    if isinstance(tail_decoded, dict):
+                        visit(tail_decoded, depth + 1)
+                        return
+                for line in value.splitlines()[:64]:
+                    stripped = line.strip()
+                    if stripped.startswith("{") and stripped.endswith("}"):
+                        try:
+                            line_decoded = json.loads(stripped)
+                        except (ValueError, TypeError):
+                            continue
+                        if isinstance(line_decoded, dict):
+                            visit(line_decoded, depth + 1)
                 return
             if not isinstance(decoded, str):
                 visit(decoded, depth + 1)
@@ -941,6 +958,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     pending_tool_role = None
     state_path = None
     expected_read_command_requested = False
+    observed_attempt = None
+    observed_intent = None
 
     def trace_script(stage, outcome, *, error=None, flags=None):
         if script_trace_fd is not None:
@@ -960,12 +979,17 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         return matches[0]
 
     def _hook_state_presence() -> tuple[bool, bool]:
+        nonlocal observed_attempt, observed_intent
         if state_path is None:
             return False, False
         try:
             state = json.loads(state_path.read_text())
         except (OSError, ValueError):
             return False, False
+        if isinstance(state.get("inbox_attempt"), dict):
+            observed_attempt = state["inbox_attempt"]
+        if isinstance(state.get("inbox_intent"), dict):
+            observed_intent = state["inbox_intent"]
         return bool(state.get("inbox_intent")), bool(state.get("inbox_attempt"))
 
     class Handler(BaseHTTPRequestHandler):
@@ -973,7 +997,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             return
 
         def do_GET(self):
-            if self.path != "/v1/models" or len(requests) >= 3:
+            get_requests = sum(1 for method, _path in requests if method == "GET")
+            if self.path != "/v1/models" or get_requests >= 3:
                 self.send_error(404)
                 return
             requests.append(("GET", "/v1/models"))
@@ -988,7 +1013,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         def do_POST(self):
             nonlocal request_index, pending_tool_role, expected_read_command_requested
             length = int(self.headers.get("Content-Length", "0"))
-            if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or len(requests) >= 3:
+            post_requests = sum(1 for method, _path in requests if method == "POST")
+            if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or post_requests >= 3:
                 self.send_error(413)
                 return
             request = json.loads(self.rfile.read(length))
@@ -997,6 +1023,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             nonlocal source_read_confirmed, acknowledgement_confirmed
             nonlocal acknowledgement_tool_calls, script_failure_code
             if not scripted_handled:
+                _hook_state_presence()
                 item = dict(type="message", id="msg_cairn220", role="assistant", status="completed",
                     content=[dict(type="output_text", text="Synthetic local response.", annotations=[])])
             else:
@@ -1192,7 +1219,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         require(len(loaded) == 6 and all(hook.get("enabled") and hook.get("trustStatus") == "trusted"
                                          for hook in loaded), "codex_hooks_not_trusted")
         started = rpc("thread/start", dict(cwd=str(workspace), model=MODEL,
-            approvalPolicy="never", sandbox="read-only"))
+            approvalPolicy="never",
+            sandbox="danger-full-access" if scripted_handled else "read-only"))
         native_id = started["thread"]["id"]
         thread_page = rpc("thread/loaded/list", dict(limit=100))
         require(native_id in thread_page.get("data", []), "thread_not_loaded")
@@ -1247,17 +1275,22 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                 state = json.loads(state_path.read_text())
             except (OSError, ValueError):
                 state = {}
-            attempt = state.get("inbox_attempt")
-            if isinstance(attempt, dict) or (state.get("inbox_intent") or {}).get("native_turn_id"):
+            attempt = state.get("inbox_attempt") or observed_attempt
+            intent = state.get("inbox_intent") or observed_intent
+            if isinstance(attempt, dict):
                 break
             if child.poll() is not None:
                 break
             time.sleep(0.05)
-        attempt = state.get("inbox_attempt") or {}
-        intent = state.get("inbox_intent") or {}
+        response_event.wait(10)
+        try:
+            state = json.loads(state_path.read_text())
+        except (OSError, ValueError):
+            state = {}
+        attempt = observed_attempt or state.get("inbox_attempt") or {}
+        intent = observed_intent or state.get("inbox_intent") or {}
         actual_delivery = ((attempt.get("delivery") or {}).get("delivery_id"))
         turn_id = attempt.get("native_turn_id") or intent.get("native_turn_id")
-        response_event.wait(10)
         event_after = _api_call(binary, api, sender_token, "event-inspect", {"event_id": event_id},
                                 socket_path=api_socket)
         delivery_after = event_after["deliveries"][0]

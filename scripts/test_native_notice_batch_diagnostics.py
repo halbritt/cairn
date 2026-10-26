@@ -69,6 +69,14 @@ class AdvanceDiagnosticWriterTests(unittest.TestCase):
         })), "tool_error")
         self.assertEqual(classify_advance_tool_result(wrapped({}, exit_code=1)), "tool_error")
         self.assertEqual(classify_advance_tool_result({"output": "not json"}), "other")
+        native_exec = {"output": [{"type": "input_text", "text": (
+            "Chunk ID: 1\nWall time: 0.01 seconds\nProcess exited with code 0\n"
+            "Original token count: 25\nOutput:\n" + json.dumps({
+                "schema": "cairn.compact-inbox-batch/1", "ok": True,
+                "next": "private successor cue", "batch_index": 2, "batch_limit": 3,
+            }))}]}
+        self.assertEqual(advance_tool_result_stage(native_exec), "success")
+        self.assertEqual(classify_advance_tool_result(native_exec), "advance_successor")
 
     def test_advance_result_stage_codes_are_fixed_and_payload_free(self):
         def wrapped(inner, exit_code=0):

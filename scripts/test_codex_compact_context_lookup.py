@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from check_codex_compact_native import _context_for_event, compact_sessionstart_turn_id_matches
+from check_codex_compact_native import _context_for_event, check, compact_sessionstart_turn_id_matches
 from codex_fixture_diagnostic import append_ready_observation, turn_join_observation, update as update_diagnostic
 from record_codex_hook_metadata import owner_process_class, ready_window_observation, safe_output_tags
 
@@ -23,6 +23,15 @@ class ContextLookupTests(unittest.TestCase):
         self.assertTrue(compact_sessionstart_turn_id_matches(rows, "active"))
         self.assertFalse(compact_sessionstart_turn_id_matches(rows, "other"))
         self.assertFalse(compact_sessionstart_turn_id_matches(rows[:1], "active"))
+
+    def test_check_validates_auto_compact_turn_id_and_settlement_flags(self):
+        with self.assertRaisesRegex(ValueError, "compact turn-ID expectation applies only"):
+            check("/bin/false", Path("/nonexistent"), {}, lambda *a, **k: None,
+                  Path("/nonexistent"), scenario="notice", expect_compact_turn_id=True)
+        with self.assertRaisesRegex(ValueError, "post-compaction same-turn settlement requires"):
+            check("/bin/false", Path("/nonexistent"), {}, lambda *a, **k: None,
+                  Path("/nonexistent"), scenario="auto-in-turn-claimed",
+                  expect_compact_turn_id=False, settle_after_auto_compact=True)
 
     def test_missing_context_writes_fixed_stage_diagnostic_without_identity(self):
         with tempfile.TemporaryDirectory() as directory:

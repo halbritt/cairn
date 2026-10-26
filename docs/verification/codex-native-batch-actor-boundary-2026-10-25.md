@@ -418,5 +418,57 @@ removed.
 
 This proves the wrapper and coordination command can run in isolation after
 its helper is staged. It does not establish that Codex dispatched the command
-in the failed actor turn. No actor rerun followed; CAIRN-221 remains In
-Progress.
+in the failed actor turn.
+
+## Verified three-notice batch continuation and fourth-notice pending boundary (2026-10-26)
+
+Source inspection of `scripts/check_codex_full_inbox_native.py` and
+`scripts/native_notice_batch_diagnostics.py` identified two remaining fixture
+defects after the wrapper dependency staging:
+
+1. `scripts/check_codex_full_inbox_native.py` authenticated the binding token
+   against `api_role`, then hardcoded `"bob"` for the subsequent `agents list`,
+   `agents claim`, and `event-inspect` API calls even when the staged binding
+   used `carol.token` (`agent/carol`). Replacing the hardcoded `"bob"` calls
+   with `api_role` aligned the controller with the verified binding principal.
+2. In Codex 0.164.0 `js_repl`, `text(await tools.exec_command(...))` wraps the
+   command stdout in `Chunk ID: ...\nWall time: ...\nProcess exited with code 0\nOriginal token count: ...\nOutput:\n{...}`.
+   `_parse_advance_tool_result` in `scripts/native_notice_batch_diagnostics.py`
+   attempted `json.loads` directly on `outer.get("output")` when `output` was a
+   string without `returncode`, returning `inner_json_invalid` and `tool_error`
+   even though `cairn-inbox advance` had succeeded and leased the successor
+   notice. Unwrapping the `\nOutput:\n` payload when `Process exited with code 0`
+   is present restored exact classification of `cairn.inbox.advance/1`
+   (`advance_successor` and `advance_limit`).
+
+Focused unit tests (`PYTHONPATH=scripts python3 -m unittest scripts/test_codex_full_inbox_native.py scripts/test_native_notice_batch_diagnostics.py`,
+20 tests) cover these paths. Because the three-notice batch turn executes nine
+`tools.exec_command` calls and nine synchronous `PostToolUse` hooks (~50-60s on
+this host), the disposable runner set `turn_timeout=120`.
+
+One fresh provider-free disposable run under `bwrap --unshare-net` with empty
+fake auth (`{}`), synthetic `agent/alice` and `agent/carol` identities,
+disposable PostgreSQL/API, and a loopback-only Responses server passed
+end-to-end:
+
+- Private mode-0600 trace:
+  `/home/halbritt/.cache/cairn-221-native-batch-actor/actor-post70cdb69-0a24b290-52d1-4c77-ac25-ed5c7426d770.jsonl`
+  (144 lines).
+- Fixture summary: `result="PASS"`,
+  `schema="cairn.codex-full-inbox-native-fixture/1"`,
+  `workflow_id="native.notice_batch"`, `provider="local_responses_stub"`,
+  `provider_call=false`, `native_hooks_registered=true`,
+  `native_turn_joined=true`, `scripted_response_count=11`,
+  `verified_store_boundary="first_three_notices_handled_fourth_pending"`,
+  `task_outcome="unassessed"`.
+- Trace verification: all 11 scripted exchanges completed (`registration`, three
+  iterations of `read_notice` -> `settle_handled` -> `advance_successor` with
+  `advance_result_stage="success"`, and `final_message` after `advance_limit` at
+  `batch_index=3, batch_limit=3`), Store slots 1–3 recorded
+  `handled=true, attempted=true`, slot 4 recorded `pending=true, attempts_zero=true`,
+  and `actor_terminal="completed"`.
+
+This completes the provider-free native Codex batch continuation and
+three-notice cap fixture proof for CAIRN-221. Live paired provider usage,
+latency distribution, and canary activation remain deferred under the
+[token-efficiency gate](token-efficiency-gate-2026-10-24.md).

@@ -180,5 +180,75 @@ its automatic compact `SessionStart` callback in this fixture.
 This is a Codex callback serializer/runtime result only. It did not register a
 Cairn session or use the Cairn Store, inbox, or coordination hook, and it does
 not prove Cairn continuity, safe attempt recovery, accepted task outcome,
-provider usage, or measured usefulness. The earlier full Cairn fixture's
-registration boundary remains separate and unresolved.
+provider usage, or measured usefulness. The section below resolves the full
+Cairn fixture registration boundary and verifies both unsettled fail-closed Stop
+reconciliation and same-turn post-compaction settlement.
+
+## Full Cairn fixture proof with patched compact SessionStart turn ID (2026-10-26)
+
+Source inspection identified three fixture-level causes of the earlier
+registration boundary and continuation check when running the patched
+`codex-app-server` binary (SHA-256
+`b8ad1db40f7f547df6fc89190e3a1feb1355d438eca45678fddcafd746127235`) in
+[`check_codex_compact_native.py`](../../scripts/check_codex_compact_native.py):
+
+1. The previously staged `cairn224-runtime-explicit-home/codex/hooks.json` had
+   been copied from `cairn224-inbox-gate-signal`, leaving its hook command paths
+   pointing at `cairn224-inbox-gate-signal/codex/...` (whose `config_home` was
+   `/home/halbritt/.codex`). Because `check_codex_compact_native.py` replaces
+   `str(source_home)` with `str(home)`, those mismatched paths were not rewritten
+   and `coordination.py` returned early with `config_home_match=false`. Staging
+   a fresh `.codex` candidate via `stage_account(..., "codex", profile="full")`
+   aligned `source_home` with `hooks.json`.
+2. When bind-mounting the standalone `codex-app-server` binary into a disposable
+   directory, its sibling `codex-code-mode-host` binary must be present in the
+   same directory so `functions.exec` (`js_repl`) can execute `cairn-inbox` tool
+   calls.
+3. In [`check_codex_compact_native.py`](../../scripts/check_codex_compact_native.py),
+   `Handler.do_POST` previously hardcoded
+   `compact_outcomes["coordination"].get("exit_code") == 1` even when
+   `expect_compact_turn_id=True`, whereas `verify(rpc)` checked `exit_code == 0`
+   when `expect_compact_turn_id=True`. Updating `Handler.do_POST` to honor
+   `expect_compact_turn_id` and adding `settle_after_auto_compact` enabled
+   provider-free verification of both post-compaction outcomes.
+
+Focused unit tests (`PYTHONPATH=scripts python3 -m unittest scripts/test_codex_compact_context_lookup.py`,
+13 tests) and a fresh `bwrap --unshare-net` disposable run with empty fake auth
+(`{}`), synthetic principals, disposable PostgreSQL/API, and the patched
+`codex-app-server` binary (`b8ad1db40f7f547df6fc89190e3a1feb1355d438eca45678fddcafd746127235`,
+receipts recorded in `/home/halbritt/.cache/codex-cairn224-runtime-proof/manifest.json`)
+verified both modes without any external provider call:
+
+- **Unsettled Stop fail-closed reconciliation**
+  (`expect_compact_turn_id=True, settle_after_auto_compact=False`):
+  `result="PASS"`, `native_automatic_compaction=true`, `exact_source_read=true`,
+  `source_order=["exact_source_read", "PreCompact", "SessionStart(compact)"]`,
+  `compact_sessionstart_observed=true`,
+  `compact_sessionstart_turn_id_matches_active=true`,
+  `compact_sessionstart_outcomes={"coordination": {"error_code": null, "exit_code": 0}, "memory": {"error_code": null, "exit_code": 0}}`,
+  `delivery_state_during_compaction="leased"`,
+  `delivery_state_after_compact_sessionstart="leased"`,
+  `final_delivery_state="failed"`, `final_delivery_code="processing_failed"`,
+  `final_attempts=1`, `false_settlement=false`, `loopback_response_requests=4`,
+  `provider_call=false`.
+- **Same-turn post-compaction `handled` settlement**
+  (`expect_compact_turn_id=True, settle_after_auto_compact=True`):
+  `result="PASS"`, `native_automatic_compaction=true`, `exact_source_read=true`,
+  `settlement_after_auto_compact=true`,
+  `source_order=["exact_source_read", "PreCompact", "SessionStart(compact)"]`,
+  `compact_sessionstart_observed=true`,
+  `compact_sessionstart_turn_id_matches_active=true`,
+  `compact_sessionstart_outcomes={"coordination": {"error_code": null, "exit_code": 0}, "memory": {"error_code": null, "exit_code": 0}}`,
+  `delivery_state_during_compaction="leased"`,
+  `delivery_state_after_compact_sessionstart="leased"`,
+  `final_delivery_state="handled"`, `final_delivery_code=null`,
+  `final_attempts=1`, `false_settlement=false`, `loopback_response_requests=6`,
+  `provider_call=false`.
+
+This completes the provider-free full Cairn fixture proof for CAIRN-224 across
+both stock Codex (`NATIVE_TURN_MISMATCH` fail-closed when compact `SessionStart`
+omits `turn_id`) and patched Codex (`turn_id` matching the active turn,
+preserving the leased attempt across automatic compaction and supporting both
+same-turn `handled` settlement and fail-closed `Stop` reconciliation). Live
+paired provider usage and canary activation remain deferred under the
+[token-efficiency gate](token-efficiency-gate-2026-10-24.md).

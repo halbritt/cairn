@@ -467,7 +467,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                             agent = saved.get("agent") or {}
                             if agent.get("agent_id") and agent.get("execution_id"):
                                 try:
-                                    ready = api_call("bob", "session-inbox-ready", raw=True,
+                                    ready = api_call(api_role, "session-inbox-ready", raw=True,
                                         body=json.dumps(dict(agent_id=agent["agent_id"],
                                                              execution_id=agent["execution_id"])))
                                     ready_state = dict(ready=ready.get("ready"),
@@ -488,7 +488,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                     assert native_turn_id == actor_turn_id, "stall attempt is not bound to this native turn"
                     assert context["source"] == notice["ref"] == dict(
                         record_id=source["record_id"], version=source["version"])
-                    claimed = api_call("bob", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                    claimed = api_call(api_role, "session-inbox-claim", raw=True, body=json.dumps(dict(
                         request_id=attempt_id,
                         session={key: context[key] for key in ("agent_id", "execution_id")},
                         native_turn_id=native_turn_id)))["attempt"]
@@ -620,7 +620,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                              for row in hook_meta])
                         assert native_turn_id in (actor_turn_id, *observed_turn_ids), \
                             "attempt is not bound to an observed native turn"
-                        claim = api_call("bob", "session-inbox-claim", raw=True, body=json.dumps(dict(
+                        claim = api_call(api_role, "session-inbox-claim", raw=True, body=json.dumps(dict(
                             request_id=attempt_id,
                             session={key: context[key] for key in ("agent_id", "execution_id")},
                             native_turn_id=native_turn_id)))['attempt']
@@ -707,7 +707,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
         _wait_for_registration_hook(stop_complete_path, registration_id, timeout=turn_timeout)
         setup_done()
 
-        agents = api_call("bob", "agents", "list", "--harness", "codex")["agents"]
+        agents = api_call(api_role, "agents", "list", "--harness", "codex")["agents"]
         target = next(row for row in agents if row["native_session_id"] == native_id)
         assert target["metadata"]["state"] == "idle", "fixture notice must be published between turns"
         if scenario == "batch":
@@ -795,7 +795,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
             attempt_id = context["attempt_id"]
             native_turn_id = context.get("native_turn_id")
             assert native_turn_id == actor_turn_id
-            claimed = api_call("bob", "session-inbox-claim", raw=True, body=json.dumps(dict(
+            claimed = api_call(api_role, "session-inbox-claim", raw=True, body=json.dumps(dict(
                 request_id=attempt_id,
                 session={key: context[key] for key in ("agent_id", "execution_id")},
                 native_turn_id=native_turn_id)))['attempt']
@@ -881,7 +881,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                 "advance_tool_result", "turn_terminal") for row in actor_rows)
             result = dict(schema=REPORT_SCHEMA, result="PASS", workflow_id="native.notice_batch",
                 experimental_actor_fixture=True, task_outcome="unassessed",
-                verified_store_boundary="first_notice_handled_second_notice_leased",
+                verified_store_boundary="first_three_notices_handled_fourth_pending",
                 native_hooks_registered=True, native_turn_joined=True,
                 scripted_response_count=len(actor_rows), diagnostic_rows=len(trace_rows),
                 provider="local_responses_stub", provider_call=False,

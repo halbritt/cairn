@@ -565,7 +565,7 @@ accounting behavior; they do not validate proposed remediations.
 
 ## Plane execution backlog
 
-[CAIRN-213 initiative](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/9d3a3c73-30b8-482e-bbf5-54ee74e69d40/). All children are unassigned Backlog work items; project has no existing labels. Native parent relationships and written dependencies were read back and verified. The installed CLI and available tools do not expose relation creation, so dependencies below are explicit links, not native blocking edges.
+[CAIRN-213 initiative](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/9d3a3c73-30b8-482e-bbf5-54ee74e69d40/). All child slices (`CAIRN-214..227`) have landed their additive/opt-in source, disposable PostgreSQL/API integration coverage, provider-free native runtime fixtures, and exercised staging/rollback checks, concluding with a final **Defer** disposition for combined live rollout in [`token-efficiency-gate-2026-10-24.md`](../verification/token-efficiency-gate-2026-10-24.md) and [`token-efficiency-remote-code-mode-host-2026-10-25.md`](../verification/token-efficiency-remote-code-mode-host-2026-10-25.md). Native parent relationships and written dependencies were read back and verified. The installed CLI and available tools do not expose relation creation, so dependencies below are explicit links, not native blocking edges.
 
 | Item | Scope | Blocked by |
 | --- | --- | --- |
