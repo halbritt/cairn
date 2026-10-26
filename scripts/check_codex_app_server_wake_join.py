@@ -20,6 +20,18 @@ import uuid
 
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO / "scripts"))
+from codex_loopback_fixture import (
+    LoopbackResponsesServer,
+    exec_tool_item,
+    message_item,
+    response_stream,
+    stage_codex_binding_and_hooks,
+    trust_codex_hooks_via_rpc,
+    write_private_file,
+)
+
 NATIVE = (Path.home() / ".npm-global/lib/node_modules/@openai/codex/node_modules/"
           "@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex")
 TRACE_HOME = Path.home() / ".cache/cairn-220-native-wake-proof"
@@ -49,10 +61,7 @@ def _scripted_inbox_tool(results: dict, context: dict, source_body: str) -> tupl
 
 
 def _exec_tool(call_id: str, command: str) -> dict:
-    code = "text(await tools.exec_command(" + json.dumps(dict(
-        cmd=command, max_output_tokens=2000)) + "));"
-    return dict(type="custom_tool_call", id="ctc_" + call_id, name="exec",
-                namespace="functions", call_id=call_id, input=code)
+    return exec_tool_item(call_id, command, max_output_tokens=2000)
 
 
 def _source_result_matches(result: dict, context: dict, source_body: str) -> dict[str, bool]:
@@ -447,12 +456,7 @@ def _api_call(binary: Path, api: Path, token_file: Path, operation: str,
 
 
 def _write_private(path: Path, data: str) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    try:
-        os.write(fd, data.encode())
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    write_private_file(path, data, exclusive=True)
 
 
 def _sandbox_prefix(root: Path, trace_name: str, *, preflight: bool) -> list[str]:
@@ -928,8 +932,6 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     sys.path.insert(0, "/repo/scripts")
     import codex_queue
     import coordination
-    from check_codex_inbox import response_stream
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from trace_io import append_trace, create_trace
 
     root = Path(root_text)
@@ -944,7 +946,6 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
     sender_token = api / "sender.token"
     binary = root / "cairn"
     repo = "fixture:cairn-220-wake-join"
-    requests = []
     response_event = threading.Event()
     item_observer = None
     expected_event_id = None
@@ -992,189 +993,161 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             observed_intent = state["inbox_intent"]
         return bool(state.get("inbox_intent")), bool(state.get("inbox_attempt"))
 
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_args):
-            return
-
-        def do_GET(self):
-            get_requests = sum(1 for method, _path in requests if method == "GET")
-            if self.path != "/v1/models" or get_requests >= 3:
-                self.send_error(404)
-                return
-            requests.append(("GET", "/v1/models"))
-            body = json.dumps({"object": "list", "data": [
-                {"id": MODEL, "object": "model", "created": 0, "owned_by": "fixture"}]}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            nonlocal request_index, pending_tool_role, expected_read_command_requested
-            length = int(self.headers.get("Content-Length", "0"))
-            post_requests = sum(1 for method, _path in requests if method == "POST")
-            if self.path != "/v1/responses" or not 0 < length <= 2_000_000 or post_requests >= 3:
-                self.send_error(413)
-                return
-            request = json.loads(self.rfile.read(length))
-            requests.append(("POST", "/v1/responses"))
-            request_index += 1
-            nonlocal source_read_confirmed, acknowledgement_confirmed
-            nonlocal acknowledgement_tool_calls, script_failure_code
-            if not scripted_handled:
-                _hook_state_presence()
-                item = dict(type="message", id="msg_cairn220", role="assistant", status="completed",
-                    content=[dict(type="output_text", text="Synthetic local response.", annotations=[])])
+    def handle_response(request, results):
+        nonlocal request_index, pending_tool_role, expected_read_command_requested
+        nonlocal source_read_confirmed, acknowledgement_confirmed
+        nonlocal acknowledgement_tool_calls
+        request_index += 1
+        if not scripted_handled:
+            _hook_state_presence()
+            return message_item("msg_cairn220", "Synthetic local response.")
+        raw_input = request.get("input", [])
+        tool_results = [row for row in raw_input if row.get("type") == "custom_tool_call_output"]
+        trace_script("responses_request", "observed", flags={
+            "step": "request", "request_index": request_index,
+            "input_item_count": len(raw_input), "tool_result_count": len(tool_results),
+            "has_input": bool(raw_input), "has_tools": any(
+                row.get("type") == "additional_tools" for row in raw_input)})
+        trace_script("hook_context", "before", flags={"step": "context_lookup"})
+        try:
+            _context_path, context = _context_for_event()
+        except Exception as exc:
+            state_intent, state_attempt = _hook_state_presence()
+            trace_script("hook_context", "failed", error=type(exc).__name__,
+                         flags={"step": "context_lookup", "context_present": False,
+                                "intent_present": state_intent, "attempt_present": state_attempt,
+                                "failure_code": "context_not_found"})
+            raise
+        source_body = "Synthetic CAIRN-220 watcher source"
+        state_intent, state_attempt = _hook_state_presence()
+        trace_script("hook_context", "after", flags={"step": "context_lookup",
+            "context_present": True, "intent_present": state_intent,
+            "attempt_present": state_attempt})
+        if pending_tool_role:
+            result = results.get(pending_tool_role)
+            if not result:
+                trace_script("native_tool_result", "failed", error="RuntimeError", flags={
+                    "result_role": pending_tool_role, "result_class": "other",
+                    "result_transport": "missing",
+                    "expected_read_command_requested": expected_read_command_requested,
+                    "failure_code": "native_tool_result_missing"})
+                raise RuntimeError("native_tool_result_missing")
+            result_diagnostics = _tool_result_diagnostics(result)
+            result_text = json.dumps(result, sort_keys=True)
+            if pending_tool_role == "source":
+                source_matches = _source_result_matches(result, context, source_body)
+                exact = all(source_matches.values())
+                result_class = "source_exact" if exact else "source_mismatch"
+                result_flags = {"result_role": pending_tool_role, "result_class": result_class,
+                    "result_transport": "matched",
+                    "expected_read_command_requested": expected_read_command_requested,
+                    **source_matches, **result_diagnostics}
             else:
-                raw_input = request.get("input", [])
-                tool_results = [row for row in raw_input if row.get("type") == "custom_tool_call_output"]
-                trace_script("responses_request", "observed", flags={
-                    "step": "request", "request_index": request_index,
-                    "input_item_count": len(raw_input), "tool_result_count": len(tool_results),
-                    "has_input": bool(raw_input), "has_tools": any(
-                        row.get("type") == "additional_tools" for row in raw_input)})
-                try:
-                    results = {row["call_id"]: row for row in tool_results
-                               if isinstance(row.get("call_id"), str)}
-                    trace_script("hook_context", "before", flags={"step": "context_lookup"})
-                    try:
-                        _context_path, context = _context_for_event()
-                    except Exception as exc:
-                        state_intent, state_attempt = _hook_state_presence()
-                        trace_script("hook_context", "failed", error=type(exc).__name__,
-                                     flags={"step": "context_lookup", "context_present": False,
-                                            "intent_present": state_intent, "attempt_present": state_attempt,
-                                            "failure_code": "context_not_found"})
-                        raise
-                    source_body = "Synthetic CAIRN-220 watcher source"
-                    state_intent, state_attempt = _hook_state_presence()
-                    trace_script("hook_context", "after", flags={"step": "context_lookup",
-                        "context_present": True, "intent_present": state_intent,
-                        "attempt_present": state_attempt})
-                    if pending_tool_role:
-                        result = results.get(pending_tool_role)
-                        if not result:
-                            trace_script("native_tool_result", "failed", error="RuntimeError", flags={
-                                "result_role": pending_tool_role, "result_class": "other",
-                                "result_transport": "missing",
-                                "expected_read_command_requested": expected_read_command_requested,
-                                "failure_code": "native_tool_result_missing"})
-                            raise RuntimeError("native_tool_result_missing")
-                        result_diagnostics = _tool_result_diagnostics(result)
-                        result_text = json.dumps(result, sort_keys=True)
-                        if pending_tool_role == "source":
-                            source_matches = _source_result_matches(result, context, source_body)
-                            exact = all(source_matches.values())
-                            result_class = "source_exact" if exact else "source_mismatch"
-                            result_flags = {"result_role": pending_tool_role, "result_class": result_class,
-                                "result_transport": "matched",
-                                "expected_read_command_requested": expected_read_command_requested,
-                                **source_matches, **result_diagnostics}
-                        else:
-                            exact = "handled" in result_text
-                            result_class = "ack_handled" if exact else "ack_unconfirmed"
-                            result_flags = {"result_role": pending_tool_role, "result_class": result_class,
-                                "result_transport": "matched", **result_diagnostics}
-                        trace_script("native_tool_result", "observed" if exact else "refused",
-                            flags=result_flags)
-                        require(exact, "source_read_mismatch" if pending_tool_role == "source"
-                                else "acknowledgement_not_confirmed")
-                        pending_tool_role = None
-                    stage, item = _scripted_inbox_tool(
-                        results, context, source_body)
-                    call_role = "source" if stage == "source_read" else (
-                        "acknowledgement" if stage == "acknowledgement" else None)
-                    if stage == "acknowledgement":
-                        source_read_confirmed = True
-                        acknowledgement_tool_calls += 1
-                    elif stage == "store_verification":
-                        inspect = _api_call(binary, api, sender_token, "event-inspect",
-                                            {"event_id": expected_event_id}, socket_path=api_socket)
-                        delivery = next(row for row in inspect["deliveries"]
-                                        if row["delivery_id"] == context["delivery_id"])
-                        require(delivery.get("state") == "handled" and delivery.get("attempts") == 1
-                                and acknowledgement_tool_calls == 1,
-                                "store_handled_outcome_not_exactly_once")
-                        acknowledgement_confirmed = True
-                        item = dict(type="message", id="msg_cairn220_done", role="assistant",
-                            status="completed", content=[dict(type="output_text",
-                            text="Read the exact notice source and acknowledged it as handled.", annotations=[])])
-                        response_event.set()
-                        call_role = None
-                    if call_role:
-                        pending_tool_role = call_role
-                        expected_read_command_requested = False
-                        if call_role == "source":
-                            expected_read_command_requested = _is_expected_source_read_tool_call(
-                                item, context, source_body)
-                        trace_script("native_tool_call", "observed", flags={
-                            "step": stage, "tool_name": item.get("name", "other"),
-                            "tool_namespace": item.get("namespace", "other"),
-                            "call_role": item.get("call_id", "other")
-                                if item.get("call_id") in ("source", "acknowledgement") else "other",
-                            "expected_read_command_requested": expected_read_command_requested})
-                    trace_script("responses_response", "before", flags={
-                        "response_item_type": item.get("type", "other")})
-                except Exception as exc:
-                    failure_codes = {"native_inbox_context_not_unique": "context_not_found",
-                        "native_tool_result_missing": "native_tool_result_missing",
-                        "source_read_mismatch": "source_read_mismatch",
-                        "exact_source_read_not_observed": "source_read_mismatch",
-                        "native_acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
-                        "acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
-                        "store_handled_outcome_not_exactly_once": "store_handled_not_confirmed"}
-                    script_failure_code = failure_codes.get(str(exc), "other")
-                    trace_script("responses_response", "failed", error=type(exc).__name__, flags={
-                        "failure_code": script_failure_code})
-                    self.send_error(500)
-                    return
-            body = response_stream("resp_cairn220_" + str(len(requests)), item)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            if scripted_handled:
-                trace_script("responses_response", "after", flags={
-                    "response_item_type": item.get("type", "other")})
-            if not scripted_handled:
-                response_event.set()
+                exact = "handled" in result_text
+                result_class = "ack_handled" if exact else "ack_unconfirmed"
+                result_flags = {"result_role": pending_tool_role, "result_class": result_class,
+                    "result_transport": "matched", **result_diagnostics}
+            trace_script("native_tool_result", "observed" if exact else "refused",
+                flags=result_flags)
+            require(exact, "source_read_mismatch" if pending_tool_role == "source"
+                    else "acknowledgement_not_confirmed")
+            pending_tool_role = None
+        stage, item = _scripted_inbox_tool(
+            results, context, source_body)
+        call_role = "source" if stage == "source_read" else (
+            "acknowledgement" if stage == "acknowledgement" else None)
+        if stage == "acknowledgement":
+            source_read_confirmed = True
+            acknowledgement_tool_calls += 1
+        elif stage == "store_verification":
+            inspect = _api_call(binary, api, sender_token, "event-inspect",
+                                {"event_id": expected_event_id}, socket_path=api_socket)
+            delivery = next(row for row in inspect["deliveries"]
+                            if row["delivery_id"] == context["delivery_id"])
+            require(delivery.get("state") == "handled" and delivery.get("attempts") == 1
+                    and acknowledgement_tool_calls == 1,
+                    "store_handled_outcome_not_exactly_once")
+            acknowledgement_confirmed = True
+            item = message_item(
+                "msg_cairn220_done",
+                "Read the exact notice source and acknowledged it as handled.",
+            )
+            response_event.set()
+            call_role = None
+        if call_role:
+            pending_tool_role = call_role
+            expected_read_command_requested = False
+            if call_role == "source":
+                expected_read_command_requested = _is_expected_source_read_tool_call(
+                    item, context, source_body)
+            trace_script("native_tool_call", "observed", flags={
+                "step": stage, "tool_name": item.get("name", "other"),
+                "tool_namespace": item.get("namespace", "other"),
+                "call_role": item.get("call_id", "other")
+                    if item.get("call_id") in ("source", "acknowledgement") else "other",
+                "expected_read_command_requested": expected_read_command_requested})
+        trace_script("responses_response", "before", flags={
+            "response_item_type": item.get("type", "other")})
+        return item
+    def on_response_error(exc: BaseException) -> None:
+        nonlocal script_failure_code
+        failure_codes = {
+            "native_inbox_context_not_unique": "context_not_found",
+            "native_tool_result_missing": "native_tool_result_missing",
+            "source_read_mismatch": "source_read_mismatch",
+            "exact_source_read_not_observed": "source_read_mismatch",
+            "native_acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
+            "acknowledgement_not_confirmed": "acknowledgement_not_confirmed",
+            "store_handled_outcome_not_exactly_once": "store_handled_not_confirmed",
+        }
+        script_failure_code = failure_codes.get(str(exc), "other")
+        trace_script("responses_response", "failed", error=type(exc).__name__, flags={
+            "failure_code": script_failure_code})
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    config = (
-        f'model = "{MODEL}"\nmodel_provider = "fixture"\nmodel_reasoning_effort = "low"\n'
-        'check_for_update_on_startup = false\n'
-        '[model_providers.fixture]\nname = "CAIRN-220 loopback fixture"\n'
-        f'base_url = "http://127.0.0.1:{server.server_port}/v1"\n'
-        'wire_api = "responses"\nrequires_openai_auth = false\n'
-        'request_max_retries = 0\nstream_max_retries = 0\n')
-    (profile / "config.toml").write_text(config)
-    (profile / "config.toml").chmod(0o600)
+    def after_response(item: dict) -> None:
+        if scripted_handled:
+            trace_script("responses_response", "after", flags={
+                "response_item_type": item.get("type", "other")})
+        else:
+            response_event.set()
+
+    server = LoopbackResponsesServer(
+        handle_response,
+        model=MODEL,
+        response_id_prefix="resp_cairn220_",
+        sequence_by_http_events=True,
+        max_requests=3,
+        max_body_bytes=2_000_000,
+        enable_models_endpoint=True,
+        max_model_requests=3,
+        enforce_bounds_via_http_status=True,
+        on_error=on_response_error,
+        after_response=after_response,
+    )
+    server.write_config_toml(
+        profile,
+        provider_name="CAIRN-220 loopback fixture",
+        reasoning_effort="low",
+        check_for_update_on_startup=False,
+    )
     # Hook definitions are loaded and explicitly trusted on this disposable
     # profile only. The command points at the repository's production hook.
     engine_root = root / "engine"
     bindings = engine_root / "bindings"
     state_dir = engine_root / "state"
-    bindings.mkdir(parents=True, mode=0o700)
-    state_dir.mkdir(mode=0o700)
     binding = "codex-wake-join"
-    config_path = bindings / (binding + ".json")
     config_data = dict(cairn=str(binary), socket=api_socket,
         token_file=str(worker_token), state_dir=str(state_dir), binding=binding,
         harness="codex", repo=repo, model=MODEL, native_delivery=True,
         idle_wakeup="/bin/false", process_names=["codex"], config_home=str(profile))
-    config_path.write_text(json.dumps(config_data))
-    config_path.chmod(0o600)
-    command = "/usr/bin/python3 /repo/integrations/lifecycle/coordination.py hook --config " + str(config_path)
-    hooks = {}
-    for event in ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "Interrupt", "PostToolUse"):
-        hooks[event] = [{"hooks": [{"type": "command", "command": command,
-                                     "timeout": 2 if event in ("SessionEnd", "Interrupt", "PostToolUse") else 15}]}]
-    (profile / "hooks.json").write_text(json.dumps({"hooks": hooks}))
-    (profile / "hooks.json").chmod(0o600)
-    server_thread.start()
+    _config_path, command = stage_codex_binding_and_hooks(
+        engine_root,
+        profile,
+        binding=binding,
+        config_data=config_data,
+        hook_script="/repo/integrations/lifecycle/coordination.py",
+    )
+    server.start()
 
     child = subprocess.Popen(["/opt/codex-bin/codex", "app-server", "--listen", "unix://" + str(socket_path)],
         env={"HOME": str(profile), "CODEX_HOME": str(profile), "PATH": "/usr/bin:/bin:/opt/codex-bin",
@@ -1204,20 +1177,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         rpc("initialize", dict(clientInfo=dict(name="cairn-220-disposable-fixture", version="1"),
                                capabilities=dict(experimentalApi=True)))
         connection.send(json.dumps(dict(method="initialized")))
-        listed = rpc("hooks/list", dict(cwds=[str(workspace)]))
-        selected = [hook for entry in listed.get("data", []) for hook in entry.get("hooks", [])
-                    if hook.get("sourcePath") == str(profile / "hooks.json")
-                    and hook.get("command") == command]
-        require(len(selected) == 6, "codex_hook_definitions_missing")
-        for hook in selected:
-            rpc("config/value/write", dict(filePath=str(profile / "config.toml"),
-                keyPath="hooks.state." + json.dumps(hook["key"]) + ".trusted_hash",
-                value=hook["currentHash"], mergeStrategy="replace"))
-        verified = rpc("hooks/list", dict(cwds=[str(workspace)]))
-        loaded = [hook for entry in verified.get("data", []) for hook in entry.get("hooks", [])
-                  if hook.get("key") in {item["key"] for item in selected}]
-        require(len(loaded) == 6 and all(hook.get("enabled") and hook.get("trustStatus") == "trusted"
-                                         for hook in loaded), "codex_hooks_not_trusted")
+        trust_codex_hooks_via_rpc(rpc, workspace=workspace, profile_dir=profile, command=command)
         started = rpc("thread/start", dict(cwd=str(workspace), model=MODEL,
             approvalPolicy="never",
             sandbox="danger-full-access" if scripted_handled else "read-only"))
@@ -1311,8 +1271,8 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             "store_attempt": "not_observed",
             "delivery_id_match": actual_delivery == expected_delivery_id,
             "native_turn_id_present": isinstance(turn_id, str) and bool(turn_id),
-            "response_requests": sum(1 for method, _path in requests if method == "POST"),
-            "model_list_requests": sum(1 for method, _path in requests if method == "GET"),
+            "response_requests": server.post_count,
+            "model_list_requests": server.get_count,
             "scripted_handled_requested": scripted_handled,
             "exact_source_read": source_read_confirmed,
             "acknowledgement": "handled_confirmed" if acknowledgement_confirmed else "not_confirmed",
@@ -1402,9 +1362,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait(timeout=3)
-        server.shutdown()
-        server.server_close()
-        server_thread.join(timeout=2)
+        server.close(timeout=2)
         stderr_thread.join(timeout=2)
         child.stderr.close()
         if script_trace_fd is not None:

@@ -4,9 +4,7 @@ This fixture proves transport and source-read plumbing only. Its Responses
 messages, function calls, and usage are scripted; they are not actor decisions
 or provider measurements.
 """
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,6 +16,20 @@ import sys
 import threading
 import time
 import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codex_loopback_fixture import (
+    LoopbackResponsesServer,
+    exec_tool_item as _exec_tool,
+    load_coordination_installer,
+    load_script_module,
+    message_item,
+    prepare_synthetic_auth_fixture,
+    response_stream,
+    stage_hook_metadata_wrapper as _stage_hook_metadata_wrapper,
+    wait_for_registration_hook as _wait_for_registration_hook,
+    wrap_hook_commands,
+)
 
 
 MODEL = "gpt-6-luna"
@@ -32,51 +44,8 @@ BATCH_BODIES = (
 )
 
 
-def response_stream(ident, item):
-    response = dict(id=ident, object="response", created_at=0, status="in_progress",
-                    output=[], model=MODEL)
-    events = [dict(type="response.created", response=response),
-              dict(type="response.output_item.added", output_index=0,
-                   item=dict(item, status="in_progress"))]
-    if item["type"] == "message":
-        part = item["content"][0]
-        events += [dict(type="response.content_part.added", item_id=item["id"], output_index=0,
-                        content_index=0, part=dict(part, text="")),
-                   dict(type="response.output_text.delta", item_id=item["id"], output_index=0,
-                        content_index=0, delta=part["text"]),
-                   dict(type="response.output_text.done", item_id=item["id"], output_index=0,
-                        content_index=0, text=part["text"]),
-                   dict(type="response.content_part.done", item_id=item["id"], output_index=0,
-                        content_index=0, part=part)]
-    elif item["type"] == "custom_tool_call":
-        pass
-    events += [dict(type="response.output_item.done", output_index=0, item=item),
-               dict(type="response.completed", response=dict(
-                   response, status="completed", output=[item],
-                   usage=dict(input_tokens=1, output_tokens=1, total_tokens=2)))]
-    return "".join("event: " + event["type"] + "\ndata: " +
-                   json.dumps(dict(event, sequence_number=i)) + "\n\n"
-                   for i, event in enumerate(events)).encode()
-
-
 def _load_installer():
-    path = Path(__file__).with_name("install-agent-coordination.py")
-    spec = importlib.util.spec_from_file_location("codex_full_inbox_installer", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _stage_hook_metadata_wrapper(profile):
-    """Stage the wrapper and its diagnostic helper into the isolated profile."""
-    source_dir = Path(__file__).resolve().parent
-    wrapper = Path(profile) / "record_codex_hook_metadata.py"
-    helper = Path(profile) / "codex_fixture_diagnostic.py"
-    shutil.copyfile(source_dir / wrapper.name, wrapper)
-    shutil.copyfile(source_dir / helper.name, helper)
-    wrapper.chmod(0o600)
-    helper.chmod(0o600)
-    return wrapper
+    return load_coordination_installer("codex_full_inbox_installer")
 
 
 def _fixture_task_and_notice(scenario="single"):
@@ -92,35 +61,6 @@ def _fixture_task_and_notice(scenario="single"):
     assert events[0]["body"] == SOURCE_BODY
     # Deliberately return only actor-visible inputs. Never read acceptance_check.
     return row["actor_task"], events[0]["body"]
-
-
-def _exec_tool(call_id, command):
-    code = "text(await tools.exec_command(" + json.dumps(dict(
-        cmd=command, max_output_tokens=3000)) + "));"
-    return dict(type="custom_tool_call", id="ctc_" + call_id, name="exec",
-                namespace="functions", call_id=call_id, input=code)
-
-
-def _wait_for_registration_hook(stop_complete_path, turn_id, timeout=30):
-    """Wait for the registration turn's Stop hook to finish before querying state.
-
-    Codex can report turn/completed before its command hook has exited. The
-    marker is written by record_codex_hook_metadata.py only after the Stop
-    hook returns, so it provides the ordering boundary needed by the fixture.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            completed = json.loads(Path(stop_complete_path).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            time.sleep(0.05)
-            continue
-        if completed.get("event") != "Stop" or completed.get("turn_id") != turn_id:
-            raise AssertionError("registration Stop hook marker does not match the registration turn")
-        if completed.get("exit_code") != 0:
-            raise AssertionError("registration Stop hook returned nonzero")
-        return completed
-    raise TimeoutError("registration Stop hook did not complete before fixture lookup")
 
 
 def _diagnostic_path_roles(binary, config, candidate_root, codex_entry, codex_root, root):
@@ -280,23 +220,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     setup_stage("configure_profile")
     profile = actor_root / ".codex"
     profile.mkdir(mode=0o700)
-    if sandbox_auth_file is None:
-        auth_fixture = profile / "synthetic-auth-fixture.json"
-        auth_fixture.write_text("{}\n", encoding="utf-8")
-        auth_fixture.chmod(0o600)
-    else:
-        auth_input = Path(sandbox_auth_file)
-        if auth_input.is_symlink():
-            raise RuntimeError("synthetic auth fixture must not be a symlink")
-        auth_fixture = auth_input.resolve(strict=True)
-        if not auth_fixture.is_file():
-            raise RuntimeError("synthetic auth fixture must be a regular file")
-        try:
-            synthetic_auth = json.loads(auth_fixture.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, ValueError) as exc:
-            raise RuntimeError("synthetic auth fixture must be readable JSON") from exc
-        if synthetic_auth != {} or stat.S_IMODE(auth_fixture.stat().st_mode) != 0o600:
-            raise RuntimeError("synthetic auth fixture must be an owner-only empty JSON object")
+    auth_fixture = prepare_synthetic_auth_fixture(profile, sandbox_auth_file)
     actor_task_path = actor_root / "task.txt"
     actor_task_path.write_text(actor_task + "\n", encoding="utf-8")
     actor_task_path.chmod(0o600)
@@ -322,7 +246,6 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     state_dir = engine_root / "state/codex-full-inbox"
     metadata_path = profile / "hook-metadata.jsonl"
     stop_complete_path = profile / "registration-stop-complete.json"
-    requests, failures = [], []
     notice = None
     source = None
     native_id = None
@@ -371,11 +294,10 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
 
     if scenario == "batch":
         setup_stage("build_sandbox_launcher")
-    helper_spec = importlib.util.spec_from_file_location(
+    helper = load_script_module(
+        Path(__file__).with_name("trial_codex_app_server_sandbox.py"),
         "trial_codex_app_server_sandbox",
-        Path(__file__).with_name("trial_codex_app_server_sandbox.py"))
-    helper = importlib.util.module_from_spec(helper_spec)
-    helper_spec.loader.exec_module(helper)
+    )
     binds = []
     for field, bind_mode in (("cairn", "ro"), ("socket", "rw"), ("token_file", "ro")):
         original_path = Path(config[field])
@@ -397,41 +319,22 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     setup_done()
 
     metadata_wrapper = _stage_hook_metadata_wrapper(profile)
-    hook_settings = json.loads(settings.read_text(encoding="utf-8"))
-    for groups in hook_settings.get("hooks", {}).values():
-        for group in groups:
-            for hook in group.get("hooks", []):
-                original = hook.get("command", "")
-                if str(engine_root / "coordination.py") in original and "--config" in original:
-                    hook["command"] = shlex.join([os.sys.executable, str(metadata_wrapper),
-                        "--metadata", str(metadata_path), "--stop-complete", str(stop_complete_path),
-                        "--", *shlex.split(original)])
-    settings.write_text(json.dumps(hook_settings, indent=2) + "\n", encoding="utf-8")
-    settings.chmod(0o600)
-    command = next(hook["command"] for groups in hook_settings["hooks"].values()
-                   for group in groups for hook in group.get("hooks", [])
-                   if "record_codex_hook_metadata.py" in hook.get("command", "")
-                   and "--config" in hook.get("command", ""))
+    command = wrap_hook_commands(
+        settings,
+        metadata_path=metadata_path,
+        stop_complete_path=stop_complete_path,
+        wrapper_path=metadata_wrapper,
+        match_targets=(str(engine_root / "coordination.py"),),
+    )["coordination"]
 
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_args):
-            pass
-
-        def do_POST(self):
-            nonlocal notice, source, attempt_id, native_turn_id, delivery_id
-            nonlocal source_read_confirmed, settlement_confirmed
-            nonlocal attempt_claimed
-            nonlocal batch_item_index, batch_action, batch_last_call_id, batch_root_attempt_id
-            nonlocal batch_stage
-            try:
-                assert self.path == "/v1/responses", "unexpected local Responses path"
-                size = int(self.headers.get("Content-Length", "0"))
-                assert 0 < size <= 2_000_000 and len(requests) < (16 if scenario == "batch" else 8), \
-                    "local Responses fixture bounds exceeded"
-                request = json.loads(self.rfile.read(size))
-                requests.append(request)
-                results = {item["call_id"]: item for item in request.get("input", [])
-                           if item.get("type") == "custom_tool_call_output"}
+    def handle_response(request, results):
+        nonlocal notice, source, attempt_id, native_turn_id, delivery_id
+        nonlocal source_read_confirmed, settlement_confirmed
+        nonlocal attempt_claimed
+        nonlocal batch_item_index, batch_action, batch_last_call_id, batch_root_attempt_id
+        nonlocal batch_stage
+        if True:
+            if True:
                 if actor_turn_started and mode == "stall":
                     assert notice is not None and source is not None
                     context = None
@@ -502,10 +405,9 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                     assert delivery["state"] == "leased" and delivery["attempts"] == 1, delivery
                     stalled.set()
                     release_stall.wait(turn_timeout + 10)
-                    return
+                    return None
                 if not actor_turn_started:
-                    item = dict(type="message", id="msg_initial", role="assistant", status="completed",
-                        content=[dict(type="output_text", text="Native fixture registration turn completed.", annotations=[])])
+                    item = message_item("msg_initial", "Native fixture registration turn completed.")
                     if trace is not None:
                         trace.record_actor_exchange("registration_message", ["none"], stage="registration")
                 elif scenario == "batch":
@@ -591,10 +493,10 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                                 assert pending["state"] == "pending" and pending["attempts"] == 0
                                 response_class = "final_message"
                                 batch_stage = "turn_terminal"
-                                item = dict(type="message", id="msg_batch_done", role="assistant",
-                                    status="completed", content=[dict(type="output_text",
-                                    text="Read and handled the first three notices; the fourth remains pending.",
-                                    annotations=[])])
+                                item = message_item(
+                                    "msg_batch_done",
+                                    "Read and handled the first three notices; the fourth remains pending.",
+                                )
                                 finished.set()
                         else:
                             raise AssertionError("unexpected batch tool result action")
@@ -643,34 +545,27 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                         state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
                         assert "handled" in ack_text and state["state"] == "handled" and state["attempts"] == 1
                         settlement_confirmed = True
-                        item = dict(type="message", id="msg_done", role="assistant", status="completed",
-                            content=[dict(type="output_text", text="Build 81 completed; checksum 7b1a recorded.", annotations=[])])
+                        item = message_item("msg_done", "Build 81 completed; checksum 7b1a recorded.")
                         finished.set()
-                body = response_stream("resp_" + str(len(requests)), item)
-            except Exception as exc:
-                if trace is not None:
-                    trace.record_actor_exchange("unexpected", ["tool_error"], stage=batch_stage)
-                failures.append(type(exc).__name__)
-                self.send_error(500)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+                return item
+
+    def on_response_error(_exc):
+        if trace is not None:
+            trace.record_actor_exchange("unexpected", ["tool_error"], stage=batch_stage)
 
     if scenario == "batch":
         setup_stage("configure_responses")
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    (profile / "config.toml").write_text(
-        'model = "gpt-6-luna"\nmodel_provider = "fixture"\n'
-        '[model_providers.fixture]\nname = "Local fixture"\n'
-        f'base_url = "http://127.0.0.1:{server.server_port}/v1"\n'
-        'wire_api = "responses"\nrequires_openai_auth = false\n'
-        'request_max_retries = 0\nstream_max_retries = 0\n', encoding="utf-8")
-    (profile / "config.toml").chmod(0o600)
+    server = LoopbackResponsesServer(
+        handle_response,
+        model=MODEL,
+        max_requests=16 if scenario == "batch" else 8,
+        max_body_bytes=2_000_000,
+        failure_format="type_only",
+        on_error=on_response_error,
+    )
+    requests = server.requests
+    failures = server.failures
+    server.write_config_toml(profile, provider_name="Local fixture")
     setup_done()
 
     def verify(rpc):
@@ -841,7 +736,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
 
     if scenario == "batch":
         setup_stage("start_actor_server")
-    thread.start()
+    server.start()
     setup_done()
     try:
         if scenario == "batch":
@@ -905,9 +800,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
         return result
     finally:
         release_stall.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+        server.close(timeout=5)
         if trace is not None:
             if scenario == "batch":
                 exception_type = sys.exc_info()[0]
