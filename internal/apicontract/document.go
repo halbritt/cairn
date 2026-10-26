@@ -33,9 +33,6 @@ func Build(source *Source) (Document, error) {
 		for _, operation := range route.Operations {
 			served[operation] = true
 			properties := canonicalProperties(r, route.Request)
-			if _, listed := retryByOperation[operation]; listed && properties["request_id"] {
-				return nil, fmt.Errorf("%s has a request_id; remove it from retryByOperation", operation)
-			}
 			retry, ok := retryClass(operation, properties)
 			if !ok {
 				unclassified = append(unclassified, operation)
@@ -99,9 +96,9 @@ func Build(source *Source) (Document, error) {
 			}}
 		}
 	}
-	for operation := range retryByOperation {
-		if !served[operation] {
-			unclassified = append(unclassified, operation+" (stale entry)")
+	for _, spec := range localapi.Operations() {
+		if !served[spec.Name] {
+			unclassified = append(unclassified, spec.Name+" (stale entry)")
 		}
 	}
 	if len(unclassified) > 0 {

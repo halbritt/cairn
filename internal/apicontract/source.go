@@ -14,9 +14,12 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/halbritt/cairn/localapi"
 )
 
 // Route is one or more /v1 paths served by a single serveJSON call.
@@ -152,6 +155,11 @@ func load(dir string) (*Source, error) {
 			return nil, err
 		}
 	}
+	routes, err := loadCatalogRoutes(pkg)
+	if err != nil {
+		return nil, err
+	}
+	source.Routes = routes
 	for header := range headers {
 		source.Headers = append(source.Headers, header)
 	}
@@ -219,16 +227,6 @@ func (s *Source) scanFile(file *ast.File, info *types.Info, headers map[string]b
 		case *ast.CallExpr:
 			s.scanWriteError(node)
 			s.scanHeader(node, headers, info)
-		case *ast.CaseClause:
-			var operations []string
-			for _, expr := range node.List {
-				if path, ok := stringLiteral(expr); ok && strings.HasPrefix(path, "/v1/") {
-					operations = append(operations, strings.TrimPrefix(path, "/v1/"))
-				}
-			}
-			if len(operations) > 0 {
-				failure = s.scanRoute(node, operations, info)
-			}
 		}
 		return true
 	})
@@ -327,105 +325,97 @@ func (s *Source) scanStatusMap(decl *ast.FuncDecl) error {
 	return nil
 }
 
-func (s *Source) scanRoute(clause *ast.CaseClause, operations []string, info *types.Info) error {
-	route := Route{Operations: operations, File: s.position(clause)}
-	calls := 0
-	for _, statement := range clause.Body {
-		ast.Inspect(statement, func(node ast.Node) bool {
-			if guard, ok := node.(*ast.IfStmt); ok && isLocalDestinationGuard(guard) {
-				route.RequiresLocalDestination = true
-			}
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			name, ok := call.Fun.(*ast.Ident)
-			if !ok || name.Name != "serveJSON" || len(call.Args) != 3 {
-				return true
-			}
-			calls++
-			signature, ok := info.Types[call.Args[2]].Type.Underlying().(*types.Signature)
-			if !ok || signature.Params().Len() != 2 || signature.Results().Len() != 2 {
-				return true
-			}
-			route.Request = signature.Params().At(1).Type()
-			route.Response = signature.Results().At(0).Type()
-			if _, isInterface := route.Response.Underlying().(*types.Interface); isInterface {
-				route.Response = concreteReturn(call.Args[2], info)
-			}
-			return true
+func loadCatalogRoutes(pkg *types.Package) ([]Route, error) {
+	catalog := localapi.Operations()
+	routes := make([]Route, 0, len(catalog))
+	for _, spec := range catalog {
+		if spec.Name == "" || spec.Method != "POST" || spec.Path != "/v1/"+spec.Name || spec.SourceFile == "" {
+			return nil, fmt.Errorf("invalid operation spec %q", spec.Name)
+		}
+		if spec.RequiresLocalDestination != (spec.LocalDestinationMessage != "") {
+			return nil, fmt.Errorf("operation %s has inconsistent local destination guard configuration", spec.Name)
+		}
+		req, err := resolveType(pkg, spec.RequestType)
+		if err != nil {
+			return nil, fmt.Errorf("operation %s request type: %w", spec.Name, err)
+		}
+		resp, err := resolveType(pkg, spec.ResponseType)
+		if err != nil {
+			return nil, fmt.Errorf("operation %s response type: %w", spec.Name, err)
+		}
+		routes = append(routes, Route{
+			Operations:               []string{spec.Name},
+			Request:                  req,
+			Response:                 resp,
+			RequiresLocalDestination: spec.RequiresLocalDestination,
+			File:                     spec.SourceFile,
 		})
 	}
-	if calls != 1 || route.Request == nil || route.Response == nil {
-		return fmt.Errorf("route %v: expected one typed serveJSON call, found %d", operations, calls)
+	return routes, nil
+}
+
+func findPackage(root *types.Package, path string) *types.Package {
+	if root.Path() == path {
+		return root
 	}
-	s.Routes = append(s.Routes, route)
+	for _, imp := range root.Imports() {
+		if found := findPackage(imp, path); found != nil {
+			return found
+		}
+	}
 	return nil
 }
 
-// isLocalDestinationGuard matches `if !x.AllowLocal { writeError(w, 403, ...) }`,
-// which refuses hosted profiles before decoding. A condition that merely
-// filters local records (for example `!AllowLocal && sensitivity == "local"`)
-// is not a guard.
-func isLocalDestinationGuard(statement *ast.IfStmt) bool {
-	not, ok := statement.Cond.(*ast.UnaryExpr)
-	if !ok || not.Op != token.NOT {
-		return false
+func resolveType(pkg *types.Package, rt reflect.Type) (types.Type, error) {
+	if rt == nil {
+		return nil, fmt.Errorf("nil reflect.Type")
 	}
-	selector, ok := not.X.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "AllowLocal" {
-		return false
+	if rt.PkgPath() != "" && rt.Name() != "" {
+		target := findPackage(pkg, rt.PkgPath())
+		if target == nil {
+			return nil, fmt.Errorf("package %s not found in imports of %s", rt.PkgPath(), pkg.Path())
+		}
+		obj := target.Scope().Lookup(rt.Name())
+		if obj == nil {
+			return nil, fmt.Errorf("type %s.%s not found", rt.PkgPath(), rt.Name())
+		}
+		return obj.Type(), nil
 	}
-	refuses := false
-	ast.Inspect(statement.Body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
+	switch rt.Kind() {
+	case reflect.Slice:
+		elem, err := resolveType(pkg, rt.Elem())
+		if err != nil {
+			return nil, err
 		}
-		if name, isIdent := call.Fun.(*ast.Ident); isIdent && name.Name == "writeError" && len(call.Args) >= 2 {
-			status, _ := intLiteral(call.Args[1])
-			refuses = refuses || status == 403
+		return types.NewSlice(elem), nil
+	case reflect.Pointer:
+		elem, err := resolveType(pkg, rt.Elem())
+		if err != nil {
+			return nil, err
 		}
-		return true
-	})
-	return refuses
-}
-
-// concreteReturn resolves a handler declared to return an interface by the
-// single concrete type of its successful return expressions.
-func concreteReturn(handler ast.Expr, info *types.Info) types.Type {
-	literal, ok := handler.(*ast.FuncLit)
-	if !ok {
-		return nil
+		return types.NewPointer(elem), nil
+	case reflect.Struct:
+		fields := make([]*types.Var, rt.NumField())
+		tags := make([]string, rt.NumField())
+		for i := 0; i < rt.NumField(); i++ {
+			sf := rt.Field(i)
+			ft, err := resolveType(pkg, sf.Type)
+			if err != nil {
+				return nil, err
+			}
+			fields[i] = types.NewField(token.NoPos, pkg, sf.Name, ft, sf.Anonymous)
+			tags[i] = string(sf.Tag)
+		}
+		return types.NewStruct(fields, tags), nil
+	case reflect.Bool:
+		return types.Typ[types.Bool], nil
+	case reflect.Int:
+		return types.Typ[types.Int], nil
+	case reflect.Int64:
+		return types.Typ[types.Int64], nil
+	case reflect.String:
+		return types.Typ[types.String], nil
+	default:
+		return nil, fmt.Errorf("unsupported unnamed reflect kind %s", rt)
 	}
-	var found types.Type
-	ambiguous := false
-	ast.Inspect(literal.Body, func(node ast.Node) bool {
-		if _, nested := node.(*ast.FuncLit); nested {
-			return false
-		}
-		ret, ok := node.(*ast.ReturnStmt)
-		if !ok || len(ret.Results) != 2 {
-			return true
-		}
-		typ := info.Types[ret.Results[0]].Type
-		if typ == nil {
-			return true
-		}
-		if _, isInterface := typ.Underlying().(*types.Interface); isInterface {
-			return true // e.g. an untyped nil error path
-		}
-		if basic, ok := typ.(*types.Basic); ok && basic.Kind() == types.UntypedNil {
-			return true
-		}
-		if found != nil && !types.Identical(found, typ) {
-			ambiguous = true
-		}
-		found = typ
-		return true
-	})
-	if ambiguous {
-		return nil
-	}
-	return found
 }

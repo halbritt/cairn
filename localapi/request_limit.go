@@ -10,18 +10,8 @@ const MaxRequestBodyLimit int64 = 8 * 1024 * 1024
 const ResponseBodyLimit int64 = 8 * 1024 * 1024
 
 func RequestBodyLimit(operation string) int64 {
-	if operation == "explain-page" {
-		return 4096
+	if spec, ok := LookupOperation(operation); ok && spec.RequestBodyLimit > 0 {
+		return spec.RequestBodyLimit
 	}
-	if operation == "replace" || operation == "set-sections" {
-		// Both old and new text or section maps may contain 64 KiB with sixfold escaping.
-		return 1024 * 1024
-	}
-	if operation == "evidence" {
-		return MaxRequestBodyLimit
-	}
-	if operation == "create" || operation == "edit" || operation == "revise" || operation == "append" || operation == "event-complete" {
-		return 512 * 1024
-	}
-	return 128 * 1024
+	return DefaultRequestBodyLimit
 }

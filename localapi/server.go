@@ -54,6 +54,15 @@ type Server struct {
 	// Server never depends on it for startup. Tests may set it before serving.
 	obs         *observer
 	observeOnce sync.Once
+	routeMux    *http.ServeMux
+	muxOnce     sync.Once
+}
+
+func (s *Server) mux() *http.ServeMux {
+	s.muxOnce.Do(func() {
+		s.routeMux = s.NewHandler()
+	})
+	return s.routeMux
 }
 
 func (s *Server) observation() *observer {
@@ -135,7 +144,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 403, "AUTHORITY_DENIED", "network API requires a remote machine profile")
 		return
 	}
-	if c.remote && (!remoteOperations[strings.TrimPrefix(r.URL.Path, "/v1/")] || (c.role != "agent" && r.URL.Path != "/v1/version")) {
+	opSpec, hasOp := LookupOperation(strings.TrimPrefix(r.URL.Path, "/v1/"))
+	if c.remote && (!hasOp || !opSpec.RemoteAllowed || (c.role != "agent" && !opSpec.RemoteObserverAllowed)) {
 		writeError(w, 403, "AUTHORITY_DENIED", "operation is unavailable to remote machine profiles")
 		return
 	}
@@ -169,250 +179,157 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		}
 		c.store = store
 	}
-	if s.serveAgentSessions(w, r, c) {
-		return
-	}
-	if serveAgentEvents(w, r, c) {
-		return
-	}
-	switch r.URL.Path {
-	case "/v1/version":
-		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{QueryInputCapabilities: &QueryInputCapabilities{Schema: QueryInputCapabilitiesSchema, IndexedSemanticQueryV1: c.indexedSemanticQuery}, PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities(),
-				SourceOpeningCapabilities: &SourceOpeningCapabilities{Schema: SourceOpeningCapabilitiesSchema, ReaderGuard: true, ReceiptBinding: c.sourceOpening}}, nil
-		})
-	case "/v1/clients":
-		// A principal-scoped read of this process's volatile observations. The
-		// caller's own principal and machine come from its authenticated profile.
-		serveJSON(w, r, func(_ context.Context, req ClientsRequest) (ClientsResponse, error) {
-			return s.observation().view(c.principal, c.machineID, req)
-		})
-	case "/v1/create":
-		serveJSON(w, r, c.store.Create)
-	case "/v1/edit":
-		serveJSON(w, r, c.store.Edit)
-	case "/v1/revise":
-		serveJSON(w, r, c.store.Revise)
-	case "/v1/append":
-		serveJSON(w, r, c.store.Append)
-	case "/v1/replace":
-		serveJSON(w, r, func(ctx context.Context, req core.ReplaceRequest) (core.Revision, error) {
-			return c.store.ReplaceForDestination(ctx, req, c.destination)
-		})
-	case "/v1/set-sections":
-		serveJSON(w, r, func(ctx context.Context, req core.SetSectionsRequest) (core.Revision, error) {
-			return c.store.SetSectionsForDestination(ctx, req, c.destination)
-		})
-	case "/v1/cite":
-		serveJSON(w, r, c.store.Cite)
-	case "/v1/delete":
-		serveJSON(w, r, c.store.Delete)
-	case "/v1/supersede":
-		serveJSON(w, r, func(ctx context.Context, req core.SupersedeRequest) (core.Supersession, error) {
-			if req.GrantID != "" {
-				return core.Supersession{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "authority mutations require the operator CLI"}
-			}
-			return c.store.Supersede(ctx, req)
-		})
-	case "/v1/preview-retract":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "impact inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.RetractionPreview, error) {
-			return c.store.PreviewRetraction(ctx, req.RecordID)
-		})
-	case "/v1/supersession":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "supersession inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Supersession, error) {
-			return c.store.Supersession(ctx, req.RecordID)
-		})
-	case "/v1/index":
-		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
-			if err := s.checkExpansionReader(req, c.destination); err != nil {
-				return core.IndexResult{}, err
-			}
-			return c.store.Index(ctx, req, c.destination)
-		})
-	case "/v1/expand":
-		serveJSON(w, r, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
-			accepts, err := acceptsSourceOpening(r.Header)
-			if err != nil {
-				return core.Expansion{}, err
-			}
-			return c.store.ExpandForReader(ctx, req, c.destination, accepts)
-		})
-	case "/v1/expand-evidence":
-		serveJSON(w, r, func(ctx context.Context, req core.ExpandEvidenceRequest) (core.EvidenceExpansion, error) {
-			return c.store.ExpandEvidence(ctx, req, c.destination)
-		})
-	case "/v1/compile":
-		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
-			if err := s.checkExpansionReader(req, c.destination); err != nil {
-				return core.Package{}, err
-			}
-			return c.store.Compile(ctx, req, c.destination)
-		})
-	case "/v1/explain-page":
-		serveJSON(w, r, func(ctx context.Context, req core.ExplainPageRequest) (core.ExplanationPage, error) {
-			page, err := c.store.ExplainPageForDestination(ctx, req, c.destination)
-			if err != nil {
-				return core.ExplanationPage{}, err
-			}
-			if err = boundEnvelope(page, 32*1024); err != nil {
-				return core.ExplanationPage{}, err
-			}
-			return page, nil
-		})
-	case "/v1/recompile":
-		serveJSON(w, r, func(ctx context.Context, req core.RecompileRequest) (any, error) {
-			pkg, err := c.store.RecompileForDestination(ctx, req, c.destination)
-			return struct {
-				Historical bool         `json:"historical"`
-				Package    core.Package `json:"package"`
-			}{true, pkg}, err
-		})
-	case "/v1/run-index":
-		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.IndexResult, error) {
-			return c.store.RunIndex(ctx, req, c.destination)
-		})
-	case "/v1/run-package":
-		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.Package, error) {
-			return c.store.RunPackage(ctx, req, c.destination)
-		})
-	case "/v1/usage":
-		serveJSON(w, r, c.store.RecordUsage)
-	case "/v1/usage-coverage":
-		serveJSON(w, r, c.store.RecordUsageCoverage)
-	case "/v1/recall-observation":
-		serveJSON(w, r, c.store.RecordRecallObservation)
-	case "/v1/capture-observation":
-		serveJSON(w, r, c.store.RecordCaptureObservation)
-	case "/v1/capture-observations":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "capture observation history requires a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.CaptureObservations)
-	case "/v1/evidence-impact":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "evidence impact inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.InspectEvidenceImpact)
-	case "/v1/check-evidence":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "evidence inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.CheckEvidence)
-	case "/v1/evidence":
-		serveJSON(w, r, c.store.CaptureEvidence)
-	case "/v1/spawn":
-		serveJSON(w, r, c.store.RecordSpawn)
-	case "/v1/terminal":
-		serveJSON(w, r, c.store.RecordTerminal)
-	case "/v1/task-state":
-		serveJSON(w, r, c.store.ObserveTask)
-	case "/v1/run-status":
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			ReceiptID string `json:"receipt_id"`
-		}) (core.RunStatus, error) {
-			return c.store.RunStatus(ctx, req.ReceiptID)
-		})
-	case "/v1/claim-run":
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			ReceiptID string `json:"receipt_id"`
-		}) (struct{}, error) {
-			return struct{}{}, c.store.ClaimRun(ctx, req.ReceiptID)
-		})
-	case "/v1/bind-run":
-		serveJSON(w, r, c.store.BindRun)
-	case "/v1/link-run-retrieval":
-		serveJSON(w, r, c.store.LinkRunRetrieval)
-	case "/v1/register-context":
-		serveJSON(w, r, c.store.RegisterManagedContext)
-	case "/v1/delivery":
-		serveJSON(w, r, c.store.RecordDelivery)
-	case "/v1/outcome":
-		serveJSON(w, r, c.store.RecordOutcome)
-	case "/v1/assess-run":
-		serveJSON(w, r, func(ctx context.Context, req core.AssessmentRequest) (core.Assessment, error) {
-			return c.store.AssessRunForDestination(ctx, req, c.destination)
-		})
-	case "/v1/assessments":
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			ReceiptID string `json:"receipt_id"`
-		}) ([]core.Assessment, error) {
-			return c.store.AssessmentHistory(ctx, req.ReceiptID, c.destination)
-		})
-	case "/v1/assessments-page":
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			ReceiptID    string `json:"receipt_id"`
-			AfterVersion int    `json:"after_version"`
-			Limit        int    `json:"limit"`
-		}) (core.AssessmentPage, error) {
-			if req.Limit == 0 {
-				req.Limit = 100
-			}
-			return c.store.AssessmentHistoryPage(ctx, req.ReceiptID, c.destination, req.AfterVersion, req.Limit)
-		})
-	case "/v1/refusal":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "protected refusal inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			RefusalID string `json:"refusal_id"`
-		}) (core.Refusal, error) {
-			return c.store.Refusal(ctx, req.RefusalID)
-		})
-	case "/v1/use-report":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "protected reports require a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.UseReport)
-	case "/v1/run-report":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "protected reports require a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.RunReport)
-	case "/v1/conflicts":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "conflict inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, c.store.Conflicts)
-	case "/v1/conflict":
-		if !c.destination.AllowLocal {
-			writeError(w, 403, "AUTHORITY_DENIED", "conflict inspection requires a local profile")
-			return
-		}
-		serveJSON(w, r, func(ctx context.Context, req struct {
-			ConflictID string `json:"conflict_id"`
-		}) (core.ConflictDetail, error) {
-			return c.store.Conflict(ctx, req.ConflictID)
-		})
-	case "/v1/history":
-		serveJSON(w, r, func(ctx context.Context, req core.RecordHistoryRequest) (core.RecordHistory, error) {
-			return c.store.History(ctx, req, c.destination)
-		})
-	case "/v1/get":
-		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Record, error) {
-			record, err := c.store.Get(ctx, req.RecordID)
-			if err == nil && !c.destination.AllowLocal && record.Sensitivity == "local" {
-				return core.Record{}, &core.Error{Code: "NOT_FOUND", Message: "record not found"}
-			}
-			return record, err
-		})
-	default:
+	spec, ok := LookupOperationByPath(r.URL.Path)
+	if !ok || r.Method != spec.Method {
 		writeError(w, 404, "NOT_FOUND", "unknown endpoint")
+		return
 	}
+	s.mux().ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientContextKey{}, c)))
+}
+
+func (s *Server) serveOperation(w http.ResponseWriter, r *http.Request, c client, spec OperationSpec) {
+	if spec.RequiresLocalDestination && !c.destination.AllowLocal {
+		writeError(w, 403, "AUTHORITY_DENIED", spec.LocalDestinationMessage)
+		return
+	}
+	spec.serve(s, w, r, c)
+}
+
+var serverOperations = []OperationSpec{
+	bindOperation(OperationSpec{Name: "version", SourceFile: "server.go", RemoteAllowed: true, RemoteObserverAllowed: true, RetryClass: "read"}, func(_ context.Context, _ *Server, _ *http.Request, c client, _ struct{}) (VersionResponse, error) {
+		return VersionResponse{QueryInputCapabilities: &QueryInputCapabilities{Schema: QueryInputCapabilitiesSchema, IndexedSemanticQueryV1: c.indexedSemanticQuery}, PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities(),
+			SourceOpeningCapabilities: &SourceOpeningCapabilities{Schema: SourceOpeningCapabilitiesSchema, ReaderGuard: true, ReceiptBinding: c.sourceOpening}}, nil
+	}),
+	// A principal-scoped read of this process's volatile observations. The
+	// caller's own principal and machine come from its authenticated profile.
+	bindOperation(OperationSpec{Name: "clients", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, func(_ context.Context, s *Server, _ *http.Request, c client, req ClientsRequest) (ClientsResponse, error) {
+		return s.observation().view(c.principal, c.machineID, req)
+	}),
+	bindStore(OperationSpec{Name: "create", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Create),
+	bindStore(OperationSpec{Name: "edit", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Edit),
+	bindStore(OperationSpec{Name: "revise", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Revise),
+	bindStore(OperationSpec{Name: "append", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).Append),
+	bindDestination(OperationSpec{Name: "replace", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 1024 * 1024, RetryClass: "request-id"}, (*core.Store).ReplaceForDestination),
+	bindDestination(OperationSpec{Name: "set-sections", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 1024 * 1024, RetryClass: "request-id"}, (*core.Store).SetSectionsForDestination),
+	bindStore(OperationSpec{Name: "cite", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).Cite),
+	bindStore(OperationSpec{Name: "delete", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).Delete),
+	bindOperation(OperationSpec{Name: "supersede", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.SupersedeRequest) (core.Supersession, error) {
+		if req.GrantID != "" {
+			return core.Supersession{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "authority mutations require the operator CLI"}
+		}
+		return c.store.Supersede(ctx, req)
+	}),
+	bindOperation(OperationSpec{Name: "preview-retract", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "impact inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req recordRequest) (core.RetractionPreview, error) {
+		return c.store.PreviewRetraction(ctx, req.RecordID)
+	}),
+	bindOperation(OperationSpec{Name: "supersession", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "supersession inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req recordRequest) (core.Supersession, error) {
+		return c.store.Supersession(ctx, req.RecordID)
+	}),
+	bindOperation(OperationSpec{Name: "index", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, s *Server, _ *http.Request, c client, req core.CompileRequest) (core.IndexResult, error) {
+		if err := s.checkExpansionReader(req, c.destination); err != nil {
+			return core.IndexResult{}, err
+		}
+		return c.store.Index(ctx, req, c.destination)
+	}),
+	bindOperation(OperationSpec{Name: "expand", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, _ *Server, r *http.Request, c client, req core.ExpandRequest) (core.Expansion, error) {
+		accepts, err := acceptsSourceOpening(r.Header)
+		if err != nil {
+			return core.Expansion{}, err
+		}
+		return c.store.ExpandForReader(ctx, req, c.destination, accepts)
+	}),
+	bindDestination(OperationSpec{Name: "expand-evidence", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).ExpandEvidence),
+	bindOperation(OperationSpec{Name: "compile", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, s *Server, _ *http.Request, c client, req core.CompileRequest) (core.Package, error) {
+		if err := s.checkExpansionReader(req, c.destination); err != nil {
+			return core.Package{}, err
+		}
+		return c.store.Compile(ctx, req, c.destination)
+	}),
+	bindOperation(OperationSpec{Name: "explain-page", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: 4096, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.ExplainPageRequest) (core.ExplanationPage, error) {
+		page, err := c.store.ExplainPageForDestination(ctx, req, c.destination)
+		if err != nil {
+			return core.ExplanationPage{}, err
+		}
+		if err = boundEnvelope(page, 32*1024); err != nil {
+			return core.ExplanationPage{}, err
+		}
+		return page, nil
+	}),
+	bindOperation(OperationSpec{Name: "recompile", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.RecompileRequest) (struct {
+		Historical bool         `json:"historical"`
+		Package    core.Package `json:"package"`
+	}, error) {
+		pkg, err := c.store.RecompileForDestination(ctx, req, c.destination)
+		return struct {
+			Historical bool         `json:"historical"`
+			Package    core.Package `json:"package"`
+		}{true, pkg}, err
+	}),
+	bindDestination(OperationSpec{Name: "run-index", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).RunIndex),
+	bindDestination(OperationSpec{Name: "run-package", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).RunPackage),
+	bindStore(OperationSpec{Name: "usage", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordUsage),
+	bindStore(OperationSpec{Name: "usage-coverage", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordUsageCoverage),
+	bindStore(OperationSpec{Name: "recall-observation", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordRecallObservation),
+	bindStore(OperationSpec{Name: "capture-observation", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).RecordCaptureObservation),
+	bindStore(OperationSpec{Name: "capture-observations", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "capture observation history requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).CaptureObservations),
+	bindStore(OperationSpec{Name: "evidence-impact", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "evidence impact inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).InspectEvidenceImpact),
+	bindStore(OperationSpec{Name: "check-evidence", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "evidence inspection requires a local profile", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).CheckEvidence),
+	bindStore(OperationSpec{Name: "evidence", SourceFile: "server.go", RemoteAllowed: true, RequestBodyLimit: MaxRequestBodyLimit, RetryClass: "request-id"}, (*core.Store).CaptureEvidence),
+	bindStore(OperationSpec{Name: "spawn", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RecordSpawn),
+	bindStore(OperationSpec{Name: "terminal", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RecordTerminal),
+	bindStore(OperationSpec{Name: "task-state", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).ObserveTask),
+	bindOperation(OperationSpec{Name: "run-status", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		ReceiptID string `json:"receipt_id"`
+	}) (core.RunStatus, error) {
+		return c.store.RunStatus(ctx, req.ReceiptID)
+	}),
+	bindOperation(OperationSpec{Name: "claim-run", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "no-key"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		ReceiptID string `json:"receipt_id"`
+	}) (struct{}, error) {
+		return struct{}{}, c.store.ClaimRun(ctx, req.ReceiptID)
+	}),
+	bindStore(OperationSpec{Name: "bind-run", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).BindRun),
+	bindStore(OperationSpec{Name: "link-run-retrieval", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).LinkRunRetrieval),
+	bindStore(OperationSpec{Name: "register-context", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RegisterManagedContext),
+	bindStore(OperationSpec{Name: "delivery", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RecordDelivery),
+	bindStore(OperationSpec{Name: "outcome", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RecordOutcome),
+	bindDestination(OperationSpec{Name: "assess-run", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).AssessRunForDestination),
+	bindOperation(OperationSpec{Name: "assessments", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		ReceiptID string `json:"receipt_id"`
+	}) ([]core.Assessment, error) {
+		return c.store.AssessmentHistory(ctx, req.ReceiptID, c.destination)
+	}),
+	bindOperation(OperationSpec{Name: "assessments-page", SourceFile: "server.go", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		ReceiptID    string `json:"receipt_id"`
+		AfterVersion int    `json:"after_version"`
+		Limit        int    `json:"limit"`
+	}) (core.AssessmentPage, error) {
+		if req.Limit == 0 {
+			req.Limit = 100
+		}
+		return c.store.AssessmentHistoryPage(ctx, req.ReceiptID, c.destination, req.AfterVersion, req.Limit)
+	}),
+	bindOperation(OperationSpec{Name: "refusal", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected refusal inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		RefusalID string `json:"refusal_id"`
+	}) (core.Refusal, error) {
+		return c.store.Refusal(ctx, req.RefusalID)
+	}),
+	bindStore(OperationSpec{Name: "use-report", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected reports require a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).UseReport),
+	bindStore(OperationSpec{Name: "run-report", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "protected reports require a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).RunReport),
+	bindStore(OperationSpec{Name: "conflicts", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "conflict inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, (*core.Store).Conflicts),
+	bindOperation(OperationSpec{Name: "conflict", SourceFile: "server.go", RequiresLocalDestination: true, LocalDestinationMessage: "conflict inspection requires a local profile", RemoteAllowed: false, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req struct {
+		ConflictID string `json:"conflict_id"`
+	}) (core.ConflictDetail, error) {
+		return c.store.Conflict(ctx, req.ConflictID)
+	}),
+	bindDestination(OperationSpec{Name: "history", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).History),
+	bindOperation(OperationSpec{Name: "get", SourceFile: "server.go", RemoteAllowed: true, RetryClass: "read"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req recordRequest) (core.Record, error) {
+		record, err := c.store.Get(ctx, req.RecordID)
+		if err == nil && !c.destination.AllowLocal && record.Sensitivity == "local" {
+			return core.Record{}, &core.Error{Code: "NOT_FOUND", Message: "record not found"}
+		}
+		return record, err
+	}),
 }
 
 func (s *Server) checkExpansionReader(req core.CompileRequest, dest core.Destination) error {

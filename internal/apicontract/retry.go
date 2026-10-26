@@ -1,5 +1,7 @@
 package apicontract
 
+import "github.com/halbritt/cairn/localapi"
+
 // retryClasses defines the x-cairn-retry values. No class permits automatic
 // replay of an uncertain write by the relay: UPSTREAM_UNCERTAIN always goes
 // back to the caller, which applies its operation's class.
@@ -11,40 +13,16 @@ var retryClasses = map[string]string{
 	"no-key":     "May have a durable effect and has no retry key. After an uncertain outcome do not repeat automatically; inspect state first.",
 }
 
-// retryByOperation classifies operations whose request has no request_id.
-// Build fails when an operation is missing, so a new route needs a decision.
-var retryByOperation = map[string]string{
-	"agent-directory": "read", "agent-resolve": "read",
-	"assessments": "read", "assessments-page": "read",
-	"conflict": "read", "conflicts": "read",
-	"capture-observations": "read",
-	"event-group":          "read", "event-groups": "read", "event-inspect": "read",
-	"event-list": "read", "event-metrics": "read", "event-subscriptions": "read", "event-watch": "read",
-	"evidence-impact": "read", "get": "read", "handoff-request-status": "read", "history": "read",
-	"pool-list": "read", "worker-list": "read", "wake-attempts": "read", "wake-control": "read",
-	"preview-retract": "read", "supersession": "read", "refusal": "read",
-	"recompile": "read", "explain-page": "read", "run-index": "read", "run-package": "read",
-	"run-report": "read", "run-status": "read", "use-report": "read",
-	"session-inbox-control": "read", "session-inbox-pending": "read", "session-inbox-ready": "read",
-	"version": "read", "clients": "read",
-
-	"agent-heartbeat": "idempotent", "agent-leave": "idempotent", "worker-heartbeat": "idempotent",
-	"session-delivery-observe": "idempotent",
-
-	"event-renew": "lease", "event-retry": "lease",
-
-	// event-next claims a new delivery; a repeat may lease a second one while
-	// the first stays leased. claim-run: a lost commit reply cannot authorize a
-	// second execution (core.ClaimRun).
-	"event-next": "no-key", "claim-run": "no-key",
-}
-
 func retryClass(operation string, properties map[string]bool) (string, bool) {
-	if class, ok := retryByOperation[operation]; ok {
-		return class, true
+	spec, ok := localapi.LookupOperation(operation)
+	if !ok || spec.RetryClass == "" {
+		return "", false
 	}
-	if properties["request_id"] {
-		return "request-id", true
+	if _, defined := retryClasses[spec.RetryClass]; !defined {
+		return "", false
 	}
-	return "", false
+	if (spec.RetryClass == "request-id") != properties["request_id"] {
+		return "", false
+	}
+	return spec.RetryClass, true
 }

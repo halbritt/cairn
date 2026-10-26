@@ -1,59 +1,44 @@
 package localapi
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
 func TestEveryAPIRouteHasRemoteClassification(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	routes := map[string]bool{}
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			clause, ok := node.(*ast.CaseClause)
-			if !ok {
-				return true
-			}
-			for _, expr := range clause.List {
-				literal, ok := expr.(*ast.BasicLit)
-				if !ok || literal.Kind != token.STRING {
-					continue
-				}
-				path, err := strconv.Unquote(literal.Value)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if operation, ok := strings.CutPrefix(path, "/v1/"); ok {
-					routes[operation] = true
-				}
-			}
-			return true
-		})
-	}
-	if len(routes) == 0 {
+	catalog := Operations()
+	if len(catalog) == 0 {
 		t.Fatal("API route inventory was empty")
 	}
-	for route := range routes {
-		if _, ok := remoteOperations[route]; !ok {
-			t.Errorf("route %q needs an explicit remote decision", route)
+	mux := (&Server{}).NewHandler()
+	routes := map[string]bool{}
+	for _, spec := range catalog {
+		if spec.Name == "" || spec.Method != "POST" || spec.Path != "/v1/"+spec.Name {
+			t.Fatalf("malformed operation spec: %+v", spec)
 		}
-		if RequestBodyLimit(route) > MaxRequestBodyLimit {
-			t.Errorf("relay would refuse legal %s bodies", route)
+		if routes[spec.Name] {
+			t.Fatalf("duplicate operation %q in catalog", spec.Name)
+		}
+		routes[spec.Name] = true
+		if _, ok := remoteOperations[spec.Name]; !ok {
+			t.Errorf("route %q needs an explicit remote decision", spec.Name)
+		}
+		if allowed, classified := RemoteOperation(spec.Name); !classified || allowed != spec.RemoteAllowed {
+			t.Errorf("route %q remote classification mismatch: got (%v, %v), want (%v, true)", spec.Name, allowed, classified, spec.RemoteAllowed)
+		}
+		if limit := RequestBodyLimit(spec.Name); limit <= 0 || limit != spec.RequestBodyLimit || limit > MaxRequestBodyLimit {
+			t.Errorf("route %q invalid request body limit %d", spec.Name, limit)
+		}
+		if spec.RequiresLocalDestination != (spec.LocalDestinationMessage != "") {
+			t.Errorf("route %q local destination guard mismatch: RequiresLocalDestination=%v message=%q", spec.Name, spec.RequiresLocalDestination, spec.LocalDestinationMessage)
+		}
+		if spec.RequiresLocalDestination && !strings.Contains(spec.LocalDestinationMessage, "a local profile") {
+			t.Errorf("route %q local destination guard message %q does not mention a local profile", spec.Name, spec.LocalDestinationMessage)
+		}
+		req := httptest.NewRequest(spec.Method, spec.Path, nil)
+		if _, pattern := mux.Handler(req); pattern != spec.Method+" "+spec.Path {
+			t.Errorf("NewHandler pattern for %s %s = %q, want %q", spec.Method, spec.Path, pattern, spec.Method+" "+spec.Path)
 		}
 	}
 	for route := range remoteOperations {
