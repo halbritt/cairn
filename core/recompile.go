@@ -5,10 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/jackc/pgx/v5"
 	"slices"
-	"strings"
 )
 
 type RecompileRequest struct {
@@ -180,72 +178,17 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if err != nil {
 		return Package{}, err
 	}
-	if (contract.Schema != "cairn.semantic/3" && contract.Schema != "cairn.semantic/4" && contract.Schema != "cairn.semantic/5" && contract.Schema != "cairn.semantic/6" && contract.Schema != "cairn.semantic/7" && contract.Schema != "cairn.semantic/8" && contract.Schema != "cairn.semantic/9" && contract.Schema != "cairn.semantic/10" && contract.Schema != "cairn.semantic/11" && contract.Schema != "cairn.semantic/12" && contract.Schema != "cairn.semantic/13" && contract.Schema != "cairn.semantic/14" && contract.Schema != "cairn.semantic/15" && contract.Schema != "cairn.semantic/16" && contract.Schema != "cairn.semantic/17" && contract.Schema != "cairn.semantic/18" && contract.Schema != "cairn.semantic/19") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
+	spec, ok := LookupSchemaSpec(contract.Schema)
+	if !ok || !SupportedRanking(original.Semantic.Ranking) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
-	if contract.Schema == "cairn.semantic/6" || ((contract.Schema == "cairn.semantic/8" || contract.Schema == "cairn.semantic/9" || contract.Schema == "cairn.semantic/10" || contract.Schema == "cairn.semantic/13" || contract.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
-		page := original.Semantic.Browse
-		if original.Semantic.Mode != "index" || req.Query != "" || page == nil || page.Offset < 0 || page.Offset > 10000 {
-			return Package{}, failure("INTEGRITY_FAILURE", "historical browse page is invalid")
-		}
-	} else if original.Semantic.Browse != nil {
-		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
+	if err = spec.ValidateRecompileContract(original.Semantic, req); err != nil {
+		return Package{}, err
 	}
-	indexedSchema := contract.Schema == "cairn.semantic/15" || contract.Schema == "cairn.semantic/16" || contract.Schema == "cairn.semantic/18" || contract.Schema == "cairn.semantic/19"
-	indexedIDFSchema := contract.Schema == "cairn.semantic/19"
-	idfSchema := contract.Schema == "cairn.semantic/17"
-	advisorySchema := contract.Schema == "cairn.semantic/14" || ((indexedSchema || idfSchema) && original.Semantic.AdvisoryConflicts)
-	if advisorySchema != original.Semantic.AdvisoryConflicts || (advisorySchema && original.Semantic.Purpose != "context") {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical advisory conflict intent is invalid")
-	}
-	entitySchema := contract.Schema == "cairn.semantic/13" || advisorySchema || indexedSchema || idfSchema
+	advisorySchema := original.Semantic.AdvisoryConflicts
+	entitySchema := spec.SupportsEntities
 	entityIntent := original.Semantic.EntitiesSHA256 != ""
-	if original.Semantic.EntitiesSHA256 != entitiesDigest(req.Entities) {
-		return Package{}, failure("INVALID_REQUEST", "entities do not match the historical intent digest")
-	}
-	if (entityIntent && (!entitySchema || original.Semantic.Browse != nil)) || entityIntent != hasEntityRanking(original.Semantic.Ranking) {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical entity intent is invalid")
-	}
-	if idfSchema && (legacyIDFRanking(original.Semantic.Ranking) != idfRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)) || original.Semantic.IDF == nil) {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical IDF ranking identity is invalid")
-	}
-	if indexedIDFSchema && original.Semantic.Ranking != strings.Replace(adjacentIDFRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)), "binary-idf-", "interleaved-", 1) {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical indexed IDF ranking identity is invalid")
-	}
 	signatureSchema := original.Semantic.ErrorSignature != ""
-	if (contract.Schema == "cairn.semantic/12" && !signatureSchema) || (signatureSchema && ((!entitySchema && contract.Schema != "cairn.semantic/12") || !digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || (!hasFailureRanking(original.Semantic.Ranking) && !hasEntityRanking(original.Semantic.Ranking)))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical failure signature is invalid")
-	}
-	pagedSchema := contract.Schema == "cairn.semantic/11" || ((signatureSchema || entitySchema) && original.Semantic.Page != nil)
-	page := original.Semantic.Page
-	if pagedSchema {
-		if original.Semantic.Mode != "index" || original.Semantic.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && !signatureSchema && !entityIntent) || original.Semantic.Browse != nil || page == nil || page.Offset < 0 || page.Offset > 10000 {
-			return Package{}, failure("INTEGRITY_FAILURE", "historical search page is invalid")
-		}
-	} else if page != nil {
-		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a search page")
-	}
-	normalized, kindErr := NormalizeKinds(original.Semantic.Kinds)
-	phaseSchema := contract.Schema == "cairn.semantic/10"
-	if (!entitySchema && !signatureSchema && !pagedSchema && phaseSchema != (original.Semantic.Context != nil && original.Semantic.Context.TaskPhase != "")) || original.Semantic.Context.validate() != nil {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical task phase is invalid")
-	}
-	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (!entitySchema && !signatureSchema && !pagedSchema && !phaseSchema && (contract.Schema == "cairn.semantic/9") != (len(normalized) > 0)) {
-		return Package{}, failure("INTEGRITY_FAILURE", "historical kind filter is invalid")
-	}
-	switch original.Semantic.Policy {
-	case "local-loop/1":
-		if original.Semantic.PolicyRevision != nil {
-			return Package{}, failure("INTEGRITY_FAILURE", "legacy policy cannot carry an explicit revision")
-		}
-	case "local-loop/2", "local-loop/3":
-		pin := original.Semantic.PolicyRevision
-		if pin == nil || pin.Rules.validate() != nil || original.Semantic.Policy != pin.Rules.engine() || original.Semantic.OptionalLimit != min(original.Semantic.AvailableTokens*pin.Rules.OptionalPercent/100, pin.Rules.OptionalMaxTokens) {
-			return Package{}, failure("INTEGRITY_FAILURE", "historical policy revision or budget is invalid")
-		}
-	default:
-		return Package{}, failure("REPLAY_INCOMPLETE", "historical policy engine is not supported")
-	}
 	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.retrieval_candidate WHERE receipt_id=$1 ORDER BY record_id,version`, req.ReceiptID)
 	if err != nil {
 		return Package{}, err
@@ -331,73 +274,21 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		} else if entitiesDigest(record.Entities) != *e.Facts.EntitiesSHA256 {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical candidate associations changed")
 		}
-		entity := !e.Mandatory && matchesEntities(record.Entities, req.Entities)
-		if entity != e.EntityMatch {
-			return Package{}, failure("INTEGRITY_FAILURE", "historical entity match changed")
-		}
 		candidateLexicon := lexicon
-		if indexedIDFSchema && (e.Mandatory || e.Reason == "KIND_FILTERED") {
+		if spec.IsIndexedIDF && (e.Mandatory || e.Reason == "KIND_FILTERED") {
 			candidateLexicon = legacyLexicon
 		}
-		terms := candidateLexicon.terms
-		words := candidateLexicon.bodyTerms(record.Body)
-		score := 0
-		for word := range terms {
-			if words[word] {
-				score++
-			}
+		words, score, specificity := scoreCandidateLexical(record, candidateLexicon)
+		features := evaluateCandidateMatchFeatures(record, e.Mandatory, words, score, specificity, literals, req.Entities, e.FailureMatch)
+		if features.entity != e.EntityMatch {
+			return Package{}, failure("INTEGRITY_FAILURE", "historical entity match changed")
 		}
-		specificity := 0
-		if record.Scope.TaskID != "*" {
-			specificity++
-		}
-		if record.Scope.RunID != "*" {
-			specificity++
-		}
-		literal := !e.Mandatory && matchesLiteral(record.Body, literals)
-		if literal != e.ExactTextMatch || score != e.LexicalMatches || specificity != e.ScopeSpecificity {
+		if features.literal != e.ExactTextMatch || features.score != e.LexicalMatches || features.specificity != e.ScopeSpecificity {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical ranking features changed")
 		}
-		selection := Selection{Conflicts: e.Facts.Conflicts, Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
-		failureMatch := e.FailureMatch != nil
-		selection.Reason = entityReason(failureReason(literalReason(selection.Reason, literal), failureMatch), entity)
-		if (p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4") && !selection.Mandatory && e.SemanticScore != nil {
-			score = *e.SemanticScore
-			selection.Reason = entityReason(failureReason(literalReason(semanticReason(score, specificity), literal), failureMatch), entity)
-		}
-		item := candidate{identity: entityIntent && (entity || failureMatch), literal: literal, failure: failureMatch, selection: selection, score: score, specificity: specificity}
-		if advisorySchema {
-			pool[e.RecordID] = item
-			e.Reason = ""
-		}
-		if !kindAllowed(p.Kinds, selection) {
-			p.Omitted["KIND_FILTERED"]++
-			e.Reason = "KIND_FILTERED"
-			continue
-		}
-		if entityIntent && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !entity && !failureMatch {
-			p.Omitted["NO_ENTITY_MATCH"]++
-			e.Reason = "NO_ENTITY_MATCH"
-			continue
-		}
-		if !entityIntent && signatureSchema && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
-			p.Omitted["NO_FAILURE_MATCH"]++
-			e.Reason = "NO_FAILURE_MATCH"
-			continue
-		}
-		if idfSchema && !selection.Mandatory {
-			idfMembers = append(idfMembers, makeIDFMember(record, words, terms))
-		}
-		nonemptyQuery := len(terms) > 0
-		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) || idfSchema {
-			nonemptyQuery = strings.TrimSpace(req.Query) != ""
-		}
-		if !hasIndexedRanking(p.Ranking) && p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal && !failureMatch && !entity {
-			p.Omitted["NO_LEXICAL_MATCH"]++
-			e.Reason = "NO_LEXICAL_MATCH"
-			continue
-		}
-		candidates = append(candidates, item)
+		selection := Selection{Conflicts: e.Facts.Conflicts, Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory}
+		deferLexical := hasIndexedRanking(p.Ranking) || hasSemanticScopeRanking(p.Ranking)
+		admitEvaluatedCandidate(&p, selection, e, features, candidateLexicon.terms, req.Query, entityIntent, signatureSchema, spec.IsPureIDF, deferLexical, advisorySchema, true, pool, &idfMembers, &candidates)
 	}
 	if hasIndexedRanking(p.Ranking) {
 		// Recreate the complete qualified dispute set before scoring, just as
@@ -405,7 +296,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		if advisorySchema {
 			candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 		}
-		if indexedIDFSchema {
+		if spec.IsIndexedIDF {
 			members := indexedIDFMembers(req.Query, p.Ranking, candidates, evaluations, false)
 			if err = verifyFrozenIDF(p.IDF, req.Query, p.Ranking, members, evaluations); err != nil {
 				return Package{}, err
@@ -419,7 +310,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if advisorySchema {
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 	}
-	if idfSchema {
+	if spec.IsPureIDF {
 		if err = verifyFrozenIDF(p.IDF, req.Query, p.Ranking, idfMembers, evaluations); err != nil {
 			return Package{}, err
 		}

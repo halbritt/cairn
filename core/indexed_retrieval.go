@@ -64,7 +64,7 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 }
 
 func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, retainedRanking string, memo *semanticMemo) ([]candidate, error) {
-	p.Schema = "cairn.semantic/16"
+	p.Schema = SchemaSemantic16
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
 	bodies := map[string]string{}
@@ -111,18 +111,9 @@ func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery stri
 	if r.QueryProjection != nil {
 		projection := *r.QueryProjection
 		id.QueryProjection = &projection
-		p.Schema = "cairn.semantic/18"
+		p.Schema = SchemaSemantic18
 	}
-	switch {
-	case hasEntityRanking(p.Ranking):
-		p.Ranking = "interleaved-scope-recency/4"
-	case hasFailureRanking(p.Ranking):
-		p.Ranking = "interleaved-scope-recency/3"
-	case hasLiteralRanking(p.Ranking):
-		p.Ranking = "interleaved-scope-recency/2"
-	default:
-		p.Ranking = "interleaved-scope-recency/1"
-	}
+	p.Ranking = resolveInterleavedRanking(p.Ranking)
 	for _, h := range r.Hits {
 		hit := h
 		evaluations[h.RecordID].PassageHit = &hit
@@ -130,7 +121,7 @@ func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery stri
 	if hasIndexedRanking(retainedRanking) {
 		p.Ranking = retainedRanking
 		if hasHybridRanking(retainedRanking) {
-			p.Schema = "cairn.semantic/15"
+			p.Schema = SchemaSemantic15
 		}
 	} else if strings.HasPrefix(retainedRanking, "interleaved-scope-recency/") || strings.HasPrefix(retainedRanking, "hybrid-scope-recency/") {
 		return nil, failure("REPLAY_INCOMPLETE", "retained indexed ranking is unsupported")
@@ -138,7 +129,7 @@ func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery stri
 		p.Ranking = indexedIDFRanking(p.Ranking)
 	}
 	if hasIndexedIDFRanking(p.Ranking) {
-		p.Schema = "cairn.semantic/19"
+		p.Schema = SchemaSemantic19
 		members := indexedIDFMembers(query, p.Ranking, candidates, evaluations, true)
 		p.IDF, err = buildIDF(query, p.Ranking, members, evaluations)
 		if err != nil {
@@ -246,8 +237,8 @@ func passagePreview(body string, span ByteSpanRequest) (string, ByteSpanRequest)
 
 func validateFrozenIndexed(p SemanticPackage, evaluations map[string]*CandidateEvaluation) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical indexed retrieval metadata is invalid") }
-	validContract := (p.Schema == "cairn.semantic/15" && hasHybridRanking(p.Ranking)) || ((p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/18") && hasInterleavedRanking(p.Ranking) && !hasIndexedIDFRanking(p.Ranking)) || (p.Schema == "cairn.semantic/19" && hasIndexedIDFRanking(p.Ranking) && p.IDF != nil)
-	if !validContract || p.Discovery == nil || p.Discovery.State != "ready" || !semanticIdentityValid(p.Discovery) || p.Discovery.Coverage == nil {
+	spec, _ := LookupSchemaSpec(p.Schema)
+	if !spec.MatchesIndexedPackage(p) || p.Discovery == nil || p.Discovery.State != "ready" || !semanticIdentityValid(p.Discovery) || p.Discovery.Coverage == nil {
 		return invalid()
 	}
 	coverage := p.Discovery.Coverage

@@ -114,15 +114,7 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 			if valid {
 				identity.ScoresSHA256 = scoreDigest(result.Scores)
 				p.Discovery = identity
-				if hasEntityRanking(p.Ranking) {
-					p.Ranking = "semantic-scope-recency/4"
-				} else if hasFailureRanking(p.Ranking) {
-					p.Ranking = "semantic-scope-recency/3"
-				} else if hasLiteralRanking(p.Ranking) {
-					p.Ranking = "semantic-scope-recency/2"
-				} else {
-					p.Ranking = "semantic-scope-recency/1"
-				}
+				p.Ranking = resolveSemanticScopeRanking(p.Ranking)
 				for i := range candidates {
 					c := &candidates[i]
 					if c.selection.Mandatory {
@@ -191,14 +183,15 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 }
 
 func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query, semanticQuery string) error {
-	if p.Schema == "cairn.semantic/18" || (p.Schema == "cairn.semantic/19" && p.Discovery != nil && p.Discovery.QueryProjection != nil) {
+	spec, _ := LookupSchemaSpec(p.Schema)
+	if spec.RequiresQueryProjection || (spec.SupportsQueryProjection && p.Discovery != nil && p.Discovery.QueryProjection != nil) {
 		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, semanticQuery) != nil {
 			return failure("INTEGRITY_FAILURE", "historical query projection is invalid")
 		}
 	} else if p.Discovery != nil && p.Discovery.QueryProjection != nil {
 		return failure("INTEGRITY_FAILURE", "query projection has the wrong schema")
 	}
-	if p.Schema == "cairn.semantic/17" {
+	if spec.IsPureIDF {
 		if !hasIDFRanking(p.Ranking) || p.IDF == nil || p.Discovery != nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "historical IDF search intent is invalid")
 		}
@@ -209,7 +202,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		}
 		return nil
 	}
-	if p.Schema == "cairn.semantic/19" {
+	if spec.IsIndexedIDF {
 		if !hasIndexedIDFRanking(p.Ranking) || p.IDF == nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "historical indexed IDF intent is invalid")
 		}
@@ -235,8 +228,8 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		}
 	}
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14" && p.Schema != "cairn.semantic/15" && p.Schema != "cairn.semantic/16") || p.Discovery == nil) {
-		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4" {
+	if !spec.RequiresSemanticDiscovery && (!spec.SupportsSemanticDiscovery || p.Discovery == nil) {
+		if p.Discovery != nil || hasSemanticScopeRanking(p.Ranking) {
 			return invalid()
 		}
 		for _, e := range evaluations {
@@ -254,7 +247,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		if d.State != "unavailable" && d.State != "not_needed" && d.State != "invalid_result" {
 			return invalid()
 		}
-		if *d != (DiscoveryRanking{State: d.State}) || (p.Ranking != "lexical-scope-recency/4" && p.Ranking != "lexical-scope-recency/5" && p.Ranking != "lexical-scope-recency/6" && p.Ranking != "lexical-scope-recency/7") {
+		if *d != (DiscoveryRanking{State: d.State}) || !hasFallbackLexicalRanking(p.Ranking) {
 			return invalid()
 		}
 		for _, e := range evaluations {
@@ -264,7 +257,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		}
 		return nil
 	}
-	if (p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4") || !semanticIdentityValid(d) {
+	if !hasSemanticScopeRanking(p.Ranking) || !semanticIdentityValid(d) {
 		return invalid()
 	}
 	scores := []SemanticScore{}

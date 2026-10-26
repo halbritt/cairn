@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -318,18 +317,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 				p.Presentation = previewCompactV1
 			}
 		}
-		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" && req.ErrorSignature == "" {
-			p.Schema = "cairn.semantic/8"
-		}
-		if req.BrowseOffset != nil {
-			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
-		}
-		if req.PageOffset != nil {
-			if req.ErrorSignature == "" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" {
-				p.Schema = "cairn.semantic/11"
-			}
-			p.Page = &BrowsePage{Offset: *req.PageOffset}
-		}
+		promoteIndexSchema(&p, req)
 		if req.Semantic {
 			retained, lookupErr := s.retainedRetrievalContract(ctx, tx, req)
 			if lookupErr != nil {
@@ -365,7 +353,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
-	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	p := SemanticPackage{Context: req.Context, Schema: SchemaSemantic3, Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	if req.MemoryBudgetBytes != nil {
 		p.MemoryBudget = &MemoryBudget{Schema: "cairn.memory-budget/1", Bytes: *req.MemoryBudgetBytes}
 		if req.MinPullBytes != nil {
@@ -381,31 +369,8 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		}
 	}
 	literals := queryLiterals(req.Query)
-	if len(literals) > 0 {
-		p.Ranking = "lexical-scope-recency/5"
-	}
-	if len(req.Kinds) > 0 {
-		p.Kinds = req.Kinds
-		p.Schema = "cairn.semantic/9"
-	}
-	if req.Context != nil && req.Context.TaskPhase != "" {
-		p.Schema = "cairn.semantic/10"
-	}
-	if req.ErrorSignature != "" {
-		p.Schema = "cairn.semantic/12"
-		p.ErrorSignature = req.ErrorSignature
-		p.Ranking = "lexical-scope-recency/6"
-		p.Omitted["NO_FAILURE_MATCH"] = 0
-	}
-	if len(req.Entities) > 0 {
-		p.Schema = "cairn.semantic/13"
-		p.EntitiesSHA256 = entitiesDigest(req.Entities)
-		p.Ranking = "lexical-scope-recency/7"
-		p.Omitted["NO_ENTITY_MATCH"] = 0
-	}
-	idfSearch := req.Mode == "index" && req.Purpose == "context" && strings.TrimSpace(req.Query) != "" && req.BrowseOffset == nil && !req.Semantic
+	idfSearch := resolveCompileSchemaAndRanking(&p, req, literals)
 	if idfSearch {
-		p.Schema = "cairn.semantic/17"
 		var err error
 		p.Ranking, err = s.retryIDFRanking(ctx, tx, req, adjacentIDFRanking(req.Entities, req.ErrorSignature, literals))
 		if err != nil {
@@ -502,20 +467,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			}
 			continue
 		}
-		words := lexicon.bodyTerms(record.Body)
-		score := 0
-		for word := range terms {
-			if words[word] {
-				score++
-			}
-		}
-		specificity := 0
-		if record.Scope.TaskID != "*" {
-			specificity++
-		}
-		if record.Scope.RunID != "*" {
-			specificity++
-		}
+		words, score, specificity := scoreCandidateLexical(record, lexicon)
 		evaluation := &CandidateEvaluation{RecordID: id, Version: record.Version, Class: record.Class, LexicalMatches: score, ScopeSpecificity: specificity, WrittenAt: record.WrittenAt}
 		evaluations[id] = evaluation
 		if reason := applicabilityReason(record.Pins, req.Context, now); reason != "" {
@@ -564,43 +516,13 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		digest := sha256.Sum256([]byte(record.Body))
 		associationDigest := entitiesDigest(record.Entities)
 		evaluation.Facts = &CandidateFacts{EntitiesSHA256: &associationDigest, Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
-		entity := !selection.Mandatory && matchesEntities(record.Entities, req.Entities)
-		evaluation.EntityMatch = entity
-		literal := !selection.Mandatory && matchesLiteral(record.Body, literals)
-		evaluation.ExactTextMatch = literal
+		features := evaluateCandidateMatchFeatures(record, selection.Mandatory, words, score, specificity, literals, req.Entities, matches[id])
+		evaluation.EntityMatch = features.entity
+		evaluation.ExactTextMatch = features.literal
 		if !selection.Mandatory {
 			evaluation.FailureMatch = matches[id]
 		}
-		failureMatch := evaluation.FailureMatch != nil
-		selection.Reason = entityReason(failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch), entity)
-		item := candidate{identity: hasEntityRanking(p.Ranking) && (entity || failureMatch), literal: literal, failure: failureMatch, selection: selection, score: score, specificity: specificity}
-		if allowDisputes {
-			pool[id] = item
-		}
-		if !kindAllowed(req.Kinds, selection) {
-			evaluation.Reason = "KIND_FILTERED"
-			p.Omitted["KIND_FILTERED"]++
-			continue
-		}
-		if len(req.Entities) > 0 && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !entity && !failureMatch {
-			evaluation.Reason = "NO_ENTITY_MATCH"
-			p.Omitted["NO_ENTITY_MATCH"]++
-			continue
-		}
-		if len(req.Entities) == 0 && req.ErrorSignature != "" && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
-			evaluation.Reason = "NO_FAILURE_MATCH"
-			p.Omitted["NO_FAILURE_MATCH"]++
-			continue
-		}
-		if idfSearch && !selection.Mandatory {
-			idfMembers = append(idfMembers, makeIDFMember(record, words, terms))
-		}
-		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal && !failureMatch && !entity {
-			evaluation.Reason = "NO_LEXICAL_MATCH"
-			p.Omitted["NO_LEXICAL_MATCH"]++
-			continue
-		}
-		candidates = append(candidates, item)
+		admitEvaluatedCandidate(&p, selection, evaluation, features, terms, req.Query, len(req.Entities) > 0, req.ErrorSignature != "", idfSearch, req.Semantic, allowDisputes, false, pool, &idfMembers, &candidates)
 	}
 	if allowDisputes {
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
