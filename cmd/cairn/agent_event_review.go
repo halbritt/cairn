@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"time"
@@ -49,23 +48,14 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 	}
 	var attention *attentionResult
 	if req.Attention != nil {
-		// Project only the public review schema. This keeps the presentation
-		// independent of internal store observation types; no payload is cached.
-		raw, err := json.Marshal(deliveries.Deliveries)
-		if err != nil {
-			return nil, err
-		}
-		var rows []attentionDelivery
-		if err = json.Unmarshal(raw, &rows); err != nil {
-			return nil, err
-		}
+		rows := deliveries.Deliveries
 		scope := attentionScope(struct {
 			Repo, Consumer, State, Delivery, Database, Home string
 			Age                                             int64
 		}{req.Repo, req.Consumer, req.State, req.DeliveryID, os.Getenv("CAIRN_DATABASE_URL"), os.Getenv("CAIRN_HOME"), req.Attention.OlderThanSeconds})
 		now := time.Now()
 		result, err := withAttentionCache(*req.Attention, scope, func(previous attentionCache) (attentionResult, attentionCache, error) {
-			res, next, err := summarizeAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, now)
+			res, next, err := summarizeReviewAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, now)
 			if err != nil || !req.Attention.NotifyPublishers {
 				return res, next, err
 			}
@@ -80,7 +70,7 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 			return nil, err
 		}
 		// Starvation is a current snapshot of this page, outside the change cache.
-		result.StarvedSessions, err = detectStarvation(rows, req.Attention.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
+		result.StarvedSessions, err = detectReviewStarvation(rows, req.Attention.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
 			return store.LastHandledDeliveries(ctx, req.Repo, consumers)
 		})
 		if err != nil {

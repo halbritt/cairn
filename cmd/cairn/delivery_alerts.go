@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -16,7 +15,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/halbritt/cairn/core"
@@ -255,12 +253,12 @@ func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (an
 	if req.StateFile != "" && !filepath.IsAbs(req.StateFile) {
 		return nil, invalid("delivery-alerts state_file must be absolute")
 	}
-	rows, scanned, complete, err := scanStarvationRows(ctx, store, req.Repo, req.MaxPages)
+	rows, scanned, complete, err := store.ScanStarvationDeliveries(ctx, req.Repo, req.MaxPages)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
-	current, err := detectStarvation(rows, req.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
+	current, err := detectReviewStarvation(rows, req.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
 		return store.LastHandledDeliveries(ctx, req.Repo, consumers)
 	})
 	if err != nil {
@@ -288,46 +286,6 @@ func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (an
 		res.Coverage += " Partial scan: more deliveries exist; absence does not clear an alert."
 	}
 	return res, err
-}
-
-// scanStarvationRows reads bounded pages of the review states that can starve
-// a session. Held pending rows appear in more than one state; IDs dedupe them.
-func scanStarvationRows(ctx context.Context, store *core.Store, repo string, maxPages int) ([]attentionDelivery, int, bool, error) {
-	seen := map[string]bool{}
-	var rows []attentionDelivery
-	complete := true
-	for _, state := range []string{"pending", "leased", "held"} {
-		var after int64
-		for page := 0; ; page++ {
-			if page == maxPages {
-				complete = false
-				break
-			}
-			got, err := store.ReviewEvents(ctx, core.EventReviewRequest{Repo: repo, State: state, After: after, Limit: 100})
-			if err != nil {
-				return nil, 0, false, err
-			}
-			raw, err := json.Marshal(got.Deliveries)
-			if err != nil {
-				return nil, 0, false, err
-			}
-			var batch []attentionDelivery
-			if err = json.Unmarshal(raw, &batch); err != nil {
-				return nil, 0, false, err
-			}
-			for _, d := range batch {
-				if !seen[d.DeliveryID] {
-					seen[d.DeliveryID] = true
-					rows = append(rows, d)
-				}
-			}
-			if !got.More {
-				break
-			}
-			after = got.NextAfter
-		}
-	}
-	return rows, len(rows), complete, nil
 }
 
 // nameStarvedSessions adds display names from the online agent directory.
@@ -363,67 +321,26 @@ func nameStarvedSessions(ctx context.Context, store *core.Store, repo string, se
 // write so overlapping timer runs cannot alert twice. Without a state file, or
 // in report-only mode, nothing is written.
 func withDeliveryAlertState(path, scope string, write bool, run func(deliveryAlertState) (deliveryAlertState, error)) error {
-	state := deliveryAlertState{Schema: deliveryAlertSchema, Scope: scope, Alerts: map[string]deliveryAlertEntry{}}
-	if path == "" {
-		_, err := run(state)
-		return err
+	stateFile := LockedStateFile[deliveryAlertState]{
+		Path:             path,
+		TempPattern:      ".cairn-alerts-*",
+		MaxBytes:         1024 * 1024,
+		CreateDir:        true,
+		AbsPathError:     "delivery-alerts state_file must be absolute",
+		SizeLimitError:   "delivery alert state exceeds size limit",
+		ParseErrorPrefix: "invalid delivery alert state",
+		Default: func() deliveryAlertState {
+			return deliveryAlertState{Schema: deliveryAlertSchema, Scope: scope, Alerts: map[string]deliveryAlertEntry{}}
+		},
+		Validate: func(s deliveryAlertState) error {
+			if s.Schema != deliveryAlertSchema || s.Scope != scope || s.Alerts == nil {
+				return invalid("delivery alert state scope or schema mismatch; use a separate state file")
+			}
+			return nil
+		},
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	if file, openErr := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0); openErr == nil {
-		raw, readErr := io.ReadAll(io.LimitReader(file, 1024*1024+1))
-		file.Close()
-		if readErr != nil {
-			return readErr
-		}
-		if len(raw) > 1024*1024 {
-			return invalid("delivery alert state exceeds size limit")
-		}
-		if err = json.Unmarshal(raw, &state); err != nil {
-			return fmt.Errorf("invalid delivery alert state: %w", err)
-		}
-		if state.Schema != deliveryAlertSchema || state.Scope != scope || state.Alerts == nil {
-			return invalid("delivery alert state scope or schema mismatch; use a separate state file")
-		}
-	} else if !errors.Is(openErr, os.ErrNotExist) {
-		return openErr
-	}
-	next, runErr := run(state)
-	if !write {
-		return runErr
-	}
-	// Successful notifications are recorded even when another one failed.
-	if err = writePrivateJSON(path, next); err != nil {
-		return errors.Join(runErr, err)
-	}
-	return runErr
-}
-
-func writePrivateJSON(path string, value any) error {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".cairn-alerts-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err = tmp.Write(raw); err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return stateFile.Update(func(state deliveryAlertState, _ func(deliveryAlertState) error) (deliveryAlertState, bool, error) {
+		next, runErr := run(state)
+		return next, write, runErr
+	})
 }

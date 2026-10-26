@@ -5,14 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -89,101 +87,36 @@ func sendHash(intent sendIntent) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func readSendJournal(path string) (sendJournal, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if errors.Is(err, os.ErrNotExist) {
-		return sendJournal{}, nil
-	}
-	if err != nil {
-		return sendJournal{}, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return sendJournal{}, err
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 8192 {
-		return sendJournal{}, invalid("send journal must be an owner-only regular file under 8 KiB")
-	}
-	var journal sendJournal
-	decoder := json.NewDecoder(io.LimitReader(file, 8193))
-	if err := decoder.Decode(&journal); err != nil {
-		return sendJournal{}, invalid("invalid send journal: " + err.Error())
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return sendJournal{}, invalid("send journal contains trailing data")
-	}
+func validateSendJournal(journal sendJournal) error {
 	if journal.Schema != "cairn.send-journal/1" || uuid.Validate(journal.SourceRequestID) != nil || uuid.Validate(journal.PublicationRequestID) != nil || journal.SourceRequestID == journal.PublicationRequestID || len(journal.IntentSHA256) != 64 {
-		return sendJournal{}, invalid("invalid send journal identity")
+		return invalid("invalid send journal identity")
 	}
 	if _, err := hex.DecodeString(journal.IntentSHA256); err != nil {
-		return sendJournal{}, invalid("invalid send journal digest")
+		return invalid("invalid send journal digest")
 	}
 	if journal.Source.RecordID != "" && (uuid.Validate(journal.Source.RecordID) != nil || journal.Source.Version < 1) {
-		return sendJournal{}, invalid("invalid send journal source reference")
+		return invalid("invalid send journal source reference")
 	}
 	if journal.EventID != "" && (uuid.Validate(journal.EventID) != nil || journal.Source.RecordID == "") {
-		return sendJournal{}, invalid("invalid send journal event reference")
+		return invalid("invalid send journal event reference")
 	}
-	return journal, nil
+	return nil
 }
 
-func writeSendJournal(path string, journal sendJournal) error {
-	directory := filepath.Dir(path)
-	file, err := os.CreateTemp(directory, ".cairn-send-*")
-	if err != nil {
-		return err
+func sendJournalStore(path string) LockedStateFile[sendJournal] {
+	return LockedStateFile[sendJournal]{
+		Path:               path,
+		TempPattern:        ".cairn-send-*",
+		MaxBytes:           8192,
+		RequirePrivateDir:  true,
+		RequirePrivateFile: true,
+		StrictJSON:         true,
+		NonBlocking:        true,
+		AbsPathError:       "--journal requires an absolute path",
+		SizeLimitError:     "send journal must be an owner-only regular file under 8 KiB",
+		ParseErrorPrefix:   "invalid send journal",
+		Validate:           validateSendJournal,
 	}
-	defer os.Remove(file.Name())
-	if err := json.NewEncoder(file).Encode(journal); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return err
-	}
-	parent, err := os.Open(directory)
-	if err != nil {
-		return err
-	}
-	defer parent.Close()
-	return parent.Sync()
-}
-
-func sendJournalLock(path string) (*os.File, error) {
-	if !filepath.IsAbs(path) {
-		return nil, invalid("--journal requires an absolute path")
-	}
-	directory := filepath.Dir(path)
-	info, err := os.Stat(directory)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() || info.Mode().Perm()&0022 != 0 {
-		return nil, invalid("send journal directory must not be writable by others")
-	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
-	if err != nil {
-		return nil, err
-	}
-	lockInfo, err := lock.Stat()
-	if err != nil || !lockInfo.Mode().IsRegular() || lockInfo.Mode().Perm()&0077 != 0 {
-		lock.Close()
-		return nil, invalid("send journal lock must be owner-only regular file")
-	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		lock.Close()
-		return nil, invalid("send journal is already in use or cannot be locked")
-	}
-	return lock, nil
 }
 
 func agentSend(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, args []string, input io.Reader) (any, error) {
@@ -291,55 +224,56 @@ func agentSend(ctx context.Context, client *localapi.Client, session *core.Agent
 	if err != nil {
 		return nil, err
 	}
-	lock, err := sendJournalLock(*journalPath)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Close()
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	journal, err := readSendJournal(*journalPath)
-	if err != nil {
-		return nil, err
-	}
-	if journal.Schema == "" {
-		journal = sendJournal{Schema: "cairn.send-journal/1", IntentSHA256: intentHash, SourceRequestID: uuid.NewString(), PublicationRequestID: uuid.NewString()}
-		if err := writeSendJournal(*journalPath, journal); err != nil {
-			return nil, err
+	var out any
+	err = sendJournalStore(*journalPath).Update(func(journal sendJournal, save func(sendJournal) error) (sendJournal, bool, error) {
+		if journal.Schema == "" {
+			journal = sendJournal{Schema: "cairn.send-journal/1", IntentSHA256: intentHash, SourceRequestID: uuid.NewString(), PublicationRequestID: uuid.NewString()}
+			if err := save(journal); err != nil {
+				return journal, false, err
+			}
+		} else if journal.IntentSHA256 != intentHash {
+			return journal, false, &core.Error{Code: "IDEMPOTENCY_CONFLICT", Message: "send journal already owns a different selected source or destination"}
 		}
-	} else if journal.IntentSHA256 != intentHash {
-		return nil, &core.Error{Code: "IDEMPOTENCY_CONFLICT", Message: "send journal already owns a different selected source or destination"}
-	}
-	if journal.Source.RecordID == "" {
-		sensitivity := "local"
-		if *shareable {
-			sensitivity = "shareable"
+		if journal.Source.RecordID == "" {
+			sensitivity := "local"
+			if *shareable {
+				sensitivity = "shareable"
+			}
+			create := core.CreateRequest{RequestID: journal.SourceRequestID, Draft: core.Draft{Body: string(body), Kind: *sourceKind, ClaimType: "self", Sensitivity: sensitivity, Scope: core.Scope{Repo: *repo, TaskID: "coordination/" + journal.PublicationRequestID, RunID: "*"}}}
+			var record core.Record
+			if err := client.Call(ctx, "create", create, &record); err != nil {
+				out = sendState(journal)
+				return journal, false, err
+			}
+			if uuid.Validate(record.RecordID) != nil || record.Version < 1 || record.Scope != create.Draft.Scope || record.Body != create.Draft.Body || record.Kind != create.Draft.Kind || record.Sensitivity != create.Draft.Sensitivity {
+				out = sendState(journal)
+				return journal, false, &core.Error{Code: "SCHEMA_MISMATCH", Message: "create returned a source different from the selected assignment"}
+			}
+			journal.Source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
+			if err := save(journal); err != nil {
+				out = sendState(journal)
+				return journal, false, err
+			}
 		}
-		create := core.CreateRequest{RequestID: journal.SourceRequestID, Draft: core.Draft{Body: string(body), Kind: *sourceKind, ClaimType: "self", Sensitivity: sensitivity, Scope: core.Scope{Repo: *repo, TaskID: "coordination/" + journal.PublicationRequestID, RunID: "*"}}}
-		var record core.Record
-		if err := client.Call(ctx, "create", create, &record); err != nil {
-			return sendState(journal), err
+		if journal.EventID == "" {
+			publish := core.PublishEventRequest{RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
+			var event core.AgentEvent
+			if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
+				out = sendState(journal)
+				return journal, false, err
+			}
+			if uuid.Validate(event.EventID) != nil || event.Ref != journal.Source || event.Destination != dest || event.Repo != *repo || event.Kind != *kind || event.From == "" {
+				out = sendState(journal)
+				return journal, false, &core.Error{Code: "SCHEMA_MISMATCH", Message: "publish returned a different source or destination"}
+			}
+			journal.EventID = event.EventID
+			if err := save(journal); err != nil {
+				out = sendState(journal)
+				return journal, false, err
+			}
 		}
-		if uuid.Validate(record.RecordID) != nil || record.Version < 1 || record.Scope != create.Draft.Scope || record.Body != create.Draft.Body || record.Kind != create.Draft.Kind || record.Sensitivity != create.Draft.Sensitivity {
-			return sendState(journal), &core.Error{Code: "SCHEMA_MISMATCH", Message: "create returned a source different from the selected assignment"}
-		}
-		journal.Source = core.RecordVersionRef{RecordID: record.RecordID, Version: record.Version}
-		if err := writeSendJournal(*journalPath, journal); err != nil {
-			return sendState(journal), err
-		}
-	}
-	if journal.EventID == "" {
-		publish := core.PublishEventRequest{RequestID: journal.PublicationRequestID, Repo: *repo, Kind: *kind, Ref: journal.Source, Destination: dest, Resolution: resolution, Pool: needs}
-		var event core.AgentEvent
-		if err := client.Call(ctx, "event-publish", publish, &event); err != nil {
-			return sendState(journal), err
-		}
-		if uuid.Validate(event.EventID) != nil || event.Ref != journal.Source || event.Destination != dest || event.Repo != *repo || event.Kind != *kind || event.From == "" {
-			return sendState(journal), &core.Error{Code: "SCHEMA_MISMATCH", Message: "publish returned a different source or destination"}
-		}
-		journal.EventID = event.EventID
-		if err := writeSendJournal(*journalPath, journal); err != nil {
-			return sendState(journal), err
-		}
-	}
-	return sendState(journal), nil
+		out = sendState(journal)
+		return journal, false, nil
+	})
+	return out, err
 }
