@@ -77,6 +77,8 @@ def _load_sibling_module(name):
 _unix_peer_transport = _load_sibling_module("unix_peer_transport")
 _wake_transport = _load_sibling_module("wake_transport")
 _transcript_recovery = _load_sibling_module("transcript_recovery")
+_grant_ledger = _load_sibling_module("grant_ledger")
+GrantLedger = _grant_ledger.GrantLedger
 
 
 class _CoordNamespace:
@@ -3278,143 +3280,36 @@ def refusal_cause_details(cause, wrapper=None):
     return result
 
 
-GRANT_KINDS = ('inbox_delivery', 'ordinary_context', 'unadmitted_wake', 'mixed', 'unknown')
+GRANT_KINDS = _grant_ledger.GRANT_KINDS
 
 
 def recall_grant_kind(identity):
-    """Fixed-vocabulary evidence class of one bridge/memory ledger grant identity.
-
-    'inbox_delivery' names a delivered inbox attempt; 'ordinary_context' is
-    ordinary (or launcher-task) memory context emitted into a prompt and is not
-    inbox delivery evidence; 'unadmitted_wake' is required-only output for a wake
-    that had no admitted attempt. Anything else stays 'unknown'.
-    """
-    boundary = identity.get('boundary')
-    if identity.get('attempt_id') or identity.get('delivery_id') or boundary in ('claude_prompt_delivery', 'native_turn'):
-        return 'inbox_delivery'
-    if boundary in ('ordinary_prompt', 'launcher_task'):
-        return 'ordinary_context'
-    if boundary == 'unadmitted_wake':
-        return 'unadmitted_wake'
-    return 'unknown'
+    """Fixed-vocabulary evidence class of one bridge/memory ledger grant identity."""
+    return _grant_ledger.recall_grant_kind(identity)
 
 
 def summarize_grant_kinds(kinds):
-    kinds = set(kinds)
-    if not kinds:
-        return None
-    return kinds.pop() if len(kinds) == 1 else 'mixed'
+    return _grant_ledger.summarize_grant_kinds(kinds)
 
 
 def recall_grant_evidence(config, state, attempt=None, native_owner=None, *, require_files=True):
-    """Read the bound bridge's own ledger for grants naming an attempt, its delivery or a native prompt.
-
-    Returns (status, kind). status is 'present' when some grant names them,
-    'absent' only when the ledger was read under the bridge's session lock and
-    none does, 'busy' when that lock is held elsewhere, and 'unknown' for any
-    other doubt. kind classifies present grants (see recall_grant_kind) and is
-    'mixed' for several classes; it is diagnostic only and never authority.
-    With require_files, a missing ledger or marker is doubt; without it, both
-    missing is the bridge's own empty-ledger state, as load_grants reads it.
-    """
-    owner = native_owner if native_owner is not None else (attempt or {}).get('native_turn_id')
-    try:
-        bridge = load_inbox_recall(config, validate=False)
-        _, memory = bridge.binding(config)
-        directory = Path(memory['state_dir'])
-        native = state['agent']['native_session_id']
-        if not require_files and directory.is_absolute() and not os.path.lexists(directory):
-            return 'absent', None  # The bridge creates its directory with an empty ledger.
-        info = directory.stat()
-        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
-            return 'unknown', 'unknown'
-        with (directory / (native + '.lock')).open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return 'busy', 'unknown'
-            ledger_path = directory / (native + '.inbox-recall.json')
-            # load_grants treats a missing ledger and marker as an empty ledger. For a
-            # claimed attempt absence of evidence is not evidence of absence.
-            for required in (ledger_path, ledger_path.with_suffix('.initialized')):
-                try:
-                    info = os.lstat(required)
-                except FileNotFoundError:
-                    if require_files:
-                        return 'unknown', 'unknown'
-                    continue
-                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-                    return 'unknown', 'unknown'
-            ledger = bridge.load_grants(ledger_path, native)
-            kinds = set()
-            for grant in ledger['grants'].values():
-                identity = grant['identity']
-                if attempt and (identity.get('attempt_id') == attempt['attempt_id']
-                                or identity.get('delivery_id') == attempt['delivery']['delivery_id']):
-                    kinds.add('inbox_delivery')
-                elif owner and identity.get('native_owner') == owner:
-                    kinds.add(recall_grant_kind(identity))
-            return ('present', summarize_grant_kinds(kinds)) if kinds else ('absent', None)
-    except Exception:  # Any doubt keeps the conservative hold.
-        return 'unknown', 'unknown'
+    """Read the bound bridge's own ledger for grants naming an attempt, its delivery or a native prompt."""
+    return _grant_ledger.recall_grant_evidence(
+        config, state, attempt=attempt, native_owner=native_owner,
+        require_files=require_files, coord=_COORD_NS,
+    )
 
 
 def codex_pre_grant_ledger_absent(config, state, attempt, recorded):
-    """Explicit-recovery proof that a recorded required-lookup refusal left no grant.
-
-    Bridges before the pre-lookup initialization wrote their ledger and marker
-    only after the required lookup succeeded, and the lookup's own raise sites
-    are the only source of recall_phase 'required_search'. For a Codex binding
-    no other writer touches these files, so both missing is the state that
-    refusal leaves. It counts as absence only when, under the bridge's session
-    lock, neither file exists and the same directory's Codex turn ledger shows
-    the bridge was activated for this native turn without recording a turn
-    grant, which ties the directory to that turn. The automatic watcher never
-    calls this; any doubt is False and the existing hold stands.
-    """
-    turn = attempt.get('native_turn_id')
-    if (config.get('harness') != 'codex' or recorded.get('recall_phase') != 'required_search'
-            or recorded.get('grant') != 'not_checked' or not isinstance(turn, str)):
-        return False
-    try:
-        bridge = load_inbox_recall(config, validate=False)
-        _, memory = bridge.binding(config)
-        directory = Path(memory['state_dir'])
-        native = state['agent']['native_session_id']
-        info = directory.stat()
-        if not directory.is_absolute() or info.st_uid != os.getuid() or info.st_mode & 0o022:
-            return False
-        with (directory / (native + '.lock')).open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return False
-            ledger_path = directory / (native + '.inbox-recall.json')
-            if any(os.path.lexists(p) for p in (ledger_path, ledger_path.with_suffix('.initialized'))):
-                return False
-            budget_path = directory / (native + '.memory-budget.json')
-            info = os.lstat(budget_path)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-                return False
-            budget = json.loads(budget_path.read_text())
-            return bool(isinstance(budget, dict) and budget.get('schema') == 'cairn.codex-memory-grants/1'
-                        and budget.get('session_id') == native
-                        and isinstance(budget.get('inbox_activation'), dict)
-                        and budget['inbox_activation'].get(turn) is True
-                        and isinstance(budget.get('turns'), dict) and turn not in budget['turns'])
-    except Exception:  # Any doubt keeps the conservative hold.
-        return False
+    """Explicit-recovery proof that a recorded required-lookup refusal left no grant."""
+    return _grant_ledger.codex_pre_grant_ledger_absent(
+        config, state, attempt, recorded, coord=_COORD_NS,
+    )
 
 
 def recall_grant_state(config, state, attempt):
-    """What the bound bridge's own ledger says about this claimed attempt.
-
-    'absent' only when the ledger is read under the bridge's session lock and no
-    grant names this attempt, its delivery or its native prompt. A busy lock, an
-    unreadable or corrupt ledger, or any other doubt is 'unknown', never absent.
-    """
-    status, _ = recall_grant_evidence(config, state, attempt)
-    return 'unknown' if status == 'busy' else status
+    """What the bound bridge's own ledger says about this claimed attempt."""
+    return _grant_ledger.recall_grant_state(config, state, attempt, coord=_COORD_NS)
 
 
 def attempt_commands_absent(config, attempt):

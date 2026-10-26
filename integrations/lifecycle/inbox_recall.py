@@ -6,9 +6,36 @@ import json
 import os
 import re
 from pathlib import Path
+import sys
 import time
 import tempfile
 import uuid
+
+
+def _load_grant_ledger():
+    for name in ("grant_ledger", "integrations.lifecycle.grant_ledger"):
+        if name in sys.modules and sys.modules[name] is not None:
+            return sys.modules[name]
+    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    for path in (
+        here / "grant_ledger.py",
+        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle/grant_ledger.py"),
+        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / "grant_ledger.py",
+    ):
+        try:
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location("grant_ledger", path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["grant_ledger"] = module
+                spec.loader.exec_module(module)
+                return module
+        except OSError:
+            continue
+    return None
+
+
+_grant_ledger = _load_grant_ledger()
+GrantLedger = _grant_ledger.GrantLedger if _grant_ledger is not None else None
 
 SCHEMA = 'cairn.inbox-recall-binding/1'
 RECALL_OBSERVATION_VERSION = 1
@@ -273,6 +300,8 @@ def binding(config):
 
 
 def claude_owner(event):
+    if _grant_ledger is not None:
+        return _grant_ledger.claude_owner(event)
     prompt = event.get('prompt_id')
     if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
             or any(ord(c) < 32 for c in prompt)):
@@ -280,20 +309,13 @@ def claude_owner(event):
     return 'claude-channel:' + prompt
 
 
-# Claude and Codex run a prompt's coordination and memory hooks in parallel, and
-# both take this session lock: each records or reads the activation decision, and
-# coordination then locks the same grant ledger for delivery. The holder rewrites
-# a grant ledger (up to hundreds of KB before CAIRN-186 compaction; two fsyncs), which under
-# I/O load outlasts a fraction of a second. Waiting stays bounded so that this,
-# the 12 s bridge deadline and interpreter startup fit the 15 s coordination hook.
 LOCK_WAIT_SECONDS = 1.5
 
 
 def acquire_session_lock(lock, deadline=None):
-    """Exclusive session lock, waiting at most LOCK_WAIT_SECONDS (and never past deadline).
-
-    Persistent contention re-raises BlockingIOError; other errors are not retried.
-    """
+    """Exclusive session lock, waiting at most LOCK_WAIT_SECONDS (and never past deadline)."""
+    if _grant_ledger is not None:
+        return _grant_ledger.acquire_session_lock(lock, deadline, wait_seconds=LOCK_WAIT_SECONDS)
     limit = time.monotonic() + LOCK_WAIT_SECONDS
     if deadline is not None:
         limit = min(limit, deadline)
@@ -441,11 +463,15 @@ FOLD_DOMAIN = 'cairn.inbox-recall-fold/1'
 
 
 def folded_token(kind, value):
+    if _grant_ledger is not None:
+        return _grant_ledger.folded_token(kind, value)
     return hashlib.sha256('\0'.join((FOLD_DOMAIN, kind, value)).encode()).hexdigest()[:16]
 
 
 def folded_conflict(ledger, *, key, wake_sha256, owner):
     """True when a folded grant matched this key, wake hash or (Claude) native owner."""
+    if _grant_ledger is not None:
+        return _grant_ledger.folded_conflict(ledger, key=key, wake_sha256=wake_sha256, owner=owner)
     tokens = set((ledger.get('folded') or {}).get('tokens', ()))
     if not tokens:
         return False
@@ -458,11 +484,18 @@ def folded_conflict(ledger, *, key, wake_sha256, owner):
 
 
 def compact_grants(ledger, *, owners=(), deliveries=(), attempts=(), turns=()):
-    """Fold grants outside the retained set into digests; returns how many were folded.
-
-    Call only under the session lock, as part of the write that records an
-    admitted delivery's grant. A ledger within the windows is left unchanged.
-    """
+    """Fold grants outside the retained set into digests; returns how many were folded."""
+    if _grant_ledger is not None:
+        return _grant_ledger.compact_grants(
+            ledger,
+            owners=owners,
+            deliveries=deliveries,
+            attempts=attempts,
+            turns=turns,
+            recent_grants=LEDGER_RECENT_GRANTS,
+            folded_tokens=LEDGER_FOLDED_TOKENS,
+            recent_decisions=LEDGER_RECENT_DECISIONS,
+        )
     grants = ledger['grants']
     recent = set(list(grants)[-LEDGER_RECENT_GRANTS:])
     retained, fresh = {}, []
@@ -499,6 +532,8 @@ def compact_grants(ledger, *, owners=(), deliveries=(), attempts=(), turns=()):
 
 
 def load_grants(path, session):
+    if _grant_ledger is not None:
+        return _grant_ledger.load_grants(path, session)
     marker = path.with_suffix('.initialized')
     if marker.exists() and json.loads(marker.read_text()) != dict(schema='cairn.inbox-recall-initialized/1', session=session):
         raise ValueError('inbox recall initialization marker corrupt')

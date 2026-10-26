@@ -21,6 +21,32 @@ import tempfile
 import time
 import uuid
 
+
+def _load_grant_ledger():
+    for name in ("grant_ledger", "integrations.lifecycle.grant_ledger"):
+        if name in sys.modules and sys.modules[name] is not None:
+            return sys.modules[name]
+    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    for path in (
+        here / "grant_ledger.py",
+        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle/grant_ledger.py"),
+        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / "grant_ledger.py",
+    ):
+        try:
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location("grant_ledger", path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules["grant_ledger"] = module
+                spec.loader.exec_module(module)
+                return module
+        except OSError:
+            continue
+    return None
+
+
+_grant_ledger = _load_grant_ledger()
+GrantLedger = _grant_ledger.GrantLedger if _grant_ledger is not None else None
+
 RECALL_TASK_VERSION = 1  # explicit one-task/one-child launcher contract only
 CONTEXT_BYTES = 12000  # default; installations may lower it with config["context_bytes"]
 TEXT_BYTES = 24000
@@ -1573,6 +1599,8 @@ def native_uuid(value):
 
 def codex_budget_ledger(path, session, budget):
     """Load retained turn grants; never infer a refund from missing/corrupt state."""
+    if _grant_ledger is not None:
+        return _grant_ledger.codex_budget_ledger(path, session, budget, error_cls=HookError)
     marker = path.with_suffix(".initialized")
     if marker.exists():
         try:
@@ -1624,6 +1652,8 @@ def codex_budget_ledger(path, session, budget):
 
 def save_codex_budget(path, ledger):
     """Commit the grant before delivery, including file and directory durability."""
+    if _grant_ledger is not None:
+        return _grant_ledger.save_codex_budget(path, ledger)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as output:
         temporary = Path(output.name)
         try:
@@ -1652,6 +1682,8 @@ def claude_ledger(config, session):
 
 
 def save_claude_ledger(path, ledger):
+    if _grant_ledger is not None:
+        return _grant_ledger.save_claude_ledger(path, ledger, save_fn=save_codex_budget)
     marker = path.with_suffix(".initialized")
     if not marker.exists():
         save_codex_budget(marker, dict(schema="cairn.inbox-recall-initialized/1", session=ledger["session"]))
@@ -1659,6 +1691,8 @@ def save_claude_ledger(path, ledger):
 
 
 def claude_prompt_owner(event):
+    if _grant_ledger is not None:
+        return _grant_ledger.claude_prompt_owner(event)
     prompt = event.get("prompt_id")
     if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
             or any(ord(c) < 32 for c in prompt)):
@@ -1678,12 +1712,16 @@ def recall_task_key(config):
 
 
 def claude_grant_matches(grant, owner, task_key):
+    if _grant_ledger is not None:
+        return _grant_ledger.claude_grant_matches(grant, owner, task_key)
     identity = grant["identity"]
     return (identity.get("recall_task_key") == task_key if task_key else
             identity.get("native_owner") == owner and not identity.get("recall_task_key"))
 
 
 def claude_required_grant(ledger, event, task_key=None):
+    if _grant_ledger is not None:
+        return _grant_ledger.claude_required_grant(ledger, event, task_key)
     if event["hook_event_name"] == "UserPromptSubmit" and claude_prompt_owner(event):
         owner = claude_prompt_owner(event)
         for grant in ledger["grants"].values():
@@ -1838,11 +1876,15 @@ def bound_codex(config):
 
 
 def codex_hook_cost(event, text):
+    if _grant_ledger is not None:
+        return _grant_ledger.codex_hook_cost(event, text)
     return (1 + len(encoded(dict(hookSpecificOutput=dict(
         hookEventName=event["hook_event_name"], additionalContext=text))).encode())) if text else 0
 
 
 def codex_emitted_wire_bytes(grant):
+    if _grant_ledger is not None:
+        return _grant_ledger.codex_emitted_wire_bytes(grant)
     emitted = grant["emitted_hook_bytes"]
     if grant.get("serialized_hook_bytes") == emitted:
         return emitted
@@ -1854,11 +1896,15 @@ def codex_emitted_wire_bytes(grant):
 
 
 def codex_required_selection(grant, selected):
+    if _grant_ledger is not None:
+        return _grant_ledger.codex_required_selection(grant, selected)
     grant["required"] = dict(count=len(selected), selection_sha256=hashlib.sha256(
         encoded(selected).encode()).hexdigest() if selected else "", pending=False)
 
 
 def codex_required_grant(ledger, event):
+    if _grant_ledger is not None:
+        return _grant_ledger.codex_required_grant(ledger, event)
     if event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")):
         turn = event["turn_id"]
         if turn in ledger["turns"]:
@@ -1909,6 +1955,8 @@ def codex_required_error(config, event, error, *, persist=False):
 
 
 def save_codex_ledger(path, ledger):
+    if _grant_ledger is not None:
+        return _grant_ledger.save_codex_ledger(path, ledger, save_fn=save_codex_budget)
     marker = path.with_suffix(".initialized")
     if not marker.exists():
         save_codex_budget(marker, dict(schema="cairn.codex-memory-grants/1", session_id=ledger["session_id"]))
@@ -2589,6 +2637,12 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     return candidates[choice][:2]
 
 
+def parse_wake_envelope(prompt):
+    if _grant_ledger is not None:
+        return _grant_ledger.parse_wake_envelope(prompt)
+    return None
+
+
 def taskless_notification(prompt):
     """Classify complete known wake text; this establishes no identity or authority.
 
@@ -2597,6 +2651,8 @@ def taskless_notification(prompt):
     Both the current closing sentence (owner decision 2026-10-21) and the one before
     it are accepted, so wakes produced on either side of a rollout stay recognized.
     """
+    if _grant_ledger is not None:
+        return _grant_ledger.taskless_notification(prompt)
     if not isinstance(prompt, str):
         return False
     uuid_text = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
