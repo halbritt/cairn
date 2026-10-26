@@ -142,7 +142,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if args[0] == "clients" {
 		return clientsCommand(ctx, args[1:], input)
 	}
-	if isEventCommand(args[0]) {
+	if _, ok := eventCommandOperations[args[0]]; ok {
 		return eventCommand(ctx, args[0], args[1:], input, nil)
 	}
 	if args[0] == "machine" {
@@ -498,17 +498,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	case "grants":
 		return store.Grants(ctx)
 	case "create":
-		return invokeBounded(ctx, input, store.Create, localapi.RequestBodyLimit("create"))
+		return invokeOperation(ctx, "create", input, store.Create)
 	case "edit":
-		return invokeBounded(ctx, input, store.Edit, localapi.RequestBodyLimit("edit"))
+		return invokeOperation(ctx, "edit", input, store.Edit)
 	case "revise":
-		return invokeBounded(ctx, input, store.Revise, localapi.RequestBodyLimit("revise"))
+		return invokeOperation(ctx, "revise", input, store.Revise)
 	case "replace":
-		return invokeBounded(ctx, input, store.Replace, localapi.RequestBodyLimit("replace"))
+		return invokeOperation(ctx, "replace", input, store.Replace)
 	case "set-sections":
-		return invokeBounded(ctx, input, store.SetSections, localapi.RequestBodyLimit("set-sections"))
+		return invokeOperation(ctx, "set-sections", input, store.SetSections)
 	case "append":
-		return invokeBounded(ctx, input, store.Append, localapi.RequestBodyLimit("append"))
+		return invokeOperation(ctx, "append", input, store.Append)
 	case "cite":
 		return invoke(ctx, input, store.Cite)
 	case "delete":
@@ -624,7 +624,11 @@ func recoverRun(ctx context.Context, store *core.Store, id string) (core.Observa
 	return observed, os.Rename(path, filepath.Join(root, "runs", id, "outcome.json"))
 }
 func invoke[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error)) (Response, error) {
-	return invokeBounded(ctx, input, call, 128*1024)
+	return invokeBounded(ctx, input, call, localapi.DefaultRequestBodyLimit)
+}
+
+func invokeOperation[Request, Response any](ctx context.Context, operation string, input io.Reader, call func(context.Context, Request) (Response, error)) (Response, error) {
+	return invokeBounded(ctx, input, call, localapi.RequestBodyLimit(operation))
 }
 
 func invokeBounded[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error), limit int64) (Response, error) {

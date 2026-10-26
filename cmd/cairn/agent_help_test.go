@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/localapi"
 )
 
 type unreadHelpInput struct{}
@@ -67,6 +71,55 @@ func TestAgentHelpDoesNotHideMalformedArguments(t *testing.T) {
 	} {
 		if _, err := run(context.Background(), args, strings.NewReader("")); core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid invocation %v became help: %v", args, err)
+		}
+	}
+}
+
+func TestAgentSubcommandAndHelpCatalogSynchronizedWithLocalAPI(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("CAIRN_HOME", "")
+	for _, op := range localapi.Operations() {
+		sub, ok := lookupAgentSubcommand(op.Name)
+		if !ok {
+			t.Errorf("localapi operation %q is missing from agentSubcommands", op.Name)
+			continue
+		}
+		if sub.Operation != op.Name {
+			t.Errorf("localapi operation %q mapped to %q in agentSubcommands", op.Name, sub.Operation)
+		}
+	}
+	for name, sub := range agentSubcommands {
+		if _, ok := localapi.LookupOperation(sub.Operation); !ok {
+			t.Errorf("agent subcommand %q references unknown localapi operation %q", name, sub.Operation)
+		}
+		if _, isEvent := eventCommandOperations[name]; isEvent != isEventCommand(name) {
+			t.Errorf("eventCommandOperations[%q] = %v, isEventCommand = %v", name, isEvent, isEventCommand(name))
+		}
+		if sub.Help != nil {
+			got, err := run(context.Background(), []string{"agent", name, "--help"}, unreadHelpInput{})
+			if err != nil || strings.TrimSpace(fmt.Sprint(got)) == "" {
+				t.Errorf("offline help for %q failed: %v", name, err)
+			}
+		}
+	}
+	for name, topic := range agentJSONHelp {
+		opSpec, ok := localapi.LookupOperation(name)
+		if !ok {
+			t.Errorf("agentJSONHelp entry %q is not a registered localapi operation", name)
+			continue
+		}
+		if strings.TrimSpace(topic.Detail) == "" || strings.TrimSpace(topic.Example) == "" {
+			t.Errorf("agentJSONHelp entry %q has empty detail or example", name)
+		}
+		target := reflect.New(opSpec.RequestType).Interface()
+		dec := json.NewDecoder(strings.NewReader(topic.Example))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(target); err != nil {
+			t.Errorf("agentJSONHelp[%q] example %s does not decode into %s: %v", name, topic.Example, opSpec.RequestType, err)
+		}
+		var extra any
+		if err := dec.Decode(&extra); err != io.EOF {
+			t.Errorf("agentJSONHelp[%q] example has trailing tokens: %v", name, err)
 		}
 	}
 }

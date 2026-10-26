@@ -14,6 +14,206 @@ import (
 	"github.com/halbritt/cairn/localapi"
 )
 
+type agentSubcommandSpec struct {
+	Name          string
+	Operation     string
+	AcceptsArgs   bool
+	DistinctQuery bool
+	Help          func() (commandHelp, error)
+	Dispatch      func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error)
+}
+
+var eventCommandOperations = map[string]string{
+	"publish":         "event-publish",
+	"notice-flush":    "event-notice-flush",
+	"inbox":           "event-next",
+	"ack":             "event-complete",
+	"complete":        "event-complete",
+	"retry":           "event-retry",
+	"renew":           "event-renew",
+	"subscribe":       "event-subscribe",
+	"unsubscribe":     "event-subscribe",
+	"subscriptions":   "event-subscriptions",
+	"events":          "event-list",
+	"event-status":    "event-inspect",
+	"event-stats":     "event-metrics",
+	"response-group":  "event-group",
+	"response-groups": "event-groups",
+}
+
+var agentSubcommands map[string]agentSubcommandSpec
+
+func init() {
+	agentSubcommands = buildAgentSubcommandCatalog()
+}
+
+func lookupAgentSubcommand(name string) (agentSubcommandSpec, bool) {
+	spec, ok := agentSubcommands[name]
+	return spec, ok
+}
+
+func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
+	catalog := make(map[string]agentSubcommandSpec, len(localapi.Operations())+len(eventCommandOperations)+8)
+	for _, op := range localapi.Operations() {
+		name := op.Name
+		sub := agentSubcommandSpec{
+			Name:          name,
+			Operation:     name,
+			DistinctQuery: name == "compile" || name == "index" || name == "recompile",
+		}
+		if topic, ok := agentJSONHelp[name]; ok {
+			topic := topic
+			sub.Help = func() (commandHelp, error) {
+				return formatAgentJSONHelp(name, topic), nil
+			}
+		}
+		catalog[name] = sub
+	}
+	for cmd, backingOp := range eventCommandOperations {
+		cmd := cmd
+		catalog[cmd] = agentSubcommandSpec{
+			Name:        cmd,
+			Operation:   backingOp,
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return commandHelp(eventHelp), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				return eventCommand(ctx, cmd, args, input, client)
+			},
+		}
+	}
+	overrides := []agentSubcommandSpec{
+		{
+			Name:      "version",
+			Operation: "version",
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, _ []string, _ io.Reader) (any, error) {
+				var server localapi.VersionInfo
+				if err := client.Call(ctx, "version", struct{}{}, &server); err != nil {
+					return nil, err
+				}
+				serverProtocol, declared := server.ServerProtocol()
+				return struct {
+					Schema         string                 `json:"schema"`
+					Client         buildinfo.Info         `json:"client"`
+					Server         buildinfo.Info         `json:"server"`
+					ClientProtocol localapi.ProtocolRange `json:"client_protocol"`
+					ServerProtocol localapi.ProtocolRange `json:"server_protocol"`
+					Protocol       int                    `json:"protocol"`
+				}{"cairn.version/1", buildinfo.Read(), server.Info, localapi.Protocol, serverProtocol, localapi.Protocol.Effective(serverProtocol, declared)}, nil
+			},
+		},
+		{
+			Name:        "clients",
+			Operation:   "clients",
+			AcceptsArgs: true,
+			Help:        clientsOperationHelp,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, _ io.Reader) (any, error) {
+				return agentClients(ctx, client, args)
+			},
+		},
+		{
+			Name:        "evidence",
+			Operation:   "evidence",
+			AcceptsArgs: true,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				if len(args) > 0 {
+					req, err := evidenceFileRequest(args)
+					if err != nil {
+						return nil, err
+					}
+					var result json.RawMessage
+					if err := client.Call(ctx, "evidence", req, &result); err != nil {
+						return nil, err
+					}
+					return result, nil
+				}
+				return callAgentJSONOperation(ctx, client, agentSubcommandSpec{Name: "evidence", Operation: "evidence"}, input)
+			},
+		},
+		{
+			Name:        "remember",
+			Operation:   "create",
+			AcceptsArgs: true,
+			Help:        rememberOperationHelp,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				req, err := rememberRequest(args, input)
+				if err != nil {
+					return nil, err
+				}
+				var result json.RawMessage
+				if err := client.Call(ctx, "create", req, &result); err != nil {
+					return nil, err
+				}
+				return result, nil
+			},
+		},
+		{
+			Name:        "send",
+			Operation:   "create",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return commandHelp(sendHelp), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, session *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				return agentSend(ctx, client, session, args, input)
+			},
+		},
+		{
+			Name:        "run",
+			Operation:   "compile",
+			AcceptsArgs: true,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, _ io.Reader) (any, error) {
+				return runTask(ctx, client, args)
+			},
+		},
+		{
+			Name:        "start",
+			Operation:   "index",
+			AcceptsArgs: true,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, _ io.Reader) (any, error) {
+				return prepareAgentStart(ctx, client, args)
+			},
+		},
+		{
+			Name:        "search",
+			Operation:   "index",
+			AcceptsArgs: true,
+			Help:        searchOperationHelp,
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, socketPath, tokenPath string, args []string, input io.Reader) (any, error) {
+				return agentSearch(ctx, client, args, socketPath, tokenPath, input)
+			},
+		},
+		{
+			Name:        "pull",
+			Operation:   "expand",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return pullOperationHelp("pull"), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				if len(args) > 0 {
+					return agentPull(ctx, client, "pull", args)
+				}
+				return callAgentJSONOperation(ctx, client, agentSubcommandSpec{Name: "pull", Operation: "expand"}, input)
+			},
+		},
+		{
+			Name:        "pull-evidence",
+			Operation:   "expand-evidence",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return pullOperationHelp("pull-evidence"), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				if len(args) > 0 {
+					return agentPull(ctx, client, "pull-evidence", args)
+				}
+				return callAgentJSONOperation(ctx, client, agentSubcommandSpec{Name: "pull-evidence", Operation: "expand-evidence"}, input)
+			},
+		},
+	}
+	for _, sub := range overrides {
+		if _, ok := localapi.LookupOperation(sub.Operation); !ok {
+			panic("agent subcommand " + sub.Name + " references unknown localapi operation " + sub.Operation)
+		}
+		catalog[sub.Name] = sub
+	}
+	return catalog
+}
+
 func agentRequest(ctx context.Context, args []string, input io.Reader) (any, error) {
 	f := flags("agent")
 	tokenFile := f.String("token-file", "", "owner-only API token file")
@@ -30,11 +230,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		if f.NArg() != 2 {
 			return nil, invalid("operation help takes no additional arguments")
 		}
-		help, err := agentOperationHelp(f.Arg(0))
-		if err != nil {
-			return nil, err
-		}
-		return help, nil
+		return agentOperationHelp(f.Arg(0))
 	}
 	provided := map[string]bool{}
 	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })
@@ -76,18 +272,12 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := isEventCommand(operation) || operation == "clients" || operation == "evidence" || operation == "remember" || operation == "send" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
-	if !commandArgs && f.NArg() != 1 {
-		return nil, invalid("agent operation requires one JSON request on stdin")
-	}
-	switch operation {
-	case "event-watch":
-	case "agent-register", "agent-context", "agent-heartbeat", "agent-leave", "agent-directory", "agent-resolve", "session-inbox-ready", "session-inbox-pending", "session-inbox-claim", "session-inbox-advance", "session-inbox-reconcile", "session-inbox-control", "session-delivery-observe", "session-tool-capture", "session-tool-stop":
-	case "worker-register", "worker-heartbeat", "worker-health", "worker-list", "pool-list", "wake-claim", "wake-attempts", "wake-control", "wake-change", "event-list", "event-inspect", "event-metrics", "event-publish", "event-notice-flush", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "notice-flush", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "event-group", "event-groups", "response-group", "response-groups":
-	case "version", "clients", "remember", "send", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "set-sections", "cite", "assessments", "assessments-page", "history", "recompile", "explain-page":
-	case "handoff-request-status", "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "recall-observation", "capture-observation", "capture-observations", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
-	default:
+	sub, ok := lookupAgentSubcommand(operation)
+	if !ok {
 		return nil, invalid("unknown agent operation")
+	}
+	if !sub.AcceptsArgs && f.NArg() != 1 {
+		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	client, err := localapi.NewClient(socketPath, tokenPath)
 	if err != nil {
@@ -98,73 +288,14 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	if session != nil {
 		client = client.ForAgentSession(*session)
 	}
-	if isEventCommand(operation) {
-		return eventCommand(ctx, operation, f.Args()[1:], input, client)
+	if sub.Dispatch != nil {
+		return sub.Dispatch(ctx, client, session, socketPath, tokenPath, f.Args()[1:], input)
 	}
-	if operation == "version" {
-		var server localapi.VersionInfo
-		if err := client.Call(ctx, "version", struct{}{}, &server); err != nil {
-			return nil, err
-		}
-		// Build identity stays diagnostic; the protocol ranges decide compatibility.
-		// A server without a protocol object is the legacy protocol 1.
-		serverProtocol, declared := server.ServerProtocol()
-		return struct {
-			Schema         string                 `json:"schema"`
-			Client         buildinfo.Info         `json:"client"`
-			Server         buildinfo.Info         `json:"server"`
-			ClientProtocol localapi.ProtocolRange `json:"client_protocol"`
-			ServerProtocol localapi.ProtocolRange `json:"server_protocol"`
-			Protocol       int                    `json:"protocol"`
-		}{"cairn.version/1", buildinfo.Read(), server.Info, localapi.Protocol, serverProtocol, localapi.Protocol.Effective(serverProtocol, declared)}, nil
-	}
-	if operation == "clients" {
-		return agentClients(ctx, client, f.Args()[1:])
-	}
-	if operation == "evidence" && f.NArg() > 1 {
-		req, err := evidenceFileRequest(f.Args()[1:])
-		if err != nil {
-			return nil, err
-		}
-		var result json.RawMessage
-		if err := client.Call(ctx, "evidence", req, &result); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-	if operation == "remember" {
-		req, err := rememberRequest(f.Args()[1:], input)
-		if err != nil {
-			return nil, err
-		}
-		var result json.RawMessage
-		if err := client.Call(ctx, "create", req, &result); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-	if operation == "send" {
-		return agentSend(ctx, client, session, f.Args()[1:], input)
-	}
-	if operation == "run" {
-		return runTask(ctx, client, f.Args()[1:])
-	}
-	if operation == "start" {
-		return prepareAgentStart(ctx, client, f.Args()[1:])
-	}
-	if operation == "search" {
-		return agentSearch(ctx, client, f.Args()[1:], socketPath, tokenPath, input)
-	}
-	if operation == "pull" || operation == "pull-evidence" {
-		if f.NArg() > 1 {
-			return agentPull(ctx, client, operation, f.Args()[1:])
-		}
-		if operation == "pull" {
-			operation = "expand"
-		} else {
-			operation = "expand-evidence"
-		}
-	}
+	return callAgentJSONOperation(ctx, client, sub, input)
+}
+
+func callAgentJSONOperation(ctx context.Context, client *localapi.Client, sub agentSubcommandSpec, input io.Reader) (any, error) {
+	operation := sub.Operation
 	limit := localapi.RequestBodyLimit(operation)
 	body, err := io.ReadAll(io.LimitReader(input, limit+1))
 	if err != nil {
@@ -179,7 +310,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	// The explicit JSON compile/replay commands need the same mixed-version
 	// guard as search. Legacy requests gain no additional version lookup.
 	distinct := false
-	if operation == "compile" || operation == "index" || operation == "recompile" {
+	if sub.DistinctQuery {
 		var fields struct {
 			SemanticQuery string `json:"semantic_query"`
 		}
