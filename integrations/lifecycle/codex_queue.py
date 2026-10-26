@@ -1,10 +1,47 @@
 """Queue a wakeup on an already loaded Codex thread without touching its TUI."""
+import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import socket
 import struct
+import sys
 import time
+
+
+def _load_sibling_module(name):
+    if name in sys.modules:
+        mod = sys.modules[name]
+        if mod is None:
+            raise ImportError(f"import of {name} halted; None in sys.modules")
+        return mod
+    qualified = f"integrations.lifecycle.{name}"
+    if qualified in sys.modules:
+        mod = sys.modules[qualified]
+        if mod is None:
+            raise ImportError(f"import of {qualified} halted; None in sys.modules")
+        return mod
+    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    candidates = [
+        here / f"{name}.py",
+        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle") / f"{name}.py",
+        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py",
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location(name, path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+                return module
+        except OSError:
+            continue
+    return importlib.import_module(name)
+
+
+_transport = _load_sibling_module("unix_peer_transport")
 
 
 class QueueError(Exception):
@@ -25,33 +62,13 @@ class QueueRefused(QueueError):
 
 BUSY_CODE = -32600
 BUSY_MESSAGE = 'thread already has an active or pending turn'
-MAX_PEER_BYTES = 1024 * 1024
+MAX_PEER_BYTES = _transport.MAX_PEER_BYTES
 
 
-class _BoundedPeerSocket:
-    """Limit reads by the supported preconnected-socket WebSocket path.
-
-    The WebSocket client may assemble a complete frame before recv() returns.
-    Capping its underlying socket reads stops that assembly at the byte budget,
-    including fragmented frames and unsolicited server notifications.
-    """
+class _BoundedPeerSocket(_transport.BoundedPeerSocket):
+    """Limit reads by the supported preconnected-socket WebSocket path."""
     def __init__(self, transport):
-        self.transport = transport
-        self.received = 0
-
-    def recv(self, size, *args, **kwargs):
-        if self.received >= MAX_PEER_BYTES:
-            raise QueueError('native queue response exceeded byte limit')
-        chunk = self.transport.recv(min(size, MAX_PEER_BYTES + 1 - self.received), *args, **kwargs)
-        self.received += len(chunk)
-        if self.received > MAX_PEER_BYTES:
-            raise QueueError('native queue response exceeded byte limit')
-        return chunk
-
-    def __getattr__(self, name):
-        if name.startswith('recv') or name == 'makefile':
-            raise QueueError('native queue client requested an unbounded socket read')
-        return getattr(self.transport, name)
+        super().__init__(transport, max_bytes=MAX_PEER_BYTES, error_cls=QueueError)
 
 
 def _busy(error):
@@ -99,53 +116,26 @@ class _Rpc:
 
 
 def _discard(transport, connection):
-    try:
-        if connection is not None:
-            connection.close(timeout=0)
-        else:
-            transport.close()
-    except OSError:
-        pass
+    _transport.close_quietly(transport, connection)
 
 
 def _open(endpoint, process, owner='process'):
-    """Connect and verify the endpoint owner before anything is sent.
-
-    Returns (connection, websocket module, peer identity). owner='process'
-    pins the socket to the observed app-server process. owner='uid' serves a
-    TUI sharing an app-server via --remote: the socket peer must belong to
-    this user, and the observed TUI process must still carry its recorded
-    identity. The returned peer identity is the process actually owning the
-    socket — the app-server — which control tooling must pin its operations
-    to; it is distinct from the observed TUI in the uid mode.
-    """
+    """Connect and verify the endpoint owner before anything is sent."""
     try:
         import websocket
     except ImportError as exc:
         raise QueueUnavailable('native Codex queue requires python3-websocket') from exc
-    transport = socket.socket(socket.AF_UNIX)
+    transport = None
     connection = None
     try:
-        transport.settimeout(4)
-        transport.connect(endpoint)
-        peer, peer_uid, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-        checked = peer
-        identity = dict(pid=peer, start=0, boot='')
-        if owner == 'process':
-            if peer != process['pid']:
-                raise QueueUnavailable('native socket belongs to a different process')
-        else:
-            if peer_uid != os.geteuid():
-                raise QueueUnavailable('native socket belongs to another user')
-            checked = process['pid']
-        start = int(Path(f'/proc/{checked}/stat').read_text().rsplit(')', 1)[1].split()[19])
-        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        if start != process['start'] or boot != process['boot']:
-            raise QueueUnavailable('native process identity has changed')
-        peer_boot = boot if owner == 'process' else Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        peer_start = start if owner == 'process' else int(
-            Path(f'/proc/{peer}/stat').read_text().rsplit(')', 1)[1].split()[19])
-        identity = dict(pid=peer, start=peer_start, boot=peer_boot)
+        transport, identity = _transport.open_verified_socket(
+            endpoint,
+            process,
+            owner=owner,
+            timeout=4,
+            unavailable_cls=QueueUnavailable,
+            return_identity=True,
+        )
         connection = websocket.create_connection('ws://localhost', socket=_BoundedPeerSocket(transport), timeout=4)
         return connection, websocket, identity
     except QueueUnavailable:

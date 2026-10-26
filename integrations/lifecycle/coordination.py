@@ -43,11 +43,63 @@ WATCH_INTERVAL = 30  # seconds between full presence, renewal and wake cycles
 CANCEL_POLL_INTERVAL = 2  # seconds between cancellation-only passes while one is pending
 
 
+def _load_sibling_module(name):
+    if name in sys.modules:
+        mod = sys.modules[name]
+        if mod is None:
+            raise ImportError(f"import of {name} halted; None in sys.modules")
+        return mod
+    qualified = f"integrations.lifecycle.{name}"
+    if qualified in sys.modules:
+        mod = sys.modules[qualified]
+        if mod is None:
+            raise ImportError(f"import of {qualified} halted; None in sys.modules")
+        return mod
+    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    candidates = [
+        here / f"{name}.py",
+        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle") / f"{name}.py",
+        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py",
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location(name, path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+                return module
+        except OSError:
+            continue
+    return importlib.util.find_spec(name) and __import__(name)
+
+
+_unix_peer_transport = _load_sibling_module("unix_peer_transport")
+_wake_transport = _load_sibling_module("wake_transport")
+
+
+class _CoordNamespace:
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+_COORD_NS = _CoordNamespace()
+
+WakeTransport = _wake_transport.WakeTransport
+CodexQueueWakeTransport = _wake_transport.CodexQueueWakeTransport
+ClaudeChannelWakeTransport = _wake_transport.ClaudeChannelWakeTransport
+OpenCodeQueueWakeTransport = _wake_transport.OpenCodeQueueWakeTransport
+HermesQueueWakeTransport = _wake_transport.HermesQueueWakeTransport
+TerminalWakeTransport = _wake_transport.TerminalWakeTransport
+get_wake_transport = _wake_transport.get_wake_transport
+get_harness_wake_transport = _wake_transport.get_harness_wake_transport
+
+
 def process_reference(pid):
-    raw = Path(f"/proc/{pid}/stat").read_text()
-    fields = raw.rsplit(")", 1)[1].split()
-    return dict(pid=pid, start=int(fields[19]), state=fields[0], parent=int(fields[1]),
-                boot=Path("/proc/sys/kernel/random/boot_id").read_text().strip())
+    return _unix_peer_transport.process_reference(pid)
 
 
 def process_alive(ref):
@@ -822,9 +874,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
             'retained native queue item is missing; prior admission is unknown; reconciliation required',
             'wake_retained' if prior.get('delivery_id') == delivery else 'unknown', cycle)
     if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
-        if (endpoint and prior.get('transport') == 'codex-queue' and prior.get('status') == 'queued' and
-                prior.get('queued_submission_id') and prior.get('endpoint') == endpoint['endpoint'] and
-                prior.get('native_id') == agent['native_session_id']):
+        if _wake_transport.CODEX_WAKE_TRANSPORT.can_resume_queued(prior, endpoint, agent):
             return dict(wake=prior, process=state['process'])  # Retry only this retained start; never another add.
         # Submitted or uncertain; only native handling permits a new nudge.
         return note_wake_refusal(config, state, delivery,
@@ -832,102 +882,27 @@ def prepare_idle_wake(config, state, path, cycle=None):
             "only native handling of that wake permits another",
             'wake_retained' if prior.get('status') in ('submitted', 'uncertain', 'queued', 'refused') else 'unknown', cycle)
     request_id = ready.get('request_id') or str(uuid.uuid4())
-    if endpoint:
-        state.pop('wake_refusal', None)
-        note_codex_error_wake(config, state, delivery)
-        state['idle_wake'] = dict(delivery_id=delivery, client_id=delivery, request_id=request_id,
-            session=session_ref(agent), transport='codex-queue', endpoint=endpoint['endpoint'],
-            owner=endpoint['owner'], native_id=agent['native_session_id'],
-            status='uncertain', attempted_at=time.time())
-        event_id = ready.get('event_id')
-        if isinstance(event_id, str) and re.fullmatch('[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', event_id):
-            state['idle_wake']['event_id'] = event_id
-        write_state(path, state)
-        return dict(wake=state['idle_wake'], process=state['process'])
-    channel = claude_channel_endpoint(config, state['process'])
-    if channel:
-        state.pop('wake_refusal', None)
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
-            transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
-            parent=channel['parent'], native_id=agent['native_session_id'],
-            status='uncertain', attempted_at=time.time())
-        event_id = ready.get('event_id')
-        if isinstance(event_id, str) and re.fullmatch('[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', event_id):
-            state['idle_wake']['event_id'] = event_id
-        write_state(path, state)
-        return dict(wake=state['idle_wake'], process=state['process'])
-    opencode = opencode_idle_endpoint(config, state['process'], agent['native_session_id'], state)
-    if opencode:
-        state.pop('wake_refusal', None)
-        cancel_capable = False
-        if config.get('opencode_cancel_enabled') and opencode_capture_available():
-            try:
-                import opencode_queue
-            except ImportError:
-                pass
-            else:
-                try:
-                    cancel_capable = (opencode_queue.supports_cancel(opencode, state['process'], agent['native_session_id']) and
-                                      opencode_queue.supports_tool_capture(opencode, state['process'], agent['native_session_id']))
-                except opencode_queue.QueueUnavailable:
-                    pass
-        # The delivery UUID is stable across a BUSY retry and is the exact
-        # requestID supplied to OpenCode's idempotent native admission.
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=delivery, session=session_ref(agent),
-            transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
-            cancel_capable=cancel_capable,
-            status='uncertain', attempted_at=time.time())
-        write_state(path, state)
-        return dict(wake=state['idle_wake'], process=state['process'])
-    hermes = hermes_queue_endpoint(config, state['process'])
-    if hermes:
-        state.pop('wake_refusal', None)
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
-            transport='hermes-queue', endpoint=hermes, native_id=agent['native_session_id'],
-            status='uncertain', attempted_at=time.time())
-        write_state(path, state)
-        return dict(wake=state['idle_wake'], process=state['process'])
-    if config.get('claude_channel_dir') or config.get('harness') in ('codex', 'claude', 'opencode', 'hermes'):
+    coord_mod = _COORD_NS
+    prepared_native = _wake_transport.prepare_native_wake(
+        coord_mod, config, state, path, agent, delivery, request_id, ready, codex_endpoint=endpoint
+    )
+    if prepared_native is not None:
+        return prepared_native
+    if config.get('claude_channel_dir') or config.get('harness') in _wake_transport.NATIVE_WAKE_HARNESSES:
         # An explicitly configured native channel or known native harness
         # never falls back to the terminal route when its registry/socket is
         # stale, malformed or missing.
-        return note_wake_refusal(config, state, delivery, refusal or {
-            'claude': 'no live channel bridge registry for this process; its cairn-events MCP server is not running',
-            'codex': 'no native Codex queue endpoint (explicit Unix listener) for this process',
-            'opencode': 'no verified OpenCode prompt_idle bridge for this process; owner prompts remain eligible',
-            'hermes': 'no Hermes queue endpoint for this process',
-        }.get(config['harness'], 'no native wake transport for this process'),
-            refusal_condition or 'native_transport_unavailable', cycle)
-    environment = herdr_environment(state['process'])
-    if environment is None:
-        return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment',
-                                'terminal_host_unavailable', cycle)
-    candidates = herdr_call(config, environment, 'agent', 'list')['agents']
-    identified = [h for h in candidates if host_identifies_session(config, state, h, environment)]
-    matches = [h for h in identified if host_eligible(h)]
-    if len(matches) != 1:
-        parent = agy_subagent_parent(config, state, path, candidates, environment) if not identified else None
-        if parent:
-            return note_wake_refusal(config, state, delivery,
-                f"Agy subagent conversation inside {parent['display_name']}'s process (native "
-                f"{parent['native_session_id']}); it runs only when its parent messages it, so it has no wake "
-                "transport", 'native_transport_unavailable', cycle)
-        reason, condition = terminal_target_diagnosis(identified, matches)
-        return note_wake_refusal(config, state, delivery, reason, condition, cycle)
-    host = matches[0]
-    current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
-    keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
-    if any(current.get(k) != host.get(k) for k in keys) or not host_matches(config, state, current, environment):
-        return None
-    # Revalidate the Cairn execution and delivery after host observations. This
-    # remains a hint, not a lease; the prompt contains no source/work payload.
-    if call(config, 'session-inbox-ready', session_ref(agent)).get('delivery_id') != delivery:
-        return None
-    state.pop('wake_refusal', None)
-    state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
-        target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
-    write_state(path, state)
-    return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
+        return note_wake_refusal(
+            config,
+            state,
+            delivery,
+            refusal or _wake_transport.unavailable_wake_reason(config.get('harness')),
+            refusal_condition or 'native_transport_unavailable',
+            cycle,
+        )
+    return _wake_transport.TERMINAL_WAKE_TRANSPORT.prepare_terminal(
+        coord_mod, config, state, path, agent, delivery, request_id, cycle
+    )
 
 
 def agy_subagent_parent(config, state, path, candidates, environment):
@@ -1366,15 +1341,7 @@ def opencode_wake_binding(state, event):
 
 
 def wake_binding(config, state, event, joined=False):
-    if config['harness'] == 'codex':
-        return queued_wake_binding(state, event)
-    if config['harness'] == 'claude':
-        return channel_wake_binding(state, event, joined)
-    if config['harness'] == 'hermes':
-        return hermes_wake_binding(state, event)
-    if config['harness'] == 'opencode':
-        return opencode_wake_binding(state, event)
-    return {}
+    return _wake_transport.bind_wake_event(_COORD_NS, config, state, event, joined=joined)
 
 
 def submit_idle_wake(config, path, prepared):
@@ -1383,126 +1350,13 @@ def submit_idle_wake(config, path, prepared):
     if not process_alive(prepared['process']):
         return
     text = wake_message(wake)
-    queued_id = None
-    started = None
-    start_outcome = None
-    if wake.get('transport') == 'codex-queue':
-        try:
-            queue = queue_helper()
-        except CoordinationError as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            if wake.get('queued_submission_id'):
-                return  # A retained submission exists; retry its start once the helper returns.
-            drop_idle_wake(path, wake)  # Nothing was sent; a later cycle retries cleanly.
-            return
-        if wake.get('status') == 'queued' and wake.get('queued_submission_id'):
-            # The add already committed; only this exact pending submission's start retries.
-            try:
-                start_outcome = queue.start_outcome(wake['endpoint'], prepared['process'], wake['native_id'],
-                                                    wake['queued_submission_id'], owner=wake.get('owner', 'process'))
-            except queue.QueueUnavailable as exc:
-                print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-                start_outcome = 'unavailable'
-            started = start_outcome == 'started'
-        else:
-            try:
-                queued_id, started = queue.enqueue(wake['endpoint'], prepared['process'],
-                                                   wake['native_id'], text, wake['delivery_id'],
-                                                   owner=wake.get('owner', 'process'))
-            except queue.QueueUnavailable as exc:
-                # Nothing was sent; drop the marker so a later cycle can retry the add.
-                print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-                drop_idle_wake(path, wake)
-                return
-            except queue.QueueError as exc:
-                raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
-    elif wake.get('transport') == 'claude-channel':
-        try:
-            channel = channel_helper()
-        except CoordinationError as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            drop_idle_wake(path, wake)  # Nothing was sent; a later cycle retries cleanly.
-            return
-        meta = dict(native_session_id=wake['native_id'], agent_id=wake['session']['agent_id'],
-                    execution_id=wake['session']['execution_id'], delivery_id=wake['delivery_id'])
-        try:
-            channel.write(wake['endpoint'], wake['bridge'], wake['parent'], text, meta)
-        except channel.ChannelUnavailable as exc:
-            # Proven pre-send refusal; never a terminal prompt fallback.
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            drop_idle_wake(path, wake)
-            return
-        except channel.ChannelError as exc:
-            # Transport written is not processed: retain the uncertain marker,
-            # never resend and never fall back to terminal submission.
-            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
-        started = True
-    elif wake.get('transport') == 'opencode-queue':
-        try:
-            import opencode_queue
-        except ImportError as exc:
-            raise CoordinationError('WAKE_UNAVAILABLE', f'opencode queue client is unavailable: {exc}') from exc
-        try:
-            queued_id, started = opencode_queue.enqueue(wake['endpoint'], prepared['process'],
-                                                        wake['native_id'], text, wake['delivery_id'],
-                                                        request_id=wake['request_id'])
-        except opencode_queue.QueueUnsupported as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            with session_lock(path):
-                state = json.loads(path.read_text())
-                if state.get('idle_wake') == wake:
-                    state.pop('idle_wake')
-                    state['opencode_unsupported'] = {key: prepared['process'].get(key)
-                                                     for key in ('pid', 'start', 'boot')}
-                    write_state(path, state)
-            return
-        except opencode_queue.QueueUnavailable as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            drop_idle_wake(path, wake)
-            return
-        except opencode_queue.QueueRefused as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            with session_lock(path):
-                state = json.loads(path.read_text())
-                if state.get('idle_wake') == wake:
-                    state['idle_wake']['status'] = 'refused'
-                    state['idle_wake']['refusal'] = str(exc)
-                    write_state(path, state)
-            return
-        except opencode_queue.QueueAlreadyAdmitted as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            with session_lock(path):
-                state = json.loads(path.read_text())
-                if state.get('idle_wake') == wake:
-                    state.pop('idle_wake')
-                    state['opencode_replay'] = dict(delivery_id=wake['delivery_id'], session=wake['session'])
-                    write_state(path, state)
-            return
-        except opencode_queue.QueueError as exc:
-            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
-    elif wake.get('transport') == 'hermes-queue':
-        try:
-            import hermes_queue
-        except ImportError as exc:
-            raise CoordinationError('WAKE_UNAVAILABLE', f'hermes queue client is unavailable: {exc}') from exc
-        try:
-            queued_id, started = hermes_queue.enqueue(wake['endpoint'], prepared['process'],
-                                                      wake['native_id'], text, wake['delivery_id'],
-                                                      request_id=wake.get('request_id'),
-                                                      delivery_id=wake['delivery_id'])
-        except hermes_queue.QueueUnavailable as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            drop_idle_wake(path, wake)
-            return
-        except hermes_queue.QueueError as exc:
-            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
-    else:
-        response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
-        confirmed = response.get('agent', {})
-        if (response.get('type') != 'agent_prompted' or
-                any(confirmed.get(k) != wake['target'][k] for k in ('pane_id', 'terminal_id'))):
-            raise CoordinationError('WAKE_UNCERTAIN', 'host did not confirm prompt submission; no automatic resend')
-        started = True
+    adapter = _wake_transport.get_wake_transport(wake.get('transport'))
+    outcome = adapter.submit(_COORD_NS, config, path, prepared, wake, text)
+    if outcome is None:
+        return
+    queued_id = outcome['queued_id']
+    started = outcome['started']
+    start_outcome = outcome['start_outcome']
     try:
         with session_lock(path):
             state = json.loads(path.read_text())

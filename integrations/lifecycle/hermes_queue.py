@@ -1,9 +1,46 @@
 """Queue a wakeup on an already running Hermes session without touching its composer or interrupting a busy turn."""
+import importlib
+import importlib.util
 import json
 from pathlib import Path
 import socket
 import struct
+import sys
 import time
+
+
+def _load_sibling_module(name):
+    if name in sys.modules:
+        mod = sys.modules[name]
+        if mod is None:
+            raise ImportError(f"import of {name} halted; None in sys.modules")
+        return mod
+    qualified = f"integrations.lifecycle.{name}"
+    if qualified in sys.modules:
+        mod = sys.modules[qualified]
+        if mod is None:
+            raise ImportError(f"import of {qualified} halted; None in sys.modules")
+        return mod
+    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    candidates = [
+        here / f"{name}.py",
+        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle") / f"{name}.py",
+        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py",
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location(name, path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+                return module
+        except OSError:
+            continue
+    return importlib.import_module(name)
+
+
+_transport = _load_sibling_module("unix_peer_transport")
 
 
 class QueueError(Exception):
@@ -19,32 +56,17 @@ class RequestMismatchError(QueueError):
 
 
 def _discard(transport):
-    try:
-        transport.close()
-    except OSError:
-        pass
+    _transport.close_quietly(transport)
 
 
 def _open(endpoint, process):
     """Connect and verify the exact native process before anything is sent."""
-    transport = socket.socket(socket.AF_UNIX)
-    try:
-        transport.settimeout(4)
-        transport.connect(endpoint)
-        peer, _, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-        if peer != process['pid']:
-            raise QueueUnavailable('native socket belongs to a different process')
-        start = int(Path(f'/proc/{peer}/stat').read_text().rsplit(')', 1)[1].split()[19])
-        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        if start != process['start'] or boot != process['boot']:
-            raise QueueUnavailable('native process identity has changed')
-        return transport
-    except QueueUnavailable:
-        _discard(transport)
-        raise
-    except OSError as exc:
-        _discard(transport)
-        raise QueueUnavailable('native queue endpoint is unavailable') from exc
+    return _transport.open_verified_socket(
+        endpoint,
+        process,
+        timeout=4,
+        unavailable_cls=QueueUnavailable,
+    )
 
 
 def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=None, request_id=None, delivery_id=None):
@@ -71,14 +93,12 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
             'method': 'session/queue_message',
             'params': params,
         }
-        payload = (json.dumps(req) + '\n').encode('utf-8')
-        transport.sendall(payload)
-
-        file_obj = transport.makefile('r', encoding='utf-8')
-        line = file_obj.readline()
-        if not line:
-            raise QueueError('native queue outcome is uncertain; Hermes closed connection without response; do not automatically resend')
-        msg = json.loads(line)
+        msg = _transport.exchange_json_line(
+            transport,
+            req,
+            eof_cls=QueueError,
+            eof_message='native queue outcome is uncertain; Hermes closed connection without response; do not automatically resend',
+        )
         if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
             raise QueueError('native queue outcome is uncertain; invalid bridge response identity')
         if 'error' in msg:
@@ -148,12 +168,12 @@ def abort(endpoint, process, native_id, expected_request_id=None, expected_turn_
             'method': 'session/abort',
             'params': params,
         }
-        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
-        file_obj = transport.makefile('r', encoding='utf-8')
-        line = file_obj.readline()
-        if not line:
-            raise QueueError('native Hermes closed connection during abort; outcome uncertain; do not resend')
-        msg = json.loads(line)
+        msg = _transport.exchange_json_line(
+            transport,
+            req,
+            eof_cls=QueueError,
+            eof_message='native Hermes closed connection during abort; outcome uncertain; do not resend',
+        )
         if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
             raise QueueError('native Hermes abort outcome is uncertain; invalid bridge response identity')
         if 'error' in msg:
@@ -200,12 +220,12 @@ def status(endpoint, process, native_id):
                 'session_id': native_id,
             }
         }
-        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
-        file_obj = transport.makefile('r', encoding='utf-8')
-        line = file_obj.readline()
-        if not line:
-            raise QueueError('native Hermes closed connection without response')
-        msg = json.loads(line)
+        msg = _transport.exchange_json_line(
+            transport,
+            req,
+            eof_cls=QueueError,
+            eof_message='native Hermes closed connection without response',
+        )
         if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
             raise QueueError('invalid bridge status response identity')
         if 'error' in msg:
@@ -231,12 +251,12 @@ def tools_status(endpoint, process, native_id, tool_ids=None):
                 'tool_ids': tool_ids or [],
             }
         }
-        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
-        file_obj = transport.makefile('r', encoding='utf-8')
-        line = file_obj.readline()
-        if not line:
-            raise QueueError('native Hermes closed connection without response')
-        msg = json.loads(line)
+        msg = _transport.exchange_json_line(
+            transport,
+            req,
+            eof_cls=QueueError,
+            eof_message='native Hermes closed connection without response',
+        )
         if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
             raise QueueError('invalid bridge tools_status response identity')
         if 'error' in msg:
