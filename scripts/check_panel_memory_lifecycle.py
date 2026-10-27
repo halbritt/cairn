@@ -5,12 +5,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -22,20 +22,10 @@ def require(condition, message):
 
 def call(binary, env, socket, token, operation, *, payload=None, args=(),
          expected="OK"):
-    command = [str(binary), "agent", "--socket", str(socket),
-               "--token-file", str(token), operation, *args]
-    result = subprocess.run(command,
-                            input=json.dumps(payload) if payload is not None else None,
-                            text=True, capture_output=True, env=env, timeout=20)
-    require(len(result.stdout) < 1_000_000 and len(result.stderr) < 100_000,
-            f"{operation}: response exceeds bound")
-    envelope = json.loads(result.stdout, object_pairs_hook=panel.pairs_unique)
-    require(envelope.get("schema") == "cairn.response/1"
-            and envelope.get("status") == expected
-            and envelope.get("ok") is (expected == "OK")
-            and (result.returncode == 0) is (expected == "OK"),
-            f"{operation}: got {envelope.get('status')}, expected {expected}")
-    return envelope.get("data")
+    result = disposable_host.run_envelope(
+        [binary, "agent", "--socket", socket, "--token-file", token, operation, *args],
+        payload, env=env, expected=expected, timeout=20, label=operation)
+    return result if expected == "OK" else result.get("data")
 
 
 def fixture_case(fixture, case_id, names, transitions):
@@ -80,23 +70,8 @@ def entry_for(search, record, source, *, version):
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_memory_lifecycle sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    count = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c",
-                            "SELECT count(*) FROM cairn.memory_record"],
-                           text=True, capture_output=True, timeout=10)
-    require(count.returncode == 0 and count.stdout.strip() == "0",
-            "memory panel database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     fixture, fixture_hash = panel.read_fixture()
     trail, cairn = fixture_case(fixture, "wrong_project_memory",
@@ -130,31 +105,14 @@ def check(binary):
             and "defer routine notices until the active task ends" in new_owner["body"],
             "panel source values no longer cover the frozen distinction")
 
-    home = root / "panel-memory-lifecycle-home"
-    home.mkdir(mode=0o700)
-    token_value = secrets.token_urlsafe(32)
-    token = home / "agent.token"
-    token.write_text(token_value, encoding="utf-8")
-    token.chmod(0o600)
-    principal = f"agent/panel-memory-{uuid.uuid4()}"
-    identities = home / "identities.json"
-    identities.write_text(json.dumps([{
-        "token_sha256": hashlib.sha256(token_value.encode()).hexdigest(),
-        "principal": principal, "repo": trail["scope"]["repo"],
-        "role": "agent", "destination": "hosted",
-    }]), encoding="utf-8")
-    identities.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=trail["scope"]["repo"], database="cairn_panel_memory_lifecycle",
+        home=root / "panel-memory-lifecycle-home", roles=("agent",),
+        principals={"agent": f"agent/panel-memory-{uuid.uuid4()}"})
+    home, env, socket, dsn = host.home, host.env, host.socket, host.dsn
+    token, principal = host.token("agent"), host.principal("agent")
     try:
-        socket = home / "api.sock"
-        deadline = time.monotonic() + 10
-        while not socket.exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK(socket.stat().st_mode), "local API socket missing")
+        host.require_fresh("memory_record", message="memory panel database is not fresh")
 
         def agent(operation, *, payload=None, args=(), expected="OK"):
             return call(binary, env, socket, token, operation, payload=payload,
@@ -243,21 +201,11 @@ def check(binary):
             "task_outcome": "unassessed",
         }, sort_keys=True))
     finally:
-        if server.poll() is None:
-            server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 def count_records(dsn):
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c",
-                             "SELECT count(*) FROM cairn.memory_record"],
-                            text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0, "record count query failed")
-    return int(result.stdout.strip())
+    return int(disposable_host.run_sql(dsn, "SELECT count(*) FROM cairn.memory_record"))
 
 
 if __name__ == "__main__":

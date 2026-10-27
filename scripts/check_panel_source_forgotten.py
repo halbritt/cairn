@@ -9,12 +9,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -26,24 +26,16 @@ def require(value, message):
 
 def invoke(binary, env, command, body=None, args=(), *, status="OK", token=None,
            socket=None, session=None, forbidden=None):
-    argv = [str(binary), command]
+    argv = [binary, command]
     if token is not None:
         argv += ["--socket", str(socket), "--token-file", str(token)]
         if session is not None:
             argv += ["--agent-id", session["agent_id"],
                      "--execution-id", session["execution_id"]]
     argv += list(args)
-    result = subprocess.run(argv, input=json.dumps(body) if body is not None else None,
-                            text=True, capture_output=True, env=env, timeout=20)
-    require(len(result.stdout) < 1_000_000 and len(result.stderr) < 100_000,
-            "API response too large")
-    if forbidden is not None:
-        require(forbidden not in result.stdout and forbidden not in result.stderr,
-                "forgotten body disclosed in response")
-    envelope = json.loads(result.stdout)
-    require(envelope.get("status") == status and (result.returncode == 0) == (status == "OK"),
-            f"{command} returned {envelope.get('status')}, expected {status}")
-    return envelope.get("data")
+    result = disposable_host.run_envelope(argv, body, env=env, expected=status, timeout=20,
+                                          forbidden=forbidden, label=command)
+    return result if status == "OK" else result.get("data")
 
 
 def agent(binary, env, home, role, operation, body, *, status="OK", forbidden=None):
@@ -53,28 +45,8 @@ def agent(binary, env, home, role, operation, body, *, status="OK", forbidden=No
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_source_forgotten sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    def count(table):
-        require(table in ("agent_event", "agent_session", "memory_record"), "invalid count table")
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c",
-                                 f"SELECT count(*) FROM cairn.{table}"],
-                                text=True, capture_output=True, timeout=10)
-        require(result.returncode == 0, "disposable SQL count failed")
-        return result.stdout.strip()
-    require(all(count(table) == "0" for table in
-                ("agent_event", "agent_session", "memory_record")),
-            "source-forget database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     fixture, fixture_hash = panel.read_fixture()
     cases = [row for row in fixture["cases"] if row["id"] == "source_forgotten_before_read"]
@@ -89,31 +61,15 @@ def check(binary):
         "source-loss fixture setup changed")
     source_body = row["setup"]["events"][0]["body"]
     repo = fixture["event_source_defaults"]["scope"]["repo"]
-    home = root / "panel-source-forgotten-home"
-    home.mkdir(mode=0o700)
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        path = home / f"{role}.token"
-        path.write_text(token, encoding="utf-8")
-        path.chmod(0o600)
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": f"agent/panel-forget-{role}-{uuid.uuid4()}",
-                           "repo": repo, "role": "agent", "destination": "hosted"})
-    identities_path = home / "identities.json"
-    identities_path.write_text(json.dumps(identities), encoding="utf-8")
-    identities_path.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_panel_source_forgotten",
+        home=root / "panel-source-forgotten-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/panel-forget-{role}-{uuid.uuid4()}")
+    home, env = host.home, host.env
+    identities = [dict(principal=host.principal(role)) for role in host.roles]
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode),
-                "local API socket missing")
+        host.require_fresh("agent_event", "agent_session", "memory_record",
+                           message="source-forget database is not fresh")
         for role in ("sender", "worker"):
             agent(binary, env, home, role, "version", {})
         registration = agent(binary, env, home, "worker", "agent-register", {
@@ -212,12 +168,7 @@ def check(binary):
                           "requester_explanation": "unrun", "actor_task": "unrun",
                           "provider_called": False, "task_outcome": "unassessed"}))
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":

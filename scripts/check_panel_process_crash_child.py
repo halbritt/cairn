@@ -9,14 +9,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import select
 import signal
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -27,15 +27,9 @@ def require(condition, message):
 
 
 def call(binary, home, env, role, operation, body):
-    command = [str(binary), "agent", "--socket", str(home / "api.sock"),
-               "--token-file", str(home / f"{role}.token"), operation]
-    result = subprocess.run(command, input=json.dumps(body), text=True,
-                            capture_output=True, env=env, timeout=15)
-    require(len(result.stdout) < 1_000_000, "API response too large")
-    response = json.loads(result.stdout)
-    require(result.returncode == 0 and response.get("status") == "OK",
-            f"{operation}: {response.get('status')}")
-    return response["data"]
+    return disposable_host.run_envelope(
+        [binary, "agent", "--socket", home / "api.sock", "--token-file", home / f"{role}.token",
+         operation], body, env=env, timeout=15, label=operation)
 
 
 def child(binary, home, env, claim):
@@ -67,26 +61,8 @@ def read_child_receipt(stream):
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_process_crash_child sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    def sql(statement):
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c", statement],
-                                text=True, capture_output=True, timeout=10)
-        require(result.returncode == 0, "disposable SQL verification failed")
-        return result.stdout.strip()
-    require(sql("SELECT count(*) FROM cairn.agent_event") == "0"
-            and sql("SELECT count(*) FROM cairn.agent_session") == "0",
-            "process-crash database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     fixture, fixture_hash = panel.read_fixture()
     rows = [row for row in fixture["cases"] if row["id"] == "process_crash"]
@@ -100,31 +76,15 @@ def check(binary):
                                                      "target": "request_crash"}],
             "process_crash setup changed")
     repo = fixture["event_source_defaults"]["scope"]["repo"]
-    home = root / "panel-process-crash-child-home"
-    home.mkdir(mode=0o700)
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        path = home / f"{role}.token"
-        path.write_text(token, encoding="utf-8")
-        path.chmod(0o600)
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": f"agent/panel-crash-{role}-{uuid.uuid4()}",
-                           "repo": repo, "role": "agent", "destination": "hosted"})
-    config = home / "identities.json"
-    config.write_text(json.dumps(identities), encoding="utf-8")
-    config.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_panel_process_crash_child",
+        home=root / "panel-process-crash-child-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/panel-crash-{role}-{uuid.uuid4()}")
+    home, env, sql = host.home, host.env, host.sql
+    identities = [dict(principal=host.principal(role)) for role in host.roles]
     worker = None
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode), "API socket missing")
+        host.require_fresh("agent_event", "agent_session", message="process-crash database is not fresh")
         for role in ("sender", "worker"):
             call(binary, home, env, role, "version", {})
         registered = call(binary, home, env, "worker", "agent-register", {
@@ -223,12 +183,7 @@ def check(binary):
         if worker is not None and worker.poll() is None:
             worker.kill()
             worker.wait(timeout=5)
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":

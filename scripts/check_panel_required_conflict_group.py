@@ -9,12 +9,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -26,45 +26,22 @@ def require(value, message):
 
 def invoke(binary, env, command, body=None, *, socket=None, token=None,
            expected="OK", forbidden=()):
-    argv = [str(binary)]
+    argv = [binary]
     if token is not None:
         argv += ["agent", "--socket", str(socket), "--token-file", str(token), command]
     else:
         argv.append(command)
-    process = subprocess.run(argv, input=json.dumps(body) if body is not None else None,
-                             text=True, capture_output=True, env=env, timeout=20)
-    require(len(process.stdout) < 1_000_000 and len(process.stderr) < 100_000,
-            "API response exceeds bound")
-    require(all(value not in process.stdout and value not in process.stderr
-                for value in forbidden), "conflicting source body disclosed")
-    envelope = json.loads(process.stdout, object_pairs_hook=panel.pairs_unique)
-    require(envelope.get("schema") == "cairn.response/1"
-            and envelope.get("status") == expected
-            and envelope.get("ok") is (expected == "OK")
-            and (process.returncode == 0) is (expected == "OK"),
-            f"{command} returned {envelope.get('status')}, expected {expected}")
+    result = disposable_host.run_envelope(argv, body, env=env, expected=expected, timeout=20,
+                                          forbidden=forbidden, label=command)
     if expected != "OK":
-        require(envelope.get("data") is None, "policy refusal included partial data")
-    return envelope.get("data")
+        require(result.get("data") is None, "policy refusal included partial data")
+        return None
+    return result
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_required_conflict_group sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c",
-                             "SELECT count(*) FROM cairn.memory_record"],
-                            text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0 and result.stdout.strip() == "0", "database not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     fixture, fixture_hash = panel.read_fixture()
     rows = [row for row in fixture["cases"] if row["id"] == "required_conflict_group"]
@@ -88,28 +65,13 @@ def check(binary):
     bodies = tuple(source["body"] for source in sources)
     forbidden_claims = (*bodies, "24 hours", "48 hours", "24-hour", "48-hour")
     repo = sources[0]["scope"]["repo"]
-    home = root / "panel-required-conflict-home"
-    home.mkdir(mode=0o700)
-    token = secrets.token_urlsafe(32)
-    token_file = home / "agent.token"
-    token_file.write_text(token, encoding="utf-8")
-    token_file.chmod(0o600)
-    (home / "identities.json").write_text(json.dumps([{
-        "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-        "principal": f"agent/panel-conflict-{uuid.uuid4()}",
-        "repo": repo, "role": "agent", "destination": "hosted"}]), encoding="utf-8")
-    (home / "identities.json").chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_panel_required_conflict_group",
+        home=root / "panel-required-conflict-home", roles=("agent",),
+        principals={"agent": f"agent/panel-conflict-{uuid.uuid4()}"})
+    home, env, token_file = host.home, host.env, host.token("agent")
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode),
-                "local API socket missing")
+        host.require_fresh("memory_record", message="database not fresh")
         invoke(binary, env, "version", {}, socket=home / "api.sock", token=token_file)
         grant = invoke(binary, env, "bootstrap", {
             "request_id": str(uuid.uuid4()),
@@ -169,12 +131,7 @@ def check(binary):
                           "provider_called": False, "task_outcome": "unassessed"},
                          sort_keys=True))
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":

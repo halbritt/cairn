@@ -9,12 +9,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -25,27 +25,8 @@ def require(condition, message):
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_semantic_unavailable sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-
-    def sql(statement):
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c", statement],
-                                text=True, capture_output=True, timeout=10)
-        require(result.returncode == 0, result.stderr)
-        return result.stdout.strip()
-
-    require(sql("SELECT count(*) FROM cairn.memory_record") == "0",
-            "semantic panel database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
     fixture, fixture_hash = panel.read_fixture()
     cases = [row for row in fixture["cases"] if row["id"] == "semantic_unavailable"]
     require(len(cases) == 1 and cases[0]["setup"] == {
@@ -62,19 +43,14 @@ def check(binary):
             and source["scope"] == {"repo": "fixture:cairn-token-efficiency",
                                      "task_id": "*", "run_id": "*"},
             "lexical anchor source contract changed")
-    home = root / "panel-semantic-unavailable-home"
-    home.mkdir(mode=0o700)
-    token = secrets.token_urlsafe(32)
-    token_file = home / "agent.token"
-    token_file.write_text(token, encoding="utf-8")
-    token_file.chmod(0o600)
-    principal = f"agent/panel-semantic-{uuid.uuid4()}"
-    identities = home / "identities.json"
-    identities.write_text(json.dumps([{
-        "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-        "principal": principal, "repo": source["scope"]["repo"],
-        "role": "agent", "destination": "hosted"}]), encoding="utf-8")
-    identities.chmod(0o600)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=source["scope"]["repo"], database="cairn_panel_semantic_unavailable",
+        home=root / "panel-semantic-unavailable-home", roles=("agent",),
+        principals={"agent": f"agent/panel-semantic-{uuid.uuid4()}"}, serve=False)
+    home, env = host.home, host.env
+    token_file, principal = host.token("agent"), host.principal("agent")
+    sql = host.sql
+    host.require_fresh("memory_record", message="semantic panel database is not fresh")
     marker = home / "semantic-worker-invoked"
     worker = home / "failing-semantic-worker"
     worker.write_text("#!/usr/bin/env python3\n"
@@ -83,31 +59,12 @@ def check(binary):
         "    calls.write('failed\\n')\n"
         "raise SystemExit(7)\n", encoding="utf-8")
     worker.chmod(0o700)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve", "--semantic-command", str(worker)],
-                              env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
     try:
-        socket = home / "api.sock"
-        deadline = time.monotonic() + 10
-        while not socket.exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable semantic API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK(socket.stat().st_mode), "API socket missing")
+        host.start_server(args=("--semantic-command", str(worker)))
+        socket = host.socket
 
         def agent(operation, *args, payload=None):
-            command = [str(binary), "agent", "--socket", str(socket),
-                       "--token-file", str(token_file), operation, *args]
-            result = subprocess.run(command,
-                                    input=json.dumps(payload) if payload is not None else None,
-                                    text=True, capture_output=True, env=env, timeout=20)
-            require(len(result.stdout) < 1_000_000, "API response too large")
-            envelope = json.loads(result.stdout, object_pairs_hook=panel.pairs_unique)
-            require(result.returncode == 0 and envelope.get("status") == "OK"
-                    and envelope.get("ok") is True,
-                    f"{operation}: {envelope.get('status')} {result.stderr}")
-            return envelope["data"]
+            return host.agent("agent", operation, payload, args=args, timeout=20)
 
         agent("version", payload={})
         draft = {key: source[key] for key in
@@ -165,13 +122,7 @@ def check(binary):
                           "actor_task": "unrun", "provider_called": False,
                           "task_outcome": "unassessed"}, sort_keys=True))
     finally:
-        if server.poll() is None:
-            server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":

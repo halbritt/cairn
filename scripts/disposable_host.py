@@ -416,8 +416,8 @@ def run_envelope(argv, body=None, *, env=None, expected="OK", timeout=15,
         raise HostRefusal(f"{label}: no reply within {timeout}s") from None
     require(len(result.stdout) <= stdout_limit and len(result.stderr) <= stderr_limit,
             f"{label}: reply exceeds bound")
-    if forbidden is not None:
-        require(forbidden not in result.stdout and forbidden not in result.stderr,
+    for text in ([forbidden] if isinstance(forbidden, str) else forbidden or ()):
+        require(text not in result.stdout and text not in result.stderr,
                 f"{label}: reply disclosed forbidden text")
     envelope = decode_json(result.stdout)
     succeeded = expected == "OK"

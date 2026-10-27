@@ -11,26 +11,17 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import select
 import stat
 import subprocess
 import sys
 import time
 import uuid
 
+import disposable_host
+
 import preflight_token_efficiency_panel as panel
 
 
-OWNER = r'''
-import json, os, subprocess, sys
-script, config = sys.argv[1:3]
-for line in sys.stdin:
-    result = subprocess.run([sys.executable, script, 'hook', '--config', config],
-        input=line, text=True, capture_output=True, timeout=15)
-    print(json.dumps(dict(code=result.returncode, stdout=result.stdout,
-                          stderr=result.stderr)), flush=True)
-'''
 
 
 def require(condition, message):
@@ -39,28 +30,8 @@ def require(condition, message):
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_completion_reply_lost sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-
-    def sql(statement):
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c", statement],
-                                text=True, capture_output=True, timeout=10)
-        require(result.returncode == 0, result.stderr)
-        return result.stdout.strip()
-
-    require(sql("SELECT count(*) FROM cairn.agent_event") == "0"
-            and sql("SELECT count(*) FROM cairn.agent_session") == "0",
-            "reply-loss database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
     fixture, fixture_hash = panel.read_fixture()
     rows = [row for row in fixture["cases"] if row["id"] == "completion_reply_lost"]
     require(len(rows) == 1, "completion_reply_lost fixture missing")
@@ -72,44 +43,18 @@ def check(binary):
                             {"phase": "after_drop", "action": "retry_delivery",
                              "target": "request_lost_reply"}]}, "fixture setup changed")
     repo = fixture["event_source_defaults"]["scope"]["repo"]
-    home = root / "panel-completion-reply-lost-home"
-    home.mkdir(mode=0o700)
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        token_path = home / f"{role}.token"
-        token_path.write_text(token, encoding="utf-8")
-        token_path.chmod(0o600)
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": f"agent/panel-reply-loss-{role}-{uuid.uuid4()}",
-                           "repo": repo, "role": "agent", "destination": "hosted"})
-    identities_path = home / "identities.json"
-    identities_path.write_text(json.dumps(identities), encoding="utf-8")
-    identities_path.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_panel_completion_reply_lost",
+        home=root / "panel-completion-reply-lost-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/panel-reply-loss-{role}-{uuid.uuid4()}")
+    home, env, socket, sql = host.home, host.env, host.socket, host.sql
+    identities = [dict(principal=host.principal(role)) for role in host.roles]
     owner = None
     try:
-        socket = home / "api.sock"
-        deadline = time.monotonic() + 10
-        while not socket.exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK(socket.stat().st_mode), "disposable API socket missing")
+        host.require_fresh("agent_event", "agent_session", message="reply-loss database is not fresh")
 
         def call(role, command, body, session=None):
-            options = ["--socket", str(socket), "--token-file", str(home / f"{role}.token")]
-            if session:
-                options += ["--agent-id", session["agent_id"],
-                            "--execution-id", session["execution_id"]]
-            result = subprocess.run([str(binary), "agent", *options, command],
-                    input=json.dumps(body), text=True, capture_output=True, env=env, timeout=15)
-            envelope = json.loads(result.stdout)
-            require(result.returncode == 0 and envelope["status"] == "OK",
-                    f"{command}: {envelope['status']}")
-            return envelope["data"]
+            return host.agent(role, command, body, session=session)
 
         for role in ("sender", "worker"):
             call(role, "version", {})
@@ -125,18 +70,13 @@ def check(binary):
             "native_delivery": True}), encoding="utf-8")
         config.chmod(0o600)
         script = Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py"
-        owner = subprocess.Popen([sys.executable, "-u", "-c", OWNER, str(script), str(config)],
-                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True,
-                                 env=dict(env, CAIRN_INBOX_ROOT=str(home)))
+        owner = disposable_host.HookOwner.start(script, config, dict(env, CAIRN_INBOX_ROOT=str(home)),
+                                                hook_timeout=15, reply_timeout=20)
 
         def hook(name):
-            owner.stdin.write(json.dumps({"session_id": "panel-reply-loss", "cwd": str(root),
+            response = owner.send({"session_id": "panel-reply-loss", "cwd": str(root),
                 "hook_event_name": name, "model": "synthetic/probe",
-                "prompt": "Synthetic host boundary only"}) + "\n")
-            owner.stdin.flush()
-            require(select.select([owner.stdout], [], [], 20)[0], "hook owner timed out")
-            response = json.loads(owner.stdout.readline())
+                "prompt": "Synthetic host boundary only"})
             require(response["code"] == 0, f"{name}: {response['stderr']}")
             return json.loads(response["stdout"])
 
@@ -279,20 +219,8 @@ def check(binary):
                           "task_outcome": "unassessed"}, sort_keys=True))
     finally:
         if owner is not None:
-            if owner.poll() is None:
-                owner.terminate()
-            try:
-                owner.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                owner.kill()
-                owner.communicate(timeout=5)
-        if server.poll() is None:
-            server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+            owner.stop()
+        host.close()
 
 
 if __name__ == "__main__":

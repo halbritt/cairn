@@ -10,12 +10,13 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
 import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 import preflight_token_efficiency_panel as panel
 
@@ -26,22 +27,13 @@ def require(condition, message):
 
 
 def invoke(binary, env, argv, body=None, expected="OK"):
-    result = subprocess.run([str(binary), *argv], input=json.dumps(body) if body is not None else None,
-                            text=True, capture_output=True, env=env, timeout=20)
-    require(len(result.stdout) < 1_000_000 and len(result.stderr) < 100_000,
-            "CLI response too large")
-    envelope = json.loads(result.stdout)
-    require(envelope.get("status") == expected and (result.returncode == 0) == (expected == "OK"),
-            f"{argv[0]} returned {envelope.get('status')}, expected {expected}")
-    return envelope.get("data")
+    result = disposable_host.run_envelope([binary, *argv], body, env=env, expected=expected,
+                                          timeout=20, label=str(argv[-1]))
+    return result if expected == "OK" else result.get("data")
 
 
 def sql(dsn, statement):
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-                             "-d", dsn, "-c", statement], text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0 and len(result.stdout) < 4096,
-            "disposable SQL operation failed")
-    return result.stdout.strip()
+    return disposable_host.run_sql(dsn, statement, limit=4096)
 
 
 def journal_command(script, env, context, body, expected):
@@ -57,21 +49,8 @@ def journal_command(script, env, context, body, expected):
 
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_panel_stale_journal sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    require(sql(dsn, "SELECT count(*) FROM cairn.agent_event") == "0"
-            and sql(dsn, "SELECT count(*) FROM cairn.agent_session") == "0",
-            "stale-journal database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     fixture, fixture_hash = panel.read_fixture()
     rows = [row for row in fixture["cases"] if row["id"] == "stale_execution"]
@@ -81,37 +60,18 @@ def check(binary):
         "transitions": [{"phase": "after_claim_before_settlement", "action": "rotate_execution",
                          "target": "request_stale"}]}, "stale_execution fixture changed")
     repo = fixture["event_source_defaults"]["scope"]["repo"]
-    home = root / "panel-stale-journal-home"
-    home.mkdir(mode=0o700)
-    principals = {}
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        token_file = home / f"{role}.token"
-        token_file.write_text(token, encoding="utf-8")
-        token_file.chmod(0o600)
-        principal = f"agent/panel-stale-{role}-{uuid.uuid4()}"
-        principals[role] = principal
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": principal, "repo": repo, "role": "agent",
-                           "destination": "hosted"})
-    (home / "identities.json").write_text(json.dumps(identities), encoding="utf-8")
-    (home / "identities.json").chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    socket = home / "api.sock"
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_panel_stale_journal",
+        home=root / "panel-stale-journal-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/panel-stale-{role}-{uuid.uuid4()}")
+    home, env, socket, dsn = host.home, host.env, host.socket, host.dsn
+    principals = host.principals
+    host.require_fresh("agent_event", "agent_session", message="stale-journal database is not fresh")
     coordination_script = Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py"
     module_spec = importlib.util.spec_from_file_location("panel_stale_coordination", coordination_script)
     coordination = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(coordination)
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
     try:
-        deadline = time.monotonic() + 10
-        while not socket.exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK(socket.stat().st_mode), "API socket missing")
 
         def agent(role, operation, body, expected="OK", session=None):
             argv = ["agent", "--socket", str(socket), "--token-file", str(home / f"{role}.token")]
@@ -298,12 +258,7 @@ def check(binary):
                           "current_attempt": "handled_once", "actor_task": "unrun",
                           "provider_called": False, "task_outcome": "unassessed"}))
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":
