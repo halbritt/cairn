@@ -34,3 +34,11 @@ exclusivity use the same cleanup evidence but remain distinct settlement outcome
 The result emitted by a harness tool invocation, including its execution status
 and output. Fixtures interpret this result separately from the Store state used
 to verify delivery and settlement.
+
+## Integration fixtures
+
+**Disposable host**:
+A fixture's private database, owner-only home with agent identities, and local
+API, created inside a disposable cluster and torn down with it. The host owns
+the cluster precondition, the envelope contract and process cleanup; a fixture
+keeps only its scenario and assertions.

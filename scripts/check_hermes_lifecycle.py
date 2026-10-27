@@ -21,6 +21,8 @@ import threading
 import time
 import uuid
 
+import disposable_host
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from check_claude_tools import response_events
@@ -45,38 +47,22 @@ def main():
     output.mkdir(mode=0o700)
     logging.basicConfig(filename=output / 'native.log',level=logging.INFO,format='%(name)s %(levelname)s %(message)s')
     root = output / 'store'
-    root.mkdir(mode=0o700)
-    pg = Path(subprocess.check_output(['pg_config', '--bindir'], text=True).strip())
-    subprocess.run([pg / 'initdb', '-D', root / 'data', '--auth-local=trust', '--auth-host=reject', '--no-locale', '-E', 'UTF8'], check=True, capture_output=True)
-    socket = root / 'socket'
-    socket.mkdir()
-    subprocess.run([pg / 'pg_ctl', '-D', root / 'data', '-l', root / 'postgres.log', '-o', f"-F -k {socket} -c listen_addresses=''", '-w', 'start'], check=True, capture_output=True)
-    api = None
-    server = None
+    cluster = disposable_host.OwnedCluster.start(root)
+    host = None
     try:
-        subprocess.run([pg / 'createdb', '-h', socket, 'hermes_fixture'], check=True)
-        env = dict(os.environ, CAIRN_HOME=str(root), CAIRN_DATABASE_URL=f'host={socket} dbname=hermes_fixture sslmode=disable')
         binary = str(args.binary.resolve())
-        subprocess.run([binary, 'migrate'], env=env, check=True, capture_output=True)
-        token = secrets.token_urlsafe(32)
-        (root / 'hosted-agent.token').write_text(token)
-        (root / 'hosted-agent.token').chmod(0o600)
-        (root / 'identities.json').write_text(json.dumps([dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-            principal='agent:hermes-fixture', repo='fixture:hermes', role='agent', destination='hosted')]))
-        (root / 'identities.json').chmod(0o600)
-        api_log = (root / 'api.log').open('w')
-        api = subprocess.Popen([binary, 'serve', *(['--semantic-stream-command', str(args.semantic_worker.resolve())] if args.semantic_worker else [])], env=env, stdout=api_log, stderr=api_log)
-        deadline = time.monotonic() + 10
-        while not (root / 'api.sock').exists():
-            assert api.poll() is None and time.monotonic() < deadline, 'fixture API not ready'
-            time.sleep(.02)
-        run_fixture(args, output, root, env)
+        host = disposable_host.DisposableHost.start(
+            cluster, binary=binary, repo='fixture:hermes', database='hermes_fixture', home=root,
+            roles=('agent',), principals={'agent': 'agent:hermes-fixture'},
+            token_name=lambda role: 'hosted-agent.token', label='hermes_lifecycle',
+            serve_args=(['--semantic-stream-command', str(args.semantic_worker.resolve())]
+                        if args.semantic_worker else ()), log=root / 'api.log')
+        run_fixture(args, output, root, host.env)
     finally:
-        if api is not None:
-            api.terminate()
-            api.wait(timeout=10)
-            api_log.close()
-        subprocess.run([pg / 'pg_ctl', '-D', root / 'data', '-m', 'immediate', '-w', 'stop'], check=True, capture_output=True)
+        if host is not None:
+            host.close()
+        if not cluster.stop():
+            raise RuntimeError('disposable PostgreSQL state unresolved; retained ' + str(root))
 
 
 def run_fixture(args, output, store, operator_env):
