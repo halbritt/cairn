@@ -56,9 +56,9 @@ class SchemaExposureAuditTests(unittest.TestCase):
                     dict(type="api-request", shapeHash="missing", requestDigest="old",
                          timestamp="2026-10-24T00:01:00Z")]
             path.write_text("".join(json.dumps(row) + "\n" for row in rows))
-            requests, errors = audit.inspect_claude(path, dt.datetime.fromisoformat("2026-10-24T00:00:00+00:00"),
+            requests, errors = self.audit.inspect_claude(path, dt.datetime.fromisoformat("2026-10-24T00:00:00+00:00"),
                                                      dt.datetime.fromisoformat("2026-10-25T00:00:00+00:00"))
-            result = audit.aggregate(requests, errors)
+            result = self.audit.aggregate(requests, errors)
             self.assertEqual(result["phases"]["file_first"]["requests"], 0)
             self.assertEqual(result["phases"]["same_digest_repeat"]["requests"], 1)
             self.assertEqual(result["requests_without_shape"], 1)
