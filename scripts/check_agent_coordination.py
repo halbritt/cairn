@@ -869,7 +869,8 @@ def check(binary, root, repo, api_call):
                         root=root / "native-full-inbox-codex",
                         config=route_config, api_call=api_call,
                         candidate_root=candidate_root, sandbox_auth_file=None,
-                        turn_timeout=120, codex_entry=codex_entry, codex_root=codex_root)
+                        turn_timeout=120, codex_entry=codex_entry, codex_root=codex_root,
+                        api_role="carol")
                     complete_refusal = provider_free_fixture_refusal(
                         workflow_manifest, complete_fixture)
                     assert complete_refusal["state"] == "refused"
@@ -882,7 +883,7 @@ def check(binary, root, repo, api_call):
                         config=route_config, api_call=api_call,
                         candidate_root=candidate_root, sandbox_auth_file=None,
                         turn_timeout=2, codex_entry=codex_entry, codex_root=codex_root,
-                        mode="stall")
+                        mode="stall", api_role="carol")
                     stall_refusal = provider_free_fixture_refusal(workflow_manifest, stall_fixture)
                     assert stall_refusal["state"] == "refused"
                     assert stall_refusal["join_eligible"] is False

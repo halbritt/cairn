@@ -28,10 +28,16 @@ and MCP processes.
   A follow-up run against the installed codex-cli 0.164.0 passed the wake-join,
   capture-observation and request-shape probes and the three-notice full-inbox
   batch fixture (`check_agent_events.py` with `CAIRN_CODEX_BINARY`,
-  `CAIRN_CODEX_ENTRY` and `CAIRN_CODEX_ROOT` set). The compact scenarios and the
-  single-notice full-inbox runs need a `CAIRN_COMPACT_STAGE` candidate root and
-  were not re-run. `/opt/codex-bin` is the in-sandbox mount point, not a host
-  path; the fixtures bind the npm package's native binary there.
+  `CAIRN_CODEX_ENTRY` and `CAIRN_CODEX_ROOT` set). A subsequent targeted
+  integration run passed the compact notice, response and batch-admission
+  scenarios and the single-notice full-inbox completion and stall checks.
+  Its `CAIRN_COMPACT_STAGE` candidate came from the stager's synthetic account
+  fixture, leaving installed configuration and trusted snapshot hashes intact.
+  The single-notice callers now explicitly use Carol, matching the token that
+  registered their session; the default Bob role could not claim that inbox.
+  These runs use scripted local responses and do not measure provider usage
+  or live-model usefulness. `/opt/codex-bin` is the in-sandbox mount point, not
+  a host path; the fixtures bind the npm package's native binary there.
 - One task-evaluation attempt now runs through `scripts/trial_attempt.py`: the
   agent command reads its flags once into a typed execution profile, a provider
   adapter (Claude, Codex, or an inert local actor) owns the launch, and one
