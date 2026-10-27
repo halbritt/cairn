@@ -364,12 +364,23 @@ class ProvidedDatabase:
 
 # ------------------------------------------------------------------ identities
 
-def stage_identities(home, roles, repo, *, principals, destination="hosted", token_dir=None,
-                     token_name=None):
+def _per_role(value, role, default):
+    if value is None:
+        return default
+    if callable(value):
+        return value(role)
+    if isinstance(value, dict):
+        return value.get(role, default)
+    return value
+
+
+def stage_identities(home, roles, repo, *, principals, destination="hosted", identity_role="agent",
+                     token_dir=None, token_name=None):
     """Write one owner-only token per role and the identities file the API reads.
 
     ``principals`` maps each role to its principal or is a callable of the role.
-    Returns ``{role: {"token_file": Path, "principal": str}}``.
+    ``destination`` and ``identity_role`` are a single value, a dict by role or a
+    callable of the role. Returns ``{role: {"token_file": Path, "principal": str}}``.
     """
     home = Path(home)
     private_dir(home)
@@ -384,8 +395,9 @@ def stage_identities(home, roles, repo, *, principals, destination="hosted", tok
         path = token_dir / token_name(role)
         write_private(path, token)
         identities.append(dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-                               principal=principal, repo=repo, role="agent",
-                               destination=destination))
+                               principal=principal, repo=repo,
+                               role=_per_role(identity_role, role, "agent"),
+                               destination=_per_role(destination, role, "hosted")))
         staged[role] = dict(token_file=path, principal=principal)
     write_private(home / "identities.json", json.dumps(identities))
     return staged
@@ -400,7 +412,8 @@ def run_envelope(argv, body=None, *, env=None, expected="OK", timeout=15,
     The reply must be bounded, one JSON value without duplicate keys, carry the
     response schema, agree between ``ok``, ``status`` and the exit code, and
     match ``expected``. Returns ``data`` for ``OK``; the whole envelope when a
-    refusal was expected, so callers can read its status and message.
+    refusal was expected, so callers can read its status and message. With
+    ``expected=None`` any status is accepted and the envelope is returned.
     """
     argv = [str(a) for a in argv]
     label = label or " ".join(argv[1:3])
@@ -420,12 +433,16 @@ def run_envelope(argv, body=None, *, env=None, expected="OK", timeout=15,
         require(text not in result.stdout and text not in result.stderr,
                 f"{label}: reply disclosed forbidden text")
     envelope = decode_json(result.stdout)
-    succeeded = expected == "OK"
     status = envelope.get("status") if isinstance(envelope, dict) else None
     require(isinstance(envelope, dict) and envelope.get("schema") == RESPONSE_SCHEMA
-            and envelope.get("ok") is succeeded and status == expected
-            and (result.returncode == 0) == succeeded,
-            f"{label}: {status or 'malformed reply'} (expected {expected}, exit {result.returncode})"
+            and envelope.get("ok") is (status == "OK") and (result.returncode == 0) is (status == "OK"),
+            f"{label}: malformed reply (status {status}, exit {result.returncode})"
+            + (" " + excerpt(result.stderr) if result.stderr.strip() else ""))
+    if expected is None:
+        return envelope
+    succeeded = expected == "OK"
+    require(status == expected,
+            f"{label}: {status} (expected {expected}, exit {result.returncode})"
             + (" " + excerpt(result.stderr) if result.stderr.strip() else ""))
     return envelope.get("data") if succeeded else envelope
 
@@ -445,7 +462,7 @@ def run_sql(dsn, statement, *, limit=SQL_LIMIT, timeout=10, pg_bin=None):
 
 # ---------------------------------------------------------------------- server
 
-def stop_process(process, *, timeout=5, label="process"):
+def stop_process(process, *, timeout=10, label="process"):
     """Terminate, then kill, one process this host started; refuse an unobserved exit."""
     if process is None:
         return None
@@ -517,7 +534,7 @@ class ApiServer:
             for capture in self.captures[:2]:
                 capture.discard()
 
-    def stop(self, timeout=5):
+    def stop(self, timeout=10):
         code = stop_process(self.process, timeout=timeout, label=self.label)
         if self.log is not None and hasattr(self.log, "close"):
             self.log.close()
@@ -548,9 +565,9 @@ class DisposableHost:
 
     @classmethod
     def start(cls, source, *, repo, binary=None, database=None, home=None,
-              roles=("sender", "worker"), principals=None, destination="hosted", label=None,
-              env=None, inbox_root=False, serve=True, serve_args=(), socket_path=None, log=None,
-              timeout=10):
+              roles=("sender", "worker"), principals=None, destination="hosted",
+              identity_role="agent", token_name=None, label=None, env=None, inbox_root=False,
+              serve=True, serve_args=(), socket_path=None, log=None, timeout=10):
         host = cls()
         host.label = label or fixture_label()
         host.source = source
@@ -574,7 +591,10 @@ class DisposableHost:
             host.pg_bin = source.pg_bin
         require(home is not None or host.root is not None, "home required")
         host.home = Path(home) if home else host.root / (host.label.replace("_", "-") + "-home")
-        host.home.mkdir(mode=0o700)
+        if host.home.exists():
+            private_dir(host.home)
+        else:
+            host.home.mkdir(mode=0o700)
         host.env = dict(os.environ, CAIRN_HOME=str(host.home), CAIRN_DATABASE_URL=host.dsn,
                         CAIRN_TEST_DATABASE_URL=host.dsn)
         if inbox_root:
@@ -589,7 +609,8 @@ class DisposableHost:
                 def principals(role, prefix=host.label.replace("_", "-")):
                     return f"agent/{prefix}-{role}-{uuid.uuid4()}"
             host.identities = stage_identities(host.home, host.roles, repo, principals=principals,
-                                               destination=destination)
+                                               destination=destination, identity_role=identity_role,
+                                               token_name=token_name)
             if serve:
                 host.start_server()
         except BaseException:
@@ -619,7 +640,8 @@ class DisposableHost:
 
     def agent(self, role, operation, body=None, *, args=(), session=None, expected="OK",
               timeout=15, forbidden=None):
-        """``cairn agent`` as one role: returns ``data``, or the envelope for an expected refusal."""
+        """``cairn agent`` as one role: ``data``, the envelope for an expected refusal, or any
+        envelope with ``expected=None``."""
         argv = [self.binary, "agent", *self.connection(role, session), operation, *args]
         return run_envelope(argv, body, env=self.env, expected=expected, timeout=timeout,
                             forbidden=forbidden, label=operation)
@@ -659,7 +681,7 @@ class DisposableHost:
         self.server.wait_ready(self.timeout if timeout is None else timeout)
         return self.server
 
-    def stop_server(self, timeout=5):
+    def stop_server(self, timeout=10):
         if self.server is None:
             return None
         code, self.server = self.server.stop(timeout), None
@@ -673,8 +695,9 @@ class DisposableHost:
     def process(self):
         return None if self.server is None else self.server.process
 
-    def close(self):
-        self.stop_server()
+    def close(self, timeout=10):
+        """Stop the API this host started; returns its exit code (None when already stopped)."""
+        return self.stop_server(timeout)
 
     def __enter__(self):
         return self

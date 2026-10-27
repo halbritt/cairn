@@ -22,6 +22,7 @@ import uuid
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
+import disposable_host
 from native_tool_results import (
     tool_result_diagnostics as _tool_result_diagnostics,
     source_result_matches, source_read_succeeded, settlement_succeeded,
@@ -130,10 +131,13 @@ def _checked_run(argv, *, env=None, timeout=30, cwd=None) -> subprocess.Complete
     return result
 
 
-def _pg_start_command(pg_bin: Path, data_dir: Path, socket_dir: Path,
-                      log_path: Path) -> list[str]:
-    return [str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-l", str(log_path),
-            "-o", f"-F -k {socket_dir} -c listen_addresses=''", "-w", "start"]
+# The cluster and API startup helpers live in scripts/disposable_host.py; these
+# names stay for the stage-trace fixtures and tests that import them from here.
+_pg_start_command = disposable_host.pg_start_command
+_classify_pg_start_failure = disposable_host.classify_pg_start_failure
+_stop_disposable_postgres = disposable_host.stop_postgres
+_OutputCapture = disposable_host.OutputCapture
+_classify_api_start_output = disposable_host.classify_api_start_output
 
 
 def _short_socket_dir() -> Path:
@@ -142,27 +146,6 @@ def _short_socket_dir() -> Path:
     return path
 
 
-def _classify_pg_start_failure(stdout: bytes, stderr: bytes, log_path: Path) -> str:
-    """Map transient PostgreSQL diagnostics to fixed codes; retain no text or paths."""
-    data = (stdout + b"\n" + stderr).decode("utf-8", "replace")
-    try:
-        data += "\n" + log_path.read_text(errors="replace")
-    except OSError:
-        return "diagnostic_log_unavailable"
-    lowered = data.lower()
-    patterns = (
-        ("address_in_use", ("address already in use", "could not bind")),
-        ("socket_path_too_long", ("unix-domain socket path", "too long")),
-        ("permission_denied", ("permission denied", "operation not permitted")),
-        ("port_conflict", ("lock file \"postmaster.pid\" already exists", "is another postmaster")),
-        ("invalid_configuration", ("unrecognized configuration parameter", "syntax error in file")),
-        ("storage_or_filesystem", ("no space left on device", "read-only file system", "input/output error")),
-        ("data_directory_invalid", ("is not a valid data directory", "database files are incompatible")),
-    )
-    for code, needles in patterns:
-        if any(needle in lowered for needle in needles):
-            return code
-    return "unclassified"
 
 
 def _start_disposable_postgres(pg_bin: Path, data_dir: Path, socket_dir: Path,
@@ -183,85 +166,10 @@ def _start_disposable_postgres(pg_bin: Path, data_dir: Path, socket_dir: Path,
     return result
 
 
-def _stop_disposable_postgres(pg_bin: Path, data_dir: Path) -> bool:
-    if not (data_dir / "postmaster.pid").exists():
-        return True
-    try:
-        result = subprocess.run([str(pg_bin / "pg_ctl"), "-D", str(data_dir),
-                                 "-m", "immediate", "-w", "stop"],
-                                capture_output=True, timeout=20, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0 and not (data_dir / "postmaster.pid").exists()
 
 
-class _OutputCapture:
-    def __init__(self, limit: int = 16_384):
-        self.limit = limit
-        self.kept = bytearray()
-        self.total = 0
-        self.enabled = True
-        self.lock = threading.Lock()
-
-    def drain(self, stream):
-        while True:
-            chunk = stream.read(2048)
-            if not chunk:
-                return
-            with self.lock:
-                if self.enabled:
-                    self.total += len(chunk)
-                    if len(self.kept) < self.limit:
-                        self.kept.extend(chunk[:self.limit - len(self.kept)])
-
-    def snapshot(self) -> tuple[bytes, bool]:
-        with self.lock:
-            return bytes(self.kept), self.total > len(self.kept)
-
-    def discard(self) -> None:
-        with self.lock:
-            self.enabled = False
-            self.kept.clear()
-            self.total = 0
 
 
-def _classify_api_start_output(stdout: bytes, stderr: bytes, *, truncated: bool,
-                               socket_path: Path | None = None) -> str:
-    """Classify transient serve output without retaining paths or error text."""
-    if truncated:
-        return "output_truncated"
-    try:
-        envelope = json.loads(stdout)
-    except (TypeError, ValueError):
-        envelope = None
-    if isinstance(envelope, dict) and envelope.get("ok") is False:
-        status = envelope.get("status")
-        message = envelope.get("message")
-        lower = message.lower() if isinstance(message, str) else ""
-        if status == "STORE_ERROR" and socket_path is not None and len(os.fsencode(socket_path)) >= 108:
-            return "api_socket_path_too_long"
-        if status in ("STORE_ERROR", "STORE_UNREACHABLE"):
-            return "store_open_failed"
-        if status == "INVALID_REQUEST" and "identity configuration" in lower:
-            return "identity_config_invalid"
-        if any(text in lower for text in ("connection refused", "no such file or directory",
-                                          "database does not exist", "authentication failed")):
-            return "database_unavailable"
-        if any(text in lower for text in ("socket directory", "socket lock", "api socket")):
-            return "socket_setup_refused"
-        if any(text in lower for text in ("unrecognized configuration", "invalid source-opening")):
-            return "runtime_configuration_invalid"
-        return "unknown_json_refusal"
-    combined = (stdout + b"\n" + stderr).lower()
-    if b"address already in use" in combined or b"bind: address" in combined:
-        return "api_bind_failed"
-    if b"identity configuration" in combined:
-        return "identity_config_invalid"
-    if b"connection refused" in combined or b"database does not exist" in combined:
-        return "database_unavailable"
-    if not combined.strip():
-        return "process_exit_no_output"
-    return "unclassified_output"
 
 
 def _launch_api(binary: Path, api: Path, server_env: dict, socket_path: Path,

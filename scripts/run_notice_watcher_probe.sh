@@ -34,11 +34,7 @@ trap cleanup EXIT
 mkdir "$test_root/socket"
 "$pg_bin/pg_ctl" -D "$test_root/data" -l "$test_root/postgres.log" \
     -o "-F -k $test_root/socket -c listen_addresses=''" -w start >/dev/null
-"$pg_bin/createdb" -h "$test_root/socket" cairn_notice_watcher_eligibility
-dsn="host=$test_root/socket dbname=cairn_notice_watcher_eligibility sslmode=disable"
-CAIRN_DATABASE_URL="$dsn" go run ./cmd/cairn migrate
 go build -o "$test_root/cairn" ./cmd/cairn
+# The fixture creates and migrates its own database through scripts/disposable_host.py.
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" \
-CAIRN_TEST_DATABASE_URL="$dsn" \
-CAIRN_DATABASE_URL="$dsn" \
-    python3 scripts/check_notice_watcher_eligibility.py "${python_args[@]}" "$test_root/cairn"
+    python3 -B scripts/check_notice_watcher_eligibility.py "${python_args[@]}" "$test_root/cairn"

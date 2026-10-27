@@ -35,6 +35,8 @@ import tempfile
 import time
 import uuid
 
+import disposable_host
+
 from trial_account_selection import credentials_source
 import trial_codex_account_selection as codex_account_selection
 import trial_legacy_limits as legacy_limits
@@ -462,13 +464,9 @@ class TrialStore:
             base = {k: v for k, v in os.environ.items() if not k.startswith("CAIRN_")}
             self.env = dict(base, CAIRN_HOME=str(self.home), CAIRN_DATABASE_URL=self.dsn)
             run([self.binary, "migrate"], env=self.env, timeout=300)
-            token = secrets.token_urlsafe(32)
-            self.token_file.write_text(token)
-            self.token_file.chmod(0o600)
-            identities = [dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(), principal="agent:task-eval-" + label,
-                               repo=TRIAL_REPO, role="agent", destination="hosted")]
-            (self.home / "identities.json").write_text(json.dumps(identities))
-            (self.home / "identities.json").chmod(0o600)
+            disposable_host.stage_identities(self.home, ("agent",), TRIAL_REPO,
+                                             principals={"agent": "agent:task-eval-" + label},
+                                             token_dir=self.root, token_name=lambda role: "agent.token")
         except BaseException:
             self.token_file.unlink(missing_ok=True)
             (self.home / "identities.json").unlink(missing_ok=True)
@@ -553,20 +551,17 @@ class TrialStore:
         return max(target, start)
 
     def start(self):
-        command = [self.binary, "serve", "--socket", self.socket]
+        extra = []
         if self.worker:
-            command += ["--semantic-stream-command", str(Path(self.worker).resolve())]
+            extra += ["--semantic-stream-command", str(Path(self.worker).resolve())]
         if self.embedding_worker:
-            command += ["--embedding-command", str(Path(self.embedding_worker).resolve())]
-        self.log = (self.root / "api.log").open("wb")
+            extra += ["--embedding-command", str(Path(self.embedding_worker).resolve())]
         self.started = time.monotonic()
         self._launch_attempted = True
-        self.server = subprocess.Popen([str(c) for c in command], env=self.env, stdout=self.log, stderr=self.log)
-        deadline = time.time() + 30
-        while not self.socket.exists():
-            if self.server.poll() is not None or time.time() > deadline:
-                raise RuntimeError("API did not start; see " + str(self.root / "api.log"))
-            time.sleep(0.1)
+        api = disposable_host.launch_server(self.binary, self.env, socket_path=self.socket, args=extra,
+                                            log=self.root / "api.log", label="candidate API")
+        self.log, self.server = api.log, api.process
+        api.wait_ready(timeout=30)
 
     def wait_for_full_coverage(self, timeout=1800):
         """Separate cold backfill from warm agent timing for the passage index."""
@@ -604,17 +599,7 @@ class TrialStore:
         raise RuntimeError(f"candidate index did not reach full eligible coverage in {timeout}s; last={last}")
 
     def stop(self):
-        if self.server and self.server.poll() is None:
-            self.server.terminate()
-            try:
-                self.server.wait(15)
-            except subprocess.TimeoutExpired:
-                self.server.kill()
-                try:
-                    self.server.wait(15)
-                except subprocess.TimeoutExpired:
-                    # Exit is unobserved: keep the server handle and socket for recovery.
-                    raise RuntimeError("cairn API did not exit after kill") from None
+        disposable_host.stop_process(self.server, timeout=15, label="cairn API")
         self.server = None
         shutil.rmtree(self.sockdir, ignore_errors=True)
 

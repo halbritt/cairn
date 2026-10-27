@@ -191,7 +191,8 @@ class IdentityTests(unittest.TestCase):
 
     def test_stages_private_tokens_and_identities(self):
         staged = dh.stage_identities(self.home, ("sender", "worker"), "fixture:unit",
-                                     principals=lambda role: "agent/" + role)
+                                     principals=lambda role: "agent/" + role,
+                                     destination={"worker": "local"}, identity_role={"worker": "observer"})
         identities = json.loads((self.home / "identities.json").read_text())
         self.assertEqual([row["principal"] for row in identities], ["agent/sender", "agent/worker"])
         for row, role in zip(identities, ("sender", "worker")):
@@ -200,7 +201,9 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(token_file.stat().st_mode), 0o600)
             self.assertEqual(row["token_sha256"], __import__("hashlib").sha256(
                 token_file.read_text().encode()).hexdigest())
-            self.assertEqual((row["repo"], row["role"], row["destination"]), ("fixture:unit", "agent", "hosted"))
+            self.assertEqual((row["repo"], row["role"], row["destination"]),
+                             ("fixture:unit", "agent", "hosted") if role == "sender"
+                             else ("fixture:unit", "observer", "local"))
         self.assertEqual(stat.S_IMODE((self.home / "identities.json").stat().st_mode), 0o600)
         with self.assertRaises(FileExistsError):
             dh.stage_identities(self.home, ("sender",), "fixture:unit", principals={"sender": "x"})
@@ -231,6 +234,10 @@ class EnvelopeTests(unittest.TestCase):
         envelope = self.call("refused", expected="REFUSED")
         self.assertEqual((envelope["status"], envelope["message"]), ("REFUSED", "no"))
         self.assertEqual(dh.run_envelope([self.binary, "ok"], "raw body")["echo"], "raw body")
+        self.assertEqual(self.call("refused", expected=None)["status"], "REFUSED")
+        self.assertEqual(self.call("ok", expected=None)["status"], "OK")
+        with self.assertRaises(dh.HostRefusal):
+            self.call("lie", expected=None)
         self.assertEqual(dh.run_envelope([self.binary, "ok"])["echo"], "")
 
     def test_contract_refusals(self):
@@ -327,8 +334,22 @@ class HostTests(unittest.TestCase):
             self.assertEqual(host.agent("alice", "refused", expected="REFUSED")["status"], "REFUSED")
             host.restart_server()
             self.assertTrue(dh.socket_accepts(host.socket))
+            self.assertEqual(host.close(), 0)
+            self.assertIsNone(host.close())
         self.assertIsNone(host.server)
         self.assertFalse(host.socket.exists())
+
+    def test_existing_private_home_and_token_names(self):
+        home = self.directory / "existing"
+        home.mkdir(mode=0o700)
+        with dh.DisposableHost.start(self.database, repo="fixture:unit", binary=self.binary, home=home,
+                                     roles=("agent",), principals={"agent": "agent:x"}, label="unit",
+                                     token_name=lambda role: "hosted-agent.token", serve=False) as host:
+            self.assertEqual(host.token("agent"), home / "hosted-agent.token")
+        home.chmod(0o755)
+        with self.assertRaises(dh.HostRefusal):
+            dh.DisposableHost.start(self.database, repo="fixture:unit", binary=self.binary, home=home,
+                                    roles=("agent",), label="unit", serve=False)
 
     def test_failed_start_releases_the_server(self):
         with self.assertRaises(dh.HostRefusal):

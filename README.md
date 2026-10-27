@@ -401,6 +401,10 @@ node scripts/check_opencode_recent_files.mjs
 node scripts/check_opencode_lifecycle.mjs
 ```
 
+`CAIRN_TEST_ONLY='<glob> ...' make test-integration` runs only the matching Python
+fixtures and skips the Go package suites while a fixture is being developed; see
+[disposable fixture hosts](docs/disposable-fixtures.md) for the fixture contract.
+
 The [local workflow model report](docs/workflow-model-report.md) joins selected
 native provider usage to inbox journals without exporting payloads. Its Python
 checks require `tiktoken==0.12.0`; run them with

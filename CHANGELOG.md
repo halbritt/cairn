@@ -61,6 +61,17 @@ and MCP processes.
   [privacy markers](docs/native-inbox.md#privacy-markers-and-hook-admission).
   Existing installations keep their behaviour until an explicit complete
   bundle upgrade.
+- Integration fixtures share one disposable host module
+  (`scripts/disposable_host.py`): cluster precondition, database creation and
+  migration, identity staging, API startup with fixed failure classes, one
+  envelope contract, a hook-owner harness, and teardown of only the processes
+  a fixture started. `scripts/test-postgres.sh` is now a runner: each
+  disposable fixture owns a database named after it, the panel loop reads the
+  controller's workflow registry, and `CAIRN_TEST_ONLY='<glob> ...'` runs
+  selected fixtures during development. `scripts/run_notice_watcher_probe.sh`
+  no longer creates the fixture database itself. See
+  [disposable fixture hosts](docs/disposable-fixtures.md). This changes the
+  test procedure only; installed binaries and hooks are unchanged.
 
 ## 2026-10-26
 
