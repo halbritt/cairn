@@ -99,6 +99,26 @@ class LifecycleBundleTests(unittest.TestCase):
                 adapter = coordination._BUNDLE.load(name)
                 self.assertEqual(adapter._transport.process_reference(os.getpid())["pid"], os.getpid())
 
+    def test_installed_entry_points_share_the_staged_hook_admission(self):
+        root = self.stage("admission")
+        modules = {}
+        for name in ("coordination", "memory"):
+            spec = importlib.util.spec_from_file_location("installed_" + name, root / (name + ".py"))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            modules[name] = module
+        admission = modules["coordination"]._hook_admission
+        self.assertIs(admission, modules["coordination"]._BUNDLE.load("hook_admission"))
+        self.assertEqual(Path(admission.__file__), root / "hook_admission.py")
+        self.assertEqual(Path(modules["memory"]._hook_admission.__file__), root / "hook_admission.py")
+        event = dict(hook_event_name="UserPromptSubmit", session_id="thread-one", cwd=str(root), model="m")
+        self.assertEqual(modules["coordination"].normalize(dict(harness="codex"), event)["phase"], "busy")
+        with patch.dict(os.environ, {"CAIRN_LIFECYCLE_DISABLED": "1"}):
+            self.assertEqual(admission.decide("memory", dict(harness="codex"), event).reason, "disabled_env")
+        (root / ".cairn-no-coordination").touch()
+        self.assertTrue(modules["coordination"].coordination_excluded(root / "deeper"))
+        self.assertTrue(admission.decide("memory", dict(harness="codex"), dict(event, session_id=str(__import__("uuid").uuid4()))).run)
+
     def test_copying_installed_bundle_preserves_checked_bytes_and_refuses_drift(self):
         original = self.stage("original")
         copied = self.root / "copied"

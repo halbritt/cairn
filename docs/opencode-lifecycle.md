@@ -53,7 +53,8 @@ null, suppresses duplicate extraction for unchanged dialogue. A normal idle turn
 can incur a separate model call; an abrupt kill can still lose a checkpoint.
 
 Set `CAIRN_LIFECYCLE_DISABLED=1` for one launch, or create `.cairn-no-memory` in the
-working directory or Git root, to disable reads and capture. To uninstall, remove
+working directory, the project directory or any directory above them, to disable
+reads and capture. To uninstall, remove
 only `plugins/cairn-lifecycle.ts` and restart OpenCode. Memory-service and selector
 failures report a labelled warning; use explicit native tools when needed.
 

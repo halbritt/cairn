@@ -64,6 +64,7 @@ def _runtime_bundle():
 
 _BUNDLE = _runtime_bundle()
 _inbox_binding = _BUNDLE.load("inbox_binding").InboxBinding(_BUNDLE)
+_hook_admission = _BUNDLE.load("hook_admission")
 
 
 _unix_peer_transport = _BUNDLE.load("unix_peer_transport")
@@ -1433,57 +1434,15 @@ def daemon_worker_of(worker, daemon):
 
 
 def valid_native_session_id(value):
-    return (isinstance(value, str) and bool(value.strip()) and
-            not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in value) and
-            len(value.encode('utf-8')) <= 256)
+    return _hook_admission.valid_native_session_id(value)
 
 
 def normalize(config, event, event_name=None):
-    harness = config["harness"]
-    name = event_name or event.get("hook_event_name")
-    if harness == "agy":
-        native = event.get("conversationId")
-        roots = event.get("workspacePaths")
-        cwd = roots[0] if isinstance(roots, list) and roots else None
-        model = event.get("modelName", "")
-    else:
-        native, cwd, model = event.get("session_id"), event.get("cwd"), event.get("model", "")
-    if not valid_native_session_id(native):
-        raise CoordinationError("INVALID_HOST", "native conversation ID required")
-    if not isinstance(cwd, str) or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
-        raise CoordinationError("INVALID_HOST", "native workspace must be an existing absolute directory")
-    if not isinstance(model, str) or len(model) > 256:
-        raise CoordinationError("INVALID_HOST", "invalid observed model")
-    phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
-              "TurnStart": "busy", "ToolStart": "busy", "ToolEnd": "busy",
-              "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
-              "Interrupt": "interrupted", "ProviderObservation": "provider"}
-    if name not in phases:
-        raise CoordinationError("INVALID_HOST", "unsupported coordination hook event")
-    if name in ('ToolStart', 'ToolEnd') and harness != 'opencode':
-        raise CoordinationError('INVALID_HOST', 'tool capture hooks are OpenCode-only')
-    if name == "Interrupt" and harness != "codex":
-        raise CoordinationError("INVALID_HOST", "interrupt observation is a Codex-only hook")
-    phase = phases[name]
-    if harness == "agy" and name == "Stop" and event.get("fullyIdle") is not True:
-        phase = "busy"
-    workspace = str(Path(cwd).resolve())
-    root = Path(workspace)
-    for parent in [root, *root.parents]:
-        if (parent / ".git").exists():
-            root = parent
-            break
-    # Codex and Hermes own turns by native turn ID. Claude owns a request by the
-    # stable prompt_id of its channel submission; the display turn is separate.
-    owner = ''
-    if harness in ('codex', 'claude', 'hermes', 'opencode'):
-        owner = event.get('prompt_id' if harness == 'claude' else 'turn_id', '')
-        if not isinstance(owner, str) or len(owner.encode()) > 256 or '\0' in owner or any(ord(c) < 32 for c in owner):
-            raise CoordinationError('INVALID_HOST', 'invalid native ownership key')
-        if owner:
-            owner = ('claude-channel:' + owner) if harness == 'claude' else owner
-    return dict(native_id=native, workspace=workspace, project=root.name or workspace,
-                observed_model=model, phase=phase, event=name, native_turn_id=owner)
+    """Validate one hook event into a presence observation; hook_admission owns the rules."""
+    admission = _hook_admission.observe(config, event, event_name)
+    if not admission.run:
+        raise CoordinationError("INVALID_HOST", admission.message)
+    return admission.observation()
 
 
 def write_state(path, state):
@@ -3200,9 +3159,9 @@ def tool_cue(config, event):
 
 
 def coordination_excluded(workspace):
-    root = Path(workspace)
-    return any((p / name).exists() for p in [root, *root.parents]
-               for name in ('.cairn-no-memory', '.cairn-no-coordination'))
+    """Either privacy marker in the workspace or any ancestor; hook_admission owns the rule."""
+    markers = _hook_admission.KINDS['coordination']['markers']
+    return bool(_hook_admission.privacy_exclusions([Path(workspace)], markers))
 
 
 def inbox_recall_wake(event):
@@ -4034,21 +3993,19 @@ def handle(config, event, event_name=None, *, _inbox_resolved=False):
 
 def _handle(config, event, event_name=None, *, recall_reports=None):
     bridge_deadline = time.monotonic() + 12
-    if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1':
-        return {}
-    if config.get("config_home") and config["harness"] in ("codex", "claude"):
-        variable = "CODEX_HOME" if config["harness"] == "codex" else "CLAUDE_CONFIG_DIR"
-        active_home = Path(os.environ.get(variable, str(Path.home() / ("." + config["harness"])))).resolve()
-        if active_home != Path(config["config_home"]).resolve():
-            return {}  # Merged config layers can include another account's hooks.
-    if (event_name or event.get('hook_event_name')) == 'PostToolUse':
-        if config['harness'] not in ('claude', 'codex', 'opencode') or os.environ.get('CAIRN_WAKE_CONTEXT') or any(
-                os.environ.get(k) == '1' for k in ('CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD')):
-            return {}
+    wake = None
+
+    def accept_wake():
+        nonlocal wake
+        wake = wake_context(config)
+        return bool(wake)
+
+    # Environment, account home and the tool-cue vocabulary are one admission decision.
+    admission = _hook_admission.guard('coordination', config, event, event_name, wake_accepted=accept_wake)
+    if not admission.run:
+        return {}  # Disabled, another account's merged hooks, or a wake-less child.
+    if admission.phase == 'cue':
         return tool_cue(config, event)
-    wake = wake_context(config)
-    if not wake and (any(os.environ.get(k) == "1" for k in ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")) or os.environ.get("CAIRN_WAKE_CONTEXT")):
-        return {}
     if wake:
         config = dict(config, _wake=wake, native_delivery=False)
     observation = normalize(config, event, event_name)

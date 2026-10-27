@@ -437,8 +437,8 @@ after changing that setting. If no model is configured, Claude selects its defau
 and collection. The installer never provisions credentials or changes policy.
 
 To disable hooks for one launch, set `CAIRN_LIFECYCLE_DISABLED=1`. A
-`.cairn-no-memory` file in the working directory or nearest Git root disables both retrieval and
-capture there. To uninstall, remove this installation's commands from the six
+`.cairn-no-memory` file in the working directory, or in any directory above it, disables both
+retrieval and capture there (the [one marker rule](native-inbox.md#privacy-markers-and-hook-admission)). To uninstall, remove this installation's commands from the six
 hook lists; leave other hooks intact. Do not restore the entire backup over newer
 settings changes.
 

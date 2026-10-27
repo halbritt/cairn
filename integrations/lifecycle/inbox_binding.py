@@ -33,6 +33,7 @@ class InboxBinding:
     def __init__(self, bundle):
         self._bundle = bundle
         self._ledger = bundle.load('grant_ledger')
+        self._admission = bundle.load('hook_admission')
 
     def effective_config(self, config, event, is_wake):
         """Snapshot the one-file activation decision for this hook invocation.
@@ -42,16 +43,8 @@ class InboxBinding:
         """
         if not config.get("inbox_recall_binding"):
             return config
-        excluded = (any(os.environ.get(k) == "1" for k in
-                        ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD", "CAIRN_COORDINATION_DISABLED"))
-                    or bool(os.environ.get("CAIRN_WAKE_CONTEXT")))
-        if event is not None:
-            excluded = excluded or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit")
-            for name in ("cwd", "project_path"):
-                if event.get(name) and isinstance(event[name], str):
-                    root = Path(event[name]).resolve()
-                    excluded = excluded or any((p / marker).exists() for p in (root, *root.parents)
-                                               for marker in (".cairn-no-memory", ".cairn-no-coordination"))
+        # Guards, event vocabulary and the privacy walk are the shared admission decision.
+        excluded = not self._admission.decide("inbox_recall", config, event).run
         if excluded:
             result = dict(config)
             result.pop("inbox_recall_binding")
@@ -122,10 +115,9 @@ class InboxBinding:
         except (ValueError, TypeError, AttributeError):
             return enabled
         # Privacy exclusions do not write per-session activation metadata.
-        for name in ('cwd', 'project_path'):
-            if event.get(name) and any((p / '.cairn-no-memory').exists() for p in
-                    [Path(event[name]).resolve(), *Path(event[name]).resolve().parents]):
-                return enabled
+        roots = self._admission.privacy_roots(event, explicit_project=True)
+        if self._admission.privacy_exclusions(roots, (self._admission.MEMORY_MARKER,)):
+            return enabled
         manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
         path = Path(manifest['memory_config']['path'])
         # Disabled staging intentionally does not require the final configuration
@@ -141,22 +133,18 @@ class InboxBinding:
         """A coordination opt-out leaves the independent required-only hook active."""
         manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
         coordinators = [json.loads(_checked_file(item)[1]) for item in manifest['coordination_configs']]
-        variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
-        active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
+        active = self._admission.active_home(config['harness']).resolve()
         matches = [c for c in coordinators if not c.get('config_home') or active == Path(c['config_home']).resolve()]
         if len(matches) > 1:
             raise ValueError('ambiguous coordination profile')
         if not matches:
             return False
         coordination = matches[0]
-        if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1' or os.environ.get('CAIRN_WAKE_CONTEXT'):
+        if self._admission.disabled('inbox_recall'):
             return False
-        root = Path(event['cwd']).resolve()
-        if any((p / '.cairn-no-coordination').exists() for p in [root, *root.parents]):
+        roots = self._admission.privacy_roots(event, explicit_project=False)
+        if self._admission.privacy_exclusions(roots, (self._admission.COORDINATION_MARKER,)):
             return False
-        if coordination.get('config_home'):
-            variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
-            active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
-            if active != Path(coordination['config_home']).resolve():
-                return False
+        if self._admission.other_account_home(coordination):
+            return False
         return True

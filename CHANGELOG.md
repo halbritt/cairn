@@ -36,8 +36,6 @@ and MCP processes.
   starvation evaluation; `coordination-review` and `delivery-alerts` keep
   using the core implementation, which now has its own tests.
 
-## 2026-10-27
-
 - Delivery and native-attempt transitions in core now have one owner
   (`core/delivery_transitions.go`): lease, renew, release, fail, settle and
   attempt open/finish, plus the hold predicates, replace the per-file SQL that
@@ -48,6 +46,15 @@ and MCP processes.
   and lets sweep rows omit a request id. Upgrade note: deploy the binary and
   `scripts/recovery_model_report.py` together, since the report validates the
   action/outcome pairs it accepts.
+- Lifecycle hooks share one admission decision (`hook_admission.py`, a new
+  bundle member). Memory, coordination and bound inbox recall previously kept
+  separate environment guards, account-home checks and privacy-marker walks
+  that disagreed: a `.cairn-no-memory` marker above a Git root silenced
+  coordination but not memory. The one rule now walks the working directory,
+  an explicit project directory and every directory above them; see
+  [privacy markers](docs/native-inbox.md#privacy-markers-and-hook-admission).
+  Existing installations keep their behaviour until an explicit complete
+  bundle upgrade.
 
 ## 2026-10-26
 

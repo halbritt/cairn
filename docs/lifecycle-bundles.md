@@ -1,8 +1,9 @@
 # Installed lifecycle bundles
 
 A lifecycle installation carries the complete implementation needed by its
-memory, coordination, and inbox recall entry points. The shared bundle module
-owns the file inventory, staging, validation, and dependency loading. Installers
+memory, coordination, and inbox recall entry points, including the shared
+hook admission module that decides whether any of them runs. The shared bundle
+module owns the file inventory, staging, validation, and dependency loading. Installers
 and current native fixtures use that inventory instead of maintaining separate
 lists of helper files.
 

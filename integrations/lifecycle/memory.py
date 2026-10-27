@@ -46,6 +46,7 @@ _BUNDLE = _runtime_bundle()
 
 _grant_ledger = _BUNDLE.load("grant_ledger")
 _inbox_binding = _BUNDLE.load("inbox_binding").InboxBinding(_BUNDLE)
+_hook_admission = _BUNDLE.load("hook_admission")
 GrantLedger = _grant_ledger.GrantLedger
 
 LIFECYCLE_BUNDLE_VERSION = 1  # selected artifacts must include a pinned complete bundle
@@ -3299,40 +3300,28 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
     hook_started = time.monotonic()
     if not _inbox_resolved:
         config = effective_inbox_config(config, event)
-    if os.environ.get("CAIRN_LIFECYCLE_CHILD") == "1" or os.environ.get("CAIRN_LIFECYCLE_DISABLED") == "1":
+    # Environment guards, identity shape, event vocabulary, workspace validity and
+    # the privacy walk are one admission decision shared with coordination.
+    admission = _hook_admission.decide("memory", config, event)
+    if admission.reason in ("disabled_env", "other_account_home"):
         _trace_note(outcome="early_return:disabled_env")
         return {}
-    if not isinstance(event.get("session_id"), str) or not event["session_id"] or len(event["session_id"]) > 128:
-        raise HookError("missing or invalid host session identity")
-    if config.get("harness") == "opencode":
-        if not re.fullmatch(r"ses_[A-Za-z0-9]+", event["session_id"]):
-            raise HookError("invalid OpenCode session identity")
-    elif config.get("harness") == "hermes":
-        if any(ord(c) < 32 for c in event["session_id"]):
-            raise HookError("invalid Hermes session identity")
-    else:
-        try:
-            uuid.UUID(event["session_id"])
-        except ValueError as exc:
-            raise HookError("host session identity must be a UUID") from exc
+    if admission.verdict == "invalid" and admission.message in _hook_admission.IDENTITY_MESSAGES:
+        raise HookError(admission.message)
     event_name = event.get("hook_event_name")
     _trace_note(stage="validated")
-    if event_name == "Stop" and (config.get("harness") != "codex" or event.get("stop_hook_active")):
+    if admission.reason == "stop_not_boundary":
         _trace_note(outcome="early_return:stop_not_boundary")
         return {}  # Only Codex captures at Stop; a Stop continuation is not a new boundary.
-    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PreToolUse", "PostToolUse",
-                          "PostToolUseFailure", "Stop"):
+    if admission.reason == "unsupported_event":
         _trace_note(outcome="early_return:unsupported_event")
         return {}
-    if not Path(event["cwd"]).is_dir():
-        raise HookError("host working directory is unavailable")
-    if event.get("project_path") and (not isinstance(event["project_path"], str)
-            or not Path(event["project_path"]).is_absolute() or not Path(event["project_path"]).is_dir()):
-        raise HookError("explicit project directory is unavailable")
+    if admission.verdict == "invalid":
+        raise HookError(admission.message)
     topic = event.get("workstream", "")
     if not isinstance(topic, str) or len(topic.encode()) > 90 or any(c in topic for c in '\r\n"'):
         raise HookError("invalid explicit workstream")
-    if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]), project_root(event))):
+    if admission.reason == "privacy_marker":
         _trace_note(outcome="early_return:no_memory_marker")
         return {}
     if (event_name in ("PreToolUse", "PostToolUse") and config.get("harness") != "hermes"

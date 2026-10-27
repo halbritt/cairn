@@ -12,6 +12,11 @@ memory and coordination configurations, with pinned files and an activation
 state. A callback pair retains its first activation decision for the same native
 turn or Claude prompt owner.
 
+**Hook admission**:
+The one decision whether a lifecycle hook runs: environment guards, the account
+home, the event vocabulary, the session identity shape and the privacy-marker
+walk. Memory, coordination and bound inbox recall consume the same decision.
+
 **Native attempt cleanup**:
 The Store's interpretation of host observations about a native inbox attempt's
 turn, captured tools and terminal scan. Confirmed cancellation and revoked

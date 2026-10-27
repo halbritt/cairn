@@ -117,7 +117,8 @@ The cue is a hint, not delivery:
   runs before the cue). The hook takes no presence lock, so it never waits behind
   the watcher, and it does not write presence state. It checks the process,
   execution, account, workspace opt-outs (`.cairn-no-memory`,
-  `.cairn-no-coordination`), lifecycle-child and wake-context guards before
+  `.cairn-no-coordination`; see [privacy markers](#privacy-markers-and-hook-admission)),
+  lifecycle-child and wake-context guards before
   asking, and again confirms afterwards that the execution did not change
   while the lookup ran and rechecks workspace opt-outs before emission. Fresh
   workers, idle or ending sessions, lifecycle
@@ -604,3 +605,31 @@ separately from a queue refusal; receipt acceptance followed by idle
 auto-dispatch can still establish the join when a later explicit start reports
 that the submission no longer exists. See the
 [native wake verification record](verification/codex-app-server-wake-join-2026-10-25.md).
+
+## Privacy markers and hook admission
+
+One module, `integrations/lifecycle/hook_admission.py`, decides whether any
+lifecycle hook runs: the environment guards, the account home, the event
+vocabulary, the session identity shape and the privacy walk. The memory engine,
+the coordination hook and the bound inbox recall binding consume that one
+decision instead of keeping their own copies. The marker rule is:
+
+- `.cairn-no-memory` or `.cairn-no-coordination` in the working directory or
+  any directory above it excludes coordination (presence, inbox delivery, the
+  waiting-work cue) and bound inbox recall.
+- `.cairn-no-memory` in the working directory, in an explicit `project_path`
+  (Hermes and OpenCode may pass one), or in any directory above either excludes
+  the memory engine and bound inbox recall.
+- `.cairn-no-coordination` never silences the independent memory hook, and a
+  marker in an explicit `project_path` does not stop presence registration for
+  the working directory.
+
+`CAIRN_LIFECYCLE_DISABLED=1` and `CAIRN_LIFECYCLE_CHILD=1` stop every hook.
+`CAIRN_COORDINATION_DISABLED=1` stops coordination and bound inbox recall only.
+`CAIRN_WAKE_CONTEXT` stops coordination and bound inbox recall unless the named
+wake context is accepted, in which case the fresh worker's coordination hook runs
+even under the lifecycle-child guard. Hooks installed for one account home skip
+when another account's merged configuration invokes them. Memory requires each
+harness's own session identity shape (UUIDs for Claude and Codex, `ses_…` for
+OpenCode, printable labels for Hermes); coordination accepts any printable
+native conversation ID within the API byte limit.

@@ -196,7 +196,8 @@ original as `hooks.json.before-cairn-lifecycle`. It then trusts exactly those
 four definitions through Codex's own app-server protocol, as the coordination
 installer does. Rerunning it updates the installation without duplicating
 hooks. Start a fresh Codex session afterward. Put `.cairn-no-memory` in a
-project to opt it out, or set `CAIRN_LIFECYCLE_DISABLED=1` for one run.
+project (it applies to every directory below it) to opt it out, or set
+`CAIRN_LIFECYCLE_DISABLED=1` for one run.
 
 ## Optional invocation trace (diagnostic window)
 

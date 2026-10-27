@@ -122,8 +122,9 @@ background drain. Failures are labelled in Hermes logs and CLI warnings; tool
 output and dialogue are excluded from those diagnostics. Abrupt process death
 can still lose work, and selection remains fallible.
 
-`CAIRN_LIFECYCLE_DISABLED=1`, `.cairn-no-memory` in the working directory or Git
-root, and `CAIRN_LIFECYCLE_CHILD=1` disable automatic memory. Child, cron, flush
+`CAIRN_LIFECYCLE_DISABLED=1`, `.cairn-no-memory` in the working directory, the
+explicit project directory or any directory above either, and
+`CAIRN_LIFECYCLE_CHILD=1` disable automatic memory. Child, cron, flush
 and auxiliary runs are excluded. An observed opt-out also discards pending
 dialogue so re-enabling does not capture it later. Explicit tools remain available.
 

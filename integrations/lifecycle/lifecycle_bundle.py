@@ -17,7 +17,7 @@ MODULE_FILES = (
     "lifecycle_bundle.py", "memory.py", "coordination.py", "inbox_recall.py", "inbox_binding.py",
     "grant_ledger.py", "transcript_recovery.py", "unix_peer_transport.py",
     "wake_transport.py", "process_scan.py", "codex_queue.py", "claude_channel.py",
-    "opencode_queue.py", "hermes_queue.py", "recall_dispatch.py",
+    "opencode_queue.py", "hermes_queue.py", "recall_dispatch.py", "hook_admission.py",
 )
 
 
