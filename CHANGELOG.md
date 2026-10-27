@@ -26,6 +26,19 @@ and MCP processes.
   probe now sends `initialized` as a notification, not a request with an id.
   The installed queue client and the installer's RPC closure are unchanged.
   These fixtures were not re-run against a real Codex binary for this change.
+- One task-evaluation attempt now runs through `scripts/trial_attempt.py`: the
+  agent command reads its flags once into a typed execution profile, a provider
+  adapter (Claude, Codex, or an inert local actor) owns the launch, and one
+  builder each writes the completed and the failed attempt's row. `run_agent`
+  shrank from 459 lines to a delegating adapter and no longer branches on five
+  attributes attached to the argument namespace. The whole capture, custody,
+  grading and record path can now run without model quota through the inert
+  adapter, which only an explicit `provider` argument can select. New
+  `agent --execution-profile PATH SHA256` accepts the same flag values as a
+  pinned document. Records, files and argv are unchanged. The weekly runner's
+  pinned harness commit is unchanged: it keeps running its exported harness with
+  flags until an operator pins a new commit, and no real-account re-verification
+  of this change was performed.
 - The compiler now parses a sealed ranking identity such as
   `binary-idf-scope-recency/6` once, into a declared channel, outer tier,
   tokenizer generation and IDF evidence flags, instead of re-deriving each

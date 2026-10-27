@@ -113,7 +113,31 @@ python3 scripts/trial_task_eval.py agent --legacy-fixtures --harness codex --mod
   --output OUT/codex --arms none direct --cases local-ci --parallel 1
 ```
 
-Memory arms still require the disposable-cluster wrapper shown below. The npm
+Memory arms still require the disposable-cluster wrapper shown below.
+
+### One attempt: execution profile and provider seam
+
+`scripts/trial_attempt.py` owns one attempt. `cmd_agent` reads the CLI
+namespace once into an `ExecutionProfile` (harness, model, effort, limits, the
+execution mode, per-arm controls, the retained native binary, the owned writer
+policy and the account assignment); every attempt runs under that declaration.
+A provider adapter owns the provider argv, binds, environment and launch:
+`ClaudeProvider` and `CodexProvider` build the real sandboxed command, and
+`InertProvider` runs a local inert actor through the same capture, custody,
+grading and record path without a model. The real adapter always follows the
+declared harness. The inert adapter is injected only through the explicit
+`provider` argument of `cmd_agent`/`run_agent`; no environment variable selects
+it. One builder writes the agent row for a completed attempt and another for an
+attempt that raised, so no record field is derived twice.
+
+`agent --execution-profile PATH SHA256` accepts a pinned
+`cairn.task-eval.execution-profile/1` document whose `agent` object carries the
+same flag values (argparse names, for example `model`, `original_limits`). The
+document refuses unknown fields and changed bytes; an explicit flag that differs
+from the profile refuses; every existing flag validation still applies. The
+individual flags remain the compatibility interface: the weekly runner keeps
+invoking pinned harness commits with flags, because an older pinned export does
+not know `--execution-profile`. The npm
 installation and auth paths are host-specific defaults; they can be overridden.
 Use `--semantic-recall LABEL` for each memory arm that should run the semantic
 recall/applicability route. Its default is off, matching the frozen Claude

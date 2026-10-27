@@ -56,32 +56,23 @@ from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
 from trial_task_input import corpus_entities, freeze_input, load_input
 from trial_task_permissions import settings_permissions, command_metadata, error_metadata, denial_metadata, background_result
 from trial_attempt_custody import AttemptBaseline, BaselineError
+import trial_attempt
+# One attempt lives in trial_attempt; these names stay importable from the harness.
+from trial_attempt import (  # noqa: F401
+    BINDING_CHECK, CLAUDE_CONTEXT_BYTES, CODEX_BINDING_CHECK, CODEX_CONTEXT_BYTES, HOOK_EVENTS,
+    MEMORY_INSTRUCTION, PROSPECTIVE_MEMORY_INSTRUCTION, TRIAL_REPO, InertProvider,
+    add_delivery_evidence, binding_check_command, classify_relevance, codex_process_admission_failure,
+    codex_weekly_command, execution_failure, failed_selected_input, hook_observations, names_for,
+    paired_json_pin, parse_injection, prerequisite_command, retain_observation_error,
+    selected_observation_error, trial_hook_observer_bindings)
 
 ROOT = Path(__file__).resolve().parents[1]
 TRIAL = ROOT / "trials" / "task-eval"
-TRIAL_REPO = "trial:task-eval"
 OTHER_REPO = "trial:other-collection"
-CLAUDE_CONTEXT_BYTES = 9500  # scripts/install-claude-hooks.py
-CODEX_CONTEXT_BYTES = 12000  # scripts/install-codex-hooks.py
 RANK_DEPTH = 50
 CASE_MATERIALS_SCHEMA = 'cairn.legacy-v12-case-material-manifest/2'
 DB_COVERAGE_ACTION_PROJECTION = 'cairn.legacy-db-coverage-action-trace/1'
 CASE_MATERIALS_LIMIT = 2 * 1024 * 1024
-MEMORY_INSTRUCTION = """# Shared memory
-
-Use the `cairn` MCP tools. Search for relevant prior decisions, preferences and
-lessons at the start of substantive work; pull relevant notes using the returned
-`pull_arguments` and check them against current source. Saved notes are fallible."""
-PROSPECTIVE_MEMORY_INSTRUCTION = MEMORY_INSTRUCTION + """
-
-A note's repository scope names the shared memory collection, independently of
-the current working directory. Determine project applicability from the note's
-content and the current task. Trial imports have fresh record IDs, version 1,
-writer and written_at metadata; these identify trial records, not their original
-authorship or date. Neither collection membership nor import metadata establishes
-relevance, currentness or authority. Preserve source conditions and uncertainty;
-use the supplied trial IDs and versions when citing retrieved evidence."""
-HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure")
 
 
 # ---------------------------------------------------------------- fixtures
@@ -622,22 +613,6 @@ def hook_config(store, state_dir, context_bytes=CLAUDE_CONTEXT_BYTES):
                 state_dir=str(state_dir), context_bytes=context_bytes, harness="claude")
 
 
-def parse_injection(output):
-    """Return (record ids in the index, expanded record id, injected bytes) from hook stdout."""
-    if not output.strip():
-        return [], None, 0
-    data = json.loads(output)
-    text = (data.get("hookSpecificOutput") or {}).get("additionalContext", "")
-    if not text:
-        return [], None, 0
-    start = text.index("{")
-    view = json.loads(text[start:])
-    index = [entry["record_id"] for entry in view.get("index", [])]
-    expanded = ((view.get("expanded") or {}).get("selection") or {}).get("record", {}).get("record_id")
-    selected = [item.get("record", {}).get("record_id") for item in view.get("selected", []) if isinstance(item, dict)]
-    return index + [s for s in selected if s], expanded, len(text.encode())
-
-
 def invoke_hook(hook_path, config_path, event):
     started = time.monotonic()
     result = subprocess.run([sys.executable, "-B", str(hook_path), "--config", str(config_path)],
@@ -1082,16 +1057,6 @@ def parse_codex_stream(text):
                 cache_creation_tokens=usage.get("cache_write_input_tokens"), output_tokens=usage.get("output_tokens"))
 
 
-def codex_process_admission_failure(trace, exit_code):
-    """Keep scheduling closed on an opaque failed or truncated Codex process."""
-    failure = trace.get("admission_failure")
-    if failure is not None:
-        return failure
-    if exit_code != 0 or not trace.get("completed"):
-        return dict(provider="codex", reason="provider_error_unknown", api_error_status=None)
-    return None
-
-
 def codex_custody_failure(process_custody, writer_record):
     """Name missing process, writer-release, or final-artifact custody separately."""
     if (not isinstance(process_custody, dict)
@@ -1195,18 +1160,6 @@ def parse_claude_stream(text):
                 turn_unit="claude_num_turns",
                 input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cache_read_input_tokens"),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens"), output_tokens=usage.get("output_tokens"))
-
-
-def execution_failure(trace, code):
-    if code == 124:
-        return "timeout"
-    if code:
-        return "nonzero_exit"
-    if trace.get("is_error"):
-        return "provider_error"
-    if not trace.get("completed"):
-        return "unterminated_stream"
-    return None
 
 
 def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None,
@@ -1332,647 +1285,31 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     return command + provider_args
 
 
-def trial_hook_observer_bindings(config_path, state_dir):
-    """Mount the observer and its helper modules at their importable sandbox paths."""
-    return [
-        (ROOT / "scripts/trial_hook_observer.py", "/tmp/trial/hook-observer.py", "ro"),
-        (ROOT / "scripts/trial_source_delivery.py", "/tmp/trial/trial_source_delivery.py", "ro"),
-        (ROOT / "scripts/trial_observation_storage.py", "/tmp/trial/trial_observation_storage.py", "ro"),
-        (config_path, "/tmp/trial/hookconfig.json", "ro"),
-        (state_dir, "/tmp/trial/hookstate", "rw"),
-    ]
+def attempt_toolkit():
+    """The harness collaborators an attempt crosses, read at call time so tests can replace them."""
+    return trial_attempt.Toolkit(
+        prepare_workspace=prepare_workspace, load_corpus=load_corpus, grade=grade, parse_stream=parse_stream,
+        parse_tool_outputs=parse_tool_outputs, sandbox=sandbox_command, capture=capture, read_custody=read_custody,
+        custody_failure=codex_custody_failure, bind_ordinary_claude=bind_ordinary_claude,
+        measure=measure, hook_observations=hook_observations)
 
 
-def codex_weekly_command(codex_entry, model, effort):
-    """Build a subscription-routed Codex command with no ambient user config."""
-    return [codex_entry, "exec", "--json", "--ephemeral", "--ignore-user-config",
-            "--ignore-rules", "--skip-git-repo-check", "--sandbox", "danger-full-access",
-            "-c", 'model_provider="openai"', "-c", 'approval_policy="never"',
-            "-c", "model_reasoning_effort=" + json.dumps(effort), "-m", model]
+def run_agent(case, arm, seed, order, args, stores, out, *, provider=None):
+    """One attempt. The CLI namespace is only a compatibility adapter onto the execution profile.
+
+    ``cmd_agent`` declares the profile once (``args._execution_profile``); direct callers
+    still pass the legacy namespace, read here exactly once. ``provider`` injects an adapter
+    such as ``trial_attempt.InertProvider``; it is never selected by environment.
+    """
+    profile = getattr(args, "_execution_profile", None) or trial_attempt.ExecutionProfile.from_args(args)
+    if provider is not None:
+        profile = profile.with_provider(provider)
+    return trial_attempt.execute(case, arm, seed, order, profile, stores, out, attempt_toolkit())
 
 
-# Inside the sandbox, before the provider: Claude's task-key contract or Codex's
-# native-turn handler, plus the owner-only inbox recall binding.
-BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
-CODEX_BINDING_CHECK = ["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert config.get('harness')=='codex' and 'recall_task_key' not in config; assert engine.get('recall_task_key') is not None and engine['recall_task_key'](config) is None; assert engine.get('bound_codex') is not None and engine['bound_codex'](config); assert callable(engine.get('codex_agent_context')); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]
-
-
-def binding_check_command(harness):
-    if harness == "claude":
-        return BINDING_CHECK
-    if harness == "codex":
-        return CODEX_BINDING_CHECK
-    raise ValueError("unknown harness " + harness)
-
-
-def paired_json_pin(path, sha256):
-    """A closed JSON control document pinned by path and SHA-256 (trial_paired_request rules)."""
-    import trial_paired_request as paired
-    try:
-        return paired.read_json_pin(dict(path=path, sha256=sha256))
-    except paired.Refusal as error:
-        raise ValueError("original_writer_controls_unavailable") from error
-
-
-def original_binding_check(root, cwd_name, binds, env, harness, sandbox_options, base, timeout):
-    """Run BINDING_CHECK in the attempt sandbox for an original agent_tools arm; refuse before launch."""
-    check = binding_check_command(harness)
-    checked = sandbox_command(root, cwd_name, binds, env, prerequisite_command(check), harness, **sandbox_options)
-    try:
-        done = subprocess.run(checked, capture_output=True, timeout=min(120, timeout))
-        row = dict(argv=check, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
-                   stderr_sha256=hashlib.sha256(done.stderr).hexdigest())
-    except subprocess.TimeoutExpired:
-        row = dict(argv=check, exit=None, error="prerequisite_timeout")
-    (base / "original-binding-check.json").write_text(json.dumps(row, indent=2))
-    if row["exit"] != 0:
-        raise RuntimeError("original_recall_binding_invalid: binding check failed before provider launch")
-
-
-def prerequisite_command(argv):
-    """Give a prerequisite a waiting non-init parent; preserve shell-style signal status."""
-    supervisor = ("import subprocess,sys; result=subprocess.run(sys.argv[1:]); "
-                  "sys.exit(result.returncode if result.returncode >= 0 else 128-result.returncode)")
-    return ["python3", "-c", supervisor, *argv]
-
-
-def run_agent(case, arm, seed, order, args, stores, out):
-    run_id = f"{case['id']}.{arm}.s{seed}"
-    base = out / "runs" / run_id
-    base.mkdir(parents=True)
-    root = base / "work"
-    root.mkdir()
-    prepare_workspace(case, root)
-    cwd = root / case["cwd"]
-    baseline = AttemptBaseline.capture(base, case, arm, seed)
-    prospective = getattr(args, "_prospective", None)
-    # Legacy fixtures under the original paired limits (trial_legacy_limits).
-    original = bool(getattr(args, "original_limits", False)) and not prospective
-    codex_weekly = bool(getattr(args, "codex_weekly_limits", False)) and not prospective
-    assigned_account = (weekly_accounts.account_for(args._codex_account_assignment, case['id'], arm, seed)
-                        if codex_weekly and getattr(args, '_codex_account_assignment', None) is not None else None)
-    memory_instruction = PROSPECTIVE_MEMORY_INSTRUCTION if prospective else MEMORY_INSTRUCTION
-    corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
-    prompt = case["wordings"][args.wording]
-    home = Path.home()
-    env = dict(HOME=str(home), PATH=f"{home}/.local/bin:{home}/.local/go/bin:/usr/local/bin:/usr/bin:/bin",
-               LANG="C.UTF-8", GOTOOLCHAIN="local", GOFLAGS="-mod=mod", TERM="dumb",
-               GIT_AUTHOR_NAME="trial agent", GIT_AUTHOR_EMAIL="agent@example.invalid",
-               GIT_COMMITTER_NAME="trial agent", GIT_COMMITTER_EMAIL="agent@example.invalid")
-    binds = []
-    sandbox_options = dict(native_executable=checked_file(prospective["document"]["native"]["binary"])) if prospective else {}
-    original_native = None if prospective else getattr(args, "_original_native", None)
-    if original_native is not None:
-        # Re-hash the retained copy immediately before this attempt; mount it at the sandbox target.
-        copy = original_native["observed"]["source"]
-        row_sha256 = native_copy.file_sha256(copy)
-        if row_sha256 != original_native["declared"]["sha256"]:
-            raise RuntimeError("original native copy changed before launch")
-        sandbox_options = dict(native_executable=Path(copy), credentials_readonly=False)
-    common_runtime = prospective['document'].get('runtime') if prospective else None
-    runtime_identity = None
-    if common_runtime is not None:
-        from trial_task_runtime import validate_runtime, prepare_identity, runtime_environment
-        validate_runtime(common_runtime)
-        runtime_identity = prepare_identity(base/'runtime-identity')
-        sandbox_options.update(common_runtime=common_runtime, runtime_identity=runtime_identity)
-        env.update(runtime_environment(common_runtime))
-    if args.harness == "claude":
-        provider = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
-                    "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
-                    "--max-turns", str(args.max_turns)]
-        if original_native is not None:
-            # The retained bytes run at the absolute sandbox target, never an ambient PATH lookup.
-            provider = [original_native["observed"]["target"], "-p", "--model", args.model,
-                        "--effort", args.reasoning_effort, *provider[4:]]
-        if prospective:
-            provider = ["claude", "-p", "--model", args.model, "--effort", args.reasoning_effort,
-                        "--output-format", "stream-json", "--verbose", "--permission-prompts", "none",
-                        "--setting-sources", "", "--no-session-persistence", "--strict-mcp-config",
-                        "--input-format", "stream-json", "--replay-user-messages", "--include-hook-events",
-                        "--max-turns", str(args.max_turns)]
-            env["ENABLE_TOOL_SEARCH"] = "false"
-    else:
-        # Invoke the reviewed npm entry point, not this host's coordination launcher.
-        if codex_weekly:
-            auth_file = assigned_account['auth_file'] if assigned_account else args.codex_auth_file
-            auth_sha256 = assigned_account['auth_sha256'] if assigned_account else args.codex_auth_sha256
-            expected_account_id = assigned_account['account_id'] if assigned_account else None
-            codex_account_selection.verify_auth_file(auth_file, auth_sha256,
-                                                      expected_account_id=expected_account_id)
-        profile = base / "codex-home"
-        profile.mkdir(mode=0o700)
-        binds += [(profile, home / ".codex", "rw"),
-                  (Path(auth_file if codex_weekly else args.codex_auth_file).resolve(strict=True),
-                   home / ".codex/auth.json", "ro")]
-        env['CODEX_HOME'] = str(home / '.codex')
-        if getattr(args, "codex_binary", None):
-            codex_binary = Path(args.codex_binary).resolve(strict=True)
-            if native_copy.file_sha256(str(codex_binary)) != args.codex_binary_sha256:
-                raise ValueError("codex_binary_mismatch")
-            codex_entry = home / ".codex/codex"
-            binds.append((codex_binary, codex_entry, "ro"))
-            codex_entry = str(codex_entry)
-        else:
-            install = Path(args.codex_install).resolve()
-            binds.append((install, install, "ro"))
-            codex_entry = str(install / "codex/bin/codex.js")
-        provider = codex_weekly_command(codex_entry,args.model,args.reasoning_effort)
-    if arm == "direct":
-        notes = [corpus[n]["body"] for n in case["expected"]]
-        if notes:
-            prompt = "Relevant saved notes (fallible; check against the workspace):\n\n" + "\n\n---\n\n".join(notes) + "\n\n---\n\n" + prompt
-    elif arm != "none":
-        store = stores[arm]
-        task_wire = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
-        context_limit = 9500 - len(task_wire) - 512 - len(memory_instruction.encode()) if prospective else (
-            codex_weekly_limits.hook_context_bytes(prompt, memory_instruction) if getattr(args, "codex_weekly_limits", False) else
-            legacy_limits.hook_context_bytes(prompt, memory_instruction) if original
-            else CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
-        if context_limit < 1000:
-            raise ValueError("task leaves insufficient hook allowance")
-        session_state = base / "hook-state"
-        session_state.mkdir()
-        trial = Path("/tmp/trial/store")
-        config = dict(cairn=str(trial / "cairn"), socket=str(trial / "sock/api.sock"), token_file=str(trial / "agent.token"),
-                      repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate",
-                      context_bytes=context_limit,
-                      harness=args.harness, semantic_fallback=arm in args.semantic_recall)
-        original_arms = None if prospective else getattr(args, "_original_arms", None)
-        arm_config = stores[arm].get("configuration", {}) if prospective or original_arms else {}
-        if prospective or original_arms:
-            # Literal per-arm controls (prospective input, or the original weekly contract).
-            config["semantic_fallback"] = arm_config["semantic_fallback"]
-            config["recall_mode"] = arm_config["recall_mode"]
-        if original_arms:
-            if config["semantic_fallback"] and config["recall_mode"] != "agent_tools":
-                raise ValueError("original_execution_unsupported:semantic_fallback_selector")
-            observed_arm = original_arm_controls.observed_arm(arm_config)
-        if config["semantic_fallback"] and config.get("recall_mode") != "agent_tools":
-            config.update(claude="/tmp/trial/selector/claude", model=args.selector_model)
-            binds.append((Path(args.selector_binary).resolve(), config["claude"], "ro"))
-            if args.harness == "codex":
-                binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
-        (base / "hook-config.json").write_text(json.dumps(config))
-        if (prospective or original_arms) and config["recall_mode"] == "agent_tools":
-            # Claude's single child has an explicit one-task key. Codex uses its
-            # own durable per-native-turn grant; never add Claude's key there.
-            binds += bind_ordinary_claude(base, config, arm_config["bridge"],
-                                          launcher_task=args.harness == "claude", bundle_pin=arm_config.get("bundle"))
-        hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
-        if prospective:
-            hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
-            hook_cmd += " --frozen-prompt-sha256 " + hashlib.sha256(prompt.encode()).hexdigest()
-        hook_timeout = legacy_limits.hook_timeout_seconds() if original or codex_weekly else 13
-        settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=hook_timeout)])] for event in HOOK_EVENTS})
-        (base / "settings.json").write_text(json.dumps(settings))
-        mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
-            "mcp", "--socket", str(trial / "sock/api.sock"), "--token-file", str(trial / "agent.token"), "--repo", TRIAL_REPO,
-            "--task", "task-eval/" + run_id, "--run", run_id,
-            *(legacy_limits.mcp_tool_room_arguments() if original or codex_weekly else [])])))
-        (base / "mcp.json").write_text(json.dumps(mcp))
-        binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
-                  (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro")]
-        binds += trial_hook_observer_bindings(base / "hook-config.json", session_state)
-        binds += [(base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
-        if args.harness == "claude":
-            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", memory_instruction]
-        else:
-            # Only recall hooks; capture and production inbox hooks are absent.
-            hooks = {event: [dict(hooks=[dict(type="command", command=hook_cmd,
-                                            timeout=legacy_limits.hook_timeout_seconds() if codex_weekly else 13,
-                                            additionalContextLimit=min(CODEX_CONTEXT_BYTES, context_limit))])]
-                     for event in ("SessionStart", "UserPromptSubmit")}
-            (profile / "hooks.json").write_text(json.dumps(dict(hooks=hooks)))
-            server = mcp["mcpServers"]["cairn"]
-            provider += ["--dangerously-bypass-hook-trust",
-                         "-c", "mcp_servers.cairn.command=" + json.dumps(server["command"]),
-                         "-c", "mcp_servers.cairn.args=" + json.dumps(server["args"]),
-                         "-c", "developer_instructions=" + json.dumps(memory_instruction)]
-    if prospective:
-        settings_path, mcp_path = base / "settings.json", base / "mcp.json"
-        settings = load_json(settings_path) if settings_path.exists() else {}
-        settings.update(permissions=settings_permissions(), autoMemoryEnabled=False, claudeMdExcludes=["**"])
-        settings_path.write_text(json.dumps(settings))
-        if arm in ("none", "direct"):
-            mcp_path.write_text(json.dumps(dict(mcpServers={})))
-            binds += [(settings_path, "/tmp/trial/settings.json", "ro"), (mcp_path, "/tmp/trial/mcp.json", "ro")]
-            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json"]
-        prerequisites = []
-        binding_check = [binding_check_command(args.harness)] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
-        prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
-        for argv in prerequisite_commands:
-            checked = sandbox_command(root, case["cwd"], binds, env, prerequisite_command(argv), args.harness, **sandbox_options)
-            try:
-                done = subprocess.run(checked, capture_output=True, timeout=min(120, args.timeout))
-                row = dict(argv=argv, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
-                           stderr_sha256=hashlib.sha256(done.stderr).hexdigest())
-            except subprocess.TimeoutExpired:
-                row = dict(argv=argv, exit=None, error="prerequisite_timeout")
-            prerequisites.append(row)
-            (base / "preflight.json").write_text(json.dumps(prerequisites, indent=2))
-            if row["exit"] != 0:
-                raise RuntimeError("prospective prerequisite failed before provider launch")
-    if not prospective and arm in stores and getattr(args, "_original_arms", None) \
-            and stores[arm]["configuration"]["recall_mode"] == "agent_tools":
-        original_binding_check(root, case["cwd"], binds, env, args.harness, sandbox_options, base, args.timeout)
-    if prospective:
-        native_input = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
-        input_charge = len(native_input) + 512 + (len(memory_instruction.encode()) if arm not in ("none", "direct") else 0)
-        if input_charge > 8500:
-            raise ValueError("task and framing leave less than1000 bytes; no provider launched")
-    else:
-        provider += ["--", prompt]
-    writer_leaf = writer_record = None
-    if (original or codex_weekly) and getattr(args, "_original_writer", None):
-        # Root-selected owned leaf: the actor joins it before exec. Unavailable refuses before launch.
-        try:
-            writer_leaf = writer_release.WriterLeaf(args._original_writer["delegated"], args._original_writer["controls"],
-                                                    reviewed=args._original_writer.get("reviewed"))
-        except writer_release.WriterUnavailable as error:
-            raise RuntimeError("original_writer_containment_unavailable: " + str(error)) from None
-    writer_observed = None
-    # The owned leaf's whole lifetime, from capture to release and close, is guarded: any failure
-    # still releases and closes it, records the observations, and never claims a successful release.
-    try:
-        if writer_leaf is not None:
-            # The in-sandbox launch-evidence probe runs first and execs the unchanged provider argv.
-            provider, probe_bind = writer_leaf.probe(provider)
-            binds = binds + [probe_bind]
-        command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
-        started = time.monotonic()
-        capture_error = None
-        raw_stdout, raw_stderr = b'', b''
-        timings = []
-        custody_failure = None  # original-limits capture custody (legacy only)
-        try:
-            if prospective:
-                raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input,
-                                                              custody_path=base / "native-process-custody.json")
-                stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
-            elif original or codex_weekly:
-                # The existing capture records per-line receive times for the last-memory bound.
-                raw_stdout, raw_stderr, code, timings = capture(
-                    writer_leaf.wrap(command) if writer_leaf is not None else command, args.timeout,
-                    base / "stream-timing.json", custody_path=base / "native-process-custody.json",
-                    pass_fds=writer_leaf.pass_fds if writer_leaf is not None else (),
-                    observer=writer_leaf.observe_init if writer_leaf is not None else None)
-                stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
-            else:
-                result = subprocess.run(command, capture_output=True, timeout=args.timeout)
-                stdout, stderr, code = result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"), result.returncode
-        except subprocess.TimeoutExpired as expired:
-            stdout = (expired.stdout or b"").decode(errors="replace")
-            stderr, code = "timeout", 124
-            if prospective:
-                capture_error = 'capture_timeout_exception'
-        except Exception:
-            if not prospective:
-                raise
-            stdout, stderr, code = '', '', 125
-            capture_error = 'capture_exception'
-        except (KeyboardInterrupt, SystemExit):
-            if not prospective:
-                raise
-            stdout, stderr, code = '', '', 125
-            capture_error = 'observer_interrupted'
-        if prospective:
-            process_custody = read_custody(base / "native-process-custody.json")
-            if process_custody['classification'] == 'unknown' or capture_error:
-                selected_failure = dict(schema='cairn.process-custody-unknown/1',
-                                        reason=capture_error or 'process_custody_unknown', process_custody=process_custody)
-                retain_observation_error(base, selected_failure, name='process-custody-unknown.json')
-        elapsed = time.monotonic() - started
-        if not prospective:
-            # Record the exact stream bytes written, so blind grading can bind the
-            # original attempt's answer (CAIRN-107 legacy blind selection).
-            stream_bytes = stdout.encode("utf-8")
-            (base / "stream.jsonl").write_bytes(stream_bytes)
-            (base / "stderr.txt").write_text(stderr[-20000:])
-            limit_assessment = None
-            if original or codex_weekly:
-                # Retain scoped process observations for both weekly provider routes. They
-                # remain separate from the writer namespace-init proof.
-                process_custody = read_custody(base / "native-process-custody.json")
-                if original and (process_custody["classification"] == "unknown" or not process_custody["leader_reaped"]
-                        or process_custody["cleanup"]["status"] != "observed_clear"):
-                    custody_failure = "process_custody_unknown"
-
-            if (original or codex_weekly) and arm in stores:
-                hook_rows = None  # malformed observations stay unknown in the assessment
-                observations = base / "hook-state/observations.jsonl"
-                try:
-                    hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
-                except (OSError, ValueError):
-                    pass
-                checker = codex_weekly_limits if codex_weekly else legacy_limits
-                limit_assessment = checker.assess(stdout, hook_rows, timings=timings,
-                                                  input_bytes=checker.input_charge(prompt, memory_instruction))
-        else:
-            (base / "native-output-metadata.json").write_text(json.dumps(dict(
-                stdout_bytes=len(raw_stdout) if capture_error is None else None,
-                stdout_sha256=hashlib.sha256(raw_stdout).hexdigest() if capture_error is None else None,
-                stderr_bytes=len(raw_stderr) if capture_error is None else None,
-                stderr_sha256=hashlib.sha256(raw_stderr).hexdigest() if capture_error is None else None,
-                capture_returned=capture_error is None,
-                raw_stream_retained=False)))
-    except BaseException as primary:
-        if writer_leaf is not None:
-            writer_observed = writer_leaf.finish(time.monotonic() + 5)
-            failed = writer_release.result(run_id=run_id, workspace=cwd, leaf=writer_leaf, observed=writer_observed,
-                                           custody=None, attempt_failed=True)
-            # Sanitized observations travel with the primary error, whatever happens to the receipt file.
-            primary.add_note("writer_release: " + json.dumps(dict(state=failed["state"], release=failed["release"],
-                             bootstrap=failed["bootstrap"].get("state"), close_errors=failed["close_errors"]),
-                             sort_keys=True))
-            try:
-                (base / "writer-release.json").write_text(json.dumps(failed, indent=2))
-            except OSError as error:
-                primary.add_note("writer_release_receipt_unwritten: " + type(error).__name__)
-        raise
-    if writer_leaf is not None:
-        # Owner-derived release before any grading: bootstrap membership, then the leaf release.
-        writer_observed = writer_leaf.finish(time.monotonic() + 5)
-        writer_record = writer_release.result(run_id=run_id, workspace=cwd, leaf=writer_leaf, observed=writer_observed,
-                                              custody=process_custody)
-        (base / "writer-release.json").write_text(json.dumps(writer_record, indent=2))
-        if writer_record["state"] != "released" and custody_failure is None:
-            custody_failure = "writer_release_" + writer_record["state"]
-        if writer_record["state"] == "released":
-            try:
-                final_artifacts = legacy_pregrade.capture(
-                    base=base, case=case, arm=arm, seed=seed, baseline=baseline,
-                    writer_record=writer_record, stream_bytes=stream_bytes,
-                    prompt=prompt)
-            except (legacy_pregrade.PregradeError, OSError) as error:
-                writer_record["final_artifact_capture"] = dict(
-                    state="not_established", reason=str(error) if isinstance(error, legacy_pregrade.PregradeError)
-                    else "legacy_pregrade_storage_failed")
-            else:
-                writer_record["final_artifact_custody"] = final_artifacts
-            # Persist the post-capture custody result before any grading begins.
-            release_path = base / "writer-release.json"
-            temporary = base / ".writer-release.json.tmp"
-            with temporary.open("x") as retained:
-                json.dump(writer_record, retained, indent=2)
-                retained.flush()
-                os.fsync(retained.fileno())
-            os.replace(temporary, release_path)
-            directory = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-    trace = parse_stream(stdout, args.harness)
-    if codex_weekly:
-        # Codex can terminate on auth/quota failures without emitting a typed
-        # terminal event. Do not infer which failure occurred from prose; stop
-        # the campaign as an opaque provider failure before admitting another
-        # account attempt.
-        trace["admission_failure"] = codex_process_admission_failure(trace, code)
-        codex_custody_problem = codex_custody_failure(process_custody, writer_record)
-    else:
-        codex_custody_problem = None
-    if prospective:
-        # Retain only fixed terminal admission metadata before fallible grading.
-        # Prospective runs intentionally have no raw stream recovery path.
-        with (base / "native-terminal.json").open("x") as retained:
-            json.dump(dict(schema="cairn.native-terminal/1", admission_failure=trace["admission_failure"]), retained)
-            retained.flush()
-            os.fsync(retained.fileno())
-    failure = execution_failure(trace, code)
-    failures = [failure] if failure else []
-    if prospective:
-        if process_custody["input_bytes_written"] is not None and process_custody["input_bytes_written"] != len(native_input):
-            failures.append("input_delivery_incomplete")
-        if process_custody["cleanup"]["status"] != "observed_clear" or not process_custody["leader_reaped"]:
-            failures.append("process_custody_unknown")
-        if capture_error:
-            failures.append(capture_error)
-        failure = failures[0] if failures else None
-    if prospective:
-        try:
-            observation_phase = "hook_metadata"
-            observations = base / "hook-state/observations.jsonl"
-            hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
-            observation_phase = "measurement"
-            selected_input = measure(stdout, timings, hook_rows, input_bytes=input_charge,
-                                     expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt,
-                                     workspace=cwd, public_validation_commands=case.get("public_validation_commands"))
-            observation_phase = "origin_binding"
-            origin_path = stores[arm]["store"].root / "import-provenance.json" if arm in stores else None
-            origins = json.loads(origin_path.read_bytes()) if origin_path else []
-            selected_input['origin_map_sha256'] = hashlib.sha256(origin_path.read_bytes()).hexdigest() if origin_path else None
-            if arm == 'direct' and case['expected']:
-                selected_input['status'] = 'unknown'
-                selected_input['unknown'].append('direct_prompt_source_delivery_unobserved')
-            for delivery in selected_input['source_deliveries']:
-                delivery['delivery'] = bind_origins(delivery['delivery'], origins, bodies={n['id']: n['body'] for n in prospective['notes']})
-                if delivery['delivery']['status'] == 'unknown':
-                    selected_input['status'] = 'unknown'
-                    if 'source_delivery_or_origin_unknown' not in selected_input['unknown']:
-                        selected_input['unknown'].append('source_delivery_or_origin_unknown')
-            # Preserve source evidence even when the independent task grader fails.
-            observation_phase = "selected_input_write"
-            with (base / "selected-input.json").open('x') as retained:
-                json.dump(selected_input, retained)
-                retained.flush()
-                os.fsync(retained.fileno())
-        except Exception as error:
-            # Observation failure must remain visible without erasing independent
-            # technical grading. Never retain exception text or raw native data.
-            selected_input = failed_selected_input(input_charge, observation_phase, error)
-            retain_observation_error(base, selected_input["observation_error"])
-    receipt_export = (retain_hook_explanations(stores[arm]["store"], base)
-                      if prospective and arm in stores else None)
-    ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
-               tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
-               snapshot=baseline.snapshot, baseline=baseline,
-               common_runtime=common_runtime, runtime_identity=runtime_identity)
-    if custody_failure is None:
-        graded = grade(case, ctx)
-    else:
-        graded = dict(outcome="harness_error", execution_failure=custody_failure, error=custody_failure)
-    if failure and custody_failure is None:
-        graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
-                      error="prospective_native_failure" if prospective else stderr[-600:])
-    try:
-        memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
-    except Exception as error:
-        if not prospective:
-            raise
-        memory = dict(observation_error=selected_observation_error("hook_summary", error))
-        selected_input['status'] = 'unknown'
-        selected_input['unknown'].append('hook_summary_failed')
-        retain_observation_error(base, memory['observation_error'], name="hook-summary-error.json")
-    record = dict(run_id=run_id, case=case["id"], category=case["category"], primary=case.get("primary", True), provenance=case["provenance"]["type"], arm=arm,
-                  seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
-                  **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
-                  commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
-    if assigned_account is not None:
-        record['account_id'] = assigned_account['account_id']
-        record['account_auth_sha256'] = assigned_account['auth_sha256']
-    record['baseline_custody'] = baseline.pin
-    if not prospective:
-        record["stream_sha256"] = hashlib.sha256(stream_bytes).hexdigest()
-        record["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-        if original_native is not None:
-            record["original_native"] = dict(binary_sha256=row_sha256, effort=args.reasoning_effort,
-                                             target=original_native["observed"]["target"])
-        if codex_weekly and getattr(args, "codex_binary", None):
-            record["original_codex"] = dict(binary_sha256=args.codex_binary_sha256, effort=args.reasoning_effort,
-                                            target=str(Path.home()/".codex/codex"))
-        if arm in stores and getattr(args, "_original_arms", None):
-            record["original_arm"] = observed_arm
-        if original:
-            record["original_limits"] = limit_assessment
-            record["process_custody"] = process_custody
-        if codex_weekly:
-            record["codex_weekly_limits"] = limit_assessment
-            record["process_custody"] = process_custody
-        if codex_custody_problem:
-            record["observer_integrity_unknown"] = True
-            record["observer_failure_reason"] = codex_custody_problem
-        if writer_record is not None:
-            record["writer_release"] = writer_record
-            record["final_artifact_custody"] = writer_record.get(
-                "final_artifact_custody", "not_established")
-    if prospective:
-        record["selected_input"] = selected_input
-        record["process_custody"] = process_custody
-        record["execution_failures"] = failures
-        record["observer_integrity_unknown"] = bool(capture_error or process_custody['cleanup']['status'] != 'observed_clear')
-    if prospective:
-        record["receipt_explanation_export"] = receipt_export
-    record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
-    if prospective:
-        add_delivery_evidence(memory, selected_input)
-    classify_relevance(memory, case, prospective=bool(prospective))
-    if prospective:
-        record["trace"] = {key: value for key, value in record["trace"].items() if key not in ("writes", "memory_calls")}
-        record["memory_tool_pulls"] = [dict(tool=row["tool"]) for row in record["memory_tool_pulls"]]
-        record["memory"]["selected_input"] = record["selected_input"]
-        (base / "answer.md").write_text(trace["answer"] or "")
-    (base / "result.json").write_text(json.dumps(record, indent=2))
-    return record
-
-
-def selected_observation_error(phase, error):
-    categories = (ValueError, TypeError, AttributeError, KeyError, OSError, RuntimeError)
-    category = next((kind.__name__ for kind in categories if isinstance(error,kind)), 'Exception')
-    return dict(phase=phase, exception_type=category)
-
-
-def retain_observation_error(base, metadata, *, name="observation-error.json"):
-    try:
-        with (base / name).open('x') as retained:
-            json.dump(metadata, retained)
-            retained.flush()
-            os.fsync(retained.fileno())
-    except OSError:
-        # A report-write error cannot erase an independently available grade.
-        # The aggregate record still exposes the fixed failure and failed save.
-        metadata['persistence_failed'] = True
-
-
-def failed_selected_input(input_bytes, phase, error):
-    return dict(schema='cairn.task-eval.selected-input/1', status='unknown', failures=[],
-                unknown=['observation_failed'], observation_error=selected_observation_error(phase, error),
-                input_bytes=input_bytes, hook_wire_bytes=None, native_memory_result_bytes=None,
-                total_bytes=None, last_native_memory_seconds=None, memory_attempted=None,
-                memory_calls=None, native_searches=None, hook_searches=None, total_actual_pull_calls=None,
-                source_deliveries=[], source_delivery_events_omitted=None, source_delivery_empty_events=None, origin_map_sha256=None,
-                public_actions=dict(schema='cairn.public-actions/1', status='unknown', actions=[],
-                    time_basis='capture_start_monotonic', time_unit='seconds',
-                    actions_omitted=None, unmatched_results=None, duplicate_events=None,
-                    unknown=['observation_failed'], limit=256),
-                native_prompt_events=[], native_prompt_events_omitted=None,
-                limits=dict(selected_input_bytes=9500, hook_seconds=5, last_native_memory_seconds=30))
-
-
-def add_delivery_evidence(memory, selected_input):
-    deliveries = selected_input['source_deliveries']
-    memory['source_deliveries'] = deliveries
-    memory['origin_map_sha256'] = selected_input['origin_map_sha256']
-    # Only actual emitted payloads establish exposure; seen/inspection do not.
-    memory['delivered'] = sorted({item['input_id'] for row in deliveries for item in row['delivery']['items']
-                                  if item.get('input_id') and item['extent'] != 'history_metadata'})
-    memory['injected_bytes'] = selected_input['hook_wire_bytes']
-    memory['injected_byte_basis'] = 'hook_stdout_wire'
-
-
-def classify_relevance(memory, case, *, prospective=False):
-    if not memory:
-        return
-    delivered = set(memory.get('delivered', []))
-    memory['forbidden'] = sorted((set(case.get('must_not_deliver', [])) | set(case.get('over_applied', []))) & delivered)
-    if prospective and not case.get('relevance_labels_complete', False):
-        memory['relevance_status'] = 'unknown_unlabelled'
-        memory.pop('irrelevant', None)
-        memory.pop('delivered_expected', None)
-        return
-    if prospective:
-        memory['relevance_status'] = 'declared_exhaustive'
-    expected = set(case['expected'])
-    memory['delivered_expected'] = sorted(expected & delivered)
-    memory['irrelevant'] = sorted(delivered - expected - set(case.get('acceptable', [])))
-
-
-def names_for(store, call):
-    return dict(tool=call["tool"].replace("mcp__cairn__", ""), query=(call["input"] or {}).get("query"))
-
-
-def hook_observations(state_dir, store):
-    """Read delivered context and per-invocation metrics; label legacy state-only evidence."""
-    if store is None or not Path(state_dir).is_dir():
-        return {}
-    delivered, size, outcomes, recalls = [], 0, [], []
-    calls = Path(state_dir) / "calls.jsonl"
-    injections = []
-    if calls.exists():
-        for line in calls.read_text().splitlines():
-            try:
-                index, expanded, size_one = parse_injection(line)
-            except (ValueError, KeyError):
-                continue
-            injections.append(dict(index=[store.names.get(r, "?") for r in index],
-                                   expanded=store.names.get(expanded) if expanded else None, bytes=size_one))
-            delivered += injections[-1]["index"]
-            size += size_one
-    for path in Path(state_dir).glob("*.json"):
-        state = json.loads(path.read_text())
-        recall = state.get("last_recall") or {}
-        outcomes.append(recall.get("outcome"))
-        recalls.append({key: recall[key] for key in ("outcome", "discovery", "coverage", "inspected", "rejected",
-                                                    "shortlist_candidates", "model_seconds", "model_reported_cost_usd",
-                                                    "preview_seconds", "preview_reported_cost_usd", "pull_seconds",
-                                                    "elapsed_seconds", "bytes", "preview_input_bytes", "selector_input_bytes")
-                        if key in recall})
-        delivered += [store.names.get(r["record_id"], "?") for r in recall.get("records", [])]
-        delivered += [store.names.get(r, "?") for r in state.get("seen", {})]
-    observation_path = Path(state_dir) / "observations.jsonl"
-    invocations = []
-    if observation_path.exists():
-        for line in observation_path.read_text().splitlines():
-            row = json.loads(line)
-            if (not isinstance(row, dict) or row.get("schema") != "cairn.task-hook-observation/1"
-                    or type(row.get("recall_attempted")) is not bool
-                    or "recall" not in row or "event" not in row
-                    or (row["recall"] is not None and not isinstance(row["recall"], dict))
-                    or (not row["recall_attempted"] and row["recall"] is not None)):
-                raise ValueError("unsupported hook observation")
-            invocations.append(row)
-        recalls = [dict(row["recall"] or {}, event=row["event"],
-                        metrics_available=row["recall"] is not None,
-                        observed_seconds=row.get("recall_seconds"))
-                   for row in invocations if row["recall_attempted"]]
-        outcomes = [r.get("outcome") for r in recalls]
-    return dict(delivered=sorted(set(delivered)), injected_bytes=size, injections=injections, outcomes=outcomes,
-                recalls=recalls, hook_invocations=invocations,
-                recall_observation="per_invocation" if observation_path.exists() else "last_state_only")
-
-
-def cmd_agent(args):
+def cmd_agent(args, provider=None):
+    """Run a campaign. ``provider`` explicitly injects an adapter (tests, inert probes); never the environment."""
+    account_assignment = original_native = original_writer = original_arms = None
     prospective = load_input(args.prospective_input) if getattr(args, "prospective_input", None) else None
     frozen = prospective["frozen"] if prospective else verify_frozen()
     all_cases = prospective["cases"] if prospective else load_cases()
@@ -1993,7 +1330,7 @@ def cmd_agent(args):
         for account in assignment['accounts']:
             codex_account_selection.verify_auth_file(account['auth_file'], account['auth_sha256'],
                                                       expected_account_id=account['account_id'])
-        args._codex_account_assignment = assignment
+        account_assignment = assignment
     expected_pairs = {(c["id"], seed) for c in cases for seed in range(args.first_seed, args.first_seed + args.seeds)}
     paired_plans, baseline_pairs = [], set()
     for path in args.paired_plan:
@@ -2027,10 +1364,14 @@ def cmd_agent(args):
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      receipt_exporter_sha256=hashlib.sha256((ROOT / "scripts/trial_receipt_explanation.py").read_bytes()).hexdigest(),
-                     harness_version=None if getattr(args, "original_native_path", None) and not prospective else
+                     harness_version=provider.harness_version(None, run) if provider is not None else
+                     None if getattr(args, "original_native_path", None) and not prospective else
                      run([str(Path(args.codex_binary).resolve(strict=True)) if args.harness == "codex" and getattr(args,"codex_binary",None)
                           else str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex"
                           else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
+    if getattr(args, "execution_profile", None):
+        execution["execution_profile"] = dict(path=str(Path(args.execution_profile[0]).resolve()),
+                                              sha256=args.execution_profile[1])
     if getattr(args, "original_limits", False) and not prospective:
         execution["original_limits"] = dict(legacy_limits.LIMITS)
     if getattr(args, "codex_weekly_limits", False) and not prospective:
@@ -2047,9 +1388,9 @@ def cmd_agent(args):
     out.mkdir(mode=0o700)
     if getattr(args, "original_native_path", None) and not prospective:
         # Before any store starts: retain, hash and version the declared binary; never run the ambient one.
-        args._original_native = native_copy.retain(args.original_native_path, args.original_native_sha256, out)
-        execution.update(original_native=args._original_native, reasoning_effort=args.reasoning_effort,
-                         harness_version=args._original_native["observed"]["version"])
+        original_native = native_copy.retain(args.original_native_path, args.original_native_sha256, out)
+        execution.update(original_native=original_native, reasoning_effort=args.reasoning_effort,
+                         harness_version=original_native["observed"]["version"])
     declared_identity = None
     if getattr(args, "original_writer_cgroup", None) and not prospective:
         # Root-selected delegated parent and explicit resource policy for the owned writer leaf.
@@ -2058,22 +1399,22 @@ def cmd_agent(args):
                                                                  {"schema", "controls", "reviewed_identity"})
                 and controls["schema"] == "cairn.writer-controls/1"):
             raise ValueError("original_writer_controls_invalid")
-        args._original_writer = dict(delegated=args.original_writer_cgroup,
+        original_writer = dict(delegated=args.original_writer_cgroup,
                                      controls=writer_release.check_controls(controls["controls"]),
                                      reviewed=writer_release.check_reviewed(controls.get("reviewed_identity")))
-        if args._original_writer["reviewed"] is None:
+        if original_writer["reviewed"] is None:
             raise ValueError("original_writer_reviewed_identity_required")
         execution["original_writer"] = dict(delegated=args.original_writer_cgroup,
                                             controls=dict(path=args.original_writer_controls,
                                                           sha256=args.original_writer_controls_sha256),
-                                            policy=args._original_writer["controls"],
-                                            reviewed_identity=args._original_writer["reviewed"])
-        execution['original_writer_preflight'] = writer_launch_preflight(args._original_writer, out)
+                                            policy=original_writer["controls"],
+                                            reviewed_identity=original_writer["reviewed"])
+        execution['original_writer_preflight'] = writer_launch_preflight(original_writer, out)
     if selected_case_materials is not None:
         execution['case_materials'] = selected_case_materials
     if getattr(args, "original_arms", None) and not prospective:
         # Before any store starts: the literal per-arm controls and raw recall blobs.
-        execution["original_arms"], args._original_arms = original_arm_controls.load_controls(
+        execution["original_arms"], original_arms = original_arm_controls.load_controls(
             args.original_arms, args.original_arms_sha256, args.memory)
     if getattr(args, "original_embedding_identity", None) and not prospective:
         execution["original_embedding_identity"], declared_identity = original_arm_controls.load_identity(
@@ -2086,7 +1427,6 @@ def cmd_agent(args):
         if prospective["frozen"] != frozen:
             raise ValueError("prospective input changed during snapshot")
         cases = [c for c in prospective["cases"] if not args.cases or c["id"] in args.cases]
-        args._prospective = prospective
         chosen_arms, pinned_arms = copy_arms(prospective["document"], out,
                                             lambda binary: cairn_json(binary, ["version"], dict(os.environ, CAIRN_DATABASE_URL="invalid-not-used")))
         args.arms = [name for name in chosen_arms if name in ("none", "direct")]
@@ -2099,6 +1439,11 @@ def cmd_agent(args):
         execution["reasoning_effort"] = args.reasoning_effort
         execution["permission_policy_sha256"] = hashlib.sha256((ROOT / "scripts/trial_task_permissions.py").read_bytes()).hexdigest()
         preflight_workspaces(cases, out)
+    # The one reading of the execution declaration; every attempt runs under it.
+    profile = trial_attempt.ExecutionProfile.from_args(
+        args, prospective=prospective, original_native=original_native, original_arms=original_arms,
+        original_writer=original_writer, account_assignment=account_assignment, provider_adapter=provider)
+    args._execution_profile = profile
     with ExitStack() as cleanup:
         stores = {}
         corpus = prospective["notes"] if prospective else load_corpus()
@@ -2109,8 +1454,7 @@ def cmd_agent(args):
         arms = list(args.arms)
         for spec in args.memory:
             label, binary, hook = spec.split(":", 2)
-            arm_config = pinned_arms[label] if prospective else (
-                args._original_arms[label] if getattr(args, "_original_arms", None) else {})
+            arm_config = pinned_arms[label] if prospective else (original_arms[label] if original_arms else {})
             store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
                                embedding_worker=arm_config.get("embedding_worker") if prospective else args.embedding_worker)
             cleanup.callback(store.token_file.unlink, missing_ok=True)
@@ -2143,10 +1487,10 @@ def cmd_agent(args):
             execution["selector_binary_sha256"] = hashlib.sha256(Path(args.selector_binary).read_bytes()).hexdigest()
         account_assignment_sha256 = None
         run_accounts = None
-        if getattr(args, '_codex_account_assignment', None) is not None:
+        if account_assignment is not None:
             account_assignment_sha256 = args.codex_account_assignment_sha256
             assignment_by_run = {row['run_id']: row['account_id']
-                                 for row in args._codex_account_assignment['assignments']}
+                                 for row in account_assignment['assignments']}
             run_accounts = [dict(run_id=f'{case["id"]}.{arm}.s{seed}',
                                  account_id=assignment_by_run[f'{case["id"]}.{arm}.s{seed}'])
                             for seed in range(args.first_seed, args.first_seed + args.seeds)
@@ -2186,64 +1530,11 @@ def cmd_agent(args):
                     try:
                         record = future.result()
                     except Exception as error:  # keep failed runs in the record
-                        cid = c["id"]
-                        record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
-                                      outcome="harness_error", error=selected_observation_error('runner', error)['exception_type'] if prospective else str(error)[-600:],
-                                      harness=args.harness, model=args.model, wording=args.wording)
-                        if (args.harness == "codex" and getattr(args, "codex_weekly_limits", False)
-                                and getattr(args, "_codex_account_assignment", None) is not None):
-                            account = weekly_accounts.account_for(args._codex_account_assignment, cid, arm, seed)
-                            record["account_id"] = account["account_id"]
-                            record["account_auth_sha256"] = account["auth_sha256"]
-                        if args.harness == "codex" and getattr(args, "codex_weekly_limits", False):
-                            record["observer_integrity_unknown"] = True
-                            record["observer_failure_reason"] = "codex_attempt_exception"
-                        # A later grading failure must not hide a provider stop.
-                        base = out / "runs" / record["run_id"]
-                        if prospective:
-                            record['process_custody'] = read_custody(base / 'native-process-custody.json')
-                            record['execution_failures'] = ['runner_exception']
-                            record['observer_integrity_unknown'] = record['process_custody']['cleanup']['status'] != 'observed_clear'
-                            if record['observer_integrity_unknown']:
-                                record['execution_failures'].append('process_custody_unknown')
-                            custody = record['process_custody']
-                            if custody['legacy_exit_code']:
-                                record['execution_failures'].append('timeout' if custody['legacy_exit_code'] == 124 else 'nonzero_exit')
-                            if custody['input_delivery_complete'] is False:
-                                record['execution_failures'].append('input_delivery_incomplete')
-                        terminal = base / "native-terminal.json"
-                        stream = base / "stream.jsonl"
-                        if prospective and terminal.is_file():
-                            try:
-                                selected = json.loads(terminal.read_text())
-                                failure = selected.get("admission_failure")
-                                allowed = [dict(provider=provider, reason=reason, api_error_status=status)
-                                           for provider, reason, status in (
-                                               ("claude", "authentication_failed", 401),
-                                               ("claude", "capacity_exhausted", 429),
-                                               ("codex", "authentication_failed", 401),
-                                               ("codex", "capacity_exhausted", 429),
-                                               ("codex", "provider_error_unknown", None))]
-                                if selected.get("schema") != "cairn.native-terminal/1" or (failure is not None and failure not in allowed):
-                                    raise ValueError("invalid selected terminal metadata")
-                                record["trace"] = dict(admission_failure=failure)
-                            except (OSError, ValueError, TypeError, AttributeError) as parse_error:
-                                record["trace_parse_error"] = type(parse_error).__name__
-                        elif not prospective and stream.is_file():
-                            try:
-                                trace = parse_stream(stream.read_text(), args.harness)
-                                record["trace"] = {k: v for k, v in trace.items() if k not in ("answer", "commands")}
-                            except (OSError, ValueError, TypeError, AttributeError) as parse_error:
-                                record["trace_parse_error"] = str(parse_error)[-600:]
-                        selected = base / "selected-input.json"
-                        if prospective and selected.is_file():
-                            try:
-                                record['selected_input'] = json.loads(selected.read_bytes())
-                                record['memory'] = {}
-                                add_delivery_evidence(record['memory'], record['selected_input'])
-                                classify_relevance(record['memory'], c, prospective=True)
-                            except (OSError, ValueError, TypeError, KeyError):
-                                record['source_delivery_error'] = 'selected_evidence_unavailable'
+                        account = (weekly_accounts.account_for(account_assignment, c["id"], arm, seed)
+                                   if profile.codex_weekly and account_assignment is not None else None)
+                        record = trial_attempt.failed_attempt_record(
+                            c, arm, seed, profile, error, out / "runs" / f'{c["id"]}.{arm}.s{seed}',
+                            attempt_toolkit(), account=account)
                     if prospective and arm in stores and "receipt_explanation_export" not in record:
                         record["receipt_explanation_export"] = receipt_export_metadata(out / "runs" / record["run_id"])
                     records.append(record)
@@ -2432,8 +1723,11 @@ def main(argv=None):
     r.add_argument("--sizes", type=int, nargs="+", default=[0, 1900])
     r.add_argument("--semantic-worker")
     r.add_argument("--cases", nargs="*")
-    a = sub.add_parser("agent")
+    a = agent_parser = sub.add_parser("agent")
     a.add_argument("--output", required=True)
+    a.add_argument("--execution-profile", nargs=2, metavar=("PATH", "SHA256"),
+                   help="pinned cairn.task-eval.execution-profile/1 declaring the agent flags; "
+                        "an explicit conflicting flag refuses")
     source = a.add_mutually_exclusive_group(required=True)
     source.add_argument("--prospective-input", help="explicit frozen fresh input directory")
     source.add_argument("--legacy-fixtures", action="store_true", help="explicitly select historical fixtures; not authorization to replay")
@@ -2498,6 +1792,18 @@ def main(argv=None):
             parser.error("; ".join(problems))
         print(json.dumps(freeze_input(args.input)["frozen"], indent=2))
         return 0
+    if args.command == "agent" and args.execution_profile:
+        import pinned_document
+        path, digest = args.execution_profile
+        try:
+            fields = trial_attempt.profile_fields(pinned_document.read_json_pin(dict(path=path, sha256=digest)))
+        except (pinned_document.Refusal, ValueError) as error:
+            parser.error("execution profile refused: " + str(error))
+        for name, value in fields.items():
+            current = getattr(args, name)
+            if current != agent_parser.get_default(name) and current != value:
+                parser.error("--" + name.replace("_", "-") + " conflicts with the execution profile")
+            setattr(args, name, value)
     if args.command == "agent":
         originals = (args.original_native_path, args.original_native_sha256, args.original_arms, args.original_arms_sha256,
                      args.original_embedding_identity, args.original_embedding_identity_sha256,

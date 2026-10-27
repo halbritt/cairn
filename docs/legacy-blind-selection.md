@@ -152,7 +152,7 @@ legacy defects. Their effect on this converter, checked against current
   or altered baseline custody. This closes baseline substitution, not the
   final-artifact/evaluator release channels or independent provenance. `/2`'s
   action projection is still harness-recorded correspondence, not independent custody.
-- **Run ID map.** `run_id` is `case.arm.sSEED` (`trial_task_eval.py:1048`).
+- **Run ID map.** `run_id` is `case.arm.sSEED` (`trial_attempt.open_attempt`).
   This map is not injective when a case or arm contains a dot, so dotted
   names refuse `legacy_attempt_identity_ambiguous`. So do a `run_id` that
   differs from the formula and a duplicate `run_id`. Every record must match
