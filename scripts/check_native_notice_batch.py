@@ -5,17 +5,16 @@ This invokes the native coordinator helper in a synthetic owner process. It
 proves per-item Store transitions, not a provider/model turn or task outcome.
 """
 
-import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 from native_notice_batch_diagnostics import AdvanceDiagnosticWriter
 
@@ -34,27 +33,14 @@ def native_coordinator():
 
 
 def call(binary, home, env, role, operation, body):
-    result = subprocess.run([str(binary), "agent", "--socket", str(home / "api.sock"),
-                             "--token-file", str(home / f"{role}.token"), operation],
-                            input=json.dumps(body), text=True, capture_output=True,
-                            env=env, timeout=15)
-    require(len(result.stdout) < 1_000_000, "API response too large")
-    envelope = json.loads(result.stdout)
-    require(result.returncode == 0 and envelope.get("status") == "OK",
-            f"{operation}: {envelope.get('status')}")
-    return envelope["data"]
+    return disposable_host.run_envelope(
+        [binary, "agent", "--socket", home / "api.sock", "--token-file", home / f"{role}.token",
+         operation], body, env=env, timeout=15, label=operation)
 
 
 def operator(binary, env, operation, body=None, args=()):
-    result = subprocess.run([str(binary), operation, *args],
-                            input=json.dumps(body) if body is not None else None,
-                            text=True, capture_output=True, env=env, timeout=15)
-    require(len(result.stdout) < 100_000 and len(result.stderr) < 100_000,
-            "operator response too large")
-    envelope = json.loads(result.stdout)
-    require(result.returncode == 0 and envelope.get("status") == "OK",
-            f"operator {operation}: {envelope.get('status')}")
-    return envelope["data"]
+    return disposable_host.run_envelope([binary, operation, *args], body, env=env, timeout=15,
+                                        stdout_limit=100_000, label="operator " + operation)
 
 
 def compact(script, root, env, native_session_id, operation, handle, disposition=None, code=None,
@@ -106,58 +92,24 @@ def compact(script, root, env, native_session_id, operation, handle, disposition
 def sql_count(dsn, table):
     require(table in ("agent_event", "agent_session", "agent_session_attempt"),
             "unsupported disposable count table")
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn,
-                             "-c", f"SELECT count(*) FROM cairn.{table}"],
-                            text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0, "disposable SQL count failed")
-    return int(result.stdout.strip())
+    return int(disposable_host.run_sql(dsn, f"SELECT count(*) FROM cairn.{table}"))
 
 
 def check(binary, diagnostic_output=None):
-    cluster = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(cluster.parent == Path("/tmp") and cluster.name.startswith("cairn-postgres.")
-            and cluster.stat().st_uid == os.getuid()
-            and stat.S_IMODE(cluster.stat().st_mode) == 0o700
-            and (cluster / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == cluster / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={cluster / 'socket'} dbname=cairn_native_notice_batch sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    require(sql_count(dsn, "agent_event") == 0 and sql_count(dsn, "agent_session") == 0,
-            "notice-batch database is not fresh")
+    provided = disposable_host.ProvidedCluster.from_environment()
+    cluster = provided.root
 
-    home = cluster / "native-notice-batch-home"
-    home.mkdir(mode=0o700)
     repo = "fixture:native-notice-batch"
-    principals = {}
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        token_path = home / f"{role}.token"
-        token_path.write_text(token, encoding="utf-8")
-        token_path.chmod(0o600)
-        principals[role] = f"agent/native-batch-{role}-{uuid.uuid4()}"
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": principals[role], "repo": repo,
-                           "role": "agent", "destination": "hosted"})
-    config_file = home / "identities.json"
-    config_file.write_text(json.dumps(identities), encoding="utf-8")
-    config_file.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
+    host = disposable_host.DisposableHost.start(
+        provided, binary=binary, repo=repo, database="cairn_native_notice_batch",
+        home=cluster / "native-notice-batch-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/native-batch-{role}-{uuid.uuid4()}")
+    home, env, dsn, principals = host.home, host.env, host.dsn, host.principals
     diagnostic_writer = (AdvanceDiagnosticWriter(diagnostic_output, cluster)
                          if diagnostic_output is not None else None)
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode), "local API socket missing")
+        require(sql_count(dsn, "agent_event") == 0 and sql_count(dsn, "agent_session") == 0,
+                "notice-batch database is not fresh")
         for role in ("sender", "worker"):
             call(binary, home, env, role, "version", {})
         forget_grant = operator(binary, env, "bootstrap", {
@@ -399,12 +351,7 @@ def check(binary, diagnostic_output=None):
                           "handoff_retry": "same_attempt_no_duplicate",
                           "provider_called": False, "task_outcome": "unassessed"}))
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        host.close()
         if diagnostic_writer is not None:
             diagnostic_writer.close()
 

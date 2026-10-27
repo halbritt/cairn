@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Exercise one selected panel setup in this invocation's disposable database."""
 
-import hashlib
 from datetime import datetime, timedelta
+import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
-import stat
 import subprocess
 import sys
 import time
 import uuid
 
 import preflight_token_efficiency_panel as panel
+import token_efficiency_panel_controller as panel_controller
+import disposable_host
 
 
 def require(value, message):
@@ -22,34 +22,16 @@ def require(value, message):
 
 
 def check(binary, workflow_id):
-    require(workflow_id in ("baseline.single_notice", "baseline.actionable_response",
-                            "baseline.duplicate_send", "baseline.small_request_result_reply",
-                            "baseline.concurrent_receivers") or workflow_id in tuple(
-                                f"{arm}.{case}" for arm in
-                                ("baseline", "envelope", "batch", "combined")
-                                for case in ("routine_burst_urgent_request",
-                                             "wrong_project_memory", "corrected_note",
-                                             "meaningful_owner_correction", "unfinished_handoff",
-                                             "required_conflict_group", "semantic_unavailable",
-                                             "source_forgotten_before_read")),
-            "unsupported workflow")
-    arm, case = workflow_id.split(".", 1)
+    case = panel_controller.case_name(workflow_id)
+    arm = workflow_id.split(".", 1)[0]
     burst = case == "routine_burst_urgent_request"
     source_case = case in ("wrong_project_memory", "corrected_note",
                            "meaningful_owner_correction", "unfinished_handoff",
                            "required_conflict_group", "semantic_unavailable")
     per_arm_case = source_case or case == "source_forgotten_before_read"
     label = workflow_id.replace(".", "-") if burst or per_arm_case else case
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres."), "fresh cluster root")
-    require(root.stat().st_uid == os.getuid() and stat.S_IMODE(root.stat().st_mode) == 0o700,
-            "private cluster root")
-    require((root / "data" / "PG_VERSION").is_file(), "cluster not initialized")
-    require(binary == root / "cairn" and binary.is_file(), "disposable binary")
-    database = f"cairn_panel_{arm}_{case}" if burst or per_arm_case else f"cairn_panel_{case}"
-    dsn = f"host={root / 'socket'} dbname={database} sslmode=disable"
-    require(os.environ["CAIRN_TEST_DATABASE_URL"] == os.environ["CAIRN_DATABASE_URL"] == dsn,
-            "dedicated database")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
 
     export_parent = root / f"panel-export-{label}"
     export_parent.mkdir(mode=0o700)
@@ -57,61 +39,23 @@ def check(binary, workflow_id):
     export = export_parent / "frozen"
     fixture, fixture_hash = panel.read_fixture()
     panel.export(fixture, fixture_hash, export)
-    home = root / f"panel-controller-home-{label}"
-    home.mkdir(mode=0o700)
-    principals = {role: f"agent/panel-{role}-{uuid.uuid4()}"
-                  for role in ("sender", "worker", "other", "stranger")}
-    identities = []
-    for role, principal in principals.items():
-        token = secrets.token_urlsafe(32)
-        token_path = home / f"{role}.token"
-        token_path.write_text(token, encoding="utf-8")
-        token_path.chmod(0o600)
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": principal, "repo": "fixture:cairn-token-efficiency",
-                           "role": "agent", "destination": "hosted"})
-    config = home / "identities.json"
-    config.write_text(json.dumps(identities), encoding="utf-8")
-    config.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-
-    def sql(statement):
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c", statement],
-                                text=True, capture_output=True, env=env, timeout=10)
-        require(result.returncode == 0, result.stderr)
-        return result.stdout.strip()
-
-    require(sql("SELECT count(*) FROM cairn.agent_event") == "0", "event table not fresh")
-    require(sql("SELECT count(*) FROM cairn.agent_session") == "0", "session table not fresh")
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.PIPE, text=True)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo="fixture:cairn-token-efficiency",
+        database=panel_controller.database_name(workflow_id), home=root / f"panel-controller-home-{label}",
+        roles=("sender", "worker", "other", "stranger"),
+        principals=lambda role: f"agent/panel-{role}-{uuid.uuid4()}",
+        log=root / f"panel-controller-api-{label}.log")
+    home, env, sql, principals = host.home, host.env, host.sql, host.principals
 
     def cli(role, *args, body=None, session=None):
-        connection = ["--socket", str(home / "api.sock"),
-                      "--token-file", str(home / f"{role}.token")]
-        if session is not None:
-            connection += ["--agent-id", session["agent_id"],
-                           "--execution-id", session["execution_id"]]
-        result = subprocess.run([str(binary), args[0], *connection, *args[1:]],
-                                input=body, text=True, capture_output=True, env=env, timeout=20)
-        envelope = json.loads(result.stdout)
-        require(result.returncode == 0 and envelope["status"] == "OK", (args, envelope, result.stderr))
-        return envelope["data"]
+        return host.command([args[0], *host.connection(role, session), *args[1:]], body,
+                            timeout=20, label=args[-1])
 
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            if server.poll() is not None:
-                raise AssertionError(server.stderr.read())
-            require(time.monotonic() < deadline, "panel API startup timed out")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode), "API socket required")
+        host.require_fresh("agent_event", message="event table not fresh")
+        host.require_fresh("agent_session", message="session table not fresh")
         for role in principals:
-            result = subprocess.run([str(binary), "agent", "--socket", str(home / "api.sock"),
-                                     "--token-file", str(home / f"{role}.token"), "version"],
-                                    text=True, capture_output=True, env=env, timeout=10)
-            require(result.returncode == 0 and json.loads(result.stdout)["status"] == "OK",
-                    "token authentication failed")
+            host.agent(role, "version", timeout=10)
 
         controller = Path(__file__).with_name("token_efficiency_panel_controller.py")
         command = [sys.executable, str(controller), "--fixture", str(panel.FIXTURE),
@@ -543,9 +487,8 @@ def check(binary, workflow_id):
         print(json.dumps({"workflow_id": workflow_id, "events": expected_events,
                           "provider_called": False}, sort_keys=True))
     finally:
-        server.terminate()
-        server.communicate(timeout=10)
-        require(server.returncode == 0, "API server did not stop cleanly")
+        code = host.close()
+        require(code == 0, f"API server did not stop cleanly: exit {code}")
 
 
 if __name__ == "__main__":

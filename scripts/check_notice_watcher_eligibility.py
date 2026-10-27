@@ -6,18 +6,17 @@ watcher refusal proves eligibility was observed, never a model wake.
 """
 
 from datetime import datetime, timedelta, timezone
-import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
 import socket
-import stat
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 
 def require(value, message):
@@ -34,19 +33,12 @@ def coordinator():
 
 
 def call(binary, home, env, role, operation, body, expected="OK", session=None):
-    command = [str(binary), "agent", "--socket", str(home / "api.sock"),
-               "--token-file", str(home / f"{role}.token")]
+    command = [binary, "agent", "--socket", home / "api.sock", "--token-file", home / f"{role}.token"]
     if session:
         command += ["--agent-id", session["agent_id"], "--execution-id", session["execution_id"]]
-    command.append(operation)
-    result = subprocess.run(command,
-                            input=json.dumps(body), text=True, capture_output=True,
-                            env=env, timeout=15)
-    require(len(result.stdout) < 1_000_000, "API response too large")
-    response = json.loads(result.stdout)
-    require(response.get("status") == expected and (result.returncode == 0) == (expected == "OK"),
-            f"{operation}: expected {expected}, got {response.get('status')}")
-    return response.get("data")
+    result = disposable_host.run_envelope([*command, operation], body, env=env, expected=expected,
+                                          timeout=15, label=operation)
+    return result if expected == "OK" else result.get("data")
 
 
 def parse_time(value):
@@ -58,67 +50,31 @@ def utc_now():
 
 
 def empty_database(dsn):
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn,
-                             "-c", "SELECT count(*) FROM cairn.agent_event"],
-                            text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0 and result.stdout.strip() == "0",
+    require(disposable_host.run_sql(dsn, "SELECT count(*) FROM cairn.agent_event") == "0",
             "notice watcher database must be fresh")
 
 
 def expire_disposable_deadline(dsn, delivery_id):
     canonical = str(uuid.UUID(delivery_id))
-    result = subprocess.run(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-                             "-d", dsn, "-c", "UPDATE cairn.agent_delivery SET "
-                             "available_at=clock_timestamp()-interval '1 second' "
-                             f"WHERE delivery_id='{canonical}'::uuid"],
-                            text=True, capture_output=True, timeout=10)
-    require(result.returncode == 0 and result.stdout.strip() == "UPDATE 1",
+    require(disposable_host.run_sql(dsn, "UPDATE cairn.agent_delivery SET "
+                                    "available_at=clock_timestamp()-interval '1 second' "
+                                    f"WHERE delivery_id='{canonical}'::uuid") == "UPDATE 1",
             "disposable deadline did not advance")
 
 
 def check(binary, real_clock_pilot=False):
-    cluster = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(cluster.parent == Path("/tmp") and cluster.name.startswith("cairn-postgres.")
-            and cluster.stat().st_uid == os.getuid()
-            and stat.S_IMODE(cluster.stat().st_mode) == 0o700
-            and (cluster / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == cluster / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={cluster / 'socket'} dbname=cairn_notice_watcher_eligibility sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-    empty_database(dsn)
+    provided = disposable_host.ProvidedCluster.from_environment()
+    cluster = provided.root
 
-    home = cluster / "notice-watcher-home"
-    home.mkdir(mode=0o700)
     repo = "fixture:notice-watcher-eligibility"
-    principals = {}
-    identities = []
-    for role in ("sender", "worker", "stranger"):
-        token = secrets.token_urlsafe(32)
-        token_path = home / f"{role}.token"
-        token_path.write_text(token, encoding="utf-8")
-        token_path.chmod(0o600)
-        principals[role] = f"agent/notice-watcher-{role}-{uuid.uuid4()}"
-        identities.append({"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                           "principal": principals[role], "repo": repo,
-                           "role": "agent", "destination": "hosted"})
-    identities_path = home / "identities.json"
-    identities_path.write_text(json.dumps(identities), encoding="utf-8")
-    identities_path.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home))
-    api = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+    host = disposable_host.DisposableHost.start(
+        provided, binary=binary, repo=repo, database="cairn_notice_watcher_eligibility",
+        home=cluster / "notice-watcher-home", roles=("sender", "worker", "stranger"),
+        principals=lambda role: f"agent/notice-watcher-{role}-{uuid.uuid4()}")
+    home, env, dsn, principals = host.home, host.env, host.dsn, host.principals
     owner = None
     try:
-        deadline = time.monotonic() + 10
-        while not (home / "api.sock").exists():
-            require(api.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK((home / "api.sock").stat().st_mode), "local API socket missing")
+        empty_database(dsn)
         call(binary, home, env, "sender", "version", {})
         native_id = f"synthetic-notice-watcher-{uuid.uuid4()}"
         registered = call(binary, home, env, "worker", "agent-register", {
@@ -329,21 +285,7 @@ def check(binary, real_clock_pilot=False):
         delayed_deadline = delayed_before["available_at"]
         require(parse_time(delayed_deadline) - parse_time(delayed["created_at"])
                 == timedelta(seconds=60), "second fixed deadline differs")
-        api.terminate()
-        api.wait(timeout=5)
-        api = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
-        restart_deadline = time.monotonic() + 10
-        while True:
-            require(api.poll() is None and time.monotonic() < restart_deadline,
-                    "disposable API did not restart")
-            try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
-                    probe.settimeout(0.2)
-                    probe.connect(str(home / "api.sock"))
-                break
-            except OSError:
-                time.sleep(0.02)
+        host.restart_server()
         delayed_after = call(binary, home, env, "sender", "event-inspect",
                              {"event_id": delayed["event_id"]})["deliveries"][0]
         require(delayed_after["delivery_id"] == delayed_id
@@ -637,12 +579,7 @@ def check(binary, real_clock_pilot=False):
             except subprocess.TimeoutExpired:
                 owner.kill()
                 owner.wait(timeout=5)
-        api.terminate()
-        try:
-            api.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            api.kill()
-            api.wait(timeout=5)
+        host.close()
 
 
 if __name__ == "__main__":
