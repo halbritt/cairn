@@ -22,6 +22,7 @@ import uuid
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
+from native_tool_results import tool_result_diagnostics as _tool_result_diagnostics
 from codex_loopback_fixture import (
     LoopbackResponsesServer,
     exec_tool_item,
@@ -73,101 +74,6 @@ def _source_result_matches(result: dict, context: dict, source_body: str) -> dic
         "source_body_match": source_body in serialized,
     }
 
-
-def _tool_result_diagnostics(result: dict) -> dict:
-    """Reduce a custom tool result to fixed status, exit, and API-read classes."""
-    output = result.get("output", result.get("content"))
-    output_type = ("missing" if output is None else "string" if isinstance(output, str) else
-                   "array" if isinstance(output, list) else "object" if isinstance(output, dict) else "other")
-    status_value = result.get("status")
-    status = status_value if status_value in ("completed", "failed", "in_progress") else (
-        "failed" if result.get("isError") is True or result.get("is_error") is True else
-        "other" if status_value is not None else "missing")
-    error_present = (result.get("isError") is True or result.get("is_error") is True or
-                     bool(result.get("error")))
-
-    parsed = []
-    strings = []
-
-    def visit(value, depth=0):
-        if depth > 8:
-            return
-        if isinstance(value, dict):
-            parsed.append(value)
-            for child in value.values():
-                visit(child, depth + 1)
-        elif isinstance(value, list):
-            for part in value[:64]:
-                visit(part, depth + 1)
-        elif isinstance(value, str):
-            strings.append(value[:2_000_000])
-            try:
-                decoded = json.loads(value)
-            except (ValueError, TypeError):
-                if "\nOutput:\n" in value:
-                    tail = value.split("\nOutput:\n", 1)[1].strip()
-                    try:
-                        tail_decoded = json.loads(tail)
-                    except (ValueError, TypeError):
-                        tail_decoded = None
-                    if isinstance(tail_decoded, dict):
-                        visit(tail_decoded, depth + 1)
-                        return
-                for line in value.splitlines()[:64]:
-                    stripped = line.strip()
-                    if stripped.startswith("{") and stripped.endswith("}"):
-                        try:
-                            line_decoded = json.loads(stripped)
-                        except (ValueError, TypeError):
-                            continue
-                        if isinstance(line_decoded, dict):
-                            visit(line_decoded, depth + 1)
-                return
-            if not isinstance(decoded, str):
-                visit(decoded, depth + 1)
-
-    visit(result)
-    exit_code = next((node.get("exit_code") for node in parsed
-                      if type(node.get("exit_code")) is int), None)
-    exit_class = "unavailable" if exit_code is None else ("zero" if exit_code == 0 else "nonzero")
-    envelopes = [node for node in parsed if node.get("schema") == "cairn.response/1"]
-    cairn_envelope = bool(envelopes)
-    api_read_status = ("success" if any(node.get("ok") is True and node.get("status") == "OK"
-                                         for node in envelopes) else
-                       "refused" if envelopes else
-                       "not_observed" if exit_class == "nonzero" else "unknown")
-    api_read_invocation = ("confirmed" if cairn_envelope else
-                           "not_observed" if exit_class == "nonzero" else "unknown")
-    content = "\n".join(strings).lower()
-    error_classes = (
-        ("no_such_file", ("no such file or directory",)),
-        ("command_not_found", ("command not found", "not found")),
-        ("permission_denied", ("permission denied",)),
-        ("operation_not_permitted", ("operation not permitted",)),
-        ("connection_refused", ("connection refused", "api_connection_failed")),
-    )
-    execution_error = next((code for code, patterns in error_classes
-                            if any(pattern in content for pattern in patterns)), None)
-    if execution_error is None and envelopes and api_read_status == "refused":
-        execution_error = "cairn_refusal"
-    if execution_error is None and exit_class == "nonzero":
-        execution_error = "exit_nonzero"
-    if execution_error is None and error_present:
-        execution_error = "tool_error"
-    if execution_error is None:
-        execution_error = "none" if exit_class == "zero" else "unknown"
-    execution_observed = (exit_code is not None or status in ("completed", "failed") or error_present)
-    return {
-        "result_status": status,
-        "result_output_type": output_type,
-        "result_error_present": error_present,
-        "tool_execution_observed": execution_observed,
-        "exit_class": exit_class,
-        "execution_error_class": execution_error,
-        "cairn_api_envelope_observed": cairn_envelope,
-        "api_read_status": api_read_status,
-        "api_read_invocation": api_read_invocation,
-    }
 
 
 def _is_expected_source_read_tool_call(item: dict, context: dict, source_body: str) -> bool:

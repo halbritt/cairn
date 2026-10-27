@@ -5,6 +5,11 @@ import os
 from pathlib import Path
 import stat
 
+from native_tool_results import (
+    advance_tool_result_stage,
+    classify_advance_tool_result,
+)
+
 _RESPONSE_SCHEMA = "cairn.compact-inbox-batch/1"
 _SAFE_KEYS = {
     "schema", "ok", "next", "remainder", "batch_index", "batch_limit", "status",
@@ -114,110 +119,6 @@ def classify_setup_filename(filename, role_paths):
         return "shared_parent"
     return "unknown"
 
-
-def _extract_exec_exit_code(header):
-    for line in header.splitlines():
-        if line.startswith("Process exited with code "):
-            suffix = line.removeprefix("Process exited with code ").strip()
-            if suffix.lstrip("-").isdigit():
-                return int(suffix)
-    return None
-
-
-def _parse_advance_tool_result(tool_result):
-    """Unwrap either JSON-wrapped or native exec_command-formatted advance output."""
-    if not isinstance(tool_result, dict):
-        return "outer_json_invalid", None
-    if tool_result.get("is_error") is True or tool_result.get("isError") is True:
-        return "is_error", None
-    raw_output = tool_result.get("output")
-    texts = []
-    if isinstance(raw_output, str):
-        texts.append(raw_output)
-    elif isinstance(raw_output, list):
-        for item in raw_output:
-            if isinstance(item, str):
-                texts.append(item)
-            elif isinstance(item, dict):
-                for key in ("text", "output", "content"):
-                    if isinstance(item.get(key), str):
-                        texts.append(item[key])
-    if not texts:
-        return "outer_json_invalid", None
-    last_stage = "outer_json_invalid"
-    for output in texts:
-        envelope = None
-        try:
-            decoded = json.loads(output)
-            if isinstance(decoded, dict):
-                envelope = decoded
-        except (TypeError, ValueError):
-            envelope = None
-        if envelope is not None:
-            exit_code = envelope.get("exit_code")
-            if exit_code is None and isinstance(envelope.get("metadata"), dict):
-                exit_code = envelope["metadata"].get("exit_code")
-            if type(exit_code) is int and exit_code != 0:
-                return "exit_nonzero", None
-            stdout = envelope.get("output")
-            if isinstance(stdout, str):
-                if "\nOutput:\n" in stdout:
-                    header, stdout = stdout.split("\nOutput:\n", 1)
-                    header_exit = _extract_exec_exit_code(header)
-                    if type(header_exit) is int and header_exit != 0:
-                        return "exit_nonzero", None
-                try:
-                    response = json.loads(stdout.strip())
-                except (TypeError, ValueError):
-                    last_stage = "inner_json_invalid"
-                    continue
-            elif "schema" in envelope or "ok" in envelope:
-                response = envelope
-            else:
-                last_stage = "inner_json_invalid"
-                continue
-        elif "\nOutput:\n" in output:
-            header, stdout = output.split("\nOutput:\n", 1)
-            exit_code = _extract_exec_exit_code(header)
-            if type(exit_code) is int and exit_code != 0:
-                return "exit_nonzero", None
-            try:
-                response = json.loads(stdout.strip())
-            except (TypeError, ValueError):
-                last_stage = "inner_json_invalid"
-                continue
-        else:
-            continue
-        if (not isinstance(response, dict) or response.get("schema") != _RESPONSE_SCHEMA or
-                response.get("ok") is not True):
-            return "schema_or_ok_invalid", None
-        return "success", response
-    return last_stage, None
-
-
-def advance_tool_result_stage(tool_result):
-    """Return a fixed parse-stage code for an advance tool result."""
-    stage, _response = _parse_advance_tool_result(tool_result)
-    return stage
-
-
-def classify_advance_tool_result(tool_result):
-    """Classify a nested Responses tool result without retaining its payload."""
-    stage, response = _parse_advance_tool_result(tool_result)
-    if stage in ("is_error", "exit_nonzero", "schema_or_ok_invalid"):
-        return "tool_error"
-    if stage != "success" or not isinstance(response, dict):
-        return "other"
-    next_value = response.get("next")
-    if (isinstance(next_value, str) and
-            _bounded_integer(response.get("batch_index"), 2, 3) is not None and
-            _bounded_integer(response.get("batch_limit"), 1, 3) == 3):
-        return "advance_successor"
-    if next_value is None and response.get("remainder") == "batch_limit":
-        return "advance_limit"
-    if next_value is None and response.get("remainder") == "priority_waiting":
-        return "advance_priority"
-    return "other"
 
 
 def _bounded_code(value, allowed):

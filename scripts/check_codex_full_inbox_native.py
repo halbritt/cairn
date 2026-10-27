@@ -163,16 +163,12 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                 {path.name for path in root.iterdir()}):
             raise RuntimeError("pre-created native fixture root must be an empty directory")
     diagnostic_path = Path(diagnostic_output) if diagnostic_output is not None else None
-    classify_advance_tool_result = None
     if diagnostic_path is not None:
         from native_notice_batch_diagnostics import (
             AdvanceDiagnosticWriter,
-            advance_tool_result_stage,
-            classify_advance_tool_result as classify,
             classify_setup_filename,
         )
-        classify_advance_tool_result_stage = advance_tool_result_stage
-        classify_advance_tool_result = classify
+        from native_tool_results import interpret_advance_tool_result
         if trace is None:
             trace = AdvanceDiagnosticWriter(diagnostic_path, root)
         path_roles = _diagnostic_path_roles(binary, config, candidate_root, codex_entry,
@@ -459,10 +455,11 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                             item = batch_exec("advance", context["compact_handle"])
                         elif batch_action == "await_advance":
                             batch_stage = "advance_tool_result"
-                            result_stage = classify_advance_tool_result_stage(result)
+                            advance_result = interpret_advance_tool_result(result)
+                            result_stage = advance_result.stage
                             if trace is not None:
                                 trace.record_advance_result_stage(result_stage)
-                            advance_class = classify_advance_tool_result(result)
+                            advance_class = advance_result.classification
                             if batch_item_index < 2:
                                 assert advance_class == "advance_successor"
                                 result_classes = ["advance_successor"]
