@@ -1,7 +1,7 @@
 // Package apicontract generates Cairn's HTTP API contract from the localapi
-// source. Routes, request and response types, error codes and the envelope
-// are read from the type-checked handlers, so the document cannot silently
-// drift from the implementation.
+// source and shared catalogs. Request and response types and the envelope
+// are read from the type-checked handlers; refusal status mappings come from
+// the same classification table used by the HTTP and CLI adapters.
 package apicontract
 
 import (
@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/halbritt/cairn/internal/refusal"
 	"github.com/halbritt/cairn/localapi"
 )
 
@@ -143,7 +144,10 @@ func load(dir string) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("type-check localapi: %w", err)
 	}
-	source := &Source{fset: fset}
+	source := &Source{fset: fset, DefaultCode: refusal.DefaultHTTPStatus}
+	for code, status := range refusal.HTTPStatusOverrides() {
+		source.Errors = append(source.Errors, ErrorCode{HTTPStatus: status, Code: code, Source: "serveJSON"})
+	}
 	envelope := pkg.Scope().Lookup("response")
 	if envelope == nil {
 		return nil, fmt.Errorf("localapi has no response envelope type")
@@ -151,9 +155,7 @@ func load(dir string) (*Source, error) {
 	source.Envelope = envelope.Type()
 	headers := map[string]bool{}
 	for _, file := range files {
-		if err := source.scanFile(file, info, headers); err != nil {
-			return nil, err
-		}
+		source.scanFile(file, info, headers)
 	}
 	routes, err := loadCatalogRoutes(pkg)
 	if err != nil {
@@ -213,24 +215,15 @@ func (s *Source) position(node ast.Node) string {
 	return filepath.Base(position.Filename)
 }
 
-func (s *Source) scanFile(file *ast.File, info *types.Info, headers map[string]bool) error {
-	var failure error
+func (s *Source) scanFile(file *ast.File, info *types.Info, headers map[string]bool) {
 	ast.Inspect(file, func(node ast.Node) bool {
-		if failure != nil {
-			return false
-		}
 		switch node := node.(type) {
-		case *ast.FuncDecl:
-			if node.Name.Name == "serveJSON" {
-				failure = s.scanStatusMap(node)
-			}
 		case *ast.CallExpr:
 			s.scanWriteError(node)
 			s.scanHeader(node, headers, info)
 		}
 		return true
 	})
-	return failure
 }
 
 // scanHeader records header names read from incoming requests, whether the
@@ -283,46 +276,6 @@ func (s *Source) scanWriteError(call *ast.CallExpr) {
 		code = "*" // a store error code passed through
 	}
 	s.Errors = append(s.Errors, ErrorCode{HTTPStatus: status, Code: code, Source: s.position(call)})
-}
-
-// scanStatusMap extracts serveJSON's store-code to HTTP status mapping.
-func (s *Source) scanStatusMap(decl *ast.FuncDecl) error {
-	found := false
-	ast.Inspect(decl.Body, func(node ast.Node) bool {
-		assign, ok := node.(*ast.AssignStmt)
-		if ok && len(assign.Lhs) == 1 && len(assign.Rhs) == 1 {
-			if name, ok := assign.Lhs[0].(*ast.Ident); ok && name.Name == "status" {
-				if value, ok := intLiteral(assign.Rhs[0]); ok && assign.Tok == token.DEFINE {
-					s.DefaultCode = value
-				}
-			}
-		}
-		clause, ok := node.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		status := 0
-		for _, statement := range clause.Body {
-			assign, ok := statement.(*ast.AssignStmt)
-			if !ok || len(assign.Lhs) != 1 {
-				continue
-			}
-			if name, ok := assign.Lhs[0].(*ast.Ident); ok && name.Name == "status" {
-				status, _ = intLiteral(assign.Rhs[0])
-			}
-		}
-		for _, expr := range clause.List {
-			if code, ok := stringLiteral(expr); ok && status != 0 {
-				s.Errors = append(s.Errors, ErrorCode{HTTPStatus: status, Code: code, Source: "serveJSON"})
-				found = true
-			}
-		}
-		return true
-	})
-	if !found || s.DefaultCode == 0 {
-		return fmt.Errorf("could not extract serveJSON status mapping")
-	}
-	return nil
 }
 
 func loadCatalogRoutes(pkg *types.Package) ([]Route, error) {

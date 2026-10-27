@@ -18,6 +18,7 @@ import (
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/internal/jsontext"
+	"github.com/halbritt/cairn/internal/refusal"
 )
 
 type Identity struct {
@@ -390,24 +391,11 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 	result, err := call(r.Context(), req)
 	if err != nil {
 		code := core.Code(err)
-		status := 422
+		classification := refusal.Classify(code)
+		status := classification.HTTPStatus
 		message := err.Error()
-		switch code {
-		case "AUTHORITY_DENIED", "SELF_PROMOTION_DENIED":
-			status = 403
-		case "RESTORE_PAUSED":
-			status = 503
-		case "INVALID_REQUEST":
-			status = 400
-		case "NOT_FOUND":
-			status = 404
-		case "PROTOCOL_UNSUPPORTED":
-			status = 426
-		case "STALE_WORKER", "WORKER_UNAVAILABLE", "POOL_FULL", "POOL_PAUSED", "STALE_RESOLUTION", "STALE_SESSION", "AGENT_BUSY", "DELIVERY_ACTIVE", "STALE_LEASE", "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
-			status = 409
-		case "STORE_ERROR", "REFUSAL_UNRECORDED":
-			status = 500
-			message = "store operation failed"
+		if classification.HTTPMessage != "" {
+			message = classification.HTTPMessage
 		}
 		var failure *core.Error
 		id := ""

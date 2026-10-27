@@ -37,7 +37,7 @@ inventory is involved.
   `json.RawMessage` and interfaces accept any value, and `[]byte` is base64. Nil
   pointers, slices and maps are `null`. A type with a custom JSON or text
   marshaler stops generation until someone writes an explicit schema for it.
-- **Errors.** `x-cairn-errors` combines serveJSON's code-to-status switch with
+- **Errors.** `x-cairn-errors` combines the shared `internal/refusal` HTTP mappings with
   every literal `writeError(w, status, code, ...)` call, including the relay's
   transport errors. `x-cairn-store-codes` lists every literal store error code in
   `core` and `localapi`. A store code that serveJSON does not map is returned with

@@ -14,6 +14,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/jsontext"
+	"github.com/halbritt/cairn/internal/refusal"
 	"github.com/halbritt/cairn/runner"
 )
 
@@ -101,35 +102,18 @@ func main() {
 	exitCode := 0
 	if err != nil {
 		envelope.Status = core.Code(err)
-		var refusal *core.Error
-		if errors.As(err, &refusal) {
-			envelope.RefusalID = refusal.RefusalID
+		var refusalError *core.Error
+		if errors.As(err, &refusalError) {
+			envelope.RefusalID = refusalError.RefusalID
 		}
 		envelope.Message = err.Error()
-		switch envelope.Status {
-		case "CLIENT_SETUP_FAILED", "API_CONNECTION_FAILED":
-			exitCode = 7
-			envelope.Message = refusal.Error()
-		case "INSTALL_FAILED", "PROTOCOL_UNSUPPORTED":
-			exitCode = 7
-		case "RESTORE_PAUSED", "RESTORE_INCOMPLETE", "PURGE_UNRECORDED", "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
-			exitCode = 7
-		case "RUN_FAILED":
-			exitCode = 1
-		case "INVALID_REQUEST":
-			exitCode = 2
-		case "NOT_FOUND":
-			exitCode = 3
-		case "STALE_CURSOR", "STALE_LEASE", "STALE_RESTORE", "RESTORE_IN_PROGRESS", "RESTORE_NOT_PAUSED", "ARTIFACT_CHANGED", "ARTIFACT_UNSAFE", "ARTIFACT_MISMATCH", "CUSTODY_CONFLICT", "PAYLOAD_UNAVAILABLE", "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL", "HOLD_RELEASED", "SESSION_LIVE", "STALE_SESSION":
-			exitCode = 4
-		case "AUTHORITY_DENIED", "AUTHORITY_INACTIVE", "SCOPE_AUTHORITY_INACTIVE", "SELF_PROMOTION_DENIED":
-			exitCode = 6
-		case "REPLAY_INCOMPLETE", "IMPACT_PREVIEW_REQUIRED", "BUDGET_REFUSED", "POLICY_UNENFORCEABLE", "OPEN_CONFLICT", "DESTINATION_PROHIBITED", "EVIDENCE_UNAVAILABLE", "INAPPLICABLE", "ATTRIBUTION_UNRECONCILED", "ATTRIBUTION_CONTRADICTED":
-			exitCode = 2
-		default:
-			exitCode = 7
-			// pgx errors may include connection credentials or rejected payloads.
-			envelope.Message = "operation failed; inspect the local store and task runtime"
+		classification := refusal.Classify(envelope.Status)
+		exitCode = classification.ExitCode
+		if classification.CLIMessage != "" {
+			envelope.Message = classification.CLIMessage
+		}
+		if envelope.Status == "CLIENT_SETUP_FAILED" || envelope.Status == "API_CONNECTION_FAILED" {
+			envelope.Message = refusalError.Error()
 		}
 	}
 	output := os.Stdout
