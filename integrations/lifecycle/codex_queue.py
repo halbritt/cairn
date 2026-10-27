@@ -10,38 +10,29 @@ import sys
 import time
 
 
-def _load_sibling_module(name):
-    if name in sys.modules:
-        mod = sys.modules[name]
-        if mod is None:
-            raise ImportError(f"import of {name} halted; None in sys.modules")
-        return mod
-    qualified = f"integrations.lifecycle.{name}"
-    if qualified in sys.modules:
-        mod = sys.modules[qualified]
-        if mod is None:
-            raise ImportError(f"import of {qualified} halted; None in sys.modules")
-        return mod
-    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    candidates = [
-        here / f"{name}.py",
-        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle") / f"{name}.py",
-        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py",
-    ]
-    for path in candidates:
-        try:
-            if path.is_file():
-                spec = importlib.util.spec_from_file_location(name, path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[name] = module
-                spec.loader.exec_module(module)
-                return module
-        except OSError:
-            continue
-    return importlib.import_module(name)
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="codex_queue.py")
 
 
-_transport = _load_sibling_module("unix_peer_transport")
+_BUNDLE = _runtime_bundle()
+
+
+_transport = _BUNDLE.load("unix_peer_transport")
 
 
 class QueueError(Exception):

@@ -361,7 +361,13 @@ A reviewed directory contains `input.json`, `corpus.json` and
   `embedding_worker` launcher; its adjacent dependencies/models remain an
   operator verification obligation. Binary identity must report the declared
   revision and an unmodified build. Recall revision is provenance; its actual
-  bytes are checked by the hook digest.
+  bytes are checked by the hook digest. Current lifecycle code also requires a
+  `bundle: {path, sha256}` pin naming the adjacent `lifecycle-bundle.json` of an
+  explicitly staged installation. The sidecar pins every runtime member. The
+  trial copies those selected bytes and the exact sidecar without rebuilding
+  them from the checkout. Missing or changed members, a source-mode loader, or
+  mixed binding versions refuse before launch. Historical two-file arms keep
+  their original pins and version1 binding behavior.
 - `corpus_policy`: an object with a nonempty `description` plus chosen selection,
   eligibility and provenance details. No note-kind filter is inferred. This is
   where the prospective natural-cohort rule belongs, before reading outcomes.

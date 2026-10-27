@@ -1291,6 +1291,19 @@ class WeeklyRunTests(unittest.TestCase):
         observed = receipt['original_execution']['observed']['arms']['arms']
         self.assertEqual(observed['CAND']['bridge_sha256'], self.recall_blob(self.repo.candidate, 'inbox_recall.py')['sha256'])
 
+    def test_two_blob_weekly_export_refuses_current_bundle_code(self):
+        source = self.repo.path / 'integrations/lifecycle'
+        (source / 'memory.py').write_text('LIFECYCLE_BUNDLE_VERSION = 1\n')
+        (source / 'inbox_recall.py').write_text("SCHEMA = 'cairn.inbox-recall-binding/2'\n")
+        git(self.repo.path, 'add', 'integrations/lifecycle')
+        git(self.repo.path, 'commit', '-qm', 'synthetic complete-bundle source declaration')
+        commit = git(self.repo.path, 'rev-parse', 'HEAD')
+        arm = dict(recall_revision=commit, hook=self.recall_blob(commit, 'memory.py'),
+                   bridge=self.recall_blob(commit, 'inbox_recall.py'))
+        with self.assertRaisesRegex(paired.Refusal, '^original_execution_unsupported:lifecycle_bundle$'):
+            weekly._recall_blobs(self.repo.path, arm, self.root / 'refused-current-code')
+        self.assertEqual(self.executor.executed, [])
+
     def test_recall_blob_must_be_the_declared_hook_and_bridge_at_the_revision(self):
         document = self.execution_document()
         arms = document['memory_arms']

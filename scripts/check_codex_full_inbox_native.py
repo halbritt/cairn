@@ -211,12 +211,6 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     actor_root = root / "workspace"
     actor_root.mkdir(mode=0o700)
     setup_done()
-    if scenario == "batch":
-        setup_stage("copy_coordination")
-        shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
-                        actor_root / "coordination.py")
-        (actor_root / "coordination.py").chmod(0o600)
-        setup_done()
     setup_stage("configure_profile")
     profile = actor_root / ".codex"
     profile.mkdir(mode=0o700)
@@ -238,8 +232,6 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     # The frozen check and fixture are outside the workspace. Only the actor
     # task and its private Codex profile are staged inside it.
     expected_workspace_files = {"task.txt", ".codex"}
-    if scenario == "batch":
-        expected_workspace_files.add("coordination.py")
     assert {path.name for path in actor_root.iterdir()} == expected_workspace_files
     setup_done()
 
@@ -283,7 +275,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
         nonlocal batch_call_index, batch_last_call_id, batch_action
         command = ["/usr/bin/env", "CAIRN_INBOX_ROOT=" + str(engine_root),
                    "CODEX_THREAD_ID=" + str(native_id), "/usr/bin/python3",
-                   str(actor_root / "coordination.py"), "inbox", "compact", action, handle]
+                   str(engine_root / "coordination.py"), "inbox", "compact", action, handle]
         if action == "settle":
             command.append("handled")
         batch_call_index += 1

@@ -15,48 +15,26 @@ DEFAULT_CONNECT_TIMEOUT = 4.0
 DEFAULT_PROBE_TIMEOUT = 0.25
 
 
-def load_sibling_module(name, caller_file=None):
-    """Load a sibling lifecycle module across package, script, and staged contexts."""
-    if name in sys.modules:
-        module = sys.modules[name]
-        if module is None:
-            raise ImportError(f"import of {name} halted; None in sys.modules")
-        return module
-    qualified = f"integrations.lifecycle.{name}"
-    if qualified in sys.modules:
-        module = sys.modules[qualified]
-        if module is None:
-            raise ImportError(f"import of {qualified} halted; None in sys.modules")
-        return module
-    candidates = []
-    if caller_file:
-        candidates.append(Path(caller_file).resolve().parent / f"{name}.py")
-    candidates.append(Path(__file__).resolve().parent / f"{name}.py")
-    cwd = Path.cwd().resolve()
-    for base in (cwd, *cwd.parents):
-        candidates.append(base / "integrations" / "lifecycle" / f"{name}.py")
-    candidates.append(
-        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle")
-        / f"{name}.py"
-    )
-    candidates.append(Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py")
-    for path in candidates:
-        try:
-            exists = path.is_file()
-        except OSError:
-            exists = False
-        if exists:
-            spec = importlib.util.spec_from_file_location(name, path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[name] = module
-                try:
-                    spec.loader.exec_module(module)
-                except Exception:
-                    sys.modules.pop(name, None)
-                    raise
-                return module
-    return importlib.import_module(name)
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="unix_peer_transport.py")
+
+
+_BUNDLE = _runtime_bundle()
 
 
 def read_boot_id(proc="/proc"):
@@ -366,15 +344,12 @@ def exchange_json_line(transport, payload, *, timeout=None, max_bytes=MAX_PEER_B
     )
 
 
-try:
-    _wake_mod = load_sibling_module("wake_transport", __file__)
-    WakeTransport = _wake_mod.WakeTransport
-    CodexQueueWakeTransport = _wake_mod.CodexQueueWakeTransport
-    ClaudeChannelWakeTransport = _wake_mod.ClaudeChannelWakeTransport
-    OpenCodeQueueWakeTransport = _wake_mod.OpenCodeQueueWakeTransport
-    HermesQueueWakeTransport = _wake_mod.HermesQueueWakeTransport
-    TerminalWakeTransport = _wake_mod.TerminalWakeTransport
-    get_wake_transport = _wake_mod.get_wake_transport
-    get_harness_wake_transport = _wake_mod.get_harness_wake_transport
-except Exception:
-    pass
+_wake_mod = _BUNDLE.load("wake_transport")
+WakeTransport = _wake_mod.WakeTransport
+CodexQueueWakeTransport = _wake_mod.CodexQueueWakeTransport
+ClaudeChannelWakeTransport = _wake_mod.ClaudeChannelWakeTransport
+OpenCodeQueueWakeTransport = _wake_mod.OpenCodeQueueWakeTransport
+HermesQueueWakeTransport = _wake_mod.HermesQueueWakeTransport
+TerminalWakeTransport = _wake_mod.TerminalWakeTransport
+get_wake_transport = _wake_mod.get_wake_transport
+get_harness_wake_transport = _wake_mod.get_harness_wake_transport

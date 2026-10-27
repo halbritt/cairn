@@ -50,6 +50,7 @@ import trial_original_execution as original
 import trial_paired_request as paired
 import trial_run_report as report
 import trial_task_eval as te
+from trial_task_arms import source_literal
 import trial_writer_release as writer_release
 import trial_one_run_override as one_run_override_contract
 import trial_weekly_accounts as weekly_accounts
@@ -806,6 +807,11 @@ def _recall_blobs(repo, arm, directory):
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             raise paired.Refusal('original_execution_recall_unresolved') from None
         need(hashlib.sha256(blob).hexdigest() == arm[role]['sha256'], 'original_execution_recall_mismatch')
+        # The frozen weekly contract selects two raw blobs, not a complete bundle.
+        if ((role == 'hook' and source_literal(blob, 'LIFECYCLE_BUNDLE_VERSION') is not None)
+                or (role == 'bridge' and source_literal(blob, 'SCHEMA') not in
+                    (None, 'cairn.inbox-recall-binding/1'))):
+            raise paired.Refusal('original_execution_unsupported:lifecycle_bundle')
         paired.write_selected_bytes(directory / name, blob)
         pins[role] = _pin_file(directory / name)
     return pins

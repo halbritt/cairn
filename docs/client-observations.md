@@ -77,7 +77,9 @@ separately from the executing Go CLI's `transport_build` (`surface` stays `cli` 
 - **Bound inbox engine.** The bridge already read and SHA-256-pinned the exact
   bytes it executes, so it hands those bytes to the engine instead of letting a
   second read observe a different file. That engine's ID therefore equals its
-  `engine.sha256` pin in the binding manifest.
+  `engine.sha256` pin in the binding manifest. The [lifecycle bundle](lifecycle-bundles.md)
+  has a separate digest covering imported helpers; it does not replace this ID or
+  extend the caller-origin wire shape.
 - **Unknown stays unknown.** A missing, unreadable, larger-than-1 MiB, nonregular
   (it is refused without opening it for input, so a FIFO cannot make a hook wait)
   or bytecode-only source, or one whose identity, size or modification time changes

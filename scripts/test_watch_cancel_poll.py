@@ -7,11 +7,12 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-import types
 import unittest
 from unittest.mock import patch
 
 from integrations.lifecycle import coordination
+
+process_scan = coordination._BUNDLE.load('process_scan')
 
 
 class FakeStop:
@@ -117,9 +118,8 @@ class PendingCancelPassTests(unittest.TestCase):
                 return dict(self.attempt, finished_at='now')
             self.fail(f'unexpected operation {operation}')
 
-        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: dict(
-            clear=True, coverage='complete', processes=[], unknown=[]))
-        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+        with patch.object(process_scan, 'markers', return_value=dict(
+                clear=True, coverage='complete', processes=[], unknown=[])), \
                 patch.object(coordination, 'opencode_capture_available', return_value=True), \
                 patch.object(coordination, 'call', side_effect=store_call), \
                 patch.object(coordination, 'submit_opencode_cancel'):
@@ -134,8 +134,7 @@ class PendingCancelPassTests(unittest.TestCase):
 
     def test_a_clear_scan_without_the_turn_stop_is_still_refused(self):
         self.config['opencode_cancel_enabled'] = True
-        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: self.fail('scan is premature'))
-        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+        with patch.object(process_scan, 'markers', side_effect=AssertionError('scan is premature')), \
                 patch.object(coordination, 'call', return_value=dict(attempt=copy.deepcopy(self.attempt))), \
                 patch.object(coordination, 'submit_opencode_cancel'):
             self.assertTrue(coordination.watch_pending_cancels(self.config))
@@ -300,9 +299,8 @@ class NextCycleWaitTests(unittest.TestCase):
                 return dict(attempt, finished_at='now')
             self.fail(f'unexpected operation {operation}')
 
-        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: dict(
-            clear=True, coverage='complete', processes=[], unknown=[]))
-        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+        with patch.object(process_scan, 'markers', return_value=dict(
+                clear=True, coverage='complete', processes=[], unknown=[])), \
                 patch.object(coordination, 'opencode_capture_available', return_value=True), \
                 patch.object(coordination, 'call', side_effect=store_call), \
                 patch.object(coordination, 'submit_opencode_cancel'):

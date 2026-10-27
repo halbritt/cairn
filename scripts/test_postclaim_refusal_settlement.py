@@ -27,6 +27,7 @@ def module(name, path):
     return result
 
 
+bundle = module('postclaim_bundle', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
 coord = module('postclaim_refusal_coord', ROOT / 'integrations/lifecycle/coordination.py')
 SESSION = '11111111-1111-4111-8111-111111111111'
 PROMPT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -63,14 +64,14 @@ class Base(unittest.TestCase):
         for name, value in (('memory.json', self.mc), ('coordination.json', self.cc)):
             (self.root / name).write_text(json.dumps(value))
             (self.root / name).chmod(0o600)
-        for name in ('memory.py', 'inbox_recall.py'):
-            target = self.root / name
-            target.write_bytes((ROOT / 'integrations/lifecycle' / name).read_bytes())
-            target.chmod(0o600)
+        bundle.stage_runtime(ROOT / 'integrations/lifecycle', self.root)
 
         def ref(path):
-            return dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-        self.binding.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/1', enabled=True,
+            value = dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            if path.suffix == '.py':
+                value['bundle'] = bundle.bundle_descriptor(path.parent)
+            return value
+        self.binding.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/2', enabled=True,
             bridge=ref(self.root / 'inbox_recall.py'), engine=ref(self.root / 'memory.py'),
             memory_config=ref(self.root / 'memory.json'), coordination_configs=[ref(self.root / 'coordination.json')])))
         self.binding.chmod(0o600)

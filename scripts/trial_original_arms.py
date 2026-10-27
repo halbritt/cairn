@@ -5,7 +5,9 @@ for each memory arm:
 - the literal ``recall_mode`` and ``semantic_fallback``;
 - ``recall_revision``;
 - pins of the raw ``memory.py`` (``hook``) and ``inbox_recall.py``
-  (``bridge``) blobs at that revision.
+  (``bridge``) blobs at that revision;
+- for direct harness use with current code, an explicit ``bundle`` sidecar pin.
+  The legacy weekly exporter remains restricted to its two-blob contract.
 
 This module validates the document against the harness's own ``--memory``
 specs before any store starts. It also loads the typed embedding identity
@@ -19,6 +21,7 @@ from pathlib import Path
 import trial_embedding_identity as identity_declaration
 import trial_native_copy as native_copy
 import trial_paired_request as paired
+from trial_task_arms import checked_runtime_bundle
 
 SCHEMA = 'cairn.original-arm-controls/1'
 MODES = ('ambient', 'agent_tools')
@@ -45,11 +48,12 @@ def load_controls(path, sha256, memory_specs):
     record, configs = {}, {}
     for label, arm in document['arms'].items():
         if not (isinstance(arm, dict)
-                and set(arm) == {'recall_mode', 'semantic_fallback', 'recall_revision', 'hook', 'bridge'}
+                and set(arm) in ({'recall_mode', 'semantic_fallback', 'recall_revision', 'hook', 'bridge'},
+                                 {'recall_mode', 'semantic_fallback', 'recall_revision', 'hook', 'bridge', 'bundle'})
                 and arm['recall_mode'] in MODES and type(arm['semantic_fallback']) is bool
                 and type(arm['recall_revision']) is str and arm['recall_revision']):
             raise ValueError('original_arms_shape')
-        for role in ('hook', 'bridge'):
+        for role in ('hook', 'bridge', *(['bundle'] if 'bundle' in arm else [])):
             pin = arm[role]
             if not (isinstance(pin, dict) and set(pin) == {'path', 'sha256'} and type(pin['path']) is str
                     and pin['path'].startswith('/') and '\0' not in pin['path'] and type(pin['sha256']) is str
@@ -65,10 +69,18 @@ def load_controls(path, sha256, memory_specs):
         for pin in (arm['hook'], arm['bridge']):
             if file_sha256(pin['path']) != pin['sha256']:
                 raise ValueError('original_arms_recall_mismatch')
+        closure = checked_runtime_bundle(hook, arm.get('bundle'), bridge)
+        if closure is not None and any(hashlib.sha256(closure[1][name]).hexdigest() != arm[role]['sha256']
+                                       for role, name in (('hook', 'memory.py'), ('bridge', 'inbox_recall.py'))):
+            raise ValueError('original_arms_recall_mismatch')
         record[label] = dict(recall_mode=arm['recall_mode'], semantic_fallback=arm['semantic_fallback'],
                              recall_revision=arm['recall_revision'], hook_sha256=arm['hook']['sha256'],
                              bridge_sha256=arm['bridge']['sha256'])
+        if 'bundle' in arm:
+            record[label]['bundle_sha256'] = arm['bundle']['sha256']
         configs[label] = dict(record[label], bridge=str(bridge), hook=str(hook))
+        if 'bundle' in arm:
+            configs[label]['bundle'] = dict(arm['bundle'])
     return dict(controls=dict(path=path, sha256=sha256), arms=record), configs
 
 
@@ -87,9 +99,13 @@ def load_identity(path, sha256):
 
 
 def observed_arm(config):
-    """Re-hash the hook and bridge that this attempt mounts; refuse any change since loading."""
-    hook, bridge = file_sha256(config['hook']), file_sha256(config['bridge'])
+    """Check the selected closure that this attempt mounts; refuse any changed pin."""
+    closure = checked_runtime_bundle(Path(config['hook']), config.get('bundle'), Path(config['bridge']))
+    if closure is None:
+        hook, bridge = file_sha256(config['hook']), file_sha256(config['bridge'])
+    else:
+        hook, bridge = (hashlib.sha256(closure[1][name]).hexdigest() for name in ('memory.py', 'inbox_recall.py'))
     if (hook, bridge) != (config['hook_sha256'], config['bridge_sha256']):
         raise RuntimeError('original recall source changed before launch')
     return {k: config[k] for k in ('recall_mode', 'semantic_fallback', 'recall_revision', 'hook_sha256',
-                                   'bridge_sha256')}
+                                   'bridge_sha256', *(['bundle_sha256'] if 'bundle' in config else []))}

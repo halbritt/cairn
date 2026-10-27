@@ -262,6 +262,7 @@ def run_probe() -> dict[str, object]:
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
     from trial_task_eval import runtime_sandbox
+    from codex_loopback_fixture import stage_lifecycle_runtime
 
     cache = Path.home() / ".cache"
     cache.mkdir(mode=0o700, exist_ok=True)
@@ -275,10 +276,10 @@ def run_probe() -> dict[str, object]:
         os.chmod(root / "probe.py", 0o600)
         # Bind the existing queue client so the probe follows its production
         # SO_PEERCRED, WebSocket, thread-loaded, and queue/add checks.
-        queue_module = REPO / "integrations/lifecycle/codex_queue.py"
-        (root / "probe-modules").mkdir(mode=0o700)
-        shutil.copyfile(queue_module, root / "probe-modules/codex_queue.py")
-        os.chmod(root / "probe-modules/codex_queue.py", 0o600)
+        stage_lifecycle_runtime(root / "probe-modules")
+        shutil.copyfile(SCRIPTS / "codex_loopback_fixture.py",
+                        root / "probe-modules/codex_loopback_fixture.py")
+        os.chmod(root / "probe-modules/codex_loopback_fixture.py", 0o600)
         shutil.copyfile(SCRIPTS / "check_codex_inbox.py",
                         root / "probe-modules/check_codex_inbox.py")
         os.chmod(root / "probe-modules/check_codex_inbox.py", 0o600)

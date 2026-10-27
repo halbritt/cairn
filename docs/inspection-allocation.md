@@ -82,9 +82,9 @@ Its saved artifact contains the complete response; read it within the explicit
 handoff allowance. This harness behavior is separate from the Cairn receipt limit.
 
 Inbox-bound lifecycle recall loads the engine pinned in its
-`cairn.inbox-recall-binding/1` manifest. Updating a harness hook command alone
+`cairn.inbox-recall-binding/2` manifest. Updating a harness hook command alone
 does not update that engine's recall instructions. When installing revised
-guidance, check both paths and validate the manifest's engine hash and profile
+guidance, check both paths and validate the manifest's engine hash, complete lifecycle bundle, and profile
 bindings. Changing the cue does not settle a held inbox delivery.
 
 Existing receipts cannot be enlarged. Older APIs reject the new policy value.

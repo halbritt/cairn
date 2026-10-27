@@ -424,7 +424,14 @@ recall-controls lane):**
   (`cairn.original-arm-controls/1`, passed as `--original-arms` with its
   SHA-256). Each attempt re-hashes the hook and bridge before launch and
   records `original_arm {recall_mode, semantic_fallback, recall_revision,
-  hook_sha256, bridge_sha256}`.
+  hook_sha256, bridge_sha256}`. This frozen weekly exporter supports version1
+  recall sources only. Current bundle code refuses
+  `original_execution_unsupported:lifecycle_bundle`; selecting two current Git
+  blobs does not select their adjacent dependencies. Direct harness controls
+  may explicitly add `bundle: {path, sha256}` for an already staged complete
+  installation. The harness validates every member, rechecks the pin before
+  launch, and adds `bundle_sha256` to the observation. The legacy weekly
+  observation contract does not accept that extension.
 - **`embedding_config`.** The runner calls agent-504's
   `trial_embedding_launch.prepare(config, {CURRENT: worker, CAND: worker},
   slot/embedding)` and passes the retained launcher as the single

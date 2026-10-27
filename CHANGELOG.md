@@ -13,6 +13,18 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-10-26
+
+- Lifecycle installers now stage the complete implementation and validate its
+  files before loading helpers. Installed hooks no longer depend on a development
+  checkout or silently select an older ledger implementation. Bound inbox recall
+  requires an explicit upgrade to the version 2 binding with complete bundle pins;
+  the memory engine's caller-origin digest keeps its existing meaning. Reinstalls
+  preserve custom state paths and refuse to replace code used by an enabled inbox
+  binding. See [lifecycle bundles](docs/lifecycle-bundles.md) for the drain,
+  validation, and rollback procedure. This source change does not update running
+  installations.
+
 ## 2026-10-24
 
 - Selected capture can report opt-in, bounded usage and outcome observations

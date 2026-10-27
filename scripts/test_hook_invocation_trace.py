@@ -4,6 +4,7 @@ Model-free: temporary fixtures, the fake CLI and synthetic bindings only.
 """
 import contextlib
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -291,7 +292,16 @@ class InvocationTraceTests(TraceFixture):
         result = self.run_hook(raw=b' ' * (1024 * 1024 + 1))
         self.assertEqual((result.returncode, self.pair()[1]['phase']), (1, 'input'))
         self.setUp(); self.enable()
-        (self.root / 'inbox_recall.py').write_text('# changed bridge\n')
+        # Keep the ordinary engine intact so the refusal occurs during bound
+        # activation, after invocation tracing has started.
+        bridge_root = self.root / 'bound-bridge'
+        codex_fixture.bundle.stage_runtime(codex_fixture.ROOT / 'integrations/lifecycle', bridge_root)
+        bridge = bridge_root / 'inbox_recall.py'
+        manifest = json.loads(self.case.binding.read_text())
+        manifest['bridge'] = dict(path=str(bridge), sha256=hashlib.sha256(bridge.read_bytes()).hexdigest(),
+                                  bundle=codex_fixture.bundle.bundle_descriptor(bridge_root))
+        self.case.binding.write_text(json.dumps(manifest))
+        bridge.write_text('# changed bridge\n')
         result = self.run_hook()
         exit_ = self.pair()[1]
         self.assertEqual((result.returncode, exit_['error_class'], exit_['outcome']), (1, 'ValueError', 'error'))

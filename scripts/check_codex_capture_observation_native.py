@@ -98,9 +98,8 @@ def check(codex, binary, root, repo, agent, selector, cli_shim):
     destination.mkdir(mode=0o700)
     config_path = destination / "config.json"
     lifecycle = destination / "lifecycle.py"
-    source = Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py"
-    shutil.copyfile(source, lifecycle)
-    lifecycle.chmod(0o700)
+    from codex_loopback_fixture import stage_lifecycle_runtime
+    stage_lifecycle_runtime(destination, entrypoints={"memory.py": "lifecycle.py"})
     config_path.write_text(json.dumps(native_config), encoding="utf-8")
     config_path.chmod(0o600)
     command = shlex.join([sys.executable, str(lifecycle), "--config", str(config_path)])

@@ -1533,7 +1533,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             # Claude's single child has an explicit one-task key. Codex uses its
             # own durable per-native-turn grant; never add Claude's key there.
             binds += bind_ordinary_claude(base, config, arm_config["bridge"],
-                                          launcher_task=args.harness == "claude")
+                                          launcher_task=args.harness == "claude", bundle_pin=arm_config.get("bundle"))
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
         if prospective:
             hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"

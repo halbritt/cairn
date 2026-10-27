@@ -535,6 +535,21 @@ def load_coordination_installer(name: str = "codex_coordination_installer"):
     )
 
 
+def lifecycle_bundle():
+    return load_script_module(
+        Path(__file__).resolve().parents[1] / "integrations/lifecycle/lifecycle_bundle.py",
+        "codex_fixture_lifecycle_bundle",
+    )
+
+
+def stage_lifecycle_runtime(destination: Path | str, *, entrypoints=None):
+    return lifecycle_bundle().stage_runtime(
+        Path(__file__).resolve().parents[1] / "integrations/lifecycle",
+        destination,
+        entrypoints=entrypoints,
+    )
+
+
 def stage_hook_metadata_wrapper(profile_dir: Path | str) -> Path:
     """Stage record_codex_hook_metadata.py and codex_fixture_diagnostic.py into profile_dir."""
     source_dir = Path(__file__).resolve().parent
@@ -611,7 +626,6 @@ def stage_codex_binding_and_hooks(
     *,
     binding: str,
     config_data: dict[str, Any],
-    hook_script: Path | str,
     python_executable: str = "/usr/bin/python3",
 ) -> tuple[Path, str]:
     """Write a private Codex binding config and matching 6-event hooks.json."""
@@ -624,7 +638,8 @@ def stage_codex_binding_and_hooks(
     config_path = bindings / f"{binding}.json"
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
     config_path.chmod(0o600)
-    command = f"{python_executable} {hook_script} hook --config {config_path}"
+    runtime = stage_lifecycle_runtime(engine_path)
+    command = shlex.join([python_executable, str(runtime["coordination.py"]), "hook", "--config", str(config_path)])
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in CODEX_HOOK_EVENTS:
         timeout = 2 if event in ("SessionEnd", "Interrupt", "PostToolUse") else 15

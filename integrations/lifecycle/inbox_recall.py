@@ -12,32 +12,32 @@ import tempfile
 import uuid
 
 
-def _load_grant_ledger():
-    for name in ("grant_ledger", "integrations.lifecycle.grant_ledger"):
-        if name in sys.modules and sys.modules[name] is not None:
-            return sys.modules[name]
-    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    for path in (
-        here / "grant_ledger.py",
-        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle/grant_ledger.py"),
-        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / "grant_ledger.py",
-    ):
-        try:
-            if path.is_file():
-                spec = importlib.util.spec_from_file_location("grant_ledger", path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules["grant_ledger"] = module
-                spec.loader.exec_module(module)
-                return module
-        except OSError:
-            continue
-    return None
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="inbox_recall.py")
 
 
-_grant_ledger = _load_grant_ledger()
-GrantLedger = _grant_ledger.GrantLedger if _grant_ledger is not None else None
+_BUNDLE = _runtime_bundle()
 
-SCHEMA = 'cairn.inbox-recall-binding/1'
+
+_grant_ledger = _BUNDLE.load("grant_ledger")
+GrantLedger = _grant_ledger.GrantLedger
+
+SCHEMA = 'cairn.inbox-recall-binding/2'
 RECALL_OBSERVATION_VERSION = 1
 # The required lookup is the only recall phase whose failure refuses delivery.
 # Each attempt may use the remaining recall time except this reserve, and never
@@ -265,8 +265,9 @@ def validate_binding(config, *, require_enabled=False):
         raise ValueError('unknown inbox recall binding')
     if require_enabled and not manifest['enabled']:
         raise ValueError('inbox recall binding is disabled')
-    files = {name: checked_file(manifest[name]) for name in ('bridge', 'engine', 'memory_config')}
-    memory = json.loads(files['memory_config'][1])
+    # The role snapshots own code validation; checked_file is for configuration bytes.
+    _BUNDLE.check_pinned(manifest['bridge'], 'inbox_recall')
+    memory = json.loads(checked_file(manifest['memory_config'])[1])
     descriptors = manifest.get('coordination_configs')
     if not isinstance(descriptors, list) or not 1 <= len(descriptors) <= 8:
         raise ValueError('one to eight explicit coordination configurations required')
@@ -284,12 +285,7 @@ def validate_binding(config, *, require_enabled=False):
             or any(c.get('config_home') and not Path(c['config_home']).is_absolute() for c in coordinators)
             or type(memory.get('context_bytes')) is not int or not 1000 <= memory['context_bytes'] <= 9500):
         raise ValueError('incompatible inbox recall profile binding')
-    spec = importlib.util.spec_from_file_location('cairn_bound_memory', files['engine'][0])
-    engine = importlib.util.module_from_spec(spec)
-    # The engine reports a source snapshot as its caller origin. Hand it the exact pinned bytes executed
-    # below so that snapshot cannot come from a second read of the path; an engine without it ignores this.
-    engine.__dict__['_CAIRN_VALIDATED_SOURCE'] = files['engine'][1]
-    exec(compile(files['engine'][1], str(files['engine'][0]), 'exec'), engine.__dict__)
+    engine = _BUNDLE.load_pinned(manifest['engine'], 'memory')
     if getattr(engine, 'INBOX_RECALL_VERSION', None) != 1:
         raise ValueError('pinned memory engine lacks the inbox recall contract')
     return engine, memory
@@ -300,13 +296,7 @@ def binding(config):
 
 
 def claude_owner(event):
-    if _grant_ledger is not None:
-        return _grant_ledger.claude_owner(event)
-    prompt = event.get('prompt_id')
-    if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
-            or any(ord(c) < 32 for c in prompt)):
-        raise ValueError('inbox recall requires actual Claude prompt ownership')
-    return 'claude-channel:' + prompt
+    return _grant_ledger.claude_owner(event)
 
 
 LOCK_WAIT_SECONDS = 1.5
@@ -314,20 +304,7 @@ LOCK_WAIT_SECONDS = 1.5
 
 def acquire_session_lock(lock, deadline=None):
     """Exclusive session lock, waiting at most LOCK_WAIT_SECONDS (and never past deadline)."""
-    if _grant_ledger is not None:
-        return _grant_ledger.acquire_session_lock(lock, deadline, wait_seconds=LOCK_WAIT_SECONDS)
-    limit = time.monotonic() + LOCK_WAIT_SECONDS
-    if deadline is not None:
-        limit = min(limit, deadline)
-    while True:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return
-        except BlockingIOError:
-            remaining = limit - time.monotonic()
-            if remaining <= 0:
-                raise
-            time.sleep(min(0.01, remaining))
+    return _grant_ledger.acquire_session_lock(lock, deadline, wait_seconds=LOCK_WAIT_SECONDS)
 
 
 def activation_decision(config, event, enabled):
@@ -463,111 +440,30 @@ FOLD_DOMAIN = 'cairn.inbox-recall-fold/1'
 
 
 def folded_token(kind, value):
-    if _grant_ledger is not None:
-        return _grant_ledger.folded_token(kind, value)
-    return hashlib.sha256('\0'.join((FOLD_DOMAIN, kind, value)).encode()).hexdigest()[:16]
+    return _grant_ledger.folded_token(kind, value)
 
 
 def folded_conflict(ledger, *, key, wake_sha256, owner):
     """True when a folded grant matched this key, wake hash or (Claude) native owner."""
-    if _grant_ledger is not None:
-        return _grant_ledger.folded_conflict(ledger, key=key, wake_sha256=wake_sha256, owner=owner)
-    tokens = set((ledger.get('folded') or {}).get('tokens', ()))
-    if not tokens:
-        return False
-    probes = [folded_token('key', key)]
-    if isinstance(wake_sha256, str):
-        probes.append(folded_token('wake', wake_sha256))
-    if isinstance(owner, str):
-        probes.append(folded_token('owner', owner))
-    return any(p in tokens for p in probes)
+    return _grant_ledger.folded_conflict(ledger, key=key, wake_sha256=wake_sha256, owner=owner)
 
 
 def compact_grants(ledger, *, owners=(), deliveries=(), attempts=(), turns=()):
     """Fold grants outside the retained set into digests; returns how many were folded."""
-    if _grant_ledger is not None:
-        return _grant_ledger.compact_grants(
-            ledger,
-            owners=owners,
-            deliveries=deliveries,
-            attempts=attempts,
-            turns=turns,
-            recent_grants=LEDGER_RECENT_GRANTS,
-            folded_tokens=LEDGER_FOLDED_TOKENS,
-            recent_decisions=LEDGER_RECENT_DECISIONS,
-        )
-    grants = ledger['grants']
-    recent = set(list(grants)[-LEDGER_RECENT_GRANTS:])
-    retained, fresh = {}, []
-    for key, grant in grants.items():
-        identity = grant['identity']
-        if (key in recent or key == ledger.get('active') or identity.get('recall_task_key')
-                or (grant.get('required') or {}).get('pending')
-                or identity.get('native_owner') in owners or identity.get('delivery_id') in deliveries
-                or identity.get('attempt_id') in attempts):
-            retained[key] = grant
-            continue
-        fresh.append(folded_token('key', key))
-        if isinstance(grant.get('wake_sha256'), str):
-            fresh.append(folded_token('wake', grant['wake_sha256']))
-        if isinstance(identity.get('native_owner'), str):
-            fresh.append(folded_token('owner', identity['native_owner']))
-    folded = len(grants) - len(retained)
-    if folded:
-        prior = ledger.get('folded') or dict(count=0, tokens=[])
-        seen = set(prior['tokens'])
-        tokens = list(prior['tokens'])
-        for token in fresh:
-            if token not in seen:
-                seen.add(token)
-                tokens.append(token)
-        ledger['grants'] = retained
-        ledger['folded'] = dict(count=prior['count'] + folded, tokens=tokens[-LEDGER_FOLDED_TOKENS:])
-    decisions = ledger.get('inbox_activation')
-    if isinstance(decisions, dict) and len(decisions) > LEDGER_RECENT_DECISIONS:
-        names = list(decisions)
-        keep = set(names[-LEDGER_RECENT_DECISIONS:]) | (set(turns) & set(names))
-        ledger['inbox_activation'] = {name: decisions[name] for name in names if name in keep}
-    return folded
+    return _grant_ledger.compact_grants(
+        ledger,
+        owners=owners,
+        deliveries=deliveries,
+        attempts=attempts,
+        turns=turns,
+        recent_grants=LEDGER_RECENT_GRANTS,
+        folded_tokens=LEDGER_FOLDED_TOKENS,
+        recent_decisions=LEDGER_RECENT_DECISIONS,
+    )
 
 
 def load_grants(path, session):
-    if _grant_ledger is not None:
-        return _grant_ledger.load_grants(path, session)
-    marker = path.with_suffix('.initialized')
-    if marker.exists() and json.loads(marker.read_text()) != dict(schema='cairn.inbox-recall-initialized/1', session=session):
-        raise ValueError('inbox recall initialization marker corrupt')
-    if marker.exists() and not path.exists():
-        raise ValueError('inbox recall grant ledger missing')
-    ledger = json.loads(path.read_text()) if path.exists() else dict(schema='cairn.inbox-recall-grants/1', session=session, grants={})
-    if ledger.get('schema') != 'cairn.inbox-recall-grants/1' or ledger.get('session') != session or not isinstance(ledger.get('grants'), dict):
-        raise ValueError('inbox recall grant ledger corrupt')
-    for key, grant in ledger['grants'].items():
-        if (not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(grant, dict)
-                or not isinstance(grant.get('identity'), dict)
-                or any(type(grant.get(k)) is not int or grant[k] < 0 for k in ('limit_bytes', 'output_bytes', 'native_allowance_bytes'))
-                or grant['output_bytes'] + grant['native_allowance_bytes'] > grant['limit_bytes']):
-            raise ValueError('inbox recall grant ledger corrupt')
-    for grant in [ledger, *ledger['grants'].values()]:
-        required = grant.get('required')
-        if required is not None and (not isinstance(required, dict)
-                or type(required.get('count')) is not int or required['count'] < 0
-                or type(required.get('pending')) is not bool
-                or not isinstance(required.get('selection_sha256'), str)
-                or (required['selection_sha256'] != '' and not re.fullmatch('[0-9a-f]{64}', required['selection_sha256']))):
-            raise ValueError('inbox required-context status corrupt')
-        if type(grant.get('required_refresh_bytes', 0)) is not int or grant.get('required_refresh_bytes', 0) < 0:
-            raise ValueError('inbox required refresh counter corrupt')
-    if type(ledger.get('pending_bytes', 0)) is not int or not 0 <= ledger.get('pending_bytes', 0) <= 9500:
-        raise ValueError('inbox recall pending charge corrupt')
-    if ledger.get('active') is not None and ledger['active'] not in ledger['grants']:
-        raise ValueError('inbox recall active grant missing')
-    folded = ledger.get('folded')
-    if folded is not None and (not isinstance(folded, dict) or set(folded) != {'count', 'tokens'}
-            or type(folded['count']) is not int or folded['count'] < 0 or not isinstance(folded['tokens'], list)
-            or any(not isinstance(t, str) or not re.fullmatch('[0-9a-f]{16}', t) for t in folded['tokens'])):
-        raise ValueError('inbox recall folded grants corrupt')
-    return ledger
+    return _grant_ledger.load_grants(path, session)
 
 
 def hosted(result):

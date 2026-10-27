@@ -35,12 +35,13 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
     model_overrides = shared.retain_model_overrides({}, engine_path, preview_model, recall_model)
     model_overrides = shared.retain_recall_mode(model_overrides, engine_path, recall_mode)
     model_overrides = shared.retain_capture_observations(model_overrides, engine_path)
+    model_overrides = shared.retain_inbox_binding(model_overrides, engine_path)
     plugin = home / 'plugins/cairn'
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),
-                           (ROOT / 'integrations/lifecycle/memory.py', plugin / 'memory.py'),
                            (ROOT / 'integrations/hermes/controls.py', plugin / 'controls.py')]:
         shutil.copyfile(source, target)
+    runtime = shared.bundle.stage_runtime(ROOT / 'integrations/lifecycle', plugin)
     commands = home / 'plugins/cairn-controls'
     commands.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, name in [('commands.py', '__init__.py'), ('controls.py', 'controls.py'), ('commands-plugin.yaml', 'plugin.yaml')]:
@@ -49,12 +50,13 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
     if 'cairn-controls' not in enabled:
         enabled.append('cairn-controls')
     engine = dict(cairn=native['executable'], socket=native['socket'], token_file=native['token_file'],
-                  repo=native['repo'], harness='hermes', semantic_fallback=True, claude=claude, state_dir=str(home / 'cairn/state'))
+                  repo=native['repo'], harness='hermes', semantic_fallback=True, claude=claude,
+                  state_dir=model_overrides.get('state_dir', str(home / 'cairn/state')))
     if model:
         engine['model'] = model
     if native.get('context'):
         engine['context'] = native['context']
-    shared.write_json(engine_path, dict(engine, **model_overrides))
+    shared.write_json(engine_path, dict(model_overrides, **engine))
     shared.write_json(home / 'cairn-lifecycle.json', dict(script=str(plugin / 'memory.py'),
                                                        engine_config=str(home / 'cairn/engine.json')))
     skill_dir = home / 'skills/cairn'
@@ -83,8 +85,9 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
         'schema': 'cairn.hermes-install/1',
         'source_revision': revision, 'source_modified': modified,
         'files': {str(p.relative_to(home)): hashlib.sha256(p.read_bytes()).hexdigest()
-                  for p in (plugin / '__init__.py', plugin / 'memory.py', plugin / 'controls.py',
-                            commands / '__init__.py', commands / 'controls.py', commands / 'plugin.yaml', skill_dir / 'SKILL.md')}})
+                  for p in (plugin / '__init__.py', plugin / 'controls.py',
+                            commands / '__init__.py', commands / 'controls.py', commands / 'plugin.yaml', skill_dir / 'SKILL.md',
+                            *runtime.values())}})
     return config
 
 

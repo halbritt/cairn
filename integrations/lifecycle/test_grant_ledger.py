@@ -22,10 +22,11 @@ def _load(name):
 
 class GrantLedgerTest(unittest.TestCase):
     def test_grant_ledger_re_exported_across_lifecycle_modules(self):
-        gl = _load("grant_ledger")
-        coord = _load("coordination")
-        ir = _load("inbox_recall")
-        mem = _load("memory")
+        bundle = _load("lifecycle_bundle").Bundle(LIFECYCLE)
+        gl = bundle.load("grant_ledger")
+        coord = bundle.load("coordination")
+        ir = bundle.load("inbox_recall")
+        mem = bundle.load("memory")
         self.assertIs(coord.GrantLedger, gl.GrantLedger)
         self.assertIs(ir.GrantLedger, gl.GrantLedger)
         self.assertIs(mem.GrantLedger, gl.GrantLedger)

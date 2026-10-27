@@ -50,8 +50,7 @@ def assert_owner_boundary_fallback(test, endpoint, process, state_dir, probe, st
         test.fail(f'unexpected store operation: {operation}')
 
     with patch.object(coordination, 'call', side_effect=store_call), \
-            patch.object(coordination, 'opencode_queue_endpoint', return_value=endpoint), \
-            patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+            patch.object(coordination, 'opencode_queue_endpoint', return_value=endpoint):
         probe()
         with coordination.session_lock(path):
             test.assertIsNone(coordination.prepare_idle_wake(config, state, path))
@@ -237,8 +236,7 @@ class OpenCodeQueueTests(unittest.TestCase):
         coordination.write_state(path, state)
         config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
         with patch.object(coordination, 'call', return_value=dict(delivery_id=delivery_id)), \
-                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
-                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path):
             with coordination.session_lock(path):
                 prepared = coordination.prepare_idle_wake(config, state, path)
             self.serve({'id': 1, 'error': {'code': -32004,
@@ -263,8 +261,7 @@ class OpenCodeQueueTests(unittest.TestCase):
             metadata=dict(workspace=self.temp.name, state='idle', delivery_mode='existing-session')))
         coordination.write_state(state_path, state)
         with patch.object(coordination, 'call', return_value=dict(delivery_id=delivery)), \
-                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
-                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path):
             with coordination.session_lock(state_path):
                 prepared = coordination.prepare_idle_wake(config, state, state_path)
             self.serve('busy')
@@ -372,8 +369,7 @@ class OpenCodeQueueTests(unittest.TestCase):
             self.fail(f'unexpected store operation: {operation}')
 
         with patch.object(coordination, 'call', side_effect=store_call), \
-                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
-                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path):
             with coordination.session_lock(path):
                 prepared = coordination.prepare_idle_wake(config, state, path)
             self.serve({'id': 1, 'error': {'code': -32005, 'message': 'ALREADY_ADMITTED: native request is completed'}})
@@ -450,8 +446,7 @@ class OpenCodeQueueTests(unittest.TestCase):
             return ready
 
         with patch.object(coordination, 'call', side_effect=ready_call), \
-                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
-                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path):
             for outcome in ('confirm', 'drop', {'id': 99, 'result': {}},
                             {'id': 1, 'error': {'code': -32003, 'message': 'CONFLICT: request belongs to another prompt'}}):
                 with self.subTest(outcome=outcome):

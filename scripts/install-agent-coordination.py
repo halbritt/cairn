@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('coordination', ROOT / 'integrations/lifecycle/coordination.py')
 engine = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(engine)
+_bundle_spec = importlib.util.spec_from_file_location('cairn_lifecycle_bundle_installer', ROOT / 'integrations/lifecycle/lifecycle_bundle.py')
+bundle = importlib.util.module_from_spec(_bundle_spec)
+_bundle_spec.loader.exec_module(bundle)
 
 
 def backup(path):
@@ -47,6 +50,27 @@ def install_compact_inbox_launcher(root, home):
 
 def install(root, settings, config):
     config = dict(config, state_dir=str(root / 'state' / config['binding']))
+    # Several accounts can share this runtime directory; every existing bound
+    # account must be disabled before any of its implementation files change.
+    for installed_config in (root / 'bindings').glob('*.json'):
+        previous = json.loads(installed_config.read_text())
+        if previous.get('binding') == config['binding']:
+            config = dict(previous, **config)
+            if 'state_dir' in previous:
+                config['state_dir'] = previous['state_dir']
+        binding = previous.get('inbox_recall_binding')
+        if binding:
+            manifest = json.loads(Path(binding).read_text())
+            if manifest.get('enabled') is not False:
+                raise ValueError('disable the recall binding before reinstalling; repin and validate before re-enabling')
+            if previous.get('binding') == config['binding']:
+                if config.get('inbox_recall_binding', binding) != binding:
+                    raise ValueError('coordination reinstall cannot replace the recall binding')
+                config['inbox_recall_binding'] = binding
+    if config.get('inbox_recall_binding'):
+        manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
+        if manifest.get('enabled') is not False:
+            raise ValueError('disable the recall binding before reinstalling; repin and validate before re-enabling')
     engine.validate_config(config)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     bindings = root / 'bindings'
@@ -55,13 +79,7 @@ def install(root, settings, config):
     script = root / 'coordination.py'
     engine.write_state(config_path, config)
     engine.load_config(config_path)
-    shutil.copyfile(ROOT / 'integrations/lifecycle/codex_queue.py', root / 'codex_queue.py')
-    shutil.copyfile(ROOT / 'integrations/lifecycle/claude_channel.py', root / 'claude_channel.py')
-    shutil.copyfile(ROOT / 'integrations/lifecycle/opencode_queue.py', root / 'opencode_queue.py')
-    shutil.copyfile(ROOT / 'integrations/lifecycle/hermes_queue.py', root / 'hermes_queue.py')
-    shutil.copyfile(ROOT / 'integrations/lifecycle/process_scan.py', root / 'process_scan.py')
-    shutil.copyfile(ROOT / 'integrations/lifecycle/coordination.py', script)
-    script.chmod(0o700)
+    bundle.stage_runtime(ROOT / 'integrations/lifecycle', root)
     command = [sys.executable, str(script), 'hook', '--config', str(config_path)]
     harness = config['harness']
     if harness in ('codex', 'claude'):

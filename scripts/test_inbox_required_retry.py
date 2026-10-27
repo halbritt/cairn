@@ -108,6 +108,7 @@ class RequiredLookupRetryTests(unittest.TestCase):
         engine.write_text(engine.read_text().replace('INBOX_REQUIRED_SEARCH_RETRY_VERSION = 1\n', ''))
         binding = json.loads(case.binding.read_text())
         binding['engine']['sha256'] = hashlib.sha256(engine.read_bytes()).hexdigest()
+        fixtures.repin_runtime(binding)
         case.binding.write_text(json.dumps(binding))
         result = case.invoke(main=True)
         self.assertEqual((result['code'], result['stdout']), (2, ''))

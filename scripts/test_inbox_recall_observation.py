@@ -103,6 +103,7 @@ def save_codex_budget(path, value):
 """)
         manifest = json.loads(case.binding.read_text())
         manifest['engine']['sha256'] = hashlib.sha256(engine.read_bytes()).hexdigest()
+        fixtures.repin_runtime(manifest)
         case.binding.write_text(json.dumps(manifest))
         out = case.invoke(main=True)
         self.assertEqual(out['code'], 2, out)

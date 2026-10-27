@@ -12,7 +12,12 @@ import tempfile
 import time
 
 SCHEMA = "cairn.effective-recall-deployment-check/1"
-BINDING_SCHEMA = "cairn.inbox-recall-binding/1"
+BINDING_SCHEMA = "cairn.inbox-recall-binding/2"
+LEGACY_BINDING_SCHEMA = "cairn.inbox-recall-binding/1"
+_bundle_spec = importlib.util.spec_from_file_location(
+    "cairn_check_bundle", Path(__file__).resolve().parents[1] / "integrations/lifecycle/lifecycle_bundle.py")
+bundle = importlib.util.module_from_spec(_bundle_spec)
+_bundle_spec.loader.exec_module(bundle)
 DISPATCH_SCHEMA = "cairn.recall-dispatch/1"
 
 ENGINE_REQUIRED_CUES = (
@@ -95,9 +100,13 @@ def inspect_file(path, *, owner_only=False):
     return info, raw
 
 
-def load_python_module(name, path, raw_bytes=None):
+def load_python_module(name, path, raw_bytes=None, *, sources=None, role=None):
     path = Path(path)
     raw = raw_bytes if raw_bytes is not None else path.read_bytes()
+    if sources is not None:
+        if raw != sources[role + ".py"]:
+            raise ValueError("entrypoint differs from its checked lifecycle snapshot")
+        return bundle.Bundle(path.parent, sources=sources).load(role, entry_path=path)
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     module.__dict__["_CAIRN_VALIDATED_SOURCE"] = raw
@@ -188,7 +197,7 @@ def _fixture_payload(note_body, task_body, *, fail_history=None):
     return payload
 
 
-def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None):
+def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None, *, sources=None):
     note = "Preserve fixture scope until source verification completes."
     task = "Verify effective recall deployment guidance."
     with tempfile.TemporaryDirectory() as tmp:
@@ -213,7 +222,8 @@ def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None
             recall_mode="agent_tools",
             recall_observations=False,
         )
-        engine = load_python_module("cairn_check_ordinary_engine", engine_path, engine_bytes)
+        engine = load_python_module("cairn_check_ordinary_engine", engine_path, engine_bytes,
+                                    sources=sources, role="memory")
         event = {
             "session_id": SYNTHETIC_SESSION,
             "turn_id": SYNTHETIC_TURN,
@@ -232,7 +242,7 @@ def render_ordinary_recall_fixture(engine_path, engine_bytes, memory_config=None
         )
 
 
-def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind, fail_history=None):
+def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind, fail_history=None, *, runtime_sources=None):
     (root / ".git").mkdir(parents=True, exist_ok=True)
     cli = root / "cairn"
     cli.write_text(FAKE_CAIRN_CLI)
@@ -255,17 +265,27 @@ def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind,
         p = root / name
         p.write_text(json.dumps(payload))
         p.chmod(0o600)
-    for name, raw in (("inbox_recall.py", bridge_bytes), ("memory.py", engine_bytes)):
-        p = root / name
-        p.write_bytes(raw)
-        p.chmod(0o600)
+    paths = {}
+    for role, raw in (("inbox_recall", bridge_bytes), ("memory", engine_bytes)):
+        destination = root / role if runtime_sources else root
+        if runtime_sources:
+            bundle.stage_sources(runtime_sources[role], destination)
+        path = destination / (role + ".py")
+        if runtime_sources and runtime_sources[role][role + ".py"] != raw:
+            raise ValueError("entrypoint differs from its checked lifecycle snapshot")
+        path.write_bytes(raw)
+        path.chmod(0o600)
+        paths[role] = path
     def pin(p):
-        return {"path": str(p), "sha256": sha256_bytes(p.read_bytes())}
+        descriptor = {"path": str(p), "sha256": sha256_bytes(p.read_bytes())}
+        if runtime_sources and p in paths.values():
+            descriptor["bundle"] = bundle.bundle_descriptor(p.parent)
+        return descriptor
     binding_path.write_text(json.dumps({
-        "schema": BINDING_SCHEMA,
+        "schema": bridge_mod.SCHEMA,
         "enabled": True,
-        "bridge": pin(root / "inbox_recall.py"),
-        "engine": pin(root / "memory.py"),
+        "bridge": pin(paths["inbox_recall"]),
+        "engine": pin(paths["memory"]),
         "memory_config": pin(root / "memory.json"),
         "coordination_configs": [pin(root / "coordination.json")],
     }))
@@ -317,19 +337,23 @@ def _run_inbox_case(root, bridge_mod, bridge_bytes, engine_bytes, harness, kind,
     return bridge_mod.output(cc, event, obs, state, "Cairn control.", revalidate=lambda _a: None, outer_deadline=time.monotonic() + 5)
 
 
-def render_inbox_bridge_fixtures(bridge_path, bridge_bytes, engine_path, engine_bytes, harness="codex"):
+def render_inbox_bridge_fixtures(bridge_path, bridge_bytes, engine_path, engine_bytes, harness="codex", *, runtime_sources=None):
     harness = harness if harness in ("codex", "claude") else "codex"
-    bridge_mod = load_python_module("cairn_check_inbox_bridge", bridge_path, bridge_bytes)
+    bridge_mod = load_python_module("cairn_check_inbox_bridge", bridge_path, bridge_bytes,
+                                   sources=runtime_sources["inbox_recall"] if runtime_sources else None,
+                                   role="inbox_recall")
+    if bridge_mod.SCHEMA == BINDING_SCHEMA and runtime_sources is None:
+        raise ValueError("version 2 fixtures require checked lifecycle snapshots")
     results = {}
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
-        admitted_text = _run_inbox_case(base / "admitted_request", bridge_mod, bridge_bytes, engine_bytes, harness, "request")
+        admitted_text = _run_inbox_case(base / "admitted_request", bridge_mod, bridge_bytes, engine_bytes, harness, "request", runtime_sources=runtime_sources)
         results["admitted_request"] = dict(
             rendered=bool(admitted_text),
             status_present=('"status":"task_source"' in admitted_text),
             **check_cues(admitted_text, ENGINE_REQUIRED_CUES, ENGINE_STALE_CUES),
         )
-        notice_text = _run_inbox_case(base / "notice_response", bridge_mod, bridge_bytes, engine_bytes, harness, "notice")
+        notice_text = _run_inbox_case(base / "notice_response", bridge_mod, bridge_bytes, engine_bytes, harness, "notice", runtime_sources=runtime_sources)
         results["notice_response"] = dict(
             rendered=bool(notice_text),
             status_present=('"status":"required_only"' in notice_text),
@@ -343,6 +367,7 @@ def render_inbox_bridge_fixtures(bridge_path, bridge_bytes, engine_path, engine_
             harness,
             "request",
             fail_history="API_UNAVAILABLE",
+            runtime_sources=runtime_sources,
         )
         results["source_fallback"] = dict(
             rendered=bool(fallback_text),
@@ -453,57 +478,98 @@ def inspect_ordinary_hook(settings_path, engine_render_cache=None):
     return _populate_memory_hook(entry, memory_cmd, tracked_files, tracked_dirs, engine_render_cache)
 
 
+def _track_runtime(script, tracked_files):
+    root = Path(script).parent
+    tracked_files.add(str(script))
+    tracked_files.update(str(root / name) for name in (*bundle.MODULE_FILES, bundle.MANIFEST))
+
+
+def _inspect_memory_engine(script, memory_config, label, issues, tracked_files, cache):
+    """Render the checked implementation shared by ordinary and dispatch routes."""
+    _track_runtime(script, tracked_files)
+    info, raw = inspect_file(script)
+    result = dict(engine_path=script, engine_sha256=info.get("sha256"),
+                  bundle_sha256=None, bundle_verified=None, ordinary_recall_fixture=None)
+    if info.get("error") or raw is None:
+        issues.append(f"{label} engine error ({script}): {info.get('error')}")
+        return result
+    try:
+        sources = None
+        root = Path(script).parent
+        if (root / bundle.MANIFEST).exists():
+            descriptor = bundle.read_manifest(root)
+            sources = bundle.checked_sources(root, descriptor)
+            if raw != sources["memory.py"]:
+                raise ValueError("entrypoint differs from its checked lifecycle snapshot")
+            result.update(bundle_sha256=descriptor["sha256"], bundle_verified=True)
+        # Configuration can change the rendered envelope even with identical code.
+        cache_key = (script, info["sha256"], result["bundle_sha256"],
+                     json.dumps(memory_config, sort_keys=True, separators=(",", ":")))
+        if cache is not None and cache_key in cache:
+            rendered = cache[cache_key]
+        else:
+            rendered = render_ordinary_recall_fixture(script, raw, memory_config, sources=sources)
+            if cache is not None:
+                cache[cache_key] = rendered
+        result["ordinary_recall_fixture"] = rendered
+        if not rendered.get("cues_current"):
+            issues.append(f"{label} engine has stale or missing recall cue: {script}")
+    except (OSError, ValueError, ImportError, SyntaxError) as exc:
+        result["bundle_verified"] = False
+        issues.append(f"{label} bundle invalid ({script}): {exc}")
+    return result
+
+
 def _populate_memory_hook(entry, memory_cmd, tracked_files, tracked_dirs, engine_render_cache):
-    tracked_files.add(memory_cmd["script"])
     tracked_files.add(memory_cmd["config"])
-    eng_info, eng_raw = inspect_file(memory_cmd["script"])
     cfg_info, cfg_raw = inspect_file(memory_cmd["config"])
     mem_cfg = json.loads(cfg_raw) if cfg_raw else {}
     if isinstance(mem_cfg.get("state_dir"), str):
         tracked_dirs.add(mem_cfg["state_dir"])
-    render_res = None
-    if eng_raw is not None and not eng_info.get("error"):
-        cache_key = (eng_info["sha256"], mem_cfg.get("harness", "codex"))
-        if engine_render_cache is not None and cache_key in engine_render_cache:
-            render_res = engine_render_cache[cache_key]
-        else:
-            render_res = render_ordinary_recall_fixture(memory_cmd["script"], eng_raw, mem_cfg)
-            if engine_render_cache is not None:
-                engine_render_cache[cache_key] = render_res
-    else:
-        entry["issues"].append(f"ordinary hook engine error ({memory_cmd['script']}): {eng_info.get('error')}")
+    report = _inspect_memory_engine(memory_cmd["script"], mem_cfg, "ordinary hook",
+                                    entry["issues"], tracked_files, engine_render_cache)
     if cfg_info.get("error"):
         entry["issues"].append(f"ordinary hook config error ({memory_cmd['config']}): {cfg_info.get('error')}")
-    cues_ok = bool(render_res and render_res.get("cues_current"))
-    if render_res and not cues_ok:
-        entry["issues"].append(f"ordinary hook engine has stale or missing recall cue: {memory_cmd['script']}")
-    entry["memory_hook"] = {
-        "engine_path": memory_cmd["script"],
-        "engine_sha256": eng_info.get("sha256"),
-        "config_path": memory_cmd["config"],
-        "config_sha256": cfg_info.get("sha256"),
-        "harness": mem_cfg.get("harness"),
-        "recall_mode": mem_cfg.get("recall_mode"),
-        "inbox_recall_binding": mem_cfg.get("inbox_recall_binding"),
-        "ordinary_recall_fixture": render_res,
-    }
+    report.update(config_path=memory_cmd["config"], config_sha256=cfg_info.get("sha256"),
+                  harness=mem_cfg.get("harness"), recall_mode=mem_cfg.get("recall_mode"),
+                  inbox_recall_binding=mem_cfg.get("inbox_recall_binding"))
+    entry["memory_hook"] = report
+    rendered = report["ordinary_recall_fixture"]
+    cues_ok = bool(rendered and rendered.get("cues_current"))
     if memory_cmd.get("route"):
         r_path = Path(memory_cmd["route"])
         tracked_files.add(str(r_path))
         route_entry = {"route_path": str(r_path), "active": r_path.exists()}
         if r_path.exists():
-            r_data = json.loads(r_path.read_text())
-            cand = parse_command_tokens(shlex.join(r_data.get("command", [])))
-            if cand:
-                tracked_files.add(cand["script"])
-                c_eng_info, c_eng_raw = inspect_file(cand["script"])
-                c_render = render_ordinary_recall_fixture(cand["script"], c_eng_raw, mem_cfg) if c_eng_raw else None
-                route_entry["candidate_engine"] = cand["script"]
-                route_entry["candidate_sha256"] = c_eng_info.get("sha256")
-                route_entry["candidate_cues_current"] = bool(c_render and c_render.get("cues_current"))
-                if not route_entry["candidate_cues_current"]:
-                    entry["issues"].append(f"dispatch candidate engine has stale recall cue: {cand['script']}")
-                    cues_ok = False
+            try:
+                r_data = json.loads(r_path.read_text())
+                if not isinstance(r_data, dict) or r_data.get("schema") != DISPATCH_SCHEMA:
+                    raise ValueError("unsupported dispatch route")
+                cand = parse_command_tokens(shlex.join(r_data.get("command", [])))
+                if cand and cand["kind"] == "memory":
+                    tracked_files.add(cand["config"])
+                    c_cfg_info, c_cfg_raw = inspect_file(cand["config"])
+                    c_cfg = json.loads(c_cfg_raw) if c_cfg_raw else {}
+                    if not isinstance(c_cfg, dict):
+                        raise ValueError("dispatch candidate configuration is not an object")
+                    if c_cfg_info.get("error"):
+                        raise ValueError(c_cfg_info["error"])
+                    if isinstance(c_cfg.get("state_dir"), str):
+                        tracked_dirs.add(c_cfg["state_dir"])
+                    candidate = _inspect_memory_engine(cand["script"], c_cfg, "dispatch candidate",
+                        entry["issues"], tracked_files, engine_render_cache)
+                    c_render = candidate["ordinary_recall_fixture"]
+                    route_entry.update(candidate_engine=cand["script"],
+                        candidate_sha256=candidate["engine_sha256"],
+                        candidate_bundle_sha256=candidate["bundle_sha256"],
+                        candidate_bundle_verified=candidate["bundle_verified"],
+                        candidate_cues_current=bool(c_render and c_render.get("cues_current")))
+                    cues_ok = cues_ok and route_entry["candidate_cues_current"]
+                else:
+                    raise ValueError("dispatch candidate command is not a memory hook")
+            except (OSError, ValueError, TypeError) as exc:
+                entry["issues"].append(f"dispatch route invalid ({r_path}): {exc}")
+                cues_ok = False
         entry["dispatch_route"] = route_entry
     entry["cues_current"] = cues_ok and not entry["issues"]
     return entry, tracked_files, tracked_dirs
@@ -576,13 +642,33 @@ def inspect_inbox_binding(binding_path, hooks_by_home=None, bridge_render_cache=
     except ValueError as exc:
         issues.append(f"binding manifest {binding_path}: invalid JSON ({type(exc).__name__})")
         return result, tracked_files, tracked_dirs
-    if not isinstance(manifest, dict) or manifest.get("schema") != BINDING_SCHEMA or type(manifest.get("enabled")) is not bool:
+    if not isinstance(manifest, dict) or manifest.get("schema") not in (BINDING_SCHEMA, LEGACY_BINDING_SCHEMA) or type(manifest.get("enabled")) is not bool:
         issues.append(f"binding manifest {binding_path}: invalid schema or enabled flag")
         return result, tracked_files, tracked_dirs
+    result["binding_schema"] = manifest["schema"]
     result["enabled"] = manifest["enabled"]
     if not manifest["enabled"]:
         issues.append(f"binding manifest {binding_path}: binding is disabled")
     return _finish_inbox_binding(result, manifest, hooks_by_home or {}, tracked_files, tracked_dirs, bridge_render_cache)
+
+
+def _check_bundle_spec(descriptor, report, label, raw, issues, tracked_files):
+    root = Path(descriptor["path"]).parent
+    tracked_files.update(str(root / name) for name in (*bundle.MODULE_FILES, bundle.MANIFEST))
+    try:
+        expected = descriptor.get("bundle")
+        if not isinstance(expected, dict):
+            raise ValueError("lifecycle bundle pins are missing")
+        sources = bundle.checked_sources(root, expected)
+        role = "inbox_recall" if label == "bridge" else "memory"
+        if raw != sources[role + ".py"]:
+            raise ValueError("entrypoint differs from its checked lifecycle snapshot")
+        report["bundle_sha256"] = expected["sha256"]
+    except (OSError, ValueError) as exc:
+        sources = None
+        issues.append(f"{label}: lifecycle bundle validation failed ({type(exc).__name__})")
+    report["bundle_verified"] = sources is not None
+    return sources
 
 
 def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracked_dirs, bridge_render_cache):
@@ -590,6 +676,19 @@ def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracke
     b_spec, b_raw = _check_pinned_spec(manifest.get("bridge"), "bridge", issues, tracked_files)
     e_spec, e_raw = _check_pinned_spec(manifest.get("engine"), "engine", issues, tracked_files)
     m_spec, m_raw = _check_pinned_spec(manifest.get("memory_config"), "memory_config", issues, tracked_files)
+    bundles_valid = True
+    runtime_sources = None
+    if manifest["schema"] == BINDING_SCHEMA:
+        runtime_sources = {}
+        for label, report, raw in (("bridge", b_spec, b_raw), ("engine", e_spec, e_raw)):
+            descriptor = manifest.get(label)
+            sources = (_check_bundle_spec(descriptor, report, label, raw, issues, tracked_files)
+                       if isinstance(descriptor, dict) and isinstance(descriptor.get("path"), str) else None)
+            runtime_sources["inbox_recall" if label == "bridge" else "memory"] = sources
+            bundles_valid = (sources is not None) and bundles_valid
+    else:
+        b_spec["bundle_verified"] = e_spec["bundle_verified"] = None
+    result["bundles_verified"] = bundles_valid if manifest["schema"] == BINDING_SCHEMA else None
     mem_cfg = json.loads(m_raw) if m_raw else {}
     if isinstance(mem_cfg.get("state_dir"), str):
         tracked_dirs.add(mem_cfg["state_dir"])
@@ -607,7 +706,10 @@ def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracke
             home = str(Path(c_cfg["config_home"]).resolve()) if c_cfg.get("config_home") else None
             hook_entry = hooks_by_home.get(home) if home else None
             ord_eng_sha = hook_entry.get("memory_hook", {}).get("engine_sha256") if hook_entry and hook_entry.get("memory_hook") else None
+            ord_bundle_sha = hook_entry.get("memory_hook", {}).get("bundle_sha256") if hook_entry and hook_entry.get("memory_hook") else None
             c_spec.update(
+                ordinary_bundle_sha256=ord_bundle_sha,
+                bound_bundle_matches_ordinary=(ord_bundle_sha == e_spec.get("bundle_sha256")) if ord_bundle_sha else None,
                 binding_name=c_cfg.get("binding"),
                 harness=c_cfg.get("harness"),
                 config_home=home,
@@ -618,7 +720,7 @@ def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracke
             coord_entries.append(c_spec)
             coord_cfgs.append(c_cfg)
     pins_valid = bool(
-        b_spec.get("hash_match")
+        bundles_valid and b_spec.get("hash_match")
         and e_spec.get("hash_match")
         and m_spec.get("hash_match")
         and coord_entries
@@ -636,27 +738,38 @@ def _finish_inbox_binding(result, manifest, hooks_by_home, tracked_files, tracke
             issues.append(f"bound inbox bridge has stale or missing fallback cue: {b_spec.get('path')}")
         if not e_cues["cues_current"]:
             issues.append(f"bound memory engine has stale or missing recall cue: {e_spec.get('path')}")
-        _validate_and_render_binding(result, b_spec, b_raw, e_spec, e_raw, mem_cfg, coord_cfgs, bridge_render_cache)
+        if bundles_valid:
+            _validate_and_render_binding(result, b_spec, b_raw, e_spec, e_raw, mem_cfg,
+                                         coord_cfgs, bridge_render_cache, runtime_sources=runtime_sources)
     return result, tracked_files, tracked_dirs
 
 
-def _validate_and_render_binding(result, b_spec, b_raw, e_spec, e_raw, mem_cfg, coord_cfgs, bridge_render_cache):
+def _validate_and_render_binding(result, b_spec, b_raw, e_spec, e_raw, mem_cfg, coord_cfgs, bridge_render_cache, *, runtime_sources=None):
     issues = result["issues"]
     if result["pins_valid"]:
         try:
-            bridge_mod = load_python_module("cairn_check_validate_bridge", b_spec["path"], b_raw)
+            current, _ = inspect_file(result["binding_path"], owner_only=True)
+            if current.get("sha256") != result["manifest_sha256"]:
+                raise ValueError("binding manifest changed after inspection")
+            bridge_mod = load_python_module("cairn_check_validate_bridge", b_spec["path"], b_raw,
+                sources=runtime_sources["inbox_recall"] if runtime_sources else None, role="inbox_recall")
             for c_cfg in [mem_cfg, *coord_cfgs]:
                 bridge_mod.validate_binding(c_cfg, require_enabled=bool(result["enabled"]))
+            current, _ = inspect_file(result["binding_path"], owner_only=True)
+            if current.get("sha256") != result["manifest_sha256"]:
+                raise ValueError("binding manifest changed during validation")
             result["contract_valid"] = True
         except Exception as exc:
             issues.append(f"validate_binding failed: {exc}")
     harness = mem_cfg.get("harness", "codex")
-    cache_key = (b_spec.get("actual_sha256"), e_spec.get("actual_sha256"), harness)
+    cache_key = (b_spec.get("actual_sha256"), e_spec.get("actual_sha256"),
+                 b_spec.get("bundle_sha256"), e_spec.get("bundle_sha256"), harness)
     try:
         if bridge_render_cache is not None and cache_key in bridge_render_cache:
             fixtures = bridge_render_cache[cache_key]
         else:
-            fixtures = render_inbox_bridge_fixtures(b_spec["path"], b_raw, e_spec["path"], e_raw, harness=harness)
+            fixtures = render_inbox_bridge_fixtures(b_spec["path"], b_raw, e_spec["path"], e_raw,
+                                                    harness=harness, runtime_sources=runtime_sources)
             if bridge_render_cache is not None:
                 bridge_render_cache[cache_key] = fixtures
         result["fixtures"] = fixtures
@@ -702,9 +815,23 @@ def _collect_precheck_targets(hook_settings_paths, explicit_bindings, agy_path):
                     if not parsed:
                         continue
                     files.add(parsed["script"])
+                    files.update(str(Path(parsed["script"]).parent / name) for name in (*bundle.MODULE_FILES, bundle.MANIFEST))
                     files.add(parsed["config"])
                     if parsed.get("route"):
                         files.add(parsed["route"])
+                        try:
+                            route = json.loads(Path(parsed["route"]).read_text())
+                            if not isinstance(route, dict):
+                                raise ValueError("dispatch route is not an object")
+                            candidate = parse_command_tokens(shlex.join(route.get("command", [])))
+                            if candidate:
+                                _track_runtime(candidate["script"], files)
+                                files.add(candidate["config"])
+                                candidate_config = json.loads(Path(candidate["config"]).read_text())
+                                if isinstance(candidate_config, dict) and isinstance(candidate_config.get("state_dir"), str):
+                                    state_dirs.add(candidate_config["state_dir"])
+                        except (OSError, ValueError, TypeError):
+                            pass  # The ordinary-hook inspection reports malformed routes.
                     cfg_p = Path(parsed["config"])
                     if cfg_p.exists():
                         try:
@@ -726,6 +853,8 @@ def _collect_precheck_targets(hook_settings_paths, explicit_bindings, agy_path):
             for key in ("bridge", "engine", "memory_config"):
                 if isinstance(m.get(key), dict) and isinstance(m[key].get("path"), str):
                     files.add(m[key]["path"])
+                    if key in ("bridge", "engine") and m.get("schema") == BINDING_SCHEMA:
+                        files.update(str(Path(m[key]["path"]).parent / name) for name in (*bundle.MODULE_FILES, bundle.MANIFEST))
             for item in m.get("coordination_configs", []) if isinstance(m.get("coordination_configs"), list) else []:
                 if isinstance(item, dict) and isinstance(item.get("path"), str):
                     files.add(item["path"])
@@ -881,7 +1010,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path.home(), help="User home directory for default hook/Agy paths")
     parser.add_argument("--hook-settings", action="append", type=Path, help="Explicit hook settings JSON path (repeatable)")
-    parser.add_argument("--binding", action="append", type=Path, help="Explicit cairn.inbox-recall-binding/1 manifest path (repeatable)")
+    parser.add_argument("--binding", action="append", type=Path, help="Explicit cairn.inbox-recall-binding/2 manifest path (repeatable)")
     parser.add_argument("--agy-instructions", type=Path, help="Explicit Agy global AGENTS.md path")
     parser.add_argument("--skip-agy", action="store_true", help="Skip Agy global instructions check")
     parser.add_argument("--live-observed", action="store_true", help="Mark that a live native turn was separately observed")

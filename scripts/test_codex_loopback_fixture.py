@@ -372,7 +372,6 @@ class ProfileAndHookStagingTest(unittest.TestCase):
                 profile,
                 binding="codex-wake",
                 config_data={"repo": "/repo"},
-                hook_script=root / "coordination.py",
             )
             self.assertEqual(stat.S_IMODE(cfg_path.stat().st_mode), 0o600)
             self.assertIn("codex-wake.json", cmd)

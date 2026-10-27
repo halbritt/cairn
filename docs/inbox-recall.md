@@ -12,18 +12,38 @@ Both configurations must name the same absolute `inbox_recall_binding` manifest.
 The manifest is owner-only. Each referenced file is owned by that user, is not
 writable by another user, and is pinned by SHA-256:
 
-```json
-{
-  "schema": "cairn.inbox-recall-binding/1",
-  "enabled": false,
-  "bridge": {"path": "/absolute/inbox_recall.py", "sha256": "SHA256"},
-  "engine": {"path": "/absolute/memory.py", "sha256": "SHA256"},
-  "memory_config": {"path": "/absolute/memory.json", "sha256": "SHA256"},
-  "coordination_configs": [
-    {"path": "/absolute/coordination.json", "sha256": "SHA256"}
-  ]
+Build code descriptors from the complete staged [lifecycle bundle](lifecycle-bundles.md).
+For example, from the source checkout after staging the installation; replace
+the illustrative `/absolute` paths with its actual code and configuration paths:
+
+```python
+from pathlib import Path
+import hashlib
+from integrations.lifecycle.lifecycle_bundle import bundle_descriptor
+
+root = Path("/absolute/lifecycle")
+
+def pin(path, *, code=False):
+    descriptor = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    if code:
+        descriptor["bundle"] = bundle_descriptor(path.parent)
+    return descriptor
+
+manifest = {
+    "schema": "cairn.inbox-recall-binding/2",
+    "enabled": False,
+    "bridge": pin(root / "inbox_recall.py", code=True),
+    "engine": pin(root / "memory.py", code=True),
+    "memory_config": pin(Path("/absolute/memory.json")),
+    "coordination_configs": [pin(Path("/absolute/coordination.json"))],
 }
 ```
+
+The code descriptors retain the entry file's SHA-256 and add the complete bundle's
+file hashes and digest. Version 2 requires both; version 1 readers refuse the new
+schema. New readers also refuse version 1 bindings, so an existing installation
+needs an explicit coherent upgrade. Old installed code is not rewritten by this
+source change.
 
 The memory engine must implement inbox recall version 1. The bridge executes the
 engine's pinned bytes and hands those same bytes to it, so a current engine's

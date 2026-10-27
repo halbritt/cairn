@@ -7,9 +7,11 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -38,11 +40,11 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         self.coord_script.write_text("#!/usr/bin/env python3\n")
         self.coord_script.chmod(0o700)
 
-        self.ord_codex_engine = self.deploy / "ord_codex_memory.py"
-        self.ord_claude_engine = self.deploy / "ord_claude_memory.py"
-        self.bound_codex_engine = self.deploy / "bound_codex_memory.py"
-        self.bound_claude_engine = self.deploy / "bound_claude_memory.py"
-        self.bound_bridge = self.deploy / "inbox_recall.py"
+        self.ord_codex_engine = self.deploy / "ordinary-codex/memory.py"
+        self.ord_claude_engine = self.deploy / "ordinary-claude/memory.py"
+        self.bound_codex_engine = self.deploy / "bound-codex/memory.py"
+        self.bound_claude_engine = self.deploy / "bound-claude/memory.py"
+        self.bound_bridge = self.deploy / "bridge/inbox_recall.py"
 
         for p in (
             self.ord_codex_engine,
@@ -50,8 +52,10 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
             self.bound_codex_engine,
             self.bound_claude_engine,
         ):
+            checker.bundle.stage_runtime(ROOT / "integrations/lifecycle", p.parent)
             p.write_text(self.engine_src)
             p.chmod(0o600)
+        checker.bundle.stage_runtime(ROOT / "integrations/lifecycle", self.bound_bridge.parent)
         self.bound_bridge.write_text(self.bridge_src)
         self.bound_bridge.chmod(0o600)
 
@@ -147,9 +151,17 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         target.chmod(0o600)
 
     def _pin(self, path):
-        return {"path": str(path), "sha256": sha256_file(path)}
+        descriptor = {"path": str(path), "sha256": sha256_file(path)}
+        if path in (self.bound_bridge, self.bound_codex_engine, self.bound_claude_engine):
+            descriptor["bundle"] = checker.bundle.bundle_descriptor(path.parent)
+        return descriptor
+
+    def freeze_bundle(self, root):
+        (root / checker.bundle.MANIFEST).write_text(json.dumps(checker.bundle.bundle_descriptor(root)))
 
     def refresh_manifests(self, *, enabled=True):
+        for entry in (self.bound_bridge, self.bound_codex_engine, self.bound_claude_engine):
+            self.freeze_bundle(entry.parent)
         for b_path, eng, mem_cfg, coords in (
             (self.codex_binding, self.bound_codex_engine, self.codex_mc_path, [self.codex_one_cc_path, self.codex_two_cc_path]),
             (self.claude_one_binding, self.bound_claude_engine, self.claude_one_mc_path, [self.claude_one_cc_path]),
@@ -158,7 +170,7 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
             b_path.write_text(
                 json.dumps(
                     {
-                        "schema": "cairn.inbox-recall-binding/1",
+                        "schema": checker.BINDING_SCHEMA,
                         "enabled": enabled,
                         "bridge": self._pin(self.bound_bridge),
                         "engine": self._pin(eng),
@@ -255,6 +267,43 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         self.assertFalse(codex_b["engine"]["hash_match"])
         self.assertTrue(any("sha256 mismatch" in i for i in report["issues"]))
 
+    def test_changed_helper_invalidates_bundle_without_changing_engine_identity(self):
+        helper = self.bound_codex_engine.parent / "grant_ledger.py"
+        helper.write_text(helper.read_text() + "\n# changed helper\n")
+        report, tracked, _ = checker.inspect_inbox_binding(self.codex_binding)
+        self.assertTrue(report["engine"]["hash_match"])
+        self.assertFalse(report["engine"]["bundle_verified"])
+        self.assertFalse(report["pins_valid"])
+        self.assertIn(str(helper), tracked)
+
+    def test_version_one_pins_remain_inspectable_without_claiming_bundle_validation(self):
+        manifest = json.loads(self.codex_binding.read_text())
+        manifest["schema"] = checker.LEGACY_BINDING_SCHEMA
+        for role in ("bridge", "engine"):
+            manifest[role].pop("bundle")
+        self.codex_binding.write_text(json.dumps(manifest))
+        report, _, _ = checker.inspect_inbox_binding(self.codex_binding)
+        self.assertEqual(report["binding_schema"], checker.LEGACY_BINDING_SCHEMA)
+        self.assertTrue(report["pins_valid"])
+        self.assertIsNone(report["bundles_verified"])
+        self.assertIsNone(report["engine"]["bundle_verified"])
+        # A legacy manifest paired with the new reader is an incomplete upgrade.
+        self.assertFalse(report["contract_valid"])
+
+    def test_ordinary_helper_drift_is_not_hidden_by_identical_engine_cache(self):
+        second = self.deploy / "other-claude-memory"
+        checker.bundle.stage_runtime(self.ord_claude_engine.parent, second)
+        settings = self.home / ".claude-harm/settings.json"
+        settings.write_text(settings.read_text().replace(str(self.ord_claude_engine), str(second / "memory.py")))
+        helper = second / "grant_ledger.py"
+        helper.write_text(helper.read_text() + "\n# unpinned helper change\n")
+        report = checker.check_deployment(home=self.home)
+        self.assertFalse(report["installed_verified"])
+        self.assertTrue(any("ordinary hook bundle invalid" in issue for issue in report["issues"]))
+        hooks = {h["account_home"]: h for h in report["ordinary_hooks"]}
+        self.assertTrue(hooks[str(self.home / ".claude")]["cues_current"])
+        self.assertFalse(hooks[str(self.home / ".claude-harm")]["cues_current"])
+
     def test_disabled_binding_and_partial_coverage_reported(self):
         self.refresh_manifests(enabled=False)
         (self.home / ".codex-harm" / "hooks.json").unlink()
@@ -266,9 +315,78 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["missing_targets"], [str(self.home / ".codex-harm" / "hooks.json")])
         self.assertTrue(report["read_only_verified"])
 
-    def test_dispatch_wrapped_hook_and_cli_main(self):
+    def wrap_dispatch(self, candidate):
         route = self.deploy / "route.json"
-        stale_cand = self.deploy / "stale_cand_memory.py"
+        route.write_text(json.dumps({
+            "schema": checker.DISPATCH_SCHEMA,
+            "sessions": [checker.SYNTHETIC_SESSION],
+            "command": [sys.executable, str(candidate), "--config", str(self.claude_one_mc_path)],
+        }))
+        settings = self.home / ".claude" / "settings.json"
+        data = json.loads(settings.read_text())
+        hook = data["hooks"]["UserPromptSubmit"][1]["hooks"][0]
+        hook["command"] = f"{sys.executable} /opt/recall_dispatch.py --route {route} -- {hook['command']}"
+        settings.write_text(json.dumps(data))
+
+    def test_dispatch_helper_drift_returns_an_invalid_report_without_crashing(self):
+        candidate = self.deploy / "dispatch/memory.py"
+        checker.bundle.stage_runtime(ROOT / "integrations/lifecycle", candidate.parent)
+        self.wrap_dispatch(candidate)
+        helper = candidate.parent / "grant_ledger.py"
+        helper.write_text(helper.read_text() + "\n# changed without repinning\n")
+        report = checker.check_deployment(home=self.home)
+        self.assertFalse(report["installed_verified"])
+        self.assertTrue(report["read_only_verified"])
+        self.assertTrue(any("dispatch candidate bundle invalid" in issue for issue in report["issues"]))
+        hook = next(item for item in report["ordinary_hooks"] if item["account_home"] == str(self.home / ".claude"))
+        self.assertFalse(hook["dispatch_route"]["candidate_bundle_verified"])
+
+    def test_replacement_after_snapshot_does_not_change_rendered_implementation(self):
+        root = self.ord_claude_engine.parent
+        expected = checker.bundle.read_manifest(root)["sha256"]
+        remaining = set(checker.bundle.MODULE_FILES)
+        opened = os.open
+        changed = False
+
+        def replace_after_snapshot(path, *args, **kwargs):
+            nonlocal changed
+            descriptor = opened(path, *args, **kwargs)
+            path = Path(path)
+            if not changed and path.parent == root and path.name in remaining:
+                remaining.remove(path.name)
+                if not remaining:
+                    changed = True
+                    (root / "grant_ledger.py").write_text("raise RuntimeError('new helper must not execute')\n")
+            return descriptor
+
+        # Inject a filesystem replacement after the helper was captured, before rendering.
+        with patch.object(os, "open", side_effect=replace_after_snapshot):
+            report = checker.check_deployment(home=self.home)
+        self.assertTrue(changed)
+        self.assertFalse(report["installed_verified"])
+        self.assertFalse(report["read_only_verified"])
+        hook = next(item for item in report["ordinary_hooks"] if item["account_home"] == str(self.home / ".claude"))
+        self.assertEqual(hook["memory_hook"]["bundle_sha256"], expected)
+        self.assertTrue(hook["memory_hook"]["ordinary_recall_fixture"]["cues_current"])
+
+    def test_checked_fixture_snapshots_do_not_reopen_source_installations(self):
+        bridge_sources = checker.bundle.checked_sources(self.bound_bridge.parent,
+            checker.bundle.read_manifest(self.bound_bridge.parent))
+        engine_sources = checker.bundle.checked_sources(self.bound_codex_engine.parent,
+            checker.bundle.read_manifest(self.bound_codex_engine.parent))
+        shutil.rmtree(self.bound_bridge.parent)
+        shutil.rmtree(self.bound_codex_engine.parent)
+        ordinary = checker.render_ordinary_recall_fixture(self.bound_codex_engine,
+            engine_sources["memory.py"], sources=engine_sources)
+        self.assertTrue(ordinary["cues_current"])
+        inbox = checker.render_inbox_bridge_fixtures(self.bound_bridge, bridge_sources["inbox_recall.py"],
+            self.bound_codex_engine, engine_sources["memory.py"],
+            runtime_sources={"inbox_recall": bridge_sources, "memory": engine_sources})
+        self.assertTrue(inbox["all_cues_current"])
+
+    def test_dispatch_wrapped_hook_and_cli_main(self):
+        stale_cand = self.deploy / "stale-candidate/memory.py"
+        checker.bundle.stage_runtime(ROOT / "integrations/lifecycle", stale_cand.parent)
         stale_cand.write_text(
             self.engine_src.replace(
                 "You may exceed automatic recall byte/call limits when the task needs more context; no user approval needed.",
@@ -276,21 +394,8 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
             )
         )
         stale_cand.chmod(0o700)
-        route.write_text(
-            json.dumps(
-                {
-                    "schema": "cairn.recall-dispatch/1",
-                    "sessions": ["11111111-1111-4111-8111-111111111111"],
-                    "command": [sys.executable, str(stale_cand), "--config", str(self.claude_one_mc_path)],
-                }
-            )
-        )
-        settings = self.home / ".claude" / "settings.json"
-        data = json.loads(settings.read_text())
-        orig_cmd = data["hooks"]["UserPromptSubmit"][1]["hooks"][0]["command"]
-        wrapped = f"{sys.executable} /opt/recall_dispatch.py --route {route} -- {orig_cmd}"
-        data["hooks"]["UserPromptSubmit"][1]["hooks"][0]["command"] = wrapped
-        settings.write_text(json.dumps(data))
+        self.freeze_bundle(stale_cand.parent)
+        self.wrap_dispatch(stale_cand)
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -298,7 +403,7 @@ class EffectiveRecallDeploymentCheckTests(unittest.TestCase):
         self.assertEqual(code, 1)
         parsed = json.loads(out.getvalue())
         self.assertTrue(parsed["live_observed"])
-        self.assertTrue(any("dispatch candidate engine has stale recall cue" in i for i in parsed["issues"]))
+        self.assertTrue(any("dispatch candidate engine has stale" in i for i in parsed["issues"]))
 
 
 if __name__ == "__main__":

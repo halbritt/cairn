@@ -107,6 +107,10 @@ exec {binary} mcp \\
             account = self.stage / harness
             binding = json.loads((account / "binding.json").read_text())
             self.assertFalse(binding["enabled"])
+            self.assertEqual(binding["schema"], "cairn.inbox-recall-binding/2")
+            for role in ("engine", "bridge"):
+                self.assertEqual(binding[role]["bundle"]["schema"], "cairn.lifecycle-bundle/1")
+                self.assertEqual(set(binding[role]["bundle"]["files"]), set(stage.bundle.MODULE_FILES))
             self.assertEqual(len(binding["coordination_configs"]), 1)
             for config in (account / "ordinary/config.json",
                            account / "coordination/bindings" / (harness + "-one.json")):
@@ -345,8 +349,9 @@ exec {binary} mcp \\
         closure_path = Path(report["accounts"]["codex"]["pin_closure"])
         self.assertEqual(closure_path.stat().st_mode & 0o777, 0o400)
         closure = json.loads(closure_path.read_text())
-        self.assertTrue({"ordinary/memory.py", "coordination/coordination.py", "inbox_recall.py"}
-                        <= set(closure["files"]))
+        expected_runtime = {str(Path(prefix) / name) for prefix in (".", "ordinary", "coordination")
+                            for name in (*stage.bundle.MODULE_FILES, "lifecycle-bundle.json")}
+        self.assertTrue(expected_runtime <= set(closure["files"]))
         self.assertEqual(stage.sha256(closure_path), report["accounts"]["codex"]["pin_closure_sha256"])
         self.assertEqual(config_path.read_bytes(), baseline)
 

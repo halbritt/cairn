@@ -6,14 +6,16 @@ import subprocess
 import tempfile
 import unittest
 import trial_task_eval as te
+from integrations.lifecycle import lifecycle_bundle
 
 
 class PrerequisiteTests(unittest.TestCase):
     def execute(self, root, argv):
         env = dict(HOME=str(Path.home()), PATH='/usr/bin:/bin', LANG='C.UTF-8',
                    FIXTURE_LITERAL='inherited environment')
-        coordinator = te.ROOT / 'integrations/lifecycle/coordination.py'
-        command = te.sandbox_command(root, 'cairn', [(coordinator, '/tmp/coordination.py', 'ro')],
+        runtime = root / 'lifecycle'
+        lifecycle_bundle.stage_runtime(te.ROOT / 'integrations/lifecycle', runtime)
+        command = te.sandbox_command(root, 'cairn', [(runtime, '/tmp/lifecycle', 'ro')],
                                      env, te.prerequisite_command(argv), harness='codex')
         command.insert(1, '--unshare-net')
         return subprocess.run(command, input="fixture stdin", capture_output=True, text=True, timeout=15)
@@ -26,7 +28,7 @@ class PrerequisiteTests(unittest.TestCase):
             program = '''import json,os,runpy,sys
 parent=os.getppid()
 assert parent>1, ('invalid parent', parent)
-c=runpy.run_path('/tmp/coordination.py')
+c=runpy.run_path('/tmp/lifecycle/coordination.py')
 ref=c['owner_process']({}, {'host_pid':parent})
 assert ref['pid']==parent and c['process_alive'](ref)
 print(json.dumps(dict(parent=parent,start=ref['start'],args=sys.argv[1:],cwd=os.getcwd(),env=os.environ['FIXTURE_LITERAL'],stdin=sys.stdin.read())))

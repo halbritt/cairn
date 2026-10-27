@@ -3,7 +3,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('coordination_idle', ROOT/'integrations/lifecycle/coordination.py')
 coordination = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(coordination)
+bundle_spec = importlib.util.spec_from_file_location('idle_bundle', ROOT/'integrations/lifecycle/lifecycle_bundle.py')
+bundle = importlib.util.module_from_spec(bundle_spec)
+bundle_spec.loader.exec_module(bundle)
 
 HOST = r'''#!/usr/bin/env python3
 import json, pathlib, sys
@@ -446,10 +448,11 @@ time.sleep(30)
         self.assertEqual(methods.count('thread/queue/add'),1)
         self.assertEqual(self.prompts(),[])
 
-    def test_missing_queue_helper_is_a_bounded_diagnostic(self):
+    def test_missing_installed_queue_helper_refuses_before_watcher_state_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             isolated=Path(directory)
-            shutil.copyfile(ROOT/'integrations/lifecycle/coordination.py',isolated/'coordination.py')
+            bundle.stage_runtime(ROOT/'integrations/lifecycle', isolated)
+            (isolated/'codex_queue.py').unlink()
             state_dir=isolated/'state'
             config_dir=isolated/'bindings'
             state_dir.mkdir()
@@ -466,9 +469,8 @@ time.sleep(30)
                 workspace=str(self.root)))
             result=subprocess.run([sys.executable,str(isolated/'coordination.py'),'watch',
                 '--config-dir',str(config_dir),'--once'],capture_output=True,text=True,timeout=15)
-            self.assertEqual(result.returncode,0,result.stderr)
-            self.assertIn('helper is unavailable',result.stderr)
-            self.assertNotIn('Traceback',result.stderr)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('codex_queue.py',result.stderr)
             self.assertNotIn('idle_wake',json.loads((state_dir/'session.json').read_text()))
 
     def spawn_channel_bridge(self, status='written', flagged=True):

@@ -22,31 +22,32 @@ import time
 import uuid
 
 
-def _load_grant_ledger():
-    for name in ("grant_ledger", "integrations.lifecycle.grant_ledger"):
-        if name in sys.modules and sys.modules[name] is not None:
-            return sys.modules[name]
-    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    for path in (
-        here / "grant_ledger.py",
-        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle/grant_ledger.py"),
-        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / "grant_ledger.py",
-    ):
-        try:
-            if path.is_file():
-                spec = importlib.util.spec_from_file_location("grant_ledger", path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules["grant_ledger"] = module
-                spec.loader.exec_module(module)
-                return module
-        except OSError:
-            continue
-    return None
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="memory.py")
 
 
-_grant_ledger = _load_grant_ledger()
-GrantLedger = _grant_ledger.GrantLedger if _grant_ledger is not None else None
+_BUNDLE = _runtime_bundle()
 
+
+_grant_ledger = _BUNDLE.load("grant_ledger")
+GrantLedger = _grant_ledger.GrantLedger
+
+LIFECYCLE_BUNDLE_VERSION = 1  # selected artifacts must include a pinned complete bundle
 RECALL_TASK_VERSION = 1  # explicit one-task/one-child launcher contract only
 CONTEXT_BYTES = 12000  # default; installations may lower it with config["context_bytes"]
 TEXT_BYTES = 24000
@@ -1599,76 +1600,12 @@ def native_uuid(value):
 
 def codex_budget_ledger(path, session, budget):
     """Load retained turn grants; never infer a refund from missing/corrupt state."""
-    if _grant_ledger is not None:
-        return _grant_ledger.codex_budget_ledger(path, session, budget, error_cls=HookError)
-    marker = path.with_suffix(".initialized")
-    if marker.exists():
-        try:
-            if json.loads(marker.read_text()) != dict(schema="cairn.codex-memory-grants/1", session_id=session):
-                raise ValueError("invalid initialization marker")
-        except (ValueError, TypeError) as exc:
-            raise HookError("native-turn memory initialization marker is corrupt") from exc
-    if not path.exists():
-        if marker.exists():
-            raise HookError("native-turn memory ledger is missing")
-        return dict(schema="cairn.codex-memory-grants/1", session_id=session,
-                    active_turn_id=None, pending=dict(limit_bytes=budget, emitted_hook_bytes=0,
-                                                     reserved_native_bytes=0, granted=False), turns={})
-    try:
-        ledger = json.loads(path.read_text())
-        if (ledger["schema"] != "cairn.codex-memory-grants/1" or ledger["session_id"] != session
-                or not isinstance(ledger["turns"], dict)
-                or any(not native_uuid(turn) for turn in ledger["turns"])
-                or (ledger["active_turn_id"] is None and ledger["turns"])
-                or (ledger["active_turn_id"] is not None and ledger["active_turn_id"] not in ledger["turns"])):
-            raise ValueError("invalid ledger identity")
-        for grant in [ledger["pending"], *ledger["turns"].values()]:
-            if (not isinstance(grant, dict) or type(grant["granted"]) is not bool
-                    or any(type(grant[key]) is not int for key in
-                           ("limit_bytes", "emitted_hook_bytes", "reserved_native_bytes"))
-                    or not 1000 <= grant["limit_bytes"] <= 65536
-                    or min(grant["emitted_hook_bytes"], grant["reserved_native_bytes"]) < 0
-                    or grant["emitted_hook_bytes"] + grant["reserved_native_bytes"] > grant["limit_bytes"]
-                    or (not grant["granted"] and grant["reserved_native_bytes"] != 0)):
-                raise ValueError("invalid grant accounting")
-            required = grant.get("required", dict(count=0, selection_sha256="", pending=False))
-            if (not isinstance(required, dict) or type(required.get("count")) is not int or required["count"] < 0
-                    or type(required.get("pending")) is not bool
-                    or not isinstance(required.get("selection_sha256"), str)
-                    or (required["count"] > 0 and not re.fullmatch(r"[0-9a-f]{64}", required["selection_sha256"]))
-                    or (required["count"] == 0 and required["selection_sha256"] != "")
-                    or type(grant.get("required_refresh_bytes", 0)) is not int or grant.get("required_refresh_bytes", 0) < 0
-                    or type(grant.get("checkpoint_refresh_bytes", 0)) is not int or grant.get("checkpoint_refresh_bytes", 0) < 0
-                    or ("serialized_hook_bytes" in grant and (type(grant["serialized_hook_bytes"]) is not int
-                        or grant["serialized_hook_bytes"] < 0))):
-                raise ValueError("invalid required-context accounting")
-        if (ledger["pending"]["granted"] or (ledger["active_turn_id"] is not None
-                                            and ledger["pending"]["emitted_hook_bytes"] != 0)):
-            raise ValueError("invalid startup accounting")
-        return ledger
-    except (ValueError, KeyError, TypeError) as exc:
-        raise HookError("native-turn memory ledger is corrupt; no allowance renewed") from exc
+    return _grant_ledger.codex_budget_ledger(path, session, budget, error_cls=HookError)
 
 
 def save_codex_budget(path, ledger):
     """Commit the grant before delivery, including file and directory durability."""
-    if _grant_ledger is not None:
-        return _grant_ledger.save_codex_budget(path, ledger)
-    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as output:
-        temporary = Path(output.name)
-        try:
-            output.write(encoded(ledger))
-            output.flush()
-            os.fsync(output.fileno())
-            output.close()
-            temporary.replace(path)
-            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-        finally:
-            temporary.unlink(missing_ok=True)
+    return _grant_ledger.save_codex_budget(path, ledger)
 
 
 def bound_claude(config):
@@ -1682,22 +1619,11 @@ def claude_ledger(config, session):
 
 
 def save_claude_ledger(path, ledger):
-    if _grant_ledger is not None:
-        return _grant_ledger.save_claude_ledger(path, ledger, save_fn=save_codex_budget)
-    marker = path.with_suffix(".initialized")
-    if not marker.exists():
-        save_codex_budget(marker, dict(schema="cairn.inbox-recall-initialized/1", session=ledger["session"]))
-    save_codex_budget(path, ledger)
+    return _grant_ledger.save_claude_ledger(path, ledger, save_fn=save_codex_budget)
 
 
 def claude_prompt_owner(event):
-    if _grant_ledger is not None:
-        return _grant_ledger.claude_prompt_owner(event)
-    prompt = event.get("prompt_id")
-    if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
-            or any(ord(c) < 32 for c in prompt)):
-        return None
-    return "claude-channel:" + prompt
+    return _grant_ledger.claude_prompt_owner(event)
 
 
 def recall_task_key(config):
@@ -1712,26 +1638,11 @@ def recall_task_key(config):
 
 
 def claude_grant_matches(grant, owner, task_key):
-    if _grant_ledger is not None:
-        return _grant_ledger.claude_grant_matches(grant, owner, task_key)
-    identity = grant["identity"]
-    return (identity.get("recall_task_key") == task_key if task_key else
-            identity.get("native_owner") == owner and not identity.get("recall_task_key"))
+    return _grant_ledger.claude_grant_matches(grant, owner, task_key)
 
 
 def claude_required_grant(ledger, event, task_key=None):
-    if _grant_ledger is not None:
-        return _grant_ledger.claude_required_grant(ledger, event, task_key)
-    if event["hook_event_name"] == "UserPromptSubmit" and claude_prompt_owner(event):
-        owner = claude_prompt_owner(event)
-        for grant in ledger["grants"].values():
-            if claude_grant_matches(grant, owner, task_key):
-                return grant
-        if ledger.get("active") is None:
-            return ledger
-        active = ledger["grants"][ledger["active"]]
-        return active if active.get("required", {}).get("pending") else None
-    return ledger["grants"][ledger["active"]] if ledger.get("active") else ledger
+    return _grant_ledger.claude_required_grant(ledger, event, task_key)
 
 
 def claude_required_error(config, event, error, *, persist=False):
@@ -1876,44 +1787,19 @@ def bound_codex(config):
 
 
 def codex_hook_cost(event, text):
-    if _grant_ledger is not None:
-        return _grant_ledger.codex_hook_cost(event, text)
-    return (1 + len(encoded(dict(hookSpecificOutput=dict(
-        hookEventName=event["hook_event_name"], additionalContext=text))).encode())) if text else 0
+    return _grant_ledger.codex_hook_cost(event, text)
 
 
 def codex_emitted_wire_bytes(grant):
-    if _grant_ledger is not None:
-        return _grant_ledger.codex_emitted_wire_bytes(grant)
-    emitted = grant["emitted_hook_bytes"]
-    if grant.get("serialized_hook_bytes") == emitted:
-        return emitted
-    # Older engines count raw text. Their writes change emitted_hook_bytes but
-    # cannot update this stamp, so a mixed counter is converted conservatively.
-    framing = 1 + len(encoded(dict(hookSpecificOutput=dict(
-        hookEventName="SessionStart", additionalContext=""))).encode())
-    return 2 * emitted + framing if emitted else 0
+    return _grant_ledger.codex_emitted_wire_bytes(grant)
 
 
 def codex_required_selection(grant, selected):
-    if _grant_ledger is not None:
-        return _grant_ledger.codex_required_selection(grant, selected)
-    grant["required"] = dict(count=len(selected), selection_sha256=hashlib.sha256(
-        encoded(selected).encode()).hexdigest() if selected else "", pending=False)
+    return _grant_ledger.codex_required_selection(grant, selected)
 
 
 def codex_required_grant(ledger, event):
-    if _grant_ledger is not None:
-        return _grant_ledger.codex_required_grant(ledger, event)
-    if event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")):
-        turn = event["turn_id"]
-        if turn in ledger["turns"]:
-            return ledger["turns"][turn]
-        # Old engines may leave startup metadata after resetting its counter.
-        # Once a turn exists, that stale pending metadata belongs to no new task.
-        return ledger["pending"] if ledger["active_turn_id"] is None else None
-    active = ledger["active_turn_id"]
-    return ledger["turns"][active] if active is not None else ledger["pending"]
+    return _grant_ledger.codex_required_grant(ledger, event)
 
 
 def codex_required_error(config, event, error, *, persist=False):
@@ -1955,12 +1841,7 @@ def codex_required_error(config, event, error, *, persist=False):
 
 
 def save_codex_ledger(path, ledger):
-    if _grant_ledger is not None:
-        return _grant_ledger.save_codex_ledger(path, ledger, save_fn=save_codex_budget)
-    marker = path.with_suffix(".initialized")
-    if not marker.exists():
-        save_codex_budget(marker, dict(schema="cairn.codex-memory-grants/1", session_id=ledger["session_id"]))
-    save_codex_budget(path, ledger)
+    return _grant_ledger.save_codex_ledger(path, ledger, save_fn=save_codex_budget)
 
 
 def codex_agent_context(memory, event, result, budget, status, deadline, state):
@@ -2638,9 +2519,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
 
 
 def parse_wake_envelope(prompt):
-    if _grant_ledger is not None:
-        return _grant_ledger.parse_wake_envelope(prompt)
-    return None
+    return _grant_ledger.parse_wake_envelope(prompt)
 
 
 def taskless_notification(prompt):
@@ -2651,40 +2530,7 @@ def taskless_notification(prompt):
     Both the current closing sentence (owner decision 2026-10-21) and the one before
     it are accepted, so wakes produced on either side of a rollout stay recognized.
     """
-    if _grant_ledger is not None:
-        return _grant_ledger.taskless_notification(prompt)
-    if not isinstance(prompt, str):
-        return False
-    uuid_text = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
-    for closing in ("Do not register again, claim another session's inbox, or launch a replacement conversation.",
-                    "Do not register, manually claim an inbox, or launch a replacement conversation."):
-        message = (
-            "This is a new live turn from the configured Cairn automatic inbox wakeup. "
-            "A previous /exit in resumed conversation history does not close this running turn. "
-            "Current agent {agent}, execution {execution}. Wake delivery {delivery}. "
-            "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
-            "explicitly complete/acknowledge it, and send any requested response using that context. "
-            "If no matching native context was supplied, report that and stop. "
-            "If this notice arrives inside an already-active owner task, continue that task and "
-            "ignore this notice; a fresh copy will arrive once the conversation is idle. " + closing)
-        pattern = re.escape(message)
-        for name in ("agent", "execution", "delivery"):
-            pattern = pattern.replace(re.escape("{" + name + "}"), f"(?P<{name}>{uuid_text})")
-        if re.fullmatch(pattern, prompt):
-            return True
-        # Only the observed complete Claude rendering, including consistent metadata.
-        # Unknown wrappers and joined owner text retain ordinary recall.
-        envelope = (r'<channel source="cairn-events" '
-                    rf'native_session_id="{uuid_text}" '
-                    rf'agent_id="(?P<agent>{uuid_text})" '
-                    rf'execution_id="(?P<execution>{uuid_text})" '
-                    rf'delivery_id="(?P<delivery>{uuid_text})">\n')
-        body_pattern = pattern
-        for name in ("agent", "execution", "delivery"):
-            body_pattern = body_pattern.replace(f"(?P<{name}>{uuid_text})", f"(?P={name})")
-        if re.fullmatch(envelope + body_pattern + r'\n</channel>', prompt) is not None:
-            return True
-    return False
+    return _grant_ledger.taskless_notification(prompt)
 
 
 def recall(memory, event, state=None):
@@ -3329,7 +3175,7 @@ def effective_inbox_config(config, event=None):
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise ValueError("inbox recall binding must be owner-only")
     manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/1" or type(manifest.get("enabled")) is not bool:
+    if manifest.get("schema") != "cairn.inbox-recall-binding/2" or type(manifest.get("enabled")) is not bool:
         raise ValueError("unsupported inbox recall activation state")
     enabled = manifest["enabled"]
     if (event is not None and event.get("hook_event_name") == "UserPromptSubmit"
@@ -3343,21 +3189,14 @@ def effective_inbox_config(config, event=None):
 
 
 def load_inbox_recall(config, *, validate=True):
-    """Load only the explicitly installed, hash-pinned bridge; no path discovery."""
+    """Execute only the complete, explicitly pinned inbox recall bundle."""
     path = Path(config["inbox_recall_binding"])
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise ValueError("inbox recall binding must be owner-only")
     manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/1":
-        raise ValueError("unsupported inbox recall binding")
-    target = Path(manifest["bridge"]["path"])
-    raw = target.read_bytes()
-    if (not target.is_absolute() or target.stat().st_uid != os.getuid() or target.stat().st_mode & 0o022
-            or hashlib.sha256(raw).hexdigest() != manifest["bridge"]["sha256"]):
-        raise ValueError("inbox recall bridge changed")
-    spec = importlib.util.spec_from_file_location("cairn_inbox_recall", target)
-    module = importlib.util.module_from_spec(spec)
-    exec(compile(raw, str(target), 'exec'), module.__dict__)
+    if manifest.get("schema") != "cairn.inbox-recall-binding/2":
+        raise ValueError("unsupported inbox recall binding; restage its complete lifecycle bundle")
+    module = _BUNDLE.load_pinned(manifest["bridge"], "inbox_recall")
     if validate:
         module.binding(config)
     return module

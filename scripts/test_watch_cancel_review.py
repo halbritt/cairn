@@ -2,12 +2,13 @@
 import contextlib
 import copy
 import io
-import types
 import unittest
 from unittest.mock import patch
 
 from integrations.lifecycle import coordination
 from scripts import test_watch_cancel_poll as fixtures
+
+process_scan = coordination._BUNDLE.load('process_scan')
 
 
 class SessionBoundaries(unittest.TestCase):
@@ -62,8 +63,7 @@ class SessionBoundaries(unittest.TestCase):
                 return dict(stored, finished_at='now')
             self.fail(operation)
 
-        scanner = types.SimpleNamespace(markers=lambda *_args, **_kwargs: next(scans))
-        with patch.dict('sys.modules', {'process_scan': scanner}), \
+        with patch.object(process_scan, 'markers', side_effect=lambda *_args, **_kwargs: next(scans)), \
                 patch.object(coordination, 'opencode_capture_available', return_value=True), \
                 patch.object(coordination, 'call', side_effect=call), \
                 patch.object(coordination, 'submit_opencode_cancel') as submit:

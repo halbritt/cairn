@@ -774,17 +774,18 @@ def check(binary, root, repo, api_call):
                 bridge_path = staged_home / "inbox_recall.py"
                 memory_engine = staged_home / "ordinary/memory.py"
                 manifest = json.loads((staged_home / "binding.json").read_text(encoding="utf-8"))
+                if manifest.get("schema") != "cairn.inbox-recall-binding/2":
+                    raise RuntimeError("restage the candidate with a complete lifecycle bundle before native verification")
                 manifest.update(enabled=True,
-                    bridge=dict(path=str(bridge_path), sha256=hashlib.sha256(bridge_path.read_bytes()).hexdigest()),
-                    engine=dict(path=str(memory_engine), sha256=hashlib.sha256(memory_engine.read_bytes()).hexdigest()),
+                    bridge=dict(manifest["bridge"], path=str(bridge_path)),
+                    engine=dict(manifest["engine"], path=str(memory_engine)),
                     memory_config=dict(path=str(memory_path), sha256=hashlib.sha256(memory_path.read_bytes()).hexdigest()),
                     coordination_configs=[dict(path=str(coordination_path), sha256=hashlib.sha256(coordination_path.read_bytes()).hexdigest())])
                 manifest_path = staged_home / "binding.json"
                 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
                 manifest_path.chmod(0o600)
-                bridge_spec = importlib.util.spec_from_file_location("staged_native_bridge", bridge_path)
-                bridge = importlib.util.module_from_spec(bridge_spec)
-                bridge_spec.loader.exec_module(bridge)
+                from codex_loopback_fixture import lifecycle_bundle
+                bridge = lifecycle_bundle().Bundle(staged_home).load_pinned(manifest["bridge"], "inbox_recall")
                 bridge.validate_binding(memory, require_enabled=True)
                 bridge.validate_binding(coordination, require_enabled=True)
 

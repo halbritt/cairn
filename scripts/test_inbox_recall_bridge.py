@@ -22,8 +22,21 @@ def module(name, path):
     spec.loader.exec_module(result)
     return result
 
+bundle = module('inbox_recall_bundle', ROOT/'integrations/lifecycle/lifecycle_bundle.py')
 coord = module('inbox_recall_coord', ROOT/'integrations/lifecycle/coordination.py')
 memory = module('inbox_recall_memory', ROOT/'integrations/lifecycle/memory.py')
+
+
+def repin_runtime(manifest):
+    """Pin a deliberately changed test implementation, including its helper snapshot."""
+    for role in ('engine', 'bridge'):
+        path = Path(manifest[role]['path'])
+        manifest[role]['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        descriptor = bundle.bundle_descriptor(path.parent)
+        manifest[role]['bundle'] = descriptor
+        (path.parent / bundle.MANIFEST).write_text(json.dumps(descriptor))
+
+
 SESSION = '11111111-1111-4111-8111-111111111111'
 TURN = '22222222-2222-4222-8222-222222222222'
 AGENT = '33333333-3333-4333-8333-333333333333'
@@ -137,10 +150,13 @@ class InboxRecallBridgeTests(unittest.TestCase):
     def freeze(self):
         for name,value in [('memory.json',self.mc),('coordination.json',self.cc),('fixture.json',self.fixture)]:
             (self.root/name).write_text(json.dumps(value)); (self.root/name).chmod(0o600)
-        for name in ('memory.py','inbox_recall.py'):
-            target=self.root/name; target.write_bytes((ROOT/'integrations/lifecycle'/name).read_bytes()); target.chmod(0o600)
-        def file(path): return dict(path=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-        self.binding.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/1',enabled=True,
+        bundle.stage_runtime(ROOT/'integrations/lifecycle', self.root)
+        def file(path):
+            spec = dict(path=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            if path.suffix == '.py':
+                spec['bundle'] = bundle.bundle_descriptor(path.parent)
+            return spec
+        self.binding.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/2',enabled=True,
             bridge=file(self.root/'inbox_recall.py'),engine=file(self.root/'memory.py'),
             memory_config=file(self.root/'memory.json'),coordination_configs=[file(self.root/'coordination.json')])))
         self.binding.chmod(0o600)
@@ -1195,5 +1211,28 @@ class InboxRecallBridgeTests(unittest.TestCase):
         (self.root/'memory.json').write_text('{}')
         with self.assertRaises(ValueError): memory.handle(self.mc,self.event)
         self.assertEqual(self.calls(),[])
+
+    def test_separately_pinned_engine_helper_drift_refuses_before_suppression(self):
+        engine_root = self.root / 'engine-bundle'
+        bundle.stage_runtime(ROOT/'integrations/lifecycle', engine_root)
+        engine = engine_root / 'memory.py'
+        manifest = json.loads(self.binding.read_text())
+        manifest['engine'] = dict(path=str(engine), sha256=hashlib.sha256(engine.read_bytes()).hexdigest(),
+                                  bundle=bundle.bundle_descriptor(engine_root))
+        self.binding.write_text(json.dumps(manifest))
+        helper = engine_root / 'grant_ledger.py'
+        helper.write_bytes(helper.read_bytes() + b'\n# changed after binding\n')
+        with self.assertRaises(ValueError):
+            memory.handle(self.mc, self.event)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((self.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
+
+    def test_legacy_binding_requires_explicit_complete_bundle_upgrade(self):
+        manifest = json.loads(self.binding.read_text())
+        manifest['schema'] = 'cairn.inbox-recall-binding/1'
+        self.binding.write_text(json.dumps(manifest))
+        with self.assertRaises(ValueError):
+            memory.handle(self.mc, self.event)
+        self.assertEqual(self.calls(), [])
 
 if __name__=='__main__': unittest.main()

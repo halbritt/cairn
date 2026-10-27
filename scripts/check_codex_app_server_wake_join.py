@@ -1145,7 +1145,6 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         profile,
         binding=binding,
         config_data=config_data,
-        hook_script="/repo/integrations/lifecycle/coordination.py",
     )
     server.start()
 
@@ -1216,11 +1215,11 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
         # Keep environment minimal; only fake fixture paths and the dedicated trace pass in.
         watcher_env = {"PATH": "/usr/bin:/bin", "HOME": str(profile), "CODEX_HOME": str(profile),
                        "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
-                       "PYTHONPATH": "/repo/scripts/fixtures/cairn220_queue_trace:/repo/integrations/lifecycle",
+                       "PYTHONPATH": "/repo/scripts/fixtures/cairn220_queue_trace:" + str(engine_root),
                        "CAIRN220_QUEUE_TRACE": os.environ["CAIRN220_TRACE_TARGET"]}
         item_observer.record_watcher_start("before")
         try:
-            watcher = subprocess.run(["/usr/bin/python3", "/repo/integrations/lifecycle/coordination.py",
+            watcher = subprocess.run(["/usr/bin/python3", str(engine_root / "coordination.py"),
                 "watch", "--config-dir", str(bindings), "--once"], env=watcher_env,
                 capture_output=True, timeout=30, check=False)
         except Exception as exc:

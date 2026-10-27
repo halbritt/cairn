@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import shutil
 from pathlib import Path
 import sys
@@ -15,6 +16,7 @@ from unittest.mock import Mock, patch
 
 import trial_original_arms as controls
 import trial_task_eval as task
+from trial_task_arms import _bundle_validator
 
 ACTOR = r'''
 import json, sys
@@ -54,6 +56,10 @@ class Fixture(unittest.TestCase):
         document = dict(schema=controls.SCHEMA, arms={
             label: dict(self.arms[label], recall_revision='r' * 40, hook=pin(self.recall[label] / 'memory.py'),
                         bridge=pin(self.recall[label] / 'inbox_recall.py')) for label in ('CURRENT', 'CAND')})
+        for label in ('CURRENT', 'CAND'):
+            sidecar = self.recall[label] / 'lifecycle-bundle.json'
+            if sidecar.exists():
+                document['arms'][label]['bundle'] = pin(sidecar)
         for label, change in changes.items():
             document['arms'][label].update(change)
         path = self.root / 'original-arms.json'
@@ -199,10 +205,8 @@ class BindingPreflightTests(RecallRunBase):
         home = patch.object(Path, 'home', return_value=self.home)
         home.start()
         self.addCleanup(home.stop)
-        # The real reviewed engine and bridge, so the binding check validates actual sources.
-        for name in ('memory.py', 'inbox_recall.py'):
-            shutil.copy2(task.ROOT / 'integrations/lifecycle' / name, self.recall['CURRENT'] / name)
-            (self.recall['CURRENT'] / name).chmod(0o600)
+        # Select an explicit complete current installation, including its sidecar pin.
+        _bundle_validator().stage_runtime(task.ROOT / 'integrations/lifecycle', self.recall['CURRENT'])
         self.reload()
 
     def reload(self):
@@ -230,13 +234,15 @@ class BindingPreflightTests(RecallRunBase):
                 stack.enter_context(context)
             return task.run_agent(self.case, 'CURRENT', 0, 0, self.args, self.stores, self.out)
 
-    def test_agent_tools_arm_carries_its_literal_controls_and_binds_the_raw_recall_blobs(self):
+    def test_agent_tools_arm_carries_its_literal_controls_and_pinned_complete_bundle(self):
         record = self.run_preflighted()
         self.assertEqual(self.actors, 1)
         config = json.loads(self.attempt('CURRENT', 'hook-config.json').read_text())
         self.assertEqual((config['recall_mode'], config['semantic_fallback']), ('agent_tools', True))
         self.assertNotIn('model', config)  # no selector for an agent_tools arm
         binding = json.loads(self.attempt('CURRENT', 'binding.json').read_text())
+        self.assertEqual(binding['schema'], 'cairn.inbox-recall-binding/2')
+        self.assertEqual(binding['bridge']['bundle'], _bundle_validator().bundle_descriptor(self.recall['CURRENT']))
         self.assertEqual(binding['bridge']['sha256'], pin(self.recall['CURRENT'] / 'inbox_recall.py')['sha256'])
         self.assertEqual(binding['engine']['sha256'], pin(self.recall['CURRENT'] / 'memory.py')['sha256'])
         mounts = {str(target): str(source) for source, target, _ in self.actor_binds}
@@ -245,7 +251,8 @@ class BindingPreflightTests(RecallRunBase):
         self.assertEqual(record['original_arm'], dict(
             recall_mode='agent_tools', semantic_fallback=True, recall_revision='r' * 40,
             hook_sha256=pin(self.recall['CURRENT'] / 'memory.py')['sha256'],
-            bridge_sha256=pin(self.recall['CURRENT'] / 'inbox_recall.py')['sha256']))
+            bridge_sha256=pin(self.recall['CURRENT'] / 'inbox_recall.py')['sha256'],
+            bundle_sha256=pin(self.recall['CURRENT'] / 'lifecycle-bundle.json')['sha256']))
 
     def test_valid_binding_and_task_key_pass_the_real_check_then_launch_once(self):
         record = self.run_preflighted()
@@ -312,6 +319,8 @@ class BindingPreflightTests(RecallRunBase):
         self.assertIn('def codex_agent_context(', source)
         engine.write_text(source.replace('def codex_agent_context(', 'def unsupported_codex_agent_context(', 1))
         engine.chmod(0o600)
+        sidecar = self.recall['CURRENT'] / 'lifecycle-bundle.json'
+        sidecar.write_text(json.dumps(_bundle_validator().bundle_descriptor(self.recall['CURRENT'])))
         self.reload()
         self._configure_codex()
         with patch.object(task.codex_account_selection, 'verify_auth_file'):
@@ -320,14 +329,57 @@ class BindingPreflightTests(RecallRunBase):
         self.assertEqual(self.actors, 0)
         self.assertNotEqual(json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())['exit'], 0)
 
-    def test_invalid_bridge_refuses_before_the_provider(self):
+    def test_missing_explicit_bundle_pin_refuses_legacy_two_blob_controls(self):
+        path, _ = self.controls()
+        document = json.loads(Path(path).read_text())
+        del document['arms']['CURRENT']['bundle']
+        Path(path).write_text(json.dumps(document))
+        with self.assertRaisesRegex(ValueError, 'requires an explicit lifecycle bundle pin'):
+            controls.load_controls(path, pin(path)['sha256'], self.memory)
+
+    def test_changed_bundle_member_or_sidecar_refuses_before_the_provider(self):
+        for name in ('grant_ledger.py', 'lifecycle-bundle.json'):
+            with self.subTest(name=name):
+                self.out = self.root / 'tamper-output' / name
+                self.out.mkdir(parents=True)
+                path = self.recall['CURRENT'] / name
+                raw = path.read_bytes()
+                path.write_bytes(raw + b'\n')
+                try:
+                    with self.assertRaisesRegex(ValueError, 'bundle.*changed'):
+                        self.run_preflighted()
+                    self.assertEqual(self.actors, 0)
+                finally:
+                    path.write_bytes(raw)
+
+    def test_snapshot_must_match_the_original_entrypoint_pins(self):
+        hook = self.recall['CURRENT'] / 'memory.py'
+        selected = hook.read_bytes()
+        hook.write_bytes(selected + b'\n# earlier separately pinned entrypoint\n')
+        earlier_pin = pin(hook)['sha256']
+        path, digest = self.controls()  # hook A with the explicitly selected bundle B
+        real_open, reads = os.open, 0
+
+        def swap_after_initial_hash(path, *args, **kwargs):
+            nonlocal reads
+            if Path(path) == hook:
+                reads += 1
+                if reads == 2:
+                    hook.write_bytes(selected)
+            return real_open(path, *args, **kwargs)
+
+        with patch.object(os, 'open', side_effect=swap_after_initial_hash):
+            with self.assertRaisesRegex(ValueError, 'original_arms_recall_mismatch'):
+                controls.load_controls(path, digest, self.memory)
+        self.assertGreaterEqual(reads, 2)
+        self.configs['CURRENT']['hook_sha256'] = earlier_pin
+        with self.assertRaisesRegex(RuntimeError, 'original recall source changed'):
+            controls.observed_arm(self.configs['CURRENT'])
+
+    def test_invalid_bridge_refuses_at_controls_load(self):
         (self.recall['CURRENT'] / 'inbox_recall.py').write_text('# not the reviewed bridge\n')
-        (self.recall['CURRENT'] / 'inbox_recall.py').chmod(0o600)
-        self.reload()
-        with self.assertRaisesRegex(RuntimeError, '^original_recall_binding_invalid'):
-            self.run_preflighted()
-        self.assertEqual(self.actors, 0)
-        self.assertNotEqual(json.loads(self.attempt('CURRENT', 'original-binding-check.json').read_text())['exit'], 0)
+        with self.assertRaisesRegex(ValueError, 'version2 recall bridge'):
+            self.reload()
 
     def test_invalid_recall_task_key_refuses_before_the_provider(self):
         real = task.bind_ordinary_claude

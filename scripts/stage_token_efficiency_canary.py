@@ -25,6 +25,9 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_bundle_spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle_stager", ROOT / "integrations/lifecycle/lifecycle_bundle.py")
+bundle = importlib.util.module_from_spec(_bundle_spec)
+_bundle_spec.loader.exec_module(bundle)
 EXPECTED = {
     ".codex/hooks.json": "02d086bdd332739d7985d8583e5c8c7e63e40fb5e64c5b83d81f7faf3aa78333",
     ".codex-harm/hooks.json": "c880e3668e767ab4181f3ee7494cd25fc8d99e9c96253d74c863308af3d49c26",
@@ -45,8 +48,6 @@ EXPECTED = {
     ".local/share/cairn/deployments/inbox-recall-codex-4b0757a-20260930/binding.json": "8b1f0670fb6f71b8fdfefa49595b7f3b2d6bfb0bb63771fd2f8341ee1af8d120",
     ".local/share/cairn/deployments/inbox-recall-claude-one-2306e44-20260930/binding.json": "d40a15f6cc90933f6b36c509b86daa611b74cbef48aa931fdf21779b3070ead1",
 }
-COORD_SIBLINGS = ("codex_queue.py", "claude_channel.py", "opencode_queue.py",
-                  "hermes_queue.py", "process_scan.py")
 CODEX_ONLY_SNAPSHOT_PATHS = (
     ".codex/hooks.json",
     ".codex-harm/hooks.json",
@@ -165,16 +166,9 @@ def stage_account(home, stage, harness, *, profile="full"):
     coordination_script = native / "coordination.py"
     memory_path = ordinary / "config.json"
     coordination_path = native / "bindings" / (coordination["binding"] + ".json")
-    for source, destination in ((ROOT / "integrations/lifecycle/memory.py", memory_script),
-                                (ROOT / "integrations/lifecycle/inbox_recall.py", bridge_path),
-                                (ROOT / "integrations/lifecycle/coordination.py", coordination_script)):
-        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        shutil.copyfile(source, destination)
-        destination.chmod(0o700)
-    for sibling in COORD_SIBLINGS:
-        destination = native / sibling
-        shutil.copyfile(ROOT / "integrations/lifecycle" / sibling, destination)
-        destination.chmod(0o600)
+    runtime_files = []
+    for code_root in (target, ordinary, native):
+        runtime_files.extend(bundle.stage_runtime(ROOT / "integrations/lifecycle", code_root).values())
 
     candidate_binary = stage / "bin/cairn"
     memory.update(cairn=str(candidate_binary), state_dir=str(ordinary / "state"),
@@ -216,13 +210,13 @@ def stage_account(home, stage, harness, *, profile="full"):
         raise ValueError("unsupported candidate profile")
     write_json(memory_path, memory)
     write_json(coordination_path, coordination)
-    write_json(manifest_path, {"schema": "cairn.inbox-recall-binding/1", "enabled": False,
-                               "bridge": pinned(bridge_path), "engine": pinned(memory_script),
+    write_json(manifest_path, {"schema": "cairn.inbox-recall-binding/2", "enabled": False,
+                               "bridge": dict(pinned(bridge_path), bundle=bundle.bundle_descriptor(bridge_path.parent)),
+                               "engine": dict(pinned(memory_script), bundle=bundle.bundle_descriptor(memory_script.parent)),
                                "memory_config": pinned(memory_path),
                                "coordination_configs": [pinned(coordination_path)]})
-    spec = importlib.util.spec_from_file_location("staged_inbox_recall", bridge_path)
-    bridge = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bridge)
+    staged_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    bridge = bundle.Bundle(target).load_pinned(staged_manifest["bridge"], "inbox_recall")
     bridge.validate_binding(memory, require_enabled=False)
     bridge.validate_binding(coordination, require_enabled=False)
 
@@ -239,9 +233,8 @@ def stage_account(home, stage, harness, *, profile="full"):
                         shlex.quote(shlex.split(old_coordination)[0]) + " " +
                         shlex.quote(str(coordination_script)) + ' inbox compact "$@"\n', encoding="utf-8")
     launcher.chmod(0o700)
-    closure_files = [memory_script, coordination_script, bridge_path, memory_path,
-                     coordination_path, manifest_path, candidate_path, launcher,
-                     *(native / sibling for sibling in COORD_SIBLINGS)]
+    closure_files = [memory_path, coordination_path, manifest_path, candidate_path, launcher,
+                     *runtime_files]
     closure = {"schema": "cairn.lifecycle-pin-closure/1",
                "source_revision": subprocess.run(
                    ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,

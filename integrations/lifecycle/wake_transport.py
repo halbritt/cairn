@@ -1,10 +1,34 @@
 """Uniform WakeTransport adapter seam and registry for per-harness idle wake delivery."""
+from pathlib import Path
+import importlib.util
+import os
 import re
 import sys
 import time
 
 UUID_RE = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 
+
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="wake_transport.py")
+
+
+_BUNDLE = _runtime_bundle()
 
 def _attach_event_id(wake_record, ready):
     event_id = ready.get("event_id") if isinstance(ready, dict) else None
@@ -185,7 +209,7 @@ class OpenCodeQueueWakeTransport(WakeTransport):
         cancel_capable = False
         if config.get("opencode_cancel_enabled") and coord.opencode_capture_available():
             try:
-                import opencode_queue
+                opencode_queue = _BUNDLE.load("opencode_queue")
             except ImportError:
                 pass
             else:
@@ -213,7 +237,7 @@ class OpenCodeQueueWakeTransport(WakeTransport):
 
     def submit(self, coord, config, path, prepared, wake, text):
         try:
-            import opencode_queue
+            opencode_queue = _BUNDLE.load("opencode_queue")
         except ImportError as exc:
             raise coord.CoordinationError("WAKE_UNAVAILABLE", f"opencode queue client is unavailable: {exc}") from exc
         try:
@@ -291,7 +315,7 @@ class HermesQueueWakeTransport(WakeTransport):
 
     def submit(self, coord, config, path, prepared, wake, text):
         try:
-            import hermes_queue
+            hermes_queue = _BUNDLE.load("hermes_queue")
         except ImportError as exc:
             raise coord.CoordinationError("WAKE_UNAVAILABLE", f"hermes queue client is unavailable: {exc}") from exc
         try:

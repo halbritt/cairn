@@ -154,26 +154,25 @@ def check(binary):
         for path, value in ((coord_config, coord), (memory_config, mem)):
             path.write_text(json.dumps(value), encoding='utf-8')
             path.chmod(0o600)
-        source_lifecycle = Path(__file__).resolve().parents[1] / 'integrations/lifecycle'
-        lifecycle = home / 'lifecycle'
-        lifecycle.mkdir(mode=0o700)
-        for name in ('coordination.py', 'memory.py', 'inbox_recall.py'):
-            target = lifecycle / name
-            target.write_bytes((source_lifecycle / name).read_bytes())
-            target.chmod(0o600)
+        source_lifecycle = Path(__file__).resolve().parents[1] / "integrations/lifecycle"
+        lifecycle = home / "lifecycle"
+        spec = importlib.util.spec_from_file_location("fixture_lifecycle_bundle",
+                                                    source_lifecycle / "lifecycle_bundle.py")
+        bundle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bundle)
+        bundle.stage_runtime(source_lifecycle, lifecycle)
+        descriptor = bundle.bundle_descriptor(lifecycle)
 
         def pinned(path):
             return dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
 
-        binding_path.write_text(json.dumps(dict(schema='cairn.inbox-recall-binding/1',
-            enabled=True, bridge=pinned(lifecycle / 'inbox_recall.py'),
-            engine=pinned(lifecycle / 'memory.py'), memory_config=pinned(memory_config),
-            coordination_configs=[pinned(coord_config)])), encoding='utf-8')
+        manifest = dict(schema="cairn.inbox-recall-binding/2", enabled=True,
+            bridge=dict(pinned(lifecycle / "inbox_recall.py"), bundle=descriptor),
+            engine=dict(pinned(lifecycle / "memory.py"), bundle=descriptor),
+            memory_config=pinned(memory_config), coordination_configs=[pinned(coord_config)])
+        binding_path.write_text(json.dumps(manifest), encoding="utf-8")
         binding_path.chmod(0o600)
-        spec = importlib.util.spec_from_file_location('panel_compaction_probe_bridge',
-                                                  lifecycle / 'inbox_recall.py')
-        bridge = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bridge)
+        bridge = bundle.Bundle(lifecycle).load_pinned(manifest["bridge"], "inbox_recall")
         bridge.validate_binding(mem, require_enabled=True)
 
         owner = subprocess.Popen([sys.executable, '-u', '-c', OWNER,

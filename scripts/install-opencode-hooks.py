@@ -27,10 +27,10 @@ def install(config_dir, destination, claude, model=None, preview_model=None, rec
     config = installer.retain_model_overrides(config, engine_config, preview_model, recall_model)
     config = installer.retain_recall_mode(config, engine_config, recall_mode)
     config = installer.retain_capture_observations(config, engine_config)
+    config = installer.retain_inbox_binding(config, engine_config)
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     script = destination / "memory.py"
-    shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
-    script.chmod(0o700)
+    installer.bundle.stage_runtime(ROOT / "integrations/lifecycle", destination)
     installer.write_json(engine_config, config)
     installer.write_json(config_dir / "cairn-lifecycle.json", dict(
         python=sys.executable, script=str(script), engine_config=str(engine_config)))

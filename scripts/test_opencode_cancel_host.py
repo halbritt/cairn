@@ -4,11 +4,13 @@ import json
 import os
 from pathlib import Path
 import tempfile
-import types
 import unittest
 from unittest.mock import patch
 
-from integrations.lifecycle import coordination, opencode_queue
+from integrations.lifecycle import coordination
+
+opencode_queue = coordination._BUNDLE.load('opencode_queue')
+process_scan = coordination._BUNDLE.load('process_scan')
 
 
 class OpenCodeCancelHostTests(unittest.TestCase):
@@ -60,8 +62,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
                 sent.append(args)
             return dict(outcome='accepted')
 
-        with patch.dict('sys.modules', {'opencode_queue': opencode_queue}), \
-                patch.object(opencode_queue, 'cancel_request', side_effect=native_cancel):
+        with patch.object(opencode_queue, 'cancel_request', side_effect=native_cancel):
             coordination.submit_opencode_cancel(self.config, self.path, request)
         self.assertEqual(sent[0][2:], ('ses-one', 'delivery-one', 'turn-one'))
         state = json.loads(self.path.read_text())
@@ -167,8 +168,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
                 return dict(self.attempt, finished_at='now')
             self.fail(f'unexpected operation {operation}')
 
-        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: next(scans))
-        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+        with patch.object(process_scan, 'markers', side_effect=lambda *_args, **_kwargs: next(scans)), \
                 patch.object(coordination, 'call', side_effect=store_call):
             coordination.scan_opencode_cancel(self.config, self.state, self.path, self.attempt)
             self.assertEqual(operations, ['session-tool-stop'])
@@ -179,8 +179,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertNotIn('inbox_intent', self.state)
 
     def test_clear_scan_cannot_replace_missing_turn_stop(self):
-        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: self.fail('scan is premature'))
-        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+        with patch.object(process_scan, 'markers', side_effect=AssertionError('scan is premature')), \
                 patch.object(coordination, 'call', side_effect=lambda *_args, **_kwargs: self.fail('premature API write')):
             coordination.scan_opencode_cancel(self.config, self.state, self.path, self.attempt)
         self.assertIn('inbox_intent', self.state)
@@ -215,7 +214,6 @@ class OpenCodeCancelHostTests(unittest.TestCase):
                      process=self.state['process'], workspace=self.temp.name)
         for capture, expected in ((False, False), (True, True)):
             with self.subTest(capture=capture), \
-                    patch.dict('sys.modules', {'opencode_queue': opencode_queue}), \
                     patch.object(coordination, 'opencode_idle_endpoint', return_value='/unused/bridge.sock'), \
                     patch.object(coordination, 'opencode_capture_available', return_value=True), \
                     patch.object(opencode_queue, 'supports_cancel', return_value=True), \

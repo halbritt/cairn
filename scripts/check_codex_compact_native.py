@@ -19,7 +19,8 @@ from codex_loopback_fixture import (
     custom_tool_outputs,
     exec_tool_item,
     load_coordination_installer,
-    load_script_module,
+    lifecycle_bundle,
+    stage_lifecycle_runtime,
     message_item,
     response_stream as _response_stream,
     trust_codex_hooks_via_rpc,
@@ -43,7 +44,6 @@ def response_stream(ident, item, *, input_tokens=1):
     return _response_stream(ident, item, model=MODEL, input_tokens=input_tokens)
 
 
-_module = load_script_module
 _exec_tool = exec_tool_item
 
 
@@ -123,8 +123,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
     selector_path = root / "local-selector"
     selector_path.write_text(SELECTOR, encoding="utf-8")
     selector_path.chmod(0o700)
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py",
-                    home / "coordination/coordination.py")
+    for code_root in (home, home / "ordinary", home / "coordination"):
+        stage_lifecycle_runtime(code_root)
 
     # All candidate bindings point into this private copy and disposable API.
     for rel in ("ordinary/config.json", "coordination/bindings/codex-one.json"):
@@ -163,16 +163,18 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
     coordination_path = home / "coordination/bindings/codex-one.json"
     manifest_path = home / "binding.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest.update(enabled=True,
-        bridge=dict(path=str(bridge_path), sha256=hashlib.sha256(bridge_path.read_bytes()).hexdigest()),
-        engine=dict(path=str(memory_path), sha256=hashlib.sha256(memory_path.read_bytes()).hexdigest()),
+    manifest.update(schema="cairn.inbox-recall-binding/2", enabled=True,
+        bridge=dict(path=str(bridge_path), sha256=hashlib.sha256(bridge_path.read_bytes()).hexdigest(),
+                    bundle=lifecycle_bundle().bundle_descriptor(bridge_path.parent)),
+        engine=dict(path=str(memory_path), sha256=hashlib.sha256(memory_path.read_bytes()).hexdigest(),
+                    bundle=lifecycle_bundle().bundle_descriptor(memory_path.parent)),
         memory_config=dict(path=str(home / "ordinary/config.json"),
                            sha256=hashlib.sha256((home / "ordinary/config.json").read_bytes()).hexdigest()),
         coordination_configs=[dict(path=str(coordination_path),
                                    sha256=hashlib.sha256(coordination_path.read_bytes()).hexdigest())])
     write_private_file(manifest_path, json.dumps(manifest, indent=2) + "\n")
 
-    bridge = _module(bridge_path, "staged_codex_compact_bridge")
+    bridge = lifecycle_bundle().Bundle(home).load_pinned(manifest["bridge"], "inbox_recall")
     memory = json.loads((home / "ordinary/config.json").read_text(encoding="utf-8"))
     coordination = json.loads(coordination_path.read_text(encoding="utf-8"))
     bridge.validate_binding(memory, require_enabled=True)

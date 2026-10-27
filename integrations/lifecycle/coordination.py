@@ -43,41 +43,32 @@ WATCH_INTERVAL = 30  # seconds between full presence, renewal and wake cycles
 CANCEL_POLL_INTERVAL = 2  # seconds between cancellation-only passes while one is pending
 
 
-def _load_sibling_module(name):
-    if name in sys.modules:
-        mod = sys.modules[name]
-        if mod is None:
-            raise ImportError(f"import of {name} halted; None in sys.modules")
-        return mod
-    qualified = f"integrations.lifecycle.{name}"
-    if qualified in sys.modules:
-        mod = sys.modules[qualified]
-        if mod is None:
-            raise ImportError(f"import of {qualified} halted; None in sys.modules")
-        return mod
-    here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    candidates = [
-        here / f"{name}.py",
-        Path("/home/halbritt/.cache/agent-worktrees/cairn/cairn-244-246-lifecycle/integrations/lifecycle") / f"{name}.py",
-        Path.home() / "git" / "cairn" / "integrations" / "lifecycle" / f"{name}.py",
-    ]
-    for path in candidates:
-        try:
-            if path.is_file():
-                spec = importlib.util.spec_from_file_location(name, path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[name] = module
-                spec.loader.exec_module(module)
-                return module
-        except OSError:
-            continue
-    return importlib.util.find_spec(name) and __import__(name)
+def _runtime_bundle():
+    if "_CAIRN_BUNDLE" in globals():
+        return _CAIRN_BUNDLE
+    path = Path(__file__).resolve().with_name("lifecycle_bundle.py")
+    import stat
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 2 * 1024 * 1024:
+            raise ValueError("lifecycle bundle loader is not a bounded regular file")
+        raw = source.read(2 * 1024 * 1024 + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("lifecycle bundle loader changed during read")
+    spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(path), "exec"), module.__dict__)
+    return module.Bundle(path.parent, bootstrap_source=raw, entry_path=__file__, entry_name="coordination.py")
 
 
-_unix_peer_transport = _load_sibling_module("unix_peer_transport")
-_wake_transport = _load_sibling_module("wake_transport")
-_transcript_recovery = _load_sibling_module("transcript_recovery")
-_grant_ledger = _load_sibling_module("grant_ledger")
+_BUNDLE = _runtime_bundle()
+
+
+_unix_peer_transport = _BUNDLE.load("unix_peer_transport")
+_wake_transport = _BUNDLE.load("wake_transport")
+_transcript_recovery = _BUNDLE.load("transcript_recovery")
+_grant_ledger = _BUNDLE.load("grant_ledger")
 GrantLedger = _grant_ledger.GrantLedger
 
 
@@ -290,7 +281,7 @@ def host_identifies_session(config, state, host, environment):
 def queue_helper():
     """Load the queue helper with a bounded diagnostic when it is missing."""
     try:
-        import codex_queue
+        codex_queue = _BUNDLE.load("codex_queue")
     except ImportError as exc:
         raise CoordinationError('WAKE_UNAVAILABLE', f'codex queue helper is unavailable: {exc}') from exc
     return codex_queue
@@ -1035,7 +1026,7 @@ def claude_channel_endpoint(config, process):
 def channel_helper():
     """Load the channel client with a bounded diagnostic when it is missing."""
     try:
-        import claude_channel
+        claude_channel = _BUNDLE.load("claude_channel")
     except ImportError as exc:
         raise CoordinationError('WAKE_UNAVAILABLE', f'claude channel client is unavailable: {exc}') from exc
     return claude_channel
@@ -1057,7 +1048,7 @@ def opencode_idle_endpoint(config, process, native_id, state=None):
     if not endpoint:
         return None
     try:
-        import opencode_queue
+        opencode_queue = _BUNDLE.load("opencode_queue")
     except ImportError:
         return None
     try:
@@ -1068,7 +1059,7 @@ def opencode_idle_endpoint(config, process, native_id, state=None):
 
 def opencode_capture_available():
     try:
-        import process_scan
+        process_scan = _BUNDLE.load("process_scan")
     except ImportError:
         return False
     return callable(getattr(process_scan, 'markers', None))
@@ -1814,7 +1805,7 @@ def scan_opencode_cancel(config, state, path, attempt):
         return
     if not opencode_capture_available():
         return
-    import process_scan
+    process_scan = _BUNDLE.load("process_scan")
     calls = state.get('tool_calls', {})
     if any(item.get('attempt_id') != attempt['attempt_id'] for item in calls.values()):
         raise CoordinationError('INBOX_ATTEMPT_MISMATCH', 'tool capture belongs to another attempt')
@@ -1860,7 +1851,7 @@ def scan_opencode_cancel(config, state, path, attempt):
 def submit_opencode_cancel(config, path, request):
     """Let native cancellation settle without blocking the pinned TurnEnd hook."""
     try:
-        import opencode_queue
+        opencode_queue = _BUNDLE.load("opencode_queue")
     except ImportError:
         status = 'unavailable'
     else:
@@ -4037,7 +4028,7 @@ def effective_inbox_config(config, event=None):
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise ValueError("inbox recall binding must be owner-only")
     manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/1" or type(manifest.get("enabled")) is not bool:
+    if manifest.get("schema") != "cairn.inbox-recall-binding/2" or type(manifest.get("enabled")) is not bool:
         raise ValueError("unsupported inbox recall activation state")
     enabled = manifest["enabled"]
     if (event is not None and event.get("hook_event_name") == "UserPromptSubmit"
@@ -4051,21 +4042,14 @@ def effective_inbox_config(config, event=None):
 
 
 def load_inbox_recall(config, *, validate=True):
-    """Load only the explicitly installed, hash-pinned bridge; no path discovery."""
+    """Execute only the complete, explicitly pinned inbox recall bundle."""
     path = Path(config["inbox_recall_binding"])
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise ValueError("inbox recall binding must be owner-only")
     manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/1":
-        raise ValueError("unsupported inbox recall binding")
-    target = Path(manifest["bridge"]["path"])
-    raw = target.read_bytes()
-    if (not target.is_absolute() or target.stat().st_uid != os.getuid() or target.stat().st_mode & 0o022
-            or hashlib.sha256(raw).hexdigest() != manifest["bridge"]["sha256"]):
-        raise ValueError("inbox recall bridge changed")
-    spec = importlib.util.spec_from_file_location("cairn_inbox_recall", target)
-    module = importlib.util.module_from_spec(spec)
-    exec(compile(raw, str(target), 'exec'), module.__dict__)
+    if manifest.get("schema") != "cairn.inbox-recall-binding/2":
+        raise ValueError("unsupported inbox recall binding; restage its complete lifecycle bundle")
+    module = _BUNDLE.load_pinned(manifest["bridge"], "inbox_recall")
     if validate:
         module.binding(config)
     return module

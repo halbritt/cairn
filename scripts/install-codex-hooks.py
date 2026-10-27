@@ -57,6 +57,7 @@ def install(hooks_path, destination, config, recall_mode=None, context_lifecycle
     config_path = destination / "config.json"
     config = shared.retain_recall_mode(config, config_path, recall_mode)
     config = shared.retain_capture_observations(config, config_path)
+    config = shared.retain_inbox_binding(config, config_path)
     if context_lifecycle is None and config_path.exists():
         context_lifecycle = json.loads(config_path.read_text()).get('context_lifecycle', 'full')
     if context_lifecycle == 'compact/1':
@@ -77,9 +78,9 @@ def install(hooks_path, destination, config, recall_mode=None, context_lifecycle
         groups.append({"hooks": [dict(type="command", command=command, **settings)]})
     original = hooks_path.read_bytes() if hooks_path.exists() else None
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
-    shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
-    script.chmod(0o700)
-    write_json(config_path, dict(config, harness="codex", state_dir=str(destination / "state"),
+    shared.bundle.stage_runtime(ROOT / "integrations/lifecycle", destination,
+                                entrypoints={"memory.py": "lifecycle.py"})
+    write_json(config_path, dict(config, harness="codex", state_dir=config.get("state_dir", str(destination / "state")),
                                  semantic_fallback=config.get("semantic_fallback", True)))
     backup = hooks_path.with_name(hooks_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():

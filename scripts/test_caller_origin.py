@@ -79,6 +79,7 @@ def execute(raw, location, validated=None):
     """Initialize a module the way the bound bridge does: execute pinned bytes with `location` as its __file__."""
     spec = importlib.util.spec_from_file_location('origin_bound_%d' % next(names), location)
     module = importlib.util.module_from_spec(spec)
+    module.__dict__['_CAIRN_BUNDLE'] = fixtures.bundle.Bundle(SOURCE.parent)
     if validated is not None:
         module.__dict__['_CAIRN_VALIDATED_SOURCE'] = validated
     exec(compile(raw, str(location), 'exec'), module.__dict__)
@@ -104,6 +105,8 @@ class CallerOriginTests(unittest.TestCase):
     def copy(self, name, data=None):
         path = self.root / name / 'memory.py'
         path.parent.mkdir()
+        for member in fixtures.bundle.MODULE_FILES:
+            (path.parent / member).write_bytes((SOURCE.parent / member).read_bytes())
         path.write_bytes(self.raw if data is None else data)
         return path
 
@@ -225,7 +228,7 @@ class CallerOriginTests(unittest.TestCase):
             with self.subTest(source=name), bounded():
                 self.assert_component_only(execute(self.raw, location))
         with self.subTest(source='no __file__'):
-            namespace = {'__name__': 'bare'}
+            namespace = {'__name__': 'bare', '_CAIRN_BUNDLE': fixtures.bundle.Bundle(SOURCE.parent)}
             exec(compile(self.raw, 'memory.py', 'exec'), namespace)
             self.assert_component_only(types.SimpleNamespace(**namespace))
         with self.subTest(source='unreadable'):
@@ -410,6 +413,10 @@ class BoundEngineTests(unittest.TestCase):
         engine.write_bytes(engine.read_bytes() + b'\n# the pinned engine is not the hook module\n')
         manifest = json.loads(case.binding.read_text())
         manifest['engine']['sha256'] = sha256(engine)
+        descriptor = fixtures.bundle.bundle_descriptor(case.root)
+        for role in ('engine', 'bridge'):
+            manifest[role]['bundle'] = descriptor
+        (case.root / fixtures.bundle.MANIFEST).write_text(json.dumps(descriptor))
         case.binding.write_text(json.dumps(manifest))
         return engine
 
@@ -434,15 +441,15 @@ class BoundEngineTests(unittest.TestCase):
         bridge = fixtures.memory.load_inbox_recall(case.mc, validate=False)
         path = case.root / 'memory.py'
         pinned = path.read_bytes()
-        real = bridge.checked_file
+        real = bridge._BUNDLE.check_pinned
 
-        def racing(spec):
-            checked, raw = real(spec)
-            if checked == path:  # replaced after its pin was validated, before the engine runs
-                checked.write_bytes(raw + b'\n# replaced after the pin was validated\n')
-            return checked, raw
+        def racing(spec, role):
+            checked, sources = real(spec, role)
+            if role == 'memory':  # replacement after the complete snapshot was validated
+                checked.write_bytes(sources['memory.py'] + b'\n# replaced after the pin was validated\n')
+            return checked, sources
 
-        with patch.object(bridge, 'checked_file', racing):
+        with patch.object(bridge._BUNDLE, 'check_pinned', racing):
             engine, config = bridge.binding(case.mc)
         self.assertNotEqual(path.read_bytes(), pinned)
         engine.Memory(config, 'session').call('history', payload=dict(record_id=fixtures.RECORD))

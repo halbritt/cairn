@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install Cairn lifecycle hooks alongside existing Claude Code settings."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,11 @@ import shutil
 import sys
 import tempfile
 
+
+ROOT = Path(__file__).resolve().parents[1]
+_bundle_spec = importlib.util.spec_from_file_location("cairn_lifecycle_bundle_installer", ROOT / "integrations/lifecycle/lifecycle_bundle.py")
+bundle = importlib.util.module_from_spec(_bundle_spec)
+_bundle_spec.loader.exec_module(bundle)
 
 CLAUDE_CONTEXT_BYTES = 9500
 
@@ -51,6 +57,24 @@ def retain_capture_observations(config, existing_path):
     return result
 
 
+def retain_inbox_binding(config, existing_path):
+    """Require a disabled binding before an explicit installed-runtime upgrade."""
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(existing)
+    result.update(config)
+    if "state_dir" in existing:
+        result["state_dir"] = existing["state_dir"]
+    binding = existing.get("inbox_recall_binding") or result.get("inbox_recall_binding")
+    if binding:
+        if result.get("inbox_recall_binding", binding) != binding:
+            raise ValueError("lifecycle reinstall cannot replace the recall binding")
+        manifest = json.loads(Path(binding).read_text())
+        if manifest.get("enabled") is not False:
+            raise ValueError("disable the recall binding before reinstalling; repin and validate before re-enabling")
+        result["inbox_recall_binding"] = binding
+    return result
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
@@ -72,6 +96,7 @@ def install(settings_path, destination, config, preview_model=None, recall_model
     config = retain_model_overrides(config, config_path, preview_model, recall_model)
     config = retain_recall_mode(config, config_path, recall_mode)
     config = retain_capture_observations(config, config_path)
+    config = retain_inbox_binding(config, config_path)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         groups = hooks.setdefault(event, [])
@@ -83,11 +108,11 @@ def install(settings_path, destination, config, preview_model=None, recall_model
                                  "timeout": 150 if event in ("PreCompact", "SessionEnd") else 13}]})
     original = settings_path.read_bytes() if settings_path.exists() else None
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py", script)
-    script.chmod(0o700)
+    bundle.stage_runtime(ROOT / "integrations/lifecycle", destination,
+                         entrypoints={"memory.py": "lifecycle.py"})
     # Claude Code keeps only about 10,000 characters of hook additionalContext
     # (measured 2026-09-24); keep injected memory under it.
-    write_json(config_path, dict(config, state_dir=str(destination / "state"),
+    write_json(config_path, dict(config, state_dir=config.get("state_dir", str(destination / "state")),
                                  semantic_fallback=config.get("semantic_fallback", True),
                                  context_bytes=config.get("context_bytes", CLAUDE_CONTEXT_BYTES)))
     backup = settings_path.with_name(settings_path.name + ".before-cairn-lifecycle")
