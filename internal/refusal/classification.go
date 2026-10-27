@@ -15,7 +15,7 @@ const DefaultHTTPStatus = 422
 const privateCLIMessage = "operation failed; inspect the local store and task runtime"
 
 var classifications = map[string]Classification{
-	"AGENT_BUSY":               {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"AGENT_BUSY":               {HTTPStatus: 409, ExitCode: 4},
 	"API_CONNECTION_FAILED":    {HTTPStatus: 422, ExitCode: 7},
 	"ARTIFACT_CHANGED":         {HTTPStatus: 422, ExitCode: 4},
 	"ARTIFACT_MISMATCH":        {HTTPStatus: 422, ExitCode: 4},
@@ -29,11 +29,11 @@ var classifications = map[string]Classification{
 	"CHECKPOINT_MISMATCH":      {HTTPStatus: 422, ExitCode: 7},
 	"CLIENT_SETUP_FAILED":      {HTTPStatus: 422, ExitCode: 7},
 	"CUSTODY_CONFLICT":         {HTTPStatus: 422, ExitCode: 4},
-	"DELIVERY_ACTIVE":          {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"DELIVERY_ACTIVE":          {HTTPStatus: 409, ExitCode: 4},
 	"DEPENDENCY_CONFLICT":      {HTTPStatus: 422, ExitCode: 4},
 	"DESTINATION_PROHIBITED":   {HTTPStatus: 422, ExitCode: 2},
 	"EVIDENCE_UNAVAILABLE":     {HTTPStatus: 422, ExitCode: 2},
-	"FORGET_REQUIRED":          {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"FORGET_REQUIRED":          {HTTPStatus: 409, ExitCode: 4},
 	"HOLD_RELEASED":            {HTTPStatus: 422, ExitCode: 4},
 	"IDEMPOTENCY_CONFLICT":     {HTTPStatus: 409, ExitCode: 4},
 	"IMPACT_PREVIEW_REQUIRED":  {HTTPStatus: 422, ExitCode: 2},
@@ -45,8 +45,8 @@ var classifications = map[string]Classification{
 	"OPEN_CONFLICT":            {HTTPStatus: 422, ExitCode: 2},
 	"PAYLOAD_UNAVAILABLE":      {HTTPStatus: 409, ExitCode: 4},
 	"POLICY_UNENFORCEABLE":     {HTTPStatus: 422, ExitCode: 2},
-	"POOL_FULL":                {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
-	"POOL_PAUSED":              {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"POOL_FULL":                {HTTPStatus: 409, ExitCode: 4},
+	"POOL_PAUSED":              {HTTPStatus: 409, ExitCode: 4},
 	"PROTOCOL_UNSUPPORTED":     {HTTPStatus: 426, ExitCode: 7},
 	"PURGE_UNRECORDED":         {HTTPStatus: 422, ExitCode: 7},
 	"REFUSAL_UNRECORDED":       {HTTPStatus: 500, ExitCode: 7, HTTPMessage: "store operation failed"},
@@ -67,13 +67,13 @@ var classifications = map[string]Classification{
 	"STALE_PACKAGE":            {HTTPStatus: 409, ExitCode: 4},
 	"STALE_PREVIEW":            {HTTPStatus: 422, ExitCode: 4},
 	"STALE_PROPOSAL":           {HTTPStatus: 422, ExitCode: 4},
-	"STALE_RESOLUTION":         {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"STALE_RESOLUTION":         {HTTPStatus: 409, ExitCode: 4},
 	"STALE_RESTORE":            {HTTPStatus: 422, ExitCode: 4},
 	"STALE_SESSION":            {HTTPStatus: 409, ExitCode: 4},
-	"STALE_WORKER":             {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"STALE_WORKER":             {HTTPStatus: 409, ExitCode: 4},
 	"STORE_ERROR":              {HTTPStatus: 500, ExitCode: 7, HTTPMessage: "store operation failed", CLIMessage: privateCLIMessage},
 	"VERSION_CONFLICT":         {HTTPStatus: 409, ExitCode: 4},
-	"WORKER_UNAVAILABLE":       {HTTPStatus: 409, ExitCode: 7, CLIMessage: privateCLIMessage},
+	"WORKER_UNAVAILABLE":       {HTTPStatus: 409, ExitCode: 4},
 }
 
 // Classify retains the open-code contracts: HTTP passes unknown refusal text

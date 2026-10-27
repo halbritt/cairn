@@ -210,6 +210,11 @@ Exit codes: 0 command success, 2 invalid request/policy refusal, 3 not found,
 A wrapped process's nonzero exit gives CLI exit 1; timeout gives 124 and
 cancellation 130. A child terminated by a signal gives 128 plus the signal
 number. The receipt records the observed child exit separately.
+Coordination conflicts (`STALE_WORKER`, `WORKER_UNAVAILABLE`, `POOL_FULL`,
+`POOL_PAUSED`, `STALE_RESOLUTION`, `AGENT_BUSY`, `DELIVERY_ACTIVE`) and
+`FORGET_REQUIRED` use exit 4 and retain their refusal explanation. Unknown error
+codes use exit 7 with a generic message to avoid exposing private store details.
+
 
 
 ## Governed policy

@@ -35,9 +35,9 @@ func TestCLIRefusalClassification(t *testing.T) {
 		{"AUTHORITY_DENIED", 6, true}, {"RESTORE_PAUSED", 7, true}, {"REFUSAL_UNRECORDED", 7, true},
 		{"RUN_FAILED", 1, true}, {"BUDGET_REFUSED", 2, true}, {"STALE_SESSION", 4, true},
 		{"STORE_ERROR", 7, false}, {"UNRECOGNIZED_CODE", 7, false},
-		{"STALE_WORKER", 7, false}, {"WORKER_UNAVAILABLE", 7, false}, {"POOL_FULL", 7, false},
-		{"POOL_PAUSED", 7, false}, {"STALE_RESOLUTION", 7, false}, {"AGENT_BUSY", 7, false},
-		{"DELIVERY_ACTIVE", 7, false}, {"FORGET_REQUIRED", 7, false},
+		{"STALE_WORKER", 4, true}, {"WORKER_UNAVAILABLE", 4, true}, {"POOL_FULL", 4, true},
+		{"POOL_PAUSED", 4, true}, {"STALE_RESOLUTION", 4, true}, {"AGENT_BUSY", 4, true},
+		{"DELIVERY_ACTIVE", 4, true}, {"FORGET_REQUIRED", 4, true},
 	}
 	requested := make(chan refusalCase, 1)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

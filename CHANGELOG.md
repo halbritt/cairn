@@ -15,6 +15,14 @@ and MCP processes.
 
 ## 2026-10-27
 
+- The CLI now reports ordinary coordination conflicts (`STALE_WORKER`,
+  `WORKER_UNAVAILABLE`, `POOL_FULL`, `POOL_PAUSED`, `STALE_RESOLUTION`,
+  `AGENT_BUSY`, `DELIVERY_ACTIVE`) and `FORGET_REQUIRED` with exit 4 and their
+  existing diagnostic text. They previously fell through to exit 7 and a
+  generic infrastructure error. HTTP classifications are unchanged. One shared
+  table now supplies CLI exit/message policy, HTTP status/message policy and
+  generated API error mappings; unknown CLI errors remain scrubbed.
+
 - Codex native fixtures now share one app-server session module
   (`scripts/codex_app_server_session.py`) instead of five hand-written JSON-RPC
   clients and separate `turn/completed` loops. It owns matching, deadlines,
