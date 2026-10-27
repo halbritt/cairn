@@ -278,6 +278,18 @@ class ServerTests(unittest.TestCase):
                     server.wait_ready(timeout=5)
                 self.assertIn(category, str(caught.exception))
 
+    def test_exists_probe_accepts_a_plain_path(self):
+        socket_path = self.directory / "plain.sock"
+        server = dh.launch_server(self.binary, dict(os.environ, FAKE_SERVE="listen"), socket_path=socket_path)
+        try:
+            socket_path.write_text("")
+            with self.assertRaises(dh.HostRefusal):
+                server.wait_ready(timeout=1)
+            self.assertIs(server.wait_ready(timeout=1, probe="exists"), server)
+        finally:
+            socket_path.unlink(missing_ok=True)
+            server.stop()
+
     def test_log_mode_points_at_the_log(self):
         log = self.directory / "api.log"
         server = dh.launch_server(self.binary, dict(os.environ, FAKE_SERVE="exit_store_error"),

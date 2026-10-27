@@ -502,12 +502,23 @@ class ApiServer:
     def poll(self):
         return self.process.poll()
 
-    def wait_ready(self, timeout=10):
+    def wait_ready(self, timeout=10, *, probe="accept"):
+        """Wait until the server is ready or refuse with its failure class.
+
+        ``probe="accept"`` requires a Unix socket that accepts a connection.
+        ``probe="exists"`` is the historical contract that only requires the
+        path to exist; TrialStore keeps it because pinned trial consumers drive
+        it with synthetic binaries that create the path without listening.
+        """
+        require(probe in ("accept", "exists"), "unknown readiness probe")
         deadline = time.monotonic() + timeout
         while True:
             if self.process.poll() is not None:
                 raise HostRefusal(f"{self.label} did not start: " + self.failure_class())
             if self.socket.exists():
+                if probe == "exists":
+                    self.discard_capture()
+                    return self
                 require(stat.S_ISSOCK(self.socket.stat().st_mode), f"{self.label} socket missing")
                 if socket_accepts(self.socket):
                     self.discard_capture()

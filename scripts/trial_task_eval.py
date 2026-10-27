@@ -561,7 +561,7 @@ class TrialStore:
         api = disposable_host.launch_server(self.binary, self.env, socket_path=self.socket, args=extra,
                                             log=self.root / "api.log", label="candidate API")
         self.log, self.server = api.log, api.process
-        api.wait_ready(timeout=30)
+        api.wait_ready(timeout=30, probe="exists")  # pinned consumers use synthetic binaries
 
     def wait_for_full_coverage(self, timeout=1800):
         """Separate cold backfill from warm agent timing for the passage index."""
