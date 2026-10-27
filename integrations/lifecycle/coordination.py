@@ -2642,6 +2642,39 @@ def unacknowledged_turn_end_reminder(config, state, path, observation):
     return reminder
 
 
+def inbox_handoff(config, session, delivery, attempt_id, request_ids, *, scope=()):
+    """Build the persisted inbox context and its journaled commands for one held delivery.
+
+    Admission, lease ownership, and native-turn validation belong to the caller.
+    Native and manual-drain routes share the source identity and command format.
+    """
+    event = delivery['event']
+    target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
+    common = ['--socket', config['socket'], '--token-file', config['token_file'],
+              '--agent-id', session['agent_id'], '--execution-id', session['execution_id']]
+    leased = [*common, '--request-id', request_ids['completion'], '--lease', delivery['lease_id']]
+    commands = dict(complete=[config['cairn'], 'complete', *leased, *scope,
+                              '--shareable', '--stdin', delivery['delivery_id']],
+                    ack=[config['cairn'], 'ack', *leased, delivery['delivery_id']])
+    if event['kind'] == 'request':
+        commands['respond'] = [config['cairn'], 'publish', *common, '--request-id', request_ids['response'],
+                               '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
+        if event.get('correlation_id'):
+            commands['respond'] += ['--correlation-id', event['correlation_id']]
+    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
+    context = dict(schema='cairn.session-inbox/1', **session, attempt_id=attempt_id,
+                   event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
+                   delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
+                   read=[config['cairn'], 'agent', '--socket', config['socket'],
+                         '--token-file', config['token_file'], 'history'],
+                   read_input=event['ref'], completion=[*journaled, 'complete'],
+                   acknowledgement=[*journaled, 'ack'], state_dir=config['state_dir'],
+                   commands=commands, request_ids=request_ids)
+    if event['kind'] == 'request':
+        context['response'] = [*journaled, 'respond']
+    return target, context
+
+
 def inbox_context(config, state, path, observation, wake_binding=None):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
@@ -2756,36 +2789,15 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         state['inbox_completion'] = str(uuid.uuid4())
     if not state.get('inbox_response'):
         state['inbox_response'] = str(uuid.uuid4())
-    common = ['--socket', config['socket'], '--token-file', config['token_file'],
-              '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
-              '--request-id', state['inbox_completion'], '--lease', delivery['lease_id']]
-    commands = dict(complete=[config['cairn'], 'complete', *common, *completion_scope(state, attempt),
-                              '--shareable', '--stdin', delivery['delivery_id']],
-                    ack=[config['cairn'], 'ack', *common, delivery['delivery_id']])
-    if event['kind'] == 'request':
-        commands['respond'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],
-            '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
-            '--request-id', state['inbox_response'], '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
-        if event.get('correlation_id'):
-            commands['respond'] += ['--correlation-id', event['correlation_id']]
-    target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
+    target, context = inbox_handoff(config, attempt['session'], delivery, attempt['attempt_id'],
+        dict(completion=state['inbox_completion'], response=state['inbox_response']),
+        scope=completion_scope(state, attempt))
     session_journals(config, state)
     write_state(path, state)  # The journal list names this attempt before the agent can act.
-    # The agent runs these through the journal so a reply lost in transit is
-    # replayed by the host before it reconciles or leaves.
-    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
-    context = dict(schema='cairn.session-inbox/1', **attempt['session'], attempt_id=attempt['attempt_id'],
-        event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
-        delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
-        read=[config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history'],
-        read_input=event['ref'], completion=[*journaled, 'complete'], acknowledgement=[*journaled, 'ack'],
-        state_dir=config['state_dir'], commands=commands,
-        request_ids=dict(completion=state['inbox_completion'], response=state['inbox_response']))
     if attempt.get('native_turn_id'):
         context['native_turn_id'] = attempt['native_turn_id']
     if event['kind'] == 'request':
-        context['response'] = [*journaled, 'respond']
-        context['finish_reply'] = [*journaled, 'finish-reply']
+        context['finish_reply'] = [*context['completion'][:-1], 'finish-reply']
     if config.get('compact_inbox_version') == 1 and event['kind'] in ('notice', 'response'):
         if config.get('notice_batch_version') == 1 and event['kind'] == 'notice' and attempt.get('native_turn_id'):
             context['batch_advance_request_id'] = str(uuid.uuid4())
@@ -4298,30 +4310,13 @@ def drain_command(argv):
     attempt_id = 'drain-' + delivery['lease_id']
     common = ['--socket', config['socket'], '--token-file', config['token_file'],
               '--agent-id', session['agent_id'], '--execution-id', session['execution_id']]
-    request_ids = dict(completion=str(uuid.uuid4()), response=str(uuid.uuid4()))
-    leased = [*common, '--request-id', request_ids['completion'], '--lease', delivery['lease_id']]
-    commands = dict(complete=[config['cairn'], 'complete', *leased, '--shareable', '--stdin', delivery['delivery_id']],
-                    ack=[config['cairn'], 'ack', *leased, delivery['delivery_id']])
-    if event['kind'] == 'request':
-        commands['respond'] = [config['cairn'], 'publish', *common, '--request-id', request_ids['response'],
-                               '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
-        if event.get('correlation_id'):
-            commands['respond'] += ['--correlation-id', event['correlation_id']]
-    target = Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')
-    read = [config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history']
-    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
-    context = dict(schema='cairn.session-inbox/1', **session, attempt_id=attempt_id, route='drain',
-                   event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
-                   delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'], read=read,
-                   read_input=event['ref'], completion=[*journaled, 'complete'],
-                   acknowledgement=[*journaled, 'ack'], state_dir=config['state_dir'],
-                   commands=commands, request_ids=request_ids)
-    if event['kind'] == 'request':
-        context['response'] = [*journaled, 'respond']
+    target, context = inbox_handoff(config, session, delivery, attempt_id,
+        dict(completion=str(uuid.uuid4()), response=str(uuid.uuid4())))
+    context['route'] = 'drain'
     write_state(target, context)  # Owner-only, before anything is printed.
     result = dict(schema='cairn.inbox-drain/1', delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
                   event_id=event['event_id'], kind=event['kind'], sender=event['from'], context=str(target),
-                  read=read, read_input=event['ref'], completion=context['completion'],
+                  read=context['read'], read_input=event['ref'], completion=context['completion'],
                   acknowledgement=context['acknowledgement'],
                   renew=[config['cairn'], 'renew', *common, '--lease', delivery['lease_id'],
                          '--lease-seconds', str(args.lease_seconds), delivery['delivery_id']],
