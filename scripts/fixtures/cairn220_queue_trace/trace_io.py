@@ -11,7 +11,7 @@ ERROR_CLASSES = {
     "KeyError", "TypeError", "WebSocketException", "ImportError", "FileNotFoundError",
     "CalledProcessError", "TimeoutExpired", "RuntimeError", "AssertionError",
 }
-STAGES = {"trace", "module_import", "_open", "_admit", "queue_add", "queue_start",
+STAGES = {"trace", "module_import", "observer_attach", "_open", "_admit", "queue_add", "queue_start",
           "observer_subscription", "observer_loaded_list", "observer_resume",
           "observer_connection", "observer_initialize", "observer_initialized",
           "observer_fallback", "watcher_start", "native_item_started", "bootstrap",

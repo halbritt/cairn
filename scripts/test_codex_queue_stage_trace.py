@@ -1,5 +1,6 @@
 """Regression checks for the opt-in CAIRN-220 private queue-stage trace."""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from integrations.lifecycle import lifecycle_bundle
+from scripts import test_codex_queue as queue_fixture
 
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -118,81 +122,115 @@ class CodexQueueStageTraceTests(unittest.TestCase):
         self.assertEqual(category, "socket_path_too_long")
         self.assertNotIn("private/path", category)
 
-    def test_trace_is_private_fixed_code_and_excludes_refusal_text(self):
-        with tempfile.TemporaryDirectory() as directory:
-            trace = Path(directory) / "trace.jsonl"
-            env = dict(os.environ)
-            env.update(
-                CAIRN220_QUEUE_TRACE=str(trace),
-                PYTHONPATH=os.pathsep.join((str(OBSERVER), str(LIFECYCLE))),
-            )
-            code = r"""
-import json, time
-import codex_queue
+    def observer(self):
+        sys.path.insert(0, str(OBSERVER))
+        try:
+            spec = importlib.util.spec_from_file_location("cairn220_observer", OBSERVER / "watcher.py")
+            observer = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(observer)
+            return observer
+        finally:
+            sys.path.remove(str(OBSERVER))
 
-class Peer:
-    def settimeout(self, _value): pass
-    def send(self, _value): pass
-    def recv(self):
-        return json.dumps({"id": 1, "error": {"code": -32600, "message": "PRIVATE WAKE TEXT"}})
+    def peer(self):
+        peer = queue_fixture.NativeQueue()
+        peer.setUp()
+        self.addCleanup(peer.doCleanups)
+        return peer
 
-rpc = codex_queue._Rpc(Peer(), time.monotonic() + 5)
-try:
-    rpc("thread/queue/add", {})
-except codex_queue.QueueRefused:
-    pass
-else:
-    raise AssertionError("the synthetic native refusal was not preserved")
-"""
-            completed = subprocess.run(
-                [sys.executable, "-c", code], env=env, capture_output=True, text=True, check=False
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(trace.stat().st_mode & 0o777, 0o600)
-            rows = [json.loads(line) for line in trace.read_text().splitlines()]
+    def test_installed_bundle_queue_trace_preserves_results_and_private_refusals(self):
+        observer = self.observer()
+        for outcome in ("confirm", "missing", "private_refusal"):
+            with self.subTest(outcome=outcome):
+                peer = self.peer()
+                root = Path(peer.temp.name)
+                installed = root / "installed"
+                lifecycle_bundle.stage_runtime(LIFECYCLE, installed)
+                trace = root / "trace.jsonl"
+                if outcome == "private_refusal":
+                    peer.serve(start_error={"code": -32600, "message": "PRIVATE NATIVE DETAIL"})
+                else:
+                    peer.serve(start=outcome)
+                with observer.observed_watcher(installed / "coordination.py", trace) as coordination:
+                    queue = coordination.queue_helper()
+                    result = queue.enqueue(peer.path, peer.process, "native-one", "PRIVATE WAKE TEXT", "delivery-one")
+                peer.join()
+                self.assertEqual(result, ("queued-one", outcome == "confirm"))
+                self.assertEqual(peer.methods(), ["initialize", "initialized", "thread/loaded/list",
+                                                   "thread/queue/add", "thread/queue/start"])
+                rows = [json.loads(line) for line in trace.read_text().splitlines()]
+                self.assertEqual(trace.stat().st_mode & 0o777, 0o600)
+                self.assertEqual([(row["stage"], row["outcome"]) for row in rows], [
+                    ("trace", "started"), ("observer_attach", "after"),
+                    ("_open", "before"), ("_open", "after"), ("_admit", "before"), ("_admit", "after"),
+                    ("queue_add", "before"), ("queue_add", "after"),
+                    ("queue_start", "before"), ("queue_start", "after" if outcome == "confirm" else "refused")])
+                added, started = rows[-3], rows[-1]
+                self.assertTrue(added["receipt_confirmed"])
+                self.assertTrue(added["delivery_id_matches"])
+                self.assertTrue(started["receipt_matches_start"])
+                if outcome == "confirm":
+                    self.assertTrue(started["turn_started"])
+                else:
+                    self.assertEqual(started["native_code"], -32600)
+                    self.assertEqual(started["error_class"], "QueueRefused")
+                    self.assertEqual(started["native_refusal_class"],
+                                     "submission_not_found" if outcome == "missing" else "invalid_request_other")
+                    self.assertNotIn("turn_started", started)
+                self.assertNotIn("PRIVATE", json.dumps(rows))
+                self.assertNotIn(peer.path, json.dumps(rows))
+                self.assertNotIn("delivery-one", json.dumps(rows))
 
-        self.assertEqual(
-            [(row["stage"], row["outcome"]) for row in rows],
-            [("trace", "started"), ("queue_add", "before"), ("queue_add", "refused")],
-        )
-        self.assertEqual(rows[-1]["error_class"], "QueueRefused")
-        self.assertEqual(rows[-1]["native_code"], -32600)
-        self.assertNotIn("PRIVATE WAKE TEXT", json.dumps(rows))
-        self.assertFalse(any("message" in row for row in rows))
+    def test_observer_does_not_trace_another_module_or_survive_its_scope(self):
+        observer = self.observer()
+        peer = self.peer()
+        root = Path(peer.temp.name)
+        installed = root / "installed"
+        lifecycle_bundle.stage_runtime(LIFECYCLE, installed)
+        trace = root / "trace.jsonl"
+        with observer.observed_watcher(installed / "coordination.py", trace) as coordination:
+            queue = coordination.queue_helper()
+            attached = trace.read_bytes()
+            # A normal imported queue has its own live connection; observing the
+            # installed coordinator must not patch that unrelated module.
+            peer.serve()
+            self.assertEqual(peer.enqueue(), ("queued-one", True))
+            peer.join()
+            self.assertEqual(trace.read_bytes(), attached)
+            peer.serve()
+            self.assertEqual(queue.enqueue(peer.path, peer.process, "native-one", "wake", "delivery-one"),
+                             ("queued-one", True))
+            peer.join()
+        recorded = trace.read_bytes()
+        peer.serve()
+        self.assertEqual(queue.enqueue(peer.path, peer.process, "native-one", "wake", "delivery-one"),
+                         ("queued-one", True))
+        peer.join()
+        self.assertEqual(trace.read_bytes(), recorded)
+        rows = [json.loads(line) for line in recorded.splitlines()]
+        self.assertEqual(sum(row["stage"] == "observer_attach" for row in rows), 1)
+        self.assertEqual(sum(row["stage"] == "queue_add" and row["outcome"] == "after" for row in rows), 1)
 
-    def test_queue_start_refusal_records_fixed_class_and_receipt_match(self):
-        with tempfile.TemporaryDirectory() as directory:
-            trace = Path(directory) / "trace.jsonl"
-            env = dict(os.environ)
-            env.update(
-                CAIRN220_QUEUE_TRACE=str(trace),
-                PYTHONPATH=os.pathsep.join((str(OBSERVER), str(LIFECYCLE))),
-            )
-            code = r"""
-import json, time
-import codex_queue
-class Peer:
-    def settimeout(self, _value): pass
-    def send(self, _value): pass
-    def recv(self):
-        return json.dumps({"id": 1, "error": {"code": -32600, "message": "PRIVATE NATIVE DETAIL"}})
-rpc = codex_queue._Rpc(Peer(), time.monotonic() + 5)
-try:
-    rpc("thread/queue/start", {"threadId": "thread", "queuedSubmissionId": "receipt"}, busy_ok=True)
-except codex_queue.QueueRefused:
-    pass
-else:
-    raise AssertionError("the synthetic start refusal was not preserved")
-"""
-            completed = subprocess.run([sys.executable, "-c", code], env=env,
-                                       capture_output=True, text=True, check=False)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            rows = [json.loads(line) for line in trace.read_text().splitlines()]
-        refusal = rows[-1]
-        self.assertEqual((refusal["stage"], refusal["outcome"]), ("queue_start", "refused"))
-        self.assertEqual(refusal["native_refusal_class"], "invalid_request_other")
-        self.assertFalse(refusal["receipt_matches_start"])
-        self.assertNotIn("PRIVATE NATIVE DETAIL", json.dumps(rows))
+    def test_watcher_launcher_validates_bundle_before_attachment(self):
+        for changed in (False, True):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                installed = root / "installed"
+                lifecycle_bundle.stage_runtime(LIFECYCLE, installed)
+                bindings = root / "bindings"
+                bindings.mkdir()
+                trace = root / "trace.jsonl"
+                if changed:
+                    helper = installed / "codex_queue.py"
+                    helper.write_bytes(helper.read_bytes() + b"\nCHANGED = True\n")
+                done = subprocess.run([sys.executable, str(OBSERVER / "watcher.py"),
+                                       str(installed / "coordination.py"), "watch", "--config-dir", str(bindings),
+                                       "--once"], env=dict(os.environ, CAIRN220_QUEUE_TRACE=str(trace)),
+                                      capture_output=True, text=True, timeout=5)
+                self.assertEqual(done.returncode == 0, not changed, done.stderr)
+                rows = [json.loads(line) for line in trace.read_text().splitlines()]
+                self.assertEqual([(row["stage"], row["outcome"]) for row in rows],
+                                 [("trace", "started"), ("observer_attach", "failed" if changed else "after")])
 
     def test_api_start_classifier_uses_only_fixed_path_category(self):
         sys.path.insert(0, str(SCRIPTS))

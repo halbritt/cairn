@@ -593,3 +593,14 @@ read Store state independently to verify the exact delivery and its attempts.
 Diagnostic classifications remain bounded metadata; they do not alone establish
 successful source reading or settlement. Historical verification records retain
 the checks and limitations of their original runs.
+
+The native wake probe explicitly attaches its fixture observer to the queue
+module loaded by the validated installed bundle. Both its default and
+`--scripted-handled` modes require observer attachment and invocation, a queue
+receipt joined to the native user-message item and the hook's Store attempt,
+and successful watcher and runner exits. Scripted mode additionally requires
+the exact source read and one handled settlement. A missing observer is reported
+separately from a queue refusal; receipt acceptance followed by idle
+auto-dispatch can still establish the join when a later explicit start reports
+that the submission no longer exists. See the
+[native wake verification record](verification/codex-app-server-wake-join-2026-10-25.md).

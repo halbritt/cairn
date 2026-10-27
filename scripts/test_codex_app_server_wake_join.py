@@ -3,6 +3,9 @@
 import hashlib
 import json
 import io
+import os
+from pathlib import Path
+import tempfile
 from contextlib import redirect_stdout
 import unittest
 from unittest.mock import patch
@@ -208,6 +211,10 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
             {"stage": "observer_initialize", "outcome": "failed",
              "error_class": "TimeoutExpired"},
         ]), "observer_initialize_failed")
+        self.assertEqual(_classify_missing_queue_trace([
+            {"stage": "watcher_start", "outcome": "before"},
+            {"stage": "watcher_start", "outcome": "after", "exit_zero": True},
+        ]), "queue_observer_trace_missing")
 
     def test_resume_refusal_classifier_keeps_only_source_known_reason_codes(self):
         cases = {
@@ -336,21 +343,139 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
                               if "private_refusal_message" in row), QueueRefused.message)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class QueueJoinEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.delivery_digest = hashlib.sha256(b"delivery-1").hexdigest()
+        self.turn_digest = hashlib.sha256(b"turn-1").hexdigest()
+        self.queue_rows = [
+            dict(stage="trace", outcome="started"),
+            dict(stage="observer_attach", outcome="after"),
+            dict(stage="queue_add", outcome="before"),
+            dict(stage="queue_add", outcome="after", receipt_confirmed=True,
+                 delivery_id_matches=True, delivery_id_sha256=self.delivery_digest,
+                 receipt_id_sha256=hashlib.sha256(b"receipt-1").hexdigest()),
+            dict(stage="queue_start", outcome="before"),
+            dict(stage="queue_start", outcome="after", receipt_matches_start=True, turn_started=True),
+        ]
+        self.item_rows = [dict(stage="native_item_started", outcome="observed",
+            delivery_id_matches=True, item_thread_matches=True, item_is_user_message=True,
+            delivery_id_sha256=self.delivery_digest, turn_id_sha256=self.turn_digest,
+            native_item_id_sha256=hashlib.sha256(b"item-1").hexdigest())]
+
+    def evidence(self, queue_rows=None, item_rows=None, hook_join=True):
+        return dict(hook_join=hook_join, watcher_exit=0, **wake._queue_join_evidence(
+            self.queue_rows if queue_rows is None else queue_rows,
+            self.item_rows if item_rows is None else item_rows,
+            "delivery-1", "turn-1", hook_join))
+
+    def test_auto_consumed_queue_still_joins_exact_receipt_item_hook_and_store(self):
+        self.queue_rows[-1] = dict(stage="queue_start", outcome="refused",
+            error_class="QueueRefused", receipt_matches_start=True,
+            native_refusal_class="submission_not_found")
+        report = self.evidence()
+        self.assertTrue(report["exact_queue_hook_store_join"])
+        self.assertTrue(wake._queue_join_succeeded(report, inside=True))
+        self.assertEqual(report["queue_start_rpc"], "refused")
+        self.assertEqual(report["queue_start_refusal_class"], "submission_not_found")
+        self.assertTrue(report["start_matches_receipt"])
+
+    def test_trace_file_or_attachment_without_a_queue_hit_cannot_prove_the_join(self):
+        cases = [
+            ([self.queue_rows[0]], "queue_observer_not_attached"),
+            ([self.queue_rows[0], dict(stage="observer_attach", outcome="failed")],
+             "queue_observer_not_attached"),
+            (self.queue_rows[:2], "queue_observer_not_hit"),
+            ([row for row in self.queue_rows if row["stage"] != "observer_attach"],
+             "queue_observer_not_attached"),
+            ([self.queue_rows[2], self.queue_rows[1], self.queue_rows[3]],
+             "queue_observer_not_hit"),
+        ]
+        for rows, stage in cases:
+            with self.subTest(stage=stage, rows=rows):
+                report = self.evidence(queue_rows=rows)
+                self.assertFalse(report["exact_queue_hook_store_join"])
+                self.assertEqual(wake._failure_stage(report, rows), stage)
+
+    def test_observed_join_is_retained_but_failed_watcher_cannot_pass_inside_gate(self):
+        good = self.evidence()
+        cases = [dict(good, watcher_exit=value) for value in (1, -15, False, None, "0")]
+        cases.append({key: value for key, value in good.items() if key != "watcher_exit"})
+        for report in cases:
+            with self.subTest(report=report):
+                self.assertTrue(report["exact_queue_hook_store_join"])
+                self.assertFalse(wake._queue_join_succeeded(report, inside=True))
+
+    def test_receipt_must_be_successful_and_match_expected_delivery(self):
+        for changes in (dict(receipt_confirmed=False), dict(delivery_id_matches=False),
+                        dict(delivery_id_sha256="0" * 64), dict(receipt_id_sha256=None),
+                        dict(outcome="before")):
+            rows = [dict(row) for row in self.queue_rows]
+            rows[3].update(changes)
+            with self.subTest(changes=changes):
+                report = self.evidence(queue_rows=rows)
+                self.assertFalse(report["exact_queue_hook_store_join"])
+
+    def test_native_item_must_match_expected_delivery_thread_and_store_turn(self):
+        for changes in (dict(delivery_id_sha256="0" * 64), dict(turn_id_sha256="0" * 64),
+                        dict(item_thread_matches=False), dict(item_is_user_message=False),
+                        dict(delivery_id_matches=False)):
+            with self.subTest(changes=changes):
+                report = self.evidence(item_rows=[dict(self.item_rows[0], **changes)])
+                self.assertFalse(report["exact_queue_hook_store_join"])
+                self.assertNotEqual(wake._failure_stage(report, self.queue_rows), "joined")
+        report = self.evidence(hook_join=False)
+        self.assertFalse(report["exact_queue_hook_store_join"])
+        self.assertEqual(wake._failure_stage(report, self.queue_rows), "hook_to_store_attempt")
+
+
+class ExplicitTracePreflightTests(unittest.TestCase):
+    def test_preflight_creates_private_trace_without_interpreter_startup_hook(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "trace.jsonl"
+            with patch.object(wake, "__file__", "/repo/scripts/check_codex_app_server_wake_join.py"), \
+                    patch.dict(os.environ, {"CAIRN220_QUEUE_TRACE": str(trace)}), \
+                    redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(wake._preflight_inner(), 0)
+            self.assertEqual(json.loads(output.getvalue())["trace_created"], True)
+            self.assertEqual(trace.stat().st_mode & 0o777, 0o600)
+            self.assertEqual([json.loads(line) for line in trace.read_text().splitlines()],
+                [dict(schema="cairn.codex-queue-stage/1", stage="trace", outcome="started")])
 
 
 class ScriptedRunnerExitTests(unittest.TestCase):
-    def test_scripted_runner_requires_read_and_store_settlement_confirmation(self):
+    def test_scripted_runner_requires_observed_full_join_read_and_store_settlement(self):
         good = dict(hook_join=True, exact_source_read=True, acknowledgement='handled_confirmed',
-                    settlement_exactly_once=True)
-        cases = [(good, 0), (dict(hook_join=True), 1)]
+                    settlement_exactly_once=True, queue_observer_attached=True,
+                    queue_observer_hit=True, exact_queue_hook_store_join=True, outer_exit=0,
+                    watcher_exit=0)
+        cases = [(good, 0), (dict(hook_join=True), 1), ({}, 1)]
         for field in good:
             cases.append((dict(good, **{field: False}), 1))
+        cases.extend((dict(good, outer_exit=value), 1) for value in (1, -15, False, None, "0"))
+        cases.append(({key: value for key, value in good.items() if key != "outer_exit"}, 1))
+        cases.extend((dict(good, watcher_exit=value), 1) for value in (1, -15, False, None, "0"))
+        cases.append(({key: value for key, value in good.items() if key != "watcher_exit"}, 1))
         for report, expected in cases:
             with self.subTest(report=report), patch.object(wake.sys, 'argv', ['fixture', '--scripted-handled']), \
                     patch.object(wake, 'run_once', return_value=report), redirect_stdout(io.StringIO()):
                 self.assertEqual(wake.main(), expected)
-        with patch.object(wake.sys, 'argv', ['fixture']), patch.object(wake, 'run_once', return_value=dict(hook_join=True)), \
-                redirect_stdout(io.StringIO()):
-            self.assertEqual(wake.main(), 0)
+
+    def test_default_runner_rejects_hook_only_and_missing_observer_evidence(self):
+        good = dict(hook_join=True, queue_observer_attached=True,
+                    queue_observer_hit=True, exact_queue_hook_store_join=True, outer_exit=0,
+                    watcher_exit=0)
+        cases = [(good, 0), (dict(hook_join=True), 1), ({}, 1)]
+        for field in good:
+            cases.append((dict(good, **{field: False}), 1))
+        cases.extend((dict(good, outer_exit=value), 1) for value in (1, -15, False, None, "0"))
+        cases.append(({key: value for key, value in good.items() if key != "outer_exit"}, 1))
+        cases.extend((dict(good, watcher_exit=value), 1) for value in (1, -15, False, None, "0"))
+        cases.append(({key: value for key, value in good.items() if key != "watcher_exit"}, 1))
+        for report, expected in cases:
+            with self.subTest(report=report), patch.object(wake.sys, 'argv', ['fixture']), \
+                    patch.object(wake, 'run_once', return_value=report), redirect_stdout(io.StringIO()):
+                self.assertEqual(wake.main(), expected)
+
+
+if __name__ == "__main__":
+    unittest.main()

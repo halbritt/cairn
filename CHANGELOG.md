@@ -28,6 +28,10 @@ and MCP processes.
   source and settlement fields. Matching text inside an error cannot confirm a
   source read or handled delivery. Independent Store checks still verify the
   delivery identity and attempt count.
+- The native wake probe now observes the queue module actually loaded by the
+  installed lifecycle bundle. Both probe modes require a connected queue receipt,
+  native item, hook and Store attempt, plus successful watcher and runner exits.
+  Missing observer evidence can no longer produce a successful probe result.
 
 ## 2026-10-24
 

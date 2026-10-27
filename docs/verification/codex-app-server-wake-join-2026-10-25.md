@@ -1,9 +1,8 @@
 # CAIRN-220 native wake join probe, 2026-10-25
 
-The initial runs below did not establish the watcher-to-Store join. The final
-section (`## Scripted continuation and handled settlement verified (2026-10-26)`)
-records the verified provider-free queue-to-Store join and `--scripted-handled`
-source-read and single-settlement proof. That fixture evidence remains separate
+The initial runs below did not establish the watcher-to-Store join. The later sections record the verified provider-free queue-to-Store join and
+`--scripted-handled` source-read and single-settlement proof. The final section
+records the observer repair and fresh verification after lifecycle bundle isolation. That fixture evidence remains separate
 from live provider/canary acceptance.
 
 ## Attempt record
@@ -500,3 +499,50 @@ This completes the provider-free native wake-to-Store join and scripted
 single-settlement fixture proof for CAIRN-220. Live provider wake reduction,
 latency distribution, and canary activation remain deferred under the
 [token-efficiency gate](token-efficiency-gate-2026-10-24.md).
+
+
+## Bundle-isolated observer restored (2026-10-26)
+
+The complete lifecycle bundle introduced at `c9724c1` loads queue helpers in a
+private module cache. The fixture's former `sitecustomize.py` observer patched
+an ordinary import instead. A local regression reproduced the mismatch with an
+installed bundle and a real Unix/WebSocket peer: enqueue and start completed,
+but the trace recorded only startup. The architecture verification run
+`6c0c2c0f6a73406eaf1ff74bbd988cd5` therefore established exact source reading
+and handled-once settlement without the queue receipt needed for the full join.
+Its `before_queue_add` classification described missing observations, not a
+proved queue execution failure.
+
+The fixture now launches
+`scripts/fixtures/cairn220_queue_trace/watcher.py`, which validates the staged
+installed bundle and observes the coordinator's actual queue module. It restores
+its wrappers on exit and retains the existing private, fixed-field trace format.
+Production lifecycle loading is unchanged. An attachment marker alone is
+insufficient: the checker requires an observed queue call and exact receipt,
+delivery, native user-message item and Store turn correspondence. Both probe
+modes also require successful watcher and outer-runner exits. Missing observers
+and missing invocation evidence have distinct failure classifications.
+
+Two fresh fake-auth, `bwrap --unshare-net` runs with Codex 0.164.0 and disposable
+PostgreSQL/API instances passed on the repaired fixture:
+
+- Default mode, run `8039838857b543b3adaadc49851fdd05`: observer attached and invoked,
+  `exact_queue_hook_store_join=true`, delivery leased, one delivery attempt.
+- Scripted mode, run `9459569b820a4a449e1a1daf3bcb723d`: observer attached and invoked,
+  `exact_queue_hook_store_join=true`, `exact_source_read=true`,
+  `acknowledgement="handled_confirmed"`, one acknowledgement tool call,
+  delivery handled, one delivery attempt, and `settlement_exactly_once=true`.
+
+Both watcher and outer-runner exits were zero. Queue-add confirmed the matching
+receipt; a later explicit queue-start returned `submission_not_found` for that
+receipt, consistent with the pinned idle auto-dispatch path already observed
+above. The independently observed native item and matching Store turn establish
+the join despite that later refusal. The default mode intentionally does not
+read or acknowledge the source.
+
+The final focused fixture/decoder/loopback/socket suite passed 68 tests. Its
+regressions reject absent observer evidence, mismatched identities, and failed
+watcher or runner exits even when other success fields are present. Private
+trace files remain under `~/.cache/cairn-220-native-wake-proof/` with the run IDs
+above. No external provider call, live deployment or canary acceptance is
+claimed; the existing token-efficiency gate still applies.

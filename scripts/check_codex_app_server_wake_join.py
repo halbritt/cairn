@@ -652,6 +652,8 @@ def _classify_missing_queue_trace(item_rows: list[dict]) -> str:
     outcomes = {(row.get("stage"), row.get("outcome")) for row in item_rows}
     if ("watcher_start", "before") in outcomes and ("watcher_start", "after") not in outcomes:
         return "watcher_start_incomplete"
+    if ("watcher_start", "after") in outcomes:
+        return "queue_observer_trace_missing"
     if ("observer_resume", "failed") in outcomes:
         return "observer_resume_failed"
     if ("observer_loaded_list", "failed") in outcomes:
@@ -1119,7 +1121,9 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                        "CAIRN220_QUEUE_TRACE": os.environ["CAIRN220_TRACE_TARGET"]}
         item_observer.record_watcher_start("before")
         try:
-            watcher = subprocess.run(["/usr/bin/python3", str(engine_root / "coordination.py"),
+            watcher = subprocess.run(["/usr/bin/python3",
+                "/repo/scripts/fixtures/cairn220_queue_trace/watcher.py",
+                str(engine_root / "coordination.py"),
                 "watch", "--config-dir", str(bindings), "--once"], env=watcher_env,
                 capture_output=True, timeout=30, check=False)
         except Exception as exc:
@@ -1207,45 +1211,23 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                 trace_rows = [json.loads(line) for line in stream]
         except (OSError, ValueError):
             pass
-        queue_add = next((row for row in reversed(trace_rows) if row.get("stage") == "queue_add"), {})
-        queue_start = next((row for row in reversed(trace_rows) if row.get("stage") == "queue_start"), {})
-        summary["queue_add_rpc"] = queue_add.get("outcome", "not_observed")
-        summary["receipt_confirmed"] = queue_add.get("receipt_confirmed", False)
-        summary["delivery_id_matches_receipt"] = queue_add.get("delivery_id_matches", False)
-        summary["queue_start_rpc"] = queue_start.get("outcome", "not_observed")
-        summary["start_matches_receipt"] = queue_start.get("receipt_matches_start", False)
-        summary["native_turn_started"] = queue_start.get("turn_started", False)
         item_trace_rows = []
         try:
             with open(os.environ["CAIRN220_ITEM_TRACE_TARGET"], encoding="utf-8") as stream:
                 item_trace_rows = [json.loads(line) for line in stream]
         except (OSError, ValueError):
             pass
-        observed_items = [row for row in item_trace_rows
-            if row.get("stage") == "native_item_started" and row.get("outcome") == "observed"
-            and row.get("delivery_id_matches") and row.get("item_thread_matches")]
-        started_item = observed_items[-1] if observed_items else {}
-        summary["item_started"] = "observed" if started_item else "not_observed"
-        summary["item_notification_trace_rows"] = len(item_trace_rows)
-        summary["queue_receipt_to_item_started"] = bool(
-            summary["receipt_confirmed"] and summary["delivery_id_matches_receipt"] and started_item
-            and started_item.get("delivery_id_sha256") == queue_add.get("delivery_id_sha256"))
-        summary["native_turn_hash_matches_store_attempt"] = bool(
-            started_item.get("turn_id_sha256") and turn_id and
-            started_item.get("turn_id_sha256") == _digest(turn_id.encode()))
-        summary["exact_queue_hook_store_join"] = bool(
-            summary["queue_receipt_to_item_started"] and summary["hook_join"] and
-            summary["native_turn_hash_matches_store_attempt"])
+        summary.update(_queue_join_evidence(
+            trace_rows, item_trace_rows, expected_delivery_id, turn_id, summary["hook_join"]))
         if summary["exact_queue_hook_store_join"]:
             summary["failure_stage"] = "joined"
         else:
             summary["failure_stage"] = _failure_stage(summary, trace_rows)
         result_path = root / "inside-result.json"
         _write_private(result_path, json.dumps(summary, sort_keys=True))
-        # A local Responses request can only be served from loopback in this net namespace.
-        if response_event.is_set():
-            return 0 if summary["hook_join"] else 1
-        return 0 if summary["failure_stage"] else 1
+        if scripted_handled:
+            return 0 if _scripted_handled_succeeded(summary, inside=True) else 1
+        return 0 if _queue_join_succeeded(summary, inside=True) else 1
     finally:
         if item_observer is not None:
             item_observer.close()
@@ -1268,25 +1250,101 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
             os.close(script_trace_fd)
 
 
+def _queue_observer_evidence(trace_rows: list[dict]) -> dict:
+    attached_at = next((index for index, row in enumerate(trace_rows)
+        if row.get("stage") == "observer_attach" and row.get("outcome") == "after"), None)
+    return {
+        "queue_observer_attached": attached_at is not None,
+        "queue_observer_hit": attached_at is not None and any(
+            row.get("stage") == "queue_add" and row.get("outcome") == "before"
+            for row in trace_rows[attached_at + 1:]),
+    }
+
+
+def _queue_join_evidence(trace_rows: list[dict], item_rows: list[dict],
+                         delivery_id: str, turn_id: str | None, hook_join: bool) -> dict:
+    """Join actual queue, native-item, and Store identities; attachment alone is not a hit."""
+    evidence = _queue_observer_evidence(trace_rows)
+    queue_add = next((row for row in reversed(trace_rows) if row.get("stage") == "queue_add"), {})
+    queue_start = next((row for row in reversed(trace_rows) if row.get("stage") == "queue_start"), {})
+    delivery_digest = _digest(delivery_id.encode())
+    observed_items = [row for row in item_rows
+        if row.get("stage") == "native_item_started" and row.get("outcome") == "observed"
+        and row.get("delivery_id_matches") is True and row.get("item_thread_matches") is True
+        and row.get("item_is_user_message") is True
+        and row.get("delivery_id_sha256") == delivery_digest]
+    started_item = observed_items[-1] if observed_items else {}
+    evidence.update(
+        queue_add_rpc=queue_add.get("outcome", "not_observed"),
+        receipt_confirmed=queue_add.get("outcome") == "after" and queue_add.get("receipt_confirmed") is True
+            and isinstance(queue_add.get("receipt_id_sha256"), str) and bool(queue_add["receipt_id_sha256"]),
+        delivery_id_matches_receipt=queue_add.get("delivery_id_matches") is True
+            and queue_add.get("delivery_id_sha256") == delivery_digest,
+        queue_start_rpc=queue_start.get("outcome", "not_observed"),
+        queue_start_refusal_class=queue_start.get("native_refusal_class"),
+        start_matches_receipt=queue_start.get("receipt_matches_start") is True,
+        native_turn_started=queue_start.get("turn_started") is True,
+        item_started="observed" if started_item else "not_observed",
+        item_notification_trace_rows=len(item_rows),
+        native_turn_hash_matches_store_attempt=bool(
+            turn_id and started_item.get("turn_id_sha256") == _digest(turn_id.encode())),
+    )
+    evidence["queue_receipt_to_item_started"] = bool(
+        evidence["receipt_confirmed"] and evidence["delivery_id_matches_receipt"] and started_item)
+    evidence["exact_queue_hook_store_join"] = bool(
+        evidence["queue_observer_attached"] and evidence["queue_observer_hit"]
+        and evidence["queue_receipt_to_item_started"] and hook_join
+        and evidence["native_turn_hash_matches_store_attempt"])
+    return evidence
+
+
+def _queue_join_succeeded(report: dict, *, inside: bool = False) -> bool:
+    if type(report.get("watcher_exit")) is not int or report["watcher_exit"] != 0:
+        return False
+    if not inside and (type(report.get("outer_exit")) is not int or report["outer_exit"] != 0):
+        return False
+    return (report.get("queue_observer_attached") is True
+            and report.get("queue_observer_hit") is True
+            and report.get("exact_queue_hook_store_join") is True
+            and report.get("hook_join") is True)
+
+
+def _scripted_handled_succeeded(report: dict, *, inside: bool = False) -> bool:
+    return (_queue_join_succeeded(report, inside=inside) and report.get("exact_source_read") is True
+            and report.get("acknowledgement") == "handled_confirmed"
+            and report.get("settlement_exactly_once") is True)
+
+
 def _failure_stage(summary: dict, trace_rows: list[dict]) -> str:
+    if not summary.get("queue_observer_attached"):
+        return "queue_observer_not_attached"
+    if not summary.get("queue_observer_hit"):
+        return "queue_observer_not_hit"
     for row in reversed(trace_rows):
         if row.get("outcome") == "refused":
             return row.get("stage", "other") + ":" + row.get("error_class", "OtherError")
     if summary["queue_add_rpc"] in ("before", "not_observed"):
         return "before_queue_add"
-    if summary["queue_start_rpc"] in ("before", "not_observed"):
+    if not summary.get("receipt_confirmed") or not summary.get("delivery_id_matches_receipt"):
         return "queue_add_or_receipt_validation"
-    if summary["user_prompt_submit"] == "not_observed":
-        return "queue_start_to_hook"
-    if summary["store_attempt"] != "observed":
+    if not summary.get("queue_receipt_to_item_started"):
+        return "queue_receipt_to_native_item"
+    if not summary.get("hook_join"):
         return "hook_to_store_attempt"
-    return "joined"
+    if not summary.get("native_turn_hash_matches_store_attempt"):
+        return "native_item_to_store_turn"
+    return "joined" if summary.get("exact_queue_hook_store_join") else "queue_hook_store_join_unconfirmed"
 
 
 def _preflight_inner() -> int:
     require(Path(__file__).resolve() == Path("/repo/scripts/check_codex_app_server_wake_join.py"),
             "runner_path_not_mounted")
     trace = Path(os.environ["CAIRN220_QUEUE_TRACE"])
+    descriptor = create_trace(str(trace))
+    try:
+        append_trace(descriptor, "trace", "started")
+    finally:
+        os.close(descriptor)
     info = trace.stat(follow_symlinks=False)
     require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and
             stat.S_IMODE(info.st_mode) == 0o600 and not trace.is_symlink(), "trace_path_not_private")
@@ -1389,6 +1447,10 @@ def run_once(scripted_handled: bool = False) -> dict:
                                                   if row.get("error_class")}))
         report["bootstrap_trace"] = bootstrap_path.name
         report["queue_trace_present"] = trace_present
+        report.update(_queue_observer_evidence(trace_rows))
+        if not report["queue_observer_attached"] or not report["queue_observer_hit"]:
+            report["exact_queue_hook_store_join"] = False
+            report["failure_stage"] = _failure_stage(report, trace_rows)
         report["item_trace_present"] = item_trace_present
         report["script_trace_present"] = script_trace_present if scripted_handled else False
         report["script_trace_rows"] = len(script_trace_rows)
@@ -1482,10 +1544,8 @@ def main() -> int:
         return 1
     print(json.dumps(report, sort_keys=True))
     if scripted_handled:
-        return 0 if (report.get("hook_join") and report.get("exact_source_read") is True
-                     and report.get("acknowledgement") == "handled_confirmed"
-                     and report.get("settlement_exactly_once") is True) else 1
-    return 0 if report.get("hook_join") else 1
+        return 0 if _scripted_handled_succeeded(report) else 1
+    return 0 if _queue_join_succeeded(report) else 1
 
 
 if __name__ == "__main__":
