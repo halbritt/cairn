@@ -135,7 +135,7 @@ class TransitionTableTests(unittest.TestCase):
             ("pending", True, True, True, "turn_ended_pending"),
             ("turn_ended", True, False, True, "turn_ended"),
             ("turn_ended", False, False, True, "turn_ended_pending"),
-            ("turn_ended", False, False, False, "turn_ended"),  # the Claude hook leaves it to the watcher
+            ("turn_ended", False, False, False, "turn_ended"),  # explicit non-strict settlement retains its prior diagnostic
             ("turn_ended", True, True, False, "turn_ended_pending"),
         ]
         for settlement, flush, raises, strict, expected in cases:
