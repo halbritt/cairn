@@ -2,7 +2,8 @@
 
 A lifecycle installation carries the complete implementation needed by its
 memory, coordination, and inbox recall entry points, including the shared
-hook admission module that decides whether any of them runs. The shared bundle
+hook admission module that decides whether any of them runs and the native
+session module that owns the session record's attempt transitions. The shared bundle
 module owns the file inventory, staging, validation, and dependency loading. Installers
 and current native fixtures use that inventory instead of maintaining separate
 lists of helper files.

@@ -153,9 +153,8 @@ def daemon_start_claim_evidence(config, state, attempt, *, coord=None):
 
 def recover_daemon_start_claim(config, native_session_id, attempt_id, *, check_only=False, coord=None):
     """Settle a start claim stranded on a Claude daemon-managed worker that never ran a turn (CAIRN-178)."""
-    path = coord.state_path(config, native_session_id)
-    with coord.session_lock(path):
-        state = json.loads(path.read_text())
+    with coord.open_native_session(config, native_session_id) as session:
+        state = session.record
         attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
         if (config.get('harness') != 'claude' or state.get('agent', {}).get('native_session_id') != native_session_id
                 or state.get('ending') or state.get('retired') or attempt.get('attempt_id') != attempt_id
@@ -178,26 +177,16 @@ def recover_daemon_start_claim(config, native_session_id, attempt_id, *, check_o
                      worker={k: worker[k] for k in ('pid', 'start', 'boot')}, **evidence)
         if check_only:
             return dict(status='eligible', attempt_id=attempt_id, worker=proof['worker'], native_record=proof)
-        state['daemon_start_claim'] = dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending')
-        state['inbox_turn_ended'] = True
-        state['delivered_since_idle'] = False
         state['process'] = worker
-        coord.write_state(path, state)
-        try:
-            settled = coord.flush_inbox_intents(config, state) and coord.end_turn_inbox(config, state, path)
-        except (coord.CoordinationError, OSError, ValueError, KeyError, TypeError):
-            settled = False
-        record = state['daemon_start_claim']
-        record['settlement'] = (state.get('inbox_close') or {}).get('reason', 'turn_ended') if settled else 'turn_ended_pending'
-        coord.write_state(path, state)
+        record = session.settle('daemon_start_claim',
+                                dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending'))
         return dict(record)
 
 
 def recover_refused_wake(config, native_session_id, attempt_id, native_turn_id, *, coord=None):
     """Operator step for a refusal this host recorded but could not settle at the time."""
-    path = coord.state_path(config, native_session_id)
-    with coord.session_lock(path):
-        state = json.loads(path.read_text())
+    with coord.open_native_session(config, native_session_id) as session:
+        state, path = session.record, session.path
         attempt = state.get('inbox_attempt') or {}
         recorded = state.get('wake_refusal_diagnostic') or {}
         if (state.get('agent', {}).get('native_session_id') != native_session_id
@@ -269,9 +258,8 @@ def native_refusal_proof(config, config_path, state, attempt, locators, *, coord
 
 def recover_native_refused_wake(config, config_path, native_session_id, attempt_id, locators, *, coord=None):
     """Operator step: settle an attempt stuck before the repair, from pinned native refusal records."""
-    path = coord.state_path(config, native_session_id)
-    with coord.session_lock(path):
-        state = json.loads(path.read_text())
+    with coord.open_native_session(config, native_session_id) as session:
+        state, path = session.record, session.path
         attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
         turn = attempt.get('native_turn_id')
         if (state.get('agent', {}).get('native_session_id') != native_session_id or state.get('ending') or state.get('retired')
@@ -415,9 +403,8 @@ def codex_refusal_proof(config, state, attempt, recorded, locators, *, coord=Non
 
 def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, *, check_only=False, coord=None):
     """Explicitly settle a proven ended Codex refusal; never claim, requeue, or replay it."""
-    path = coord.state_path(config, native_session_id)
-    with coord.session_lock(path):
-        state = json.loads(path.read_text())
+    with coord.open_native_session(config, native_session_id) as session:
+        state = session.record
         attempt = state.get('inbox_attempt') or {}
         recorded = state.get('wake_refusal_diagnostic') or {}
         turn = attempt.get('native_turn_id')
@@ -440,20 +427,9 @@ def recover_codex_refused_wake(config, native_session_id, attempt_id, locators, 
         proof = codex_refusal_proof(config, state, attempt, recorded, locators, coord=coord)
         if check_only:
             return dict(status='eligible', attempt_id=attempt_id, grant='absent', native_record=proof, **grant_evidence)
-        state['wake_refusal_diagnostic'] = dict(recorded, settlement='turn_ended', grant='absent',
-            recovery_origin='codex_native_records', native_record=proof, **grant_evidence)
-        state['inbox_turn_ended'] = True
-        state['delivered_since_idle'] = False
-        coord.write_state(path, state)
-        try:
-            settled = coord.flush_inbox_intents(config, state) and coord.end_turn_inbox(config, state, path)
-            if not settled:
-                state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
-                coord.write_state(path, state)
-        except (coord.CoordinationError, OSError, ValueError, KeyError, TypeError):
-            state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
-            coord.write_state(path, state)
-        return state['wake_refusal_diagnostic']
+        return session.settle('wake_refusal_diagnostic', dict(
+            recorded, settlement='turn_ended', grant='absent', recovery_origin='codex_native_records',
+            native_record=proof, **grant_evidence))
 
 
 def codex_ended_turn_proof(config, state, attempt, locators, *, coord=None):
@@ -534,9 +510,8 @@ def codex_ended_turn_proof(config, state, attempt, locators, *, coord=None):
 
 def recover_codex_ended_turn(config, native_session_id, attempt_id, locators, *, check_only=False, coord=None):
     """Explicitly settle a held Codex attempt whose queue turn ended on a provider error (CAIRN-179)."""
-    path = coord.state_path(config, native_session_id)
-    with coord.session_lock(path):
-        state = json.loads(path.read_text())
+    with coord.open_native_session(config, native_session_id) as session:
+        state = session.record
         attempt, intent = state.get('inbox_attempt') or {}, state.get('inbox_intent') or {}
         turn = attempt.get('native_turn_id')
         if (config.get('harness') != 'codex' or state.get('agent', {}).get('native_session_id') != native_session_id
@@ -557,17 +532,8 @@ def recover_codex_ended_turn(config, native_session_id, attempt_id, locators, *,
         proof['thread_status'] = health['status_type']
         if check_only:
             return dict(status='eligible', attempt_id=attempt_id, native_record=proof)
-        state['codex_ended_turn'] = dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending')
-        state['inbox_turn_ended'] = True
-        state['delivered_since_idle'] = False
-        coord.write_state(path, state)
-        try:
-            settled = coord.flush_inbox_intents(config, state) and coord.end_turn_inbox(config, state, path)
-        except (coord.CoordinationError, OSError, ValueError, KeyError, TypeError):
-            settled = False
-        record = state['codex_ended_turn']
-        record['settlement'] = (state.get('inbox_close') or {}).get('reason', 'turn_ended') if settled else 'turn_ended_pending'
-        coord.write_state(path, state)
+        record = session.settle('codex_ended_turn',
+                                dict(proof, attempt_id=attempt_id, at=time.time(), settlement='pending'))
         return dict(record, recovery_origin='codex_ended_turn')
 
 
@@ -705,19 +671,9 @@ def auto_settle_codex_refused_wake(config, state, path, *, coord=None):
         proof = proof_fn(config, state, attempt, recorded, locators) if proof_fn is not None else codex_refusal_proof(config, state, attempt, recorded, locators, coord=coord)
     except (err_cls, OSError, ValueError, KeyError, TypeError):
         return False
-    state['wake_refusal_diagnostic'] = dict(recorded, settlement='turn_ended', grant='absent',
-        recovery_origin='codex_native_records', native_record=proof)
-    state['inbox_turn_ended'] = True
-    state['delivered_since_idle'] = False
-    coord.write_state(path, state)
-    try:
-        settled = coord.flush_inbox_intents(config, state) and coord.end_turn_inbox(config, state, path)
-        if not settled:
-            state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
-            coord.write_state(path, state)
-    except (err_cls, OSError, ValueError, KeyError, TypeError):
-        state['wake_refusal_diagnostic']['settlement'] = 'turn_ended_pending'
-        coord.write_state(path, state)
+    coord.native_session(config, state, path).settle('wake_refusal_diagnostic', dict(
+        recorded, settlement='turn_ended', grant='absent', recovery_origin='codex_native_records',
+        native_record=proof))
     return True
 
 

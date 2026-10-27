@@ -117,6 +117,12 @@ class LifecycleBundleTests(unittest.TestCase):
             self.assertEqual(admission.decide("memory", dict(harness="codex"), event).reason, "disabled_env")
         (root / ".cairn-no-coordination").touch()
         self.assertTrue(modules["coordination"].coordination_excluded(root / "deeper"))
+        native = modules["coordination"]._native_session
+        self.assertEqual(Path(native.__file__), root / "native_session.py")
+        self.assertIs(modules["coordination"].NativeSession, native.NativeSession)
+        record = {}
+        modules["coordination"].clear_inbox(record, root / "unused.json")
+        self.assertEqual(record, {})
         self.assertTrue(admission.decide("memory", dict(harness="codex"), dict(event, session_id=str(__import__("uuid").uuid4()))).run)
 
     def test_copying_installed_bundle_preserves_checked_bytes_and_refuses_drift(self):

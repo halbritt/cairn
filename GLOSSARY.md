@@ -17,6 +17,12 @@ The one decision whether a lifecycle hook runs: environment guards, the account
 home, the event vocabulary, the session identity shape and the privacy-marker
 walk. Memory, coordination and bound inbox recall consume the same decision.
 
+**Native session record**:
+The host's `cairn.native-session/1` file for one conversation: its registration,
+owning process, held inbox attempt and settlement evidence. The NativeSession
+module owns its attempt-lifecycle transitions (intend, claim, renew, release,
+settle, retire); the key layout is implementation, not interface.
+
 **Native attempt cleanup**:
 The Store's interpretation of host observations about a native inbox attempt's
 turn, captured tools and terminal scan. Confirmed cancellation and revoked

@@ -46,6 +46,12 @@ and MCP processes.
   and lets sweep rows omit a request id. Upgrade note: deploy the binary and
   `scripts/recovery_model_report.py` together, since the report validates the
   action/outcome pairs it accepts.
+- The native session record's attempt lifecycle has one owner
+  (`native_session.py`, a new bundle member): intent, claim, batch handoff,
+  lease renewal, release, turn-end settlement and retirement are transitions
+  with offline table tests, and the transcript-proof recovery verifiers settle
+  through the same transition instead of re-spelling it. Nothing on disk
+  changes; see [the native session record](docs/native-inbox.md#the-native-session-record).
 - Lifecycle hooks share one admission decision (`hook_admission.py`, a new
   bundle member). Memory, coordination and bound inbox recall previously kept
   separate environment guards, account-home checks and privacy-marker walks

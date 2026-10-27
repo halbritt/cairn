@@ -633,3 +633,23 @@ when another account's merged configuration invokes them. Memory requires each
 harness's own session identity shape (UUIDs for Claude and Codex, `ses_…` for
 OpenCode, printable labels for Hermes); coordination accepts any printable
 native conversation ID within the API byte limit.
+
+## The native session record
+
+Each conversation's host state is one owner-only `cairn.native-session/1`
+file under the coordination state directory, keyed by binding and native
+session ID. `integrations/lifecycle/native_session.py` owns the record's
+attempt-lifecycle transitions: `admit_inbox` (intend one claim for this
+execution's slot and recover it), `recover` (replay a saved batch handoff,
+then claim), `refresh_attempt`, `renew`, `mark_turn_ended`, `release`
+(reconcile under one saved close, then clear), `end_turn` (name
+`delivery_completed` only when the journal proves it), `settle` (record a
+recovery proof, end the owning turn, reconcile, and record `turn_ended`,
+the store's close reason, or `turn_ended_pending`) and `retire`. The
+coordination hook, the watcher, the recovery CLI and the transcript-proof
+verifiers all go through those transitions; the file's key names and values
+are unchanged, so an older installed bundle reads the same record. The
+remaining presence and wake keys (`agent`, `process`, `idle_wake`,
+`wake_refusal`, `native_health`, `active_prompt` and the OpenCode cancel
+bookkeeping) are still written directly by their owners.
+

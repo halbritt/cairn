@@ -72,6 +72,28 @@ _wake_transport = _BUNDLE.load("wake_transport")
 _transcript_recovery = _BUNDLE.load("transcript_recovery")
 _grant_ledger = _BUNDLE.load("grant_ledger")
 GrantLedger = _grant_ledger.GrantLedger
+_native_session = _BUNDLE.load("native_session")
+# The session's collaborators late-bind to this module's names, so the entry
+# points below stay the one patchable path to every transition.
+_NATIVE_HOST = _native_session.Host(
+    call=lambda *a, **k: call(*a, **k), persist=lambda p, r: write_state(p, r), refusal=CoordinationError,
+    flush=lambda *a, **k: flush_inbox_intents(*a, **k), journal_committed=lambda *a, **k: journal_committed(*a, **k),
+    turn_end_diagnostic=lambda *a, **k: record_unacknowledged_turn_end(*a, **k),
+    session_ref=lambda agent: session_ref(agent), locate=lambda *a, **k: state_path(*a, **k),
+    lock=lambda p: session_lock(p), recover=lambda *a, **k: recover_inbox(*a, **k),
+    release=lambda *a, **k: release_inbox(*a, **k), renew=lambda *a, **k: renew_inbox(*a, **k),
+    end_turn=lambda *a, **k: end_turn_inbox(*a, **k))
+NativeSession = _native_session.NativeSession
+
+
+def native_session(config, state, path):
+    """The native session record held by the caller, with its transitions."""
+    return _native_session.NativeSession(config, path, state, _NATIVE_HOST)
+
+
+def open_native_session(config, native_id, *, create=False):
+    """Lock and load one conversation's record; yields its NativeSession."""
+    return _native_session.open_session(config, native_id, _NATIVE_HOST, create=create)
 
 
 class _CoordNamespace:
@@ -1594,62 +1616,13 @@ def heartbeat(config, state):
 
 
 def recover_inbox(config, state, path):
-    if state.get('batch_advance_intent'):
-        advance_batch_intent(config, state, path)
-    if state.get('inbox_intent') and not state.get('inbox_attempt'):
-        result = call(config, 'session-inbox-claim', state['inbox_intent'])
-        if result['attempt']:
-            state['inbox_attempt'] = result['attempt']
-        else:
-            state.pop('inbox_intent')
-        write_state(path, state)
+    """Replay a saved batch handoff and claim a pending intent (NativeSession.recover)."""
+    return native_session(config, state, path).recover()
 
 
 def advance_batch_intent(config, state, path):
-    """Replay one saved atomic notice handoff before interpreting local state."""
-    request = state.get('batch_advance_intent')
-    if not isinstance(request, dict) or set(request) != {'request_id', 'session', 'attempt_id', 'version'}:
-        raise CoordinationError('INVALID_HOST', 'native batch advance intent is malformed')
-    old = state.get('inbox_attempt') or {}
-    if (request['attempt_id'] != old.get('attempt_id') or request['session'] != old.get('session')
-            or request['version'] != 1 or not old.get('native_turn_id')):
-        raise CoordinationError('STALE_SESSION', 'native batch advance left its active turn')
-    try:
-        # Native inbox mutations require the base profile; the execution is
-        # fenced by the explicit session in the request body.
-        result = call(config, 'session-inbox-advance', request)
-    except CoordinationError as exc:
-        # A definite refusal transferred no hold. Do not replay it ahead of
-        # later settlement on every hook. Unknown transport results retain
-        # the exact intent for idempotent recovery.
-        if exc.code in ('DELIVERY_ACTIVE', 'INVALID_REQUEST', 'STALE_SESSION',
-                        'NOT_FOUND', 'AUTHORITY_DENIED', 'IDEMPOTENCY_CONFLICT'):
-            state.pop('batch_advance_intent')
-            write_state(path, state)
-        raise
-    if not isinstance(result, dict) or not isinstance(result.get('remainder', ''), str) or 'attempt' not in result:
-        raise CoordinationError('INVALID_HOST', 'native batch advance returned an invalid result')
-    next_attempt = result['attempt']
-    if next_attempt is not None:
-        expected_index = old.get('batch_index') or 1
-        if (not isinstance(next_attempt, dict) or next_attempt.get('attempt_id') != request['request_id'] or
-                next_attempt.get('session') != request['session'] or
-                next_attempt.get('native_turn_id') != old['native_turn_id'] or
-                next_attempt.get('batch_root') != (old.get('batch_root') or old['attempt_id']) or
-                next_attempt.get('batch_index') != expected_index + 1 or
-                next_attempt.get('batch_limit') != 3 or next_attempt.get('finished_at') or
-                (next_attempt.get('delivery') or {}).get('event', {}).get('kind') != 'notice'):
-            raise CoordinationError('INVALID_HOST', 'native batch advance changed item ownership')
-        state['inbox_attempt'] = next_attempt
-        state['inbox_intent'] = dict(request_id=next_attempt['attempt_id'], session=request['session'],
-                                     native_turn_id=next_attempt['native_turn_id'])
-        state['inbox_result_policy'] = dict(claim_request_id=next_attempt['attempt_id'], version=1)
-        for key in ('inbox_close', 'inbox_completion', 'inbox_response', 'inbox_ack_reminded',
-                    'inbox_ack_reminder_revision'):
-            state.pop(key, None)
-    state.pop('batch_advance_intent')
-    write_state(path, state)
-    return result
+    """Replay one saved atomic notice handoff (NativeSession.advance_batch)."""
+    return native_session(config, state, path).advance_batch()
 
 
 def opencode_inbox_control(config, state, path):
@@ -1836,57 +1809,13 @@ def submit_opencode_cancel(config, path, request):
 
 
 def release_inbox(config, state, path, reason, fenced=False):
-    if not fenced:
-        recover_inbox(config, state, path)
-    intent = state.get('inbox_intent')
-    if not intent:
-        return True
-    request = dict(session=intent['session'], attempt_id=intent['request_id'], reason=reason)
-    saved = state.get('inbox_close', {})
-    if saved.get('attempt_id') == request['attempt_id'] and saved.get('reason') != reason:
-        # The saved reconciliation may have committed before its reply was lost.
-        # Finish it under its own UUID; a new reason never replaces it unless the
-        # store proved nothing committed.
-        try:
-            call(config, 'session-inbox-reconcile', saved)
-        except CoordinationError as exc:
-            if not (exc.code == 'DELIVERY_ACTIVE' and saved['reason'] == 'delivery_completed'):
-                if not (fenced and exc.code == 'NOT_FOUND'):
-                    raise
-            else:
-                saved = {}
-                state.pop('inbox_close')
-                write_state(path, state)
-        if saved:
-            return clear_inbox(state, path)
-    if any(saved.get(k) != v for k, v in request.items()):
-        state['inbox_close'] = dict(request_id=str(uuid.uuid4()), **request)
-        write_state(path, state)
-    try:
-        call(config, 'session-inbox-reconcile', state['inbox_close'])
-    except CoordinationError as exc:
-        if exc.code == 'DELIVERY_ACTIVE' and reason == 'delivery_completed':
-            # A refusal commits nothing, so a later reason may use a new UUID.
-            state.pop('inbox_close')
-            write_state(path, state)
-            return False
-        # Leaving or a restore fence prevents a delayed claim from committing
-        # after an unknown attempt was found absent.
-        if not (fenced and exc.code == 'NOT_FOUND'):
-            raise
-    return clear_inbox(state, path)
+    """Reconcile and clear the held attempt (NativeSession.release)."""
+    return native_session(config, state, path).release(reason, fenced=fenced)
 
 
 def clear_inbox(state, path):
-    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'inbox_turn_ended', 'inbox_result_policy', 'inbox_ack_reminded', 'inbox_ack_reminder_revision',
-                'batch_advance_intent', 'held_refusal_observation',
-                'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
-                'cancel_scan_report', 'cancel_final_report',
-                'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
-        state.pop(key, None)
-    write_state(path, state)
-    return True
+    """Forget the attempt and everything that belonged to it (NativeSession.clear)."""
+    return native_session(None, state, path).clear()
 
 
 # Refusals that prove this exact request did not commit and never will. Any
@@ -2489,24 +2418,8 @@ def flush_inbox_intents(config, state, scope='attempt'):
 
 
 def renew_inbox(config, state, path, attempt):
-    """Renew a live lease. A lapsed lease leaves the durable hold in place."""
-    delivery = attempt['delivery']
-    if attempt.get('lease_lapsed'):
-        return delivery
-    try:
-        delivery = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
-            lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
-    except CoordinationError as exc:
-        if exc.code != 'STALE_LEASE':
-            raise
-        # The hold still excludes every other consumer. Completion under this
-        # exact lease is either accepted late or refused explicitly.
-        attempt['lease_lapsed'] = True
-        print(f"Cairn presence {config['binding']}: lease lapsed for attempt {attempt['attempt_id']}; "
-              "the hold remains until completion or reconciliation", file=sys.stderr)
-    attempt['delivery'] = delivery
-    write_state(path, state)
-    return delivery
+    """Renew a live lease; a lapsed lease leaves the durable hold (NativeSession.renew)."""
+    return native_session(config, state, path).renew(attempt)
 
 
 def journal_committed(config, state):
@@ -2570,17 +2483,8 @@ def record_unacknowledged_turn_end(config, state):
 
 
 def end_turn_inbox(config, state, path, fenced=False):
-    """Close an ended turn's attempt, naming completion when the journal proves it.
-
-    ``delivery_completed`` means the delivery was explicitly handled; ``turn_ended``
-    means the turn ended without it. A store refusal of the former falls back.
-    """
-    if journal_committed(config, state) and release_inbox(config, state, path, 'delivery_completed', fenced):
-        return True
-    if not fenced:
-        record_unacknowledged_turn_end(config, state)
-        write_state(path, state)
-    return release_inbox(config, state, path, 'turn_ended', fenced)
+    """Close an ended turn's attempt, naming completion when the journal proves it (NativeSession.end_turn)."""
+    return native_session(config, state, path).end_turn(fenced=fenced)
 
 
 def settle_inbox(config, state, path):
@@ -2774,9 +2678,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                 reminder = unacknowledged_turn_end_reminder(config, state, path, observation)
                 if reminder:
                     return reminder
-                if state.get('inbox_intent') and not state.get('inbox_turn_ended'):
-                    state['inbox_turn_ended'] = True  # Survives an uncertain flush for the watcher.
-                    write_state(path, state)
+                if state.get('inbox_intent'):
+                    native_session(config, state, path).mark_turn_ended()
                 try:
                     if flush_inbox_intents(config, state):
                         end_turn_inbox(config, state, path)
@@ -2827,11 +2730,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                 len(native_turn_id.encode('utf-8')) <= 256 and
                 not any(ord(character) < 32 for character in native_turn_id)):
             ordinary_codex_binding = dict(native_turn_id=native_turn_id)
-        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']),
-                                     **(wake_binding or replay_binding or ordinary_codex_binding))
-        state['inbox_result_policy'] = dict(claim_request_id=state['inbox_intent']['request_id'], version=1)
-        write_state(path, state)
-        recover_inbox(config, state, path)
+        native_session(config, state, path).admit_inbox(wake_binding or replay_binding or ordinary_codex_binding)
     attempt = state.get('inbox_attempt')
     if not attempt:
         return ''
@@ -2964,25 +2863,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
 
 
 def finish_presence(config, state, path, timeout=4, reason='process_exited'):
-    # Persist the logical end before contacting the API. A long-lived gateway
-    # process must not cause its finished conversation to be revived on recovery.
-    state['ending'] = True
-    state.setdefault('ending_reason', reason)
-    write_state(path, state)
-    if not state.get('agent'):
-        state['agent'] = call(config, 'agent-register', state['registration'], timeout=timeout)
-        write_state(path, state)
-    if not flush_inbox_intents(config, state, 'all'):
-        # Leaving would strand a result or reply that may still commit under this execution.
-        raise CoordinationError('INTENT_PENDING', 'a journaled inbox command is still uncertain; the session stays until it settles')
-    try:
-        call(config, 'agent-leave', session_ref(state['agent']), timeout=timeout)
-    except CoordinationError as exc:
-        if exc.code not in ('STALE_SESSION', 'NOT_FOUND'):
-            raise
-    release_inbox(config, state, path, state['ending_reason'], fenced=True)
-    state['retired'] = True
-    write_state(path, state)
+    """Persist the logical end, leave, release the hold and retire (NativeSession.retire)."""
+    return native_session(config, state, path).retire(reason, timeout=timeout)
 
 
 # The tool-boundary lookup shares the hook's budget: OpenCode kills its cue hook
@@ -3341,19 +3223,9 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
         state['wake_refusal_diagnostic'] = dict(diagnostic, settlement='held')
         write_state(path, state)
         return state['wake_refusal_diagnostic']
-    state['wake_refusal_diagnostic'] = dict(diagnostic, settlement='turn_ended')
-    state['inbox_turn_ended'] = True  # Survives a failed reconcile: the watcher settles, never renews.
-    if (state.get('active_prompt') or {}).get('id') == turn:
-        state.pop('active_prompt')  # The refused prompt never reaches a native Stop.
-    state['delivered_since_idle'] = False
-    write_state(path, state)
-    try:
-        if flush_inbox_intents(config, state):
-            end_turn_inbox(config, state, path)
-    except (CoordinationError, OSError, ValueError, KeyError, TypeError):
-        state['wake_refusal_diagnostic'] = dict(state['wake_refusal_diagnostic'], settlement='turn_ended_pending')
-        write_state(path, state)
-    return state['wake_refusal_diagnostic']
+    # The owning prompt ended here; the watcher settles a reconcile that did not finish.
+    return native_session(config, state, path).settle(
+        'wake_refusal_diagnostic', dict(diagnostic, settlement='turn_ended'), prompt=turn, strict=False)
 
 
 CLAUDE_NON_TURN_RECORDS = _transcript_recovery.CLAUDE_NON_TURN_RECORDS
