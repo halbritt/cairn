@@ -35,16 +35,18 @@ type SemanticCoverage struct {
 }
 
 func hasHybridRanking(ranking string) bool {
-	return ranking == "hybrid-scope-recency/1" || ranking == "hybrid-scope-recency/2" || ranking == "hybrid-scope-recency/3" || ranking == "hybrid-scope-recency/4"
+	spec, ok := ParseRanking(ranking)
+	return ok && spec.Channel == RankingHybrid
 }
 
 func hasInterleavedRanking(ranking string) bool {
-	ranking = legacyIndexedRanking(ranking)
-	return ranking == "interleaved-scope-recency/1" || ranking == "interleaved-scope-recency/2" || ranking == "interleaved-scope-recency/3" || ranking == "interleaved-scope-recency/4"
+	spec, ok := ParseRanking(ranking)
+	return ok && spec.Channel == RankingInterleaved
 }
 
 func hasIndexedRanking(ranking string) bool {
-	return hasHybridRanking(ranking) || hasInterleavedRanking(ranking)
+	spec, ok := ParseRanking(ranking)
+	return ok && (spec.Channel == RankingHybrid || spec.Channel == RankingInterleaved)
 }
 
 func passageDigest(hits []SemanticPassageHit) string {
@@ -123,7 +125,7 @@ func (s *Store) rankIndexedInputs(ctx context.Context, query, semanticQuery stri
 		if hasHybridRanking(retainedRanking) {
 			p.Schema = SchemaSemantic15
 		}
-	} else if strings.HasPrefix(retainedRanking, "interleaved-scope-recency/") || strings.HasPrefix(retainedRanking, "hybrid-scope-recency/") {
+	} else if channel, known := rankingChannelOf(retainedRanking); known && (channel == RankingInterleaved || channel == RankingHybrid) {
 		return nil, failure("REPLAY_INCOMPLETE", "retained indexed ranking is unsupported")
 	} else {
 		p.Ranking = indexedIDFRanking(p.Ranking)

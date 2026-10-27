@@ -184,15 +184,20 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 
 func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query, semanticQuery string) error {
 	spec, _ := LookupSchemaSpec(p.Schema)
+	// An unsupported identity parses to no channel flags and fails the checks below.
+	ranking, _ := ParseRanking(p.Ranking)
+	interleaved := ranking.Channel == RankingInterleaved
+	idf := ranking.Channel == RankingBinaryIDF
+	indexed := interleaved || ranking.Channel == RankingHybrid
 	if spec.RequiresQueryProjection || (spec.SupportsQueryProjection && p.Discovery != nil && p.Discovery.QueryProjection != nil) {
-		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, semanticQuery) != nil {
+		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !interleaved || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, semanticQuery) != nil {
 			return failure("INTEGRITY_FAILURE", "historical query projection is invalid")
 		}
 	} else if p.Discovery != nil && p.Discovery.QueryProjection != nil {
 		return failure("INTEGRITY_FAILURE", "query projection has the wrong schema")
 	}
 	if spec.IsPureIDF {
-		if !hasIDFRanking(p.Ranking) || p.IDF == nil || p.Discovery != nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
+		if !idf || p.IDF == nil || p.Discovery != nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "historical IDF search intent is invalid")
 		}
 		for _, e := range evaluations {
@@ -203,12 +208,12 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		return nil
 	}
 	if spec.IsIndexedIDF {
-		if !hasIndexedIDFRanking(p.Ranking) || p.IDF == nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
+		if !ranking.IndexedIDF || p.IDF == nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "historical indexed IDF intent is invalid")
 		}
 		return validateFrozenIndexed(p, evaluations)
 	}
-	if p.IDF != nil || hasIDFRanking(p.Ranking) {
+	if p.IDF != nil || idf {
 		return failure("INTEGRITY_FAILURE", "historical IDF metadata has the wrong schema")
 	}
 	for _, e := range evaluations {
@@ -216,7 +221,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 			return failure("INTEGRITY_FAILURE", "historical IDF score has the wrong schema")
 		}
 	}
-	if hasIndexedRanking(p.Ranking) {
+	if indexed {
 		if p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "invalid indexed retrieval intent")
 		}
@@ -229,7 +234,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 	}
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
 	if !spec.RequiresSemanticDiscovery && (!spec.SupportsSemanticDiscovery || p.Discovery == nil) {
-		if p.Discovery != nil || hasSemanticScopeRanking(p.Ranking) {
+		if p.Discovery != nil || ranking.Channel == RankingSemantic {
 			return invalid()
 		}
 		for _, e := range evaluations {
@@ -257,7 +262,7 @@ func validateFrozenDiscoveryInputs(p SemanticPackage, evaluations map[string]*Ca
 		}
 		return nil
 	}
-	if !hasSemanticScopeRanking(p.Ranking) || !semanticIdentityValid(d) {
+	if ranking.Channel != RankingSemantic || !semanticIdentityValid(d) {
 		return invalid()
 	}
 	scores := []SemanticScore{}

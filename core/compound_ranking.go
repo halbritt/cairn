@@ -9,32 +9,18 @@ import (
 // Adjacent-compound IDF versions retain the corresponding historical outer
 // entity/failure/literal tiers and preview policy. Only their term evidence changes.
 func legacyIDFRanking(version string) string {
-	switch version {
-	case "binary-idf-scope-recency/5":
-		return "binary-idf-scope-recency/1"
-	case "binary-idf-scope-recency/6":
-		return "binary-idf-scope-recency/2"
-	case "binary-idf-scope-recency/7":
-		return "binary-idf-scope-recency/3"
-	case "binary-idf-scope-recency/8":
-		return "binary-idf-scope-recency/4"
+	spec, ok := ParseRanking(version)
+	if !ok || spec.Channel != RankingBinaryIDF || !spec.CompoundTerms {
+		return version
 	}
-	return version
+	return spec.withoutCompoundTerms().String()
 }
 func hasAdjacentCompoundRanking(version string) bool {
-	return legacyIDFRanking(version) != version || hasIndexedIDFRanking(version)
+	spec, ok := ParseRanking(version)
+	return ok && spec.CompoundTerms
 }
 func adjacentIDFRanking(entities []EntityRef, signature string, literals []string) string {
-	switch idfRanking(entities, signature, literals) {
-	case "binary-idf-scope-recency/2":
-		return "binary-idf-scope-recency/6"
-	case "binary-idf-scope-recency/3":
-		return "binary-idf-scope-recency/7"
-	case "binary-idf-scope-recency/4":
-		return "binary-idf-scope-recency/8"
-	default:
-		return "binary-idf-scope-recency/5"
-	}
+	return rankingSpec(RankingBinaryIDF, rankingTierForIntent(entities, signature, literals)).withCompoundTerms().String()
 }
 
 type rankingLexicon struct {

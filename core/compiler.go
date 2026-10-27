@@ -832,11 +832,13 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
-	if version == "semantic-scope-recency/1" || hasIndexedRanking(version) || hasLiteralRanking(version) || hasIDFRanking(version) {
-		version = "lexical-scope-recency/4"
+	// An unsupported identity keeps generation 1: whole words, no stop lists.
+	generation := 1
+	if spec, ok := ParseRanking(version); ok {
+		generation = spec.Tokenizer
 	}
 	terms := lexical(text)
-	if version == "lexical-scope-recency/3" || version == "lexical-scope-recency/4" {
+	if generation >= 3 {
 		for word := range terms {
 			for _, part := range strings.Split(word, "_") {
 				if part != "" {
@@ -845,10 +847,10 @@ func rankingTerms(text, version string) map[string]bool {
 			}
 		}
 	}
-	if version == "lexical-scope-recency/2" || version == "lexical-scope-recency/3" || version == "lexical-scope-recency/4" {
+	if generation >= 2 {
 		removeRankingStopWords(terms, functionStopWords, functionStopSet)
 	}
-	if version == "lexical-scope-recency/4" {
+	if generation >= 4 {
 		removeRankingStopWords(terms, questionStopWords, questionStopSet)
 	}
 	return terms

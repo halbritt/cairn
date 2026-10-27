@@ -89,8 +89,8 @@ func matchesEntities(record, query []EntityRef) bool {
 }
 
 func hasEntityRanking(version string) bool {
-	version = legacyIndexedRanking(legacyIDFRanking(version))
-	return version == "lexical-scope-recency/7" || version == "semantic-scope-recency/4" || version == "hybrid-scope-recency/4" || version == "interleaved-scope-recency/4" || version == "binary-idf-scope-recency/4"
+	spec, ok := ParseRanking(version)
+	return ok && spec.Tier == RankingTierEntity
 }
 
 func entityReason(reason string, matched bool) string {

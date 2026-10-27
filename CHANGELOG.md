@@ -13,6 +13,15 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-10-27
+
+- The compiler now parses a sealed ranking identity such as
+  `binary-idf-scope-recency/6` once, into a declared channel, outer tier,
+  tokenizer generation and IDF evidence flags, instead of re-deriving each
+  property from the version number in separate places. Every sealed identity
+  renders byte-identically; retained packages, seals and replay are unchanged,
+  and a test proves the new table against the historical enumerations.
+
 ## 2026-10-26
 
 - Lifecycle installers now stage the complete implementation and validate its

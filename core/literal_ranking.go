@@ -32,9 +32,10 @@ func queryLiterals(query string) []string {
 	return literals
 }
 
+// Tiers are cumulative: failure and entity searches also prefer quoted literals.
 func hasLiteralRanking(version string) bool {
-	version = legacyIndexedRanking(legacyIDFRanking(version))
-	return version == "lexical-scope-recency/5" || version == "semantic-scope-recency/2" || version == "hybrid-scope-recency/2" || version == "interleaved-scope-recency/2" || version == "binary-idf-scope-recency/2" || hasFailureRanking(version) || hasEntityRanking(version)
+	spec, ok := ParseRanking(version)
+	return ok && spec.Tier >= RankingTierLiteral
 }
 
 func matchesLiteral(body string, literals []string) bool {

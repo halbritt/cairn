@@ -151,7 +151,7 @@ func queryPackageContract(p SemanticPackage) (SemanticPackage, error) {
 	switch p.Discovery.State {
 	case "ready":
 	case "unavailable", "invalid_result", "not_needed":
-		if *p.Discovery != (DiscoveryRanking{State: p.Discovery.State}) || (p.Ranking != "lexical-scope-recency/4" && p.Ranking != "lexical-scope-recency/5" && p.Ranking != "lexical-scope-recency/6" && p.Ranking != "lexical-scope-recency/7") {
+		if *p.Discovery != (DiscoveryRanking{State: p.Discovery.State}) || !hasFallbackLexicalRanking(p.Ranking) {
 			return p, failure("INTEGRITY_FAILURE", "invalid distinct query fallback contract")
 		}
 	default:

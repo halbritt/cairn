@@ -179,7 +179,8 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, err
 	}
 	spec, ok := LookupSchemaSpec(contract.Schema)
-	if !ok || !SupportedRanking(original.Semantic.Ranking) {
+	ranking, supported := ParseRanking(original.Semantic.Ranking)
+	if !ok || !supported {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	if err = spec.ValidateRecompileContract(original.Semantic, req); err != nil {
@@ -234,10 +235,12 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, err
 	}
 	lexicon := newRankingLexicon(req.Query, p.Ranking)
-	legacyLexicon := newRankingLexicon(req.Query, legacyIndexedRanking(p.Ranking))
+	// Mandatory and kind-filtered rows were scored before indexed IDF evidence
+	// existed; their retained features use the outer identity's lexicon.
+	legacyLexicon := newRankingLexicon(req.Query, ranking.withoutCompoundTerms().String())
 	idfMembers := []idfMember{}
 	var literals []string
-	if hasLiteralRanking(p.Ranking) {
+	if ranking.Tier >= RankingTierLiteral {
 		literals = queryLiterals(req.Query)
 	}
 	for _, e := range evaluations {
@@ -287,10 +290,10 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 			return Package{}, failure("INTEGRITY_FAILURE", "historical ranking features changed")
 		}
 		selection := Selection{Conflicts: e.Facts.Conflicts, Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory}
-		deferLexical := hasIndexedRanking(p.Ranking) || hasSemanticScopeRanking(p.Ranking)
+		deferLexical := ranking.Channel != RankingLexical && ranking.Channel != RankingBinaryIDF
 		admitEvaluatedCandidate(&p, selection, e, features, candidateLexicon.terms, req.Query, entityIntent, signatureSchema, spec.IsPureIDF, deferLexical, advisorySchema, true, pool, &idfMembers, &candidates)
 	}
-	if hasIndexedRanking(p.Ranking) {
+	if ranking.Channel == RankingHybrid || ranking.Channel == RankingInterleaved {
 		// Recreate the complete qualified dispute set before scoring, just as
 		// collectCandidates does. A kind-filtered companion can still be required.
 		if advisorySchema {

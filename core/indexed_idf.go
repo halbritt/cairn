@@ -2,33 +2,28 @@ package core
 
 import "fmt"
 
-// Versions 5–8 change only the ready indexed lexical channel. Their outer
-// preference tiers and preview policy remain those of versions 1–4.
+// Interleaved versions 5–8 change only the ready indexed lexical channel. Their
+// outer preference tiers and preview policy remain those of versions 1–4.
 func legacyIndexedRanking(ranking string) string {
-	switch ranking {
-	case "interleaved-scope-recency/5":
-		return "interleaved-scope-recency/1"
-	case "interleaved-scope-recency/6":
-		return "interleaved-scope-recency/2"
-	case "interleaved-scope-recency/7":
-		return "interleaved-scope-recency/3"
-	case "interleaved-scope-recency/8":
-		return "interleaved-scope-recency/4"
+	spec, ok := ParseRanking(ranking)
+	if !ok || !spec.IndexedIDF {
+		return ranking
 	}
-	return ranking
+	return spec.withoutCompoundTerms().String()
 }
-func hasIndexedIDFRanking(ranking string) bool { return legacyIndexedRanking(ranking) != ranking }
+func hasIndexedIDFRanking(ranking string) bool {
+	spec, ok := ParseRanking(ranking)
+	return ok && spec.IndexedIDF
+}
+
+// indexedIDFRanking adds indexed IDF evidence to a freshly resolved interleaved
+// identity; any other input yields the plain indexed IDF identity.
 func indexedIDFRanking(ranking string) string {
-	switch ranking {
-	case "interleaved-scope-recency/2":
-		return "interleaved-scope-recency/6"
-	case "interleaved-scope-recency/3":
-		return "interleaved-scope-recency/7"
-	case "interleaved-scope-recency/4":
-		return "interleaved-scope-recency/8"
-	default:
-		return "interleaved-scope-recency/5"
+	tier := RankingTierPlain
+	if spec, ok := ParseRanking(ranking); ok && spec.Channel == RankingInterleaved && !spec.IndexedIDF {
+		tier = spec.Tier
 	}
+	return rankingSpec(RankingInterleaved, tier).withIndexedIDF().String()
 }
 
 // The ready index's complete optional cohort includes zero-match sources and

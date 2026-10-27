@@ -36,22 +36,12 @@ type idfMember struct {
 }
 
 func hasIDFRanking(r string) bool {
-	r = legacyIDFRanking(r)
-	return strings.HasPrefix(r, "binary-idf-scope-recency/") && (r == "binary-idf-scope-recency/1" || r == "binary-idf-scope-recency/2" || r == "binary-idf-scope-recency/3" || r == "binary-idf-scope-recency/4")
+	spec, ok := ParseRanking(r)
+	return ok && spec.Channel == RankingBinaryIDF
 }
 
 func idfRanking(entities []EntityRef, signature string, literals []string) string {
-	version := "1"
-	if len(literals) > 0 {
-		version = "2"
-	}
-	if signature != "" {
-		version = "3"
-	}
-	if len(entities) > 0 {
-		version = "4"
-	}
-	return "binary-idf-scope-recency/" + version
+	return rankingSpec(RankingBinaryIDF, rankingTierForIntent(entities, signature, literals)).String()
 }
 
 func makeIDFMember(record Record, words, terms map[string]bool) idfMember {

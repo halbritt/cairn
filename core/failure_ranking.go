@@ -13,9 +13,10 @@ type FailureMatch struct {
 	ReviewVersion int    `json:"review_version"`
 }
 
+// The failure tier alone; an entity search carries failure matches under its own tier.
 func hasFailureRanking(version string) bool {
-	version = legacyIndexedRanking(legacyIDFRanking(version))
-	return version == "lexical-scope-recency/6" || version == "semantic-scope-recency/3" || version == "hybrid-scope-recency/3" || version == "interleaved-scope-recency/3" || version == "binary-idf-scope-recency/3"
+	spec, ok := ParseRanking(version)
+	return ok && spec.Tier == RankingTierFailure
 }
 
 func failureReason(reason string, matched bool) string {
@@ -64,7 +65,7 @@ func validateFrozenFailure(ctx context.Context, tx pgx.Tx, p SemanticPackage, e 
 	invalid := func() error {
 		return failure("INTEGRITY_FAILURE", "historical failure review does not match the candidate")
 	}
-	if (!hasFailureRanking(p.Ranking) && !hasEntityRanking(p.Ranking)) || e.Facts == nil || e.Mandatory || validID(e.FailureMatch.ProposalID) != nil || e.FailureMatch.ReviewVersion < 2 {
+	if rankingTierOf(p.Ranking) < RankingTierFailure || e.Facts == nil || e.Mandatory || validID(e.FailureMatch.ProposalID) != nil || e.FailureMatch.ReviewVersion < 2 {
 		return invalid()
 	}
 	var valid bool

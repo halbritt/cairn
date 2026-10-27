@@ -109,48 +109,24 @@ func AllSchemaSpecs() []SchemaSpec {
 }
 
 func hasSemanticScopeRanking(ranking string) bool {
-	return ranking == "semantic-scope-recency/1" || ranking == "semantic-scope-recency/2" || ranking == "semantic-scope-recency/3" || ranking == "semantic-scope-recency/4"
+	spec, ok := ParseRanking(ranking)
+	return ok && spec.Channel == RankingSemantic
 }
 
+// Fallback lexical identities are the generation-4 lexical versions a degraded
+// semantic search seals instead of a semantic channel.
 func hasFallbackLexicalRanking(ranking string) bool {
-	return ranking == "lexical-scope-recency/4" || ranking == "lexical-scope-recency/5" || ranking == "lexical-scope-recency/6" || ranking == "lexical-scope-recency/7"
+	spec, ok := ParseRanking(ranking)
+	return ok && spec.Channel == RankingLexical && spec.Tokenizer == 4
 }
 
-func SupportedRanking(ranking string) bool {
-	return ranking == "lexical-scope-recency/1" ||
-		ranking == "lexical-scope-recency/2" ||
-		ranking == "lexical-scope-recency/3" ||
-		ranking == "lexical-scope-recency/4" ||
-		ranking == "semantic-scope-recency/1" ||
-		hasLiteralRanking(ranking) ||
-		hasIndexedRanking(ranking) ||
-		hasIDFRanking(ranking)
-}
-
+// A semantic or indexed search keeps the outer tier the lexical intent earned.
 func resolveSemanticScopeRanking(current string) string {
-	switch {
-	case hasEntityRanking(current):
-		return "semantic-scope-recency/4"
-	case hasFailureRanking(current):
-		return "semantic-scope-recency/3"
-	case hasLiteralRanking(current):
-		return "semantic-scope-recency/2"
-	default:
-		return "semantic-scope-recency/1"
-	}
+	return rankingSpec(RankingSemantic, rankingTierOf(current)).String()
 }
 
 func resolveInterleavedRanking(current string) string {
-	switch {
-	case hasEntityRanking(current):
-		return "interleaved-scope-recency/4"
-	case hasFailureRanking(current):
-		return "interleaved-scope-recency/3"
-	case hasLiteralRanking(current):
-		return "interleaved-scope-recency/2"
-	default:
-		return "interleaved-scope-recency/1"
-	}
+	return rankingSpec(RankingInterleaved, rankingTierOf(current)).String()
 }
 
 func schemaIndexSummaryMode(schema string) IndexSummaryMode {
@@ -164,13 +140,17 @@ func schemaIndexSummaryMode(schema string) IndexSummaryMode {
 }
 
 func (s SchemaSpec) MatchesIndexedPackage(p SemanticPackage) bool {
+	ranking, ok := ParseRanking(p.Ranking)
+	if !ok {
+		return false
+	}
 	switch s.IndexedRanking {
 	case IndexedRankingHybrid:
-		return hasHybridRanking(p.Ranking)
+		return ranking.Channel == RankingHybrid
 	case IndexedRankingInterleaved:
-		return hasInterleavedRanking(p.Ranking) && !hasIndexedIDFRanking(p.Ranking)
+		return ranking.Channel == RankingInterleaved && !ranking.IndexedIDF
 	case IndexedRankingInterleavedIDF:
-		return hasIndexedIDFRanking(p.Ranking) && p.IDF != nil
+		return ranking.IndexedIDF && p.IDF != nil
 	default:
 		return false
 	}
@@ -196,10 +176,11 @@ func (s SchemaSpec) ValidateRecompileContract(p SemanticPackage, req RecompileRe
 	if (entityIntent && (!s.SupportsEntities || p.Browse != nil)) || entityIntent != hasEntityRanking(p.Ranking) {
 		return failure("INTEGRITY_FAILURE", "historical entity intent is invalid")
 	}
-	if s.IsPureIDF && (legacyIDFRanking(p.Ranking) != idfRanking(req.Entities, p.ErrorSignature, queryLiterals(req.Query)) || p.IDF == nil) {
+	intentTier := rankingTierForIntent(req.Entities, p.ErrorSignature, queryLiterals(req.Query))
+	if s.IsPureIDF && (legacyIDFRanking(p.Ranking) != rankingSpec(RankingBinaryIDF, intentTier).String() || p.IDF == nil) {
 		return failure("INTEGRITY_FAILURE", "historical IDF ranking identity is invalid")
 	}
-	if s.IsIndexedIDF && p.Ranking != strings.Replace(adjacentIDFRanking(req.Entities, p.ErrorSignature, queryLiterals(req.Query)), "binary-idf-", "interleaved-", 1) {
+	if s.IsIndexedIDF && p.Ranking != rankingSpec(RankingInterleaved, intentTier).withIndexedIDF().String() {
 		return failure("INTEGRITY_FAILURE", "historical indexed IDF ranking identity is invalid")
 	}
 	signatureSchema := p.ErrorSignature != ""
@@ -242,9 +223,9 @@ func (s SchemaSpec) ValidateRecompileContract(p SemanticPackage, req RecompileRe
 
 func resolveCompileSchemaAndRanking(p *SemanticPackage, req CompileRequest, literals []string) bool {
 	p.Schema = SchemaSemantic3
-	p.Ranking = "lexical-scope-recency/4"
+	p.Ranking = lexicalRanking(4).String()
 	if len(literals) > 0 {
-		p.Ranking = "lexical-scope-recency/5"
+		p.Ranking = rankingSpec(RankingLexical, RankingTierLiteral).String()
 	}
 	if len(req.Kinds) > 0 {
 		p.Kinds = req.Kinds
@@ -256,13 +237,13 @@ func resolveCompileSchemaAndRanking(p *SemanticPackage, req CompileRequest, lite
 	if req.ErrorSignature != "" {
 		p.Schema = SchemaSemantic12
 		p.ErrorSignature = req.ErrorSignature
-		p.Ranking = "lexical-scope-recency/6"
+		p.Ranking = rankingSpec(RankingLexical, RankingTierFailure).String()
 		p.Omitted["NO_FAILURE_MATCH"] = 0
 	}
 	if len(req.Entities) > 0 {
 		p.Schema = SchemaSemantic13
 		p.EntitiesSHA256 = entitiesDigest(req.Entities)
-		p.Ranking = "lexical-scope-recency/7"
+		p.Ranking = rankingSpec(RankingLexical, RankingTierEntity).String()
 		p.Omitted["NO_ENTITY_MATCH"] = 0
 	}
 	idfSearch := req.Mode == "index" && req.Purpose == "context" && strings.TrimSpace(req.Query) != "" && req.BrowseOffset == nil && !req.Semantic
@@ -333,12 +314,13 @@ func evaluateCandidateFeatures(record Record, mandatory bool, literals []string,
 func admitEvaluatedCandidate(p *SemanticPackage, selection Selection, e *CandidateEvaluation, features candidateFeatures, terms map[string]bool, query string, entityIntent, signatureIntent, idfSearch, deferLexicalFilter, allowDisputes, resetPoolReason bool, pool map[string]candidate, idfMembers *[]idfMember, candidates *[]candidate) {
 	score := features.score
 	selection.Reason = features.reason
-	if hasSemanticScopeRanking(p.Ranking) && !selection.Mandatory && e.SemanticScore != nil {
+	ranking, _ := ParseRanking(p.Ranking)
+	if ranking.Channel == RankingSemantic && !selection.Mandatory && e.SemanticScore != nil {
 		score = *e.SemanticScore
 		selection.Reason = entityReason(failureReason(literalReason(semanticReason(score, features.specificity), features.literal), features.failure), features.entity)
 	}
 	item := candidate{
-		identity:    hasEntityRanking(p.Ranking) && (features.entity || features.failure),
+		identity:    ranking.Tier == RankingTierEntity && (features.entity || features.failure),
 		literal:     features.literal,
 		failure:     features.failure,
 		selection:   selection,
@@ -370,7 +352,9 @@ func admitEvaluatedCandidate(p *SemanticPackage, selection Selection, e *Candida
 		*idfMembers = append(*idfMembers, makeIDFMember(selection.Record, features.words, terms))
 	}
 	nonemptyQuery := len(terms) > 0
-	if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) || idfSearch {
+	// Generation-2+ lexical terms, every tiered identity and IDF search treat a
+	// whitespace-only query as empty; generation 1 keeps its raw term test.
+	if (ranking.Channel == RankingLexical && ranking.Tokenizer >= 2) || ranking.Tier >= RankingTierLiteral || idfSearch {
 		nonemptyQuery = strings.TrimSpace(query) != ""
 	}
 	if !deferLexicalFilter && !selection.Mandatory && nonemptyQuery && score == 0 && !features.literal && !features.failure && !features.entity {
