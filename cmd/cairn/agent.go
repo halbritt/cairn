@@ -66,6 +66,13 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			sub.Help = func() (commandHelp, error) {
 				return formatAgentJSONHelp(name, topic), nil
 			}
+		} else {
+			// Every catalog operation has offline help: hand-written topics
+			// carry examples; the rest is derived from the declared spec.
+			spec := op
+			sub.Help = func() (commandHelp, error) {
+				return derivedAgentJSONHelp(spec), nil
+			}
 		}
 		catalog[name] = sub
 	}
@@ -114,6 +121,7 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			Name:        "evidence",
 			Operation:   "evidence",
 			AcceptsArgs: true,
+			Help:        evidenceOperationHelp,
 			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
 				if len(args) > 0 {
 					req, err := evidenceFileRequest(args)
@@ -206,8 +214,12 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 		},
 	}
 	for _, sub := range overrides {
-		if _, ok := localapi.LookupOperation(sub.Operation); !ok {
+		spec, ok := localapi.LookupOperation(sub.Operation)
+		if !ok {
 			panic("agent subcommand " + sub.Name + " references unknown localapi operation " + sub.Operation)
+		}
+		if sub.Help == nil && !sub.AcceptsArgs {
+			sub.Help = func() (commandHelp, error) { return derivedAgentJSONHelp(spec), nil }
 		}
 		catalog[sub.Name] = sub
 	}

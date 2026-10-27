@@ -2,7 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"reflect"
 	"strings"
+
+	"github.com/halbritt/cairn/localapi"
 )
 
 // commandHelp is human-readable output for an explicitly requested help path.
@@ -284,4 +288,124 @@ func agentFlagHelp(usage, detail string, f *flag.FlagSet) commandHelp {
 	f.PrintDefaults()
 	text.WriteString("\nHelp does not read stdin, inspect credentials, or connect to the API.\n")
 	return commandHelp(text.String())
+}
+
+// derivedAgentJSONHelp describes a catalog operation from its declared
+// request and response types, body limit, retry class and remote policy when
+// no hand-written topic exists. It reads no stdin and opens no connection.
+func derivedAgentJSONHelp(spec localapi.OperationSpec) commandHelp {
+	var b strings.Builder
+	b.WriteString("Usage: cairn agent [--token-file FILE] [--socket PATH] " + spec.Name + " < request.json\n\n")
+	b.WriteString("Request: " + jsonTypeLabel(spec.RequestType) + "\n")
+	fields := jsonFieldLines(spec.RequestType, map[reflect.Type]bool{})
+	if len(fields) == 0 {
+		b.WriteString("  (no fields; send {})\n")
+	}
+	for _, line := range fields {
+		b.WriteString("  " + line + "\n")
+	}
+	b.WriteString("Response: " + jsonTypeLabel(spec.ResponseType) + "\n\n")
+	remote := "denied"
+	if spec.RemoteAllowed {
+		remote = "allowed"
+	}
+	fmt.Fprintf(&b, "Encoded request limit: %d KiB. Remote machine profiles: %s.\n", localapi.RequestBodyLimit(spec.Name)/1024, remote)
+	if spec.RequiresLocalDestination {
+		b.WriteString("Requires a local profile: " + spec.LocalDestinationMessage + ".\n")
+	}
+	b.WriteString("Retry: " + retryClassHint(spec.RetryClass) + "\n")
+	b.WriteString("\nThe request schema is docs/api/openapi.json (operationId " + spec.Name + ").\nHelp does not read stdin or connect to the API.\n")
+	return commandHelp(b.String())
+}
+
+func retryClassHint(class string) string {
+	switch class {
+	case "read":
+		return "read; no durable effect, safe to repeat after any failure."
+	case "request-id":
+		return "request-id; after an uncertain outcome repeat only with the same request_id and identical arguments."
+	case "idempotent":
+		return "idempotent; repeating has the same effect as one call."
+	case "lease":
+		return "lease; keyed by delivery_id and lease_id, a repeat after success is refused with STALE_LEASE."
+	case "no-key":
+		return "no-key; may have a durable effect with no retry key, inspect state before repeating."
+	}
+	return class
+}
+
+func jsonTypeLabel(t reflect.Type) string {
+	if t == nil {
+		return "none"
+	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Name() != "" {
+		return t.String()
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		if t.NumField() == 0 {
+			return "empty object"
+		}
+		return "object"
+	case reflect.Slice:
+		return "array of " + jsonTypeLabel(t.Elem())
+	case reflect.Map:
+		return "object"
+	}
+	return t.Kind().String()
+}
+
+// jsonFieldLines lists the encoding/json field names of a request type with
+// their Go types, promoting embedded structs the way the decoder does.
+func jsonFieldLines(t reflect.Type, seen map[reflect.Type]bool) []string {
+	if t == nil {
+		return nil
+	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || seen[t] {
+		return nil
+	}
+	seen[t] = true
+	var lines []string
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() && !field.Anonymous {
+			continue
+		}
+		tag := field.Tag.Get("json")
+		name, opts, _ := strings.Cut(tag, ",")
+		if name == "-" {
+			continue
+		}
+		if field.Anonymous && name == "" {
+			lines = append(lines, jsonFieldLines(field.Type, seen)...)
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		line := name + "  " + jsonTypeLabel(field.Type)
+		if strings.Contains(opts, "omitempty") || strings.Contains(opts, "omitzero") {
+			line += " (optional)"
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func evidenceOperationHelp() (commandHelp, error) {
+	spec, ok := localapi.LookupOperation("evidence")
+	if !ok {
+		return "", invalid("evidence operation is not registered")
+	}
+	text := "Usage: cairn agent [--token-file FILE] [--socket PATH] evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]\n" +
+		"       cairn agent [--token-file FILE] [--socket PATH] evidence < request.json\n\n" +
+		"The file form captures one regular file as supporting evidence and builds the\n" +
+		"JSON request for you. The stdin form sends the request below as is.\n\n"
+	return commandHelp(text + strings.TrimPrefix(string(derivedAgentJSONHelp(spec)), "Usage: cairn agent [--token-file FILE] [--socket PATH] evidence < request.json\n\n")), nil
 }

@@ -3,11 +3,19 @@
 Every mutation has a caller-scoped request UUID. Reuse it only for retrying the
 same intent. These examples use placeholder UUIDs; substitute IDs returned by
 your own requests. CLI input is one JSON object, normally bounded to 128 KiB.
-Ordinary `create`, `edit` and `revise` allow 512 KiB of encoded JSON for their
-existing 64 KiB decoded body limit. The core library permits up to 1 MiB per
-inline evidence object; authenticated `agent evidence` allows an 8 MiB envelope.
-The encoded limits are defined in [RequestBodyLimit](../localapi/request_limit.go)
-and applied at the [agent CLI](../cmd/cairn/agent.go),
+Operator JSON commands that share an agent API operation (`create`, `edit`,
+`revise`, `append`, `replace`, `set-sections`, `cite`, `delete`,
+`check-evidence`, `capture-evidence`, `usage`, `history`, `expand-evidence`)
+run that operation's catalog entry, so they use its limit and decoding:
+`create`, `edit`, `revise` and `append` allow 512 KiB of encoded JSON for their
+existing 64 KiB decoded body limit, `replace` and `set-sections` allow 1 MiB,
+and `capture-evidence` allows the same 8 MiB envelope as authenticated
+`agent evidence`. The core library permits up to 1 MiB per inline evidence
+object. The encoded limits are defined in
+[RequestBodyLimit](../localapi/request_limit.go) on each
+[catalog entry](../localapi/operations.go) and applied at the
+[agent CLI](../cmd/cairn/agent.go), the
+[operator CLI](../cmd/cairn/operator_operations.go),
 [client](../localapi/client.go) and [API](../localapi/server.go) boundaries.
 
 Create an ordinary note:

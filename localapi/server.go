@@ -378,16 +378,13 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 	if !admitted {
 		return
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	var req Q
-	if err := decoder.Decode(&req); err != nil {
+	if err := DecodeRequest(body, &req); err != nil {
+		if errors.Is(err, errTrailingRequest) {
+			writeError(w, 400, "INVALID_REQUEST", "expected one JSON request")
+			return
+		}
 		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
-		return
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeError(w, 400, "INVALID_REQUEST", "expected one JSON request")
 		return
 	}
 	result, err := call(r.Context(), req)

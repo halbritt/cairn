@@ -1,11 +1,16 @@
 package localapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"reflect"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/jsontext"
 )
 
 // DefaultRequestBodyLimit is the encoded JSON body limit when an operation
@@ -27,6 +32,58 @@ type OperationSpec struct {
 	RequestType              reflect.Type
 	ResponseType             reflect.Type
 	serve                    func(*Server, http.ResponseWriter, *http.Request, client)
+	// invoke runs the operation outside HTTP on one raw JSON request. Only
+	// operations whose implementation needs no server or transport state
+	// (bindStore, bindDestination) declare it; handler-shaped operations
+	// stay HTTP-only.
+	invoke func(context.Context, *core.Store, core.Destination, json.RawMessage) (any, error)
+}
+
+// Invocable reports whether the operation can run outside HTTP through Invoke.
+func (spec OperationSpec) Invocable() bool { return spec.invoke != nil }
+
+// Invoke runs a transport-neutral operation: it decodes raw exactly as the
+// HTTP adapter does (DecodeRequest) and calls the store-bound implementation
+// with dest. The caller bounds raw with RequestBodyLimit and establishes the
+// store's channel itself; Invoke adds no authority.
+func Invoke(ctx context.Context, spec OperationSpec, store *core.Store, dest core.Destination, raw json.RawMessage) (any, error) {
+	if spec.invoke == nil {
+		return nil, &core.Error{Code: "INVALID_REQUEST", Message: "operation " + spec.Name + " is only served over the API"}
+	}
+	return spec.invoke(ctx, store, dest, raw)
+}
+
+// errTrailingRequest is returned by DecodeRequest when more than one JSON
+// value is present. The HTTP adapter reports it with its own message.
+var errTrailingRequest = &core.Error{Code: "INVALID_REQUEST", Message: "expected exactly one JSON request"}
+
+// DecodeRequest decodes exactly one JSON value into target. Invalid Unicode,
+// unknown fields and trailing tokens are refused as INVALID_REQUEST. The HTTP
+// adapter and transport-neutral invocation share this one definition.
+func DecodeRequest(body []byte, target any) error {
+	if err := jsontext.CheckUnicode(body); err != nil {
+		return &core.Error{Code: "INVALID_REQUEST", Message: err.Error()}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return &core.Error{Code: "INVALID_REQUEST", Message: err.Error()}
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errTrailingRequest
+	}
+	return nil
+}
+
+func decodeInvoke[Q, R any](call func(context.Context, *core.Store, core.Destination, Q) (R, error)) func(context.Context, *core.Store, core.Destination, json.RawMessage) (any, error) {
+	return func(ctx context.Context, store *core.Store, dest core.Destination, raw json.RawMessage) (any, error) {
+		var req Q
+		if err := DecodeRequest(raw, &req); err != nil {
+			return nil, err
+		}
+		return call(ctx, store, dest, req)
+	}
 }
 
 type clientContextKey struct{}
@@ -116,13 +173,21 @@ func bindOperation[Q, R any](spec OperationSpec, call func(context.Context, *Ser
 }
 
 func bindStore[Q, R any](spec OperationSpec, call func(*core.Store, context.Context, Q) (R, error)) OperationSpec {
-	return bindOperation(spec, func(ctx context.Context, _ *Server, _ *http.Request, c client, req Q) (R, error) {
+	spec = bindOperation(spec, func(ctx context.Context, _ *Server, _ *http.Request, c client, req Q) (R, error) {
 		return call(c.store, ctx, req)
 	})
+	spec.invoke = decodeInvoke(func(ctx context.Context, store *core.Store, _ core.Destination, req Q) (R, error) {
+		return call(store, ctx, req)
+	})
+	return spec
 }
 
 func bindDestination[Q, R any](spec OperationSpec, call func(*core.Store, context.Context, Q, core.Destination) (R, error)) OperationSpec {
-	return bindOperation(spec, func(ctx context.Context, _ *Server, _ *http.Request, c client, req Q) (R, error) {
+	spec = bindOperation(spec, func(ctx context.Context, _ *Server, _ *http.Request, c client, req Q) (R, error) {
 		return call(c.store, ctx, req, c.destination)
 	})
+	spec.invoke = decodeInvoke(func(ctx context.Context, store *core.Store, dest core.Destination, req Q) (R, error) {
+		return call(store, ctx, req, dest)
+	})
+	return spec
 }

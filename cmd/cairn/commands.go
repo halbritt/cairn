@@ -13,7 +13,6 @@ import (
 	"github.com/halbritt/cairn/artifacts"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
-	"github.com/halbritt/cairn/localapi"
 )
 
 const help = `Cairn: local memory for agents
@@ -432,160 +431,12 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if len(args) != 1 {
 		return nil, invalid("unexpected arguments")
 	}
-	switch args[0] {
-	case "begin-restore":
-		return invoke(ctx, input, store.BeginRestore)
-	case "restore-status":
-		return store.RestoreStatus(ctx)
-	case "rebuild-restore":
-		return invoke(ctx, input, store.RebuildRestore)
-	case "verify-restore":
-		var req core.VerifyRestoreRequest
-		if err := decodeBounded(input, &req, 20*1024*1024); err != nil {
-			return nil, invalid(err.Error())
-		}
-		result, err := store.VerifyRestore(ctx, req)
-		if err == nil && !result.Ready {
-			err = &core.Error{Code: "RESTORE_INCOMPLETE", Message: "restore checks failed; service remains paused"}
-		}
-		return result, err
-	case "resume-restore":
-		var req core.ResumeRestoreRequest
-		if err := decodeBounded(input, &req, 20*1024*1024); err != nil {
-			return nil, invalid(err.Error())
-		}
-		return store.ResumeRestore(ctx, req)
-	case "fence-restore":
-		return invoke(ctx, input, store.FenceRestore)
-	case "invalidate-handles":
-		return invoke(ctx, input, store.InvalidateHandles)
-	case "worker-pool-configure":
-		return invoke(ctx, input, store.ConfigureWorkerPool)
-	case "coordination-review":
-		return coordinationReview(ctx, store, input)
-	case "delivery-alerts":
-		return deliveryAlerts(ctx, store, input)
-	case "event-reissue":
-		return invoke(ctx, input, store.ReissueEvent)
-	case "native-hold-release":
-		return invoke(ctx, input, store.ReleaseNativeHold)
-	case "stopped-inbox-expire":
-		return invoke(ctx, input, store.ExpireStoppedInboxes)
-	case "session-successor-authorize":
-		return invoke(ctx, input, store.AuthorizeSessionSuccessor)
-	case "session-successor-revoke":
-		return invoke(ctx, input, store.RevokeSessionSuccessor)
-	case "work-cancel":
-		return invoke(ctx, input, store.CancelWork)
-	case "request-control-sweep":
-		return invoke(ctx, input, store.SweepRequestControls)
-	case "event-schedule":
-		return invoke(ctx, input, store.ScheduleEvent)
-	case "schedule-list":
-		return invoke(ctx, input, store.Schedules)
-	case "schedule-cancel":
-		return invoke(ctx, input, store.CancelSchedule)
-	case "schedule-tick":
-		return invoke(ctx, input, store.TickSchedules)
-	case "verify-checkpoint":
-		result, err := invoke(ctx, input, store.VerifyCheckpoint)
-		if err == nil && !result.Valid {
-			err = &core.Error{Code: "INTEGRITY_FAILURE", Message: "audit members differ from expected restore set"}
-		}
-		return result, err
-	case "migrate":
-		return nil, store.Migrate(ctx)
-	case "grants":
-		return store.Grants(ctx)
-	case "create":
-		return invokeOperation(ctx, "create", input, store.Create)
-	case "edit":
-		return invokeOperation(ctx, "edit", input, store.Edit)
-	case "revise":
-		return invokeOperation(ctx, "revise", input, store.Revise)
-	case "replace":
-		return invokeOperation(ctx, "replace", input, store.Replace)
-	case "set-sections":
-		return invokeOperation(ctx, "set-sections", input, store.SetSections)
-	case "append":
-		return invokeOperation(ctx, "append", input, store.Append)
-	case "cite":
-		return invoke(ctx, input, store.Cite)
-	case "delete":
-		return invoke(ctx, input, store.Delete)
-	case "bootstrap":
-		return invoke(ctx, input, store.Bootstrap)
-	case "grant":
-		return invoke(ctx, input, store.Grant)
-	case "revoke-grant":
-		return invoke(ctx, input, store.RevokeGrant)
-	case "check-evidence":
-		return invoke(ctx, input, store.CheckEvidence)
-	case "capture-evidence":
-		return invoke(ctx, input, store.CaptureEvidence)
-	case "demote":
-		return invoke(ctx, input, store.Demote)
-	case "promote":
-		return invoke(ctx, input, store.Promote)
-	case "issue":
-		return invoke(ctx, input, store.Issue)
-	case "correct":
-		return invoke(ctx, input, store.Correct)
-	case "supersede":
-		return invoke(ctx, input, store.Supersede)
-	case "authorize-scope":
-		return invoke(ctx, input, store.AuthorizeScope)
-	case "policy-revise":
-		return invoke(ctx, input, store.RevisePolicy)
-	case "forget":
-		return invoke(ctx, input, store.Forget)
-	case "retract":
-		return invoke(ctx, input, store.Retract)
-	case "dispute":
-		return invoke(ctx, input, store.Dispute)
-	case "resolve":
-		return invoke(ctx, input, store.Resolve)
-	case "generate-proposals":
-		return invoke(ctx, input, store.GenerateProposals)
-	case "proposal-history":
-		return invoke(ctx, input, store.ProposalHistory)
-	case "review-proposal":
-		return invoke(ctx, input, store.ReviewProposal)
-	case "history":
-		return invoke(ctx, input, func(ctx context.Context, req core.RecordHistoryRequest) (core.RecordHistory, error) {
-			return store.History(ctx, req, core.Destination{Name: "local", AllowLocal: true})
-		})
-	case "recompile":
-		return invoke(ctx, input, func(ctx context.Context, req core.RecompileRequest) (any, error) {
-			p, err := store.Recompile(ctx, req)
-			return struct {
-				Historical bool         `json:"historical"`
-				Package    core.Package `json:"package"`
-			}{true, p}, err
-		})
-	case "assess-run":
-		return invoke(ctx, input, store.AssessRun)
-	case "usage":
-		return invoke(ctx, input, store.RecordUsage)
-	case "index":
-		return invoke(ctx, input, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
-			return store.Index(ctx, req, core.Destination{Name: "local", AllowLocal: true})
-		})
-	case "expand":
-		return invoke(ctx, input, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
-			return store.Expand(ctx, req, core.Destination{Name: "local", AllowLocal: true})
-		})
-	case "expand-evidence":
-		return invoke(ctx, input, func(ctx context.Context, req core.ExpandEvidenceRequest) (core.EvidenceExpansion, error) {
-			return store.ExpandEvidence(ctx, req, core.Destination{Name: "local", AllowLocal: true})
-		})
-	case "compile":
-		return invoke(ctx, input, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
-			return store.Compile(ctx, req, core.Destination{Name: "local", AllowLocal: true})
-		})
-	default:
-		return nil, invalid("unknown command; use --help")
+	// Commands that read one JSON request from stdin are table-driven; shared
+	// entries run the localapi catalog operation with the operator destination.
+	if op, ok := operatorOperations[args[0]]; ok {
+		return op.run(ctx, store, input)
 	}
+	return nil, invalid("unknown command; use --help")
 }
 
 func recoverRun(ctx context.Context, store *core.Store, id string) (core.Observation, error) {
@@ -622,20 +473,4 @@ func recoverRun(ctx context.Context, store *core.Store, id string) (core.Observa
 		return observed, err
 	}
 	return observed, os.Rename(path, filepath.Join(root, "runs", id, "outcome.json"))
-}
-func invoke[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error)) (Response, error) {
-	return invokeBounded(ctx, input, call, localapi.DefaultRequestBodyLimit)
-}
-
-func invokeOperation[Request, Response any](ctx context.Context, operation string, input io.Reader, call func(context.Context, Request) (Response, error)) (Response, error) {
-	return invokeBounded(ctx, input, call, localapi.RequestBodyLimit(operation))
-}
-
-func invokeBounded[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error), limit int64) (Response, error) {
-	var req Request
-	var zero Response
-	if err := decodeBounded(input, &req, limit); err != nil {
-		return zero, invalid(err.Error())
-	}
-	return call(ctx, req)
 }

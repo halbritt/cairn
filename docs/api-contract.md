@@ -16,16 +16,21 @@ conformance tests against real handlers.
 
 ## How it is generated
 
-`internal/apicontract` parses the non-test files of `localapi` that the default
-build selects (`go/build` file matching, so build-tagged variants such as
-`cairn_protocol_min2` are excluded). It type-checks them with `go/types`. No
-hand-kept inventory is involved.
+`internal/apicontract` reads the declarative operation catalog
+(`localapi.Operations()`) and type-checks the non-test files of `localapi` that
+the default build selects (`go/build` file matching, so build-tagged variants
+such as `cairn_protocol_min2` are excluded) with `go/types`. No hand-kept route
+inventory is involved.
 
-- **Routes.** Every `case "/v1/OPERATION"` clause must contain exactly one
-  `serveJSON` call. The operation's request type is the handler's second
-  parameter, and its response type is the handler's first result. If a handler
-  returns `any` (as `recompile` does), the contract uses the single concrete
-  type of its return values. A route that breaks these rules stops generation.
+- **Routes.** Every catalog entry is one `POST /v1/OPERATION` route. Its
+  request and response types are the Go types the entry was bound with
+  (`bindStore`, `bindDestination` or `bindOperation` in `localapi`); an entry
+  whose method, path or source file breaks that convention stops generation.
+  The same entry drives the HTTP mux, the remote allowlist, the request body
+  limit, the `cairn agent` subcommand table and its offline help, and, for
+  store-bound entries, the operator CLI's shared JSON commands through
+  `localapi.Invoke`, which decodes with the same `DecodeRequest` as the HTTP
+  adapter.
 - **Schemas.** Go types are mapped by `encoding/json` rules: json tags,
   `omitempty`/`omitzero`, `-`, embedded-struct promotion and conflict
   resolution, and `,string`. `time.Time` is a `date-time` string,
@@ -42,11 +47,12 @@ hand-kept inventory is involved.
   - `x-cairn-remote`: the live remote allowlist, read through
     `localapi.RemoteOperation`.
   - `x-cairn-remote-roles`: the roles a remote profile may call it with.
-  - `x-cairn-requires-local-destination`: set when the handler has an
-    `if !...AllowLocal { writeError(403) }` guard.
+  - `x-cairn-requires-local-destination`: the entry's `RequiresLocalDestination`
+    guard, enforced before its handler runs.
   - `x-cairn-session-headers`: whether session headers are optional or
     forbidden.
-  - `x-cairn-request-limit-bytes`: the value of `localapi.RequestBodyLimit`.
+  - `x-cairn-request-limit-bytes`: the value of `localapi.RequestBodyLimit`,
+    the entry's own limit or the 128 KiB default.
   - `x-cairn-retry`: the retry class; see below.
 - **Headers.** `x-cairn-request-headers` lists every header the server reads
   from an incoming request, whether by literal or constant name, including

@@ -21,6 +21,20 @@ and MCP processes.
   property from the version number in separate places. Every sealed identity
   renders byte-identically; retained packages, seals and replay are unchanged,
   and a test proves the new table against the historical enumerations.
+- Operator JSON commands that share an agent API operation now run the
+  localapi catalog entry itself instead of a second binding in the command
+  switch, so request limits and decoding cannot drift between the operator
+  CLI and the API. `capture-evidence` with a JSON request accepts the same
+  8 MiB envelope as `agent evidence`; it was bounded to 128 KiB before.
+  Operator-only commands (authority, policy, proposals, restore and recovery
+  administration) use the same table shape and stay outside localapi. See
+  [structured command examples](docs/commands.md).
+- Every `cairn agent OPERATION --help` now works offline. Operations without a
+  hand-written topic describe their request fields, response type, limit,
+  retry class and remote policy from the catalog entry.
+- The CLI no longer carries a test-only copy of the delivery attention and
+  starvation evaluation; `coordination-review` and `delivery-alerts` keep
+  using the core implementation, which now has its own tests.
 
 ## 2026-10-26
 
