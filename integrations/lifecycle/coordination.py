@@ -3225,7 +3225,7 @@ def settle_refused_claude_wake(config, state, path, turn, exc, *, origin='hook',
         return state['wake_refusal_diagnostic']
     # The owning prompt ended here; the watcher settles a reconcile that did not finish.
     return native_session(config, state, path).settle(
-        'wake_refusal_diagnostic', dict(diagnostic, settlement='turn_ended'), prompt=turn, strict=False)
+        'wake_refusal_diagnostic', dict(diagnostic, settlement='turn_ended'), prompt=turn)
 
 
 CLAUDE_NON_TURN_RECORDS = _transcript_recovery.CLAUDE_NON_TURN_RECORDS

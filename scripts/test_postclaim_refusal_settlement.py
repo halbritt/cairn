@@ -320,6 +320,27 @@ class TurnBoundaryTests(Base):
         with self.patched(), patch.object(coord, 'claude_session_config', side_effect=lambda c, *a: c):
             self.assertEqual(coord.inbox_context(self.cc, state, self.path, self.stop_observation(OTHER_PROMPT)), '')
 
+    def test_unflushed_refusal_remains_visible_until_the_watcher_settles_it(self):
+        state = self.load()
+        with self.patched(), patch.object(coord, 'flush_inbox_intents', return_value=False), \
+             coord.session_lock(self.path):
+            diagnostic = coord.settle_refused_claude_wake(
+                self.cc, state, self.path, TURN, self.refusal())
+        self.assertEqual(diagnostic['settlement'], 'turn_ended_pending')
+        self.assertEqual(self.reconciles(), [])
+        saved = self.load()
+        self.assertTrue(saved['inbox_turn_ended'])
+        self.assertNotIn('active_prompt', saved)
+        with patch.object(coord, 'process_alive', return_value=True):
+            observation = coord.held_attempt_refusal_observation(self.cc, saved)
+        self.assertEqual(observation['evidence_state'], 'reconcile_pending')
+        self.assertEqual(observation['attempt_id'], ATTEMPT)
+        with self.patched():
+            coord.watch_inbox(self.cc, saved, self.path)
+        self.assertNotIn('event-renew', [op for op, _ in self.ops])
+        self.assertEqual([r['reason'] for r in self.reconciles()], ['turn_ended'])
+        self.assertNotIn('inbox_intent', self.load())
+
     def test_failed_reconcile_hands_settlement_to_the_watcher_which_never_renews(self):
         self.fail_reconcile = True
         diagnostic, _ = self.settle()
