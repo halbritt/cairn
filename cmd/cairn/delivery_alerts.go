@@ -27,12 +27,12 @@ import (
 const deliveryAlertSchema = "cairn.delivery-alerts/1"
 
 type deliveryAlertsRequest struct {
-	Repo         string            `json:"repo"`
-	StateFile    string            `json:"state_file,omitempty"`
-	PlaneProject string            `json:"plane_project,omitempty"`
-	MaxNew       int               `json:"max_new,omitempty"`
-	MaxPages     int               `json:"max_pages,omitempty"`
-	Starvation   starvationOptions `json:"starvation,omitempty"`
+	Repo         string                 `json:"repo"`
+	StateFile    string                 `json:"state_file,omitempty"`
+	PlaneProject string                 `json:"plane_project,omitempty"`
+	MaxNew       int                    `json:"max_new,omitempty"`
+	MaxPages     int                    `json:"max_pages,omitempty"`
+	Starvation   core.StarvationOptions `json:"starvation,omitempty"`
 }
 
 type deliveryAlertLimits struct {
@@ -67,7 +67,7 @@ type deliveryAlertsResult struct {
 	Scanned         int                    `json:"scanned"`
 	Coverage        string                 `json:"coverage"`
 	Notifier        string                 `json:"notifier"`
-	StarvedSessions []starvedSession       `json:"starved_sessions"`
+	StarvedSessions []core.StarvedSession  `json:"starved_sessions"`
 	New             []deliveryAlertOutcome `json:"new"`
 	Ongoing         int                    `json:"ongoing"`
 	Cleared         []string               `json:"cleared"`
@@ -77,7 +77,7 @@ type deliveryAlertsResult struct {
 }
 
 type starvationAlert struct {
-	Session         starvedSession
+	Session         core.StarvedSession
 	Key             string
 	ExternalID      string
 	Title           string
@@ -86,7 +86,7 @@ type starvationAlert struct {
 
 type alertNotifier func(context.Context, starvationAlert) (string, error)
 
-func deliveryAlertKey(s starvedSession) string {
+func deliveryAlertKey(s core.StarvedSession) string {
 	return s.Recipient + "|" + s.ExecutionID + "|" + s.Condition
 }
 
@@ -97,7 +97,7 @@ func deliveryAlertExternalID(key, onset string) string {
 	return "starvation-" + hex.EncodeToString(sum[:16])
 }
 
-func newStarvationAlert(s starvedSession, name string, now time.Time) starvationAlert {
+func newStarvationAlert(s core.StarvedSession, name string, now time.Time) starvationAlert {
 	if name == "" {
 		name = s.Recipient
 	}
@@ -136,7 +136,7 @@ func newStarvationAlert(s starvedSession, name string, now time.Time) starvation
 
 // applyDeliveryAlerts is the dedupe policy. A nil notifier reports without
 // recording. Failed notifications are not recorded, so the next run retries.
-func applyDeliveryAlerts(ctx context.Context, current []starvedSession, complete bool, previous deliveryAlertState, limits deliveryAlertLimits, notify alertNotifier, now time.Time) (deliveryAlertsResult, deliveryAlertState, error) {
+func applyDeliveryAlerts(ctx context.Context, current []core.StarvedSession, complete bool, previous deliveryAlertState, limits deliveryAlertLimits, notify alertNotifier, now time.Time) (deliveryAlertsResult, deliveryAlertState, error) {
 	res := deliveryAlertsResult{Complete: complete, StarvedSessions: current, New: []deliveryAlertOutcome{}, Cleared: []string{}}
 	next := deliveryAlertState{Schema: deliveryAlertSchema, Scope: previous.Scope, Alerts: map[string]deliveryAlertEntry{}}
 	for k, v := range previous.Alerts {
@@ -258,7 +258,7 @@ func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (an
 		return nil, err
 	}
 	now := time.Now()
-	current, err := detectReviewStarvation(rows, req.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
+	current, err := core.DetectStarvation(rows, req.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
 		return store.LastHandledDeliveries(ctx, req.Repo, consumers)
 	})
 	if err != nil {
@@ -290,7 +290,7 @@ func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (an
 
 // nameStarvedSessions adds display names from the online agent directory.
 // A name is presentation only; a missing name leaves the inbox as the label.
-func nameStarvedSessions(ctx context.Context, store *core.Store, repo string, sessions []starvedSession) error {
+func nameStarvedSessions(ctx context.Context, store *core.Store, repo string, sessions []core.StarvedSession) error {
 	if len(sessions) == 0 {
 		return nil
 	}

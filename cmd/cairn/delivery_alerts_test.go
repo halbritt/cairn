@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,8 +15,12 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
-func starved(recipient, condition, oldest string) starvedSession {
-	return starvedSession{Recipient: recipient, AgentID: "id-" + recipient, ExecutionID: "x-" + recipient, Condition: condition,
+var starvationNow = time.Date(2026, 10, 21, 22, 0, 0, 0, time.UTC)
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func starved(recipient, condition, oldest string) core.StarvedSession {
+	return core.StarvedSession{Recipient: recipient, AgentID: "id-" + recipient, ExecutionID: "x-" + recipient, Condition: condition,
 		RecipientState: "busy", Count: 2, Notices: 2, OldestAgeSeconds: 36000, OldestDeliveryID: oldest, AgeBasis: "waiting",
 		ThresholdSeconds: 1800, HostCondition: "busy", Diagnosis: "Online busy session has 2 pending deliveries."}
 }
@@ -40,7 +45,7 @@ func emptyAlertState() deliveryAlertState {
 func TestDeliveryAlertsNotifyOncePerNewCondition(t *testing.T) {
 	n := &recordingNotifier{}
 	now := starvationNow
-	current := []starvedSession{starved("agent/449", "pending_starved", "d1"), starved("agent/468", "hold_stalled", "h1")}
+	current := []core.StarvedSession{starved("agent/449", "pending_starved", "d1"), starved("agent/468", "hold_stalled", "h1")}
 	res, state, err := applyDeliveryAlerts(context.Background(), current, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, now)
 	if err != nil || res.Sent != 2 || len(n.sent) != 2 || len(state.Alerts) != 2 {
 		t.Fatalf("first run: %+v %+v %v", res, state, err)
@@ -61,7 +66,7 @@ func TestDeliveryAlertsNotifyOncePerNewCondition(t *testing.T) {
 
 func TestDeliveryAlertsClearOnlyOnCompleteScanAndRealertNewEpisode(t *testing.T) {
 	n := &recordingNotifier{}
-	cur := []starvedSession{starved("agent/449", "pending_starved", "d1")}
+	cur := []core.StarvedSession{starved("agent/449", "pending_starved", "d1")}
 	_, state, _ := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow)
 	res, state, err := applyDeliveryAlerts(context.Background(), nil, false, state, deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow)
 	if err != nil || len(res.Cleared) != 0 || len(state.Alerts) != 1 {
@@ -80,7 +85,7 @@ func TestDeliveryAlertsClearOnlyOnCompleteScanAndRealertNewEpisode(t *testing.T)
 
 func TestDeliveryAlertsBoundedAndFailuresRetryLater(t *testing.T) {
 	n := &recordingNotifier{fail: map[string]bool{"agent/b": true}}
-	cur := []starvedSession{starved("agent/a", "pending_starved", "1"), starved("agent/b", "pending_starved", "2"), starved("agent/c", "pending_starved", "3")}
+	cur := []core.StarvedSession{starved("agent/a", "pending_starved", "1"), starved("agent/b", "pending_starved", "2"), starved("agent/c", "pending_starved", "3")}
 	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 2}, n.notify, starvationNow)
 	if err == nil || res.Sent != 1 || res.Failed != 1 || res.Deferred != 1 || len(state.Alerts) != 1 {
 		t.Fatalf("want one sent, one failed (error), one deferred: %+v %v", res, err)
@@ -93,7 +98,7 @@ func TestDeliveryAlertsBoundedAndFailuresRetryLater(t *testing.T) {
 }
 
 func TestDeliveryAlertsReportOnlyWithoutNotifier(t *testing.T) {
-	cur := []starvedSession{starved("agent/a", "pending_starved", "1")}
+	cur := []core.StarvedSession{starved("agent/a", "pending_starved", "1")}
 	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, nil, starvationNow)
 	if err != nil || res.Sent != 0 || len(res.New) != 1 || len(state.Alerts) != 0 {
 		t.Fatalf("report-only run must not record alerts: %+v %+v %v", res, state, err)

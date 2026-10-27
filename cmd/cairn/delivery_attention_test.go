@@ -13,131 +13,29 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
-func attentionFixture(id, kind, condition string) attentionDelivery {
-	var d attentionDelivery
-	err := json.Unmarshal([]byte(`{"delivery_id":"`+id+`","consumer":"agent/fixture","state":"pending","event":{"kind":"`+kind+`"},"diagnosis":{"stage":"waiting","waiting_seconds":900,"recipient":{"kind":"session","state":"idle","presence":"online"},"host":{"condition":"`+condition+`","applies":"exact","freshness":"current"}}}`), &d)
-	if err != nil {
-		panic(err)
-	}
-	return d
-}
-func emptyAttentionCache() attentionCache {
-	return attentionCache{Schema: "cairn.delivery-attention/1", Scope: "fixture", Deliveries: map[string]attentionEntry{}}
-}
+// The attention and starvation evaluation is tested in core through
+// SummarizeAttention and DetectStarvation. These tests cover the CLI's own
+// presentation: the private state file and the coordination-review page.
 
-func TestAttentionSeparatesKindsAndSuppressesUnchanged(t *testing.T) {
-	now := time.Now()
-	request := attentionFixture("request", "request", "wake_retained")
-	notice := attentionFixture("notice", "notice", "wake_retained")
-	result, cache, err := summarizeAttention([]attentionDelivery{request, notice}, true, attentionOptions{}, emptyAttentionCache(), now)
-	if err != nil || len(result.Changed) != 1 || result.Groups[0].Requests != 1 || result.Groups[0].Notices != 1 {
-		t.Fatalf("first: %+v %v", result, err)
-	}
-	request.Diagnosis.WaitingSeconds += 100
-	notice.DeliveryID = "new-notice"
-	result, cache, err = summarizeAttention([]attentionDelivery{request, notice}, true, attentionOptions{}, cache, now)
-	if err != nil || len(result.Changed) != 0 || len(cache.Deliveries) != 1 {
-		t.Fatalf("unchanged request repeated: %+v %v", result, err)
-	}
-	second := request
-	second.DeliveryID = "second-request"
-	result, _, err = summarizeAttention([]attentionDelivery{request, second}, true, attentionOptions{}, cache, now)
-	if err != nil || len(result.Changed) != 1 || result.Changed[0].Requests != 2 {
-		t.Fatalf("new request not visible: %+v %v", result, err)
-	}
-}
-
-func TestAttentionPartialAbsenceCannotClearButProgressCan(t *testing.T) {
-	now := time.Now()
-	request := attentionFixture("one", "request", "wake_retained")
-	_, cache, _ := summarizeAttention([]attentionDelivery{request}, true, attentionOptions{}, emptyAttentionCache(), now)
-	result, partial, err := summarizeAttention(nil, false, attentionOptions{}, cache, now)
-	if err != nil || len(result.Cleared) != 0 || len(partial.Deliveries) != 1 || result.Complete {
-		t.Fatalf("partial erased condition: %+v %v", result, err)
-	}
-	request.State = "handled"
-	request.Diagnosis.Stage = "handled"
-	result, progress, err := summarizeAttention([]attentionDelivery{request}, false, attentionOptions{}, partial, now)
-	if err != nil || len(result.Cleared) != 1 || len(progress.Deliveries) != 0 {
-		t.Fatalf("explicit progress failed: %+v %v", result, err)
-	}
-	result, _, err = summarizeAttention(nil, true, attentionOptions{}, cache, now)
-	if err != nil || len(result.Cleared) != 1 {
-		t.Fatalf("complete absence failed: %+v %v", result, err)
-	}
-}
-
-func TestAttentionQuietForIntentionalWaiting(t *testing.T) {
-	now := time.Now()
-	for _, mode := range []string{"busy", "scheduled", "young", "notice", "response", "non-session"} {
-		t.Run(mode, func(t *testing.T) {
-			d := attentionFixture("one", "request", "native_transport_unavailable")
-			switch mode {
-			case "busy":
-				d.Diagnosis.Recipient.State = "busy"
-			case "scheduled":
-				d.AvailableAt = now.Add(time.Minute)
-			case "young":
-				d.Diagnosis.WaitingSeconds = 5
-			case "notice", "response":
-				d.Event.Kind = mode
-			case "non-session":
-				d.Diagnosis.Recipient.Kind = "other"
-			}
-			result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), now)
-			if err != nil || len(result.Changed) != 0 {
-				t.Fatalf("unexpected attention: %+v %v", result, err)
-			}
-		})
-	}
-}
-
-func TestAttentionAvailableRouteDoesNotProveProgress(t *testing.T) {
-	d := attentionFixture("one", "request", "automatic_available")
-	result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
-	if err != nil || len(result.Changed) != 1 || !strings.Contains(result.Changed[0].NextCheck, "no claim") {
-		t.Fatalf("available route hid aged pending request: %+v %v", result, err)
-	}
-}
-
-func TestAttentionIncludesExpiredLeaseWhenStoreSaysWaiting(t *testing.T) {
-	d := attentionFixture("one", "request", "unknown")
-	d.State = "leased"
-	result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
-	if err != nil || len(result.Changed) != 1 {
-		t.Fatalf("expired lease disappeared: %+v %v", result, err)
-	}
-	d.Diagnosis.Stage = "leased"
-	result, _, err = summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
-	if err != nil || len(result.Changed) != 0 {
-		t.Fatalf("live lease alerted: %+v %v", result, err)
-	}
-}
-
-func TestAttentionUnknownDoesNotRepeatOldCauseAsCurrent(t *testing.T) {
-	for _, mode := range []string{"stale", "replaced", "offline", "absent", "other_delivery"} {
-		t.Run(mode, func(t *testing.T) {
-			d := attentionFixture("one", "request", "channel_not_launched")
-			if mode == "other_delivery" {
-				d.Diagnosis.Host.Applies = mode
-			} else {
-				d.Diagnosis.Host.Freshness = mode
-			}
-			result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
-			if err != nil || len(result.Changed) != 1 || result.Changed[0].Condition != "unknown" {
-				t.Fatalf("stale cause promoted: %+v %v", result, err)
-			}
-		})
+func reviewFixture(id string) core.ReviewDelivery {
+	waiting := int64(900)
+	return core.ReviewDelivery{
+		DeliveryID: id, Consumer: "agent/fixture", State: "pending", Event: core.AgentEvent{Kind: "request"},
+		Diagnosis: &core.DeliveryDiagnosis{
+			Stage: "waiting", WaitingSeconds: &waiting,
+			Recipient: core.DiagnosisRecipient{Kind: "session", State: "idle", Presence: "online"},
+			Host:      &core.DiagnosisHost{Condition: "wake_retained", Applies: "exact", Freshness: "current"},
+		},
 	}
 }
 
 func TestAttentionCacheScopesAndBoundedPrivateState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "attention.json")
-	options := attentionOptions{StateFile: path}
+	options := core.AttentionOptions{StateFile: path}
 	calls := 0
-	run := func(c attentionCache) (attentionResult, attentionCache, error) {
+	run := func(c core.AttentionCache) (core.AttentionResult, core.AttentionCache, error) {
 		calls++
-		return summarizeAttention([]attentionDelivery{attentionFixture("one", "request", "wake_retained")}, true, options, c, time.Now())
+		return core.SummarizeAttention([]core.ReviewDelivery{reviewFixture("one")}, true, options, c, time.Now())
 	}
 	first, err := withAttentionCache(options, "scope", run)
 	if err != nil || len(first.Changed) != 1 {
@@ -169,122 +67,66 @@ func TestAttentionCacheScopesAndBoundedPrivateState(t *testing.T) {
 	}
 }
 
-func TestAttentionBounds(t *testing.T) {
-	_, _, err := summarizeAttention(nil, true, attentionOptions{OlderThanSeconds: -1}, emptyAttentionCache(), time.Now())
-	if err == nil {
-		t.Fatal("negative cutoff accepted")
+func TestCoordinationReviewAttentionReportsStarvedOnlineSession(t *testing.T) {
+	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("run make test-integration")
 	}
-	cache := emptyAttentionCache()
-	for i := 0; i < 1001; i++ {
-		cache.Deliveries[string(rune(i))] = attentionEntry{Group: "known"}
-	}
-	if _, _, err = summarizeAttention(nil, false, attentionOptions{}, cache, time.Now()); err == nil {
-		t.Fatal("unbounded partial cache")
-	}
-}
-
-func TestAttentionStoppedSessionAllKindsAndOfflineDistinction(t *testing.T) {
-	now := time.Now()
-	for _, kind := range []string{"notice", "response", "request"} {
-		t.Run("stopped-"+kind, func(t *testing.T) {
-			d := attentionFixture("del-"+kind, kind, "unknown")
-			d.Diagnosis.Recipient.Presence = "stopped"
-			d.Diagnosis.Recipient.AgentID = "46300000-0000-0000-0000-000000000463"
-			d.Diagnosis.Recipient.ExecutionID = "exec-463"
-			d.Diagnosis.WaitingSeconds = 5 // Even young deliveries on a stopped session are stranded.
-			d.Diagnosis.Host.Freshness = "offline"
-			result, cache, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), now)
-			if err != nil || len(result.Changed) != 1 || result.Changed[0].Condition != "recipient_stopped" || len(result.StoppedSessions) != 1 {
-				t.Fatalf("stopped %s missed: %+v %v", kind, result, err)
-			}
-			// Unchanged repeat is suppressed.
-			repeat, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, cache, now)
-			if err != nil || len(repeat.Changed) != 0 || len(repeat.StoppedSessions) != 1 {
-				t.Fatalf("stopped %s repeat: %+v %v", kind, repeat, err)
-			}
-		})
-	}
-	// Transiently offline presence does not become confirmed stop or alert on notices/responses.
-	for _, kind := range []string{"notice", "response"} {
-		d := attentionFixture("offline-"+kind, kind, "unknown")
-		d.Diagnosis.Recipient.Presence = "offline"
-		d.Diagnosis.Host.Freshness = "offline"
-		result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), now)
-		if err != nil || len(result.Changed) != 0 || len(result.StoppedSessions) != 0 {
-			t.Fatalf("transient offline %s promoted to stopped: %+v %v", kind, result, err)
-		}
-	}
-}
-
-func TestAttentionStoppedSessionRetainedHoldAndPagination(t *testing.T) {
-	now := time.Now()
-	held := attentionFixture("held-notice", "notice", "unknown")
-	held.Held = true
-	held.Diagnosis.Stage = "held"
-	held.Diagnosis.WaitingSeconds = 0
-	held.AvailableAt = now.Add(-2 * time.Minute)
-	held.Diagnosis.Recipient.Presence = "stopped"
-	held.Diagnosis.Host = nil
-
-	result, cache, err := summarizeAttention([]attentionDelivery{held}, false, attentionOptions{}, emptyAttentionCache(), now)
-	if err != nil || len(result.Changed) != 1 || len(result.StoppedSessions) != 1 {
-		t.Fatalf("held stopped delivery missed: %+v %v", result, err)
-	}
-	ss := result.StoppedSessions[0]
-	if ss.Held != 1 || ss.AdmissionUncertainty != "unknown" || ss.Complete || !strings.Contains(ss.Coverage, "Partial page") || ss.Deliveries[0].Stage != "held" {
-		t.Fatalf("held stopped backlog: %+v", ss)
-	}
-	// Stage transition from held to waiting triggers a changed condition.
-	held.Held = false
-	held.Diagnosis.Stage = "waiting"
-	changed, _, err := summarizeAttention([]attentionDelivery{held}, true, attentionOptions{}, cache, now)
-	if err != nil || len(changed.Changed) != 1 || !changed.StoppedSessions[0].Complete {
-		t.Fatalf("stage change not reported: %+v %v", changed, err)
-	}
-}
-
-func TestAttentionAgent463ThirtyFiveNoticesFixture(t *testing.T) {
-	now := time.Now()
-	const oldestID = "473dfc21-3361-4ea3-8563-7849d13720c6"
-	deliveries := make([]attentionDelivery, 0, 35)
-	for i := 0; i < 35; i++ {
-		id := oldestID
-		applies := "exact"
-		if i > 0 {
-			id = "00000000-0000-0000-0000-0000000000" + string(rune('a'+i/10)) + string(rune('0'+i%10))
-			applies = "other_delivery"
-		}
-		var d attentionDelivery
-		err := json.Unmarshal([]byte(`{"delivery_id":"`+id+`","consumer":"agent/46300000-0000-0000-0000-000000000463","state":"pending","attempts":0,"execution":"never_launched","event":{"event_id":"evt-`+id+`","from":"agent/integrator449","kind":"notice","ref":{"record_id":"rec-`+id+`","version":1}},"diagnosis":{"stage":"waiting","waiting_seconds":1800,"recipient":{"kind":"session","agent_id":"46300000-0000-0000-0000-000000000463","execution_id":"exec-463","state":"idle","presence":"stopped"},"host":{"condition":"unknown","reported":"wake_retained","applies":"`+applies+`","freshness":"offline","wake":{"transport":"codex-queue","status":"refused"}}}}`), &d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d.Diagnosis.WaitingSeconds = float64(1800 - i*10)
-		deliveries = append(deliveries, d)
-	}
-	result, cache, err := summarizeAttention(deliveries, true, attentionOptions{}, emptyAttentionCache(), now)
+	t.Setenv("CAIRN_DATABASE_URL", dsn)
+	ctx := context.Background()
+	repo := "starvation-" + uuid.NewString()
+	pub, err := core.Open(ctx, dsn, core.Channel{Principal: "agent/publisher", Repo: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Groups) != 1 || len(result.Changed) != 1 || result.Changed[0].Condition != "recipient_stopped" || result.Changed[0].Notices != 35 || result.Changed[0].SampleDeliveryID != oldestID {
-		t.Fatalf("expected 1 changed recipient_stopped group with 35 notices: %+v", result)
+	defer pub.Close()
+	if err := pub.Migrate(ctx); err != nil {
+		t.Fatal(err)
 	}
-	if len(result.StoppedSessions) != 1 {
-		t.Fatalf("expected 1 stopped session backlog: %+v", result.StoppedSessions)
+	host, err := core.Open(ctx, dsn, core.Channel{Principal: "agent/host-busy", Repo: repo})
+	if err != nil {
+		t.Fatal(err)
 	}
-	ss := result.StoppedSessions[0]
-	if ss.Notices != 35 || ss.Requests != 0 || ss.Responses != 0 || ss.Unattempted != 35 || ss.OldestDeliveryID != oldestID || ss.AdmissionUncertainty != "unknown" || len(ss.Deliveries) != 35 {
-		t.Fatalf("unexpected stopped session summary: %+v", ss)
+	defer host.Close()
+	dest := core.Destination{Name: "hosted", AllowLocal: false}
+	busy, err := host.RegisterAgent(ctx, core.RegisterAgentRequest{
+		RequestID: uuid.NewString(), Binding: "busy-coordinator", NativeSessionID: uuid.NewString(),
+		Metadata: core.AgentMetadata{Harness: "claude-code", Project: "fleet", Workspace: "/work/fleet", State: "busy", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ss.RetainedWake == nil || ss.RetainedWake.DeliveryID != oldestID || ss.RetainedWake.Transport != "codex-queue" || ss.RetainedWake.Status != "refused" || ss.RetainedWake.Freshness != "offline" || ss.RetainedWake.Applies != "exact" {
-		t.Fatalf("unexpected retained wake: %+v", ss.RetainedWake)
+	note, err := pub.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: "status update for the coordinator", ClaimType: "self", Sensitivity: "shareable", Scope: core.Scope{Repo: repo, TaskID: "*", RunID: "*"}}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ss.Deliveries[0].Admission != "unknown" || ss.Deliveries[1].Admission != "not_admitted" {
-		t.Fatalf("unexpected per-delivery admission: first=%+v second=%+v", ss.Deliveries[0], ss.Deliveries[1])
+	for i := 0; i < 3; i++ {
+		if _, err := pub.PublishEvent(ctx, core.PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "notice", Ref: core.RecordVersionRef{RecordID: note.RecordID, Version: note.Version}, Destination: core.EventDestination{Type: "agent", Name: busy.Inbox}}, dest); err != nil {
+			t.Fatal(err)
+		}
 	}
-	repeat, _, err := summarizeAttention(deliveries, true, attentionOptions{}, cache, now)
-	if err != nil || len(repeat.Changed) != 0 || len(repeat.StoppedSessions) != 1 {
-		t.Fatalf("repeat should suppress changed while keeping stopped_sessions view: %+v %v", repeat, err)
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := host.HeartbeatAgent(ctx, core.AgentSessionRef{AgentID: busy.AgentID, ExecutionID: busy.ExecutionID}, dest); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(ctx, []string{"coordination-review"}, strings.NewReader(`{"repo":"`+repo+`","state":"pending","limit":100,"attention":{"starvation":{"busy_after_seconds":1}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(out)
+	var review struct {
+		Attention *core.AttentionResult `json:"attention"`
+	}
+	if err := json.Unmarshal(raw, &review); err != nil || review.Attention == nil {
+		t.Fatalf("unmarshal review: %s %v", raw, err)
+	}
+	if len(review.Attention.Changed) != 0 || len(review.Attention.Groups) != 0 {
+		t.Fatalf("busy recipients stay out of the existing groups: %+v", review.Attention)
+	}
+	starved := review.Attention.StarvedSessions
+	if len(starved) != 1 || starved[0].Recipient != busy.Inbox || starved[0].Count != 3 || starved[0].Notices != 3 ||
+		starved[0].Condition != "pending_starved" || starved[0].LastHandledAt != nil || starved[0].AgentID != busy.AgentID {
+		t.Fatalf("starved_sessions: %+v", starved)
 	}
 }
 
@@ -354,7 +196,7 @@ func TestCoordinationReviewAgent463IncidentAndNotifications(t *testing.T) {
 	}
 	raw, _ := json.Marshal(out)
 	var review struct {
-		Attention *attentionResult `json:"attention"`
+		Attention *core.AttentionResult `json:"attention"`
 	}
 	if err := json.Unmarshal(raw, &review); err != nil || review.Attention == nil {
 		t.Fatalf("unmarshal review: %+v %v", review, err)
@@ -373,25 +215,5 @@ func TestCoordinationReviewAgent463IncidentAndNotifications(t *testing.T) {
 	raw2, _ := json.Marshal(out2)
 	if err := json.Unmarshal(raw2, &review); err != nil || review.Attention.PublisherNotifications.Sent != 0 || review.Attention.PublisherNotifications.Suppressed != 35 || len(review.Attention.Changed) != 0 {
 		t.Fatalf("publisher_notifications second run: %+v %v", review.Attention, err)
-	}
-}
-
-func TestAttentionDistinguishesMissingFromAmbiguousTerminalTargets(t *testing.T) {
-	checks := map[string]string{}
-	for _, condition := range []string{"terminal_target_missing", "terminal_target_not_idle", "terminal_target_focused", "terminal_target_ambiguous", "terminal_host_unavailable"} {
-		result, _, err := summarizeAttention([]attentionDelivery{attentionFixture("one", "request", condition)}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
-		if err != nil || len(result.Changed) != 1 || result.Changed[0].Condition != condition {
-			t.Fatalf("%s: %+v %v", condition, result, err)
-		}
-		next := result.Changed[0].NextCheck
-		for other, seen := range checks {
-			if seen == next {
-				t.Fatalf("%s and %s share next check %q", condition, other, next)
-			}
-		}
-		if !strings.Contains(next, "not acknowledgement") {
-			t.Fatalf("%s next check does not say waiting is not acknowledgement: %q", condition, next)
-		}
-		checks[condition] = next
 	}
 }

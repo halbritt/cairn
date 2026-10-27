@@ -14,13 +14,13 @@ import (
 func coordinationReview(ctx context.Context, store *core.Store, input io.Reader) (any, error) {
 	var req struct {
 		core.EventReviewRequest
-		ClosedAfter int64             `json:"closed_after,omitempty"`
-		ClosedLimit int               `json:"closed_limit,omitempty"`
-		QueuedAfter int64             `json:"queued_after,omitempty"`
-		QueuedLimit int               `json:"queued_limit,omitempty"`
-		AgentsAfter int64             `json:"agents_after,omitempty"`
-		AgentsLimit int               `json:"agents_limit,omitempty"`
-		Attention   *attentionOptions `json:"attention,omitempty"`
+		ClosedAfter int64                  `json:"closed_after,omitempty"`
+		ClosedLimit int                    `json:"closed_limit,omitempty"`
+		QueuedAfter int64                  `json:"queued_after,omitempty"`
+		QueuedLimit int                    `json:"queued_limit,omitempty"`
+		AgentsAfter int64                  `json:"agents_after,omitempty"`
+		AgentsLimit int                    `json:"agents_limit,omitempty"`
+		Attention   *core.AttentionOptions `json:"attention,omitempty"`
 	}
 	if err := decode(input, &req); err != nil {
 		return nil, invalid(err.Error())
@@ -46,7 +46,7 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 	if err != nil {
 		return nil, err
 	}
-	var attention *attentionResult
+	var attention *core.AttentionResult
 	if req.Attention != nil {
 		rows := deliveries.Deliveries
 		scope := attentionScope(struct {
@@ -54,12 +54,12 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 			Age                                             int64
 		}{req.Repo, req.Consumer, req.State, req.DeliveryID, os.Getenv("CAIRN_DATABASE_URL"), os.Getenv("CAIRN_HOME"), req.Attention.OlderThanSeconds})
 		now := time.Now()
-		result, err := withAttentionCache(*req.Attention, scope, func(previous attentionCache) (attentionResult, attentionCache, error) {
-			res, next, err := summarizeReviewAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, now)
+		result, err := withAttentionCache(*req.Attention, scope, func(previous core.AttentionCache) (core.AttentionResult, core.AttentionCache, error) {
+			res, next, err := core.SummarizeAttention(rows, req.After == 0 && !deliveries.More, *req.Attention, previous, now)
 			if err != nil || !req.Attention.NotifyPublishers {
 				return res, next, err
 			}
-			batch, updated, err := notifyStoppedPublishers(ctx, store, req.Repo, rows, previous, next, now)
+			batch, updated, err := core.NotifyStoppedPublishers(ctx, store, req.Repo, rows, previous, next, now)
 			if err != nil {
 				return res, previous, err
 			}
@@ -70,7 +70,7 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 			return nil, err
 		}
 		// Starvation is a current snapshot of this page, outside the change cache.
-		result.StarvedSessions, err = detectReviewStarvation(rows, req.Attention.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
+		result.StarvedSessions, err = core.DetectStarvation(rows, req.Attention.Starvation, now, func(consumers []string) (map[string]time.Time, error) {
 			return store.LastHandledDeliveries(ctx, req.Repo, consumers)
 		})
 		if err != nil {
@@ -91,6 +91,6 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 		Deliveries         core.EventReviewPage    `json:"deliveries"`
 		Sessions           core.AgentDirectoryPage `json:"sessions"`
 		Workers            []core.WorkerSlot       `json:"workers"`
-		Attention          *attentionResult        `json:"attention,omitempty"`
+		Attention          *core.AttentionResult   `json:"attention,omitempty"`
 	}{closed, queued, deliveries, sessions, workers.Workers, attention}, nil
 }
