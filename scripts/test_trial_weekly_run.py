@@ -88,12 +88,30 @@ FAKE_HARNESS = r'''#!/usr/bin/env python3
 import hashlib, json, os, sys
 from pathlib import Path
 argv = sys.argv[1:]
+invocation = list(argv)
+if '--execution-profile' in argv:
+    index = argv.index('--execution-profile')
+    raw = Path(argv[index + 1]).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != argv[index + 2]:
+        sys.exit(4)
+    argv = argv[:index]
+    for name, value in json.loads(raw)['agent'].items():
+        flag = '--' + name.replace('_', '-')
+        if name == 'memory':
+            for item in value:
+                argv += [flag, item]
+        elif isinstance(value, list):
+            argv += [flag, *map(str, value)]
+        elif value is True:
+            argv.append(flag)
+        else:
+            argv += [flag, str(value)]
 if '--original-limits' not in argv:
     sys.exit(3)
 value = lambda flag: argv[argv.index(flag) + 1]
 out = Path(value('--output'))
 out.mkdir(mode=0o700)
-(out / 'argv.json').write_text(json.dumps(dict(argv=argv, pg_bin=os.environ.get('CAIRN_PG_BIN'),
+(out / 'argv.json').write_text(json.dumps(dict(argv=argv, invocation=invocation, pg_bin=os.environ.get('CAIRN_PG_BIN'),
     config_home=os.environ.get('CAIRN_TASK_EVAL_CLAUDE_CONFIG_DIR'),
     leaked=sorted(k for k in os.environ if 'OPENROUTER' in k or k == 'ANTHROPIC_API_KEY'))))
 cases = [c['id'] for c in json.loads(Path('trials/task-eval/cases.json').read_text())['cases']]
@@ -292,7 +310,7 @@ class Repo:
         shutil.copy(Path(weekly.selection.__file__), self.path / 'scripts/trial_account_selection.py')
         shutil.copy(Path(weekly.limits.__file__), self.path / 'scripts/trial_legacy_limits.py')
         (self.path / 'scripts/trial_task_eval.py').write_text(
-            '# synthetic\n        selected = credentials_source()\n    a.add_argument("--original-limits")\n')
+            'def configure(a):\n    selected = credentials_source()\n    a.add_argument("--original-limits")\n')
         write_synthetic_trial(self.path, cases)
         git(self.path, 'add', '-A')
         git(self.path, 'commit', '-q', '-m', 'harness')
@@ -700,7 +718,7 @@ class WeeklyRunTests(unittest.TestCase):
                     original_execution=dict(native=dict(path='/declared:with/colon/claude', sha256='b' * 64), effort='max',
                                             embedding=dict(model_identity=dict(path='/declared/identity.json', sha256='c' * 64))),
                     original_arms=dict(path='/slot/original-arms.json', sha256='d' * 64))
-        self.assertEqual(weekly.legacy_argv(spec, Path('/out')), [
+        self.assertCountEqual(weekly.legacy_argv(spec, Path('/out')), [
             '/h/scripts/trial-task-eval.sh', 'agent', '--legacy-fixtures', '--original-limits', '--output', '/out', '--arms',
             '--memory', 'CURRENT:/CURRENT/cairn:/CURRENT/memory.py', '--memory', 'CAND:/CAND/cairn:/CAND/memory.py',
             '--distractors', '1900', '--seeds', '3', '--first-seed', '0', '--embedding-worker', '/w',
@@ -752,6 +770,27 @@ class WeeklyRunTests(unittest.TestCase):
         stored = json.loads((self.runs / receipt['slot_id'] / 'receipt.json').read_text())
         self.assertEqual(stored, receipt)
 
+
+    def test_profile_capable_selected_harness_completes_through_the_pinned_document(self):
+        git(self.repo.path, 'checkout', '-q', '-b', 'profile-harness', self.repo.harness)
+        source = self.repo.path / 'scripts/trial_task_eval.py'
+        source.write_text(source.read_text() + 'EXECUTION_PROFILE_SCHEMA = \"cairn.task-eval.execution-profile/1\"\n')
+        git(self.repo.path, 'commit', '-qam', 'synthetic profile harness')
+        self.profile['harness_commit'] = git(self.repo.path, 'rev-parse', 'HEAD')
+        git(self.repo.path, 'checkout', '-q', 'main')
+        self.select(harness_commit=self.profile['harness_commit'])
+        receipt = self.run_weekly()
+        self.assertEqual(receipt['status'], 'complete')
+        self.assertEqual(receipt['attempts']['records'], 126)
+        path = Path(receipt['agent']['path']).parent
+        invocation = json.loads((path / 'argv.json').read_text())['invocation']
+        self.assertEqual(invocation[4], '--execution-profile')
+        profile_path = Path(invocation[5])
+        document = paired.read_json_pin(dict(path=str(profile_path), sha256=invocation[6]))
+        self.assertEqual(document['schema'], 'cairn.task-eval.execution-profile/1')
+        self.assertTrue(document['agent']['original_limits'])
+        self.assertEqual(document['agent']['original_writer_controls_sha256'],
+                         self.profile['writer']['controls']['sha256'])
 
     def test_repeated_slot_returns_stored_receipt_without_rebuilding_or_executing(self):
         first = self.run_weekly()

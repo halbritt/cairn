@@ -122,17 +122,29 @@ def arm_controls(fragment, recall):
                    hook=dict(recall[name]['hook']), bridge=dict(recall[name]['bridge'])) for name in ARMS})
 
 
-def harness_flags(fragment, controls):
-    """Structured legacy harness flags; no PATH:SHA concatenation."""
+def harness_fields(fragment, controls):
+    """Agent field values for the selected native binary and original controls."""
     identity = fragment['embedding']['model_identity']
-    actor='provider' if fragment.get('harness')=='codex' else 'native'
-    flags=(['--codex-binary',fragment[actor]['path'],'--codex-binary-sha256',fragment[actor]['sha256'],
-            '--codex-weekly-limits'] if actor=='provider' else
-           ['--original-native-path', fragment[actor]['path'], '--original-native-sha256',fragment[actor]['sha256']])
-    return flags + ['--reasoning-effort', fragment['effort'],
-            '--original-arms', controls['path'], '--original-arms-sha256', controls['sha256'],
-            '--original-embedding-identity', identity['path'],
-            '--original-embedding-identity-sha256', identity['sha256']]
+    if fragment.get('harness') == 'codex':
+        actor = fragment['provider']
+        fields = dict(codex_binary=actor['path'], codex_binary_sha256=actor['sha256'],
+                      codex_weekly_limits=True)
+    else:
+        actor = fragment['native']
+        fields = dict(original_native_path=actor['path'], original_native_sha256=actor['sha256'])
+    return dict(fields, reasoning_effort=fragment['effort'], original_arms=controls['path'],
+                original_arms_sha256=controls['sha256'], original_embedding_identity=identity['path'],
+                original_embedding_identity_sha256=identity['sha256'])
+
+
+def harness_flags(fragment, controls):
+    """Historical harness adapter; paths and hashes remain separate arguments."""
+    flags = []
+    for name, value in harness_fields(fragment, controls).items():
+        flags.append('--' + name.replace('_', '-'))
+        if value is not True:
+            flags.append(value)
+    return flags
 
 
 def _hex64(value):

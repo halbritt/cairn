@@ -1240,3 +1240,28 @@ Limits and account selection:
 - Real conversion materials, a grader release authority, delivery, the
   grading join, `trial_run_report` render and publish, and two consecutive
   complete weekly runs.
+
+## Weekly execution profile transport — 2026-10-27
+
+Both weekly executors now derive their shared settings from one field mapping.
+If the selected, exported `trial_task_eval.py` declares the literal
+`EXECUTION_PROFILE_SCHEMA = "cairn.task-eval.execution-profile/1"`,
+the executor writes `execution-profile.json` exclusively with mode 0600 inside
+the owned slot and passes its path and SHA-256. The document carries the same
+model, effort, original limits, writer controls, memory arms, embedding worker,
+case materials and account assignment as the individual flags. Fixture source
+selection and output remain command-line arguments. Existing selected-input
+and subscription checks still apply. A failed profile launch never retries
+through the old interface.
+
+Historical harness commits that lack this entry point continue to receive the
+individual flags. This is selection by the pinned source's interface before
+launch; it does not repin a frozen harness, replace historical receipts or
+change campaign admission. To use the new path in a real weekly run, select a
+new harness commit and a fresh slot selection, and satisfy the existing capacity
+gate or provide a new occurrence-specific one-run override. Prior overrides
+are not reusable authority.
+
+Verification uses synthetic weekly fixtures, both providers' real argument
+parser, a changed-profile refusal and exclusive-create checks. It establishes
+transport equivalence, not real-account completion or campaign acceptance.

@@ -135,9 +135,10 @@ attempt that raised, so no record field is derived twice.
 same flag values (argparse names, for example `model`, `original_limits`). The
 document refuses unknown fields and changed bytes; an explicit flag that differs
 from the profile refuses; every existing flag validation still applies. The
-individual flags remain the compatibility interface: the weekly runner keeps
-invoking pinned harness commits with flags, because an older pinned export does
-not know `--execution-profile`. The npm
+individual flags remain the compatibility interface for older pinned harnesses.
+The weekly runner uses one private, pinned execution profile when its selected
+export declares the literal `EXECUTION_PROFILE_SCHEMA` capability, and preserves flag invocation for older
+exports. A profile failure never retries through flags. The npm
 installation and auth paths are host-specific defaults; they can be overridden.
 Use `--semantic-recall LABEL` for each memory arm that should run the semantic
 recall/applicability route. Its default is off, matching the frozen Claude

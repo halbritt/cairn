@@ -73,6 +73,8 @@ RANK_DEPTH = 50
 CASE_MATERIALS_SCHEMA = 'cairn.legacy-v12-case-material-manifest/2'
 DB_COVERAGE_ACTION_PROJECTION = 'cairn.legacy-db-coverage-action-trace/1'
 CASE_MATERIALS_LIMIT = 2 * 1024 * 1024
+# Pinned exporters inspect this literal without importing the selected harness.
+EXECUTION_PROFILE_SCHEMA = "cairn.task-eval.execution-profile/1"
 
 
 # ---------------------------------------------------------------- fixtures

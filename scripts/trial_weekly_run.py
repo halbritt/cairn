@@ -27,6 +27,7 @@ What this is not:
   see docs/weekly-runner-reconciliation.md.
 """
 import argparse
+import ast
 import datetime as dt
 import hashlib
 import json
@@ -127,20 +128,95 @@ def check_account(account):
     return account
 
 
-def legacy_argv(spec, output):
-    """The original harness command for one weekly spec; runs nothing."""
+def weekly_fields(spec, *, auth_account=None):
+    """One declaration of the flags shared by current and historical weekly harnesses."""
     seeds = spec['seeds']
     need(seeds == list(range(seeds[0], seeds[0] + len(seeds))), 'legacy_seed_list')
-    argv = [str(Path(spec['harness']['root']) / 'scripts/trial-task-eval.sh'), 'agent', '--legacy-fixtures',
-            '--original-limits', '--output', str(output), '--arms']
-    for name in ARMS:
-        arm = spec['arms'][name]
-        argv += ['--memory', f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
-    return argv + ['--distractors', str(spec['distractors']), '--seeds', str(len(seeds)),
-                   '--first-seed', str(seeds[0]), '--embedding-worker', spec['embedding']['worker']['path'],
-                   '--harness', 'claude', '--model', spec['actor_model'],
-                   '--max-turns', '40', '--timeout', '900', '--parallel', '3',
-                   *original.harness_flags(spec['original_execution'], spec['original_arms'])]
+    codex = spec['original_execution'].get('harness') == 'codex'
+    fields = dict(arms=[], memory=[
+        f"{name}:{spec['arms'][name]['binary']['path']}:{spec['arms'][name]['hook']['path']}"
+        for name in ARMS], distractors=spec['distractors'], seeds=len(seeds), first_seed=seeds[0],
+        embedding_worker=spec['embedding']['worker']['path'], harness='codex' if codex else 'claude',
+        model=spec['actor_model'], timeout=900, parallel=1 if codex else 3)
+    if codex:
+        need(auth_account is not None, 'codex_account_unbound')
+        fields.update(codex_auth_file=auth_account['auth_file'], codex_auth_sha256=auth_account['auth_sha256'])
+        if spec.get('account_assignment') is not None:
+            fields.update(codex_account_assignment=spec['account_assignment']['path'],
+                          codex_account_assignment_sha256=spec['account_assignment']['sha256'])
+    else:
+        fields.update(original_limits=True, max_turns=40)
+    fields.update(original.harness_fields(spec['original_execution'], spec['original_arms']))
+    if spec.get('case_materials') is not None:
+        fields.update(case_materials=spec['case_materials']['path'],
+                      case_materials_sha256=spec['case_materials']['sha256'])
+    if spec.get('writer') is not None:
+        fields.update(original_writer_cgroup=spec['writer']['cgroup'],
+                      original_writer_controls=spec['writer']['controls']['path'],
+                      original_writer_controls_sha256=spec['writer']['controls']['sha256'])
+    return fields
+
+
+def _historical_flags(fields):
+    """Serialize the weekly field subset for an older pinned harness."""
+    flags = []
+    for name, value in fields.items():
+        flag = '--' + name.replace('_', '-')
+        if name == 'memory':
+            for item in value:
+                flags.extend([flag, item])
+        elif isinstance(value, list):
+            flags.extend([flag, *map(str, value)])
+        elif value is True:
+            flags.append(flag)
+        else:
+            flags.extend([flag, str(value)])
+    return flags
+
+
+def _harness_argv(spec, output):
+    return [str(Path(spec['harness']['root']) / 'scripts/trial-task-eval.sh'),
+            'agent', '--legacy-fixtures', '--output', str(output)]
+
+
+def legacy_argv(spec, output):
+    """Historical flag adapter retained for callers and frozen harness commits."""
+    return _harness_argv(spec, output) + _historical_flags(weekly_fields(spec))
+
+
+def _execution_profile_schema(source):
+    """Read one literal capability without executing the selected harness."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        raise paired.Refusal('harness_execution_profile_invalid') from None
+    declarations = []
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else (
+            [node.target] if isinstance(node, ast.AnnAssign) else [])
+        if any(isinstance(target, ast.Name) and target.id == 'EXECUTION_PROFILE_SCHEMA' for target in targets):
+            declarations.append(node.value)
+    if not declarations:
+        return None
+    need(len(declarations) == 1 and isinstance(declarations[0], ast.Constant)
+         and type(declarations[0].value) is str, 'harness_execution_profile_invalid')
+    schema = declarations[0].value
+    need(schema == te.trial_attempt.PROFILE_SCHEMA, 'harness_execution_profile_unsupported')
+    return schema
+
+
+def execution_argv(spec, output, run_dir, *, auth_account=None):
+    """Select the pinned harness's supported interface, without retry or fallback."""
+    fields = weekly_fields(spec, auth_account=auth_account)
+    source_path = Path(spec['harness']['root']) / 'scripts/trial_task_eval.py'
+    source = source_path.read_text() if source_path.is_file() else ''
+    argv = _harness_argv(spec, output)
+    schema = _execution_profile_schema(source)
+    if schema is None:
+        return argv + _historical_flags(fields)
+    path = Path(run_dir) / 'execution-profile.json'
+    paired.write_selected(path, te.trial_attempt.profile_document(fields))
+    return argv + ['--execution-profile', str(path), hashlib.sha256(path.read_bytes()).hexdigest()]
 
 
 def legacy_environment(spec, base=None):
@@ -191,13 +267,7 @@ class LegacyHarnessExecutor:
 
     def execute(self, spec, run_dir):
         output = Path(run_dir) / 'agent'
-        argv = legacy_argv(spec, output)
-        if spec.get('case_materials') is not None:
-            argv += ['--case-materials', spec['case_materials']['path'],
-                     '--case-materials-sha256', spec['case_materials']['sha256']]
-        argv += ['--original-writer-cgroup', spec['writer']['cgroup'],
-                 '--original-writer-controls', spec['writer']['controls']['path'],
-                 '--original-writer-controls-sha256', spec['writer']['controls']['sha256']]
+        argv = execution_argv(spec, output, run_dir)
         env = legacy_environment(spec)
         with open(Path(run_dir) / 'harness.log', 'xb') as log:
             os.chmod(log.name, 0o600)
@@ -271,29 +341,9 @@ class CodexWeeklyExecutor:
         output=Path(run_dir)/'agent'
         fragment=spec['original_execution']
         need(fragment.get('harness')=='codex','codex_provider_contract_mismatch')
-        argv=[str(Path(spec['harness']['root'])/'scripts/trial-task-eval.sh'),'agent','--legacy-fixtures',
-              '--codex-weekly-limits','--output',str(output),'--arms']
-        if spec.get('case_materials') is not None:
-            argv += ['--case-materials', spec['case_materials']['path'],
-                     '--case-materials-sha256', spec['case_materials']['sha256']]
-        argv += ['--original-writer-cgroup', spec['writer']['cgroup'],
-                 '--original-writer-controls', spec['writer']['controls']['path'],
-                 '--original-writer-controls-sha256', spec['writer']['controls']['sha256']]
-        for name in ARMS:
-            arm=spec['arms'][name]
-            argv += ['--memory',f"{name}:{arm['binary']['path']}:{arm['hook']['path']}"]
         auth_account = (self.account_assignment['document']['accounts'][0]
                         if self.account_assignment is not None else self.account)
-        need(auth_account is not None, 'codex_account_unbound')
-        argv += ['--distractors',str(spec['distractors']),'--seeds',str(len(spec['seeds'])),'--first-seed',str(spec['seeds'][0]),
-                 '--embedding-worker',spec['embedding']['worker']['path'],'--harness','codex','--model',spec['actor_model'],
-                 '--codex-auth-file',
-                 auth_account['auth_file'],'--codex-auth-sha256',auth_account['auth_sha256'],
-                 '--timeout','900','--parallel','1',
-                 *original.harness_flags(fragment,spec['original_arms'])]
-        if spec.get('account_assignment') is not None:
-            argv += ['--codex-account-assignment', spec['account_assignment']['path'],
-                     '--codex-account-assignment-sha256', spec['account_assignment']['sha256']]
+        argv = execution_argv(spec, output, run_dir, auth_account=auth_account)
         env=codex_environment(spec)
         with open(Path(run_dir)/'harness.log','xb') as log:
             os.chmod(log.name,0o600)
