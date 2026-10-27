@@ -63,6 +63,7 @@ def _runtime_bundle():
 
 
 _BUNDLE = _runtime_bundle()
+_inbox_binding = _BUNDLE.load("inbox_binding").InboxBinding(_BUNDLE)
 
 
 _unix_peer_transport = _BUNDLE.load("unix_peer_transport")
@@ -4003,56 +4004,11 @@ def record_activation_refusal(config, event, exc):
 
 
 def effective_inbox_config(config, event=None):
-    """Snapshot the one-file activation decision for this hook invocation.
-
-    Disabled staging must not inspect pins whose configurations are still being
-    replaced. Removing the opt-in from a private copy preserves every old path.
-    """
-    if not config.get("inbox_recall_binding"):
-        return config
-    excluded = (any(os.environ.get(k) == "1" for k in
-                    ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD", "CAIRN_COORDINATION_DISABLED"))
-                or bool(os.environ.get("CAIRN_WAKE_CONTEXT")))
-    if event is not None:
-        excluded = excluded or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit")
-        for name in ("cwd", "project_path"):
-            if event.get(name) and isinstance(event[name], str):
-                root = Path(event[name]).resolve()
-                excluded = excluded or any((p / marker).exists() for p in (root, *root.parents)
-                                           for marker in (".cairn-no-memory", ".cairn-no-coordination"))
-    if excluded:
-        result = dict(config)
-        result.pop("inbox_recall_binding")
-        return result
-    path = Path(config["inbox_recall_binding"])
-    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
-        raise ValueError("inbox recall binding must be owner-only")
-    manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/2" or type(manifest.get("enabled")) is not bool:
-        raise ValueError("unsupported inbox recall activation state")
-    enabled = manifest["enabled"]
-    if (event is not None and event.get("hook_event_name") == "UserPromptSubmit"
-            and inbox_recall_wake(event)):
-        enabled = load_inbox_recall(config, validate=False).activation_decision(config, event, enabled)
-    if enabled:
-        return config
-    result = dict(config)
-    result.pop("inbox_recall_binding")
-    return result
+    return _inbox_binding.effective_config(config, event, inbox_recall_wake)
 
 
 def load_inbox_recall(config, *, validate=True):
-    """Execute only the complete, explicitly pinned inbox recall bundle."""
-    path = Path(config["inbox_recall_binding"])
-    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
-        raise ValueError("inbox recall binding must be owner-only")
-    manifest = json.loads(path.read_text())
-    if manifest.get("schema") != "cairn.inbox-recall-binding/2":
-        raise ValueError("unsupported inbox recall binding; restage its complete lifecycle bundle")
-    module = _BUNDLE.load_pinned(manifest["bridge"], "inbox_recall")
-    if validate:
-        module.binding(config)
-    return module
+    return _inbox_binding.load_bridge(config, validate=validate)
 
 
 def handle(config, event, event_name=None, *, _inbox_resolved=False):

@@ -8,7 +8,6 @@ import re
 from pathlib import Path
 import sys
 import time
-import tempfile
 import uuid
 
 
@@ -35,6 +34,7 @@ _BUNDLE = _runtime_bundle()
 
 
 _grant_ledger = _BUNDLE.load("grant_ledger")
+_inbox_binding = _BUNDLE.load("inbox_binding").InboxBinding(_BUNDLE)
 GrantLedger = _grant_ledger.GrantLedger
 
 SCHEMA = 'cairn.inbox-recall-binding/2'
@@ -246,49 +246,8 @@ class InboxRouteTrace:
             out.write(raw)
 
 
-def checked_file(spec):
-    path = Path(spec['path'])
-    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o022:
-        raise ValueError('inbox recall requires owner-controlled absolute paths')
-    raw = path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != spec['sha256']:
-        raise ValueError('inbox recall binding changed')
-    return path, raw
-
-
 def validate_binding(config, *, require_enabled=False):
-    path = Path(config['inbox_recall_binding'])
-    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
-        raise ValueError('inbox recall binding must be owner-only')
-    manifest = json.loads(path.read_text())
-    if manifest.get('schema') != SCHEMA or type(manifest.get('enabled')) is not bool:
-        raise ValueError('unknown inbox recall binding')
-    if require_enabled and not manifest['enabled']:
-        raise ValueError('inbox recall binding is disabled')
-    # The role snapshots own code validation; checked_file is for configuration bytes.
-    _BUNDLE.check_pinned(manifest['bridge'], 'inbox_recall')
-    memory = json.loads(checked_file(manifest['memory_config'])[1])
-    descriptors = manifest.get('coordination_configs')
-    if not isinstance(descriptors, list) or not 1 <= len(descriptors) <= 8:
-        raise ValueError('one to eight explicit coordination configurations required')
-    coordinators = [json.loads(checked_file(item)[1]) for item in descriptors]
-    profiles = [memory, *coordinators]
-    homes = [str(Path(c['config_home']).resolve()) if c.get('config_home') else None for c in coordinators]
-    if len(coordinators) > 1 and (None in homes or len(homes) != len(set(homes))):
-        raise ValueError('shared memory binding requires distinct explicit configuration homes')
-    if (config.get('harness') not in ('codex', 'claude') or memory.get('recall_mode') != 'agent_tools'
-            or any(not c.get('native_delivery') for c in coordinators)
-            or any(c.get('inbox_recall_binding') != str(path) for c in profiles)
-            or any(c.get(k) != memory.get(k) for c in profiles for k in ('harness', 'cairn', 'socket', 'token_file', 'repo'))
-            or config not in profiles or not all(Path(c['state_dir']).is_absolute() for c in profiles)
-            or any(Path(memory['state_dir']).resolve() == Path(c['state_dir']).resolve() for c in coordinators)
-            or any(c.get('config_home') and not Path(c['config_home']).is_absolute() for c in coordinators)
-            or type(memory.get('context_bytes')) is not int or not 1000 <= memory['context_bytes'] <= 9500):
-        raise ValueError('incompatible inbox recall profile binding')
-    engine = _BUNDLE.load_pinned(manifest['engine'], 'memory')
-    if getattr(engine, 'INBOX_RECALL_VERSION', None) != 1:
-        raise ValueError('pinned memory engine lacks the inbox recall contract')
-    return engine, memory
+    return _inbox_binding.validate(config, require_enabled=require_enabled)
 
 
 def binding(config):
@@ -308,83 +267,7 @@ def acquire_session_lock(lock, deadline=None):
 
 
 def activation_decision(config, event, enabled):
-    """One decision for both reserved-wake hooks; no grant or active turn changes."""
-    if config.get('harness') not in ('codex', 'claude') or event.get('hook_event_name') != 'UserPromptSubmit':
-        return enabled
-    session = event.get('session_id')
-    turn = claude_owner(event) if config['harness'] == 'claude' else event.get('turn_id')
-    try:
-        if str(uuid.UUID(session)) != session or (config['harness'] == 'codex' and str(uuid.UUID(turn)) != turn):
-            return enabled
-    except (ValueError, TypeError, AttributeError):
-        return enabled
-    # Privacy exclusions do not write per-session activation metadata.
-    for name in ('cwd', 'project_path'):
-        if event.get(name) and any((p / '.cairn-no-memory').exists() for p in
-                [Path(event[name]).resolve(), *Path(event[name]).resolve().parents]):
-            return enabled
-    manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
-    path = Path(manifest['memory_config']['path'])
-    # Disabled staging intentionally does not require the final configuration
-    # hash yet. It reads only the owner-controlled location of the existing ledger.
-    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o022:
-        raise ValueError('activation ledger configuration is not owner-controlled')
-    memory = json.loads(path.read_text())
-    if not isinstance(memory, dict) or not isinstance(memory.get('state_dir'), str):
-        raise ValueError('activation ledger configuration lacks a state directory')
-    directory = Path(memory['state_dir'])
-    if not directory.is_absolute():
-        raise ValueError('activation ledger directory must be absolute')
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o022:
-        raise ValueError('activation ledger directory is not owner-controlled')
-    with (directory / (session + '.lock')).open('a') as lock:
-        # The two reserved-wake hooks run in parallel and can overlap while
-        # persisting this same decision. Wait for that writer, never bypass its accounting.
-        acquire_session_lock(lock)
-        if config['harness'] == 'claude':
-            path = directory / (session + '.inbox-recall.json')
-            marker = path.with_suffix('.initialized')
-            expected = dict(schema='cairn.inbox-recall-initialized/1', session=session)
-            ledger = load_grants(path, session)
-        else:
-            path = directory / (session + '.memory-budget.json')
-            marker = path.with_suffix('.initialized')
-            expected = dict(schema='cairn.codex-memory-grants/1', session_id=session)
-            if marker.exists() and (json.loads(marker.read_text()) != expected or not path.exists()):
-                raise ValueError('activation cannot reset initialized turn accounting')
-            if path.exists():
-                ledger = json.loads(path.read_text())
-            else:
-                budget = memory.get('context_bytes', 9500)
-                if type(budget) is not int or not 1000 <= budget <= 65536:
-                    raise ValueError('invalid initial activation accounting limit')
-                ledger = dict(expected, active_turn_id=None, turns={}, pending=dict(
-                    limit_bytes=budget, emitted_hook_bytes=0, reserved_native_bytes=0, granted=False))
-            if ledger.get('schema') != expected['schema'] or ledger.get('session_id') != session:
-                raise ValueError('activation ledger identity differs')
-        decisions = ledger.setdefault('inbox_activation', {})
-        if not isinstance(decisions, dict) or any(not isinstance(k, str) or type(v) is not bool for k,v in decisions.items()):
-            raise ValueError('invalid activation decisions')
-        if turn in decisions:
-            return decisions[turn]
-        decisions[turn] = enabled
-        def save(target, value):
-            with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as output:
-                temporary = Path(output.name)
-                try:
-                    json.dump(value, output, separators=(',', ':'))
-                    output.flush(); os.fsync(output.fileno()); output.close()
-                    temporary.replace(target)
-                    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-                    try: os.fsync(fd)
-                    finally: os.close(fd)
-                finally:
-                    temporary.unlink(missing_ok=True)
-        if not marker.exists():
-            save(marker, expected)
-        save(path, ledger)
-        return enabled
+    return _inbox_binding.activation_decision(config, event, enabled)
 
 
 def reserved(engine, event):
@@ -392,28 +275,7 @@ def reserved(engine, event):
 
 
 def coordinates_wake(config, event):
-    """A coordination opt-out leaves the independent required-only hook active."""
-    manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
-    coordinators = [json.loads(checked_file(item)[1]) for item in manifest['coordination_configs']]
-    variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
-    active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
-    matches = [c for c in coordinators if not c.get('config_home') or active == Path(c['config_home']).resolve()]
-    if len(matches) > 1:
-        raise ValueError('ambiguous coordination profile')
-    if not matches:
-        return False
-    coordination = matches[0]
-    if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1' or os.environ.get('CAIRN_WAKE_CONTEXT'):
-        return False
-    root = Path(event['cwd']).resolve()
-    if any((p / '.cairn-no-coordination').exists() for p in [root, *root.parents]):
-        return False
-    if coordination.get('config_home'):
-        variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
-        active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
-        if active != Path(coordination['config_home']).resolve():
-            return False
-    return True
+    return _inbox_binding.coordinates_wake(config, event)
 
 
 # Grant ledger retention (CAIRN-186). Every wake rewrites the session ledger

@@ -1192,6 +1192,20 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertEqual(result['code'],1)
         self.assertEqual(result['stdout'],'')
 
+    def test_capture_and_worker_callbacks_resolve_without_manifest_or_activation_state(self):
+        self.binding.unlink()
+        for hook, config in ((memory, self.mc), (coord, self.cc)):
+            expected = {key: value for key, value in config.items() if key != 'inbox_recall_binding'}
+            for event_name in ('PreCompact', 'SessionEnd', 'Stop', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure'):
+                with self.subTest(hook=hook.__name__, event=event_name):
+                    resolved = hook.effective_inbox_config(config, dict(self.event, hook_event_name=event_name))
+                    self.assertEqual(resolved, expected)
+                    self.assertIn('inbox_recall_binding', config)
+            with self.subTest(hook=hook.__name__, worker=True), patch.dict(os.environ, {'CAIRN_WAKE_CONTEXT':'fixture'}):
+                self.assertEqual(hook.effective_inbox_config(config, self.event), expected)
+        self.assertFalse((self.root/'memory').exists())
+        self.assertEqual(self.calls(), [])
+
     def test_global_opt_out_and_child_never_read_manifest_or_write_activation(self):
         self.binding.unlink()
         for flag in ('CAIRN_LIFECYCLE_DISABLED','CAIRN_LIFECYCLE_CHILD'):

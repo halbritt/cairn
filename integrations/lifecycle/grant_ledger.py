@@ -77,6 +77,63 @@ def save_codex_budget(path, ledger):
             temporary.unlink(missing_ok=True)
 
 
+def activation_decision(memory, harness, session, turn, enabled):
+    """Persist one shared callback decision without allocating or refunding grants."""
+    directory = Path(memory['state_dir'])
+    if not directory.is_absolute():
+        raise ValueError('activation ledger directory must be absolute')
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o022:
+        raise ValueError('activation ledger directory is not owner-controlled')
+    with (directory / (session + '.lock')).open('a') as lock:
+        # The two reserved-wake hooks run in parallel and can overlap while
+        # persisting this same decision. Wait for that writer, never bypass its accounting.
+        acquire_session_lock(lock)
+        if harness == 'claude':
+            path = directory / (session + '.inbox-recall.json')
+            marker = path.with_suffix('.initialized')
+            expected = dict(schema='cairn.inbox-recall-initialized/1', session=session)
+            ledger = load_grants(path, session)
+        else:
+            path = directory / (session + '.memory-budget.json')
+            marker = path.with_suffix('.initialized')
+            expected = dict(schema='cairn.codex-memory-grants/1', session_id=session)
+            if marker.exists() and (json.loads(marker.read_text()) != expected or not path.exists()):
+                raise ValueError('activation cannot reset initialized turn accounting')
+            if path.exists():
+                ledger = json.loads(path.read_text())
+            else:
+                budget = memory.get('context_bytes', 9500)
+                if type(budget) is not int or not 1000 <= budget <= 65536:
+                    raise ValueError('invalid initial activation accounting limit')
+                ledger = dict(expected, active_turn_id=None, turns={}, pending=dict(
+                    limit_bytes=budget, emitted_hook_bytes=0, reserved_native_bytes=0, granted=False))
+            if ledger.get('schema') != expected['schema'] or ledger.get('session_id') != session:
+                raise ValueError('activation ledger identity differs')
+        decisions = ledger.setdefault('inbox_activation', {})
+        if not isinstance(decisions, dict) or any(not isinstance(k, str) or type(v) is not bool for k,v in decisions.items()):
+            raise ValueError('invalid activation decisions')
+        if turn in decisions:
+            return decisions[turn]
+        decisions[turn] = enabled
+        def save(target, value):
+            with tempfile.NamedTemporaryFile(mode='w', dir=directory, delete=False) as output:
+                temporary = Path(output.name)
+                try:
+                    json.dump(value, output, separators=(',', ':'))
+                    output.flush(); os.fsync(output.fileno()); output.close()
+                    temporary.replace(target)
+                    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                    try: os.fsync(fd)
+                    finally: os.close(fd)
+                finally:
+                    temporary.unlink(missing_ok=True)
+        if not marker.exists():
+            save(marker, expected)
+        save(path, ledger)
+        return enabled
+
+
 def parse_wake_envelope(prompt):
     """Parse a complete known automatic inbox wake prompt or Claude channel wake envelope."""
     if not isinstance(prompt, str):

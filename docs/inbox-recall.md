@@ -8,6 +8,11 @@ existing behavior is unchanged.
 
 ## Binding and activation
 
+One shared binding module owns activation policy, configuration validation,
+profile selection and pinned implementation loading for both hooks. The grant
+ledger continues to own session locks, durable activation decisions and budget
+accounting.
+
 Both configurations must name the same absolute `inbox_recall_binding` manifest.
 The manifest is owner-only. Each referenced file is owned by that user, is not
 writable by another user, and is pinned by SHA-256:
@@ -93,7 +98,8 @@ have recorded a decision. The operator must verify that boundary before the firs
 flip. No broad pause of providers is implemented. A disabled flip is not an
 instruction to restore files under a still-running enabled turn; wait for affected
 callbacks/attempts to settle, then restore the coherent pinned set. New turns can
-choose the disabled path. This slice adds no installer or service changes.
+choose the disabled path. Activation itself does not install files or change
+services.
 
 ## Admission, source, and failure handling
 

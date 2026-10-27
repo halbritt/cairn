@@ -11,6 +11,11 @@ loader is marked as installed and requires that manifest; the source loader can
 read adjacent development files. Only the loader receives that installation
 marker, so staging does not change the memory engine's source digest.
 
+Adding a runtime member changes the required inventory. Current staging and
+validation tools require the current complete set. An older installed bundle
+continues to use its own unchanged loader until an explicit complete upgrade;
+new validators do not add missing members to an older selected bundle.
+
 New entry points load their adjacent implementation. They do not search a source
 checkout, a former worktree, or another installation, and they do not silently
 substitute a retained ledger implementation. A missing or changed required file
