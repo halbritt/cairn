@@ -130,6 +130,12 @@ invalidated by the cancellation decision, every later capture, a new turn-stop
 observation, a real capture-loss transition and any host-observed owner join
 (which also revokes the exclusivity attestation one-way). A latched
 `capture_gap` preserves lost coverage.
+
+The internal [`native_cleanup.go`](../core/native_cleanup.go) module owns these
+evidence transitions, release eligibility and settlement writes. Store entry
+points retain authentication, mutation identities, locks and transaction
+boundaries. Host adapters retain responsibility for stopping and scanning work.
+
 Host operations are `session-inbox-control`, `session-tool-capture` and
 `session-tool-stop`. The OpenCode watcher polls control, issues one exact native
 stop outside its state lock, records the pinned `TurnEnd`, scans marked tool

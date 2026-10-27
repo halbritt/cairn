@@ -291,64 +291,12 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 			}
 			return attempt, nil
 		}
-		if req.Reason == "exclusivity_revoked" && !(attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil && !attempt.TurnExclusive) {
-			// Revocation reconciliation is valid only for a pending
-			// cancellation whose exclusivity attestation was actually
-			// revoked; it never applies to ordinary attempts.
-			return attempt, failure("INVALID_REQUEST", "exclusivity revocation requires a pending cancellation on an attestation that was revoked")
+		settled, err := settleNativeCleanup(ctx, tx, attempt, req.Reason)
+		if err != nil {
+			return attempt, err
 		}
-		if attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil {
-			if !attempt.TurnExclusive {
-				// The exclusivity attestation was revoked after the operator
-				// intent: per-request stop authority no longer exists. This
-				// records lost stop permission, never turn/tool cleanup, so
-				// captured tools must already be terminal to close here.
-				if req.Reason == "exclusivity_revoked" {
-					// Permission revocation alone establishes nothing about
-					// the running work: release requires the same positive
-					// evidence family as cleanup confirmation, recorded as a
-					// separate outcome with the cancellation unconfirmed.
-					if attempt.TurnStopState != "interrupted" && attempt.TurnStopState != "ended" {
-						return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close without a positive turn stop")
-					}
-					for _, tool := range attempt.Tools {
-						if tool.StopState != "terminated" && tool.StopState != "unavailable" {
-							return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close while captured tools are still running")
-						}
-					}
-					if attempt.TerminalScan != "clear" {
-						return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close without a fresh clear terminal scan")
-					}
-					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
-						return attempt, err
-					}
-					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='exclusivity_revoked' WHERE attempt_id=$1`, req.AttemptID); err != nil {
-						return attempt, err
-					}
-					return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
-				}
-				return attempt, failure("CLEANUP_UNCONFIRMED", "exclusive turn ownership was revoked; per-request cleanup cannot be confirmed")
-			}
-			// An operator cancellation keeps its hold until the binding host
-			// confirms the exact turn stopped and owned tools are terminal.
-			if req.Reason != "cancel_confirmed" {
-				return attempt, failure("CLEANUP_UNCONFIRMED", "operator cancellation is pending; confirm the native turn and owned tool cleanup first")
-			}
-			if !cancelCleanupReady(attempt) {
-				return attempt, failure("CLEANUP_UNCONFIRMED", "cancellation cleanup is incomplete; the native turn stop or owned tool termination is unconfirmed")
-			}
-			if attempt.Delivery.State == "pending" || attempt.Delivery.State == "leased" {
-				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
-					return attempt, err
-				}
-			}
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='cancel_confirmed',cancel_confirmed_at=clock_timestamp() WHERE attempt_id=$1`, req.AttemptID); err != nil {
-				return attempt, err
-			}
+		if settled {
 			return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
-		}
-		if req.Reason == "cancel_confirmed" {
-			return attempt, failure("INVALID_REQUEST", "cancel confirmation requires a recorded operator cancellation")
 		}
 		if attempt.Delivery.State == "pending" || attempt.Delivery.State == "leased" {
 			if req.Reason == "delivery_completed" {

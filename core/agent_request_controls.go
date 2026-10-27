@@ -202,12 +202,11 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 				return zero, failure("UNSUPPORTED_CONTROL", "this native attempt did not prove exclusive single-request turn ownership; reconcile its actual turn/process end")
 			}
 			if requestedAt == nil {
-				requestedAt = &time.Time{}
-				// Evidence must postdate the operator decision: any earlier
-				// clear terminal scan is invalidated with the intent itself.
-				if err = tx.QueryRow(ctx, `UPDATE cairn.agent_session_attempt SET cancel_requested_at=clock_timestamp(),cancel_by=current_setting('cairn.caller'),cancel_reason=$2,terminal_scan='' WHERE attempt_id=$1 RETURNING cancel_requested_at,cancel_by,cancel_reason`, attemptID, req.Reason).Scan(requestedAt, &cancelBy, &cancelReason); err != nil {
+				cancel, err := recordNativeCancellation(ctx, tx, attemptID, req.Reason)
+				if err != nil {
 					return zero, err
 				}
+				requestedAt = &cancel.RequestedAt
 			}
 			return WorkCancellation{EventID: eventID, DeliveryID: delivery, Held: true, Native: &NativeCancelState{
 				AttemptID: attemptID, AgentID: agentID, ExecutionID: executionID, NativeTurnID: nativeTurn,

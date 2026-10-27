@@ -12,6 +12,11 @@ memory and coordination configurations, with pinned files and an activation
 state. A callback pair retains its first activation decision for the same native
 turn or Claude prompt owner.
 
+**Native attempt cleanup**:
+The Store's interpretation of host observations about a native inbox attempt's
+turn, captured tools and terminal scan. Confirmed cancellation and revoked
+exclusivity use the same cleanup evidence but remain distinct settlement outcomes.
+
 ## Native verification
 
 **Native tool result**:
