@@ -1,4 +1,22 @@
-# Implementation status — 2026-10-25
+# Implementation status — 2026-10-27
+
+The primary CLI/API now run clean revision
+`b0ae063d364ebd5377ba157f5aa205acef14e107`; production is at schema 073.
+The release followed a fresh pgBackRest differential and disposable integration
+validation. Version, migration checksum, hosted search/pull, recovery reads,
+and service health checks passed.
+
+The complete lifecycle bundle is staged and validated but **not activated**.
+Disposable native probes showed that Codex 0.164.0 retains old hook commands
+across settings edits and thread/resume. Its running hosts require a coordinated
+restart before the shared binding can select the new bundle. Existing lifecycle
+files and pins remain coherent and unchanged. The weekly source migration is
+landed; a new real-account trial still needs a fresh selection. See the
+[deployment report](verification/cairn-deployment-2026-10-27.md) and
+[exploratory follow-up decisions](verification/architecture-followups-2026-10-27.md).
+No token-efficiency opt-in or acceptance decision changed.
+
+## Previous installed snapshot — 2026-10-25
 
 On 2026-10-25, the installed Cairn CLI and primary API were upgraded to clean
 revision `99745c35417c7467683329afcc4dcdd008aaa09a` (binary SHA-256
