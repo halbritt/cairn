@@ -6,16 +6,16 @@ heartbeat preservation, explicit health recovery, and supervisor restart
 retaining accepted work.
 """
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
 import signal
 import subprocess
 import time
 import uuid
+
+import disposable_host
 
 
 def wait_for(check, seconds=30, interval=0.1):
@@ -39,30 +39,15 @@ def load_native_fixture():
 
 
 def check(binary, root, opencode=None, hermes=None, codex=None, agy=None, claude=None):
-    assert os.environ.get("CAIRN_TEST_DATABASE_URL"), "CAIRN_TEST_DATABASE_URL required"
-    assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"], (
-        "CAIRN_DATABASE_URL must be identical to CAIRN_TEST_DATABASE_URL"
-    )
-
-    root.mkdir(mode=0o700)
+    database = disposable_host.ProvidedDatabase.from_environment()
     repo = "pool-probe:" + str(uuid.uuid4())
     pool_name = "probe-pool"
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=("agent", "observer", "publisher"),
+        principals=lambda name: "pool-probe/" + name, identity_role={"observer": "observer"},
+        label="worker_pools", log=root / "api.log")
 
-    identities = []
-    for name, role in (("agent", "agent"), ("observer", "observer"), ("publisher", "agent")):
-        token = secrets.token_urlsafe(32)
-        path = root / (name + ".token")
-        path.write_text(token)
-        path.chmod(0o600)
-        identities.append(dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-                               principal="pool-probe/" + name, role=role, repo=repo,
-                               destination="hosted"))
-    (root / "identities.json").write_text(json.dumps(identities))
-    (root / "identities.json").chmod(0o600)
-
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api = subprocess.Popen([binary, "serve"], env=env, stdout=subprocess.DEVNULL,
-                           stderr=(root / "api.log").open("w"))
+    env = host.env
     supervisor = None
     units = set()
     report = []
@@ -88,11 +73,7 @@ def check(binary, root, opencode=None, hermes=None, codex=None, agy=None, claude
     config_path = root / "wake.json"
 
     def call(op, data, identity="agent"):
-        p = subprocess.run([binary, "agent", "--socket", config["socket"], "--token-file",
-                            str(root / (identity + ".token")), op], input=json.dumps(data),
-                           text=True, capture_output=True, timeout=15)
-        assert p.returncode == 0, (op, p.stdout, p.stderr)
-        return json.loads(p.stdout)["data"]
+        return host.agent(identity, op, data)
 
     def configure_pool(name, enabled=True, max_pending=20, max_pending_per_publisher=10, expected_rev=0):
         req = dict(
@@ -434,8 +415,7 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
             supervisor.wait(timeout=35)
         for unit in units:
             subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, timeout=20)
-        api.terminate()
-        api.wait(timeout=15)
+        host.close()
 
 
 if __name__ == "__main__":

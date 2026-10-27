@@ -1,10 +1,8 @@
 """Real cancellation/deadline cgroup checks on an explicitly disposable store."""
 from datetime import datetime, timedelta, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import signal
 import subprocess
 import sys
@@ -12,45 +10,30 @@ import time
 import uuid
 
 from check_wakeups import wait_for
+import disposable_host
 
 LAUNCH_WAIT_SECONDS = 15
 ADMISSION_WINDOW_SECONDS = LAUNCH_WAIT_SECONDS + 5
 
 
 def check(binary, root):
-    assert os.environ.get('CAIRN_TEST_DATABASE_URL')
-    assert os.environ['CAIRN_DATABASE_URL'] == os.environ['CAIRN_TEST_DATABASE_URL']
+    database = disposable_host.ProvidedDatabase.from_environment()
     root = Path(root)
-    root.mkdir(mode=0o700)
     repo = 'control-probe:' + str(uuid.uuid4())
-    identities = []
-    for name in ('agent', 'observer'):
-        token = secrets.token_urlsafe(32)
-        path = root / (name + '.token')
-        path.write_text(token)
-        path.chmod(0o600)
-        identities.append(dict(principal='control-probe/' + name, role=name, repo=repo,
-                               destination='hosted', token_sha256=hashlib.sha256(token.encode()).hexdigest()))
-    (root / 'identities.json').write_text(json.dumps(identities))
-    (root / 'identities.json').chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.DEVNULL,
-                           stderr=(root / 'api.log').open('w'))
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=('agent', 'observer'),
+        principals=lambda name: 'control-probe/' + name, identity_role={'observer': 'observer'},
+        label='request_controls', log=root / 'api.log')
+    env = host.env
     supervisor = None
     units = set()
 
     def operator(operation, body):
-        result = subprocess.run([binary, operation], input=json.dumps(body), env=env,
-                                text=True, capture_output=True, timeout=20, check=True)
-        return json.loads(result.stdout)['data']
+        return host.operator(operation, body, timeout=20)
 
     def call(operation, body, expected='OK'):
-        result = subprocess.run([binary, 'agent', '--socket', str(root / 'api.sock'),
-                                 '--token-file', str(root / 'agent.token'), operation],
-                                input=json.dumps(body), text=True, capture_output=True, timeout=15)
-        envelope = json.loads(result.stdout)
-        assert envelope['status'] == expected, (operation, envelope, result.stderr)
-        return envelope.get('data')
+        result = host.agent('agent', operation, body, expected=expected)
+        return result if expected == 'OK' else result.get('data')
 
     def publish(**timing):
         note = call('create', dict(request_id=str(uuid.uuid4()), draft=dict(kind='note',
@@ -189,8 +172,7 @@ time.sleep(300)
                     subprocess.run(['systemctl', '--user', 'stop', unit], capture_output=True, timeout=20, check=True)
                     assert unit_empty(unit)
         finally:
-            api.terminate()
-            api.wait(timeout=15)
+            host.close()
 
 
 if __name__ == '__main__':

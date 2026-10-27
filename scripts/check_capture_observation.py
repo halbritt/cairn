@@ -8,12 +8,13 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
 import subprocess
 import sys
 import time
 from unittest.mock import patch
 import uuid
+
+import disposable_host
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,21 +59,13 @@ os.execv(binary, [binary, *sys.argv[1:]])
 
 
 def check(binary, directory):
-    assert os.environ.get("CAIRN_TEST_DATABASE_URL")
-    assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
+    database = disposable_host.ProvidedDatabase.from_environment()
     root = Path(directory)
-    root.mkdir(mode=0o700)
     repo = "capture-observation-probe:" + str(uuid.uuid4())
-    identities = []
-    for name, destination in (("hook", "hosted"), ("report", "local")):
-        token = secrets.token_urlsafe(32)
-        path = root / (name + ".token")
-        path.write_text(token)
-        path.chmod(0o600)
-        identities.append(dict(principal="capture-observation-probe/" + name, role="agent", repo=repo,
-                               destination=destination, token_sha256=hashlib.sha256(token.encode()).hexdigest()))
-    (root / "identities.json").write_text(json.dumps(identities))
-    (root / "identities.json").chmod(0o600)
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=("hook", "report"),
+        principals=lambda name: "capture-observation-probe/" + name,
+        destination={"report": "local"}, label="capture_observation", log=root / "api.log")
     selector = root / "selector"
     selector.write_text(SELECTOR)
     selector.chmod(0o700)
@@ -83,27 +76,12 @@ def check(binary, directory):
     work = root / "work"
     (work / ".git").mkdir(parents=True)
     state_dir = root / "state"
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api_log = (root / "api.log").open("w")
-    api = subprocess.Popen([binary, "serve"], env=env, stdout=subprocess.DEVNULL, stderr=api_log)
+    env = host.env
     try:
-        for _ in range(100):
-            if api.poll() is not None:
-                raise AssertionError("capture probe API exited before readiness")
-            if (root / "api.sock").exists():
-                break
-            time.sleep(0.1)
-        assert (root / "api.sock").exists(), "capture probe API did not start"
 
         def agent(name, operation, body, expected="OK"):
-            command = [binary, "agent", "--socket", str(root / "api.sock"),
-                       "--token-file", str(root / (name + ".token")), operation]
-            result = subprocess.run(command, input=json.dumps(body), text=True,
-                                    capture_output=True, timeout=15, env=env)
-            response = json.loads(result.stdout)
-            assert response["status"] == expected, (operation, response, result.stderr)
-            assert (result.returncode == 0) == (expected == "OK"), response
-            return response.get("data")
+            result = host.agent(name, operation, body, expected=expected)
+            return result if expected == "OK" else result.get("data")
 
         config = dict(cairn=str(shim), claude=str(selector), socket=str(root / "api.sock"),
                       token_file=str(root / "hook.token"), repo=repo, state_dir=str(state_dir),
@@ -233,13 +211,7 @@ def check(binary, directory):
             check_native_codex_capture(codex, binary, root, repo, agent, selector, shim)
         print("Capture hook/CLI/API metering: saved, no selection, skips, timeout, provider and write errors, unknown report; source/output excluded")
     finally:
-        api.terminate()
-        try:
-            api.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            api.kill()
-            api.wait(timeout=10)
-        api_log.close()
+        host.close()
 
 
 if __name__ == "__main__":

@@ -7,16 +7,16 @@ report through the trusted CLI and checks that each prompt's latency, selector
 work and injected bytes appear per receipt and in the daily per-harness rollup,
 that unreported values stay unknown, and that the profile boundaries hold.
 """
-import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('recall_observation_engine', ROOT / 'integrations/lifecycle/memory.py')
@@ -36,45 +36,29 @@ SESSIONS = dict(claude='caed9473-b01a-41e7-95ce-c3c1f28d66b3', codex='9a1c2f77-8
 
 
 def check(binary, root):
-    assert os.environ.get('CAIRN_TEST_DATABASE_URL')
-    assert os.environ['CAIRN_DATABASE_URL'] == os.environ['CAIRN_TEST_DATABASE_URL']
+    database = disposable_host.ProvidedDatabase.from_environment()
     root = Path(root)
-    root.mkdir(mode=0o700)
     repo = 'recall-observation-probe:' + str(uuid.uuid4())
-    token = secrets.token_urlsafe(32)
-    (root / 'agent.token').write_text(token)
-    (root / 'agent.token').chmod(0o600)
-    identities = [dict(principal='recall-observation-probe/agent', role='agent', repo=repo, destination='hosted',
-                       token_sha256=hashlib.sha256(token.encode()).hexdigest())]
-    (root / 'identities.json').write_text(json.dumps(identities))
-    (root / 'identities.json').chmod(0o600)
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=('agent',),
+        principals={'agent': 'recall-observation-probe/agent'}, label='recall_observation',
+        log=root / 'api.log')
     selector = root / 'selector'
     selector.write_text(SELECTOR)
     selector.chmod(0o700)
     work = root / 'work'
     (work / '.git').mkdir(parents=True)
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.DEVNULL, stderr=(root / 'api.log').open('w'))
+    env = host.env
     try:
-        for _ in range(100):
-            if (root / 'api.sock').exists():
-                break
-            time.sleep(0.1)
-        assert (root / 'api.sock').exists(), 'API socket never appeared'
-        socket = str(root / 'api.sock')
+        socket = str(host.socket)
 
         def agent(operation, body, expected='OK'):
-            result = subprocess.run([binary, 'agent', '--socket', socket, '--token-file', str(root / 'agent.token'),
-                                     operation], input=json.dumps(body), text=True, capture_output=True, timeout=15)
-            envelope = json.loads(result.stdout)
-            assert envelope['status'] == expected, (operation, envelope, result.stderr)
-            return envelope.get('data')
+            result = host.agent('agent', operation, body, expected=expected)
+            return result if expected == 'OK' else result.get('data')
 
         def report(*args, expected='OK'):
-            result = subprocess.run([binary, 'use-report', *args], env=env, text=True, capture_output=True, timeout=30)
-            envelope = json.loads(result.stdout)
-            assert envelope['status'] == expected, (args, envelope)
-            return envelope.get('data')
+            result = host.operator('use-report', args=args, expected=expected, timeout=30)
+            return result if expected == 'OK' else result.get('data')
 
         note = agent('create', dict(request_id=str(uuid.uuid4()), draft=dict(
             kind='note', body='Lease expiry fixture: renew the lease before it expires.',
@@ -173,12 +157,7 @@ def check(binary, root):
             report('--days', days, repo, expected='INVALID_REQUEST')
         print('Reporting stays within the profile boundary; an unreachable API leaves the observation unknown')
     finally:
-        api.terminate()
-        try:
-            api.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            api.kill()
-            api.wait()
+        host.close()
 
 
 if __name__ == '__main__':

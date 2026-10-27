@@ -1,15 +1,15 @@
 """Real CLI/API restart probe, only against the integration suite's disposable DB."""
-import hashlib
 from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
-import secrets
 import select
 import subprocess
 import sys
 import time
 import uuid
+
+import disposable_host
 
 
 def readiness_line(stream, *, timeout=5, limit=1024):
@@ -30,70 +30,43 @@ def readiness_line(stream, *, timeout=5, limit=1024):
 
 
 def check(binary, directory):
-    assert os.environ.get("CAIRN_TEST_DATABASE_URL")
-    assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
+    database = disposable_host.ProvidedDatabase.from_environment()
     root = Path(directory)
-    root.mkdir(mode=0o700)
     repo = "event-probe:" + str(uuid.uuid4())
-    identities = []
-    for name in ("alice", "bob", "carol"):
-        token = secrets.token_urlsafe(32)
-        path = root / (name + ".token")
-        path.write_text(token)
-        path.chmod(0o600)
-        identities.append(dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-                               principal="agent/" + name, repo=repo, role="agent",
-                               destination="hosted"))
-    config = root / "identities.json"
-    config.write_text(json.dumps(identities))
-    config.chmod(0o600)
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=("alice", "bob", "carol"),
+        principals=lambda name: "agent/" + name, label="agent_events", serve=False)
     provision = Path(__file__).with_name("provision-event-profiles.py")
     provision_args = [sys.executable, str(provision), "--home", str(root), "--repo", repo, "probe"]
     subprocess.run(provision_args, check=True, capture_output=True, text=True, timeout=10)
     original_token = (root / "event-profiles/probe.token").read_bytes()
     subprocess.run(provision_args, check=True, capture_output=True, text=True, timeout=10)
     assert (root / "event-profiles/probe.token").read_bytes() == original_token
-    env = dict(os.environ, CAIRN_HOME=str(root))
+    env = host.env
     process = None
 
     def call(name, command, *args, body=None, expected="OK", raw=False):
         connection = ["--token-file", str(root / (name + ".token"))]
         if raw:
-            argv = [binary, "agent", *connection, command, *args]
+            argv = ["agent", *connection, command, *args]
         else:
-            argv = [binary, command]
+            argv = [command]
             if command == "inbox":
                 argv.append("next")
             if command == "agents":
                 argv.append(args[0])
                 args = args[1:]
             argv += connection + list(args)
-        result = subprocess.run(argv, input=body, env=env, text=True,
-                                capture_output=True, timeout=15)
-        output = json.loads(result.stdout)
-        assert output["status"] == expected, (argv, output, result.stderr)
-        assert (result.returncode == 0) == (expected == "OK"), output
-        return output.get("data")
+        result = host.command(argv, body, expected=expected, timeout=15, label=command)
+        return result if expected == "OK" else result.get("data")
 
     def start():
-        proc = subprocess.Popen([binary, "serve"], env=env, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.PIPE, text=True)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                raise AssertionError(proc.stderr.read())
-            if (root / "api.sock").exists():
-                call("alice", "version", raw=True)
-                return proc
-            time.sleep(0.02)
-        proc.terminate()
-        proc.wait(timeout=10)
-        raise AssertionError("event probe API did not start")
+        server = host.start_server()
+        call("alice", "version", raw=True)
+        return server
 
     def stop(proc):
-        proc.terminate()
-        proc.communicate(timeout=10)
-        assert proc.returncode == 0
+        assert host.stop_server(timeout=10) == 0
 
     def publish(to=None, topic=None, request=None, source=None, cause=None):
         args = ["--request-id", request or str(uuid.uuid4()), "--kind", "request", "--version", "1"]
@@ -446,8 +419,7 @@ def check(binary, directory):
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")
         print("Operator recovery: explicit reissue, retained failure, new attribution, no topic refanout and exact retry passed")
     finally:
-        if process is not None and process.poll() is None:
-            stop(process)
+        host.close()
 
 
 if __name__ == "__main__":

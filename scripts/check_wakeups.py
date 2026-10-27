@@ -6,19 +6,19 @@ calls; the database, API identities and requested result remain disposable.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
-import hashlib
 import importlib.util
 import http.server
 import json
 import os
 from pathlib import Path
 import re
-import secrets
 import signal
 import subprocess
 import threading
 import time
 import uuid
+
+import disposable_host
 
 
 def wait_for(check, seconds=30):
@@ -40,24 +40,13 @@ def process_exited_or_zombie(pid):
 
 
 def check(binary, root, opencode=None, hermes=None, bindings=None):
-    assert os.environ.get("CAIRN_TEST_DATABASE_URL")
-    assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
-    root.mkdir(mode=0o700)
+    database = disposable_host.ProvidedDatabase.from_environment()
     repo = "wake-probe:" + str(uuid.uuid4())
-    identities = []
-    for name, role in (("agent", "agent"), ("observer", "observer")):
-        token = secrets.token_urlsafe(32)
-        path = root / (name + ".token")
-        path.write_text(token)
-        path.chmod(0o600)
-        identities.append(dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-                               principal="wake-probe/" + name, role=role, repo=repo,
-                               destination="hosted"))
-    (root / "identities.json").write_text(json.dumps(identities))
-    (root / "identities.json").chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api = subprocess.Popen([binary, "serve"], env=env, stdout=subprocess.DEVNULL,
-                           stderr=(root / "api.log").open("w"))
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=("agent", "observer"),
+        principals=lambda name: "wake-probe/" + name, identity_role={"observer": "observer"},
+        label="wakeups", log=root / "api.log")
+    env = host.env
     supervisor = None
     units = set()
     report = []
@@ -67,11 +56,7 @@ def check(binary, root, opencode=None, hermes=None, bindings=None):
     config_path = root / "wake.json"
 
     def call(op, data, identity="agent"):
-        p = subprocess.run([binary, "agent", "--socket", config["socket"], "--token-file",
-                            str(root / (identity + ".token")), op], input=json.dumps(data),
-                           text=True, capture_output=True, timeout=15)
-        assert p.returncode == 0, (op, p.stdout, p.stderr)
-        return json.loads(p.stdout)["data"]
+        return host.agent(identity, op, data)
 
     def publish(body, kind="request", group=False):
         note = call("create", dict(request_id=str(uuid.uuid4()), draft=dict(
@@ -177,14 +162,12 @@ if wake.get("response_group"):
         child = int((root / "child.pid").read_text())
         # Lose the API while a worker is active: renewal must stop the worker,
         # while durable reconciliation waits for the API to return.
-        api.terminate()
-        api.wait(timeout=15)
+        host.stop_server(timeout=15)
         wait_for(lambda: process_exited_or_zombie(child), 40)
         supervisor.wait(timeout=20)
         assert supervisor.returncode != 0
         supervisor = None
-        api = subprocess.Popen([binary, "serve"], env=env, stdout=subprocess.DEVNULL,
-                               stderr=(root / "api-restart.log").open("w"))
+        host.start_server()
         wait_for(lambda: (root / "api.sock").exists())
         start(command)
         wait_for(lambda: status(event)["state"] == "failed")
@@ -231,8 +214,7 @@ if wake.get("response_group"):
             supervisor.wait(timeout=35)
         for unit in units:
             subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, timeout=20)
-        api.terminate()
-        api.wait(timeout=15)
+        host.close()
 
 
 class NativeFixture:

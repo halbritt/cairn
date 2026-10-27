@@ -3,54 +3,35 @@
 Drives integrations/lifecycle/native_control.py through the authenticated CLI
 so generated mutation identities meet the same validation as any caller.
 """
-import hashlib
 import json
 import os
 from pathlib import Path
-import secrets
 import subprocess
 import sys
 import time
 import uuid
 
+import disposable_host
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(binary, root):
-    assert os.environ.get('CAIRN_TEST_DATABASE_URL')
-    assert os.environ['CAIRN_DATABASE_URL'] == os.environ['CAIRN_TEST_DATABASE_URL']
+    database = disposable_host.ProvidedDatabase.from_environment()
     root = Path(root)
-    root.mkdir(mode=0o700)
     repo = 'native-cancel-probe:' + str(uuid.uuid4())
-    token = secrets.token_urlsafe(32)
-    (root / 'agent.token').write_text(token)
-    (root / 'agent.token').chmod(0o600)
-    identities = [dict(principal='native-cancel-probe/agent', role='agent', repo=repo,
-                       destination='hosted', token_sha256=hashlib.sha256(token.encode()).hexdigest())]
-    (root / 'identities.json').write_text(json.dumps(identities))
-    (root / 'identities.json').chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(root))
-    api = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.DEVNULL,
-                           stderr=(root / 'api.log').open('w'))
+    host = disposable_host.DisposableHost.start(
+        database, binary=binary, repo=repo, home=root, roles=('agent',),
+        principals={'agent': 'native-cancel-probe/agent'}, label='native_cancel',
+        log=root / 'api.log')
+    env = host.env
     try:
-        for _ in range(100):
-            if (root / 'api.sock').exists():
-                break
-            time.sleep(0.1)
-        assert (root / 'api.sock').exists(), 'API socket never appeared'
 
         def agent(operation, body):
-            result = subprocess.run([binary, 'agent', '--socket', str(root / 'api.sock'),
-                                     '--token-file', str(root / 'agent.token'), operation],
-                                    input=json.dumps(body), text=True, capture_output=True, timeout=15)
-            envelope = json.loads(result.stdout)
-            assert envelope['status'] == 'OK', (operation, envelope, result.stderr)
-            return envelope['data']
+            return host.agent('agent', operation, body)
 
         def operator(operation, body):
-            result = subprocess.run([binary, operation], input=json.dumps(body), env=env,
-                                    text=True, capture_output=True, timeout=20, check=True)
-            return json.loads(result.stdout)['data']
+            return host.operator(operation, body, timeout=20)
 
         registered = agent('agent-register', dict(request_id=str(uuid.uuid4()), binding='codex-default',
             native_session_id='thread-probe', metadata=dict(harness='codex', project='native-cancel',
@@ -85,10 +66,7 @@ def check(binary, root):
         assert [t['stop_state'] for t in again['tools']] == ['captured'], 'retry changed the capture'
 
         def raw(operation, body):
-            result = subprocess.run([binary, 'agent', '--socket', str(root / 'api.sock'),
-                                     '--token-file', str(root / 'agent.token'), operation],
-                                    input=json.dumps(body), text=True, capture_output=True, timeout=15)
-            return json.loads(result.stdout)
+            return host.agent('agent', operation, body, expected=None)
 
         stale = raw('session-tool-capture', dict(request_id=str(uuid.uuid4()), session=session,
             attempt_id=attempt['attempt_id'], items=[dict(item, process_id='9999')]))
@@ -180,12 +158,7 @@ def check(binary, root):
         assert revoked_delivery['code'] == 'operator_cancelled', revoked_delivery
         print('Real-API native cancellation: capture, fence, ambiguity hold, confirmed cleanup and revocation passed')
     finally:
-        api.terminate()
-        try:
-            api.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            api.kill()
-            api.wait()
+        host.close()
 
 
 if __name__ == '__main__':
