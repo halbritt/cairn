@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import check_multi_machine as relay_probe
 import preflight_token_efficiency_panel as panel
+import disposable_host
 
 
 def require(value, message):
@@ -79,18 +80,14 @@ def start_central(binary, root, env, port, cert, key):
 
 
 def check(binary):
-    disposable = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(disposable.parent == Path("/tmp") and disposable.name.startswith("cairn-postgres.")
-            and disposable.stat().st_uid == os.getuid()
-            and stat.S_IMODE(disposable.stat().st_mode) == 0o700
-            and (disposable / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == disposable / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={disposable / 'socket'} dbname=cairn_panel_relay_uncertain_response sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    disposable = cluster.root
+    cluster.binary(binary)
+    # This fixture drives its own central server and relays, so it owns only the
+    # database here and publishes it to those services through the environment.
+    dsn = cluster.create_database("cairn_panel_relay_uncertain_response")
+    os.environ["CAIRN_TEST_DATABASE_URL"] = os.environ["CAIRN_DATABASE_URL"] = dsn
+    disposable_host.checked([binary, "migrate"], "migrate", env=dict(os.environ), timeout=300)
     require(sql_rows(dsn, "SELECT count(*) FROM cairn.agent_event") == ["0"]
             and sql_rows(dsn, "SELECT count(*) FROM cairn.agent_session") == ["0"],
             "relay-response database is not fresh")

@@ -18,6 +18,8 @@ import time
 from unittest.mock import patch
 import uuid
 
+import disposable_host
+
 
 def uid():
     return str(uuid.uuid4())
@@ -301,13 +303,13 @@ class FaultProxy:
 
 
 def check(binary, directory):
-    disposable_root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"]).resolve(strict=True)
-    assert disposable_root.parent == Path("/tmp")
-    assert disposable_root.name.startswith("cairn-postgres.")
-    test_dsn = ("host=" + str(disposable_root / "socket") +
-                " dbname=cairn_multi_machine sslmode=disable")
-    assert os.environ.get("CAIRN_TEST_DATABASE_URL") == test_dsn
-    assert os.environ.get("CAIRN_DATABASE_URL") == test_dsn
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    disposable_root = cluster.root
+    # The fixture starts its own central server and relays; it owns only the
+    # database here and publishes it to its helpers through the environment.
+    test_dsn = cluster.create_database("cairn_multi_machine")
+    os.environ["CAIRN_TEST_DATABASE_URL"] = os.environ["CAIRN_DATABASE_URL"] = test_dsn
+    disposable_host.checked([binary, "migrate"], "migrate", env=dict(os.environ), timeout=300)
     root = Path(directory)
     root.mkdir(mode=0o700)
     a_dir, b_dir = root / "host-a", root / "host-b"
