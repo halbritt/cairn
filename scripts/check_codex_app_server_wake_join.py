@@ -22,7 +22,10 @@ import uuid
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
-from native_tool_results import tool_result_diagnostics as _tool_result_diagnostics
+from native_tool_results import (
+    tool_result_diagnostics as _tool_result_diagnostics,
+    source_result_matches, source_read_succeeded, settlement_succeeded,
+)
 from codex_loopback_fixture import (
     LoopbackResponsesServer,
     exec_tool_item,
@@ -49,14 +52,12 @@ def _scripted_inbox_tool(results: dict, context: dict, source_body: str) -> tupl
         command = ("printf %s " + shlex.quote(json.dumps(context["read_input"])) +
                    " | " + shlex.join(context["read"]))
         return "source_read", _exec_tool("source", command)
-    read_text = json.dumps(results["source"], sort_keys=True)
-    require(context["source"]["record_id"] in read_text and
-            str(context["source"]["version"]) in read_text and source_body in read_text,
+    require(source_read_succeeded(results["source"], context["source"], source_body),
             "exact_source_read_not_observed")
     if "acknowledgement" not in results:
         return "acknowledgement", _exec_tool(
             "acknowledgement", shlex.join(context["acknowledgement"]))
-    require("handled" in json.dumps(results["acknowledgement"], sort_keys=True),
+    require(settlement_succeeded(results["acknowledgement"], delivery_id=context["delivery_id"], event_id=context["event_id"]),
             "native_acknowledgement_not_confirmed")
     return "store_verification", None
 
@@ -67,13 +68,7 @@ def _exec_tool(call_id: str, command: str) -> dict:
 
 def _source_result_matches(result: dict, context: dict, source_body: str) -> dict[str, bool]:
     """Classify exact source identity without retaining the returned payload."""
-    serialized = json.dumps(result, sort_keys=True)
-    return {
-        "source_record_match": context["source"]["record_id"] in serialized,
-        "source_version_match": str(context["source"]["version"]) in serialized,
-        "source_body_match": source_body in serialized,
-    }
-
+    return source_result_matches(result, context["source"], source_body)
 
 
 def _is_expected_source_read_tool_call(item: dict, context: dict, source_body: str) -> bool:
@@ -939,7 +934,6 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                     "failure_code": "native_tool_result_missing"})
                 raise RuntimeError("native_tool_result_missing")
             result_diagnostics = _tool_result_diagnostics(result)
-            result_text = json.dumps(result, sort_keys=True)
             if pending_tool_role == "source":
                 source_matches = _source_result_matches(result, context, source_body)
                 exact = all(source_matches.values())
@@ -949,7 +943,7 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                     "expected_read_command_requested": expected_read_command_requested,
                     **source_matches, **result_diagnostics}
             else:
-                exact = "handled" in result_text
+                exact = settlement_succeeded(result, delivery_id=context["delivery_id"], event_id=context["event_id"])
                 result_class = "ack_handled" if exact else "ack_unconfirmed"
                 result_flags = {"result_role": pending_tool_role, "result_class": result_class,
                     "result_transport": "matched", **result_diagnostics}
@@ -1487,6 +1481,10 @@ def main() -> int:
         print(json.dumps(failure, sort_keys=True))
         return 1
     print(json.dumps(report, sort_keys=True))
+    if scripted_handled:
+        return 0 if (report.get("hook_join") and report.get("exact_source_read") is True
+                     and report.get("acknowledgement") == "handled_confirmed"
+                     and report.get("settlement_exactly_once") is True) else 1
     return 0 if report.get("hook_join") else 1
 
 

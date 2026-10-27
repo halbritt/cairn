@@ -1,7 +1,12 @@
 """Provider-free observer binding checks for the CAIRN-220 fixture."""
 
+import hashlib
 import json
+import io
+from contextlib import redirect_stdout
 import unittest
+from unittest.mock import patch
+import check_codex_app_server_wake_join as wake
 
 from check_codex_app_server_wake_join import (
     _ItemStartedObserver,
@@ -45,10 +50,24 @@ class ItemStartedObserverSubscriptionTests(unittest.TestCase):
         ])
 
 
+def history_result(record_id='record-1', version=3, body='source body'):
+    row = dict(version=version, payload_available=True, body=body, body_bytes=len(body.encode()),
+               body_sha256=hashlib.sha256(body.encode()).hexdigest())
+    return {'output': json.dumps(dict(exit_code=0, output=json.dumps(dict(schema='cairn.response/1',
+        ok=True, status='OK', data=dict(historical=True, record_id=record_id, versions=[row])))))}
+
+
+def handled_result():
+    return {'output': json.dumps(dict(exit_code=0, output=json.dumps(dict(schema='cairn.response/1',
+        ok=True, status='OK', data=dict(delivery_id='delivery-1', state='handled', attempts=1,
+                                       event=dict(event_id='event-1'))))))}
+
+
 class ScriptedHandledContinuationTests(unittest.TestCase):
     def setUp(self):
         self.context = {
             "source": {"record_id": "record-1", "version": 3},
+            "delivery_id": "delivery-1", "event_id": "event-1",
             "read_input": {"record_id": "record-1", "version": 3},
             "read": ["cairn", "agent", "history"],
             "acknowledgement": ["coordination.py", "inbox", "--context", "private.json", "ack"],
@@ -60,14 +79,13 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertIn("history", tool["input"])
         self.assertIn("record-1", tool["input"])
 
-        stage, tool = _scripted_inbox_tool({"source": {"call_id": "source",
-            "output": 'record-1 version 3: source body'}}, self.context, "source body")
+        stage, tool = _scripted_inbox_tool({"source": history_result()}, self.context, "source body")
         self.assertEqual(stage, "acknowledgement")
         self.assertIn("coordination.py", tool["input"])
         self.assertIn("private.json", tool["input"])
 
-        stage, tool = _scripted_inbox_tool({"source": {"output": "record-1 version 3: source body"},
-            "acknowledgement": {"output": "handled"}}, self.context, "source body")
+        stage, tool = _scripted_inbox_tool({"source": history_result(),
+            "acknowledgement": handled_result()}, self.context, "source body")
         self.assertEqual(stage, "store_verification")
         self.assertIsNone(tool)
 
@@ -78,17 +96,14 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
         self.assertFalse(_is_expected_source_read_tool_call(changed, self.context, "source body"))
 
     def test_source_result_diagnostic_separates_identity_version_and_body(self):
-        expected = {"record_id": "record-1", "version": 3, "body": "source body"}
+        expected = history_result()
         self.assertEqual(_source_result_matches(expected, self.context, "source body"), {
             "source_record_match": True, "source_version_match": True, "source_body_match": True})
-        self.assertEqual(_source_result_matches({"record_id": "record-1", "version": 2,
-            "body": "source body"}, self.context, "source body"), {
+        self.assertEqual(_source_result_matches(history_result(version=2), self.context, "source body"), {
             "source_record_match": True, "source_version_match": False, "source_body_match": True})
-        self.assertEqual(_source_result_matches({"record_id": "other", "version": 3,
-            "body": "source body"}, self.context, "source body"), {
+        self.assertEqual(_source_result_matches(history_result(record_id="other"), self.context, "source body"), {
             "source_record_match": False, "source_version_match": True, "source_body_match": True})
-        self.assertEqual(_source_result_matches({"record_id": "record-1", "version": 3,
-            "body": "different"}, self.context, "source body"), {
+        self.assertEqual(_source_result_matches(history_result(body="different"), self.context, "source body"), {
             "source_record_match": True, "source_version_match": True, "source_body_match": False})
 
     def test_tool_result_diagnostics_distinguish_api_response_and_shell_failure(self):
@@ -138,8 +153,23 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
 
     def test_does_not_accept_non_handled_ack_result(self):
         with self.assertRaisesRegex(RuntimeError, "native_acknowledgement_not_confirmed"):
-            _scripted_inbox_tool({"source": {"output": "record-1 version 3 source body"},
+            _scripted_inbox_tool({"source": history_result(),
                 "acknowledgement": {"output": "pending"}}, self.context, "source body")
+
+    def test_token_mentions_and_failed_wrappers_do_not_advance_to_acknowledgement(self):
+        success = history_result()
+        failed = dict(success, isError=True)
+        for result in ({'output': 'record-1 version 3 source body'}, failed, history_result(version=2)):
+            with self.subTest(result=result), self.assertRaisesRegex(RuntimeError, 'exact_source_read_not_observed'):
+                _scripted_inbox_tool({'source': result}, self.context, 'source body')
+
+    def test_unhandled_or_wrong_delivery_does_not_advance_to_store_verification(self):
+        for replacement in ('unhandled', 'other-delivery'):
+            result = handled_result()
+            before = 'handled' if replacement == 'unhandled' else 'delivery-1'
+            result['output'] = result['output'].replace(before, replacement)
+            with self.subTest(replacement=replacement), self.assertRaisesRegex(RuntimeError, 'native_acknowledgement_not_confirmed'):
+                _scripted_inbox_tool({'source': history_result(), 'acknowledgement': result}, self.context, 'source body')
 
     def test_resume_is_not_attempted_when_metadata_check_fails(self):
         calls = []
@@ -308,3 +338,19 @@ class ScriptedHandledContinuationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScriptedRunnerExitTests(unittest.TestCase):
+    def test_scripted_runner_requires_read_and_store_settlement_confirmation(self):
+        good = dict(hook_join=True, exact_source_read=True, acknowledgement='handled_confirmed',
+                    settlement_exactly_once=True)
+        cases = [(good, 0), (dict(hook_join=True), 1)]
+        for field in good:
+            cases.append((dict(good, **{field: False}), 1))
+        for report, expected in cases:
+            with self.subTest(report=report), patch.object(wake.sys, 'argv', ['fixture', '--scripted-handled']), \
+                    patch.object(wake, 'run_once', return_value=report), redirect_stdout(io.StringIO()):
+                self.assertEqual(wake.main(), expected)
+        with patch.object(wake.sys, 'argv', ['fixture']), patch.object(wake, 'run_once', return_value=dict(hook_join=True)), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(wake.main(), 0)

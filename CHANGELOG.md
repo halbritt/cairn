@@ -24,6 +24,10 @@ and MCP processes.
   binding. See [lifecycle bundles](docs/lifecycle-bundles.md) for the drain,
   validation, and rollback procedure. This source change does not update running
   installations.
+- Native Codex fixtures now require successful structured replies with exact
+  source and settlement fields. Matching text inside an error cannot confirm a
+  source read or handled delivery. Independent Store checks still verify the
+  delivery identity and attempt count.
 
 ## 2026-10-24
 

@@ -159,3 +159,168 @@ class AdvanceSelectionPolicyTests(unittest.TestCase):
             with self.subTest(fields=fields):
                 result = interpret_advance_tool_result({'output': encoded_execution(batch_response(**fields))})
                 self.assertEqual(result, ('success', expected))
+
+
+def history_response(record_id='record-1', version=3, body='exact whole source'):
+    import hashlib
+    row = dict(version=version, payload_available=True, body=body, body_bytes=len(body.encode()),
+               body_sha256=hashlib.sha256(body.encode()).hexdigest())
+    return dict(schema='cairn.response/1', ok=True, status='OK',
+                data=dict(historical=True, record_id=record_id, versions=[row]))
+
+
+def compact_read_response(body='exact whole source'):
+    return dict(schema='cairn.compact-inbox/1', ok=True,
+                source=dict(record_id='record-1', version=3), body=body)
+
+
+def delivery_response(**changes):
+    return dict(schema='cairn.response/1', ok=True, status='OK', data=dict(dict(
+        delivery_id='delivery-1', state='handled', attempts=1, event=dict(event_id='event-1')), **changes))
+
+
+def compact_settlement_response(**changes):
+    return dict(dict(schema='cairn.compact-inbox/1', ok=True, status='handled',
+                     attempts=1, handle='handle-1'), **changes)
+
+
+class StrictFixtureAcceptanceTests(unittest.TestCase):
+    def setUp(self):
+        from native_tool_results import source_read_succeeded, settlement_succeeded
+        self.read = lambda result: source_read_succeeded(result, dict(record_id='record-1', version=3), 'exact whole source')
+        self.handled = lambda result: settlement_succeeded(result, delivery_id='delivery-1', event_id='event-1')
+        self.compact_handled = lambda result: settlement_succeeded(result, handle='handle-1')
+
+    def test_known_execution_wrappers_accept_actual_history_and_compact_shapes(self):
+        from native_tool_results import source_read_succeeded
+        for response in (history_response(), compact_read_response()):
+            shapes = [response, {'output': json.dumps(response)}, {'output': encoded_execution(response)},
+                      {'output': native_output(response)}, {'content': [{'type': 'text', 'text': json.dumps(response)}]},
+                      {'output': [{'type': 'input_text', 'text': json.dumps(dict(
+                          output=native_output(response), metadata=dict(exit_code=0)))}]}]
+            for result in shapes:
+                with self.subTest(result=result):
+                    self.assertTrue(self.read(result))
+        body = 'Unicode source: café; not found is legitimate source text.'
+        self.assertTrue(source_read_succeeded({'output': encoded_execution(history_response(body=body))},
+                                             dict(record_id='record-1', version=3), body))
+
+    def test_split_native_completion_preamble_is_metadata_not_an_application_response(self):
+        preamble = {'type': 'input_text', 'text': 'Script completed\nWall time: 0.1 seconds\nOutput:\n'}
+        execution = {'type': 'input_text', 'text': encoded_execution(history_response())}
+        self.assertTrue(self.read({'output': [preamble, execution]}))
+        self.assertFalse(self.read({'output': [preamble]}))
+        self.assertFalse(self.read({'output': [preamble, execution, execution]}))
+        for header in ('Script running with cell ID 1', 'Chunk ID: 1', 'Process exited with code 7'):
+            with self.subTest(header=header):
+                failed = {'type': 'input_text', 'text': header + '\nOutput:\n'}
+                self.assertFalse(self.read({'output': [failed, execution]}))
+
+    def test_source_fields_must_match_one_complete_version(self):
+        cases = [history_response(record_id='other'), history_response(version=2), history_response(version=True),
+                 history_response(body='prefix exact whole source suffix'),
+                 compact_read_response(body='exact whole source plus more')]
+        split = history_response(version=2)
+        split['data']['versions'].append(history_response(body='different')['data']['versions'][0])
+        cases.append(split)
+        wrong_version_elsewhere = history_response(version=2)
+        wrong_version_elsewhere['expected_version'] = 3
+        cases.append(wrong_version_elsewhere)
+        wrong_record_elsewhere = history_response(record_id='other')
+        wrong_record_elsewhere['message'] = 'record-1'
+        cases.append(wrong_record_elsewhere)
+        for response in cases:
+            with self.subTest(response=response):
+                self.assertFalse(self.read({'output': encoded_execution(response)}))
+
+    def test_history_requires_whole_payload_with_consistent_bytes_and_hash(self):
+        changes = [dict(payload_available=False), dict(span=dict(offset=0, length=18)),
+                   dict(body_bytes=True), dict(body_bytes=1), dict(body_sha256='0' * 64), dict(body='\ud800')]
+        for change in changes:
+            response = history_response()
+            response['data']['versions'][0].update(change)
+            with self.subTest(change=change):
+                self.assertFalse(self.read({'output': encoded_execution(response)}))
+        response = history_response()
+        response['data']['historical'] = False
+        self.assertFalse(self.read(response))
+
+    def test_source_body_json_is_never_reinterpreted_as_success(self):
+        embedded = json.dumps(history_response())
+        for response in (history_response(record_id='other', body=embedded),
+                         dict(compact_read_response(body=embedded), source=dict(record_id='other', version=2)),
+                         dict(schema='cairn.response/1', ok=False, status='REFUSED', data=history_response())):
+            with self.subTest(response=response):
+                self.assertFalse(self.read({'output': encoded_execution(response)}))
+        self.assertFalse(self.handled(history_response(body=json.dumps(delivery_response()))))
+        self.assertFalse(self.compact_handled(compact_read_response(body=json.dumps(compact_settlement_response()))))
+
+    def test_all_execution_errors_and_conflicting_exit_evidence_refuse(self):
+        response = history_response()
+        outer = {'output': encoded_execution(response)}
+        cases = [dict(outer, isError=True), dict(outer, is_error=1), dict(outer, is_error='false'),
+                 dict(outer, status='failed'), dict(outer, ok=False), dict(outer, error='private'),
+                 dict(outer, error={}), dict(outer, exit_code=False), dict(outer, session_id=123),
+                 dict(outer, metadata='malformed'), dict(outer, metadata=dict(status='in_progress')),
+                 dict(outer, metadata=dict(status='failed')), dict(outer, metadata=dict(session_id=123)),
+                 {'output': encoded_execution(response, metadata=dict(exit_code=7))},
+                 {'output': encoded_execution(response, exit_code=7, metadata=dict(exit_code=0))},
+                 {'output': encoded_execution(response, output=native_output(response, exit_code=7))},
+                 dict(response, error='private')]
+        for result in cases:
+            with self.subTest(result=result):
+                self.assertFalse(self.read(result))
+
+    def test_native_headers_require_completed_execution(self):
+        body = json.dumps(history_response())
+        headers = ['Chunk ID: abc\nWall time: 1', 'Script running with cell ID 1\nWall time: 1',
+                   'Process running with session ID 1\nChunk ID: abc', 'Process exited with code 7',
+                   'Process exited with code 0\nProcess exited with code 7',
+                   'Script completed\n Process exited with code 7', 'Script completed\n Process running with session ID 1',
+                   'Script completed\n Script failed', 'Script completed\n Process exited with code invalid']
+        for header in headers:
+            with self.subTest(header=header):
+                self.assertFalse(self.read({'output': header + '\nOutput:\n' + body}))
+        partial_header = 'Chunk ID: abc\nWall time: 1\nOutput:\n' + body
+        self.assertTrue(self.read({'exit_code': 0, 'output': partial_header}))
+        self.assertTrue(self.read({'output': 'Script completed\nWall time: 1\nOutput:\n' + body}))
+        self.assertFalse(self.read({'exit_code': 0, 'output': headers[1] + '\nOutput:\n' + body}))
+
+    def test_multiple_or_mixed_envelopes_refuse_instead_of_selecting_a_success(self):
+        success = json.dumps(history_response())
+        refusal = json.dumps(dict(schema='cairn.response/1', ok=False, status='REFUSED'))
+        for values in ([success, refusal], [refusal, success], [success, success]):
+            with self.subTest(values=values):
+                self.assertFalse(self.read({'output': values}))
+        self.assertFalse(self.read(dict(history_response(), output=refusal)))
+        self.assertFalse(self.read({'output': success, 'content': refusal}))
+        self.assertFalse(self.read({'output': json.dumps(dict(details=history_response()))}))
+
+    def test_duplicate_json_fields_cannot_hide_conflicting_evidence(self):
+        success = json.dumps(history_response())
+        output = json.dumps(success)
+        cases = ['{"exit_code":7,"exit_code":0,"output":' + output + '}',
+                 success.replace('"ok": true', '"ok": false, "ok": true'),
+                 success.replace('"record_id": "record-1"', '"record_id":"other","record_id":"record-1"')]
+        for value in cases:
+            with self.subTest(value=value):
+                self.assertFalse(self.read({'output': value}))
+
+    def test_ordinary_settlement_requires_exact_delivery_event_state_and_attempts(self):
+        self.assertTrue(self.handled({'output': encoded_execution(delivery_response())}))
+        for change in (dict(delivery_id='other'), dict(event=dict(event_id='other')), dict(state='unhandled'),
+                       dict(state='pending'), dict(attempts=True), dict(attempts=0), dict(attempts=2)):
+            with self.subTest(change=change):
+                self.assertFalse(self.handled({'output': encoded_execution(delivery_response(**change))}))
+        self.assertFalse(self.handled({'output': encoded_execution(delivery_response(), exit_code=7)}))
+        self.assertFalse(self.handled({'output': json.dumps(dict(schema='cairn.response/1', ok=False,
+                                                               status='REFUSED', data=delivery_response()['data']))}))
+
+    def test_compact_settlement_requires_exact_handle_state_and_attempts(self):
+        self.assertTrue(self.compact_handled({'output': encoded_execution(compact_settlement_response())}))
+        for change in (dict(handle='other'), dict(status='unhandled'), dict(ok=False),
+                       dict(attempts=True), dict(attempts=0), dict(attempts=2)):
+            with self.subTest(change=change):
+                self.assertFalse(self.compact_handled({'output': encoded_execution(compact_settlement_response(**change))}))
+        self.assertFalse(self.handled(compact_settlement_response()))
+        self.assertFalse(self.compact_handled(delivery_response()))

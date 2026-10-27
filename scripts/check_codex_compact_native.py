@@ -12,6 +12,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from native_tool_results import source_read_succeeded, settlement_succeeded
 from codex_loopback_fixture import (
     DEFAULT_MODEL as MODEL,
     LoopbackHTTPResponse,
@@ -337,8 +338,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 and state["attempts"] == 1, "automatic path did not start with one live claim"
             for call_id, output in results.items():
                 if call_id.startswith("auto-read"):
-                    serialized_output = json.dumps(output)
-                    assert SOURCE_BODY in serialized_output and source["record_id"] in serialized_output, \
+                    assert source_read_succeeded(output, context["source"], SOURCE_BODY), \
                         "automatic path did not read the exact Store source"
                     source_read_confirmed = True
                     if "exact_source_read" not in automatic_compaction_source_order:
@@ -383,8 +383,8 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                     item = _exec_tool("auto-settle", command)
                 else:
                     if settle_after_auto_compact:
-                        settled_output = json.dumps(results["auto-settle"])
-                        assert "handled" in settled_output, "post-compaction settle did not confirm handled"
+                        assert settlement_succeeded(results["auto-settle"], handle=context["compact_handle"]), \
+                            "post-compaction settle did not confirm handled"
                         assert state["state"] == "handled" and state["attempts"] == 1, \
                             "Store did not confirm post-compaction handled settlement"
                         settlement_confirmed = True
@@ -504,8 +504,7 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 item = _exec_tool("compact-read", command)
             elif scenario == "claimed-before-compact" and not settlement_confirmed and compact_turn_id is None:
                 read_result = results["compact-read"]
-                output = json.dumps(read_result)
-                assert SOURCE_BODY in output and source["record_id"] in output, \
+                assert source_read_succeeded(read_result, context["source"], SOURCE_BODY), \
                     "pre-compaction read omitted exact Store source"
                 source_read_confirmed = True
                 if compact_in_progress:
@@ -517,18 +516,17 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 precompact_read_completed.set()
             elif "compact-settle" not in results:
                 read_result = results["compact-read"]
-                output = json.dumps(read_result)
-                assert SOURCE_BODY in output and source["record_id"] in output, \
+                assert source_read_succeeded(read_result, context["source"], SOURCE_BODY), \
                     "compact read omitted exact source"
                 source_read_confirmed = True
                 command = shlex.join([str(home / "coordination/coordination.py"),
                     "inbox", "compact", "settle", handle, "handled"])
                 item = _exec_tool("compact-settle", command)
             else:
-                settled = json.dumps(results["compact-settle"])
-                assert "handled" in settled and "attempts" in settled, "compact settlement did not confirm handled"
+                assert settlement_succeeded(results["compact-settle"], handle=handle), "compact settlement did not confirm handled"
                 current = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
-                assert current["state"] == "handled" and current["attempts"] == 1, "Store did not confirm one handled attempt"
+                assert current["delivery_id"] == delivery_id and current["state"] == "handled" and current["attempts"] == 1, \
+                    "Store did not confirm one handled attempt"
                 settlement_confirmed = True
                 if scenario == "response":
                     assert not current.get("result"), "response settlement falsely created a task result"

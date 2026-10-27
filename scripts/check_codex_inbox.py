@@ -49,6 +49,8 @@ def response_stream(ident, item, *, model=MODEL, input_tokens=1, output_tokens=1
 
 
 def check(binary, root, config, api_call):
+    from native_tool_results import source_read_succeeded, settlement_succeeded
+
     installer = load_coordination_installer("codex_inbox_installer")
     root.mkdir(mode=0o700)
     home = root / "home"
@@ -119,14 +121,14 @@ def check(binary, root, config, api_call):
             )
             call_id = "source"
         elif "completion" not in results:
-            assert "Native Codex selected request source" in json.dumps(results["source"])
+            assert source_read_succeeded(results["source"], context["source"], "Native Codex selected request source")
             command = (
                 "printf %s 'Native Codex handled selected request' | "
                 + shlex.join(context["completion"])
             )
             call_id = "completion"
         else:
-            assert "handled" in json.dumps(results["completion"])
+            assert settlement_succeeded(results["completion"], delivery_id=context["delivery_id"], event_id=context["event_id"])
             finished_turn = True
             return message_item("msg_" + str(len(server.requests)), "Native inbox request handled.")
         assert_exec_tool_declared(request)
@@ -169,8 +171,9 @@ def check(binary, root, config, api_call):
         while not completed.wait(0.1):
             assert not server.failures, server.failures
             assert time.monotonic() < deadline, "Native Codex Stop continuation did not complete"
-        assert api_call("alice", "event-status", message["event_id"])["deliveries"][0]["state"] == "handled"
+        state = api_call("alice", "event-status", message["event_id"])["deliveries"][0]
         context = next(json.loads(p.read_text()) for p in (root / "engine/state/codex-inbox/inbox").glob("*.json"))
+        assert state["delivery_id"] == context["delivery_id"] and state["state"] == "handled" and state["attempts"] == 1
         while True:
             attempt = api_call(
                 "bob",

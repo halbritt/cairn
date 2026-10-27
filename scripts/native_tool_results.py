@@ -5,6 +5,7 @@ its documented outer output forms and stops at the first decisive result. These
 are deliberately distinct policies, including their existing error precedence.
 """
 
+import hashlib
 import json
 from typing import NamedTuple
 
@@ -229,3 +230,178 @@ def _bounded_integer(value, minimum, maximum):
     if type(value) is int and minimum <= value <= maximum:
         return value
     return None
+
+
+class _InvalidResult(ValueError):
+    pass
+
+
+def _strict_json(text):
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise _InvalidResult('duplicate result field')
+            value[key] = item
+        return value
+
+    def invalid_constant(_value):
+        raise _InvalidResult('invalid JSON constant')
+
+    return json.loads(text, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+
+
+def _successful_response(tool_result):
+    """Select one application response through explicit transport wrappers only.
+
+    Application data is terminal: source bodies and other payload fields are
+    never searched for another response. All selected wrappers must succeed.
+    """
+    responses = []
+
+    def check_execution(value):
+        if (any(key in value and value[key] is not False for key in ('isError', 'is_error'))
+                or value.get('error') is not None or ('ok' in value and value['ok'] is not True)):
+            raise _InvalidResult('tool error')
+        if value.get('session_id') is not None:
+            raise _InvalidResult('tool execution incomplete')
+        if 'exit_code' in value and (type(value['exit_code']) is not int or value['exit_code'] != 0):
+            raise _InvalidResult('execution did not succeed')
+
+    def visit(value, depth=0, execution_complete=False):
+        if depth > 8:
+            raise _InvalidResult('result nesting limit')
+        if isinstance(value, str):
+            if len(value) > 2_000_000:
+                raise _InvalidResult('result text limit')
+            try:
+                decoded = _strict_json(value)
+            except _InvalidResult:
+                raise
+            except ValueError:
+                if '\nOutput:\n' not in value:
+                    raise _InvalidResult('unrecognized result text') from None
+                header, body = value.split('\nOutput:\n', 1)
+                header_lines = [line.strip() for line in header.splitlines()]
+                if not any(line.startswith(('Chunk ID:', 'Wall time:', 'Process exited with code ',
+                                            'Script completed')) for line in header_lines):
+                    raise _InvalidResult('unrecognized execution header')
+                completed_header = False
+                for line in header_lines:
+                    if line.startswith(('Script ', 'Process ')) and not (
+                            line == 'Script completed' or line.startswith('Process exited with code ')):
+                        raise _InvalidResult('tool execution did not complete successfully')
+                    if line == 'Script completed':
+                        completed_header = True
+                    if line.startswith('Process exited with code '):
+                        if line.removeprefix('Process exited with code ').strip() != '0':
+                            raise _InvalidResult('execution did not succeed')
+                        completed_header = True
+                if not (completed_header or execution_complete):
+                    raise _InvalidResult('execution completion missing')
+                execution_complete = True
+                # Native functions.exec can emit its completed preamble as a
+                # separate text block, followed by the actual execution output.
+                if not body.strip():
+                    return
+                decoded = _strict_json(body.strip())
+            visit(decoded, depth + 1, execution_complete)
+            return
+        if isinstance(value, list):
+            if not value or len(value) > 64:
+                raise _InvalidResult('result block limit')
+            for item in value:
+                visit(item, depth + 1, execution_complete)
+            return
+        if not isinstance(value, dict):
+            raise _InvalidResult('unrecognized result value')
+        check_execution(value)
+        metadata = value.get('metadata')
+        if metadata is not None:
+            if not isinstance(metadata, dict) or metadata.get('status') not in (None, 'completed'):
+                raise _InvalidResult('invalid execution metadata')
+            check_execution(metadata)
+            execution_complete |= metadata.get('exit_code') == 0 or metadata.get('status') == 'completed'
+        execution_complete |= value.get('exit_code') == 0 or value.get('status') == 'completed'
+        if 'schema' in value:
+            if any(key in value for key in ('output', 'content', 'text')):
+                raise _InvalidResult('application and transport fields conflict')
+            if (value.get('schema') not in ('cairn.response/1', 'cairn.compact-inbox/1')
+                    or value.get('ok') is not True
+                    or (value['schema'] == 'cairn.response/1' and value.get('status') != 'OK')):
+                raise _InvalidResult('application response refused')
+            responses.append(value)
+            return
+        if value.get('status') not in (None, 'completed') or value.get('session_id') is not None:
+            raise _InvalidResult('tool execution incomplete')
+        fields = [key for key in ('output', 'content', 'text') if key in value]
+        if len(fields) != 1:
+            raise _InvalidResult('ambiguous result wrapper')
+        visit(value[fields[0]], depth + 1, execution_complete)
+
+    try:
+        visit(tool_result)
+    except (ValueError, TypeError, RecursionError):
+        return None
+    return responses[0] if len(responses) == 1 else None
+
+
+def source_result_matches(tool_result, source, body):
+    """Match fields from one successful whole-version history or compact read."""
+    matches = dict(source_record_match=False, source_version_match=False, source_body_match=False)
+    response = _successful_response(tool_result)
+    if response is None:
+        return matches
+    if response['schema'] == 'cairn.response/1':
+        data = response.get('data')
+        if not isinstance(data, dict) or data.get('historical') is not True:
+            return matches
+        versions = data.get('versions')
+        if not isinstance(versions, list) or len(versions) != 1 or not isinstance(versions[0], dict):
+            return matches
+        version = versions[0]
+        if version.get('payload_available') is not True or version.get('span') is not None:
+            return matches
+        record_id, number, observed_body = data.get('record_id'), version.get('version'), version.get('body')
+        if not isinstance(observed_body, str):
+            return matches
+        try:
+            encoded_body = observed_body.encode()
+        except UnicodeError:
+            return matches
+        if (type(version.get('body_bytes')) is not int or version['body_bytes'] != len(encoded_body)
+                or version.get('body_sha256') != hashlib.sha256(encoded_body).hexdigest()):
+            return matches
+    else:
+        ref = response.get('source')
+        if not isinstance(ref, dict) or response.get('status') is not None:
+            return matches
+        record_id, number, observed_body = ref.get('record_id'), ref.get('version'), response.get('body')
+    return dict(source_record_match=isinstance(record_id, str) and record_id == source.get('record_id'),
+                source_version_match=type(number) is int and number == source.get('version'),
+                source_body_match=isinstance(observed_body, str) and observed_body == body)
+
+
+def source_read_succeeded(tool_result, source, body):
+    return all(source_result_matches(tool_result, source, body).values())
+
+
+def settlement_succeeded(tool_result, *, delivery_id=None, event_id=None, handle=None):
+    """Confirm exactly one handled attempt for the caller's expected identity."""
+    if (delivery_id is None) == (handle is None):
+        raise ValueError('one expected settlement identity is required')
+    response = _successful_response(tool_result)
+    if response is None:
+        return False
+    if delivery_id is not None:
+        if response['schema'] != 'cairn.response/1':
+            return False
+        data = response.get('data')
+        return (isinstance(data, dict) and isinstance(delivery_id, str) and bool(delivery_id)
+                and data.get('delivery_id') == delivery_id and isinstance(data.get('event'), dict)
+                and isinstance(event_id, str) and bool(event_id) and data['event'].get('event_id') == event_id
+                and data.get('state') == 'handled' and type(data.get('attempts')) is int and data['attempts'] == 1)
+    return (response['schema'] == 'cairn.compact-inbox/1' and isinstance(handle, str) and bool(handle)
+            and event_id is None and response.get('handle') == handle
+            and response.get('status') == 'handled' and type(response.get('attempts')) is int
+            and response['attempts'] == 1)

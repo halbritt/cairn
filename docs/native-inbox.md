@@ -583,3 +583,13 @@ fixtures verify busy arrival, Stop continuation, source reading and explicit
 completion through their installed execution tools. Native OpenCode and Hermes
 fixtures verify next-turn handling. An opt-in Agy test uses its existing account
 and a real model. See [verification](verification/agent-sessions-2026-09-15.md).
+
+Current Codex fixtures interpret supported tool-result wrappers through
+[`native_tool_results.py`](../scripts/native_tool_results.py). Source confirmation
+requires a successful structured reply with the selected record, version and
+exact body. Settlement confirmation requires a successful handled reply with
+the matching delivery or compact handle and attempt count. The fixtures also
+read Store state independently to verify the exact delivery and its attempts.
+Diagnostic classifications remain bounded metadata; they do not alone establish
+successful source reading or settlement. Historical verification records retain
+the checks and limitations of their original runs.

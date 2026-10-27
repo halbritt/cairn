@@ -18,6 +18,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from native_tool_results import source_read_succeeded, settlement_succeeded
 from codex_loopback_fixture import (
     LoopbackResponsesServer,
     exec_tool_item as _exec_tool,
@@ -428,15 +429,13 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                     else:
                         result = results.get(batch_last_call_id)
                         assert result is not None, "Codex omitted the previous batch tool result"
-                        result_text = json.dumps(result, sort_keys=True)
                         current, context = batch_context()
                         assert current.get("native_turn_id") == actor_turn_id
                         assert (current.get("batch_root") or batch_root_attempt_id) == batch_root_attempt_id
                         if batch_action == "await_read":
                             batch_stage = "read_tool_result"
                             expected_source = batch_sources[batch_item_index]
-                            assert BATCH_BODIES[batch_item_index] in result_text
-                            assert expected_source["record_id"] in result_text
+                            assert source_read_succeeded(result, expected_source, BATCH_BODIES[batch_item_index])
                             source_read_confirmed = True
                             result_classes = ["read_success"]
                             response_class = "settle_handled"
@@ -447,7 +446,8 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                             event = batch_notices[batch_item_index]
                             delivery = api_call(event_owner, "event-status", event["event_id"])["deliveries"][0]
                             assert delivery["state"] == "handled" and delivery["attempts"] == 1
-                            assert "handled" in result_text
+                            assert settlement_succeeded(result, handle=context["compact_handle"])
+                            assert delivery["delivery_id"] == context["delivery_id"]
                             settlement_confirmed = True
                             result_classes = ["settle_success"]
                             response_class = "advance_successor"
@@ -523,16 +523,15 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                         command = "printf %s " + shlex.quote(json.dumps(context["read_input"])) + " | " + shlex.join(context["read"])
                         item = _exec_tool("source", command)
                     elif "ack" not in results:
-                        read_text = json.dumps(results["source"])
-                        assert notice_body in read_text and source["record_id"] in read_text, \
+                        assert source_read_succeeded(results["source"], context["source"], notice_body), \
                             "native turn did not read the exact full notice source"
                         source_read_confirmed = True
                         command = shlex.join(context["acknowledgement"])
                         item = _exec_tool("ack", command)
                     else:
-                        ack_text = json.dumps(results["ack"])
                         state = api_call(event_owner, "event-status", notice["event_id"])["deliveries"][0]
-                        assert "handled" in ack_text and state["state"] == "handled" and state["attempts"] == 1
+                        assert settlement_succeeded(results["ack"], delivery_id=context["delivery_id"], event_id=context["event_id"])
+                        assert state["delivery_id"] == context["delivery_id"] and state["state"] == "handled" and state["attempts"] == 1
                         settlement_confirmed = True
                         item = message_item("msg_done", "Build 81 completed; checksum 7b1a recorded.")
                         finished.set()
