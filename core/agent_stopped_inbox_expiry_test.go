@@ -12,54 +12,17 @@ import (
 // still be live or a host still holds the delivery.
 
 type stoppedInboxFixture struct {
-	op, sender, receiver *Store
-	source               Record
-	dest                 Destination
-	repo                 string
+	*nativeFixture
+	op *Store
 }
 
 func newStoppedInboxFixture(t *testing.T) stoppedInboxFixture {
 	t.Helper()
-	sender, receiver, source, dest := eventFixture(t)
-	return stoppedInboxFixture{
-		op:     testStore(t, Channel{Principal: "inbox-expiry-operator-" + source.Scope.Repo, Operator: true}),
-		sender: sender, receiver: receiver, source: source, dest: dest, repo: source.Scope.Repo,
-	}
-}
-
-func (f stoppedInboxFixture) register(t *testing.T, native string) AgentInstance {
-	t.Helper()
-	a, err := f.receiver.RegisterAgent(context.Background(), RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "inbox-expiry", NativeSessionID: native,
-		Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, f.dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a
-}
-
-func (f stoppedInboxFixture) publish(t *testing.T, kind, inbox string) (AgentEvent, string) {
-	t.Helper()
-	e, err := f.sender.PublishEvent(context.Background(), PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{"agent", inbox}}, f.dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err := f.sender.AgentEventStatus(context.Background(), EventStatusRequest{EventID: e.EventID}, f.dest)
-	if err != nil || len(st.Deliveries) != 1 {
-		t.Fatalf("status: %+v %v", st, err)
-	}
-	return e, st.Deliveries[0].DeliveryID
+	f := newNativeFixture(t)
+	return stoppedInboxFixture{f, f.operator()}
 }
 
 // stopAgo records an explicit stop and backdates it by the given interval.
-func (f stoppedInboxFixture) stopAgo(t *testing.T, a AgentInstance, interval string) {
-	t.Helper()
-	if _, err := f.receiver.LeaveAgent(context.Background(), AgentSessionRef{a.AgentID, a.ExecutionID}, f.dest); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.op.pool.Exec(context.Background(), `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-$2::interval,last_seen=clock_timestamp()-$2::interval WHERE agent_id=$1`, a.AgentID, interval); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func (f stoppedInboxFixture) expire(agentIDs ...string) (StoppedInboxExpiry, error) {
 	return f.op.ExpireStoppedInboxes(context.Background(), StoppedInboxExpiryRequest{RequestID: uuid.NewString(), Repo: f.repo, AgentIDs: agentIDs,
@@ -78,10 +41,10 @@ func (f stoppedInboxFixture) dryRun(t *testing.T, agentIDs ...string) StoppedInb
 func TestStoppedInboxExpiryFailsReviewedDeliveriesVisiblyAndAllowsReissue(t *testing.T) {
 	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
-	a := f.register(t, "stopped-long-ago")
-	request, requestDelivery := f.publish(t, "request", a.Inbox)
-	_, noticeDelivery := f.publish(t, "notice", a.Inbox)
-	f.stopAgo(t, a, "2 days")
+	a := f.register(nativeAgent{Binding: "inbox-expiry", Native: "stopped-long-ago", Harness: "claude"})
+	request, requestDelivery := f.publish("request", a.Inbox)
+	_, noticeDelivery := f.publish("notice", a.Inbox)
+	f.stopAgo(a, "2 days")
 
 	plan := f.dryRun(t)
 	if !plan.DryRun || plan.Expired != 2 || len(plan.Sessions) != 1 {
@@ -118,19 +81,17 @@ func TestStoppedInboxExpiryFailsReviewedDeliveriesVisiblyAndAllowsReissue(t *tes
 func TestStoppedInboxExpiryLeavesPossiblyLiveAndNonSessionConsumers(t *testing.T) {
 	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
-	live := f.register(t, "live")
-	offline := f.register(t, "offline-long-ago")
-	recent := f.register(t, "stopped-recently")
-	_, liveDelivery := f.publish(t, "notice", live.Inbox)
-	_, offlineDelivery := f.publish(t, "request", offline.Inbox)
-	_, recentDelivery := f.publish(t, "notice", recent.Inbox)
+	live := f.register(nativeAgent{Binding: "inbox-expiry", Native: "live", Harness: "claude"})
+	offline := f.register(nativeAgent{Binding: "inbox-expiry", Native: "offline-long-ago", Harness: "claude"})
+	recent := f.register(nativeAgent{Binding: "inbox-expiry", Native: "stopped-recently", Harness: "claude"})
+	_, liveDelivery := f.publish("notice", live.Inbox)
+	_, offlineDelivery := f.publish("request", offline.Inbox)
+	_, recentDelivery := f.publish("notice", recent.Inbox)
 	// A profile inbox that is not a registered session keeps its history.
-	_, legacyDelivery := f.publish(t, "response", f.receiver.channel.Principal)
+	_, legacyDelivery := f.publish("response", f.receiver.channel.Principal)
 	// Presence that merely expired long ago does not prove the agent stopped.
-	if _, err := f.op.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '30 days' WHERE agent_id=$1`, offline.AgentID); err != nil {
-		t.Fatal(err)
-	}
-	f.stopAgo(t, recent, "10 minutes")
+	f.lapsePresence(offline.AgentID, "30 days")
+	f.stopAgo(recent, "10 minutes")
 
 	plan := f.dryRun(t)
 	if plan.Expired != 0 || len(plan.Sessions) != 0 {
@@ -178,13 +139,13 @@ func (f stoppedInboxFixture) state(t *testing.T, delivery string) string {
 func TestStoppedInboxExpiryRetainsHeldAndTopicDeliveries(t *testing.T) {
 	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
-	a := f.register(t, "stopped-with-hold")
+	a := f.register(nativeAgent{Binding: "inbox-expiry", Native: "stopped-with-hold", Harness: "claude"})
 	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
 	view, err := f.receiver.ForAgentSession(ref, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, heldDelivery := f.publish(t, "request", a.Inbox)
+	_, heldDelivery := f.publish("request", a.Inbox)
 	claim, err := f.receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, f.dest)
 	if err != nil || claim.Attempt == nil || claim.Attempt.Delivery.DeliveryID != heldDelivery {
 		t.Fatalf("claim: %+v %v", claim, err)
@@ -196,8 +157,8 @@ func TestStoppedInboxExpiryRetainsHeldAndTopicDeliveries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, freeDelivery := f.publish(t, "notice", a.Inbox)
-	f.stopAgo(t, a, "3 days")
+	_, freeDelivery := f.publish("notice", a.Inbox)
+	f.stopAgo(a, "3 days")
 
 	plan := f.dryRun(t, a.AgentID)
 	if plan.Expired != 1 || len(plan.Sessions) != 1 || plan.Sessions[0].Retained.Held != 1 || plan.Sessions[0].Deliveries[0].DeliveryID != freeDelivery {
@@ -229,21 +190,21 @@ func TestStoppedInboxExpiryRetainsHeldAndTopicDeliveries(t *testing.T) {
 func TestStoppedInboxExpiryRetainsLeasedAndSuccessorGrantedDeliveries(t *testing.T) {
 	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
-	a := f.register(t, "stopped-with-lease")
+	a := f.register(nativeAgent{Binding: "inbox-expiry", Native: "stopped-with-lease", Harness: "claude"})
 	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
 	view, err := f.receiver.ForAgentSession(ref, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, leasedDelivery := f.publish(t, "notice", a.Inbox)
+	_, leasedDelivery := f.publish("notice", a.Inbox)
 	next, err := view.NextEvent(ctx, NextEventRequest{}, f.dest)
 	if err != nil || next.Delivery == nil || next.Delivery.DeliveryID != leasedDelivery {
 		t.Fatalf("lease: %+v %v", next, err)
 	}
-	granted, grantedDelivery := f.publish(t, "request", a.Inbox)
-	_, freeDelivery := f.publish(t, "response", a.Inbox)
-	successor := f.register(t, "successor")
-	f.stopAgo(t, a, "3 days")
+	granted, grantedDelivery := f.publish("request", a.Inbox)
+	_, freeDelivery := f.publish("response", a.Inbox)
+	successor := f.register(nativeAgent{Binding: "inbox-expiry", Native: "successor", Harness: "claude"})
+	f.stopAgo(a, "3 days")
 	if _, err = f.op.AuthorizeSessionSuccessor(ctx, AuthorizeSessionSuccessorRequest{RequestID: uuid.NewString(), Repo: f.repo, PredecessorAgentID: a.AgentID,
 		Successor: AgentSessionRef{successor.AgentID, successor.ExecutionID}, EventIDs: []string{granted.EventID}, Reason: "Successor continues the granted request"}); err != nil {
 		t.Fatal(err)
@@ -262,9 +223,9 @@ func TestStoppedInboxExpiryRetainsLeasedAndSuccessorGrantedDeliveries(t *testing
 func TestStoppedInboxExpiryAuthorityValidationReplayAndResume(t *testing.T) {
 	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
-	a := f.register(t, "resumable")
-	_, first := f.publish(t, "notice", a.Inbox)
-	f.stopAgo(t, a, "2 days")
+	a := f.register(nativeAgent{Binding: "inbox-expiry", Native: "resumable", Harness: "claude"})
+	_, first := f.publish("notice", a.Inbox)
+	f.stopAgo(a, "2 days")
 	reason := "Reviewed dry run; the stopped session will not return"
 
 	_, err := f.receiver.ExpireStoppedInboxes(ctx, StoppedInboxExpiryRequest{Repo: f.repo, DryRun: true})
@@ -298,11 +259,11 @@ func TestStoppedInboxExpiryAuthorityValidationReplayAndResume(t *testing.T) {
 	// The conversation can still resume. Its failed delivery stays failed and
 	// is not replayed; new mail flows normally, and a resumed session is not
 	// eligible for expiry.
-	resumed := f.register(t, "resumable")
+	resumed := f.register(nativeAgent{Binding: "inbox-expiry", Native: "resumable", Harness: "claude"})
 	if resumed.AgentID != a.AgentID {
 		t.Fatalf("resume changed identity: %+v", resumed)
 	}
-	_, second := f.publish(t, "notice", a.Inbox)
+	_, second := f.publish("notice", a.Inbox)
 	next, err := f.receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: AgentSessionRef{resumed.AgentID, resumed.ExecutionID}}, f.dest)
 	if err != nil || next.Attempt == nil || next.Attempt.Delivery.DeliveryID != second {
 		t.Fatalf("resumed claim: %+v %v", next, err)
@@ -319,9 +280,9 @@ func TestStoppedInboxExpiryAuthorityValidationReplayAndResume(t *testing.T) {
 func TestStoppedInboxExpiryRacesResumeConsistently(t *testing.T) {
 	f := newStoppedInboxFixture(t)
 	for i := 0; i < 8; i++ {
-		a := f.register(t, "race-"+uuid.NewString())
-		_, delivery := f.publish(t, "notice", a.Inbox)
-		f.stopAgo(t, a, "2 days")
+		a := f.register(nativeAgent{Binding: "inbox-expiry", Native: "race-" + uuid.NewString(), Harness: "claude"})
+		_, delivery := f.publish("notice", a.Inbox)
+		f.stopAgo(a, "2 days")
 		var applied StoppedInboxExpiry
 		var applyErr, resumeErr error
 		done := make(chan struct{})
@@ -330,7 +291,7 @@ func TestStoppedInboxExpiryRacesResumeConsistently(t *testing.T) {
 			applied, applyErr = f.expire(a.AgentID)
 		}()
 		_, resumeErr = f.receiver.RegisterAgent(context.Background(), RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "inbox-expiry", NativeSessionID: a.NativeSessionID,
-			Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, f.dest)
+			Metadata: existingSessionMetadata("claude", "idle")}, f.dest)
 		<-done
 		if applyErr != nil || resumeErr != nil {
 			t.Fatalf("race: %v %v", applyErr, resumeErr)

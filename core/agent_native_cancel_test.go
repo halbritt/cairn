@@ -18,47 +18,18 @@ import (
 
 func nativeCancelFixture(t *testing.T) (*Store, *Store, *Store, AgentSessionRef, string, Destination) {
 	t.Helper()
-	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	op := testStore(t, Channel{Principal: "cancel-operator-" + source.Scope.Repo, Operator: true})
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-cancel", NativeSessionID: "native-cancel", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", a.Inbox}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref, DeliveryID: eventDeliveries(t, sender, event.EventID)[0], NativeTurnID: "turn-one", TurnExclusive: true}, dest)
-	if err != nil || claim.Attempt == nil {
-		t.Fatalf("claim: %+v %v", claim, err)
-	}
-	return op, receiver, sender, ref, claim.Attempt.ID, dest
+	f := newNativeFixture(t)
+	a, _, claim := f.claimed(nativeAgent{Binding: "native-cancel"}, "request", "turn-one", true)
+	return f.operator(), f.receiver, f.sender, sessionRef(a), claim.Attempt.ID, f.dest
 }
 
 func nativeCancelFixtureNoExclusive(t *testing.T) (*Store, *Store, *Store, AgentSessionRef, string, Destination) {
 	t.Helper()
-	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	op := testStore(t, Channel{Principal: "cancel-operator-" + source.Scope.Repo, Operator: true})
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-cancel-shared", NativeSessionID: "native-cancel-shared", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", a.Inbox}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := newNativeFixture(t)
 	// A plain turn-less boundary claim, as the hook reports at a supported
 	// boundary without a wake binding: no prompt id is pinned at all.
-	claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
-	if err != nil || claim.Attempt == nil {
-		t.Fatalf("plain claim: %+v %v", claim, err)
-	}
-	_ = event
-	return op, receiver, sender, ref, claim.Attempt.ID, dest
+	a, _, claim := f.claimed(nativeAgent{Binding: "native-cancel-shared", Harness: "claude"}, "request", "", false)
+	return f.operator(), f.receiver, f.sender, sessionRef(a), claim.Attempt.ID, f.dest
 }
 
 func eventDeliveries(t *testing.T, s *Store, eventID string) []string {
@@ -220,9 +191,7 @@ func TestNativeCancelAfterCompletionRefusedAndRecoverableAfterRestart(t *testing
 		t.Fatal(err)
 	}
 	// The lease expires; the durable hold still pins the work.
-	if _, err = receiver2.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, delivery2); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, receiver2).expireLease(delivery2)
 	control, err := receiver2.SessionInboxControl(ctx, ref2, dest)
 	if err != nil || control.Attempt == nil || control.Attempt.Cancel == nil || control.Attempt.Cancel.ConfirmedAt != nil {
 		t.Fatalf("control after expiry: %+v %v", control, err)
@@ -427,23 +396,9 @@ func TestNonExclusiveTurnStaysUnsupportedForCancellation(t *testing.T) {
 
 func nativeCancelFixturePinnedUnproven(t *testing.T) (*Store, *Store, *Store, AgentSessionRef, string, Destination) {
 	t.Helper()
-	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	op := testStore(t, Channel{Principal: "cancel-operator-unproven-" + source.Scope.Repo, Operator: true})
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-unproven", NativeSessionID: "native-unproven", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", a.Inbox}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref, DeliveryID: eventDeliveries(t, sender, event.EventID)[0], NativeTurnID: "prompt-shared"}, dest)
-	if err != nil || claim.Attempt == nil {
-		t.Fatalf("pinned unproven claim: %+v %v", claim, err)
-	}
-	return op, receiver, sender, ref, claim.Attempt.ID, dest
+	f := newNativeFixture(t)
+	a, _, claim := f.claimed(nativeAgent{Binding: "native-unproven", Harness: "claude"}, "request", "prompt-shared", false)
+	return f.operator(), f.receiver, f.sender, sessionRef(a), claim.Attempt.ID, f.dest
 }
 
 func sourceRef(t *testing.T, s *Store, ref AgentSessionRef, attemptID string, dest Destination) RecordVersionRef {

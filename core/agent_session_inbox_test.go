@@ -11,12 +11,10 @@ import (
 
 func TestOrdinaryNativeTurnClaimBindsSelectedDelivery(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-prompt", NativeSessionID: "native-prompt", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "native-prompt", State: "busy"})
+	ref := sessionRef(a)
 	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -43,12 +41,10 @@ func TestOrdinaryNativeTurnClaimBindsSelectedDelivery(t *testing.T) {
 
 func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-queue", NativeSessionID: "native-queue", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "native-queue"})
+	ref := sessionRef(a)
 	var deliveries []string
 	for range 2 {
 		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
@@ -66,9 +62,7 @@ func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 		t.Fatalf("readiness: %+v %v", ready, err)
 	}
 	// The queued wake arrives after its hinted delivery becomes unavailable.
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, deliveries[0]); err != nil {
-		t.Fatal(err)
-	}
+	f.deferDelivery(deliveries[0], "1 hour")
 	claim := SessionInboxClaim{RequestID: uuid.NewString(), Session: ref, DeliveryID: deliveries[0], NativeTurnID: "native-turn-one"}
 	empty, err := receiver.ClaimSessionInbox(ctx, claim, dest)
 	if err != nil || empty.Attempt != nil {
@@ -110,12 +104,10 @@ func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 
 func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-probe", NativeSessionID: "idle-probe", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "idle-probe"})
+	ref := sessionRef(a)
 	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("empty readiness: %+v %v", ready, err)
@@ -163,9 +155,7 @@ func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 	if err != nil || blocked != (SessionInboxReadiness{}) {
 		t.Fatalf("live lease readiness: %+v %v", blocked, err)
 	}
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, ready.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireLease(ready.DeliveryID)
 	expired, err := receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || expired != ready {
 		t.Fatalf("expired lease readiness: %+v %v", expired, err)
@@ -174,10 +164,7 @@ func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 	if err != nil || status.Deliveries[0].State != "leased" || status.Deliveries[0].Attempts != 1 {
 		t.Fatalf("hint changed lease: %+v %v", status, err)
 	}
-	claimed, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
-	if err != nil || claimed.Attempt == nil {
-		t.Fatalf("claim: %+v %v", claimed, err)
-	}
+	f.claim(ref, "", "", false)
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("held readiness: %+v %v", ready, err)
@@ -186,13 +173,12 @@ func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 
 func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-state", NativeSessionID: "idle-state", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}
-	a, err := receiver.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	var err error
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-state", NativeSessionID: "idle-state", Metadata: existingSessionMetadata("codex", "busy")}
+	a := f.registerRequest(registration, receiver, dest)
+	ref := sessionRef(a)
 	_, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -211,9 +197,7 @@ func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 	if err != nil || ready.DeliveryID == "" {
 		t.Fatalf("idle notice: %+v %v", ready, err)
 	}
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, a.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireSession(a.AgentID)
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("expired: %+v %v", ready, err)
@@ -228,13 +212,11 @@ func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 
 func TestSessionInboxRetainsOneOwnerUntilExplicitCompletion(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex-one", NativeSessionID: "native-inbox", Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/work/rhumb", State: "busy", DeliveryMode: "existing-session"}}
-	agent, err := receiver.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	agent := f.registerRequest(registration, receiver, dest)
+	ref := sessionRef(agent)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -293,13 +275,11 @@ func TestSessionInboxRetainsOneOwnerUntilExplicitCompletion(t *testing.T) {
 
 func TestSessionInboxCrashRestoreAndOldReconciliation(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "claude-two", NativeSessionID: "native-crash", Metadata: AgentMetadata{Harness: "claude", Project: "rhumb", Workspace: "/work/rhumb", State: "busy", DeliveryMode: "existing-session"}}
-	agent, err := receiver.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	agent := f.registerRequest(registration, receiver, dest)
+	ref := sessionRef(agent)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -315,9 +295,7 @@ func TestSessionInboxCrashRestoreAndOldReconciliation(t *testing.T) {
 	requireCode(t, err, "DELIVERY_ACTIVE")
 	_, err = sender.ReconcileSessionInbox(ctx, reconcile, dest)
 	requireCode(t, err, "NOT_FOUND")
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, first.Attempt.Delivery.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireLease(first.Attempt.Delivery.DeliveryID)
 	next, err := view.NextEvent(ctx, NextEventRequest{}, dest)
 	if err != nil || next.Delivery != nil {
 		t.Fatalf("expired native lease replayed: %+v %v", next, err)
@@ -344,16 +322,13 @@ func TestSessionInboxCrashRestoreAndOldReconciliation(t *testing.T) {
 	if err != nil || resumed.AgentID != agent.AgentID || resumed.ExecutionID == agent.ExecutionID {
 		t.Fatalf("resume: %+v %v", resumed, err)
 	}
-	current := AgentSessionRef{resumed.AgentID, resumed.ExecutionID}
+	current := sessionRef(resumed)
 	fresh, err := receiver.ForAgentSession(current, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	publishFixture(t, sender, fresh, source, dest)
-	replacement, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: current}, dest)
-	if err != nil || replacement.Attempt == nil {
-		t.Fatalf("replacement: %+v %v", replacement, err)
-	}
+	replacement := f.claim(current, "", "", false)
 	reconcile.RequestID = uuid.NewString()
 	if _, err = receiver.ReconcileSessionInbox(ctx, reconcile, dest); err != nil {
 		t.Fatal(err)
@@ -366,12 +341,10 @@ func TestSessionInboxCrashRestoreAndOldReconciliation(t *testing.T) {
 
 func TestSessionInboxConcurrentClaimHasOneConsumer(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex", NativeSessionID: "concurrent", Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/work/rhumb", State: "busy", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	agent := f.register(nativeAgent{Binding: "codex", Native: "concurrent", State: "busy", Project: "rhumb", Workspace: "/work/rhumb"})
+	ref := sessionRef(agent)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)

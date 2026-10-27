@@ -128,7 +128,8 @@ func TestEventReviewSeparatesHoldExecutionAndHandling(t *testing.T) {
 
 func TestEventReviewRetainsPrelaunchHistoryAndPages(t *testing.T) {
 	ctx := context.Background()
-	a, b, r, d := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, r, d := f.sender, f.receiver, f.source, f.dest
 	op, _ := testOperator(t)
 	publishFixture(t, a, b, r, d)
 	for range 3 {
@@ -143,9 +144,7 @@ func TestEventReviewRetainsPrelaunchHistoryAndPages(t *testing.T) {
 		if finished.ProcessState != "prelaunch_failed" {
 			t.Fatal("finished attempt lost prelaunch fact")
 		}
-		if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp() WHERE delivery_id=$1`, wake.Attempt.Delivery.DeliveryID); err != nil {
-			t.Fatal(err)
-		}
+		f.makeAvailable(wake.Attempt.Delivery.DeliveryID)
 	}
 	req := EventReviewRequest{Repo: r.Scope.Repo, State: "failed"}
 	first, err := op.ReviewEvents(ctx, req)
@@ -182,13 +181,11 @@ func TestEventReviewRetainsPrelaunchHistoryAndPages(t *testing.T) {
 
 func TestEventReviewNativeHoldAndSelectedFailure(t *testing.T) {
 	ctx := context.Background()
-	a, b, r, d := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, r, d := f.sender, f.receiver, f.source, f.dest
 	op, _ := testOperator(t)
-	session, err := b.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "review-native", NativeSessionID: "native", Metadata: AgentMetadata{Harness: "claude", Project: "rhumb", Workspace: "/fixture/rhumb", State: "busy", DeliveryMode: "existing-session"}}, d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: session.AgentID, ExecutionID: session.ExecutionID}
+	session := f.register(nativeAgent{Binding: "review-native", Native: "native", Harness: "claude", State: "busy", Project: "rhumb", Workspace: "/fixture/rhumb"})
+	ref := sessionRef(session)
 	event, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{r.RecordID, r.Version}, Destination: EventDestination{Type: "agent", Name: session.Inbox}}, d)
 	if err != nil {
 		t.Fatal(err)

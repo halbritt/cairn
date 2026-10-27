@@ -10,7 +10,8 @@ import (
 
 func TestAdmissionExpiryPreventsClaimButDoesNotRevokeLiveLease(t *testing.T) {
 	ctx := context.Background()
-	a, b, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, source, dest := f.sender, f.receiver, f.source, f.dest
 	expired := time.Now().Add(-time.Second)
 	event, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}, AdmissionExpiresAt: &expired}, dest)
 	if err != nil {
@@ -30,9 +31,7 @@ func TestAdmissionExpiryPreventsClaimButDoesNotRevokeLiveLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	live := nextFixture(t, b, dest)
-	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_event SET admission_expires_at=clock_timestamp()-interval '1 second' WHERE event_id=$1`, event.EventID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireAdmission(event.EventID)
 	renewed, err := b.ChangeEventLease(ctx, EventLeaseRequest{DeliveryID: live.DeliveryID, LeaseID: live.LeaseID}, true, dest)
 	if err != nil || renewed.State != "leased" {
 		t.Fatalf("admission expiry revoked live work: %+v %v", renewed, err)
@@ -132,9 +131,7 @@ func TestTaskDeadlineFencesCompletionAndRetainsHold(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_event SET task_deadline=clock_timestamp()-interval '1 second' WHERE event_id=$1`, event.EventID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, b).pastDeadline(event.EventID)
 	_, err = b.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: attempt.Delivery.DeliveryID, LeaseID: attempt.Delivery.LeaseID, Disposition: "handled"}, dest)
 	requireCode(t, err, "DEADLINE_EXCEEDED")
 	control, err := b.WakeControl(ctx, WakeControlRequest{AttemptID: attempt.ID}, dest)
@@ -145,7 +142,8 @@ func TestTaskDeadlineFencesCompletionAndRetainsHold(t *testing.T) {
 
 func TestCancelWorkClosesOnlyUnclaimedNonRequests(t *testing.T) {
 	ctx := context.Background()
-	a, b, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, source, dest := f.sender, f.receiver, f.source, f.dest
 	op := testStore(t, Channel{Principal: "cancel-notice-operator-" + source.Scope.Repo, Operator: true})
 	publish := func(kind string) string {
 		t.Helper()
@@ -191,9 +189,7 @@ func TestCancelWorkClosesOnlyUnclaimedNonRequests(t *testing.T) {
 	}
 	_, err = op.CancelWork(ctx, cancel(claimed))
 	requireCode(t, err, "UNSUPPORTED_CONTROL")
-	if _, err = op.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, claimed); err != nil {
-		t.Fatal(err)
-	}
+	f.expireLease(claimed)
 	_, err = op.CancelWork(ctx, cancel(claimed))
 	requireCode(t, err, "UNSUPPORTED_CONTROL")
 

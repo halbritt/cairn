@@ -117,9 +117,7 @@ func TestAgentDirectoryFiltersExpiryVisibilityAndRestore(t *testing.T) {
 		t.Fatalf("second page or private metadata leaked: %+v %v", second, err)
 	}
 	// Simulate a missed heartbeat without a 90-second sleep.
-	if _, err = profile.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, one.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, profile).expireSession(one.AgentID)
 	query.After, query.Limit = 0, 100
 	fresh, err := profile.AgentDirectory(ctx, query, dest)
 	if err != nil || len(fresh.Agents) != 1 || fresh.Agents[0].AgentID != two.AgentID {
@@ -146,19 +144,14 @@ func TestAgentDirectoryFiltersExpiryVisibilityAndRestore(t *testing.T) {
 
 func TestSessionInboxSelectionAndResumeFencing(t *testing.T) {
 	ctx := context.Background()
-	publisher, profile, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	publisher, profile, source, dest := f.sender, f.receiver, f.source, f.dest
 	req := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex", NativeSessionID: "first",
 		Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/fixture/rhumb", State: "busy", DeliveryMode: "existing-session"}}
-	one, err := profile.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	one := f.registerRequest(req, profile, dest)
 	other := req
 	other.RequestID, other.NativeSessionID = uuid.NewString(), "second"
-	two, err := profile.RegisterAgent(ctx, other, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	two := f.registerRequest(other, profile, dest)
 	event, err := publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Ref: RecordVersionRef{source.RecordID, 1}, Kind: "request", Destination: EventDestination{Type: "agent", Name: one.Inbox}}, dest)
 	if err != nil {
 		t.Fatal(err)

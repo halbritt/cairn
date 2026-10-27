@@ -31,14 +31,12 @@ func TestWakeLaunchRequiresTheHostedRunnerDestination(t *testing.T) {
 
 func TestWakeSessionKeepsNativeIdentityAndSlotDelivery(t *testing.T) {
 	ctx := context.Background()
-	host, slot, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	host, slot, source, dest := f.sender, f.receiver, f.source, f.dest
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex-two", NativeSessionID: "actual-native-thread",
 		Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/fixture/rhumb", State: "busy", DeliveryMode: "fresh-worker"}}
-	agent, err := host.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	agent := f.registerRequest(registration, host, dest)
+	ref := sessionRef(agent)
 	request := publishFixture(t, host, slot, source, dest)
 	claimed, err := slot.ClaimWake(ctx, WakeClaimRequest{RequestID: uuid.NewString()}, dest)
 	if err != nil {
@@ -119,20 +117,15 @@ func TestWakeSessionKeepsNativeIdentityAndSlotDelivery(t *testing.T) {
 
 func TestWakeSessionRejectsStaleAndCompetingAssociations(t *testing.T) {
 	ctx := context.Background()
-	host, slot, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	host, slot, source, dest := f.sender, f.receiver, f.source, f.dest
 	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "claude-two", NativeSessionID: "native-current",
 		Metadata: AgentMetadata{Harness: "claude", Project: "rhumb", Workspace: "/fixture/rhumb", State: "busy", DeliveryMode: "fresh-worker"}}
-	agent, err := host.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	agent := f.registerRequest(registration, host, dest)
+	old := sessionRef(agent)
 	registration.RequestID = uuid.NewString()
-	agent, err = host.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{agent.AgentID, agent.ExecutionID}
+	agent = f.registerRequest(registration, host, dest)
+	ref := sessionRef(agent)
 	launch := func(s *Store) string {
 		t.Helper()
 		publishFixture(t, host, s, source, dest)
@@ -160,7 +153,7 @@ func TestWakeSessionRejectsStaleAndCompetingAssociations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localRef := AgentSessionRef{localAgent.AgentID, localAgent.ExecutionID}
+	localRef := sessionRef(localAgent)
 	_, err = slot.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: id, Operation: "session", Session: &localRef}, Destination{Name: "local", AllowLocal: true})
 	requireCode(t, err, "NOT_FOUND")
 	other := testStore(t, Channel{Principal: "slot-other:" + uuid.NewString(), Repo: source.Scope.Repo})

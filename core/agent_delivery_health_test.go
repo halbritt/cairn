@@ -9,35 +9,16 @@ import (
 )
 
 type healthFixture struct {
-	sender, receiver *Store
-	source           Record
-	dest             Destination
-	agent            AgentInstance
-	ref              AgentSessionRef
+	*nativeFixture
+	agent AgentInstance
+	ref   AgentSessionRef
 }
 
 func newHealthFixture(t *testing.T) healthFixture {
 	t.Helper()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(context.Background(), RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "health", NativeSessionID: uuid.NewString(), Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return healthFixture{sender, receiver, source, dest, a, AgentSessionRef{a.AgentID, a.ExecutionID}}
-}
-
-func (f healthFixture) publish(t *testing.T, kind, inbox string) (AgentEvent, string) {
-	t.Helper()
-	ctx := context.Background()
-	e, err := f.sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{f.source.RecordID, f.source.Version}, Destination: EventDestination{Type: "agent", Name: inbox}}, f.dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	status, err := f.sender.AgentEventStatus(ctx, EventStatusRequest{EventID: e.EventID}, f.dest)
-	if err != nil || len(status.Deliveries) != 1 {
-		t.Fatalf("status: %+v %v", status, err)
-	}
-	return e, status.Deliveries[0].DeliveryID
+	f := newNativeFixture(t)
+	a := f.register(nativeAgent{Binding: "health", Native: uuid.NewString(), Harness: "claude"})
+	return healthFixture{f, a, sessionRef(a)}
 }
 
 func (f healthFixture) observe(t *testing.T, req SessionDeliveryObservation) SessionDeliveryObservationResult {
@@ -73,7 +54,7 @@ func dbNow(t *testing.T, s *Store) time.Time {
 func TestSessionDeliveryObservationAuthorization(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	_, delivery := f.publish(t, "request", f.agent.Inbox)
+	_, delivery := f.publish("request", f.agent.Inbox)
 	now := dbNow(t, f.receiver)
 	valid := SessionDeliveryObservation{Session: f.ref, DeliveryID: delivery, Condition: "channel_not_launched", ObservedAt: now}
 
@@ -83,7 +64,7 @@ func TestSessionDeliveryObservationAuthorization(t *testing.T) {
 	requireCode(t, err, "NOT_FOUND")
 
 	// A delivery outside this session's inbox is refused.
-	_, foreign := f.publish(t, "request", f.receiver.channel.Principal)
+	_, foreign := f.publish("request", f.receiver.channel.Principal)
 	bad := valid
 	bad.DeliveryID = foreign
 	_, err = f.receiver.ObserveSessionDelivery(ctx, bad, f.dest)
@@ -138,7 +119,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 func TestSessionDeliveryObservationOrderingAndTombstone(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	_, delivery := f.publish(t, "request", f.agent.Inbox)
+	_, delivery := f.publish("request", f.agent.Inbox)
 	t0 := dbNow(t, f.receiver)
 	first := SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", Wake: &ObservedWake{Transport: "claude-channel", Status: "submitted", AttemptedAt: ptrTime(t0.Add(-time.Second))}, ObservedAt: t0}
 	got := f.observe(t, first)
@@ -186,7 +167,7 @@ func TestSessionDeliveryObservationOrderingAndTombstone(t *testing.T) {
 
 	// An observation already older than the freshness bound creates nothing.
 	g := newHealthFixture(t)
-	_, other := g.publish(t, "request", g.agent.Inbox)
+	_, other := g.publish("request", g.agent.Inbox)
 	stale := g.observe(t, SessionDeliveryObservation{DeliveryID: other, Condition: "busy", ObservedAt: dbNow(t, g.receiver).Add(-3 * time.Minute)})
 	if stale.Applied || stale.Observation != nil {
 		t.Fatalf("stale observation stored: %+v", stale)
@@ -195,7 +176,7 @@ func TestSessionDeliveryObservationOrderingAndTombstone(t *testing.T) {
 
 func TestSessionDeliveryObservationNanosecondRetryCannotRefresh(t *testing.T) {
 	f := newHealthFixture(t)
-	_, delivery := f.publish(t, "request", f.agent.Inbox)
+	_, delivery := f.publish("request", f.agent.Inbox)
 	stamp := dbNow(t, f.receiver).Add(123 * time.Nanosecond)
 	attempted := stamp.Add(-time.Second)
 	req := SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", ObservedAt: stamp,
@@ -213,8 +194,8 @@ func TestSessionDeliveryObservationNanosecondRetryCannotRefresh(t *testing.T) {
 func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	first, d1 := f.publish(t, "request", f.agent.Inbox)
-	second, _ := f.publish(t, "request", f.agent.Inbox)
+	first, d1 := f.publish("request", f.agent.Inbox)
+	second, _ := f.publish("request", f.agent.Inbox)
 
 	// No observation: unknown and absent, never healthy.
 	diag := f.diagnosis(t, first.EventID)
@@ -243,32 +224,22 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	}
 
 	// Old receipt or old host time is stale; the condition remains labelled.
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET received_at=received_at-interval '5 minutes' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.staleObservationReceipt(f.agent.AgentID)
 	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" || diag.Host.Condition != "unknown" || diag.Host.Reported != "channel_not_launched" {
 		t.Fatalf("stale receipt: %+v", diag.Host)
 	}
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET received_at=clock_timestamp(),observed_at=observed_at-interval '5 minutes' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.staleObservationHostTime(f.agent.AgentID)
 	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" || diag.Host.Condition != "unknown" {
 		t.Fatalf("stale host time: %+v", diag.Host)
 	}
 	// A changed generation fences the observation.
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET observed_at=clock_timestamp(),database_generation=database_generation-1 WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.fenceObservationGeneration(f.agent.AgentID)
 	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "replaced" || diag.Host.Condition != "unknown" {
 		t.Fatalf("generation: %+v", diag.Host)
 	}
 	// Expired presence makes it offline.
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET database_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton) WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.restoreObservationGeneration(f.agent.AgentID)
+	f.expireSession(f.agent.AgentID)
 	if diag = f.diagnosis(t, second.EventID); diag.Recipient.Presence != "offline" || diag.Host.Freshness != "offline" || diag.Host.Condition != "unknown" {
 		t.Fatalf("offline: %+v %+v", diag.Recipient, diag.Host)
 	}
@@ -289,9 +260,7 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	}
 
 	// Future availability is intentional waiting and carries no host cause.
-	if _, err = f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, d1); err != nil {
-		t.Fatal(err)
-	}
+	f.deferDelivery(d1, "1 hour")
 	if diag = f.diagnosis(t, first.EventID); diag.Stage != "scheduled" || diag.Host != nil || diag.WaitingSeconds != nil {
 		t.Fatalf("scheduled: %+v", diag)
 	}
@@ -300,7 +269,7 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 func TestDeliveryDiagnosisStoreFactsOverrideHostCause(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	event, delivery := f.publish(t, "request", f.agent.Inbox)
+	event, delivery := f.publish("request", f.agent.Inbox)
 	f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", Wake: &ObservedWake{Transport: "claude-channel", Status: "submitted"}, ObservedAt: dbNow(t, f.receiver)})
 	claim, err := f.receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: f.ref, DeliveryID: delivery, NativeTurnID: "turn"}, f.dest)
 	if err != nil || claim.Attempt == nil {
@@ -330,12 +299,12 @@ func TestDeliveryDiagnosisStoreFactsOverrideHostCause(t *testing.T) {
 func TestDeliveryDiagnosisVisibility(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	notice, _ := f.publish(t, "notice", f.agent.Inbox)
+	notice, _ := f.publish("notice", f.agent.Inbox)
 	status, err := f.sender.AgentEventStatus(ctx, EventStatusRequest{EventID: notice.EventID}, f.dest)
 	if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].Diagnosis != nil {
 		t.Fatalf("notice diagnosis on requester status: %+v %v", status, err)
 	}
-	request, _ := f.publish(t, "request", f.agent.Inbox)
+	request, _ := f.publish("request", f.agent.Inbox)
 	// The recipient's own session view keeps its existing read of its delivery.
 	view, err := f.receiver.ForAgentSession(f.ref, f.dest)
 	if err != nil {
@@ -351,7 +320,7 @@ func TestDeliveryDiagnosisVisibility(t *testing.T) {
 		t.Fatalf("unrelated read: %+v", foreign)
 	}
 	// A profile inbox is not a session and carries no host explanation.
-	profile, _ := f.publish(t, "request", f.receiver.channel.Principal)
+	profile, _ := f.publish("request", f.receiver.channel.Principal)
 	if diag := f.diagnosis(t, profile.EventID); diag == nil || diag.Recipient.Kind != "other" || diag.Host != nil {
 		t.Fatalf("profile inbox: %+v", diag)
 	}
@@ -373,7 +342,7 @@ func TestDeliveryDiagnosisVisibility(t *testing.T) {
 func TestDeliveryDiagnosisIgnoresPreClaimCauseAfterExpiredLease(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
-	event, delivery := f.publish(t, "request", f.agent.Inbox)
+	event, delivery := f.publish("request", f.agent.Inbox)
 	f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", Wake: &ObservedWake{Transport: "terminal", Status: "submitted"}, ObservedAt: dbNow(t, f.receiver)})
 	view, err := f.receiver.ForAgentSession(f.ref, f.dest)
 	if err != nil {
@@ -389,12 +358,8 @@ func TestDeliveryDiagnosisIgnoresPreClaimCauseAfterExpiredLease(t *testing.T) {
 	// The ordinary lease lapses without a hold: the delivery waits again, but
 	// the earlier pre-claim wake no longer explains it. The observation stays
 	// within its TTL but precedes the claim, as a real lapsed lease would.
-	if _, err = f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET observed_at=observed_at-interval '30 seconds',received_at=received_at-interval '30 seconds' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 millisecond' WHERE delivery_id=$1`, delivery); err != nil {
-		t.Fatal(err)
-	}
+	f.ageObservation(f.agent.AgentID, "30 seconds")
+	f.expireLease(delivery)
 	diag := f.diagnosis(t, event.EventID)
 	if diag.Stage != "waiting" || diag.Host == nil || diag.Host.Freshness != "superseded" || diag.Host.Condition != "unknown" || diag.Host.Reported != "wake_retained" || diag.Host.Applies != "none" {
 		t.Fatalf("pre-claim cause reattached: %+v %+v", diag, diag.Host)
@@ -425,7 +390,7 @@ func TestDeliveryDiagnosisWithholdsLocalOnlyObservation(t *testing.T) {
 		t.Fatalf("private status: %+v %v", status, err)
 	}
 	privateDelivery := status.Deliveries[0].DeliveryID
-	shared, _ := f.publish(t, "request", f.agent.Inbox)
+	shared, _ := f.publish("request", f.agent.Inbox)
 	if _, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{Session: f.ref, DeliveryID: privateDelivery, Condition: "channel_not_launched", ObservedAt: dbNow(t, f.receiver)}, local); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +414,7 @@ func TestDeliveryDiagnosisWithholdsLocalOnlyObservation(t *testing.T) {
 // legacy ambiguity condition already retained in older rows remains readable.
 func TestTerminalTargetConditionsAreDistinctAndLegacyReadable(t *testing.T) {
 	f := newHealthFixture(t)
-	event, delivery := f.publish(t, "request", f.agent.Inbox)
+	event, delivery := f.publish("request", f.agent.Inbox)
 	for _, condition := range []string{"terminal_target_missing", "terminal_target_not_idle", "terminal_target_focused", "terminal_target_ambiguous"} {
 		got := f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: condition, ObservedAt: dbNow(t, f.receiver)})
 		if !got.Applied || got.Observation.Condition != condition || got.Observation.Scope != "session" || got.Observation.DeliveryID != delivery {

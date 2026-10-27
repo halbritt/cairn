@@ -392,7 +392,8 @@ func TestAgentEventsTopicMembershipFanoutAndPaging(t *testing.T) {
 
 func TestAgentEventsLeaseConcurrencyRetryExpiryAndRollback(t *testing.T) {
 	ctx := context.Background()
-	a, b, r, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, r, dest := f.sender, f.receiver, f.source, f.dest
 	publishFixture(t, a, b, r, dest)
 	var wg sync.WaitGroup
 	claimed := make(chan AgentDelivery, 8)
@@ -427,9 +428,7 @@ func TestAgentEventsLeaseConcurrencyRetryExpiryAndRollback(t *testing.T) {
 	if err != nil || defaultRenewed.LeaseUntil.Before(*renewed.LeaseUntil) {
 		t.Fatalf("default renewal shortened long lease: %+v %v", defaultRenewed, err)
 	}
-	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, d.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireLease(d.DeliveryID)
 	_, err = b.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, Disposition: "handled"}, dest)
 	requireCode(t, err, "STALE_LEASE")
 	current := nextFixture(t, b, dest)

@@ -13,55 +13,32 @@ import (
 // and generation, and says it was late. Every closed or foreign hold refuses.
 
 type nativeRecovery struct {
-	op, receiver, sender, view *Store
-	ref                        AgentSessionRef
-	attempt, delivery, lease   string
-	repo                       string
-	event                      string
-	dest                       Destination
+	*nativeFixture
+	op, view                 *Store
+	ref                      AgentSessionRef
+	attempt, delivery, lease string
+	event                    string
 }
 
 func nativeRecoveryFixture(t *testing.T) nativeRecovery {
 	t.Helper()
-	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-recovery", NativeSessionID: "native-recovery", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
-	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{"agent", a.Inbox}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
-	if err != nil || claim.Attempt == nil {
-		t.Fatalf("claim: %+v %v", claim, err)
-	}
-	view, err := receiver.ForAgentSession(ref, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := newNativeFixture(t)
+	a, event, claim := f.claimed(nativeAgent{Binding: "native-recovery", Harness: "claude"}, "request", "", false)
+	ref := sessionRef(a)
 	return nativeRecovery{
-		op:       testStore(t, Channel{Principal: "recovery-operator-" + source.Scope.Repo, Operator: true}),
-		receiver: receiver, sender: sender, view: view, ref: ref, attempt: claim.Attempt.ID,
-		delivery: claim.Attempt.Delivery.DeliveryID, lease: claim.Attempt.Delivery.LeaseID,
-		repo: source.Scope.Repo, event: event.EventID, dest: dest,
+		nativeFixture: f, op: f.operator(), view: f.view(ref), ref: ref, attempt: claim.Attempt.ID,
+		delivery: claim.Attempt.Delivery.DeliveryID, lease: claim.Attempt.Delivery.LeaseID, event: event.EventID,
 	}
 }
 
 func (f nativeRecovery) expireLease(t *testing.T) {
 	t.Helper()
-	if _, err := f.receiver.pool.Exec(context.Background(), `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, f.delivery); err != nil {
-		t.Fatal(err)
-	}
+	f.nativeFixture.expireLease(f.delivery)
 }
 
 func (f nativeRecovery) expirePresence(t *testing.T) {
 	t.Helper()
-	if _, err := f.receiver.pool.Exec(context.Background(), `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, f.ref.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.nativeFixture.expireSession(f.ref.AgentID)
 }
 
 func (f nativeRecovery) complete(requestID string) (AgentDelivery, error) {
@@ -152,9 +129,7 @@ func TestNativeLateCompletionRefusedAfterHoldCloses(t *testing.T) {
 	if _, err = op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "Operator stops work before the partition heals"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, delivery); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, receiver).expireLease(delivery)
 	_, err = view.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: delivery, LeaseID: attemptLease(t, receiver, ref, attemptID, dest), Disposition: "handled"}, dest)
 	requireCode(t, err, "REQUEST_CANCELLED")
 }
@@ -216,7 +191,7 @@ func TestNativeHoldReleaseRequiresOperatorOfflineSessionAndAcceptance(t *testing
 		t.Fatalf("reissue transition: %+v", reissueTransition)
 	}
 	// A registration can resume the conversation once the hold is closed.
-	if _, err = f.receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-recovery", NativeSessionID: "native-recovery", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, f.dest); err != nil {
+	if _, err = f.receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-recovery", NativeSessionID: "native-recovery", Metadata: existingSessionMetadata("claude", "idle")}, f.dest); err != nil {
 		t.Fatal(err)
 	}
 }

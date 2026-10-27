@@ -12,15 +12,10 @@ import (
 
 func TestRoutineNoticePolicyDefersOnlyItsOwnWakeAndKeepsRetryDeadline(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
-		Binding: "routine-notice", NativeSessionID: "routine-notice",
-		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
-			State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	agent := f.register(nativeAgent{Binding: "routine-notice"})
+	ref := sessionRef(agent)
 	request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},
@@ -71,9 +66,7 @@ func TestRoutineNoticePolicyDefersOnlyItsOwnWakeAndKeepsRetryDeadline(t *testing
 	}
 	// Move only this fixture's deadline to the past; the source and delivery ID
 	// remain stable, so readiness exposes the original notice after deferral.
-	if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE event_id=$1`, notice.EventID); err != nil {
-		t.Fatal(err)
-	}
+	f.makeEventAvailable(notice.EventID)
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || ready.EventID != notice.EventID {
 		t.Fatalf("expired routine deferral remained hidden: %+v %v", ready, err)
@@ -82,15 +75,10 @@ func TestRoutineNoticePolicyDefersOnlyItsOwnWakeAndKeepsRetryDeadline(t *testing
 
 func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
-		Binding: "routine-arrivals", NativeSessionID: "routine-arrivals",
-		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
-			State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	agent := f.register(nativeAgent{Binding: "routine-arrivals"})
+	ref := sessionRef(agent)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -132,9 +120,7 @@ func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *test
 	// minute-long wait. Every original event and delivery must remain eligible
 	// in position order after the burst.
 	for _, item := range items {
-		if _, err := sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, item.delivery.DeliveryID); err != nil {
-			t.Fatal(err)
-		}
+		f.makeAvailable(item.delivery.DeliveryID)
 	}
 	for i, item := range items {
 		ready, err := receiver.SessionInboxReady(ctx, ref, dest)
@@ -165,15 +151,10 @@ func TestSustainedRoutineArrivalsKeepFixedDeadlinesAndDrainOriginalOrder(t *test
 
 func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, seed, dest := eventFixture(t)
-	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
-		Binding: "routine-pressure-overflow", NativeSessionID: "routine-pressure-overflow",
-		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
-			State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, seed, dest := f.sender, f.receiver, f.source, f.dest
+	agent := f.register(nativeAgent{Binding: "routine-pressure-overflow"})
+	ref := sessionRef(agent)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -260,9 +241,7 @@ func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *test
 	}
 	// No test clock is injected into PostgreSQL. Advance only this disposable
 	// fixture's availability rows to model the fixed deadlines expiring.
-	if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, first.deliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.makeAvailable(first.deliveryID)
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
 	if err != nil || ready.EventID != first.event.EventID || ready.DeliveryID != first.deliveryID {
 		t.Fatalf("first expired deadline did not expose oldest original: %+v %v", ready, err)
@@ -301,9 +280,7 @@ func TestRoutineNoticePressureOverflowKeepsDeadlinesUrgentAndEverySource(t *test
 		}
 	}
 	for _, late := range pressure {
-		if _, err = sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, late.deliveryID); err != nil {
-			t.Fatal(err)
-		}
+		f.makeAvailable(late.deliveryID)
 		ready, err = receiver.SessionInboxReady(ctx, ref, dest)
 		if err != nil || ready.EventID != late.event.EventID || ready.DeliveryID != late.deliveryID {
 			t.Fatalf("late pressure item was dropped/reordered: %+v %v", ready, err)
@@ -433,15 +410,10 @@ func TestRoutineTopicFanoutSharesOneFixedAvailability(t *testing.T) {
 
 func TestRoutineNoticeSurvivesStoreReopenUrgentNoticeAndPublisherFlush(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	agent, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(),
-		Binding: "routine-reopen", NativeSessionID: "routine-reopen",
-		Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test",
-			State: "idle", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	agent := f.register(nativeAgent{Binding: "routine-reopen"})
+	ref := sessionRef(agent)
 	publication := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: agent.Inbox},

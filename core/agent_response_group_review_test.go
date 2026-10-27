@@ -273,9 +273,7 @@ func TestReviewSimultaneousDuplicateAndDistinctResponseRaces(t *testing.T) {
 		}
 
 		// Move deadline to past.
-		if _, err = a.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '10 milliseconds' WHERE event_id=$1`, reqEvent.EventID); err != nil {
-			t.Fatal(err)
-		}
+		fixtureFor(t, a).closeResponseGroup(reqEvent.EventID)
 
 		op := openStore(Channel{Principal: "operator:sweep", Operator: true})
 

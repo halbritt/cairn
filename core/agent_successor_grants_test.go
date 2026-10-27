@@ -10,6 +10,7 @@ import (
 )
 
 type successorFixture struct {
+	*nativeFixture
 	op            *Store
 	senderProfile *Store
 	senderView    *Store
@@ -36,30 +37,19 @@ type successorFixture struct {
 func setupSuccessorTakeoverFixture(t *testing.T) successorFixture {
 	t.Helper()
 	ctx := context.Background()
-	senderProfile, predProfile, source, dest := eventFixture(t)
+	nf := newNativeFixture(t)
+	senderProfile, predProfile, source, dest := nf.sender, nf.receiver, nf.source, nf.dest
 	repo := source.Scope.Repo
 	succProfile := testStore(t, Channel{Principal: "succ-owner-" + repo, Repo: repo})
-	op := testStore(t, Channel{Principal: "operator-" + repo, Operator: true})
+	op := nf.operator()
 
-	senderSession, err := senderProfile.RegisterAgent(ctx, RegisterAgentRequest{
-		RequestID: uuid.NewString(), Binding: "codex-sender", NativeSessionID: "thread-469",
-		Metadata: AgentMetadata{Harness: "codex", Project: "cairn", Workspace: "/work/cairn", TaskSummary: "sender agent-469", State: "busy", DeliveryMode: "existing-session"},
-	}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	senderSession := nf.register(nativeAgent{Binding: "codex-sender", Native: "thread-469", Project: "cairn", Workspace: "/work/cairn", TaskSummary: "sender agent-469", State: "busy", Store: senderProfile})
 	senderView, err := senderProfile.ForAgentSession(AgentSessionRef{AgentID: senderSession.AgentID, ExecutionID: senderSession.ExecutionID}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	predSession, err := predProfile.RegisterAgent(ctx, RegisterAgentRequest{
-		RequestID: uuid.NewString(), Binding: "claude-oversight", NativeSessionID: "01a150a3-pred",
-		Metadata: AgentMetadata{Harness: "claude", Project: "cairn", Workspace: "/work/cairn", TaskSummary: "predecessor agent-464", State: "idle", DeliveryMode: "existing-session"},
-	}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	predSession := nf.register(nativeAgent{Binding: "claude-oversight", Native: "01a150a3-pred", Harness: "claude", Project: "cairn", Workspace: "/work/cairn", TaskSummary: "predecessor agent-464"})
 	predRef := AgentSessionRef{AgentID: predSession.AgentID, ExecutionID: predSession.ExecutionID}
 	predView, err := predProfile.ForAgentSession(predRef, dest)
 	if err != nil {
@@ -90,7 +80,9 @@ func setupSuccessorTakeoverFixture(t *testing.T) successorFixture {
 	if _, err = predProfile.LeaveAgent(ctx, predRef, dest); err != nil {
 		t.Fatal(err)
 	}
-	return finishSuccessorTakeoverFixture(t, op, senderProfile, senderView, senderSession, predProfile, predView, predSession, succProfile, source, reqEvent, reconciled.Delivery.DeliveryID, claim.Attempt.ID, repo, dest)
+	out := finishSuccessorTakeoverFixture(t, op, senderProfile, senderView, senderSession, predProfile, predView, predSession, succProfile, source, reqEvent, reconciled.Delivery.DeliveryID, claim.Attempt.ID, repo, dest)
+	out.nativeFixture = nf
+	return out
 }
 
 func finishSuccessorTakeoverFixture(
@@ -271,9 +263,7 @@ func TestSuccessorClosedResponseGroupNotReopenedOrRefilled(t *testing.T) {
 	f := setupSuccessorTakeoverFixture(t)
 
 	// Expire the response group so it closes as incomplete.
-	if _, err := f.op.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '1 minute' WHERE event_id=$1`, f.reqEvent.EventID); err != nil {
-		t.Fatal(err)
-	}
+	f.closeResponseGroup(f.reqEvent.EventID)
 	if _, err := f.op.SweepRequestControls(ctx, RequestControlSweep{Repo: f.repo}); err != nil {
 		t.Fatal(err)
 	}
@@ -578,9 +568,7 @@ func TestSuccessorSensitivityCrossCollectionAndExpiry(t *testing.T) {
 	requireCode(t, err, "DESTINATION_PROHIBITED")
 
 	// Expire grant -> successor loses access.
-	if _, err = f.op.pool.Exec(ctx, `UPDATE cairn.agent_successor_grant SET granted_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second' WHERE grant_id=$1`, grant.GrantID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireSuccessorGrant(grant.GrantID)
 	_, err = f.succView.AgentEventStatus(ctx, EventStatusRequest{EventID: f.reqEvent.EventID}, f.dest)
 	requireCode(t, err, "NOT_FOUND")
 

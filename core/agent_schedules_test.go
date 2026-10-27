@@ -28,9 +28,7 @@ func TestSchedulePublishesOnceAtDueTime(t *testing.T) {
 		t.Fatalf("early: %+v %v", result, err)
 	}
 	// Advance this disposable fixture's due instant without a wall-clock sleep.
-	if _, err = op.pool.Exec(ctx, `UPDATE cairn.agent_schedule SET not_before=clock_timestamp()-interval '1 second' WHERE occurrence_id=$1`, scheduled.OccurrenceID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, op).scheduleDue(scheduled.OccurrenceID)
 	result, err = op.TickSchedules(ctx, tick)
 	if err != nil || len(result.Occurrences) != 1 || result.Occurrences[0].State != "fired" {
 		t.Fatalf("due: %+v %v", result, err)

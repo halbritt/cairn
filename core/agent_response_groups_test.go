@@ -43,7 +43,8 @@ func TestResponseGroupSnapshotDuplicatesDeadlineAndPartialPolicy(t *testing.T) {
 	for _, policy := range []string{"all", "partial"} {
 		t.Run(policy, func(t *testing.T) {
 			ctx := context.Background()
-			a, b, r, dest := eventFixture(t)
+			f := newNativeFixture(t)
+			a, b, r, dest := f.sender, f.receiver, f.source, f.dest
 			c := testStore(t, Channel{Principal: "third-" + r.Scope.Repo, Repo: r.Scope.Repo})
 			for _, s := range []*Store{b, c} {
 				if _, err := s.SetSubscription(ctx, SubscriptionRequest{RequestID: uuid.NewString(), Topic: "review", Active: true}); err != nil {
@@ -78,9 +79,7 @@ func TestResponseGroupSnapshotDuplicatesDeadlineAndPartialPolicy(t *testing.T) {
 			if err != nil || g.State != "open" || g.Expected != 2 || g.Responded != 1 || len(g.Observations) != 2 || g.Observations[1].Disposition != "duplicate" {
 				t.Fatalf("snapshot/duplicates: %+v %v", g, err)
 			}
-			if _, err = a.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '1 second' WHERE event_id=$1`, e.EventID); err != nil {
-				t.Fatal(err)
-			}
+			f.closeResponseGroup(e.EventID)
 			op := testStore(t, Channel{Principal: "group-operator", Operator: true})
 			if _, err = op.SweepRequestControls(ctx, RequestControlSweep{Repo: r.Scope.Repo}); err != nil {
 				t.Fatal(err)

@@ -9,13 +9,10 @@ import (
 
 func batchFixture(t *testing.T) (*Store, *Store, *Store, AgentInstance, RecordVersionRef, Destination) {
 	t.Helper()
-	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "batch-notices", NativeSessionID: "batch-turn", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{AgentID: a.AgentID, ExecutionID: a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "batch-notices", Native: "batch-turn", State: "busy"})
+	ref := sessionRef(a)
 	view, err := receiver.ForAgentSession(ref, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -198,9 +195,7 @@ func TestNativeNoticeBatchExpiredLeaseNeedsItsOwnLateSettlement(t *testing.T) {
 	if err != nil || claim.Attempt == nil {
 		t.Fatalf("claim: %+v %v", claim, err)
 	}
-	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, claim.Attempt.Delivery.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, receiver).expireLease(claim.Attempt.Delivery.DeliveryID)
 	_, err = receiver.AdvanceSessionInbox(ctx, SessionInboxAdvance{RequestID: uuid.NewString(), Session: ref, AttemptID: claim.Attempt.ID, Version: 1}, dest)
 	requireCode(t, err, "DELIVERY_ACTIVE")
 	completed, err := view.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: claim.Attempt.Delivery.DeliveryID, LeaseID: claim.Attempt.Delivery.LeaseID, Disposition: "handled"}, dest)

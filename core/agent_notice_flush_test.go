@@ -134,7 +134,8 @@ func TestNoticeFlushRejectsImmediatePolicy(t *testing.T) {
 func TestNoticeFlushParallelClaimPreservesOneOriginalDelivery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	sender, receiver, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice",
 		Ref:          RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
 		Destination:  EventDestination{Type: "agent", Name: receiver.channel.Principal},
@@ -146,9 +147,7 @@ func TestNoticeFlushParallelClaimPreservesOneOriginalDelivery(t *testing.T) {
 	if err != nil || len(before.Deliveries) != 1 {
 		t.Fatalf("before race: %+v %v", before, err)
 	}
-	if _, err := sender.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, before.Deliveries[0].DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.makeAvailable(before.Deliveries[0].DeliveryID)
 	type flushOutcome struct {
 		result NoticeFlushResult
 		err    error

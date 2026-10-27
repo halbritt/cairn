@@ -118,7 +118,7 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 	}
 	defer store.Close()
 	dest := Destination{"hosted", false}
-	a, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding", NativeSessionID: "fixture-native", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
+	a, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding", NativeSessionID: "fixture-native", Metadata: existingSessionMetadata("codex", "idle")}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 	}
 	// The one-unfinished-attempt-per-agent rule predates 049, so the plain
 	// legacy attempt lives on a second registered conversation.
-	second, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding-two", NativeSessionID: "fixture-native-two", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
+	second, err := store.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fixture-binding-two", NativeSessionID: "fixture-native-two", Metadata: existingSessionMetadata("codex", "idle")}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}

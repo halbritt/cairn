@@ -10,12 +10,10 @@ import (
 
 func TestSessionInboxPendingCountsBusyBacklogWithoutClaiming(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "busy-cue", NativeSessionID: "busy-cue", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "busy-cue", Harness: "claude", State: "busy"})
+	ref := sessionRef(a)
 	pending, err := receiver.SessionInboxPending(ctx, ref, dest)
 	if err != nil || pending != (SessionInboxPending{}) {
 		t.Fatalf("empty inbox: %+v %v", pending, err)
@@ -45,10 +43,7 @@ func TestSessionInboxPendingCountsBusyBacklogWithoutClaiming(t *testing.T) {
 	}
 	// A newer arrival changes the position even when a claim keeps the count level.
 	previous := pending.LatestPosition
-	claimed, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
-	if err != nil || claimed.Attempt == nil {
-		t.Fatalf("claim: %+v %v", claimed, err)
-	}
+	f.claim(ref, "", "", false)
 	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +58,10 @@ func TestSessionInboxPendingCountsBusyBacklogWithoutClaiming(t *testing.T) {
 
 func TestSessionInboxPendingIgnoresFreshWorkerSessions(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "fresh-cue", NativeSessionID: "fresh-cue", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "fresh-worker"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := newNativeFixture(t)
+	var err error
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "fresh-cue", Harness: "claude", State: "busy", Mode: "fresh-worker"})
 	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
 		t.Fatal(err)
 	}
@@ -79,12 +73,10 @@ func TestSessionInboxPendingIgnoresFreshWorkerSessions(t *testing.T) {
 
 func TestSessionInboxPendingLatestArrivalBeyondCountLimit(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "bounded-cue", NativeSessionID: "bounded-cue", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	a := f.register(nativeAgent{Binding: "bounded-cue", Harness: "claude", State: "busy"})
+	ref := sessionRef(a)
 	publish := func(kind string) AgentEvent {
 		t.Helper()
 		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
@@ -140,12 +132,10 @@ func TestSessionInboxPendingLatestUsesDeliveryEligibility(t *testing.T) {
 	for _, exclusion := range []string{"private", "other-inbox", "delayed", "admission-expired", "managed-deadline", "live-lease", "session-hold", "wake-hold"} {
 		t.Run(exclusion, func(t *testing.T) {
 			ctx := context.Background()
-			sender, receiver, source, dest := eventFixture(t)
-			a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "eligibility", NativeSessionID: "eligibility", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}, dest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+			f := newNativeFixture(t)
+			sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+			a := f.register(nativeAgent{Binding: "eligibility", Harness: "claude", State: "busy"})
+			ref := sessionRef(a)
 			request := PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}
 			older, err := sender.PublishEvent(ctx, request, dest)
 			if err != nil {
@@ -239,20 +229,16 @@ func TestSessionInboxPendingLatestUsesDeliveryEligibility(t *testing.T) {
 
 func TestSessionInboxPendingRejectsReplacedExecution(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
-	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "current", NativeSessionID: "current", Metadata: AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}
-	a, err := receiver.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := newNativeFixture(t)
+	var err error
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
+	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "current", NativeSessionID: "current", Metadata: existingSessionMetadata("claude", "busy")}
+	a := f.registerRequest(registration, receiver, dest)
 	if _, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	registration.RequestID = uuid.NewString()
-	resumed, err := receiver.RegisterAgent(ctx, registration, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resumed := f.registerRequest(registration, receiver, dest)
 	_, err = receiver.SessionInboxPending(ctx, AgentSessionRef{a.AgentID, a.ExecutionID}, dest)
 	requireCode(t, err, "STALE_SESSION")
 	got, err := receiver.SessionInboxPending(ctx, AgentSessionRef{resumed.AgentID, resumed.ExecutionID}, dest)

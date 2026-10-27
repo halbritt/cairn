@@ -35,9 +35,7 @@ func TestScheduleSimultaneousTicksProduceOneEvent(t *testing.T) {
 	}
 
 	// Advance the schedule to be due without wall-clock sleep.
-	if _, err := op.pool.Exec(ctx, `UPDATE cairn.agent_schedule SET not_before=clock_timestamp()-interval '1 second' WHERE occurrence_id=$1`, scheduled.OccurrenceID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, op).scheduleDue(scheduled.OccurrenceID)
 
 	// Launch multiple concurrent ticks simultaneously.
 	const workers = 4
@@ -251,9 +249,7 @@ func TestScheduleSourceRetractionOrDeletionSkipsEvent(t *testing.T) {
 		}
 
 		// Advance schedule due instant.
-		if _, err := op.pool.Exec(ctx, `UPDATE cairn.agent_schedule SET not_before=clock_timestamp()-interval '1 second' WHERE occurrence_id=$1`, scheduled.OccurrenceID); err != nil {
-			t.Fatal(err)
-		}
+		fixtureFor(t, op).scheduleDue(scheduled.OccurrenceID)
 
 		result, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: source.Scope.Repo})
 		if err != nil || len(result.Occurrences) != 1 {
@@ -309,9 +305,7 @@ func TestScheduleSourceRetractionOrDeletionSkipsEvent(t *testing.T) {
 		}
 
 		// Advance schedule due instant.
-		if _, err := op.pool.Exec(ctx, `UPDATE cairn.agent_schedule SET not_before=clock_timestamp()-interval '1 second' WHERE occurrence_id=$1`, scheduled.OccurrenceID); err != nil {
-			t.Fatal(err)
-		}
+		fixtureFor(t, op).scheduleDue(scheduled.OccurrenceID)
 
 		result, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: source.Scope.Repo})
 		if err != nil || len(result.Occurrences) != 1 {
@@ -467,9 +461,7 @@ func TestScheduleTopicMembershipSnapshottedAtFiring(t *testing.T) {
 	}
 
 	// 4. Advance due instant.
-	if _, err := op.pool.Exec(ctx, `UPDATE cairn.agent_schedule SET not_before=clock_timestamp()-interval '1 second' WHERE occurrence_id=$1`, scheduled.OccurrenceID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, op).scheduleDue(scheduled.OccurrenceID)
 
 	// 5. Fire the schedule.
 	result, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: repo})

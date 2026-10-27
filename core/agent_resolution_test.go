@@ -9,17 +9,15 @@ import (
 
 func TestAgentResolutionPinsContextAndRetryRecipient(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 	query := AgentDirectoryQuery{Harness: "codex", Project: "rhumb"}
 	empty, err := sender.ResolveAgent(ctx, query, dest)
 	if err != nil || empty.State != "no-match" || empty.Resolution != nil {
 		t.Fatalf("empty: %+v %v", empty, err)
 	}
 	req := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex-first", NativeSessionID: "one", Metadata: AgentMetadata{Harness: "codex", Project: "Rhumb", Workspace: "/work/rhumb", State: "busy", DeliveryMode: "existing-session"}}
-	one, err := receiver.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	one := f.registerRequest(req, receiver, dest)
 	selected, err := sender.ResolveAgent(ctx, query, dest)
 	if err != nil || selected.State != "unique" || selected.Resolution == nil || selected.Resolution.AgentID != one.AgentID {
 		t.Fatalf("unique: %+v %v", selected, err)
@@ -56,17 +54,12 @@ func TestAgentResolutionPinsContextAndRetryRecipient(t *testing.T) {
 
 func TestAgentResolutionAmbiguityAndOfflineCandidates(t *testing.T) {
 	ctx := context.Background()
-	sender, receiver, _, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	sender, receiver, _, dest := f.sender, f.receiver, f.source, f.dest
 	req := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex", NativeSessionID: "one", Metadata: AgentMetadata{Harness: "codex", Project: "Rhumb", ProjectAliases: []string{"charts"}, Workspace: "/work/rhumb-one", TaskSummary: "Chart editor", State: "busy", DeliveryMode: "existing-session"}}
-	one, err := receiver.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	one := f.registerRequest(req, receiver, dest)
 	req.RequestID, req.NativeSessionID, req.Metadata.Workspace = uuid.NewString(), "two", "/work/rhumb-two"
-	two, err := receiver.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	two := f.registerRequest(req, receiver, dest)
 	result, err := sender.ResolveAgent(ctx, AgentDirectoryQuery{Harness: "CODEX", Project: "CHARTS"}, dest)
 	if err != nil || result.State != "ambiguous" || result.Resolution != nil || len(result.Candidates) != 2 || result.Candidates[0].DisplayName == result.Candidates[1].DisplayName {
 		t.Fatalf("ambiguity: %+v %v", result, err)
@@ -86,12 +79,10 @@ func TestAgentResolutionRejectsChangedPresenceAndPrivateMetadata(t *testing.T) {
 	for _, change := range []string{"expiry", "resume", "restore", "visibility", "collection"} {
 		t.Run(change, func(t *testing.T) {
 			ctx := context.Background()
-			sender, receiver, source, dest := eventFixture(t)
+			f := newNativeFixture(t)
+			sender, receiver, source, dest := f.sender, f.receiver, f.source, f.dest
 			req := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "codex", NativeSessionID: "one", Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/work/rhumb", State: "idle", DeliveryMode: "existing-session"}}
-			one, err := receiver.RegisterAgent(ctx, req, dest)
-			if err != nil {
-				t.Fatal(err)
-			}
+			one := f.registerRequest(req, receiver, dest)
 			selected, err := sender.ResolveAgent(ctx, AgentDirectoryQuery{AgentID: one.AgentID}, dest)
 			if err != nil || selected.Resolution == nil {
 				t.Fatalf("resolve: %+v %v", selected, err)

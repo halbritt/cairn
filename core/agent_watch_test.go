@@ -191,12 +191,10 @@ func TestInboxCursorWaitsForEarlierPoolAssignmentCommit(t *testing.T) {
 
 func TestInboxCursorSurvivesSessionResumeButFencesOldExecution(t *testing.T) {
 	ctx := context.Background()
-	publisher, profile, source, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	publisher, profile, source, dest := f.sender, f.receiver, f.source, f.dest
 	req := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "watch-session", NativeSessionID: "first", Metadata: AgentMetadata{Harness: "codex", Project: "rhumb", Workspace: "/fixture/rhumb", State: "idle", DeliveryMode: "existing-session"}}
-	one, err := profile.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	one := f.registerRequest(req, profile, dest)
 	first, err := profile.ForAgentSession(AgentSessionRef{AgentID: one.AgentID, ExecutionID: one.ExecutionID}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -211,10 +209,7 @@ func TestInboxCursorSurvivesSessionResumeButFencesOldExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.RequestID = uuid.NewString()
-	resumed, err := profile.RegisterAgent(ctx, req, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resumed := f.registerRequest(req, profile, dest)
 	_, err = first.InboxEvents(ctx, InboxWatchRequest{Cursor: page.Cursor}, dest)
 	requireCode(t, err, "STALE_SESSION")
 	current, err := profile.ForAgentSession(AgentSessionRef{AgentID: resumed.AgentID, ExecutionID: resumed.ExecutionID}, dest)

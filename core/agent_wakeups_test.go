@@ -9,7 +9,8 @@ import (
 
 func TestWakeupClaimsOnlyRequestsAndHoldsExpiredDelivery(t *testing.T) {
 	ctx := context.Background()
-	a, b, r, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, r, dest := f.sender, f.receiver, f.source, f.dest
 	notice, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "response", Ref: RecordVersionRef{r.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -28,9 +29,7 @@ func TestWakeupClaimsOnlyRequestsAndHoldsExpiredDelivery(t *testing.T) {
 	if err != nil || busy.Attempt != nil {
 		t.Fatalf("second worker: %+v %v", busy, err)
 	}
-	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, wake.Attempt.Delivery.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireLease(wake.Attempt.Delivery.DeliveryID)
 	ordinary := nextFixture(t, b, dest)
 	if ordinary.Event.EventID != notice.EventID {
 		t.Fatal("wake hold did not fence ordinary claim")
@@ -103,7 +102,8 @@ func TestWakeLinkMissingReceiptIsNotFound(t *testing.T) {
 
 func TestWakeupPrelaunchBackoffAndCompletionSurviveRecovery(t *testing.T) {
 	ctx := context.Background()
-	a, b, r, dest := eventFixture(t)
+	f := newNativeFixture(t)
+	a, b, r, dest := f.sender, f.receiver, f.source, f.dest
 	publishFixture(t, a, b, r, dest)
 	for attempt := 1; attempt <= 3; attempt++ {
 		claim, err := b.ClaimWake(ctx, WakeClaimRequest{RequestID: uuid.NewString()}, dest)
@@ -122,9 +122,7 @@ func TestWakeupPrelaunchBackoffAndCompletionSurviveRecovery(t *testing.T) {
 		if attempt == 3 && done.Delivery.State != "failed" {
 			t.Fatal("retry limit not enforced")
 		}
-		if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp() WHERE delivery_id=$1`, w.Delivery.DeliveryID); err != nil {
-			t.Fatal(err)
-		}
+		f.makeAvailable(w.Delivery.DeliveryID)
 	}
 	publishFixture(t, a, b, r, dest)
 	claim, err := b.ClaimWake(ctx, WakeClaimRequest{RequestID: uuid.NewString()}, dest)

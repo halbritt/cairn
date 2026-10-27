@@ -241,9 +241,7 @@ func TestAdmissionExpiryBetweenClaimAndEnterVsAfterEnter(t *testing.T) {
 		}
 
 		// Admission expiry arrives before enter.
-		if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_event SET admission_expires_at=clock_timestamp()-interval '1 second' WHERE event_id=$1`, event.EventID); err != nil {
-			t.Fatal(err)
-		}
+		fixtureFor(t, b).expireAdmission(event.EventID)
 
 		// Worker attempts enter: prevented, returns starting with failed/admission_expired delivery.
 		entered, err := b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: attempt.ID, Operation: "enter"}, dest)
@@ -307,9 +305,7 @@ func TestAdmissionExpiryBetweenClaimAndEnterVsAfterEnter(t *testing.T) {
 		}
 
 		// Admission expiry arrives after work is successfully running.
-		if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_event SET admission_expires_at=clock_timestamp()-interval '1 second' WHERE event_id=$1`, event.EventID); err != nil {
-			t.Fatal(err)
-		}
+		fixtureFor(t, b).expireAdmission(event.EventID)
 
 		// WakeControl check does not stop running work for admission expiry.
 		ctrl, err := b.WakeControl(ctx, WakeControlRequest{AttemptID: attempt.ID}, dest)
@@ -368,12 +364,12 @@ func TestNativeAndManualCancellationRefusalAndDeadlineValidation(t *testing.T) {
 			RequestID:       uuid.NewString(),
 			Binding:         "cancel-review",
 			NativeSessionID: "cancel-review",
-			Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+			Metadata:        existingSessionMetadata("codex", "idle"),
 		}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+		ref := sessionRef(agent)
 		_, err = a.PublishEvent(ctx, PublishEventRequest{
 			RequestID:   uuid.NewString(),
 			Kind:        "request",

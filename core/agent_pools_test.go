@@ -289,9 +289,7 @@ func TestPoolSupervisorFencingRestoreAndRetainedAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, got.Delivery.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, b).makeAvailable(got.Delivery.DeliveryID)
 	allowFixtureLaunch(t, b)
 	retry := poolClaim(t, b, replacement, d)
 	if retry == nil || retry.Delivery.Event.EventID != e.EventID || retry.Delivery.DeliveryID != got.Delivery.DeliveryID {
@@ -310,9 +308,7 @@ func TestPoolAssignedRetryCannotChangeWorkspaceOrBypassPause(t *testing.T) {
 	if _, err := b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: got.ID, Operation: "finish", Reason: "confirmed_never_started"}, d); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, got.Delivery.DeliveryID); err != nil {
-		t.Fatal(err)
-	}
+	fixtureFor(t, b).makeAvailable(got.Delivery.DeliveryID)
 	spec := w.Spec
 	spec.Workspace = "/fixture/other"
 	moved, err := b.RegisterWorkerSlot(ctx, WorkerRegisterRequest{RequestID: uuid.NewString(), Spec: spec}, d)

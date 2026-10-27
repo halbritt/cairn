@@ -30,17 +30,15 @@ func TestStoppedSessionDiagnosisVisibilityAndPrivacy(t *testing.T) {
 		}
 		return e, st.Deliveries[0].DeliveryID
 	}()
-	noticeEvt, _ := f.publish(t, "notice", f.agent.Inbox)
-	respEvt, _ := f.publish(t, "response", f.agent.Inbox)
-	reqEvt, _ := f.publish(t, "request", f.agent.Inbox)
+	noticeEvt, _ := f.publish("notice", f.agent.Inbox)
+	respEvt, _ := f.publish("response", f.agent.Inbox)
+	reqEvt, _ := f.publish("request", f.agent.Inbox)
 
 	// Host observes a retained wake on otherNotice before the session stops.
 	f.observe(t, SessionDeliveryObservation{DeliveryID: otherDelivery, Condition: "wake_retained", Wake: &ObservedWake{Transport: "codex-queue", Status: "refused"}, ObservedAt: dbNow(t, f.receiver)})
 
 	// While online or transiently offline, non-request event-status omits diagnosis.
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireSession(f.agent.AgentID)
 	for _, id := range []string{noticeEvt.EventID, respEvt.EventID} {
 		st, err := f.sender.AgentEventStatus(ctx, EventStatusRequest{EventID: id}, f.dest)
 		if err != nil || st.Deliveries[0].Diagnosis != nil {
@@ -80,7 +78,7 @@ func TestStoppedSessionPublisherNotificationLifecycle(t *testing.T) {
 	op := testStore(t, Channel{Principal: "stopped-op-" + f.source.Scope.Repo, Operator: true})
 
 	// Register a session-backed publisher as well as using f.sender profile.
-	pubAgent, err := f.sender.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "pub-session", NativeSessionID: uuid.NewString(), Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, f.dest)
+	pubAgent, err := f.sender.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "pub-session", NativeSessionID: uuid.NewString(), Metadata: existingSessionMetadata("codex", "idle")}, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,12 +96,10 @@ func TestStoppedSessionPublisherNotificationLifecycle(t *testing.T) {
 		t.Fatalf("pub status: %+v %v", pubSt, err)
 	}
 	pubDelID := pubSt.Deliveries[0].DeliveryID
-	_, senderDelID := f.publish(t, "response", f.agent.Inbox)
+	_, senderDelID := f.publish("response", f.agent.Inbox)
 
 	// Offline recipient (not stopped) is skipped.
-	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
-		t.Fatal(err)
-	}
+	f.expireSession(f.agent.AgentID)
 	offlineRes, err := op.NotifyStoppedDeliveryPublisher(ctx, StoppedDeliveryNotificationRequest{
 		RequestID: uuid.NewString(), Repo: f.source.Scope.Repo, DeliveryID: senderDelID,
 		RecipientAgentID: f.agent.AgentID, RecipientExecution: f.agent.ExecutionID, Stage: "waiting", Fingerprint: "waiting|never_launched|not_admitted||",
@@ -168,7 +164,7 @@ func TestStoppedSessionAgent463ThirtyFiveNoticesFixture(t *testing.T) {
 
 	var firstEvent AgentEvent
 	for i := 0; i < 35; i++ {
-		evt, delID := f.publish(t, "notice", agent463.Inbox)
+		evt, delID := f.publish("notice", agent463.Inbox)
 		if i == 0 {
 			firstEvent = evt
 			if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET delivery_id=$1 WHERE delivery_id=$2`, oldestID, delID); err != nil {
