@@ -596,11 +596,11 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	if _, err = retrievalGeneration(ctx, tx); err != nil {
 		return out, err
 	}
-	if _, err = expireRequestDeliveries(ctx, tx, repo, s.channel.Principal, dest.AllowLocal); err != nil {
+	if _, err = expireRequestDeliveries(ctx, tx, s, repo, s.channel.Principal, dest.AllowLocal); err != nil {
 		return out, err
 	}
-	var nativeBusy bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) WHERE 'agent/'||a.agent_id::text=$1 AND n.finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE 'agent/'||agent_id::text=$1 AND finished_at IS NULL)`, s.channel.Principal).Scan(&nativeBusy); err != nil {
+	nativeBusy, err := principalWorkOpen(ctx, tx, s.channel.Principal)
+	if err != nil {
 		return out, err
 	}
 	if nativeBusy {
@@ -614,8 +614,7 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	if err != nil {
 		return out, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+make_interval(secs=>$3),attempts=attempts+1 WHERE delivery_id=$1`, id, uuid.NewString(), seconds)
-	if err != nil {
+	if err = leaseDelivery(ctx, tx, id, uuid.NewString(), time.Duration(seconds)*time.Second); err != nil {
 		return out, err
 	}
 	d, err := s.ownedDelivery(ctx, tx, id, dest)
@@ -710,9 +709,9 @@ func (s *Store) ChangeEventLease(ctx context.Context, req EventLeaseRequest, ren
 		return d, err
 	}
 	if renew {
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=GREATEST(lease_until,clock_timestamp()+make_interval(secs=>$2)) WHERE delivery_id=$1`, d.DeliveryID, seconds)
+		err = renewDelivery(ctx, tx, d.DeliveryID, time.Duration(seconds)*time.Second)
 	} else {
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='pending',lease_id=NULL,lease_until=NULL WHERE delivery_id=$1`, d.DeliveryID)
+		err = releaseDelivery(ctx, tx, d.DeliveryID, 0)
 	}
 	if err != nil {
 		return d, err
@@ -787,8 +786,7 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 			resultID = &r.RecordID
 			resultVersion = &r.Version
 		}
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state=$2,lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$3,result_id=$4,result_version=$5,completed_after_lease=$6 WHERE delivery_id=$1`, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion, late)
-		if err != nil {
+		if err = settleDelivery(ctx, tx, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion, late); err != nil {
 			return d, err
 		}
 		return s.ownedDelivery(ctx, tx, d.DeliveryID, dest)

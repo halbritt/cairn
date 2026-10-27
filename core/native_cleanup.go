@@ -150,7 +150,7 @@ func nativeCleanupObstacle(attempt SessionInboxAttempt) string {
 // and attempt settlement atomically in the existing transaction, retaining the
 // original operator attribution. Revocation never confirms cancellation. A
 // false result without an error leaves ordinary reconciliation to the caller.
-func settleNativeCleanup(ctx context.Context, tx pgx.Tx, attempt SessionInboxAttempt, reason string) (bool, error) {
+func settleNativeCleanup(ctx context.Context, tx pgx.Tx, s *Store, attempt SessionInboxAttempt, requestID, reason string) (bool, error) {
 	var err error
 	if reason == "exclusivity_revoked" && !(attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil && !attempt.TurnExclusive) {
 		// Revocation reconciliation is valid only for a pending
@@ -172,10 +172,10 @@ func settleNativeCleanup(ctx context.Context, tx pgx.Tx, attempt SessionInboxAtt
 				if obstacle := nativeCleanupObstacle(attempt); obstacle != "" {
 					return false, failure("CLEANUP_UNCONFIRMED", "revocation cannot close "+obstacle)
 				}
-				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
+				if err = failCancelledNative(ctx, tx, s, attempt, requestID); err != nil {
 					return false, err
 				}
-				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='exclusivity_revoked' WHERE attempt_id=$1`, attempt.ID); err != nil {
+				if _, err = finishAttempt(ctx, tx, attempt.ID, "exclusivity_revoked", attemptClose{}); err != nil {
 					return false, err
 				}
 				return true, nil
@@ -190,12 +190,10 @@ func settleNativeCleanup(ctx context.Context, tx pgx.Tx, attempt SessionInboxAtt
 		if nativeCleanupObstacle(attempt) != "" {
 			return false, failure("CLEANUP_UNCONFIRMED", "cancellation cleanup is incomplete; the native turn stop or owned tool termination is unconfirmed")
 		}
-		if attempt.Delivery.State == "pending" || attempt.Delivery.State == "leased" {
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
-				return false, err
-			}
+		if err = failCancelledNative(ctx, tx, s, attempt, requestID); err != nil {
+			return false, err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='cancel_confirmed',cancel_confirmed_at=clock_timestamp() WHERE attempt_id=$1`, attempt.ID); err != nil {
+		if _, err = finishAttempt(ctx, tx, attempt.ID, "cancel_confirmed", attemptClose{CancelConfirmed: true}); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -204,4 +202,16 @@ func settleNativeCleanup(ctx context.Context, tx pgx.Tx, attempt SessionInboxAtt
 		return false, failure("INVALID_REQUEST", "cancel confirmation requires a recorded operator cancellation")
 	}
 	return false, nil
+}
+
+// failCancelledNative fails a cancelled attempt's delivery under the recorded
+// operator decision and records the cancellation in the recovery ledger. A
+// delivery that already settled keeps its outcome and leaves no ledger row.
+func failCancelledNative(ctx context.Context, tx pgx.Tx, s *Store, attempt SessionInboxAttempt, requestID string) error {
+	changed, err := failDelivery(ctx, tx, attempt.Delivery.DeliveryID, "operator_cancelled", &stopControl{By: attempt.Cancel.By, Reason: attempt.Cancel.Reason})
+	if err != nil || !changed {
+		return err
+	}
+	attemptID := attempt.ID
+	return recordRecoveryTransition(ctx, tx, s, attempt.Delivery.DeliveryID, attempt.Delivery.Event.EventID, "", &attemptID, requestID, "work_cancel", "cancelled", attempt.Delivery.State, "failed")
 }

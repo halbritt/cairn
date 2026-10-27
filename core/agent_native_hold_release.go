@@ -92,13 +92,14 @@ func (s *Store) ReleaseNativeHold(ctx context.Context, req NativeHoldReleaseRequ
 		}
 		stateBefore := out.DeliveryState
 		if out.DeliveryState == "pending" || out.DeliveryState == "leased" {
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_released',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1`, out.DeliveryID, s.channel.Principal, req.Reason); err != nil {
+			if _, err = failDelivery(ctx, tx, out.DeliveryID, "operator_released", &stopControl{By: s.channel.Principal, Reason: req.Reason}); err != nil {
 				return out, err
 			}
 		}
-		if err = tx.QueryRow(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='operator_released',released_by=$2,release_reason=$3 WHERE attempt_id=$1 RETURNING finished_at,reason,released_by,release_reason`, req.AttemptID, s.channel.Principal, req.Reason).Scan(&out.FinishedAt, &out.Reason, &out.ReleasedBy, &out.ReleaseReason); err != nil {
+		if out.FinishedAt, err = finishAttempt(ctx, tx, req.AttemptID, "operator_released", attemptClose{ReleasedBy: s.channel.Principal, ReleaseReason: req.Reason}); err != nil {
 			return out, err
 		}
+		out.Reason, out.ReleasedBy, out.ReleaseReason = "operator_released", s.channel.Principal, req.Reason
 		out.AttemptID = req.AttemptID
 		err = tx.QueryRow(ctx, `SELECT state,code FROM cairn.agent_delivery WHERE delivery_id=$1`, out.DeliveryID).Scan(&out.DeliveryState, &out.Code)
 		if err != nil {

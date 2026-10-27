@@ -42,8 +42,8 @@ func (s *Store) attachWakeSession(ctx context.Context, tx pgx.Tx, w WakeAttempt,
 	if agent.Metadata.DeliveryMode != "fresh-worker" {
 		return failure("INVALID_REQUEST", "wake requires a fresh-worker session")
 	}
-	var busy bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`, agent.AgentID, agent.Inbox).Scan(&busy); err != nil {
+	busy, err := sessionBusy(ctx, tx, agent.AgentID, agent.Inbox)
+	if err != nil {
 		return err
 	}
 	if busy {

@@ -79,7 +79,6 @@ func TestStoppedInboxExpiryFailsReviewedDeliveriesVisiblyAndAllowsReissue(t *tes
 }
 
 func TestStoppedInboxExpiryLeavesPossiblyLiveAndNonSessionConsumers(t *testing.T) {
-	ctx := context.Background()
 	f := newStoppedInboxFixture(t)
 	live := f.register(nativeAgent{Binding: "inbox-expiry", Native: "live", Harness: "claude"})
 	offline := f.register(nativeAgent{Binding: "inbox-expiry", Native: "offline-long-ago", Harness: "claude"})
@@ -120,20 +119,21 @@ func TestStoppedInboxExpiryLeavesPossiblyLiveAndNonSessionConsumers(t *testing.T
 		t.Fatalf("statuses: %+v", applied.Sessions)
 	}
 	for _, id := range []string{liveDelivery, offlineDelivery, recentDelivery, legacyDelivery} {
-		var state string
-		if err := f.op.pool.QueryRow(ctx, `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1`, id).Scan(&state); err != nil || state != "pending" {
-			t.Fatalf("delivery %s changed: %s %v", id, state, err)
+		if state := f.state(t, id); state != "pending" {
+			t.Fatalf("delivery %s changed: %s", id, state)
 		}
 	}
 }
 
+// state reads a delivery through the operator review, the same interface a
+// reviewing operator uses.
 func (f stoppedInboxFixture) state(t *testing.T, delivery string) string {
 	t.Helper()
-	var state string
-	if err := f.op.pool.QueryRow(context.Background(), `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1`, delivery).Scan(&state); err != nil {
-		t.Fatal(err)
+	page, err := f.op.ReviewEvents(context.Background(), EventReviewRequest{Repo: f.repo, DeliveryID: delivery})
+	if err != nil || len(page.Deliveries) != 1 {
+		t.Fatalf("review %s: %+v %v", delivery, page, err)
 	}
-	return state
+	return page.Deliveries[0].State
 }
 
 func TestStoppedInboxExpiryRetainsHeldAndTopicDeliveries(t *testing.T) {

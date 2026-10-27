@@ -47,7 +47,7 @@ func (s *Store) WakeControl(ctx context.Context, req WakeControlRequest, dest De
 	if err != nil {
 		return out, err
 	}
-	out.StopReason, out.ServerTime, err = applyWakeControl(ctx, tx, w)
+	out.StopReason, out.ServerTime, err = applyWakeControl(ctx, tx, s, w)
 	if err != nil {
 		return out, err
 	}
@@ -58,7 +58,7 @@ func (s *Store) WakeControl(ctx context.Context, req WakeControlRequest, dest De
 	return out, tx.Commit(ctx)
 }
 
-func applyWakeControl(ctx context.Context, tx pgx.Tx, w WakeAttempt) (string, time.Time, error) {
+func applyWakeControl(ctx context.Context, tx pgx.Tx, s *Store, w WakeAttempt) (string, time.Time, error) {
 	var now time.Time
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
 		return "", now, err
@@ -77,7 +77,11 @@ func applyWakeControl(ctx context.Context, tx pgx.Tx, w WakeAttempt) (string, ti
 		code = "admission_expired"
 	}
 	if code != "" && (w.Delivery.State == "pending" || w.Delivery.State == "leased") {
-		if err := stopRequestDelivery(ctx, tx, w.Delivery.DeliveryID, code, code); err != nil {
+		// The wake's own control check applies the same expiry the sweep would.
+		if _, err := failDelivery(ctx, tx, w.Delivery.DeliveryID, code, &stopControl{Reason: code}); err != nil {
+			return "", now, err
+		}
+		if err := recordRecoveryTransition(ctx, tx, s, w.Delivery.DeliveryID, w.Delivery.Event.EventID, "", nil, "", "request_control_sweep", code, w.Delivery.State, "failed"); err != nil {
 			return "", now, err
 		}
 	}
@@ -166,8 +170,8 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		if state != "pending" && state != "leased" {
 			return zero, failure("VERSION_CONFLICT", "delivery already terminal")
 		}
-		var wake, native bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL),EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL)`, delivery).Scan(&wake, &native); err != nil {
+		wake, native, err := deliveryHeld(ctx, tx, delivery)
+		if err != nil {
 			return zero, err
 		}
 		if kind != "request" {
@@ -177,7 +181,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 			if state != "pending" || attempts != 0 || wake || native {
 				return zero, failure("UNSUPPORTED_CONTROL", "only an unclaimed response, notice or note can be cancelled; a claimed one is acknowledged by its consumer")
 			}
-			if err = stopRequestDelivery(ctx, tx, delivery, "operator_cancelled", req.Reason); err != nil {
+			if err = stopRequestDelivery(ctx, tx, s, delivery, eventID, state, req.RequestID, "operator_cancelled", req.Reason); err != nil {
 				return zero, err
 			}
 			out := WorkCancellation{EventID: eventID, DeliveryID: delivery, Control: &WorkControl{}}
@@ -216,7 +220,7 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		if leased && !wake {
 			return zero, failure("UNSUPPORTED_CONTROL", "running manual work lacks a supervisor stop contract; reconcile its actual turn/process end")
 		}
-		if err = stopRequestDelivery(ctx, tx, delivery, "operator_cancelled", req.Reason); err != nil {
+		if err = stopRequestDelivery(ctx, tx, s, delivery, eventID, state, req.RequestID, "operator_cancelled", req.Reason); err != nil {
 			return zero, err
 		}
 		out := WorkCancellation{EventID: eventID, DeliveryID: delivery, Held: wake, Control: &WorkControl{}}
@@ -225,9 +229,13 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 	})
 }
 
-func stopRequestDelivery(ctx context.Context, tx pgx.Tx, id, code, reason string) error {
-	_, err := tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$2,control_at=clock_timestamp(),control_by=current_setting('cairn.caller'),control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, id, code, reason)
-	return err
+// stopRequestDelivery fails live work as the caller's stop decision and
+// records the cancellation in the recovery ledger.
+func stopRequestDelivery(ctx context.Context, tx pgx.Tx, s *Store, id, eventID, stateBefore, requestID, code, reason string) error {
+	if _, err := failDelivery(ctx, tx, id, code, &stopControl{Reason: reason}); err != nil {
+		return err
+	}
+	return recordRecoveryTransition(ctx, tx, s, id, eventID, "", nil, requestID, "work_cancel", "cancelled", stateBefore, "failed")
 }
 
 type RequestControlSweep struct {
@@ -265,7 +273,7 @@ func (s *Store) SweepRequestControls(ctx context.Context, req RequestControlSwee
 	if out.PoolRequests, err = expirePoolRequests(ctx, tx, repo); err != nil {
 		return out, err
 	}
-	if out.Deliveries, err = expireRequestDeliveries(ctx, tx, repo, "", true); err != nil {
+	if out.Deliveries, err = expireRequestDeliveries(ctx, tx, s, repo, "", true); err != nil {
 		return out, err
 	}
 	if out.ResponseGroups, err = expireResponseGroups(ctx, tx, repo, ""); err != nil {
@@ -283,13 +291,38 @@ const requestAdmissionOpen = `(e.admission_expires_at IS NULL OR e.admission_exp
 
 // Stop decisions fence result completion, but leave attempt holds intact until
 // their host confirms termination. Admission expiry excludes live work.
-func expireRequestDeliveries(ctx context.Context, tx pgx.Tx, repo, consumer string, allowLocal bool) (int64, error) {
-	tag, err := tx.Exec(ctx, `WITH due AS (
- SELECT d.delivery_id,CASE WHEN e.task_deadline<=clock_timestamp() THEN 'task_deadline' ELSE 'admission_expired' END AS code
+func expireRequestDeliveries(ctx context.Context, tx pgx.Tx, s *Store, repo, consumer string, allowLocal bool) (int64, error) {
+	rows, err := tx.Query(ctx, `WITH due AS (
+ SELECT d.delivery_id,d.event_id,d.state AS state_before,CASE WHEN e.task_deadline<=clock_timestamp() THEN 'task_deadline' ELSE 'admission_expired' END AS code
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  WHERE e.repo=$1 AND ($2='' OR d.consumer=$2) AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.state IN ('pending','leased') AND (
  e.task_deadline<=clock_timestamp() OR (e.admission_expires_at<=clock_timestamp() AND (d.state='pending' OR d.lease_until<=clock_timestamp()) AND `+wakeHold+` AND `+sessionInboxHold+`))
  ORDER BY d.position LIMIT 100 FOR UPDATE OF d SKIP LOCKED)
- UPDATE cairn.agent_delivery d SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=due.code,control_at=clock_timestamp(),control_by=current_setting('cairn.caller'),control_reason=due.code FROM due WHERE d.delivery_id=due.delivery_id`, repo, consumer, allowLocal)
-	return tag.RowsAffected(), err
+ UPDATE cairn.agent_delivery d SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=due.code,control_at=clock_timestamp(),control_by=current_setting('cairn.caller'),control_reason=due.code FROM due WHERE d.delivery_id=due.delivery_id
+ RETURNING d.delivery_id::text,due.event_id::text,due.state_before,due.code`, repo, consumer, allowLocal)
+	if err != nil {
+		return 0, err
+	}
+	type expired struct{ delivery, event, before, code string }
+	var list []expired
+	for rows.Next() {
+		var e expired
+		if err := rows.Scan(&e.delivery, &e.event, &e.before, &e.code); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		list = append(list, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	// The sweep runs inside polling paths that carry no request id; the
+	// ledger records the sweeping principal and the code it applied.
+	for _, e := range list {
+		if err := recordRecoveryTransition(ctx, tx, s, e.delivery, e.event, "", nil, "", "request_control_sweep", e.code, e.before, "failed"); err != nil {
+			return 0, err
+		}
+	}
+	return int64(len(list)), nil
 }

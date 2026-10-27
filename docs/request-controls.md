@@ -207,6 +207,14 @@ The scheduler service runs this sweep before each scheduling tick. Claim paths
 also refuse overdue work, so a stopped scheduler does not permit late admission.
 Terminal bookkeeping can lag while the scheduler is stopped or backlogged.
 
+Every stop the Store applies on these paths is appended to the delivery's
+recovery ledger (`recovery_transitions` in `ReviewEvents`): cancellation as
+`work_cancel`, retirement of a stopped session's inbox as
+`stopped_inbox_expiry`, and sweep or wake-control expiry as
+`request_control_sweep` with the code it applied. Sweep rows carry no request
+id. Ordinary leasing, settlement and release are not ledger entries; see
+[recovery model report](recovery-model-report.md) for the consumer contract.
+
 `coordination-review` includes controlled deliveries with their hold and selected
 reason, and `closed_pool_requests` for work closed before assignment. The latter
 has an independent position cursor and accepts `closed_after` and `closed_limit`

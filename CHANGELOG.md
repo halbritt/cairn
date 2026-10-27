@@ -36,6 +36,19 @@ and MCP processes.
   starvation evaluation; `coordination-review` and `delivery-alerts` keep
   using the core implementation, which now has its own tests.
 
+## 2026-10-27
+
+- Delivery and native-attempt transitions in core now have one owner
+  (`core/delivery_transitions.go`): lease, renew, release, fail, settle and
+  attempt open/finish, plus the hold predicates, replace the per-file SQL that
+  had drifted into four column-set variants. Behaviour is unchanged except that
+  the recovery ledger now also records operator cancellations (`work_cancel`),
+  stopped-inbox retirement (`stopped_inbox_expiry`) and request-control or wake
+  expiry (`request_control_sweep`); schema 073 widens the ledger's action kinds
+  and lets sweep rows omit a request id. Upgrade note: deploy the binary and
+  `scripts/recovery_model_report.py` together, since the report validates the
+  action/outcome pairs it accepts.
+
 ## 2026-10-26
 
 - Lifecycle installers now stage the complete implementation and validate its

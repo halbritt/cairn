@@ -172,9 +172,9 @@ func TestCancelWorkClosesOnlyUnclaimedNonRequests(t *testing.T) {
 	if err != nil || again.Control.Code != "operator_cancelled" {
 		t.Fatalf("retry: %+v %v", again, err)
 	}
-	var state, code string
-	if err = op.pool.QueryRow(ctx, `SELECT state,code FROM cairn.agent_delivery WHERE delivery_id=$1`, notice).Scan(&state, &code); err != nil || state != "failed" || code != "operator_cancelled" {
-		t.Fatalf("stored: %s %s %v", state, code, err)
+	if page, err := op.ReviewEvents(ctx, EventReviewRequest{Repo: req.Repo, DeliveryID: notice}); err != nil || len(page.Deliveries) != 1 ||
+		page.Deliveries[0].State != "failed" || page.Deliveries[0].Code != "operator_cancelled" {
+		t.Fatalf("stored: %+v %v", page, err)
 	}
 	// The cancelled notice is never offered to its consumer.
 	if next, err := b.NextEvent(ctx, NextEventRequest{}, dest); err != nil || next.Delivery != nil {

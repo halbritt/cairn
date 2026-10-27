@@ -64,11 +64,16 @@ into this envelope, then pass it with `--recovery-actions`:
 }
 ```
 
-These rows establish only committed Store endpoint mutations. A reissue's
+These rows establish only committed Store-mediated mutations. A reissue's
 null attempt stays unjoined at the attempt level; the report never borrows an
 attempt from prior history. Recovery-action rows are reported separately from
-recipient model usage and accepted task outcomes. The two instrumented actions
-do not cover manual/off-band work or every delivery lifecycle transition.
+recipient model usage and accepted task outcomes. Besides the two endpoint
+actions, the ledger records the other Store-mediated stops since schema 073:
+`work_cancel` (`cancelled`, with the attempt when a confirmed native
+cancellation closed it), `stopped_inbox_expiry` (`consumer_retired`) and
+`request_control_sweep` (`admission_expired` or `task_deadline`, with no
+request id because sweeps run inside polling paths). None of them cover
+manual/off-band work or ordinary leasing, settlement and release.
 
 For a `event_reissue`, the report follows its exact `related_event_id` into the
 workflow report. It emits the follow-up event's delivery refs, each delivery's

@@ -52,10 +52,6 @@ type SessionInboxReadiness struct {
 	EventID    string `json:"event_id,omitempty"`
 }
 
-const sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id AND n.finished_at IS NULL)`
-
-const sessionInboxOccupied = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE (consumer=$2 OR agent_id=$1) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`
-
 const sessionInboxEligibleBase = ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))`
 
 const sessionInboxEligible = sessionInboxEligibleBase + ` ORDER BY e.position`
@@ -85,7 +81,7 @@ func (s *Store) SessionInboxReady(ctx context.Context, ref AgentSessionRef, dest
 		return out, nil
 	}
 	var held bool
-	if err = tx.QueryRow(ctx, sessionInboxOccupied, a.AgentID, a.Inbox).Scan(&held); err != nil {
+	if held, err = inboxOccupied(ctx, tx, a.AgentID, a.Inbox); err != nil {
 		return out, err
 	}
 	if held {
@@ -213,13 +209,13 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		return SessionInboxResult{attempt}, tx.Commit(ctx)
 	}
 	var exists bool
-	if err = tx.QueryRow(ctx, sessionInboxOccupied, a.AgentID, a.Inbox).Scan(&exists); err != nil {
+	if exists, err = inboxOccupied(ctx, tx, a.AgentID, a.Inbox); err != nil {
 		return out, err
 	}
 	if exists {
 		return commit(nil)
 	}
-	if _, err = expireRequestDeliveries(ctx, tx, a.Repo, a.Inbox, dest.AllowLocal); err != nil {
+	if _, err = expireRequestDeliveries(ctx, tx, s, a.Repo, a.Inbox, dest.AllowLocal); err != nil {
 		return out, err
 	}
 	var id string
@@ -234,10 +230,10 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		return commit(nil) // A stale wake must not acquire a different request.
 	}
 	lease := uuid.NewString()
-	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=$1`, id, lease); err != nil {
+	if err = leaseDelivery(ctx, tx, id, lease, nativeLeaseTTL); err != nil {
 		return out, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, req.RequestID, a.AgentID, a.ExecutionID, a.Repo, id, lease, req.NativeTurnID, req.TurnExclusive); err != nil {
+	if err = openAttempt(ctx, tx, nativeAttemptOpen{AttemptID: req.RequestID, AgentID: a.AgentID, ExecutionID: a.ExecutionID, Repo: a.Repo, DeliveryID: id, LeaseID: lease, NativeTurnID: req.NativeTurnID, TurnExclusive: req.TurnExclusive}); err != nil {
 		if isTurnAlreadyBound(err) {
 			// The pinned native turn already owns an unfinished attempt: a
 			// joined or shared prompt is not per-request identity.
@@ -291,7 +287,7 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 			}
 			return attempt, nil
 		}
-		settled, err := settleNativeCleanup(ctx, tx, attempt, req.Reason)
+		settled, err := settleNativeCleanup(ctx, tx, s, attempt, req.RequestID, req.Reason)
 		if err != nil {
 			return attempt, err
 		}
@@ -302,11 +298,11 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 			if req.Reason == "delivery_completed" {
 				return attempt, failure("DELIVERY_ACTIVE", "native delivery has not been explicitly completed")
 			}
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='processing_failed' WHERE delivery_id=$1`, attempt.Delivery.DeliveryID); err != nil {
+			if _, err = failDelivery(ctx, tx, attempt.Delivery.DeliveryID, "processing_failed", nil); err != nil {
 				return attempt, err
 			}
 		}
-		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason=$2 WHERE attempt_id=$1`, req.AttemptID, req.Reason); err != nil {
+		if _, err = finishAttempt(ctx, tx, req.AttemptID, req.Reason, attemptClose{}); err != nil {
 			return attempt, err
 		}
 		return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)

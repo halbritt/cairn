@@ -56,8 +56,6 @@ type WakeChangeRequest struct {
 	Session         *AgentSessionRef `json:"session,omitempty"`
 }
 
-const wakeHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id AND w.finished_at IS NULL)`
-
 func (s *Store) readWake(ctx context.Context, tx pgx.Tx, id string, dest Destination) (WakeAttempt, error) {
 	var w WakeAttempt
 	var delivery, lease string
@@ -134,8 +132,8 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return WakeResult{}, err
 	}
-	var busy bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND consumer=$2 AND finished_at IS NULL)`, repo, s.channel.Principal).Scan(&busy); err != nil {
+	busy, err := wakeOpen(ctx, tx, repo, s.channel.Principal)
+	if err != nil {
 		return WakeResult{}, err
 	}
 	if busy {
@@ -154,7 +152,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 			return WakeResult{}, nil
 		}
 	}
-	if _, err = expireRequestDeliveries(ctx, tx, repo, s.channel.Principal, dest.AllowLocal); err != nil {
+	if _, err = expireRequestDeliveries(ctx, tx, s, repo, s.channel.Principal, dest.AllowLocal); err != nil {
 		return WakeResult{}, err
 	}
 	var candidate poolCandidate
@@ -187,7 +185,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 		}
 	}
 	lease := uuid.NewString()
-	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=$1`, id, lease); err != nil {
+	if err = leaseDelivery(ctx, tx, id, lease, nativeLeaseTTL); err != nil {
 		return WakeResult{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_wake_attempt(attempt_id,delivery_id,repo,lease_id,worker_id) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid)`, req.RequestID, id, repo, lease, req.WorkerID); err != nil {
@@ -302,7 +300,7 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 			return w, failure("VERSION_CONFLICT", "wake already finished")
 		}
 		if req.Operation == "start" || req.Operation == "enter" {
-			stop, _, err := applyWakeControl(ctx, tx, w)
+			stop, _, err := applyWakeControl(ctx, tx, s, w)
 			if err != nil {
 				return w, err
 			}
@@ -361,7 +359,7 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 				return w, err
 			}
 		case "finish":
-			if _, _, err = applyWakeControl(ctx, tx, w); err != nil {
+			if _, _, err = applyWakeControl(ctx, tx, s, w); err != nil {
 				return w, err
 			}
 			if err = s.recordWakeProviderFailure(ctx, tx, w, req.ProviderFailure); err != nil {
@@ -380,9 +378,9 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 					if d.Attempts > 1 {
 						delay = 30
 					}
-					_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='pending',lease_id=NULL,lease_until=NULL,available_at=clock_timestamp()+make_interval(secs=>$2) WHERE delivery_id=$1`, d.DeliveryID, delay)
+					err = releaseDelivery(ctx, tx, d.DeliveryID, time.Duration(delay)*time.Second)
 				} else {
-					_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='processing_failed' WHERE delivery_id=$1`, d.DeliveryID)
+					_, err = failDelivery(ctx, tx, d.DeliveryID, "processing_failed", nil)
 				}
 				if err != nil {
 					return w, err

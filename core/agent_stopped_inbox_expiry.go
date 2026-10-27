@@ -161,12 +161,22 @@ func (s *Store) ExpireStoppedInboxes(ctx context.Context, req StoppedInboxExpiry
 			}
 		}
 		if len(ids) > 0 {
-			tag, err := tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='consumer_retired',control_at=clock_timestamp(),control_by=current_setting('cairn.caller'),control_reason=$2 WHERE delivery_id=ANY($1::uuid[]) AND state='pending'`, ids, req.Reason)
+			changed, err := failPendingDeliveries(ctx, tx, ids, "consumer_retired", stopControl{Reason: req.Reason})
 			if err != nil {
 				return zero, err
 			}
-			if tag.RowsAffected() != int64(len(ids)) {
+			if changed != int64(len(ids)) {
 				return zero, failure("VERSION_CONFLICT", "a selected delivery changed during expiry; review again")
+			}
+			for i := range out.Sessions {
+				if out.Sessions[i].Status != "expired" {
+					continue
+				}
+				for _, d := range out.Sessions[i].Deliveries {
+					if err := recordRecoveryTransition(ctx, tx, s, d.DeliveryID, d.EventID, "", nil, req.RequestID, "stopped_inbox_expiry", "consumer_retired", "pending", "failed"); err != nil {
+						return zero, err
+					}
+				}
 			}
 		}
 		return out, nil

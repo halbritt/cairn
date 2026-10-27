@@ -121,13 +121,13 @@ func (s *Store) AdvanceSessionInbox(ctx context.Context, req SessionInboxAdvance
 				return endBatch("priority_waiting")
 			}
 			lease := uuid.NewString()
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='delivery_completed' WHERE attempt_id=$1`, current.ID); err != nil {
+			if _, err = finishAttempt(ctx, tx, current.ID, "delivery_completed", attemptClose{}); err != nil {
 				return empty, err
 			}
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=$1`, nextID, lease); err != nil {
+			if err = leaseDelivery(ctx, tx, nextID, lease, nativeLeaseTTL); err != nil {
 				return empty, err
 			}
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,batch_root,batch_index,batch_limit) VALUES($1,$2,$3,$4,$5,$6,$7,false,$8,$9,3)`, req.RequestID, a.AgentID, a.ExecutionID, a.Repo, nextID, lease, current.NativeTurnID, root, index+1); err != nil {
+			if err = openAttempt(ctx, tx, nativeAttemptOpen{AttemptID: req.RequestID, AgentID: a.AgentID, ExecutionID: a.ExecutionID, Repo: a.Repo, DeliveryID: nextID, LeaseID: lease, NativeTurnID: current.NativeTurnID, Batch: &nativeBatchPosition{Root: root, Index: int(index) + 1, Limit: 3}}); err != nil {
 				return empty, err
 			}
 			attempt, err := s.readSessionInboxAttempt(ctx, tx, req.RequestID, req.Session, dest)

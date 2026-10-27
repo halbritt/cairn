@@ -108,13 +108,16 @@ def read_recovery_actions(path, max_actions=10000):
         revision = item.get("revision")
         action, outcome = item.get("action"), item.get("outcome")
         before, after, observed = item.get("state_before"), item.get("state_after"), item.get("observed_at")
-        expected = {"native_hold_release": "hold_released", "event_reissue": "reissue_created"}
+        expected = {"native_hold_release": ("hold_released",), "event_reissue": ("reissue_created",),
+                    "work_cancel": ("cancelled",), "stopped_inbox_expiry": ("consumer_retired",),
+                    "request_control_sweep": ("admission_expired", "task_deadline")}
         if (raw_attempt is not None and attempt is None or type(revision) is not int or revision < 1 or
-                action not in expected or expected[action] != outcome or
+                action not in expected or outcome not in expected[action] or
                 before not in ("pending", "leased", "failed", "handled", "ignored") or
                 after not in ("pending", "leased", "failed", "handled", "ignored") or
                 (action == "native_hold_release" and (attempt is None or related is not None)) or
                 (action == "event_reissue" and (attempt is not None or related is None)) or
+                (action in ("work_cancel", "stopped_inbox_expiry", "request_control_sweep") and (related is not None or after != "failed")) or
                 not isinstance(observed, str)):
             raise ValueError("invalid Store-observed recovery action")
         try:

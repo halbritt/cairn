@@ -24,7 +24,7 @@ func reissueFixture(t *testing.T) (*Store, *Store, *Store, Record, Destination) 
 	return a, b, op, r, Destination{Name: "hosted", AllowLocal: false}
 }
 
-func failDelivery(t *testing.T, s *Store, deliveryID string) {
+func forgeFailedDelivery(t *testing.T, s *Store, deliveryID string) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `UPDATE cairn.agent_delivery SET state='failed', completed_at=clock_timestamp(), code='processing_failed', lease_id=NULL, lease_until=NULL WHERE delivery_id=$1`, deliveryID)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestReissueEventAttributionAndCausation(t *testing.T) {
 		t.Fatal(err)
 	}
 	delivery := nextFixture(t, b, dest)
-	failDelivery(t, b, delivery.DeliveryID)
+	forgeFailedDelivery(t, b, delivery.DeliveryID)
 
 	reqID := uuid.NewString()
 	reason := "reissuing failed direct task for consumer retry"
@@ -114,7 +114,7 @@ func TestReissueEventSourceVersionUnavailable(t *testing.T) {
 
 	publishFixture(t, a, b, r, dest)
 	delivery := nextFixture(t, b, dest)
-	failDelivery(t, b, delivery.DeliveryID)
+	forgeFailedDelivery(t, b, delivery.DeliveryID)
 
 	// Mark source record lifecycle as retracted.
 	if _, err := a.pool.Exec(ctx, `UPDATE cairn.memory_record SET lifecycle='retracted' WHERE record_id=$1`, r.RecordID); err != nil {
@@ -180,7 +180,7 @@ func TestReissueEventNoTopicRefanout(t *testing.T) {
 	}
 
 	// Fail consumer-1 delivery.
-	failDelivery(t, b1, b1Delivery)
+	forgeFailedDelivery(t, b1, b1Delivery)
 
 	// Reissue consumer-1 delivery.
 	reissued, err := op.ReissueEvent(ctx, ReissueEventRequest{
@@ -236,7 +236,7 @@ func TestReissueEventPoolSelectors(t *testing.T) {
 	}
 
 	// Fail the pool delivery and finish its wake attempt.
-	failDelivery(t, b, claim.Delivery.DeliveryID)
+	forgeFailedDelivery(t, b, claim.Delivery.DeliveryID)
 	if _, err := b.pool.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET state='finished', finished_at=clock_timestamp() WHERE delivery_id=$1`, claim.Delivery.DeliveryID); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestReissueEventNoReplayOfActiveHolds(t *testing.T) {
 	requireCode(t, err, "INVALID_REQUEST")
 
 	// 4. Failed delivery with active wake attempt must be refused.
-	failDelivery(t, b, deliveryID)
+	forgeFailedDelivery(t, b, deliveryID)
 	wakeAttemptID := uuid.NewString()
 	_, err = b.pool.Exec(ctx, `INSERT INTO cairn.agent_wake_attempt(attempt_id,repo,consumer,delivery_id,lease_id) VALUES($1,$2,$3,$4,$5)`,
 		wakeAttemptID, r.Scope.Repo, b.channel.Principal, deliveryID, uuid.NewString())
@@ -374,7 +374,7 @@ func TestReissueEventAtomicRollback(t *testing.T) {
 
 	publishFixture(t, a, b, r, dest)
 	delivery := nextFixture(t, b, dest)
-	failDelivery(t, b, delivery.DeliveryID)
+	forgeFailedDelivery(t, b, delivery.DeliveryID)
 
 	// Inject a trigger failure on cairn.agent_event_reissue insertion.
 	trigger := "reissue_probe_" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -416,7 +416,7 @@ func TestReissueEventExactRetry(t *testing.T) {
 
 	publishFixture(t, a, b, r, dest)
 	delivery := nextFixture(t, b, dest)
-	failDelivery(t, b, delivery.DeliveryID)
+	forgeFailedDelivery(t, b, delivery.DeliveryID)
 
 	req := ReissueEventRequest{
 		RequestID:              uuid.NewString(),
@@ -444,7 +444,7 @@ func TestReissueEventConflictingRequestUUIDAndAlreadyReissued(t *testing.T) {
 
 	publishFixture(t, a, b, r, dest)
 	delivery := nextFixture(t, b, dest)
-	failDelivery(t, b, delivery.DeliveryID)
+	forgeFailedDelivery(t, b, delivery.DeliveryID)
 
 	sameReqID := uuid.NewString()
 	req := ReissueEventRequest{
