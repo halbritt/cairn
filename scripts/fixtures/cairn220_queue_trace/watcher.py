@@ -11,17 +11,17 @@ import types
 
 from trace_io import append_trace, create_trace
 
+# The watcher runs from /repo/scripts/fixtures/cairn220_queue_trace inside the
+# sandbox; the session module (stdlib-only) lives two directories up.
+_SCRIPTS = str(Path(__file__).resolve().parents[2])
+if _SCRIPTS not in sys.path:
+    sys.path.append(_SCRIPTS)
+from codex_app_server_session import classify_refusal_exception  # noqa: E402
+
 
 def _refusal_class(exc):
-    code = getattr(exc, "code", None)
-    message = getattr(exc, "message", None)
-    if code == -32600 and message == "thread already has an active or pending turn":
-        return "busy"
-    if code == -32600 and isinstance(message, str) and message.startswith("queued submission not found:"):
-        return "submission_not_found"
-    if code == -32600:
-        return "invalid_request_other"
-    return "native_refusal_other"
+    """Queue refusal class from the one vocabulary in codex_app_server_session."""
+    return classify_refusal_exception(exc, context="queue")
 
 
 @contextmanager

@@ -606,6 +606,20 @@ auto-dispatch can still establish the join when a later explicit start reports
 that the submission no longer exists. See the
 [native wake verification record](verification/codex-app-server-wake-join-2026-10-25.md).
 
+The Codex fixtures drive the app-server through one module,
+`scripts/codex_app_server_session.py`. It owns request matching, deadlines,
+interrupt, resume and the rule that a turn is done only when its matching
+`turn/completed` arrived and, when asked, its Stop-hook marker landed with exit
+zero (`turn/completed` can arrive before Codex's Stop command hook exits). It
+also owns the one refusal vocabulary: queue refusals classify by code, resume
+refusals by pinned message prefix, and every class is a member of the set the
+queue trace validator accepts. Fixtures attach it to the installer's RPC
+closure or to the bundle's queue client, or spawn a stdio app-server with it.
+Its `FakeAppServer` adapter speaks the same JSON-RPC subset, so these ordering
+rules are tested offline (`scripts/test_codex_app_server_session.py`). The
+installed delivery client, `integrations/lifecycle/codex_queue.py`, stays a
+separate bundle member.
+
 ## Privacy markers and hook admission
 
 One module, `integrations/lifecycle/hook_admission.py`, decides whether any

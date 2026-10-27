@@ -13,15 +13,20 @@ import http.server
 import json
 import os
 from pathlib import Path
-import select
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import tomllib
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from codex_app_server_session import (  # noqa: E402
+    AppServerError, AppServerTimeout, AppServerTransportError, CodexAppServerSession,
+)
+
 TARGETS = {"cairn_search", "cairn_pull"}
 EXPECTED_MCP_TOOLS = {
     "cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember",
@@ -95,34 +100,27 @@ def nested_tool_names(namespaces: list[dict]) -> list[str]:
 
 def codex_mcp_inventory(env: dict[str, str]) -> list[dict]:
     """Read Codex's local MCP registry without starting a model thread."""
-    process = subprocess.Popen([shutil.which("codex") or "codex", "app-server",
-                                "--listen", "stdio://"], env=env,
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, bufsize=1)
-
-    def rpc(message: dict) -> dict:
-        assert process.stdin is not None and process.stdout is not None
-        process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
-        process.stdin.flush()
-        while select.select([process.stdout], [], [], 20)[0]:
-            line = process.stdout.readline()
-            require(bool(line), "Codex app-server closed before response")
-            response = json.loads(line)
-            if response.get("id") == message.get("id"):
-                require("error" not in response, "Codex app-server MCP inventory failed")
-                return response
-        raise ValueError("Codex app-server MCP inventory timed out")
+    def inventory_error(exc: Exception) -> ValueError:
+        if isinstance(exc, AppServerTimeout):
+            return ValueError("Codex app-server MCP inventory timed out")
+        if isinstance(exc, AppServerTransportError):
+            return ValueError("Codex app-server closed before response")
+        return ValueError("Codex app-server MCP inventory failed")
 
     try:
-        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "clientInfo": {"name": "cairn-schema-probe", "title": "Local schema probe",
-                           "version": "1"}, "capabilities": {}}})
-        assert process.stdin is not None
-        process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "initialized",
-                                        "params": {}}) + "\n")
-        process.stdin.flush()
-        response = rpc({"jsonrpc": "2.0", "id": 2, "method": "mcpServerStatus/list",
-                        "params": {"serverName": "cairn", "detail": "full"}})
+        session = CodexAppServerSession.spawn(
+            [shutil.which("codex") or "codex", "app-server", "--listen", "stdio://"],
+            client_name="cairn-schema-probe", client_title="Local schema probe",
+            experimental_api=False, initialized_params={}, jsonrpc=True, env=env,
+            default_timeout=20)
+    except AppServerError as exc:
+        raise inventory_error(exc) from None
+    try:
+        try:
+            result = session.call("mcpServerStatus/list", {"serverName": "cairn", "detail": "full"})
+        except AppServerError as exc:
+            raise inventory_error(exc) from None
+        response = dict(result=result)
         rows = response.get("result", {}).get("data")
         require(isinstance(rows, list), "Codex MCP registry response missing")
         row = next((item for item in rows if item.get("name") == "cairn"), None)
@@ -138,14 +136,7 @@ def codex_mcp_inventory(env: dict[str, str]) -> list[dict]:
                 "Codex MCP tool names changed; review before updating expectations")
         return result
     finally:
-        if process.stdin:
-            process.stdin.close()
-        process.terminate()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=2)
+        session.close()
 
 
 def local_request(binary: Path, parent: Path, profile: str) -> tuple[dict, list[dict]]:

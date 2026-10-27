@@ -15,6 +15,17 @@ and MCP processes.
 
 ## 2026-10-27
 
+- Codex native fixtures now share one app-server session module
+  (`scripts/codex_app_server_session.py`) instead of five hand-written JSON-RPC
+  clients and separate `turn/completed` loops. It owns matching, deadlines,
+  interrupt, resume, the Stop-marker join and one refusal vocabulary; the
+  wake-join fixture and the queue-trace watcher both classify through it. An
+  in-process fake app-server tests the ordering rules without Codex. The compact,
+  full-inbox, capture-observation, request-shape and remote code-mode probes use
+  it; their assertions and receipts keep their wording. The remote code-mode
+  probe now sends `initialized` as a notification, not a request with an id.
+  The installed queue client and the installer's RPC closure are unchanged.
+  These fixtures were not re-run against a real Codex binary for this change.
 - The compiler now parses a sealed ranking identity such as
   `binary-idf-scope-recency/6` once, into a declared channel, outer tier,
   tokenizer generation and IDF evidence flags, instead of re-deriving each

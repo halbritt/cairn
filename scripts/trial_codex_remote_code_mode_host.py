@@ -12,16 +12,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import queue
-import selectors
 import shlex
 import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codex_app_server_session import CodexAppServerSession, StdioWire  # noqa: E402
 
 
 MODEL = "gpt-6-luna"
@@ -68,69 +71,10 @@ def exec_tool(call_id: str, command: str) -> dict:
                 input=program)
 
 
-class Rpc:
-    def __init__(self, process: subprocess.Popen):
-        self.process = process
-        self.selector = selectors.DefaultSelector()
-        self.selector.register(process.stdout, selectors.EVENT_READ)
-        self.buffer = bytearray()
-        self.notifications: queue.Queue[dict] = queue.Queue()
-        self.next_id = 1
-
-    def send(self, method: str, params: dict | None = None) -> int:
-        ident = self.next_id
-        self.next_id += 1
-        wire = dict(jsonrpc="2.0", id=ident, method=method, params=params or {})
-        self.process.stdin.write(json.dumps(wire, separators=(",", ":")).encode() + b"\n")
-        self.process.stdin.flush()
-        return ident
-
-    def _read_line(self, deadline: float) -> dict:
-        while time.monotonic() < deadline:
-            if b"\n" in self.buffer:
-                line, _, rest = self.buffer.partition(b"\n")
-                self.buffer = bytearray(rest)
-                return json.loads(line)
-            ready = self.selector.select(max(0, deadline - time.monotonic()))
-            if not ready:
-                break
-            chunk = os.read(self.process.stdout.fileno(), 65536)
-            if not chunk:
-                raise RuntimeError("app-server stdout closed")
-            self.buffer.extend(chunk)
-            if len(self.buffer) > 4 * 1024 * 1024:
-                raise RuntimeError("app-server response exceeded fixture bound")
-        raise TimeoutError("app-server RPC deadline")
-
-    def result(self, ident: int, timeout: float = 10) -> dict:
-        deadline = time.monotonic() + timeout
-        while True:
-            row = self._read_line(deadline)
-            if row.get("id") == ident:
-                if "error" in row:
-                    raise RuntimeError("app-server RPC error: " +
-                                       str(row["error"].get("message", "unknown")))
-                return row.get("result") or {}
-            if "method" in row:
-                self.notifications.put(row)
-
-    def notification(self, method: str, turn_id: str | None,
-                     timeout: float) -> dict:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                row = self.notifications.get_nowait()
-            except queue.Empty:
-                row = self._read_line(deadline)
-                if "id" in row:
-                    continue
-            if row.get("method") != method:
-                continue
-            params = row.get("params") or {}
-            current = (params.get("turn") or {}).get("id") or params.get("turnId")
-            if turn_id is None or current == turn_id:
-                return row
-        raise TimeoutError("missing app-server notification " + method)
+def _require_completed(completion, timeout_message: str) -> dict:
+    if not completion.completed:
+        raise TimeoutError(timeout_message)
+    return completion.notification
 
 
 def free_tcp_port() -> int:
@@ -300,7 +244,7 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
                no_proxy="127.0.0.1,localhost")
     host = None
     app = None
-    app_rpc = None
+    app_session = None
     report = None
     cleanup_ok = []
     try:
@@ -334,21 +278,16 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
                        "--enable", "code_mode_only", "--enable", "code_mode_interrupt"]
         app = subprocess.Popen(app_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, env=env, start_new_session=True)
-        app_rpc = Rpc(app)
-        init_id = app_rpc.send("initialize", dict(
-            clientInfo=dict(name="cairn-remote-code-mode-host-probe", title="Cairn probe",
-                            version="1"), capabilities=dict(experimentalApi=True)))
-        app_rpc.result(init_id, 10)
-        app_rpc.send("initialized")
-        thread_result = app_rpc.send("thread/start", dict(
-            cwd=str(actor_workspace), model=MODEL, approvalPolicy="never",
-            sandbox="read-only", ephemeral=True))
-        thread = app_rpc.result(thread_result, 10)["thread"]["id"]
-        start_id = app_rpc.send("turn/start", dict(threadId=thread, input=[dict(
-            type="text", text="Run the harmless command, then try to read the synthetic auth file at " +
-            str(marker_file) + ". Report only whether it was denied.", text_elements=[])]))
-        turn = app_rpc.result(start_id, 10)["turn"]["id"]
-        completed = app_rpc.notification("turn/completed", turn, 25)
+        # Process-group ownership and cleanup stay here (the report attests
+        # them); the session owns framing, matching and turn completion.
+        app_session = CodexAppServerSession.start(
+            StdioWire(app, jsonrpc=True), client_name="cairn-remote-code-mode-host-probe",
+            client_title="Cairn probe", default_timeout=10)
+        thread = app_session.thread(actor_workspace, MODEL, sandbox="read-only", ephemeral=True)
+        first = thread.turn("Run the harmless command, then try to read the synthetic auth file at " +
+                            str(marker_file) + ". Report only whether it was denied.")
+        completed = _require_completed(first.wait_completed(25, poll=.25),
+                                       "missing app-server notification turn/completed")
         if (completed.get("params", {}).get("turn", {}).get("status") != "completed"
                 or not first_turn_finished.is_set()):
             output_rows = [row for request in response_requests
@@ -365,19 +304,16 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
 
         stub_state["stall"] = True
         stalled_start = time.monotonic()
-        second_start = app_rpc.send("turn/start", dict(threadId=thread, input=[dict(
-            type="text", text="Wait for the local fixture response.", text_elements=[])]))
-        second_turn = app_rpc.result(second_start, 10)["turn"]["id"]
+        second = thread.turn("Wait for the local fixture response.")
         if not stall_reached.wait(5):
             raise TimeoutError("bounded_interrupt_fixture_did_not_stall")
         interrupt_deadline = stalled_start + 2.0
         remaining = interrupt_deadline - time.monotonic()
         if remaining > 0:
             time.sleep(remaining)
-        interrupt_id = app_rpc.send("turn/interrupt", dict(threadId=thread,
-                                                            turnId=second_turn))
-        app_rpc.result(interrupt_id, 5)
-        interrupt_event = app_rpc.notification("turn/completed", second_turn, 5)
+        second.interrupt(timeout=5)
+        interrupt_event = _require_completed(second.wait_completed(5, poll=.25),
+                                             "missing app-server notification turn/completed")
         interrupt_completed_at = time.monotonic()
         status = interrupt_event.get("params", {}).get("turn", {}).get("status")
         if status != "interrupted":
@@ -430,6 +366,8 @@ def run_probe(root: Path, codex_entry: Path, host_bin: Path) -> dict:
                 process.stdout.close()
             if process.stderr:
                 process.stderr.close()
+        if app_session is not None:
+            app_session.close()
         if report is not None:
             report["owned_process_groups_cleaned"] = len(cleanup_ok) == 2 and all(cleanup_ok)
 

@@ -23,6 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
     sys.path.insert(0, str(REPO / "scripts"))
 import disposable_host
+from codex_app_server_session import CodexAppServerSession, classify_refusal
 from native_tool_results import (
     tool_result_diagnostics as _tool_result_diagnostics,
     source_result_matches, source_read_succeeded, settlement_succeeded,
@@ -522,32 +523,8 @@ def _attach_item_started_observer(rpc, native_id: str, record=None) -> None:
 
 
 def _classify_thread_resume_refusal(message) -> str:
-    """Map pinned-source resume refusal text to a fixed enum."""
-    if not isinstance(message, str):
-        return "thread_resume_other"
-    if message.startswith("no rollout found for thread id "):
-        return "thread_no_persisted_rollout"
-    if (message.startswith("thread ") and " is closing; retry " in message and
-            (message.endswith("after the thread is closed") or
-             message.endswith("thread/resume after the thread is closed"))):
-        return "thread_closing"
-    if message.startswith("thread not found: "):
-        return "thread_not_found"
-    if (message.startswith("cannot resume thread ") and
-            message.endswith("with history while it is already running")):
-        return "history_already_running"
-    if (message.startswith("cannot resume running thread ") and
-            " with stale path: requested `" in message and ", active `" in message):
-        return "stale_rollout_path"
-    if message.startswith("cannot resume an unloaded multi-agent v2 sub-agent through its parent;"):
-        return "unloaded_v2_child"
-    if (message.startswith("failed to enqueue running thread resume for thread ") and
-            message.endswith(": thread listener is not running")):
-        return "resume_listener_not_running"
-    if (message.startswith("failed to enqueue running thread resume for thread ") and
-            message.endswith(": thread listener command channel is closed")):
-        return "resume_listener_channel_closed"
-    return "thread_resume_other"
+    """Map pinned-source resume refusal text to a fixed enum (session module)."""
+    return classify_refusal(None, message, context="resume")
 
 
 def _is_missing_rollout_resume_refusal(exc) -> bool:
@@ -987,12 +964,10 @@ def _inside(root_text: str, scripted_handled: bool = False) -> int:
                                capabilities=dict(experimentalApi=True)))
         connection.send(json.dumps(dict(method="initialized")))
         trust_codex_hooks_via_rpc(rpc, workspace=workspace, profile_dir=profile, command=command)
-        started = rpc("thread/start", dict(cwd=str(workspace), model=MODEL,
-            approvalPolicy="never",
-            sandbox="danger-full-access" if scripted_handled else "read-only"))
-        native_id = started["thread"]["id"]
-        thread_page = rpc("thread/loaded/list", dict(limit=100))
-        require(native_id in thread_page.get("data", []), "thread_not_loaded")
+        app_session = CodexAppServerSession.attach(rpc)
+        native_id = app_session.thread(
+            workspace, MODEL, sandbox="danger-full-access" if scripted_handled else "read-only").id
+        require(native_id in app_session.loaded_threads(), "thread_not_loaded")
 
         metadata = dict(harness="codex", model=MODEL, observed_model=MODEL,
                         project=workspace.name, workspace=str(workspace), state="idle",

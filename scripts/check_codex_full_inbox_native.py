@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import queue
 import shlex
 import shutil
 import stat
@@ -19,6 +18,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from native_tool_results import source_read_succeeded, settlement_succeeded
+from codex_app_server_session import CodexAppServerSession
 from codex_loopback_fixture import (
     LoopbackResponsesServer,
     exec_tool_item as _exec_tool,
@@ -562,23 +562,12 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
         nonlocal attempt_id, native_turn_id, timeout_evidence
         if scenario == "batch":
             setup_stage("registration_turn")
-        started = rpc("thread/start", dict(cwd=str(actor_root), model=MODEL,
-            approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
-        native_id = started["thread"]["id"]
-        registration = rpc("turn/start", dict(threadId=native_id,
-            input=[dict(type="text", text="Register the native fixture session.", text_elements=[])]))
-        registration_id = registration["turn"]["id"]
-        deadline = time.monotonic() + turn_timeout
-        registration_completed = False
-        while time.monotonic() < deadline and not registration_completed:
-            try:
-                notification = rpc.next_notification(timeout=min(1, max(.1, deadline - time.monotonic())))
-            except queue.Empty:
-                continue
-            params = notification.get("params", {})
-            current = params.get("turn", {}).get("id") or params.get("turnId")
-            if notification.get("method") == "turn/completed" and current == registration_id:
-                registration_completed = True
+        session = CodexAppServerSession.attach(rpc)
+        thread = session.thread(actor_root, MODEL, sandbox="danger-full-access", ephemeral=True)
+        native_id = thread.id
+        registration = thread.turn("Register the native fixture session.")
+        registration_id = registration.id
+        registration_completed = registration.wait_completed(turn_timeout).completed
         assert registration_completed, "native session registration turn did not complete"
         setup_done()
 
@@ -634,35 +623,34 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
         if scenario == "batch":
             trace.record_setup_complete()
         task_text = actor_task_path.read_text(encoding="utf-8").strip()
-        turn = rpc("turn/start", dict(threadId=native_id,
-            input=[dict(type="text", text=task_text, text_elements=[])]))
-        turn_id = turn["turn"]["id"]
+        turn = thread.turn(task_text)
+        turn_id = turn.id
         setup_done()
         actor_turn_id = turn_id
         observed_turn_ids.add(turn_id)
-        active_deadline = rpc.arm_turn_deadline(native_id, turn_id, turn_timeout)
-        deadline = time.monotonic() + turn_timeout + 5
-        terminal = False
-        while (time.monotonic() < deadline and not active_deadline.expired.is_set()
-               and not (terminal and finished.is_set())):
-            assert not failures, failures
-            try:
-                notification = rpc.next_notification(timeout=min(1, max(.1, deadline - time.monotonic())))
-            except queue.Empty:
-                continue
-            params = notification.get("params", {})
+        active_deadline = turn.arm_deadline(turn_timeout)
+
+        def track_turn_ids(note):
+            # Concurrent loopback handlers read these sets during the turn.
+            params = note.get("params", {})
             current = params.get("turn", {}).get("id") or params.get("turnId")
-            if notification.get("method") == "turn/started" and current:
+            if note.get("method") == "turn/started" and current:
                 observed_turn_ids.add(current)
-            if notification.get("method") == "turn/completed" and current:
+            if note.get("method") == "turn/completed" and current:
                 completed_turn_ids.add(current)
-                if current == turn_id or current == native_turn_id:
-                    terminal = True
-                    actor_terminal_class = "completed"
-            elif current == turn_id and notification.get("method") in (
-                    "turn/failed", "turn/cancelled", "turn/canceled"):
-                actor_terminal_class = ("failed" if notification["method"] == "turn/failed"
-                                        else "cancelled")
+
+        def guard():
+            assert not failures, failures
+
+        actor = turn.wait_completed(
+            turn_timeout + 5, poll=1,
+            accept=lambda current: current == turn_id or current == native_turn_id,
+            until=active_deadline.expired.is_set, drain_until=finished.is_set,
+            guard=guard, observe=track_turn_ids)
+        if actor.completed:
+            actor_terminal_class = "completed"
+        elif actor.terminal_class is not None:
+            actor_terminal_class = actor.terminal_class
         if active_deadline.expired.is_set():
             cleanup_finished = active_deadline.wait_cleanup(5)
             release_stall.set()
@@ -699,7 +687,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
                 owned_app_server_group_stopped=True)
             return
         active_deadline.disarm()
-        assert terminal, "native Codex turn did not complete within its timeout"
+        assert actor.completed, "native Codex turn did not complete within its timeout"
         assert finished.is_set() and source_read_confirmed and settlement_confirmed, \
             "native turn did not read and settle its notice work"
         assert native_turn_id in observed_turn_ids and native_turn_id in completed_turn_ids, \

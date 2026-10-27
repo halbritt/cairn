@@ -10,10 +10,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import queue
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -21,37 +19,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from codex_app_server_session import CodexAppServerSession  # noqa: E402
+
 
 DIALOGUE = "RAW_CODEX_DIALOGUE_SENTINEL: retain the synthetic handoff."
-
-
-def _rpc(process, messages, sequence, method, params=None, timeout=10):
-    request_id = sequence[0]
-    sequence[0] += 1
-    process.stdin.write(json.dumps(dict(id=request_id, method=method, params=params or {})) + "\n")
-    process.stdin.flush()
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            response = messages.get(timeout=max(.05, deadline - time.monotonic()))
-        except queue.Empty as exc:
-            raise TimeoutError("Codex app-server RPC timed out") from exc
-        if response.get("id") != request_id:
-            continue
-        if "error" in response:
-            raise AssertionError("Codex app-server rejected " + method + ": " +
-                                 str(response["error"].get("message", "unknown error")))
-        return response.get("result", {})
-    raise TimeoutError("Codex app-server RPC timed out")
-
-
-def _response_reader(stream, messages):
-    for line in stream:
-        try:
-            messages.put(json.loads(line))
-        except json.JSONDecodeError:
-            messages.put({"transport_error": "invalid JSON"})
-    messages.put({"transport_error": "app-server closed"})
 
 
 def _record(role, text):
@@ -121,38 +93,28 @@ def check(codex, binary, root, repo, agent, selector, cli_shim):
                CAIRN_CAPTURE_PROBE_MODE="codex_native_saved", CAIRN_CAPTURE_PROBE_CALLS=str(calls),
                CAIRN_CAPTURE_PROBE_REAL_CAIRN=str(binary), CAIRN_CAPTURE_PROBE_FAIL_CREATE="0",
                CAIRN_CAPTURE_PROBE_FAIL_REPORT="0")
-    process = subprocess.Popen([str(Path(codex).resolve(strict=True)), "app-server", "--stdio"],
-        cwd=fixture, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, bufsize=1, start_new_session=True)
-    messages = queue.Queue()
-    reader = threading.Thread(target=_response_reader, args=(process.stdout, messages), daemon=True)
-    reader.start()
-    sequence = [1]
+    session = CodexAppServerSession.spawn(
+        [str(Path(codex).resolve(strict=True)), "app-server", "--stdio"],
+        client_name="cairn-capture-fixture", env=env, cwd=fixture, default_timeout=10)
     try:
-        _rpc(process, messages, sequence, "initialize", dict(
-            clientInfo=dict(name="cairn-capture-fixture", version="1"),
-            capabilities=dict(experimentalApi=True)))
-        process.stdin.write(json.dumps(dict(method="initialized")) + "\n")
-        process.stdin.flush()
-        hooks = _rpc(process, messages, sequence, "hooks/list", {"cwds": [str(fixture)]})
+        hooks = session.call("hooks/list", {"cwds": [str(fixture)]})
         matches = [hook for entry in hooks.get("data", []) for hook in entry.get("hooks", [])
                    if hook.get("command") == command and hook.get("eventName", "").lower() == "sessionend"]
         assert len(matches) == 1, "isolated Codex did not load the single SessionEnd fixture hook"
         hook = matches[0]
-        _rpc(process, messages, sequence, "config/value/write", dict(
+        session.call("config/value/write", dict(
             filePath=str(config_home / "config.toml"),
             keyPath="hooks.state." + json.dumps(hook["key"]) + ".trusted_hash",
             value=hook["currentHash"], mergeStrategy="replace"))
-        trusted = _rpc(process, messages, sequence, "hooks/list", {"cwds": [str(fixture)]})
+        trusted = session.call("hooks/list", {"cwds": [str(fixture)]})
         verified = [entry_hook for entry in trusted.get("data", []) for entry_hook in entry.get("hooks", [])
                     if entry_hook.get("key") == hook["key"]]
         assert len(verified) == 1 and verified[0].get("trustStatus") == "trusted", \
             "Codex did not trust the isolated synthetic SessionEnd handler"
 
-        thread = _rpc(process, messages, sequence, "thread/start", dict(
-            cwd=str(work), ephemeral=False, model="fixture-model", modelProvider="fixture",
-            allowProviderModelFallback=False))
-        native_thread = thread["thread"]
+        thread = session.thread(work, "fixture-model", approval_policy=None, ephemeral=False,
+                                modelProvider="fixture", allowProviderModelFallback=False)
+        native_thread = thread.result["thread"]
         session_id = native_thread["id"]
         rollout = Path(native_thread["path"])
         assert rollout.name.endswith(session_id + ".jsonl") and config_home in rollout.parents, \
@@ -172,7 +134,7 @@ def check(codex, binary, root, repo, agent, selector, cli_shim):
                              dict(role="assistant", text="Synthetic assistant reply for the capture fixture.")]
         expected_digest = hashlib.sha256(engine_bytes(expected_messages, native_config["model"])).hexdigest()
 
-        _rpc(process, messages, sequence, "thread/archive", {"threadId": session_id})
+        session.call("thread/archive", {"threadId": session_id})
         state_path = state_dir / (session_id + ".json")
         deadline = time.monotonic() + 4
         while time.monotonic() < deadline and not state_path.exists():
@@ -227,14 +189,7 @@ def check(codex, binary, root, repo, agent, selector, cli_shim):
                 ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")},
             synthetic_cost_usd=row["cost_usd"], raw_dialogue_retained=False), sort_keys=True))
     finally:
-        if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=3)
-        reader.join(timeout=1)
+        session.close()
         provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=1)

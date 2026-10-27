@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-import queue
 from pathlib import Path
 import shlex
 import shutil
@@ -13,6 +12,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from native_tool_results import source_read_succeeded, settlement_succeeded
+from codex_app_server_session import AppServerTimeout, CodexAppServerSession
 from codex_loopback_fixture import (
     DEFAULT_MODEL as MODEL,
     LoopbackHTTPResponse,
@@ -561,12 +561,11 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
         nonlocal native_id, registration_turn_id, compact_turn_id, continuation_turn_id
         nonlocal native_turn_id, event, delivery_id, compact_in_progress, claimed_before_compact
         nonlocal precompact_read_turn_id
-        started = rpc("thread/start", dict(cwd=str(root), model=MODEL,
-            approvalPolicy="never", sandbox="danger-full-access", ephemeral=True))
-        native_id = started["thread"]["id"]
-        registration_turn = rpc("turn/start", dict(threadId=native_id,
-            input=[dict(type="text", text="Register the native fixture session.", text_elements=[])]))
-        registration_turn_id = registration_turn["turn"]["id"]
+        session = CodexAppServerSession.attach(rpc)
+        thread = session.thread(root, MODEL, sandbox="danger-full-access", ephemeral=True)
+        native_id = thread.id
+        registration_turn = thread.turn("Register the native fixture session.")
+        registration_turn_id = registration_turn.id
         registration_deadline = time.monotonic() + 30
         target = None
         while time.monotonic() < registration_deadline and not stop_complete_path.exists():
@@ -581,24 +580,9 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
             "Codex registration Stop hook returned nonzero: " + json.dumps({
                 key: stop_metadata.get(key) for key in ("exit_code", "output_status", "output_code", "stderr_bytes", "stderr_code")})
 
-        registration_completed = False
-        registration_events = []
-        registration_terminal_deadline = time.monotonic() + 30
-        while time.monotonic() < registration_terminal_deadline and not registration_completed:
-            try:
-                notification = rpc.next_notification(timeout=min(5, max(.1,
-                    registration_terminal_deadline - time.monotonic())))
-            except queue.Empty:
-                continue
-            params = notification.get("params", {})
-            turn = params.get("turn", {})
-            registration_events.append(dict(method=notification.get("method"),
-                turn_id=turn.get("id") or params.get("turnId")))
-            if (notification.get("method") == "turn/completed" and
-                    params.get("threadId") == native_id and turn.get("id") == registration_turn_id):
-                registration_completed = True
-        assert registration_completed, "registration turn did not reach matching terminal notification: " + \
-            json.dumps(registration_events)
+        registration = registration_turn.wait_completed(30, poll=5)
+        assert registration.completed, "registration turn did not reach matching terminal notification: " + \
+            json.dumps(registration.summary())
 
         agents = api_call("carol", "agents", "list", "--harness", "codex")["agents"]
         target = next((row for row in agents if row["native_session_id"] == native_id), None)
@@ -629,20 +613,12 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                                      event["event_id"], delivery_id, scenario)
 
         if scenario == "claimed-before-compact":
-            preturn = rpc("turn/start", dict(threadId=native_id,
-                input=[dict(type="text", text="Read the exact notice source, then wait for compaction.", text_elements=[])]))
-            precompact_read_turn_id = preturn["turn"]["id"]
+            preturn = thread.turn("Read the exact notice source, then wait for compaction.")
+            precompact_read_turn_id = preturn.id
             native_turn_id = precompact_read_turn_id
             native_turn_ready.set()
             assert precompact_read_completed.wait(45), "native actor did not read the source before compaction"
-            preturn_terminal = False
-            deadline = time.monotonic() + 30
-            while time.monotonic() < deadline and not preturn_terminal:
-                notification = rpc.next_notification(timeout=min(5, max(.1, deadline - time.monotonic())))
-                params = notification.get("params", {})
-                if (notification.get("method") == "turn/completed" and params.get("threadId") == native_id
-                        and params.get("turn", {}).get("id") == precompact_read_turn_id):
-                    preturn_terminal = True
+            preturn_terminal = preturn.wait_completed(30, poll=5).completed
             assert preturn_terminal, "source-read turn did not reach matching turn/completed"
             preturn_hooks = [json.loads(line) for line in metadata_path.read_text(encoding="utf-8").splitlines()
                              if line]
@@ -657,37 +633,20 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
                 json.dumps(claimed_before_compact)
 
         if scenario == "batch-admission":
-            continuation = rpc("turn/start", dict(threadId=native_id,
-                input=[dict(type="text", text="Observe the staged batch admission fixture.", text_elements=[])]))
-            continuation_turn_id = continuation["turn"]["id"]
+            continuation_turn_id = thread.turn("Observe the staged batch admission fixture.").id
             native_turn_id = continuation_turn_id
             native_turn_ready.set()
             assert admission_checked.wait(30), "staged Codex did not reach batch-enabled first admission"
             return
 
         if scenario == "auto-in-turn-claimed":
-            auto_turn = rpc("turn/start", dict(threadId=native_id,
-                input=[dict(type="text", text=("Read the exact claimed notice, then continue the same "
-                    "turn until Codex automatically compacts its context."), text_elements=[])]))
-            native_turn_id = auto_turn["turn"]["id"]
+            auto_turn = thread.turn("Read the exact claimed notice, then continue the same "
+                                    "turn until Codex automatically compacts its context.")
+            native_turn_id = auto_turn.id
             native_turn_ready.set()
-            auto_completed = False
-            auto_notifications = []
-            deadline = time.monotonic() + 90
-            while time.monotonic() < deadline and not auto_completed:
-                try:
-                    notification = rpc.next_notification(timeout=min(5, max(.1, deadline - time.monotonic())))
-                except queue.Empty:
-                    continue
-                params = notification.get("params", {})
-                turn = params.get("turn", {})
-                item = params.get("item", {})
-                auto_notifications.append(dict(method=notification.get("method"),
-                    turn_id=turn.get("id") or params.get("turnId"),
-                    item_type=item.get("type")))
-                if (notification.get("method") == "turn/completed" and
-                        params.get("threadId") == native_id and turn.get("id") == native_turn_id):
-                    auto_completed = True
+            auto_wait = auto_turn.wait_completed(90, poll=5)
+            auto_completed = auto_wait.completed
+            auto_notifications = auto_wait.summary(items=True)
             assert auto_completed, "automatic-compaction turn did not reach matching turn/completed: " + \
                 json.dumps(auto_notifications)
             assert not failures, failures
@@ -793,27 +752,26 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
             return
 
         compact_in_progress = True
-        compact_response = rpc("thread/compact/start", dict(threadId=native_id))
+        compact_response = session.compact(thread)
         assert compact_response == {}, "manual compact did not return the empty accepted response"
         compact_started = None
         compact_completed = None
-        compact_notifications = []
+        compact_observed = []
         compact_deadline = time.monotonic() + 60
-        while time.monotonic() < compact_deadline and compact_completed is None:
-            try:
-                notification = rpc.next_notification(timeout=min(5, max(.1, compact_deadline - time.monotonic())))
-            except queue.Empty:
-                continue
-            method = notification.get("method")
-            params = notification.get("params", {})
-            if params.get("threadId") != native_id:
-                continue
-            compact_notifications.append(dict(method=method, turn_id=params.get("turn", {}).get("id")))
-            if method == "turn/started":
-                compact_started = params
-                compact_turn_id = params.get("turn", {}).get("id")
-            elif method == "turn/completed" and params.get("turn", {}).get("id") == compact_turn_id:
-                compact_completed = params
+        try:
+            compact_turn = session.await_turn_started(thread, 60, poll=5)
+        except AppServerTimeout:
+            compact_turn = None
+        if compact_turn is not None:
+            compact_observed.extend(compact_turn.observed_before_start)
+            compact_started = compact_turn.started.get("params", {})
+            compact_turn_id = compact_turn.id
+            compact_wait = compact_turn.wait_completed(max(.1, compact_deadline - time.monotonic()), poll=5)
+            compact_observed.extend(compact_wait.observed)
+            compact_completed = compact_wait.params if compact_wait.completed else None
+        compact_notifications = [
+            dict(method=note.get("method"), turn_id=(note.get("params", {}).get("turn") or {}).get("id"))
+            for note in compact_observed if note.get("params", {}).get("threadId") == native_id]
         hook_summary = []
         if metadata_path.exists():
             for line in metadata_path.read_text(encoding="utf-8").splitlines():
@@ -840,20 +798,11 @@ def check(binary, root, config, api_call, candidate_root, scenario="notice", dia
         assert any(row.get("event") == "PreCompact" and row.get("turn_id") == compact_turn_id
                    for row in compact_hook_metadata), \
             "native compact omitted matching PreCompact hook: " + json.dumps(observed_hooks)
-        continuation = rpc("turn/start", dict(threadId=native_id,
-            input=[dict(type="text", text="Reply OK to continue the local fixture.", text_elements=[])]))
-        continuation_turn_id = continuation["turn"]["id"]
+        continuation = thread.turn("Reply OK to continue the local fixture.")
+        continuation_turn_id = continuation.id
         native_turn_id = continuation_turn_id
         native_turn_ready.set()
-        continuation_completed = False
-        continuation_deadline = time.monotonic() + 60
-        while time.monotonic() < continuation_deadline and not continuation_completed and not finished.is_set():
-            notification = rpc.next_notification(timeout=max(.1, continuation_deadline - time.monotonic()))
-            params = notification.get("params", {})
-            if (notification.get("method") == "turn/completed" and
-                    params.get("threadId") == native_id and
-                    params.get("turn", {}).get("id") == continuation_turn_id):
-                continuation_completed = True
+        continuation_completed = continuation.wait_completed(60, until=finished.is_set).completed
         deadline = time.monotonic() + 60
         while not finished.wait(.1):
             assert not failures, failures
