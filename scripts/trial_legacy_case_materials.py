@@ -17,6 +17,7 @@ import stat
 
 import trial_blind_packet_draft as packet
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_task_eval as task_eval
 
 SCHEMA = 'cairn.legacy-v12-case-material-manifest/2'
@@ -35,10 +36,6 @@ ARTIFACT_INVENTORY = [dict(name=ARTIFACT_NAME, kind='file', representation='byte
 
 def _need(condition, code):
     paired.need(condition, code)
-
-
-def _digest(content):
-    return dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
 
 
 def _canonical(value):
@@ -135,8 +132,8 @@ def _check_source(root):
     _need(all(type(case_id) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', case_id)
               for case_id in case_ids) and len(set(case_ids)) == MAX_CASES,
           'legacy_material_case_inventory')
-    return frozen, cases, dict(frozen=_digest(frozen_bytes), cases=_digest(cases_bytes),
-                               evaluator=_digest(evaluator_bytes), labels_sha256=current['labels_sha256'])
+    return frozen, cases, dict(frozen=pinned.digest(frozen_bytes), cases=pinned.digest(cases_bytes),
+                               evaluator=pinned.digest(evaluator_bytes), labels_sha256=current['labels_sha256'])
 
 
 def case_source(case_id, *, root=None):
@@ -213,7 +210,7 @@ def issue(output, *, root=None):
                 _need(len(content) <= MAX_FILE_BYTES and total <= MAX_TOTAL_BYTES,
                       'legacy_material_total_bound')
                 files[name] = content
-                pins[name.rsplit('/', 1)[-1].split('.', 1)[0]] = dict(path=str(output/name), **_digest(content))
+                pins[name.rsplit('/', 1)[-1].split('.', 1)[0]] = dict(path=str(output/name), **pinned.digest(content))
             rows.append(dict(case=case_id, channels=contract['required_channels'],
                              unavailable_channels=unavailable,
                              action_trace_projection=_action_trace_projection(case),
@@ -249,7 +246,7 @@ def read_manifest(reference, *, root=None, evaluator_sha256=None):
         _need(isinstance(reference, dict) and set(reference) == {'schema', 'path', 'bytes', 'sha256'} and
               reference['schema'] == SCHEMA, 'legacy_material_manifest_pin')
         content = paired.read_bytes(reference['path'])
-        _need(_digest(content) == {k: reference[k] for k in ('bytes', 'sha256')},
+        _need(pinned.digest(content) == {k: reference[k] for k in ('bytes', 'sha256')},
               'legacy_material_manifest_mismatch')
         manifest = paired.decode_json(content)
         _need(type(manifest) is dict and set(manifest) == {'schema', 'label_version', 'frozen_sha256',
@@ -293,7 +290,7 @@ def read_manifest(reference, *, root=None, evaluator_sha256=None):
                 _need(Path(pin['path']) == Path(reference['path']).parent / 'cases' / row['case'] / expected_name,
                       'legacy_material_manifest_path')
                 material = paired.read_bytes(pin['path'])
-                _need(_digest(material) == {k: pin[k] for k in ('bytes', 'sha256')},
+                _need(pinned.digest(material) == {k: pin[k] for k in ('bytes', 'sha256')},
                       'legacy_material_manifest_pin_mismatch')
             contract = packet._json(paired.read_bytes(row['contract']['path']))
             task = paired.read_bytes(row['task_statement']['path'])

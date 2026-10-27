@@ -30,14 +30,13 @@ grading instructions and case contracts are supplied by the caller as pins.
 import hashlib
 import base64
 import json
-import os
 from pathlib import Path
 import re
 import shutil
-import stat
 
 import trial_blind_packet_draft as packet
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_task_eval as task_eval
 import trial_task_permissions as permissions
 import trial_legacy_case_materials as case_materials
@@ -58,24 +57,13 @@ INPUT_LIMIT = 64 * 1024 * 1024
 need = paired.need
 
 
-def _digest(content):
-    return dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
-
-
 def _read_path(path, limit=INPUT_LIMIT):
-    path = paired.plain_path(str(path))
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as source:
-        need(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'regular_file_required')
-        content = source.read(limit + 1)
-    need(len(content) <= limit, 'legacy_input_limit')
-    return content
+    return pinned.read_bytes(path, limit=limit, code='legacy_input_limit')
 
 
 def _read(reference):
-    need(isinstance(reference, dict) and set(reference) == {'path', 'bytes', 'sha256'}, 'legacy_pin_shape')
-    content = _read_path(reference['path'])
-    need(_digest(content) == {'bytes': reference['bytes'], 'sha256': reference['sha256']}, 'legacy_pin_mismatch')
-    return content
+    return pinned.read_sized_pin(reference, 'legacy_pin_mismatch', shape_code='legacy_pin_shape',
+                                 limit=INPUT_LIMIT, limit_code='legacy_input_limit')
 
 
 def _json(content):
@@ -335,7 +323,7 @@ def _db_coverage_action_projection(trace, text, harness):
 
 def _retain(files, output, name, content):
     files[name] = content
-    return dict(path=str(output/name), **_digest(content))
+    return dict(path=str(output/name), **pinned.digest(content))
 
 
 def _entry(name, reference):
@@ -348,7 +336,7 @@ def _entry(name, reference):
 def _artifact_entry(reference, content):
     return dict(name=case_materials.ARTIFACT_NAME, kind='file', representation='bytes',
                 media_type='application/json', input=dict(reference),
-                transform=dict(kind='exact_copy'), output=_digest(content))
+                transform=dict(kind='exact_copy'), output=pinned.digest(content))
 
 
 def _pregrade_snapshot(run_dir, record, case, stream_bytes):
@@ -364,7 +352,7 @@ def _pregrade_snapshot(run_dir, record, case, stream_bytes):
     need(not relative.is_absolute() and relative == expected_path and
          all(part not in ('', '.', '..') for part in relative.parts), 'legacy_pregrade_snapshot_path')
     raw = _read_path(run_dir/relative, limit=paired.FILE_LIMIT)
-    need(_digest(raw) == {k: custody_pin[k] for k in ('bytes', 'sha256')},
+    need(pinned.digest(raw) == {k: custody_pin[k] for k in ('bytes', 'sha256')},
          'legacy_pregrade_snapshot_mismatch')
     snapshot = _json(raw)
     need(isinstance(snapshot, dict) and snapshot.get('schema') == 'cairn.legacy-pregrade-snapshot/1' and
@@ -585,7 +573,7 @@ def _plan(request_pin, output):
         retained = _json(raw)
         # Legacy records carry floats, so compare exact sorted JSON, not blind canonical bytes.
         need(_exact(retained) == _exact(record), 'legacy_attempt_mismatch')
-        record_pins[run_id] = dict(path=str(path), **_digest(raw))
+        record_pins[run_id] = dict(path=str(path), **pinned.digest(raw))
 
     classes = {key: _classify(cell) for key, cell in pairs.items()}
     changed = sorted(key for key, value in classes.items() if value == 'changed')
@@ -623,7 +611,7 @@ def _plan(request_pin, output):
                 need(len(answer) == record.get('answer_chars'), 'legacy_answer_mismatch')
                 answer = answer.encode('utf-8')
                 sources['final_answer'] = _retain(files, output, 'answers/'+sample_id+'.txt', answer)
-                observed['final_answer'] = _digest(answer)
+                observed['final_answer'] = pinned.digest(answer)
             if 'action_trace' in chosen['channels']:
                 projection = chosen.get('action_trace_projection')
                 if projection == DB_COVERAGE_ACTION_PROJECTION:
@@ -636,7 +624,7 @@ def _plan(request_pin, output):
                 subject = dict(schema='cairn.legacy-action-subject/1', source=source, parser=parser,
                     agent=request['agent'], plan=request['plan'], binding=request['binding'],
                     attempt=record_pins[record['run_id']], harness=harness,
-                    stream=dict(path=str(run_dir/'runs'/record['run_id']/'stream.jsonl'), **_digest(content)),
+                    stream=dict(path=str(run_dir/'runs'/record['run_id']/'stream.jsonl'), **pinned.digest(content)),
                     prompt=dict(bytes=record['prompt_bytes'], sha256=record['prompt_sha256']),
                     stream_representation='legacy-retained-utf8/1', custody='harness_recorded_hash')
                 if projection == DB_COVERAGE_ACTION_PROJECTION:
@@ -667,7 +655,7 @@ def _plan(request_pin, output):
                 observation, subject = _evaluator_projection(
                     case_materials.case_source(case), record, source,
                     chosen['task_statement'], dict(path=str(run_dir/'runs'/record['run_id']/'stream.jsonl'),
-                    **_digest(content)), artifact_ref,
+                    **pinned.digest(content)), artifact_ref,
                     sources.get('final_answer'), sources.get('action_trace'), snapshot_pin,
                     record_pins[record['run_id']], chosen)
                 sources['evaluator_observation'] = _retain(
@@ -709,7 +697,7 @@ def _plan(request_pin, output):
                          samples=sorted(samples, key=lambda s: s['sample_id']), comparisons=comparisons,
                          review_measurement=request['review_measurement'])
         files['selection.json'] = packet.canonical_bytes(selection)
-        selection_pin = dict(path=str(output/'selection.json'), **_digest(files['selection.json']))
+        selection_pin = dict(path=str(output/'selection.json'), **pinned.digest(files['selection.json']))
     indeterminate = [dict(case=case, seed=seed) for (case, seed), value in sorted(classes.items())
                      if value == 'indeterminate']
     counts = {name: sum(1 for v in classes.values() if v == name) for name in ('changed', 'unchanged', 'indeterminate')}

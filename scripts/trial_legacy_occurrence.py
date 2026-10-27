@@ -40,6 +40,7 @@ import trial_grader_delivery_plan as delivery_plan
 import trial_legacy_blind_selection as legacy
 import trial_legacy_grading_bundle as adapter
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_run_report as report
 
 INPUT_SCHEMA = 'cairn.legacy-occurrence-input/1'
@@ -61,31 +62,13 @@ class Pending(Exception):
     """A prerequisite is not available yet; carries a fixed code."""
 
 
-def _digest(content):
-    return dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
-
-
 def _existing(path):
-    return dict(path=str(path), **_digest(legacy._read_path(path)))
+    return dict(path=str(path), **pinned.digest(legacy._read_path(path)))
 
 
 def _verify(reference, code):
-    need(isinstance(reference, dict) and set(reference) == {'path', 'bytes', 'sha256'}, code)
-    try:
-        content = legacy._read_path(reference['path'])
-    except OSError:
-        raise paired.Refusal(code) from None
-    need(_digest(content) == {'bytes': reference['bytes'], 'sha256': reference['sha256']}, code)
-    return content
-
-
-def _write_once(path, content, code):
-    """Create once; an identical rerun is a no-op, different content refuses."""
-    if path.exists():
-        need(path.read_bytes() == content, code)
-    else:
-        paired.write_selected_bytes(path, content)
-    return dict(path=str(path), **_digest(content))
+    return pinned.read_sized_pin(reference, code, limit=legacy.INPUT_LIMIT,
+                                 limit_code='legacy_input_limit', os_error=True)
 
 
 class _Phases:
@@ -113,7 +96,7 @@ class _Phases:
     def complete(self, phase, inputs, outputs, **detail):
         record = dict(schema=PHASE_SCHEMA, phase=phase, phase_id=paired.canonical_sha(inputs), inputs=inputs,
                       outputs=outputs, **detail)
-        _write_once(self.dir/(phase+'.json'), C(record), f'occurrence_{phase}_input_changed')
+        pinned.write_once(self.dir/(phase+'.json'), C(record), f'occurrence_{phase}_input_changed')
         return record
 
     def note(self, phase, state, **detail):
@@ -153,7 +136,7 @@ def _draft(phases, receipt_pin, receipt, approval, now):
     if record is None:
         # The approver needs the exact subject; it is private and never an approval itself.
         subject = blind.approval_subject(receipt['selection'])
-        subject_pin = _write_once(phases.out/'draft-subject.json', C(subject), 'occurrence_draft_output_changed')
+        subject_pin = pinned.write_once(phases.out/'draft-subject.json', C(subject), 'occurrence_draft_output_changed')
         if approval is None:
             raise Pending('draft_approval_missing')
         target = phases.out/'draft'
@@ -182,11 +165,11 @@ def _bundle(phases, receipt_pin, draft, policy_pin):
         directory = phases.out/'bundle'
         directory.mkdir(mode=0o700, exist_ok=True)
         record = phases.complete('bundle', inputs, dict(
-            bundle=_write_once(directory/'bundle.json', C(bundle), 'occurrence_bundle_output_changed'),
-            result=_write_once(directory/'result.json', C(result), 'occurrence_bundle_output_changed')))
+            bundle=pinned.write_once(directory/'bundle.json', C(bundle), 'occurrence_bundle_output_changed'),
+            result=pinned.write_once(directory/'result.json', C(result), 'occurrence_bundle_output_changed')))
     # The rebuilt bundle must be byte-identical to the recorded one.
-    need(_digest(C(bundle)) == {k: record['outputs']['bundle'][k] for k in ('bytes', 'sha256')} and
-         _digest(C(result)) == {k: record['outputs']['result'][k] for k in ('bytes', 'sha256')},
+    need(pinned.digest(C(bundle)) == {k: record['outputs']['bundle'][k] for k in ('bytes', 'sha256')} and
+         pinned.digest(C(result)) == {k: record['outputs']['result'][k] for k in ('bytes', 'sha256')},
          'occurrence_bundle_output_changed')
     phases.note('bundle', 'complete', status=result['status'], binding_sha256=result['binding_sha256'])
     return record['outputs']['bundle'], bundle, result
@@ -202,7 +185,7 @@ def _plan(phases, receipt, draft, approval, bundle_pin, result, sessions, now):
         selection = dict(schema='cairn.grader-delivery-selection/1', crosswalk=draft['crosswalk'],
                          draft_receipt=draft['receipt'], approval=approval, policy=request['policy'],
                          grading_bundle=bundle_pin, sessions=sessions, pairs=result['delivery_pairs'])
-        selection_pin = _write_once(phases.out/'delivery-selection.json', C(selection), 'occurrence_plan_output_changed')
+        selection_pin = pinned.write_once(phases.out/'delivery-selection.json', C(selection), 'occurrence_plan_output_changed')
         target = phases.out/'delivery-plan'
         if target.exists():
             prior = blind._json(legacy._read_path(target/'receipt.json'))
@@ -233,7 +216,7 @@ def _dispatch(phases, plan_receipt, authority, fabric, config, now):
                 raise Pending('dispatch_uncertain_retry') from None
             raise
         record = phases.complete('dispatch', inputs, dict(
-            receipt=_write_once(phases.out/'dispatch.json', C(receipt), 'occurrence_dispatch_output_changed')))
+            receipt=pinned.write_once(phases.out/'dispatch.json', C(receipt), 'occurrence_dispatch_output_changed')))
     phases.note('dispatch', 'complete')
     return record
 
@@ -291,10 +274,10 @@ def _report(phases, receipt, bundle_pin, bundle, result, collection, run_date):
     directory = phases.out/'report'/snapshot
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     code = f'occurrence_{phase}_output_changed'
-    outputs = dict(join=_write_once(directory/'join.json', C(join), code),
-                   report=_write_once(directory/'report.json', C(built), code),
-                   markdown=_write_once(directory/'report.md', report.render_markdown(built).encode(), code),
-                   note_draft=_write_once(directory/'note-draft.json', C(report.note_draft(built)), code))
+    outputs = dict(join=pinned.write_once(directory/'join.json', C(join), code),
+                   report=pinned.write_once(directory/'report.json', C(built), code),
+                   markdown=pinned.write_once(directory/'report.md', report.render_markdown(built).encode(), code),
+                   note_draft=pinned.write_once(directory/'note-draft.json', C(report.note_draft(built)), code))
     if record is None:
         phases.complete(phase, inputs, outputs)
     phases.note('report', 'snapshot_written', snapshot=snapshot, basis=basis, report_status=built['status'],
@@ -435,7 +418,7 @@ def _addressed(out, directory, document):
     content = C(document)
     folder = out/directory
     folder.mkdir(mode=0o700, exist_ok=True)
-    return _write_once(folder/(hashlib.sha256(content).hexdigest()[:20] + '.json'), content,
+    return pinned.write_once(folder/(hashlib.sha256(content).hexdigest()[:20] + '.json'), content,
                        'occurrence_state_snapshot_changed')
 
 

@@ -15,6 +15,7 @@ import tempfile
 from types import MappingProxyType
 
 from trial_paired_request import FILE_LIMIT
+import pinned_document as pinned
 
 
 class BaselineError(ValueError):
@@ -185,10 +186,6 @@ def _encoded(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
 
 
-def _pin(raw):
-    return dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
-
-
 class AttemptBaseline:
     def __init__(self, document, pin):
         self.identity = MappingProxyType(dict(document['identity']))
@@ -234,7 +231,7 @@ class AttemptBaseline:
             os.fsync(directory)
         finally:
             os.close(directory)
-        return cls.load(base, case, arm, seed, _pin(raw))
+        return cls.load(base, case, arm, seed, pinned.digest(raw))
 
     @classmethod
     def load(cls, base, case, arm, seed, pin):
@@ -253,7 +250,7 @@ class AttemptBaseline:
                 info = os.fstat(retained.fileno())
                 _need(stat.S_ISREG(info.st_mode) and info.st_size == pin['bytes'])
                 raw = retained.read(pin['bytes']+1)
-            _need(_pin(raw) == pin)
+            _need(pinned.digest(raw) == pin)
             document = json.loads(raw)
         except (OSError, UnicodeError, json.JSONDecodeError):
             raise BaselineError('original_baseline_unavailable') from None

@@ -6,45 +6,26 @@ import json
 import os
 import re
 from pathlib import Path
-import stat
 import uuid
 
 from trial_task_input import load_input
 from trial_task_input import corpus_entities
+# The pinned-document primitives live in pinned_document; these names stay
+# re-exported for existing importers and pinned trial_sdk_* sources.
+from pinned_document import (FILE_LIMIT, PIN_LIMIT, Refusal, canonical_sha, decode_json,  # noqa: F401
+                             need, pin, pin_shape, plain_path, read_bytes, read_json,
+                             read_json_pin, read_pin_bytes, reject_nonfinite, scan_refusal,
+                             selected_bytes, shape, unique_object, utc, write_selected,
+                             write_selected_bytes)
 
 SCHEMA = 'cairn.paired-eval.request/2'
 REVIEWS = ('task', 'oracle', 'comparator', 'supervisor', 'native', 'integration')
 ORIGINAL_LIMITS = dict(selected_input_bytes=9500, final_answer_bytes=8192,
                       tool_room_bytes=32000, native_searches=2, pulls=4,
                       hook_seconds=5, last_native_memory_seconds=30)
-FILE_LIMIT = 8 * 1024 * 1024
-PIN_LIMIT = 512 * 1024 * 1024
 IMPLEMENTATION_SOURCE_COMMIT = '6fb0fcd07f9cd7f8959190088bb9d070ff863764'
 IMPLEMENTATION_SOURCE_SHA = '43a097332584a501b752e8fe15ded91d204bb8a62af34180ec5694b763b188b2'
 IMPLEMENTATION_SETTINGS_SHA = '98b58eec1a3554ec8604c9508867684bd63a78ab482c68acab1e90af2a09261d'
-
-
-class Refusal(ValueError):
-    """Fixed public code; no path, payload or exception text."""
-
-
-def need(condition, code):
-    if not condition:
-        raise Refusal(code)
-
-
-def shape(document, fields, code):
-    need(isinstance(document, dict) and set(document) == set(fields.split()), code)
-
-
-def utc(text):
-    need(isinstance(text, str), 'utc_timestamp')
-    try:
-        parsed = dt.datetime.fromisoformat(text.replace('Z', '+00:00'))
-    except ValueError:
-        raise Refusal('utc_timestamp') from None
-    need(parsed.tzinfo is not None and parsed.utcoffset() == dt.timedelta(0), 'utc_timestamp')
-    return parsed
 
 
 def identifier(text):
@@ -417,11 +398,6 @@ def validate(request, *, now):
     return bundle
 
 
-def canonical_sha(document):
-    return hashlib.sha256(json.dumps(document, sort_keys=True, ensure_ascii=False,
-                                    separators=(',', ':'), allow_nan=False).encode()).hexdigest()
-
-
 def check_input_files(root):
     count, total = 0, 0
     for directory, names, files in os.walk(root, followlinks=False, onerror=scan_refusal):
@@ -432,96 +408,6 @@ def check_input_files(root):
         for name in files:
             total += len(read_bytes(Path(directory)/name))
             need(total <= 64*1024*1024, 'input_byte_limit')
-
-
-def scan_refusal(_):
-    raise Refusal('filesystem_scan_failed')
-
-
-def plain_path(raw):
-    need(isinstance(raw, str) and Path(raw).is_absolute(), 'absolute_path_required')
-    path = Path(raw)
-    need('..' not in path.parts and all(not p.is_symlink() for p in (path, *path.parents)), 'path_indirection')
-    return path
-
-
-def read_bytes(path):
-    path = plain_path(str(path))
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as source:
-        need(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'regular_file_required')
-        content = source.read(FILE_LIMIT + 1)
-    need(len(content) <= FILE_LIMIT, 'file_limit')
-    return content
-
-
-def read_json(path):
-    return decode_json(read_bytes(path))
-
-
-def decode_json(content):
-    try:
-        return json.loads(content, object_pairs_hook=unique_object,
-                          parse_constant=reject_nonfinite)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise Refusal('invalid_json') from None
-
-
-def pin_shape(reference):
-    need(isinstance(reference, dict) and set(reference) == {'path', 'sha256'}, 'pin_shape')
-    need(isinstance(reference['sha256'], str) and re.fullmatch('[0-9a-f]{64}', reference['sha256']), 'pin_digest')
-
-
-def pin(reference):
-    pin_shape(reference)
-    path = plain_path(reference['path'])
-    digest, total = hashlib.sha256(), 0
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as source:
-        need(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'regular_file_required')
-        while content := source.read(1024*1024):
-            total += len(content)
-            need(total <= PIN_LIMIT, 'pin_byte_limit')
-            digest.update(content)
-    need(digest.hexdigest() == reference['sha256'], 'pin_mismatch')
-
-
-def read_pin_bytes(reference):
-    # Callers parse or retain these exact hashed bytes without a second open.
-    pin_shape(reference)
-    content = read_bytes(reference['path'])
-    need(hashlib.sha256(content).hexdigest() == reference['sha256'], 'pin_mismatch')
-    return content
-
-
-def read_json_pin(reference):
-    return decode_json(read_pin_bytes(reference))
-
-
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        need(key not in result, 'duplicate_json_key')
-        result[key] = value
-    return result
-
-
-def reject_nonfinite(_):
-    raise Refusal('nonfinite_json')
-
-
-def write_selected(path, document):
-    write_selected_bytes(path, selected_bytes(document))
-
-
-def selected_bytes(document):
-    return (json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True)+'\n').encode('utf-8')
-
-
-def write_selected_bytes(path, content):
-    with path.open('xb') as target:
-        os.chmod(path, 0o600)
-        target.write(content)
-        target.flush()
-        os.fsync(target.fileno())
 
 
 def freeze_corpus(openings, policy):

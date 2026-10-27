@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import trial_paired_request as paired
 import trial_grader_delivery as grader
+import pinned_document as pinned
 import trial_grader_delivery_plan as delivery_plan
 from test_trial_grader_delivery_plan import Fixture, build
 from test_trial_grading_custody import seal
@@ -146,7 +147,7 @@ class Case(unittest.TestCase):
             observed_at='2026-10-15T11:00:00Z', valid_until='2026-10-15T13:00:00Z',
             recipients=[dict(slot=s['slot'], agent_id=s['agent_id'], session_id=s['session_id'],
                              execution_id=s['execution_id'], model=MODELS[s['slot']], route=dict(ROUTE),
-                             declared_route_sha256=grader._sha(grader._read_pinned(s['route'])),
+                             declared_route_sha256=pinned.sha256_hex(grader._read_pinned(s['route'])),
                              metadata_source='reported', model_custody='owner_selected_and_reported')
                         for s in plan['sessions']['slots']],
             packets=[dict(pair_id=p['pair_id'], slot=d['slot'], packet_sha256=d['packet_sha256'])

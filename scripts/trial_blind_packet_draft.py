@@ -1,11 +1,11 @@
 """Offline selected packet drafts. Declared approval is never release authority."""
 import base64
-import hashlib
 import json
 import re
 from pathlib import PurePosixPath
 
 import trial_paired_request as paired
+import pinned_document as pinned
 from trial_work_product import COUNT_LIMIT, TOTAL_LIMIT, GIT_OUTPUT_LIMIT
 
 CHANNELS = frozenset(('task_statement', 'grading_instructions', 'final_answer',
@@ -21,10 +21,6 @@ ARTIFACTS = dict(file='bytes', patch='bytes', index='bytes', binary='bytes',
 
 def _name(value):
     paired.need(type(value) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,95}',value), 'blind_name')
-
-
-def _digest(content):
-    return dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
 
 
 def _digest_shape(value):
@@ -76,7 +72,7 @@ class _Inputs:
             paired.need(pin == reference, 'blind_pin_conflict')
             return content
         content = paired.read_bytes(path)
-        paired.need(_digest(content) == {k:reference[k] for k in ('bytes','sha256')}, 'blind_pin_mismatch')
+        paired.need(pinned.digest(content) == {k:reference[k] for k in ('bytes','sha256')}, 'blind_pin_mismatch')
         self.total += len(content)
         self.files[path] = (dict(reference), content)
         return content
@@ -206,7 +202,7 @@ def _render(channels, inputs, contract, source):
             input_length = len(content)
             content = _transform(content, entry['transform'])
             _digest_shape(entry['output'])
-            paired.need(_digest(content) == entry['output'], 'blind_output_mismatch')
+            paired.need(pinned.digest(content) == entry['output'], 'blind_output_mismatch')
             totals[group][0] += input_length
             totals[group][1] += len(content)
             paired.need(max(totals[group]) <= ceilings[group], 'blind_channel_bound')
@@ -214,7 +210,7 @@ def _render(channels, inputs, contract, source):
                 paired.need(max(input_length,len(content)) <= GIT_OUTPUT_LIMIT, 'blind_artifact_bound')
             if artifact: _artifact_record(entry, content)
             entries.append(dict(kind=channel['name'],name=entry['name'],media_type=entry['media_type'],
-                encoding='base64',**_digest(content),data=base64.b64encode(content).decode('ascii')))
+                encoding='base64',**pinned.digest(content),data=base64.b64encode(content).decode('ascii')))
         if artifact:
             paired.need([{k:e[k] for k in META} for e in channel['entries']] == contract['artifact_inventory'],
                         'blind_inventory_coverage')
@@ -262,7 +258,7 @@ def _prepare(selection_pin, output=None):
         public_files['samples/'+ident+'.json'] = content
         _retention(public_files)
         samples[ident] = (sample,public)
-        sample_pins[ident] = _digest(content)
+        sample_pins[ident] = pinned.digest(content)
     paired.need(used == set(contracts), 'blind_unused_contract')
     paired.need(type(selection['comparisons']) is list and selection['comparisons'], 'blind_comparisons_empty')
     pair_pins, paired_samples, pair_keys = {}, set(), set()
@@ -283,7 +279,7 @@ def _prepare(selection_pin, output=None):
             policy_ref=public_policy,samples=[dict(sample_id=ident,sample_packet_sha256=sample_pins[ident]['sha256'],
                 packet=samples[ident][1]) for ident in pair['samples']])
         content = canonical_bytes(public)
-        pair_pins[pair['comparison_id']] = _digest(content)
+        pair_pins[pair['comparison_id']] = pinned.digest(content)
         public_files['comparisons/'+pair['comparison_id']+'.json'] = content
         _retention(public_files)
     paired.need(paired_samples == set(samples), 'blind_unpaired_sample')
@@ -340,7 +336,7 @@ def _draft(selection_pin, approval_pin, output, now):
     inputs, subject, public_files = _prepare(selection_pin,output)
     fit = _fit(subject,inputs)
     subject_bytes = canonical_bytes(subject)
-    subject_sha = _digest(subject_bytes)['sha256']
+    subject_sha = pinned.digest(subject_bytes)['sha256']
     approval = _json(inputs.read(approval_pin))
     paired.shape(approval, 'schema state subject_sha256 observed_at valid_until issuer_role', 'blind_approval')
     paired.need(approval['schema'] == 'cairn.blind-declared-approval/2' and approval['state'] == 'approved',
@@ -352,8 +348,8 @@ def _draft(selection_pin, approval_pin, output, now):
         approval_pin=approval_pin,subject=subject,subject_sha256=subject_sha))
     receipt = dict(schema='cairn.blind-draft-receipt/2',status='declared_correspondence_valid',
         policy=subject['selection']['policy'],selection_pin=selection_pin,approval_pin=approval_pin,
-        subject_sha256=subject_sha,input_bytes=inputs.total,public_files={n:_digest(c) for n,c in public_files.items()},
-        private_crosswalk=_digest(crosswalk),retention_fit='fits',declared_grader_fit=fit,
+        subject_sha256=subject_sha,input_bytes=inputs.total,public_files={n:pinned.digest(c) for n,c in public_files.items()},
+        private_crosswalk=pinned.digest(crosswalk),retention_fit='fits',declared_grader_fit=fit,
         release_authority_verified=False,runtime_admitted=False,delivery_available=False)
     receipt_bytes = canonical_bytes(receipt)
     _retention(public_files,crosswalk,receipt_bytes,receipt_bytes)

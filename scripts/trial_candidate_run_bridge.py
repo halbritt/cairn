@@ -13,16 +13,13 @@ import uuid
 
 import trial_candidate_request as candidate
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_weekly_run as weekly
 import trial_weekly_input as weekly_input
 
 SCHEMA = 'cairn.candidate-run-bridge/1'
 RECEIPT = 'cairn.candidate-run-bridge-receipt/1'
 need = paired.need
-
-
-def _pin(path):
-    return dict(path=str(path), sha256=hashlib.sha256(paired.read_bytes(path)).hexdigest())
 
 
 def _pins(value):
@@ -194,7 +191,7 @@ def _run(selection_pin, output, now, executors, compiler, runner):
 
     def receipt_for(content):
         spec_path = retained.parent/'spec.json'
-        spec_pin = _pin(spec_path) if spec_path.exists() else None
+        spec_pin = pinned.pin_reference(spec_path) if spec_path.exists() else None
         if content['status'] == 'complete':
             need(spec_pin is not None, 'bridge_runner_spec_missing')
             verify(paired.read_json_pin(spec_pin))
@@ -209,7 +206,7 @@ def _run(selection_pin, output, now, executors, compiler, runner):
             need((observed.get(actor_key) or {}).get('sha256') == actor['binary']['sha256'] and
                  observed.get('reasoning_effort') == actor['effort'], 'bridge_runner_execution_mismatch')
         return dict(schema=RECEIPT, selection=dict(selection_pin), binding=binding, status=content['status'],
-                    runner_spec=spec_pin, runner_receipt=_pin(retained), runner=content, runtime_admitted=False)
+                    runner_spec=spec_pin, runner_receipt=pinned.pin_reference(retained), runner=content, runtime_admitted=False)
 
     def verify(spec):
         need(_load(selection_pin, now)[1] == binding, 'bridge_source_changed')

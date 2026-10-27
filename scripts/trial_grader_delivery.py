@@ -9,7 +9,6 @@ disagreements are only routed to the owner.
 """
 import base64
 import datetime as dt
-import hashlib
 import json
 import subprocess
 import sys
@@ -18,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_blind_packet_draft as blind
 import trial_grading_custody as custody
 
@@ -42,10 +42,6 @@ INSTRUCTIONS = (
     'with one allowed label string from `response.verdict_labels` for each key. For `undetermined`, `verdicts` '
     'MUST be JSON null. Echo the request and binding identifiers exactly; add no fields. Give a short reason. '
     'Do not consult other graders, the arm mapping, or prior grades.')
-
-
-def _sha(content):
-    return hashlib.sha256(content).hexdigest()
 
 
 def _text(value, code, limit=256):
@@ -73,10 +69,7 @@ def _check_config(config):
 
 
 def _read_pinned(reference, code='grader_plan_pin_mismatch'):
-    paired.need(isinstance(reference, dict) and {'path', 'bytes', 'sha256'} <= set(reference), code)
-    content = paired.read_bytes(reference['path'])
-    paired.need(len(content) == reference['bytes'] and _sha(content) == reference['sha256'], code)
-    return content
+    return pinned.read_sized_pin(reference, code, exact=False)
 
 
 def _load_plan(plan_dir, config, now):
@@ -115,7 +108,7 @@ def _load_plan(plan_dir, config, now):
         for delivery in pair['deliveries']:
             paired.need(delivery['slot'] in SLOTS, 'grader_plan_invalid')
             rows.append((pair, delivery, destinations[delivery['slot']]))
-    return plan, bundle, rows, _sha(receipt_bytes), excluded
+    return plan, bundle, rows, pinned.sha256_hex(receipt_bytes), excluded
 
 
 def _check_authority(authority_pin, plan, rows, plan_sha, now):
@@ -145,7 +138,7 @@ def _check_authority(authority_pin, plan, rows, plan_sha, now):
         for value in got['route'].values():
             _text(value, 'grader_authority_mismatch', 4096)
         route_pin = next(row for row in plan['sessions']['slots'] if row['slot'] == want['slot'])['route']
-        declared_route_sha = _sha(_read_pinned(route_pin, 'grader_authority_mismatch'))
+        declared_route_sha = pinned.sha256_hex(_read_pinned(route_pin, 'grader_authority_mismatch'))
         paired.need(got['declared_route_sha256'] == declared_route_sha, 'grader_authority_mismatch')
         paired.need(got['metadata_source'] == 'reported' and
                     got['model_custody'] == 'owner_selected_and_reported', 'grader_authority_mismatch')
@@ -167,7 +160,7 @@ def _check_authority(authority_pin, plan, rows, plan_sha, now):
                 len(declared) == len(packets), 'grader_authority_mismatch')
     limit = authority['max_request_bytes']
     paired.need(type(limit) is int and 0 < limit <= NOTE_LIMIT, 'grader_authority_mismatch')
-    return dict(sha256=_sha(content), models=models, routes=routes, route_hashes=route_hashes,
+    return dict(sha256=pinned.sha256_hex(content), models=models, routes=routes, route_hashes=route_hashes,
                 max_request_bytes=limit)
 
 
@@ -203,7 +196,7 @@ def _check_blind(body):
 
 def _render(plan, bundle, pair, delivery, publication_id, model):
     comparison = _read_pinned(delivery['comparison'])
-    paired.need(_sha(comparison) == delivery['packet_sha256'], 'grader_plan_pin_mismatch')
+    paired.need(pinned.sha256_hex(comparison) == delivery['packet_sha256'], 'grader_plan_pin_mismatch')
     control = _read_pinned(delivery['control'])
     response_fields = dict(schema=RESPONSE_SCHEMA, request_id=publication_id, pair_id=pair['pair_id'],
         slot=delivery['slot'], packet_sha256=delivery['packet_sha256'], binding_sha256=plan['binding_sha256'])
@@ -218,7 +211,7 @@ def _render(plan, bundle, pair, delivery, publication_id, model):
                        execution_id=delivery['execution_id'], model=model),
         binding_sha256=plan['binding_sha256'], rubric_sha256=plan['binding']['rubric_sha256'],
         packet_sha256=delivery['packet_sha256'], comparison=comparison.decode('utf-8'),
-        control=dict(encoding='base64', bytes=len(control), sha256=_sha(control),
+        control=dict(encoding='base64', bytes=len(control), sha256=pinned.sha256_hex(control),
                      data=base64.b64encode(control).decode('ascii')),
         response=dict(schema=RESPONSE_SCHEMA, samples=samples, verdict_labels=labels,
                       states=['determinate', 'undetermined'], reason_limit_bytes=REASON_LIMIT,
@@ -284,7 +277,7 @@ def _send(run, fabric, config, kind, key, destination, body, ids, extra=None, re
     content = body.encode()
     task = 'coordination/'+ids[1]
     intent = run.record(kind+'-intent', key, dict(source_request_id=ids[0], publication_id=ids[1],
-        destination=destination, task=task, sha256=_sha(content), bytes=len(content), **(extra or {})),
+        destination=destination, task=task, sha256=pinned.sha256_hex(content), bytes=len(content), **(extra or {})),
         'grader_request_changed')
     source = _ref(fabric.remember(request_id=ids[0], repo=config['repo'], task=task, run='*', body=body, shareable=True))
     run.record(kind+'-source', key, source)
@@ -408,7 +401,7 @@ def _grade(run, fabric, plan, pair, delivery, destination, labels):
     paired.need(version.get('version') == result['version'] and version.get('payload_available') is True and
                 type(body) is str, 'grade_custody_mismatch')
     content = body.encode('utf-8')
-    paired.need(_sha(content) == version.get('body_sha256') and len(content) == version.get('body_bytes'),
+    paired.need(pinned.sha256_hex(content) == version.get('body_sha256') and len(content) == version.get('body_bytes'),
                 'grade_custody_mismatch')
     retained = dict(result, body_sha256=version['body_sha256'], body_bytes=version['body_bytes'],
                     kind=version.get('kind'), observed_writer=version.get('observed_writer'),
@@ -420,7 +413,7 @@ def _grade(run, fabric, plan, pair, delivery, destination, labels):
         row.update(state='invalid')
     else:
         row.update(state='graded', grade_state=parsed['state'], verdicts=parsed['verdicts'],
-                   reason_sha256=_sha(parsed['reason'].encode()))
+                   reason_sha256=pinned.sha256_hex(parsed['reason'].encode()))
     return run.record('grades', key, row, 'grade_custody_changed')
 
 

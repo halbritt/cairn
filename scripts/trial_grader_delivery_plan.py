@@ -2,6 +2,7 @@
 import base64
 
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_blind_packet_draft as blind
 import trial_grading_custody as custody
 
@@ -24,7 +25,7 @@ def _frozen(inputs, selection, now):
     _schema(cross, 'selection_pin approval_pin subject subject_sha256', 'cairn.blind-crosswalk/2')
     subject = cross['subject']
     _schema(subject, 'selection sample_packets comparison_packets', 'cairn.blind-approval-subject/2')
-    paired.need(blind._digest(C(subject))['sha256'] == cross['subject_sha256'], 'delivery_subject_hash')
+    paired.need(pinned.digest(C(subject))['sha256'] == cross['subject_sha256'], 'delivery_subject_hash')
     frozen = subject['selection']
     _schema(frozen, 'namespace policy policy_ref case_contracts samples comparisons review_measurement',
             'cairn.blind-selection/2')
@@ -151,7 +152,7 @@ def _pairs(inputs, selection, subject, bundle):
         ident = public['comparison_id']; mapping = comparisons[ident]
         paired.need(ident not in used_comparisons and row['pair_id'] not in used_pairs, 'delivery_duplicate_pair')
         used_comparisons.add(ident); used_pairs.add(row['pair_id'])
-        paired.need(blind._digest(content) == subject['comparison_packets'][ident] and
+        paired.need(pinned.digest(content) == subject['comparison_packets'][ident] and
                     public['policy_ref'] == frozen['policy_ref'], 'delivery_comparison_binding')
         ids = mapping['samples']; sources = []
         paired.need(type(ids) is list and len(ids) == 2 and type(public['samples']) is list and len(public['samples']) == 2,
@@ -160,7 +161,7 @@ def _pairs(inputs, selection, subject, bundle):
             paired.shape(embedded, 'sample_id sample_packet_sha256 packet', 'delivery_embedded_sample')
             sample = samples[sample_id]; packet = embedded['packet']
             _schema(packet, 'sample_id policy_ref channels', 'cairn.blind-sample-draft/1')
-            sample_digest = blind._digest(C(packet))
+            sample_digest = pinned.digest(C(packet))
             paired.need(sample_id not in used_samples and embedded['sample_id'] == packet['sample_id'] == sample_id and
                         packet['policy_ref'] == frozen['policy_ref'] and sample_digest == subject['sample_packets'][sample_id] and
                         embedded['sample_packet_sha256'] == sample_digest['sha256'], 'delivery_sample_binding')
@@ -272,7 +273,7 @@ def _channels(public, selected, contract, inputs, historical):
         blind._digest_shape({k:actual[k] for k in ('bytes','sha256')})
         content = base64.b64decode(actual['data'], validate=True)
         paired.need(base64.b64encode(content).decode('ascii') == actual['data'] and
-                    blind._digest(content) == entry['output'] == {k:actual[k] for k in ('bytes','sha256')},
+                    pinned.digest(content) == entry['output'] == {k:actual[k] for k in ('bytes','sha256')},
                     'delivery_channel_content')
         blind._artifact_record(entry, content)
 
@@ -296,7 +297,7 @@ def _build(selection_pin, output, now):
     def copy_file(name, reference):
         content = inputs.read(reference)
         files[name] = content
-        return dict(path=str(output/name), **blind._digest(content))
+        return dict(path=str(output/name), **pinned.digest(content))
 
     copies = {}
     for slot, selected_control in zip(sessions['slots'], subject['selection']['review_measurement']['graders']):
@@ -333,7 +334,7 @@ def _build(selection_pin, output, now):
         qualification='unqualified', **FLAGS)
     files['plan.json'] = C(plan)
     receipt = dict(schema='cairn.grader-delivery-plan-receipt/1', selection_pin=selection_pin,
-        files={name:dict(path=str(output/name),**blind._digest(content)) for name,content in files.items()},
+        files={name:dict(path=str(output/name),**pinned.digest(content)) for name,content in files.items()},
         qualification='unqualified', retention_fit='fits', wire_fit='unknown', **FLAGS)
     receipt_bytes = C(receipt)
     paired.need(all(len(content) <= paired.FILE_LIMIT for content in files.values()) and

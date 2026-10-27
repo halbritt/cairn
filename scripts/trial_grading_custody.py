@@ -3,6 +3,7 @@ import json
 import re
 
 from trial_paired_request import FILE_LIMIT, Refusal, canonical_sha, capacity_name, need, shape
+import pinned_document as pinned
 from trial_provider_mapping import original_plan
 
 
@@ -12,7 +13,7 @@ def _name(value):
 
 
 def _digest(value):
-    need(type(value) is str and re.fullmatch('[0-9a-f]{64}', value), 'grading_digest')
+    pinned.hex_digest(value, 'grading_digest')
 
 
 def _pair(row):

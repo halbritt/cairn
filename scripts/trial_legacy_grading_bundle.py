@@ -16,7 +16,6 @@ created: a changed pair without returned grades stays awaiting grades, and
 disagreements stay unresolved for the owner.
 """
 import copy
-import hashlib
 import json
 import math
 import re
@@ -26,21 +25,16 @@ import trial_blind_packet_draft as blind
 import trial_grading_custody as custody
 import trial_legacy_blind_selection as legacy
 import trial_paired_request as paired
+import pinned_document as pinned
 
 RESULT_SCHEMA = 'cairn.legacy-grading-bundle-receipt/1'
 ARMS = ('CURRENT', 'CAND')
 need = paired.need
 
 
-def _digest(content):
-    return dict(bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
-
-
 def _read(reference, code='legacy_bundle_pin_mismatch'):
-    need(isinstance(reference, dict) and set(reference) == {'path', 'bytes', 'sha256'}, code)
-    content = legacy._read_path(reference['path'])
-    need(_digest(content) == {'bytes': reference['bytes'], 'sha256': reference['sha256']}, code)
-    return content
+    return pinned.read_sized_pin(reference, code, limit=legacy.INPUT_LIMIT,
+                                 limit_code='legacy_input_limit')
 
 
 def _account_assignment(plan, agent, records):
@@ -117,13 +111,13 @@ def _packets(receipt, draft_pin):
     for comparison in selection['comparisons']:
         name = 'comparisons/' + comparison['comparison_id'] + '.json'
         content = legacy._read_path(public/name)
-        need(draft['public_files'].get(name) == _digest(content), 'legacy_bundle_draft_mismatch')
+        need(draft['public_files'].get(name) == pinned.digest(content), 'legacy_bundle_draft_mismatch')
         key = comparison['pair_key']
         need({samples[i]['arm'] for i in comparison['samples']} == set(ARMS), 'legacy_bundle_draft_mismatch')
         packets.append(dict(case=key['case'], seed=key['seed'], pair_id=comparison['comparison_id'],
-                            packet_sha256=_digest(content)['sha256'], samples=list(comparison['samples'])))
+                            packet_sha256=pinned.digest(content)['sha256'], samples=list(comparison['samples'])))
         delivery_pairs.append(dict(pair_id=comparison['comparison_id'],
-                                   comparison=dict(path=str(public/name), **_digest(content))))
+                                   comparison=dict(path=str(public/name), **pinned.digest(content))))
     need(len(packets) == changed, 'legacy_bundle_draft_mismatch')
     return packets, delivery_pairs
 

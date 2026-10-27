@@ -5,13 +5,13 @@ directory. Session model and route fields remain reported metadata. It makes no
 provider calls and publishes no events.
 """
 import datetime as dt
-import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_blind_packet_draft as blind
 import trial_grader_delivery as delivery
 
@@ -19,10 +19,6 @@ INSTRUCTION_SCHEMA = 'cairn.grader-release-instruction/1'
 AUTHORITY_SCHEMA = delivery.AUTHORITY_SCHEMA
 MAX_VALIDITY_SECONDS = 300
 ROUTE_FIELDS = ('harness', 'project', 'workspace', 'delivery_mode')
-
-
-def _sha(content):
-    return hashlib.sha256(content).hexdigest()
 
 
 def _refuse(condition, code):
@@ -77,7 +73,7 @@ def _instruction(value, plan_sha, plan, config, now):
         delivery._uuid(got['agent_id'], 'grader_release_instruction_invalid')
         delivery._uuid(got['execution_id'], 'grader_release_instruction_invalid')
         delivery._text(got['session_id'], 'grader_release_instruction_invalid', 256)
-        declared_route = _sha(delivery._read_pinned(want['route']))
+        declared_route = pinned.sha256_hex(delivery._read_pinned(want['route']))
         paired.need(got['route_sha256'] == declared_route, 'grader_release_instruction_mismatch')
         delivery._text(got['model'], 'grader_release_instruction_invalid', 128)
         for field in ROUTE_FIELDS:
@@ -163,7 +159,7 @@ def issue(plan_dir, instruction_path, *, config, directory, now):
     plan_dir = paired.plain_path(str(plan_dir))
     receipt_bytes = paired.read_bytes(plan_dir/'receipt.json')
     plan, _, rows, plan_sha, _ = delivery._load_plan(plan_dir, config, now)
-    _refuse(_sha(receipt_bytes) == plan_sha, 'grader_plan_pin_mismatch')
+    _refuse(pinned.sha256_hex(receipt_bytes) == plan_sha, 'grader_plan_pin_mismatch')
     instruction_bytes = paired.read_bytes(instruction_path)
     instruction = blind._json(instruction_bytes)
     selected = _instruction(instruction, plan_sha, plan, config, now)
@@ -171,7 +167,7 @@ def issue(plan_dir, instruction_path, *, config, directory, now):
     for row in selected['recipients']:
         recipients.append(_check_presence(directory, row, config['repo'], now))
     authority = dict(schema=AUTHORITY_SCHEMA, plan_receipt_sha256=plan_sha,
-        binding_sha256=plan['binding_sha256'], instruction_sha256=_sha(instruction_bytes),
+        binding_sha256=plan['binding_sha256'], instruction_sha256=pinned.sha256_hex(instruction_bytes),
         issuer={key: selected['issuer'][key] for key in ('role', 'agent_id', 'session_id')},
         observed_at=now.isoformat().replace('+00:00', 'Z'),
         valid_until=(now+dt.timedelta(seconds=selected['valid_for_seconds'])).isoformat().replace('+00:00', 'Z'),
@@ -202,7 +198,7 @@ def main(argv=None):
         authority = issue(plan_dir, instruction_path, config=cfg['delivery'], directory=directory, now=now)
         encoded = blind.canonical_bytes(authority)
         paired.write_selected_bytes(output_path, encoded)
-        print(json.dumps(dict(path=str(output_path), bytes=len(encoded), sha256=_sha(encoded)), sort_keys=True))
+        print(json.dumps(dict(path=str(output_path), bytes=len(encoded), sha256=pinned.sha256_hex(encoded)), sort_keys=True))
     except paired.Refusal as refusal:
         print(json.dumps(dict(status='refused', code=str(refusal))))
         return 2

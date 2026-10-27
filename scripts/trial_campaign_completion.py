@@ -25,6 +25,7 @@ import uuid
 import trial_candidate_run_bridge as bridge
 import trial_legacy_occurrence as occurrence
 import trial_paired_request as paired
+import pinned_document as pinned
 import trial_run_report as report
 import trial_weekly_run as weekly
 from check_weekly_paired_eval import WEEKLY_ATTEMPTS
@@ -60,13 +61,7 @@ need = paired.need
 
 def _read(reference, code='campaign_pin_mismatch'):
     """The exact pinned bytes; any change refuses."""
-    need(isinstance(reference, dict) and set(reference) == {'path', 'bytes', 'sha256'}, 'campaign_pin_shape')
-    try:
-        content = paired.read_bytes(reference['path'])
-    except OSError:
-        raise paired.Refusal(code) from None
-    need(len(content) == reference['bytes'] and hashlib.sha256(content).hexdigest() == reference['sha256'], code)
-    return content
+    return pinned.read_sized_pin(reference, code, shape_code='campaign_pin_shape', os_error=True)
 
 
 def _json(reference):

@@ -12,6 +12,7 @@ import trial_paired_request as paired
 import trial_blind_packet_draft as blind
 import trial_grader_delivery as delivery
 import trial_grader_release_issuer as issuer
+import pinned_document as pinned
 from test_trial_grader_delivery import Case, MODELS, OWNER, ROUTE, config
 from test_trial_grader_delivery_plan import Fixture, build
 
@@ -78,7 +79,7 @@ class ReleaseIssuerTests(unittest.TestCase):
         self.config = config()
         self.receipt_bytes = (self.root/'plan/receipt.json').read_bytes()
         self.plan = json.loads((self.root/'plan/plan.json').read_bytes())
-        self.plan_sha = issuer._sha(self.receipt_bytes)
+        self.plan_sha = pinned.sha256_hex(self.receipt_bytes)
         self.instruction = dict(schema=issuer.INSTRUCTION_SCHEMA, instruction_id=str(uuid.uuid4()),
             selected_at='2026-10-15T11:59:00Z', authorization='Authorize the exact blind grader release.',
             plan_receipt_sha256=self.plan_sha, binding_sha256=self.plan['binding_sha256'],
@@ -86,7 +87,7 @@ class ReleaseIssuerTests(unittest.TestCase):
                         execution_id='55555555-5555-4555-8555-555555555555'),
             recipients=[dict(slot=row['slot'], agent_id=row['agent_id'], session_id=row['session_id'],
                 execution_id=row['execution_id'], model=MODELS[row['slot']],
-                route_sha256=issuer._sha(delivery._read_pinned(row['route'])), route=dict(ROUTE))
+                route_sha256=pinned.sha256_hex(delivery._read_pinned(row['route'])), route=dict(ROUTE))
                 for row in self.plan['sessions']['slots']], max_request_bytes=32768, valid_for_seconds=180)
         self.instruction_path = self.root/'instruction.json'
         self.write_instruction()
@@ -111,7 +112,7 @@ class ReleaseIssuerTests(unittest.TestCase):
         self.assertEqual(authority['schema'], delivery.AUTHORITY_SCHEMA)
         self.assertEqual(authority['plan_receipt_sha256'], self.plan_sha)
         self.assertEqual(authority['binding_sha256'], self.plan['binding_sha256'])
-        self.assertEqual(authority['instruction_sha256'], issuer._sha(self.instruction_path.read_bytes()))
+        self.assertEqual(authority['instruction_sha256'], pinned.sha256_hex(self.instruction_path.read_bytes()))
         self.assertEqual(authority['valid_until'], '2026-10-15T12:03:00Z')
         self.assertEqual(len(authority['packets']), 2)
         self.assertEqual([row['metadata_source'] for row in authority['recipients']], ['reported', 'reported'])
@@ -137,7 +138,7 @@ class ReleaseIssuerTests(unittest.TestCase):
         fabric = FakeFabric()
         result = delivery.dispatch(self.root/'plan', self.root/'delivery-run', fabric=fabric,
             config=self.config, authority=dict(path=str(authority_path), bytes=len(authority_bytes),
-                                               sha256=issuer._sha(authority_bytes)), now=NOW)
+                                               sha256=pinned.sha256_hex(authority_bytes)), now=NOW)
         self.assertEqual(len(result['deliveries']), 2)
         self.assertEqual([row for row in fabric.calls if row[0] == 'resolve'],
                          [('resolve', row['agent_id']) for row in authority['recipients']])

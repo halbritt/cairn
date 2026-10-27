@@ -54,7 +54,7 @@ blockers: pair identity and original-attempt content custody.**
 `campaign_id`, `occurrence_id`, `schedule_sha256`, plus case, seed and wording,
 and to an arm role `CURRENT` or `CAND`. The paired request route
 (`trial_paired_request.prepare`) issues those five identifiers, and its launch
-still refuses (`trial_paired_request.py:646`, `trial_weekly_request.py:195`).
+still refuses (`trial_paired_request.py:532`, `trial_weekly_request.py:195`).
 Legacy `agent.json` has no request identity. Its arms are memory labels such
 as `baseline-mem`, which do not say which one is the current build. Deriving
 these values from legacy output would make up an identity that no request
