@@ -10,24 +10,14 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import secrets
-import select
-import stat
 import subprocess
 import sys
 import time
 import uuid
 
+import disposable_host
 
-OWNER = r'''
-import json, subprocess, sys
-script, config = sys.argv[1:3]
-for line in sys.stdin:
-    result = subprocess.run([sys.executable, script, 'hook', '--config', config],
-        input=line, text=True, capture_output=True, timeout=15)
-    print(json.dumps(dict(code=result.returncode, stdout=result.stdout,
-                          stderr=result.stderr)), flush=True)
-'''
+
 
 SELECTOR = r'''#!/usr/bin/env python3
 import json, sys
@@ -42,84 +32,29 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def stop(process):
-    if process is None:
-        return
-    if process.poll() is None:
-        process.terminate()
-    try:
-        process.communicate(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.communicate(timeout=5)
-
 
 def check(binary):
-    root = Path(os.environ["CAIRN_DISPOSABLE_TEST_ROOT"])
-    require(root.parent == Path("/tmp") and root.name.startswith("cairn-postgres.")
-            and root.stat().st_uid == os.getuid()
-            and stat.S_IMODE(root.stat().st_mode) == 0o700
-            and (root / "data" / "PG_VERSION").is_file(),
-            "fresh private PostgreSQL cluster required")
-    require(binary == root / "cairn" and binary.is_file() and not binary.is_symlink(),
-            "disposable Cairn binary required")
-    dsn = f"host={root / 'socket'} dbname=cairn_inbox_resume_disposable sslmode=disable"
-    require(os.environ.get("CAIRN_TEST_DATABASE_URL") == dsn
-            and os.environ.get("CAIRN_DATABASE_URL") == dsn,
-            "dedicated disposable database required")
-
-    def sql(statement):
-        result = subprocess.run(["psql", "-X", "-A", "-t", "-d", dsn, "-c", statement],
-                                capture_output=True, text=True, timeout=10)
-        require(result.returncode == 0, result.stderr)
-        return result.stdout.strip()
-
-    require(sql("SELECT count(*) FROM cairn.agent_event") == "0"
-            and sql("SELECT count(*) FROM cairn.agent_session") == "0"
-            and sql("SELECT count(*) FROM cairn.memory_record") == "0",
-            "resume database is not fresh")
+    cluster = disposable_host.ProvidedCluster.from_environment()
+    root = cluster.root
     repo = "fixture:cairn-224-resume"
-    home = root / "inbox-resume-home"
-    home.mkdir(mode=0o700)
+    host = disposable_host.DisposableHost.start(
+        cluster, binary=binary, repo=repo, database="cairn_inbox_resume_disposable",
+        home=root / "inbox-resume-home", roles=("sender", "worker"),
+        principals=lambda role: f"agent/resume-{role}-{uuid.uuid4()}", inbox_root=True)
+    home, env, socket, sql = host.home, host.env, host.socket, host.sql
+    identities = [dict(principal=host.principal(role)) for role in host.roles]
     work = home / "work"
     (work / ".git").mkdir(parents=True)
-    identities = []
-    for role in ("sender", "worker"):
-        token = secrets.token_urlsafe(32)
-        path = home / f"{role}.token"
-        path.write_text(token, encoding="utf-8")
-        path.chmod(0o600)
-        identities.append(dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
-                               principal=f"agent/resume-{role}-{uuid.uuid4()}", repo=repo,
-                               role="agent", destination="hosted"))
-    identities_path = home / "identities.json"
-    identities_path.write_text(json.dumps(identities), encoding="utf-8")
-    identities_path.chmod(0o600)
-    env = dict(os.environ, CAIRN_HOME=str(home), CAIRN_INBOX_ROOT=str(home))
-    server = subprocess.Popen([str(binary), "serve"], env=env, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL)
     owner = None
     try:
-        socket = home / "api.sock"
-        deadline = time.monotonic() + 10
-        while not socket.exists():
-            require(server.poll() is None and time.monotonic() < deadline,
-                    "disposable API did not start")
-            time.sleep(0.02)
-        require(stat.S_ISSOCK(socket.stat().st_mode), "disposable API socket missing")
+        host.require_fresh("agent_event", "agent_session", "memory_record",
+                           message="resume database is not fresh")
 
         def profile(role, command, body, session=None):
-            options = ["--socket", str(socket), "--token-file", str(home / f"{role}.token")]
-            if session:
-                options += ["--agent-id", session["agent_id"],
-                            "--execution-id", session["execution_id"]]
-            result = subprocess.run([str(binary), "agent", *options, command],
-                                    input=json.dumps(body), capture_output=True, text=True,
-                                    env=env, timeout=15)
-            envelope = json.loads(result.stdout)
-            require(result.returncode == 0 and envelope["status"] == "OK",
-                    f"{command}: {envelope['status']} {result.stderr}")
-            return envelope["data"]
+            return host.agent(role, command, body, session=session)
+
+        def operator(command, payload=None, arg=None):
+            return host.operator(command, payload, args=[arg] if arg else ())
 
         def operator(command, payload=None, arg=None):
             result = subprocess.run([str(binary), command, *([arg] if arg else [])],
@@ -179,19 +114,13 @@ def check(binary):
 
         base_event = dict(session_id=session_id, turn_id=turn_id, cwd=str(work),
                           workstream="Fixture repair", model="synthetic/probe")
-        owner = subprocess.Popen([sys.executable, "-u", "-c", OWNER,
-                                  str(lifecycle / "coordination.py"), str(coordination_config)],
-                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True, env=env)
+        owner = disposable_host.HookOwner.start(lifecycle / "coordination.py", coordination_config,
+                                                env, hook_timeout=15, reply_timeout=20)
 
         def coord_hook(name):
             event = dict(base_event, hook_event_name=name,
                          prompt="Synthetic native request boundary")
-            owner.stdin.write(json.dumps(event) + "\n")
-            owner.stdin.flush()
-            require(select.select([owner.stdout], [], [], 20)[0],
-                    "coordination hook timed out")
-            response = json.loads(owner.stdout.readline())
+            response = owner.send(event)
             require(response["code"] == 0, f"coordination {name}: {response['stderr']}")
             return json.loads(response["stdout"])
 
@@ -412,8 +341,9 @@ def check(binary):
                               model_retention="unobserved", task_outcome="unassessed"),
                          sort_keys=True))
     finally:
-        stop(owner)
-        stop(server)
+        if owner is not None:
+            owner.stop()
+        host.close()
 
 
 if __name__ == "__main__":

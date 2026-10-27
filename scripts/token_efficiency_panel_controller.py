@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 import uuid
 
 import ordinary_task_receipt as receipt_binding
@@ -120,25 +121,34 @@ CASE_ADAPTERS = {
 }
 
 
+# Cases exercised once per arm; every other case runs only under the baseline arm.
+PER_ARM_CASES = ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
+                 "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group",
+                 "semantic_unavailable", "source_forgotten_before_read")
+ARMS = ("baseline", "envelope", "batch", "combined")
+
+
+def panel_workflows():
+    """Every supported workflow id, baseline-only cases first, then each per-arm case by arm."""
+    workflows = [f"baseline.{case}" for case in CASE_ADAPTERS if case not in PER_ARM_CASES]
+    for case in PER_ARM_CASES:
+        workflows += [f"{arm}.{case}" for arm in ARMS]
+    return workflows
+
+
 def case_name(workflow_id):
     parts = workflow_id.split(".")
     require(len(parts) == 2 and parts[1] in CASE_ADAPTERS
             and (parts[0] == "baseline" or
-                 parts[1] in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group", "semantic_unavailable",
-                              "source_forgotten_before_read")
-                 and parts[0] in ("envelope", "batch", "combined")),
+                 parts[1] in PER_ARM_CASES and parts[0] in ARMS[1:]),
             "unsupported workflow")
     return parts[1]
 
 
 def database_name(workflow_id):
+    """The dedicated disposable database for one workflow; per-arm cases get one per arm."""
     case = case_name(workflow_id)
-    return (f"cairn_panel_{workflow_id.replace('.', '_')}"
-            if case in ("routine_burst_urgent_request", "wrong_project_memory", "corrected_note",
-                        "meaningful_owner_correction", "unfinished_handoff", "required_conflict_group",
-                        "semantic_unavailable", "source_forgotten_before_read")
+    return (f"cairn_panel_{workflow_id.replace('.', '_')}" if case in PER_ARM_CASES
             else f"cairn_panel_{case}")
 
 
@@ -1194,18 +1204,15 @@ def materialize(args):
     return receipt
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv == ["--list-workflows"]:
+        print("\n".join(panel_workflows()))
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, default=panel.FIXTURE)
     parser.add_argument("--export", type=Path, required=True)
-    choices = tuple(f"baseline.{case}" for case in CASE_ADAPTERS)
-    choices += tuple(f"{arm}.{case}" for arm in ("envelope", "batch", "combined")
-                     for case in ("routine_burst_urgent_request", "wrong_project_memory",
-                              "corrected_note", "meaningful_owner_correction", "unfinished_handoff",
-                              "required_conflict_group", "semantic_unavailable",
-                              "source_forgotten_before_read"))
-    parser.add_argument("--workflow-id", choices=choices,
-                        required=True)
+    parser.add_argument("--workflow-id", choices=panel_workflows(), required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--home", type=Path, required=True)
     parser.add_argument("--sender-token", type=Path, required=True)
@@ -1213,7 +1220,7 @@ def main():
     parser.add_argument("--other-token", type=Path)
     parser.add_argument("--sender-principal", required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     case_name(args.workflow_id)
     result = materialize(args)
     print(json.dumps(result, sort_keys=True))
