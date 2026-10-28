@@ -55,9 +55,9 @@ Migrations are forward-only. Retain the previous binary for a reviewed binary
 rollback; it is not a schema downgrade. Database restoration still requires the
 restore-admission and reconciliation procedure.
 
-## Lifecycle bundle is staged, not activated
+## Lifecycle bundle activated — 2026-10-28
 
-The complete candidate bundle has digest
+The activated complete bundle has digest
 `6d79a86d0d061c5c6a0fff959b655baebd6d5f9ad95299f3ee391d8952bde683`.
 Pure validation passed against private configuration copies for three inbox
 bindings and five hook accounts: Codex one/two/three and Claude one/two. Staged
@@ -83,17 +83,43 @@ the tested versions and modes, not every host or event.
 
 An existing Codex thread can therefore invoke its retained old memory engine
 after settings change. Its 15-member bundle validator rejects the candidate's
-17-member descriptor. The release keeps the old bindings coherent until a
-coordinated checkpoint/restart can include the affected Codex hosts. Fresh
+17-member descriptor. The release kept the old bindings coherent until the
+owner authorized a coordinated checkpoint/restart of the affected hosts. Fresh
 app-server trust checks alone cannot establish adoption by existing threads.
 
-The staged plan switches stable entrypoints to one immutable complete snapshot
-instead of replacing live helper files individually. It preserves preimages,
-checks exact live hashes, validates disabled bindings, and records each mutation
-phase. Revalidate source and live preimages at activation; do not replay a stale
-plan or force an unfinished attempt to complete. The old entrypoint directories
-become compatibility paths only after that switch; validate the immutable source
-bundle rather than their superseded manifests.
+Activation switched stable entrypoints to one immutable complete snapshot
+instead of replacing live helper files individually. It preserved preimages,
+checked exact live hashes, validated disabled bindings, and recorded each
+mutation phase. The lifecycle-only operation did not repeat the binary install
+or schema migration. The API stayed running while the scheduler, seven wake
+supervisors and presence watcher stopped for the switch. Old entrypoint
+directories are now compatibility paths; their old manifests are superseded.
+
+The restart procedure preserved each conversation's native ID, pane, account
+profile and working directory. A pilot and an isolated installed-version probe
+verified bare exact-ID resume with no model request. Remote resume rejects
+explicit permission overrides, including `--yolo`; the saved permissions were
+restored by the bare resume.
+
+The first automatic verifier encountered transient process records without
+`argv` and startup deadlines before several conversations were loaded. It
+recorded seven verified resumes and seven verification errors, so it did not
+send the planned continuation. This was not a successful unattended completion.
+After the owner resumed this conversation, fresh checks verified all 14 original
+conversations in their intended panes. Each retained its model, OpenAI provider,
+account profile, working directory, high reasoning effort, `never` approval
+policy and full-access sandbox. Each fresh host reported all four expected
+memory hook definitions as trusted. Metadata-only resume verification used
+`excludeTurns` for the two large conversations after full-history responses
+exceeded the bounded queue reader's limit.
+
+All three enabled inbox bindings validate under the new immutable loader, and
+all five hook account files match the intended definitions. This resumed user
+turn exercised the new native hooks. The other idle conversations were checked
+without starting model turns; their later task execution is not claimed here.
+Final checks found all ten services active with zero automatic restarts since
+their latest starts, matching clean CLI/API versions, unchanged migration 073
+and its digest, and zero unfinished native/wake attempts or unexpired leases.
 
 ## Follow-ups and limits
 
@@ -104,6 +130,8 @@ no installed weekly schedule; the latest historical selection expired. A new
 real-account trial still needs a fresh comparison/occurrence, current pins,
 capacity evidence or a new authorized override, and its writer cgroup.
 Historical profiles and overrides remain frozen.
+The owner explicitly chose on 2026-10-28 to keep that trial unlaunched; no new
+provider trial or weekly schedule was started.
 
 The private release plan, preimages, logs and native probe evidence are under
 `~/.local/share/cairn-reviews/deploy-followups-agent683/`. The prior binary is

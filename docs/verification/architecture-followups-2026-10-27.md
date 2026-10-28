@@ -23,6 +23,8 @@ contracts. This is follow-up triage, not a new exhaustive architecture audit.
 The weekly source migration does not create a schedule or choose a new study.
 No weekly unit is installed. The latest selected historical occurrence expired;
 its capacity override and writer cgroup are not current deployment inputs.
+On 2026-10-28, the owner explicitly chose to keep the real-account weekly trial
+unlaunched. The source migration does not change that decision.
 
 ## Remaining candidate decisions
 
