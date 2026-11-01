@@ -197,6 +197,11 @@ versions or older explanation formats return `REPLAY_INCOMPLETE`; `replay` can
 still inspect saved bytes where they remain intact. Neither command can recreate
 purged material from a digest.
 
+Candidate detail has an operator-selected lifetime. After
+[retention](candidate-retention.md) expires a receipt's detail, `recompile`,
+`explain` and `explain-page` refuse with `CANDIDATE_DETAIL_EXPIRED`; `replay` still
+returns the saved bytes and seal.
+
 This implements historical recompilation for read sets captured by this compiler.
 It does not invent the missing past observation history of older receipts or
 establish measured usefulness on real incidents. Real-history evaluation must
@@ -252,7 +257,8 @@ remain separate from historical eligibility.
 The returned seal identifies the original package; this operation does not verify
 it or reconstruct ranking. Use `recompile` with the original query for that
 separate check. Unsupported explanation formats refuse with `REPLAY_INCOMPLETE`
-rather than an empty result. This read creates no retrieval, delivery, use or
+and [expired detail](candidate-retention.md) refuses with
+`CANDIDATE_DETAIL_EXPIRED`, rather than an empty result. This read creates no retrieval, delivery, use or
 outcome record and does not replenish an earlier receipt's budget.
 
 ## Historical ranking profiles

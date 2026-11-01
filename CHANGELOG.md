@@ -13,6 +13,19 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-11-01
+
+- Candidate detail now has an operator-selected lifetime, so
+  `retrieval_candidate` no longer grows without bound.
+  `cairn candidate-retention` expires old receipts' evaluated-set rows in resumable,
+  bounded batches; `cairn candidate-reclaim` rewrites the table online to return
+  existing space. `explain`, `explain-page` and `recompile` refuse expired detail
+  with `CANDIDATE_DETAIL_EXPIRED` (HTTP 410, exit 4) instead of an empty result.
+  Receipts, seals, saved bytes, `record_use`, run-bound receipts and restore
+  fixtures are retained. A note whose only references were expired read sets can
+  now be deleted. Migration 074 adds the marker. See
+  [candidate retention](docs/candidate-retention.md).
+
 ## 2026-10-27
 
 - The CLI now reports ordinary coordination conflicts (`STALE_WORKER`,

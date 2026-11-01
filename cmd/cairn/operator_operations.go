@@ -195,6 +195,10 @@ func buildOperatorOperations() map[string]operatorOperation {
 		storeOperation("schedule-cancel", (*core.Store).CancelSchedule),
 		storeOperation("schedule-tick", (*core.Store).TickSchedules),
 
+		// Retention of diagnostic candidate detail.
+		storeOperation("candidate-retention", (*core.Store).ExpireCandidateDetail),
+		storeOperation("candidate-reclaim", (*core.Store).ReclaimCandidateStorage),
+
 		// Restore, audit and migration administration.
 		storeOperation("begin-restore", (*core.Store).BeginRestore),
 		noInputOperation("restore-status", func(ctx context.Context, store *core.Store) (any, error) { return store.RestoreStatus(ctx) }),

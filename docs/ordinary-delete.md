@@ -25,7 +25,9 @@ returns its original result. A new `get` returns `NOT_FOUND`.
 
 Retained uses, compiler read sets, incoming relations, proposal results,
 conflicts, audit history and other protected references prevent hard deletion.
-This includes notes considered but not selected by a retained compilation.
+This includes notes considered but not selected by a retained compilation, for
+as long as that compilation's [candidate detail](candidate-retention.md#ordinary-deletion)
+is retained.
 Former B/C records and service-generated failure-recovery observations also
 require the [audited forgetting workflow](deletion.md). The ordinary command
 returns `FORGET_REQUIRED`; it does not silently discard those references.

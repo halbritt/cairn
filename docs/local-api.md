@@ -274,7 +274,8 @@ destination, subject to current privacy and forgetting checks. See
 and an optional `after_record_id`/`after_version` cursor pair. It returns bounded
 historical candidate metadata without bodies or new delivery rights. Every page
 checks current disclosure for the entire retained evaluated set; one unavailable
-candidate refuses the whole inspection. See
+candidate refuses the whole inspection, and
+[expired detail](candidate-retention.md) refuses with `CANDIDATE_DETAIL_EXPIRED`. See
 [candidate inspection](currentness-and-replay.md#inspect-retained-candidate-decisions)
 for continuation, byte limits and the distinction from verified reconstruction.
 `assessments` takes `receipt_id` and returns the owner's full assessment versions

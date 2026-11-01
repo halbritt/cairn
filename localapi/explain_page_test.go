@@ -362,3 +362,48 @@ func TestExplainPagePreservesHistoricalMembershipWithinWireBoundWithoutWrites(t 
 		t.Fatal("inspection changed receipts, expansion allowance, observations, mutations or versions")
 	}
 }
+
+func TestExpiredCandidateDetailIsExplicitOverTheAPI(t *testing.T) {
+	f := newExplanationAPIFixture(t)
+	f.note(t, "needletarget retained detail")
+	index := f.index(t)
+	ctx := context.Background()
+	receipt := index.Package.ReceiptID
+	if status, data, _ := f.call(t, "owner", "explain-page", map[string]any{"receipt_id": receipt}); status != "OK" {
+		t.Fatalf("before expiry: %s %s", status, data)
+	}
+	if _, err := f.db.Exec(ctx, `UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at=now() WHERE receipt_id=$1`, receipt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(ctx, `DELETE FROM cairn.retrieval_candidate WHERE receipt_id=$1`, receipt); err != nil {
+		t.Fatal(err)
+	}
+	for operation, request := range map[string]any{
+		"explain-page": map[string]any{"receipt_id": receipt},
+		"recompile":    map[string]any{"receipt_id": receipt, "query": "needletarget"},
+	} {
+		b, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("POST", "/v1/"+operation, bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer synthetic-owner")
+		response := httptest.NewRecorder()
+		f.server.ServeHTTP(response, req)
+		var envelope struct {
+			OK     bool            `json:"ok"`
+			Status string          `json:"status"`
+			Data   json.RawMessage `json:"data"`
+		}
+		if err = json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != 410 || envelope.OK || envelope.Status != "CANDIDATE_DETAIL_EXPIRED" {
+			t.Fatalf("%s: HTTP %d %s", operation, response.Code, response.Body.String())
+		}
+	}
+	// A foreign caller learns nothing about expiry: ownership is checked first.
+	if status, _, _ := f.call(t, "foreign", "explain-page", map[string]any{"receipt_id": receipt}); status != "AUTHORITY_DENIED" {
+		t.Fatalf("foreign caller: %s", status)
+	}
+}

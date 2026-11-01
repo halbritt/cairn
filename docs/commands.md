@@ -261,3 +261,7 @@ same process/carrier flags as `cairn run` through a scoped observer API identity
 It requires no direct database access. The configured destination must match the
 run declaration; an ordinary agent profile cannot launch. See
 [authenticated runner](authenticated-runner.md) for output and recovery behavior.
+
+Expire old candidate detail and rewrite its storage with `cairn candidate-retention`
+and `cairn candidate-reclaim`; see [candidate retention](candidate-retention.md).
+These are operator commands with no agent API route.

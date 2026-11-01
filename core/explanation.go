@@ -37,7 +37,8 @@ type Explanation struct {
 }
 
 // Explain requires the same authenticated caller and repository as Replay.
-// Version zero explicitly means a legacy receipt has no candidate detail.
+// Version zero explicitly means a legacy receipt has no candidate detail; detail
+// removed by retention refuses instead of returning an empty candidate list.
 func (s *Store) Explain(ctx context.Context, receiptID string) (Explanation, error) {
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
@@ -45,6 +46,9 @@ func (s *Store) Explain(ctx context.Context, receiptID string) (Explanation, err
 	}
 	defer tx.Rollback(ctx)
 	if err = s.receiptAccess(ctx, tx, receiptID); err != nil {
+		return Explanation{}, err
+	}
+	if err = candidateDetailAvailable(ctx, tx, receiptID); err != nil {
 		return Explanation{}, err
 	}
 	result := Explanation{ReceiptID: receiptID, Candidates: []CandidateEvaluation{}}

@@ -1,0 +1,162 @@
+# Candidate detail retention
+
+Every compile writes one `retrieval_candidate` row for each record it evaluated,
+including records that did not match. On a store with thousands of notes this is
+thousands of rows per search, so this table can dwarf all other storage. Retention
+bounds it. Memory records, receipts, seals, saved package bytes and `record_use`
+are not touched.
+
+The operator chooses how long detail stays available. **There is no default
+window.** The deployed value and its rationale belong to the host's records; on
+Proximal, see `hosts/proximal/config/cairn/candidate-retention.md` in the infra
+repository.
+
+## What each path needs
+
+| Reader | Needs candidate rows? | After expiry |
+| --- | --- | --- |
+| `replay`, saved package bytes, seal | No | Unchanged |
+| Compile retry with the same request ID | No | Same receipt; no rows recreated |
+| `expand`, index handles and pull budget | No | Unchanged; handles expire on their own schedule |
+| `record_use`, usage, impact and reports | No | Unchanged |
+| `explain`, `explain-page`, `recompile` | Every row | Refuse with `CANDIDATE_DETAIL_EXPIRED` |
+| `verify-restore` fixtures | Every row | Reported as `FIXTURE_CANDIDATE_DETAIL_EXPIRED:RECEIPT` |
+| Recall-miss capture | Rows of the search it observes | Unaffected at normal timing; an expired receipt yields no proposal |
+| Docket `ESCALATION_BLOCKED` | Blocked rows | Blocked rows are retained |
+| Ordinary deletion's foreign key | Any row | See below |
+
+The refusal is HTTP 410 and CLI exit 4. Ownership, destination and payload checks
+run first, so an unauthorized caller learns nothing about expiry. A receipt marked
+in `candidate_detail_expired_at` never returns an empty candidate list. Explanation
+version 0 keeps its existing meaning: a legacy receipt that never had detail.
+
+## What survives a receipt's expiry
+
+- **Blocked demand and gate refusals.** Rows with `escalation_blocked` or a gate
+  reason (`AUTHORITY_INACTIVE`, `OPEN_CONFLICT`, `CURRENTNESS_MISMATCH` and the
+  rest) stay. The sealed package counts omissions by reason but does not name the
+  records, so these rows are the only record of which ones a gate refused. They are
+  not readable through `explain`; they back the docket and direct operator queries.
+- **Run-bound receipts** keep all rows with no automatic expiry: a claimed launch,
+  run binding, outcome, assessment, managed context, delivery receipt, run-retrieval
+  link or wake attempt. Their decisions stay reviewable with no defined end, and
+  their volume follows real runs rather than searches.
+- **Restore fixtures.** `verify-restore` requires a fixture that selected content.
+  The newest 100 body-selecting receipts per repository keep their rows, matching
+  its 100-fixture limit. Override with `keep_selected_per_repo`.
+
+## Ordinary deletion
+
+A candidate row's foreign key is what stops `cairn delete` removing a note that a
+retained compilation considered. That protection now lasts as long as the read set
+does: once every referencing receipt has expired, a note with no other references
+can be deleted. Any in-window receipt, `record_use` row or retained gate row still
+blocks it. Saved packages do not depend on a note they merely considered.
+
+## Expire detail
+
+```sh
+cairn candidate-retention <<'JSON'
+{"window_days": 14, "dry_run": true}
+JSON
+```
+
+`window_days` is required (1 to 36500). A dry run reports eligible and protected
+receipts and writes nothing. Each receipt expires in its own transaction: the marker
+and the row deletion commit together, so a crash leaves it either untouched or
+completely expired. Repeat the request to resume. Receipts locked by another
+transaction are skipped and counted, not waited for. Only one candidate maintenance
+run can be active; another refuses with `MAINTENANCE_ACTIVE`.
+
+| Field | Default | Stops the run when |
+| --- | --- | --- |
+| `max_receipts` | 20000 | That many receipts expired |
+| `max_runtime_seconds` | 3000 | Time elapsed |
+| `pause_ms` | 0 | Sleep between receipts |
+| `limits.max_run_wal_bytes` | 16 GiB | WAL written during this run exceeds it |
+| `limits.max_wal_dir_bytes` | 32 GiB | `pg_wal` exceeds it |
+| `limits.max_archive_backlog_segments` | 256 | Segments awaiting archive exceed it |
+| `limits.min_free_bytes` | 40 GiB | The data filesystem has less free |
+
+`stopped_by` names the reason, and `remaining_receipts` shows what is left. These
+checks read `pg_ls_waldir()`, so the role needs `pg_monitor`, and the command must run
+on the database host. It refuses rather than continuing unobserved. It stops while
+a restore is paused and during a storage rewrite. Deleted space is reused by later
+inserts after vacuum; migration 074 lowers this table's autovacuum threshold to 2%.
+It does not return that space to the filesystem.
+
+## Reclaim existing space
+
+`DELETE` and `VACUUM` do not shrink this table, because rows are written in time
+order and the expired ones are at the front. Deleting most of it would also log
+each heap page twice, once for the delete and again for vacuum.
+`cairn candidate-reclaim` instead copies what retention keeps into a new relation and
+swaps the names. Dropping the old relation returns its space immediately, and WAL
+is proportional to the retained rows, not the deleted ones.
+
+Run the phases in order. Each reads one JSON request and can be repeated after an
+interruption. `status` is always available. `abort` drops the working schema and is
+allowed until the swap.
+
+| Phase | Effect | Locking |
+| --- | --- | --- |
+| `plan` (`window_days` required) | Records the cutoff and the expiring receipts; creates schema `cairn_candidate_reclaim` | Brief |
+| `copy` | Scans for retained rows of expiring receipts, then copies retained receipts one transaction at a time | None on live tables |
+| `build` | Builds the primary key and index, then adds and validates foreign keys | Brief on `retrieval_receipt` and `record_version` when adding foreign keys |
+| `swap` | Catches up, drains ordinary transactions through the restore admission row, marks expiring receipts, renames the relations | All database work waits for the swap, bounded by `lock_timeout_ms` per attempt |
+| `verify` | Compares per-receipt row counts and byte digests of a random sample with the old relation | None; scans both relations |
+| `finish` (`confirm_drop_old: true`) | Drops the old relation and working schema. **Irreversible** | Brief |
+
+`copy` waits out WAL and archive pressure; run budgets and disk headroom stop it, and
+a later run resumes. Set `limits.max_run_wal_bytes` above the retained size. The disk
+needs room for the retained rows, their indexes, sort space and WAL until `finish`.
+
+The swap holds the admission row exclusively, so no repeatable-read transaction can
+span it and read the new relation with an older snapshot. A receipt that gained a
+run binding after planning is not marked; the swap copies its rows. Retry attempts
+that cannot get their locks end with `stopped_by: swap_lock_unavailable` and change
+nothing. `plan` refuses if the table has grants, triggers, rules, views or policies
+that a swap would not carry across.
+
+## Recovery
+
+A receipt's rows can be restored from any archive of them:
+
+```sql
+BEGIN;
+COPY cairn.retrieval_candidate FROM '/path/rows.copy';
+UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at = NULL
+ WHERE receipt_id = 'RECEIPT_UUID';
+COMMIT;
+```
+
+`explain` and `recompile` then work again, and the seal check still applies. Until
+`finish`, the old relation holds the rows. Afterwards use an archive or a PostgreSQL
+restore; follow [restore admission](restore-admission.md) for the latter. Backups keep
+expired rows until they rotate out, so expiry is not erasure. Use
+[forgetting](deletion.md) for sensitive content.
+
+## Design choices
+
+Age-based expiry was chosen over reducing what each compile writes:
+
+| Option | Bounds storage? | Cost |
+| --- | --- | --- |
+| Age-based expiry (chosen) | Window times write rate | Old diagnostics refuse explicitly; in-window behavior is unchanged |
+| Omit non-matching rows at write | No: slower growth only | Recompilation verifies the whole evaluated set and IDF cohort, so new receipts could not be recompiled, and `retained_evaluated_set` would be false |
+| One compressed value per receipt | No: 10–15× smaller only | Rewrites three readers and loses the foreign key that protects considered notes |
+| Column compression | No | Measured no effect: PostgreSQL only compresses tuples above 2 KB, and rows are about 700 bytes, whatever `toast_tuple_target` says |
+| Time partitions | Yes | Partition lifecycle, a changed primary key, and copying protected rows out before each drop |
+
+Write volume still grows with both search rate and note count, so the bound moves
+with them. If that matters, the next step is a smaller window, then one of the write
+reductions above. Reclamation options considered: `VACUUM FULL` holds an exclusive
+lock for the whole rewrite, and `pg_repack` needs a superuser extension and still
+requires the deletes first.
+
+The pinned design proposes compacting durable receipts after 90 days "only if
+dependencies and required fields survive" and a 90-day floor for `record_use`
+([§10.2](sources/agent-memory/design/agent-memory-design.md)). Receipts and
+`record_use` are retained here without an expiry. The candidate rows beyond the
+required use, enforcement and correction fields are diagnostics whose window is an
+operator policy.

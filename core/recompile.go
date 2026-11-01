@@ -144,6 +144,9 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if err = receiptPayloadAvailable(ctx, tx, req.ReceiptID); err != nil {
 		return Package{}, err
 	}
+	if err = candidateDetailAvailable(ctx, tx, req.ReceiptID); err != nil {
+		return Package{}, err
+	}
 	var original Package
 	original.ReceiptID = req.ReceiptID
 	var encoded []byte

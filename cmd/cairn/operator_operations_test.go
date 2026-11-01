@@ -78,6 +78,24 @@ func TestOperatorCommandsDecodeLikeTheAPI(t *testing.T) {
 	}
 }
 
+// Candidate maintenance acts on the whole store, so a malformed request must be
+// refused before it opens a connection, and the window must never be implied.
+func TestCandidateMaintenanceCommandsRequireExplicitWindow(t *testing.T) {
+	ctx := context.Background()
+	for _, name := range []string{"candidate-retention", "candidate-reclaim"} {
+		op, ok := operatorOperations[name]
+		if !ok {
+			t.Fatalf("%s is not an operator command", name)
+		}
+		if _, err := op.run(ctx, nil, strings.NewReader(`{"window":14}`)); core.Code(err) != "INVALID_REQUEST" {
+			t.Errorf("%s accepted an unknown field: %v", name, err)
+		}
+		if _, listed := localapi.LookupOperation(name); listed {
+			t.Errorf("%s must stay out of the agent API", name)
+		}
+	}
+}
+
 func TestEveryCatalogOperationHasOfflineHelp(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("CAIRN_HOME", "")

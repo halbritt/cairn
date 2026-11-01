@@ -94,7 +94,10 @@ A verification request contains:
   them. A store with active records requires at least one fixture that selected
   content. An empty fixture list is accepted only when there are no active records
   and no unpurged receipt history. Fixture queries are transient; admission
-  retains receipt IDs, seals and selection counts.
+  retains receipt IDs, seals and selection counts. A fixture whose
+  [candidate detail expired](candidate-retention.md) is reported as
+  `FIXTURE_CANDIDATE_DETAIL_EXPIRED:RECEIPT`; run-bound receipts and the newest
+  selecting receipts per repository keep theirs.
 
 Verification checks migration membership/checksums, current version/class links,
 current and historical authority correspondence, grant parent/depth/capability/

@@ -26405,6 +26405,11 @@
       "source": "server.go"
     },
     {
+      "http_status": 410,
+      "code": "CANDIDATE_DETAIL_EXPIRED",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 409,
       "code": "DELIVERY_ACTIVE",
       "source": "serveJSON"
@@ -26448,6 +26453,11 @@
       "http_status": 413,
       "code": "INVALID_REQUEST",
       "source": "relay.go"
+    },
+    {
+      "http_status": 409,
+      "code": "MAINTENANCE_ACTIVE",
+      "source": "serveJSON"
     },
     {
       "http_status": 404,
@@ -26597,6 +26607,7 @@
     "ATTRIBUTION_UNRECONCILED",
     "AUTHORITY_DENIED",
     "BUDGET_REFUSED",
+    "CANDIDATE_DETAIL_EXPIRED",
     "CHECKPOINT_MISMATCH",
     "CLEANUP_UNCONFIRMED",
     "CLIENT_SETUP_FAILED",
@@ -26617,6 +26628,7 @@
     "INTEGRITY_FAILURE",
     "INVALID_DIAGNOSTICS",
     "INVALID_REQUEST",
+    "MAINTENANCE_ACTIVE",
     "NOT_FOUND",
     "OPEN_CONFLICT",
     "PAYLOAD_UNAVAILABLE",

@@ -100,6 +100,9 @@ func (s *Store) ExplainPageForDestination(ctx context.Context, req ExplainPageRe
 		}
 		return empty, err
 	}
+	if err = candidateDetailAvailable(ctx, tx, req.ReceiptID); err != nil {
+		return empty, err
+	}
 	if !strings.HasPrefix(out.Seal, "blake3:") || !digestValid(strings.TrimPrefix(out.Seal, "blake3:")) {
 		return empty, failure("INTEGRITY_FAILURE", "retained receipt metadata is invalid")
 	}
