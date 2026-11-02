@@ -1,7 +1,18 @@
-# Implementation status — 2026-10-28
+# Implementation status — 2026-11-01
 
 The primary CLI/API now run clean revision
-`b0ae063d364ebd5377ba157f5aa205acef14e107`; production is at schema 073.
+`d2cccca5a619b4d1c6fefc641814ff3e1751d463`; production is at schema 074.
+[Candidate detail](candidate-retention.md) now expires after a 14-day window chosen by
+the owner, by a daily timer. An online rewrite took the store from 193 GB to 89 GB.
+Overlapping searches retry with randomized backoff, the API logs one line per refused
+operation, and delivery alerts close their work items when a condition clears. See the
+[deployment report](verification/cairn-deployment-2026-11-01.md), including its limits.
+No token-efficiency opt-in or acceptance decision changed.
+
+## Previous installed snapshot — 2026-10-28
+
+The primary CLI/API ran clean revision
+`b0ae063d364ebd5377ba157f5aa205acef14e107`; production was at schema 073.
 The release followed a fresh pgBackRest differential and disposable integration
 validation. Version, migration checksum, hosted search/pull, recovery reads,
 and service health checks passed.
