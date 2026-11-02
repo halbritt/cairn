@@ -97,7 +97,7 @@ A verification request contains:
   retains receipt IDs, seals and selection counts. A fixture whose
   [candidate detail expired](candidate-retention.md) is reported as
   `FIXTURE_CANDIDATE_DETAIL_EXPIRED:RECEIPT`; run-bound receipts and the newest
-  selecting receipts per repository keep theirs.
+  selecting receipts per channel and repository keep theirs.
 
 Verification checks migration membership/checksums, current version/class links,
 current and historical authority correspondence, grant parent/depth/capability/

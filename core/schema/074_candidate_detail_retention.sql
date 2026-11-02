@@ -8,3 +8,11 @@ CREATE INDEX retrieval_receipt_unexpired_detail ON cairn.retrieval_receipt(creat
 -- Expired rows are deleted in small batches; vacuum early enough that their space
 -- is reused before the table extends. The default 20% is too late at this size.
 ALTER TABLE cairn.retrieval_candidate SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_scale_factor=0.02);
+-- A storage rewrite writes this row without changing it, so that a transaction
+-- whose snapshot predates the rewrite fails instead of reading the new relation.
+-- Only a real transition out of a restore pause needs the resume record.
+DROP TRIGGER require_restore_resume ON cairn.restore_admission;
+CREATE CONSTRAINT TRIGGER require_restore_resume AFTER UPDATE ON cairn.restore_admission
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+ WHEN (OLD.paused IS DISTINCT FROM NEW.paused OR OLD.session_id IS DISTINCT FROM NEW.session_id)
+ EXECUTE FUNCTION cairn.require_restore_resume();

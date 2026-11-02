@@ -164,6 +164,10 @@ class ReceiptStoreTests(unittest.TestCase):
             self.assertEqual(result['receipts'][0]['candidates'],[])
             self.assertEqual(result['receipts'][0]['reason'],'missing_or_not_owned')
             self.sql(f"UPDATE cairn.retrieval_receipt SET {column}='{old}' WHERE receipt_id='{found['receipt_id']}'")
+        self.sql(f"UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at=now() WHERE receipt_id='{found['receipt_id']}'")
+        expired=self.store.receipt_explanations(observed)['receipts'][0]
+        self.assertEqual((expired['status'],expired['reason'],expired['candidates']),('unknown','candidate_detail_expired',[]))
+        self.sql(f"UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at=NULL WHERE receipt_id='{found['receipt_id']}'")
         self.sql(f"UPDATE cairn.retrieval_receipt SET explanation_version=0 WHERE receipt_id='{found['receipt_id']}'")
         self.assertEqual(self.store.receipt_explanations(observed)['receipts'][0]['reason'],'unsupported_or_legacy_explanation')
 

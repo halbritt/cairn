@@ -91,6 +91,10 @@ func (s *Store) claimRunOnce(ctx context.Context, id string) error {
 	if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
 		return err
 	}
+	// A run's decisions stay reviewable, which an expired receipt could no longer support.
+	if err = candidateDetailAvailable(ctx, tx, id); err != nil {
+		return err
+	}
 	if err = indexSessionCurrent(ctx, tx, id); err != nil {
 		return err
 	}

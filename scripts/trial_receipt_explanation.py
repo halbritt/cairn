@@ -106,7 +106,7 @@ def explanation_sql(receipt, principal, repo):
     return f"""BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='4000ms';
 WITH owned AS (
- SELECT receipt_id,explanation_version FROM cairn.retrieval_receipt
+ SELECT receipt_id,explanation_version,candidate_detail_expired_at FROM cairn.retrieval_receipt
  WHERE receipt_id='{receipt}' AND caller='{principal}' AND scope->>'repo'='{repo}'
 ), candidates AS (
  SELECT jsonb_build_object({projection}) AS value, {_integer('rank')} AS rank,
@@ -117,6 +117,7 @@ WITH owned AS (
 )
 SELECT jsonb_build_object('owned',EXISTS(SELECT 1 FROM owned),
  'explanation_version',(SELECT explanation_version FROM owned),
+ 'detail_expired',COALESCE((SELECT candidate_detail_expired_at IS NOT NULL FROM owned),false),
  'candidate_count',(SELECT count(*) FROM candidates),
  'candidates',coalesce((SELECT jsonb_agg(value ORDER BY CASE WHEN rank>0 THEN 0 ELSE 1 END,rank,record_id,version) FROM limited),'[]'::jsonb));
 COMMIT;
@@ -144,6 +145,8 @@ def export_receipts(psql, socket, database, env, run, principal, repo, observed)
             value=json.loads(raw)
             if value['owned'] is not True:
                 row['reason']='missing_or_not_owned'
+            elif value['detail_expired'] is True:
+                row['reason']='candidate_detail_expired'
             elif value['explanation_version'] not in (1,2):
                 row['reason']='unsupported_or_legacy_explanation'
             else:

@@ -41,9 +41,10 @@ version 0 keeps its existing meaning: a legacy receipt that never had detail.
   run binding, outcome, assessment, managed context, delivery receipt, run-retrieval
   link or wake attempt. Their decisions stay reviewable with no defined end, and
   their volume follows real runs rather than searches.
-- **Restore fixtures.** `verify-restore` requires a fixture that selected content.
-  The newest 100 body-selecting receipts per repository keep their rows, matching
-  its 100-fixture limit. Override with `keep_selected_per_repo`.
+- **Restore fixtures.** `verify-restore` requires a fixture that selected content,
+  can only recompile receipts its own channel owns, and cannot compile new ones while
+  paused. So the newest 100 body-selecting receipts per channel and repository keep
+  their rows, matching its 100-fixture limit. Override with `keep_selected_per_repo`.
 
 ## Ordinary deletion
 
@@ -52,6 +53,9 @@ retained compilation considered. That protection now lasts as long as the read s
 does: once every referencing receipt has expired, a note with no other references
 can be deleted. Any in-window receipt, `record_use` row or retained gate row still
 blocks it. Saved packages do not depend on a note they merely considered.
+
+`ClaimRun` refuses an expired receipt: a run's decisions stay reviewable, which an
+expired receipt could not support.
 
 ## Expire detail
 
@@ -95,38 +99,61 @@ swaps the names. Dropping the old relation returns its space immediately, and WA
 is proportional to the retained rows, not the deleted ones.
 
 Run the phases in order. Each reads one JSON request and can be repeated after an
-interruption. `status` is always available. `abort` drops the working schema and is
-allowed until the swap.
+interruption. `status` is always available.
 
 | Phase | Effect | Locking |
 | --- | --- | --- |
 | `plan` (`window_days` required) | Records the cutoff and the expiring receipts; creates schema `cairn_candidate_reclaim` | Brief |
-| `copy` | Scans for retained rows of expiring receipts, then copies retained receipts one transaction at a time | None on live tables |
+| `copy` | Marks expiring receipts, one per transaction; scans for rows that outlive them; copies every receipt left unmarked, one per transaction | None on live tables |
 | `build` | Builds the primary key and index, then adds and validates foreign keys | Brief on `retrieval_receipt` and `record_version` when adding foreign keys |
-| `swap` | Catches up, drains ordinary transactions through the restore admission row, marks expiring receipts, renames the relations | All database work waits for the swap, bounded by `lock_timeout_ms` per attempt |
-| `verify` | Compares per-receipt row counts and byte digests of a random sample with the old relation | None; scans both relations |
+| `swap` | Catches up, drains ordinary transactions through the restore admission row, copies at most four newly arrived receipts, renames the relations | All database work waits while the drain is held |
+| `verify` | Compares every receipt's row count, and byte digests of a random sample, with the old relation | None; scans both relations |
 | `finish` (`confirm_drop_old: true`) | Drops the old relation and working schema. **Irreversible** | Brief |
+| `abort` | Before the swap only: clears the markers `copy` set and drops the working schema | Brief, on the referenced tables |
+
+Marking first keeps every state truthful. A marked receipt refuses, so it needs no
+rows; an unmarked one has all of them. A receipt that cannot be marked because it
+became run-bound or is locked is simply copied, and expires later. After `abort` every
+planned receipt is whole again, because its rows stayed in the live relation.
 
 `copy` waits out WAL and archive pressure; run budgets and disk headroom stop it, and
 a later run resumes. Set `limits.max_run_wal_bytes` above the retained size. The disk
 needs room for the retained rows, their indexes, sort space and WAL until `finish`.
+`build` checks headroom first and reserves 30% of the copied size for sorting and the
+index.
 
-The swap holds the admission row exclusively, so no repeatable-read transaction can
-span it and read the new relation with an older snapshot. A receipt that gained a
-run binding after planning is not marked; the swap copies its rows. Retry attempts
-that cannot get their locks end with `stopped_by: swap_lock_unavailable` and change
-nothing. `plan` refuses if the table has grants, triggers, rules, views or policies
-that a swap would not carry across.
+The swap writes the admission row without changing it, as `begin-restore` does, so a
+repeatable-read transaction already waiting there fails with a serialization error.
+Its snapshot predates the swap, and it could otherwise read an incomplete list from
+the new relation. Compiles retry this automatically; other reads return a store error
+for that one call. Waiting for the drain does not delay ordinary work. Holding it does,
+so `lock_timeout_ms` (default 3000) bounds each statement, and after three attempts
+that held the drain and failed, the phase stops with
+`stopped_by: swap_lock_unavailable` and nothing changed. Repeat it when whatever holds
+the table has finished. The hold does not grow with the number of expiring receipts.
+
+`plan` and `swap` refuse if the table has anything a swap would lose: grants, triggers,
+rules, views, policies, extended statistics, extra indexes or constraints, or another
+owner. Expiry refuses until the rewrite has finished or been aborted. If `verify`
+reports a mismatch, the state stays `swapped`, `finish` stays refused and the old
+relation remains; investigate before doing anything else.
+
+**Do not roll back to a binary older than migration 074 after anything has expired.**
+Older binaries do not know the marker and would report an expired receipt as having
+no candidates.
 
 ## Recovery
 
-A receipt's rows can be restored from any archive of them:
+A receipt's rows can be restored from any archive of them. Use a temporary table,
+because a receipt may have kept some rows:
 
 ```sql
 BEGIN;
-COPY cairn.retrieval_candidate FROM '/path/rows.copy';
+CREATE TEMP TABLE restored (LIKE cairn.retrieval_candidate) ON COMMIT DROP;
+\copy restored FROM 'rows.copy'
+INSERT INTO cairn.retrieval_candidate SELECT * FROM restored ON CONFLICT DO NOTHING;
 UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at = NULL
- WHERE receipt_id = 'RECEIPT_UUID';
+ WHERE receipt_id IN (SELECT receipt_id FROM restored);
 COMMIT;
 ```
 
@@ -150,9 +177,20 @@ Age-based expiry was chosen over reducing what each compile writes:
 
 Write volume still grows with both search rate and note count, so the bound moves
 with them. If that matters, the next step is a smaller window, then one of the write
-reductions above. Reclamation options considered: `VACUUM FULL` holds an exclusive
-lock for the whole rewrite, and `pg_repack` needs a superuser extension and still
-requires the deletes first.
+reductions above.
+
+Reclamation options considered:
+
+- `VACUUM FULL` holds an exclusive lock for the whole rewrite, which is an outage.
+- `pg_repack` is mature and needs no code here, but it copies live rows, so the
+  expired rows must be deleted first. That logs their heap pages for the delete and
+  again for vacuum before the copy logs the retained rows: roughly two to three times
+  the WAL of the rewrite. It also needs a superuser-installed extension in this
+  database, and it discards the old relation at the end, so verification and rollback
+  have to come from a backup.
+
+`candidate-reclaim` is isolated in `core/candidate_reclaim.go`. Expiry does not depend
+on it, so it can be replaced by `pg_repack` if that trade-off changes.
 
 The pinned design proposes compacting durable receipts after 90 days "only if
 dependencies and required fields survive" and a 90-day floor for `record_use`

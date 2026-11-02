@@ -15,6 +15,10 @@ import (
 // this table would log each heap page twice. A rewrite copies only what retention
 // keeps into a new relation, swaps the names under a short drain, and returns
 // everything else when the old relation is dropped. Each phase can be repeated.
+//
+// Expiring receipts are marked first, in small transactions, while their rows are
+// still in place: a marked receipt refuses, so it needs no rows, and an unmarked
+// receipt is copied in full. The swap therefore has no bulk work to do.
 const (
 	candidateReclaimResultSchema = "cairn.candidate-reclaim/1"
 	candidateReclaimLock         = "cairn_candidate_reclaim"
@@ -26,9 +30,13 @@ const (
 	candidateReclaimBuilt    = "built"
 	candidateReclaimSwapped  = "swapped"
 	candidateReclaimVerified = "verified"
+	candidateReclaimAborting = "aborting"
 
 	candidateReclaimChunkPages = 65536
-	candidateReclaimMaxTail    = 64
+	// A receipt holds at most one row per note, so this bounds the work under the drain.
+	candidateReclaimMaxTail = 4
+	// Attempts that held the drain and still failed have paused ordinary work.
+	candidateReclaimMaxStalls = 3
 )
 
 // CandidateReclaimRequest runs one phase: status, plan, copy, build, swap, verify,
@@ -53,6 +61,7 @@ type CandidateReclaimResult struct {
 	WindowDays        int        `json:"window_days,omitempty"`
 	Cutoff            *time.Time `json:"cutoff,omitempty"`
 	ExpiringReceipts  int64      `json:"expiring_receipts"`
+	MarkedReceipts    int64      `json:"marked_receipts"`
 	RetainedReceipts  int64      `json:"retained_receipts"`
 	CopiedReceipts    int64      `json:"copied_receipts"`
 	CopiedRows        int64      `json:"copied_rows"`
@@ -61,7 +70,7 @@ type CandidateReclaimResult struct {
 	ScanBlocks        int64      `json:"scan_blocks"`
 	WALBytes          int64      `json:"wal_bytes"`
 	SwapHoldMS        int64      `json:"swap_hold_ms,omitempty"`
-	MarkedExpired     int64      `json:"marked_expired,omitempty"`
+	SwapAttempts      int        `json:"swap_attempts,omitempty"`
 	TailReceipts      int64      `json:"tail_receipts,omitempty"`
 	VerifiedReceipts  int        `json:"verified_receipts,omitempty"`
 	LiveTableBytes    int64      `json:"live_table_bytes"`
@@ -100,6 +109,19 @@ func (s *Store) ReclaimCandidateStorage(ctx context.Context, req CandidateReclai
 	if req.LockTimeoutMS == 0 {
 		req.LockTimeoutMS = 3000
 	}
+	allowed := map[string][]string{
+		"status": {candidateReclaimNone, candidateReclaimPlanned, candidateReclaimBuilt, candidateReclaimSwapped, candidateReclaimVerified, candidateReclaimAborting},
+		"plan":   {candidateReclaimNone},
+		"copy":   {candidateReclaimPlanned, candidateReclaimBuilt},
+		"build":  {candidateReclaimPlanned},
+		"swap":   {candidateReclaimBuilt},
+		"verify": {candidateReclaimSwapped},
+		"finish": {candidateReclaimVerified},
+		"abort":  {candidateReclaimPlanned, candidateReclaimBuilt, candidateReclaimAborting},
+	}[req.Phase]
+	if allowed == nil {
+		return result, failure("INVALID_REQUEST", "phase must be status, plan, copy, build, swap, verify, finish or abort")
+	}
 	if req.Phase != "status" {
 		release, err := s.holdCandidateMaintenance(ctx)
 		if err != nil {
@@ -112,19 +134,6 @@ func (s *Store) ReclaimCandidateStorage(ctx context.Context, req CandidateReclai
 		return result, err
 	}
 	result.State = state
-	allowed := map[string][]string{
-		"status": {candidateReclaimNone, candidateReclaimPlanned, candidateReclaimBuilt, candidateReclaimSwapped, candidateReclaimVerified},
-		"plan":   {candidateReclaimNone},
-		"copy":   {candidateReclaimPlanned, candidateReclaimBuilt},
-		"build":  {candidateReclaimPlanned},
-		"swap":   {candidateReclaimBuilt},
-		"verify": {candidateReclaimSwapped},
-		"finish": {candidateReclaimVerified},
-		"abort":  {candidateReclaimPlanned, candidateReclaimBuilt},
-	}[req.Phase]
-	if allowed == nil {
-		return result, failure("INVALID_REQUEST", "phase must be status, plan, copy, build, swap, verify, finish or abort")
-	}
 	permitted := false
 	for _, candidate := range allowed {
 		permitted = permitted || candidate == state
@@ -145,15 +154,15 @@ func (s *Store) ReclaimCandidateStorage(ctx context.Context, req CandidateReclai
 	case "copy":
 		result.StoppedBy, err = s.reclaimCopy(ctx, req, guard, deadline)
 	case "build":
-		err = s.reclaimBuild(ctx, req, &result)
+		result.StoppedBy, err = s.reclaimBuild(ctx, req, guard, deadline)
 	case "swap":
 		err = s.reclaimSwap(ctx, req, guard, deadline, &result)
 	case "verify":
 		err = s.reclaimVerify(ctx, req, &result)
 	case "finish":
-		err = s.reclaimFinish(ctx, req)
+		err = s.reclaimFinish(ctx, req, deadline)
 	case "abort":
-		_, err = s.pool.Exec(ctx, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
+		err = s.reclaimAbort(ctx, req, deadline)
 	}
 	if guard != nil {
 		_, _ = guard.pressure(ctx)
@@ -181,12 +190,13 @@ func (s *Store) reclaimReport(ctx context.Context, result *CandidateReclaimResul
 	var working *string
 	err = s.pool.QueryRow(ctx, `SELECT r.window_days,r.cutoff,r.scan_block,r.scan_blocks,r.residual_rows,
  (SELECT count(*) FROM `+candidateReclaimLock+`.expiring),
+ (SELECT count(*) FROM `+candidateReclaimLock+`.expiring e JOIN cairn.retrieval_receipt x USING(receipt_id) WHERE x.candidate_detail_expired_at IS NOT NULL),
  (SELECT count(*) FROM `+candidateReclaimLock+`.copied),
  (SELECT COALESCE(sum(rows),0)::bigint FROM `+candidateReclaimLock+`.copied),
- (SELECT count(*) FROM cairn.retrieval_receipt x WHERE x.candidate_detail_expired_at IS NULL AND NOT EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.expiring e WHERE e.receipt_id=x.receipt_id)),
+ (SELECT count(*) FROM cairn.retrieval_receipt x WHERE x.candidate_detail_expired_at IS NULL),
  COALESCE(to_regclass('`+candidateReclaimNewTable+`'),to_regclass('`+candidateReclaimOldTable+`'))::text
  FROM `+candidateReclaimLock+`.run r`).Scan(&result.WindowDays, &cutoff, &result.ScanBlock, &result.ScanBlocks, &result.ResidualRows,
-		&result.ExpiringReceipts, &result.CopiedReceipts, &result.CopiedRows, &result.RetainedReceipts, &working)
+		&result.ExpiringReceipts, &result.MarkedReceipts, &result.CopiedReceipts, &result.CopiedRows, &result.RetainedReceipts, &working)
 	if err != nil {
 		return err
 	}
@@ -198,20 +208,29 @@ func (s *Store) reclaimReport(ctx context.Context, result *CandidateReclaimResul
 	return nil
 }
 
-// The rewrite cannot carry triggers, grants, rules, views or row policies across a swap.
-// The migration-defined table has none, so anything else needs operator review.
+// A swap replaces the relation, so anything attached to the old one would vanish:
+// grants, triggers, rules, views, policies, publications, extra indexes or
+// constraints, extended statistics, and ownership by another role. The
+// migration-defined table has none. Checked at plan and again under the swap's lock.
 func reclaimPreflight(ctx context.Context, tx pgx.Tx) error {
 	var unexpected bool
-	err := tx.QueryRow(ctx, `SELECT c.relacl IS NOT NULL OR c.relhasrules OR c.relrowsecurity OR c.relhassubclass OR c.relkind<>'r'
+	err := tx.QueryRow(ctx, `SELECT c.relhasrules OR c.relrowsecurity OR c.relhassubclass OR c.relkind<>'r'
+ OR pg_get_userbyid(c.relowner)<>current_user
+ OR EXISTS(SELECT 1 FROM aclexplode(c.relacl) a WHERE a.grantee<>c.relowner)
  OR EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal)
  OR EXISTS(SELECT 1 FROM pg_publication_rel p WHERE p.prrelid=c.oid)
+ OR EXISTS(SELECT 1 FROM pg_statistic_ext x WHERE x.stxrelid=c.oid)
  OR EXISTS(SELECT 1 FROM pg_depend d JOIN pg_rewrite w ON w.oid=d.objid WHERE d.classid='pg_rewrite'::regclass AND d.refobjid=c.oid)
+ OR (SELECT count(*) FROM pg_index i WHERE i.indrelid=c.oid)<>2
+ OR EXISTS(SELECT 1 FROM pg_index i JOIN pg_class x ON x.oid=i.indexrelid WHERE i.indrelid=c.oid AND x.relname NOT IN ('retrieval_candidate_pkey','blocked_demand'))
+ OR (SELECT count(*) FROM pg_constraint k WHERE k.conrelid=c.oid AND k.contype<>'n')<>3
+ OR EXISTS(SELECT 1 FROM pg_constraint k WHERE k.confrelid=c.oid)
  FROM pg_class c WHERE c.oid='cairn.retrieval_candidate'::regclass`).Scan(&unexpected)
 	if err != nil {
 		return err
 	}
 	if unexpected {
-		return failure("DEPENDENCY_CONFLICT", "retrieval_candidate has grants, triggers, rules, views, policies or dependents that a rewrite would not preserve")
+		return failure("DEPENDENCY_CONFLICT", "retrieval_candidate has grants, triggers, rules, views, policies, extra indexes or another owner that a rewrite would not preserve")
 	}
 	return nil
 }
@@ -235,7 +254,8 @@ func (s *Store) reclaimPlan(ctx context.Context, req CandidateReclaimRequest) er
  CREATE TABLE `+candidateReclaimLock+`.run(
   singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
   window_days integer NOT NULL, keep_selected integer NOT NULL, cutoff timestamptz NOT NULL,
-  state text NOT NULL, scan_block bigint NOT NULL DEFAULT 0, scan_blocks bigint NOT NULL,
+  state text NOT NULL, marking_done boolean NOT NULL DEFAULT false,
+  scan_block bigint NOT NULL DEFAULT 0, scan_blocks bigint NOT NULL,
   residual_rows bigint NOT NULL DEFAULT 0, planned_at timestamptz NOT NULL DEFAULT clock_timestamp(), swapped_at timestamptz);
  CREATE TABLE `+candidateReclaimLock+`.expiring(receipt_id uuid PRIMARY KEY);
  CREATE TABLE `+candidateReclaimLock+`.copied(receipt_id uuid PRIMARY KEY, rows bigint NOT NULL);
@@ -243,7 +263,7 @@ func (s *Store) reclaimPlan(ctx context.Context, req CandidateReclaimRequest) er
 		return err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO `+candidateReclaimLock+`.run(window_days,keep_selected,cutoff,state,scan_blocks)
- SELECT $1,$2,now()-make_interval(days => $1),$3,pg_relation_size('cairn.retrieval_candidate')/current_setting('block_size')::bigint`,
+ SELECT $1::int,$2::int,now()-make_interval(days => $1::int),$3,pg_relation_size('cairn.retrieval_candidate')/current_setting('block_size')::bigint`,
 		req.WindowDays, req.KeepSelectedPerRepo, candidateReclaimPlanned); err != nil {
 		return err
 	}
@@ -291,10 +311,14 @@ func reclaimSleep(ctx context.Context, pauseMS int) error {
 	}
 }
 
-// reclaimCopy first scans for rows that outlive expiring receipts, then copies
-// retained receipts one transaction at a time. Each transaction records its own
-// progress, so stopping at any point loses nothing and repeats nothing.
+// reclaimCopy marks expiring receipts, scans for rows that outlive them, then copies
+// every receipt left unmarked. Marking ends before the scan starts, so a receipt is
+// either marked with its retained rows or copied whole, never both. Each transaction
+// records its own progress, so stopping at any point loses and repeats nothing.
 func (s *Store) reclaimCopy(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard, deadline time.Time) (string, error) {
+	if stop, err := s.reclaimMark(ctx, req, guard, deadline); err != nil || stop != "complete" {
+		return stop, err
+	}
 	for {
 		if time.Now().After(deadline) {
 			return "max_runtime_seconds", nil
@@ -318,7 +342,7 @@ func (s *Store) reclaimCopy(ctx context.Context, req CandidateReclaimRequest, gu
 		}
 	}
 	for {
-		ids, err := s.reclaimPendingReceipts(ctx, 200)
+		ids, err := s.reclaimPendingReceipts(ctx, s.pool, 200)
 		if err != nil {
 			return "", err
 		}
@@ -346,6 +370,58 @@ func (s *Store) reclaimCopy(ctx context.Context, req CandidateReclaimRequest, gu
 	}
 }
 
+// reclaimMark expires planned receipts without touching their rows. A receipt it
+// cannot mark, because it is locked or became run-bound, is simply copied.
+func (s *Store) reclaimMark(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard, deadline time.Time) (string, error) {
+	var done bool
+	var cutoff time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT marking_done,cutoff FROM `+candidateReclaimLock+`.run`).Scan(&done, &cutoff); err != nil {
+		return "", err
+	}
+	if done {
+		return "complete", nil
+	}
+	skipped := []string{}
+	for {
+		rows, err := s.pool.Query(ctx, `SELECT e.receipt_id::text FROM `+candidateReclaimLock+`.expiring e JOIN cairn.retrieval_receipt r USING(receipt_id)
+ WHERE r.candidate_detail_expired_at IS NULL AND NOT (e.receipt_id=ANY($1::uuid[])) ORDER BY r.created_at,e.receipt_id LIMIT 500`, skipped)
+		if err != nil {
+			return "", err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return "", err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			if time.Now().After(deadline) {
+				return "max_runtime_seconds", nil
+			}
+			limit, err := reclaimPace(ctx, guard, deadline)
+			if err != nil {
+				return "", err
+			}
+			if limit != "" {
+				return limit, nil
+			}
+			outcome, err := s.expireReceiptDetail(ctx, id, cutoff, false)
+			if err != nil {
+				return "", err
+			}
+			if !outcome.expired {
+				skipped = append(skipped, id)
+			}
+			if err = reclaimSleep(ctx, req.PauseMilliseconds); err != nil {
+				return "", err
+			}
+		}
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET marking_done=true`)
+	return "complete", err
+}
+
 func (s *Store) reclaimResidualChunk(ctx context.Context) (bool, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -362,9 +438,8 @@ func (s *Store) reclaimResidualChunk(ctx context.Context) (bool, error) {
 	end := block + candidateReclaimChunkPages
 	tag, err := tx.Exec(ctx, `INSERT INTO `+candidateReclaimNewTable+` SELECT c.* FROM cairn.retrieval_candidate c
  WHERE c.ctid>=$1::tid AND c.ctid<$2::tid AND `+retainedCandidateSQL+`
- AND (EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.expiring e WHERE e.receipt_id=c.receipt_id)
-  OR EXISTS(SELECT 1 FROM cairn.retrieval_receipt r WHERE r.receipt_id=c.receipt_id AND r.candidate_detail_expired_at IS NOT NULL))
- ON CONFLICT DO NOTHING`, "("+strconv.FormatInt(block, 10)+",0)", "("+strconv.FormatInt(end, 10)+",0)")
+ AND EXISTS(SELECT 1 FROM cairn.retrieval_receipt r WHERE r.receipt_id=c.receipt_id AND r.candidate_detail_expired_at IS NOT NULL)`,
+		"("+strconv.FormatInt(block, 10)+",0)", "("+strconv.FormatInt(end, 10)+",0)")
 	if err != nil {
 		return false, err
 	}
@@ -374,25 +449,19 @@ func (s *Store) reclaimResidualChunk(ctx context.Context) (bool, error) {
 	return false, tx.Commit(ctx)
 }
 
-func (s *Store) reclaimPendingReceipts(ctx context.Context, limit int) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT r.receipt_id::text FROM cairn.retrieval_receipt r
+type candidateQueryer interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func (s *Store) reclaimPendingReceipts(ctx context.Context, q candidateQueryer, limit int) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT r.receipt_id::text FROM cairn.retrieval_receipt r
  WHERE r.candidate_detail_expired_at IS NULL
- AND NOT EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.expiring e WHERE e.receipt_id=r.receipt_id)
  AND NOT EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.copied d WHERE d.receipt_id=r.receipt_id)
  ORDER BY r.created_at,r.receipt_id LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (s *Store) reclaimCopyReceipt(ctx context.Context, id string) error {
@@ -411,10 +480,10 @@ func (s *Store) reclaimCopyReceipt(ctx context.Context, id string) error {
 }
 
 const reclaimCopyReceiptSQL = `WITH inserted AS (
- INSERT INTO ` + candidateReclaimNewTable + ` SELECT c.* FROM cairn.retrieval_candidate c WHERE c.receipt_id=$1 ON CONFLICT DO NOTHING RETURNING 1)
+ INSERT INTO ` + candidateReclaimNewTable + ` SELECT c.* FROM cairn.retrieval_candidate c WHERE c.receipt_id=$1 RETURNING 1)
  INSERT INTO ` + candidateReclaimLock + `.copied(receipt_id,rows) SELECT $1,count(*) FROM inserted`
 
-func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, statement string) error {
+func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, deadline time.Time, statement string) error {
 	for attempt := 0; ; attempt++ {
 		tx, err := s.begin(ctx)
 		if err != nil {
@@ -429,30 +498,47 @@ func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, statemen
 		}
 		_ = tx.Rollback(context.Background())
 		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || pgErr.Code != "55P03" || attempt >= 20 {
+		if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
 			return err
+		}
+		if time.Now().After(deadline) {
+			return failure("MAINTENANCE_ACTIVE", "candidate maintenance could not get its locks before max_runtime_seconds; nothing changed by this step, repeat the phase")
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * time.Second):
+		case <-time.After(time.Duration(min(attempt+1, 5)) * time.Second):
 		}
 	}
 }
 
 // reclaimBuild creates constraints after the bulk copy: maintaining a random-keyed
 // index row by row would be slower and log far more. Nothing reads this table yet.
-func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, result *CandidateReclaimResult) error {
+func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard, deadline time.Time) (string, error) {
 	var block, blocks int64
-	if err := s.pool.QueryRow(ctx, `SELECT scan_block,scan_blocks FROM `+candidateReclaimLock+`.run`).Scan(&block, &blocks); err != nil {
-		return err
+	var done bool
+	if err := s.pool.QueryRow(ctx, `SELECT scan_block,scan_blocks,marking_done FROM `+candidateReclaimLock+`.run`).Scan(&block, &blocks, &done); err != nil {
+		return "", err
 	}
-	pending, err := s.reclaimPendingReceipts(ctx, candidateReclaimMaxTail*16+1)
+	pending, err := s.reclaimPendingReceipts(ctx, s.pool, 1025)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if block < blocks || len(pending) > candidateReclaimMaxTail*16 {
-		return failure("DEPENDENCY_CONFLICT", "complete the copy phase before building constraints")
+	if !done || block < blocks || len(pending) > 1024 {
+		return "", failure("DEPENDENCY_CONFLICT", "complete the copy phase before building constraints")
+	}
+	// Sort spill and the index itself come to about 30% of the heap.
+	var heap int64
+	if err = s.pool.QueryRow(ctx, `SELECT pg_relation_size('`+candidateReclaimNewTable+`')`).Scan(&heap); err != nil {
+		return "", err
+	}
+	guard.reserve = heap * 3 / 10
+	limit, err := guard.pressure(ctx)
+	if err != nil {
+		return "", err
+	}
+	if limit != "" {
+		return limit, nil
 	}
 	statements := []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS retrieval_candidate_new_pkey ON ` + candidateReclaimNewTable + `(receipt_id,record_id,version)`,
@@ -468,124 +554,126 @@ func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, r
 	}
 	var options []string
 	if err = s.pool.QueryRow(ctx, `SELECT COALESCE(reloptions,'{}') FROM pg_class WHERE oid='cairn.retrieval_candidate'::regclass`).Scan(&options); err != nil {
-		return err
+		return "", err
 	}
 	for _, option := range options {
 		statements = append(statements, `ALTER TABLE `+candidateReclaimNewTable+` SET (`+option+`)`)
 	}
 	for _, statement := range statements {
-		if err = s.reclaimRetryDDL(ctx, req.LockTimeoutMS, statement); err != nil {
-			return err
+		if err = s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, statement); err != nil {
+			return "", err
 		}
 	}
 	if _, err = s.pool.Exec(ctx, `ANALYZE `+candidateReclaimNewTable); err != nil {
-		return err
+		return "", err
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET state=$1`, candidateReclaimBuilt)
-	return err
+	return "complete", err
 }
 
 // reclaimSwap catches up outside the drain, then attempts the short transaction.
+// Waiting for the drain does not delay ordinary work; holding it does, so attempts
+// that held it and failed are limited separately from those that never got it.
 func (s *Store) reclaimSwap(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard, deadline time.Time, result *CandidateReclaimResult) error {
+	stalls := 0
 	for attempt := 0; ; attempt++ {
-		if stop, err := s.reclaimCopy(ctx, req, guard, deadline); err != nil {
+		result.SwapAttempts = attempt + 1
+		stop, err := s.reclaimCopy(ctx, req, guard, deadline)
+		if err != nil {
 			return err
-		} else if stop != "complete" {
+		}
+		if stop != "complete" {
 			if attempt > 0 && stop == "max_runtime_seconds" {
 				stop = "swap_lock_unavailable"
 			}
 			result.StoppedBy = stop
 			return nil
 		}
-		err := s.reclaimSwapOnce(ctx, req, result)
+		held, err := s.reclaimSwapOnce(ctx, req, result)
 		if err == nil {
 			return nil
 		}
 		var pgErr *pgconn.PgError
-		retry := errors.As(err, &pgErr) && (pgErr.Code == "55P03" || pgErr.Code == "40P01") || Code(err) == "STALE_CURSOR"
+		retry := Code(err) == "STALE_CURSOR" || (ctx.Err() == nil && errors.As(err, &pgErr) &&
+			(pgErr.Code == "55P03" || pgErr.Code == "57014" || pgErr.Code == "40P01"))
 		if !retry {
 			return err
 		}
-		if attempt >= 20 || time.Now().After(deadline) {
+		if held {
+			stalls++
+		}
+		if stalls >= candidateReclaimMaxStalls || time.Now().After(deadline) {
 			result.StoppedBy = "swap_lock_unavailable"
 			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * time.Second):
+		case <-time.After(time.Duration(min(attempt+1, 5)) * time.Second):
 		}
 	}
 }
 
 // reclaimSwapOnce takes the restore admission row exclusively, so every ordinary
-// transaction has finished and none can start until commit. No repeatable-read
-// snapshot can span the swap and read the new relation with an older view.
-func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest, result *CandidateReclaimResult) error {
+// transaction has finished and none can start until commit. Writing that row also
+// fails any repeatable-read transaction already waiting behind it: its snapshot
+// predates this swap and could not see the new relation's rows.
+func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest, result *CandidateReclaimResult) (held bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(context.Background())
-	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('cairn.caller',$2,true)`, strconv.Itoa(req.LockTimeoutMS)+"ms", s.channel.Principal); err != nil {
-		return err
+	timeout := strconv.Itoa(req.LockTimeoutMS) + "ms"
+	// A row-lock wait on short overlapping sharers can outlast lock_timeout, which
+	// applies to each wait, so the statement itself is bounded as well.
+	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$1,true),set_config('cairn.caller',$2,true)`, timeout, s.channel.Principal); err != nil {
+		return false, err
 	}
 	if err = restoreAdmission(context.WithValue(ctx, restoreTransitionKey{}, true), tx); err != nil {
-		return err
+		return false, err
 	}
 	started := time.Now()
-	tag, err := tx.Exec(ctx, `UPDATE cairn.retrieval_receipt r SET candidate_detail_expired_at=clock_timestamp()
- FROM `+candidateReclaimLock+`.expiring e WHERE e.receipt_id=r.receipt_id AND r.candidate_detail_expired_at IS NULL AND NOT `+runBoundReceiptSQL)
-	if err != nil {
-		return err
+	if _, err = tx.Exec(ctx, `UPDATE cairn.restore_admission SET paused=paused WHERE singleton`); err != nil {
+		return true, err
 	}
-	marked := tag.RowsAffected()
 	if _, err = tx.Exec(ctx, `LOCK TABLE cairn.retrieval_candidate IN ACCESS EXCLUSIVE MODE`); err != nil {
-		return err
+		return true, err
 	}
-	// Whatever is still unexpired and uncopied: new receipts and any that gained
-	// a run binding after planning. Only a short tail may run under this drain.
-	ids, err := func() ([]string, error) {
-		rows, err := tx.Query(ctx, `SELECT r.receipt_id::text FROM cairn.retrieval_receipt r WHERE r.candidate_detail_expired_at IS NULL
- AND NOT EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.copied d WHERE d.receipt_id=r.receipt_id) LIMIT $1`, candidateReclaimMaxTail+1)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		ids := []string{}
-		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
-				return nil, err
-			}
-			ids = append(ids, id)
-		}
-		return ids, rows.Err()
-	}()
+	if err = reclaimPreflight(ctx, tx); err != nil {
+		return true, err
+	}
+	var sameOptions bool
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(a.reloptions,'{}')=COALESCE(b.reloptions,'{}') FROM pg_class a,pg_class b WHERE a.oid='cairn.retrieval_candidate'::regclass AND b.oid='`+candidateReclaimNewTable+`'::regclass`).Scan(&sameOptions); err != nil {
+		return true, err
+	}
+	if !sameOptions {
+		return true, failure("DEPENDENCY_CONFLICT", "retrieval_candidate storage options changed after the build phase")
+	}
+	ids, err := s.reclaimPendingReceipts(ctx, tx, candidateReclaimMaxTail+1)
 	if err != nil {
-		return err
+		return true, err
 	}
 	if len(ids) > candidateReclaimMaxTail {
-		return failure("STALE_CURSOR", "too many receipts arrived during the drain; catch up and retry")
+		return true, failure("STALE_CURSOR", "too many receipts arrived during the drain; catch up and retry")
 	}
 	for _, id := range ids {
 		if _, err = tx.Exec(ctx, reclaimCopyReceiptSQL, id); err != nil {
-			return err
+			return true, err
 		}
 	}
 	if err = reclaimRenameInto(ctx, tx); err != nil {
-		return err
+		return true, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET state=$1,swapped_at=clock_timestamp()`, candidateReclaimSwapped); err != nil {
-		return err
+		return true, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return err
+		return true, err
 	}
 	result.SwapHoldMS = time.Since(started).Milliseconds()
-	result.MarkedExpired = marked
 	result.TailReceipts = int64(len(ids))
-	return nil
+	return true, nil
 }
 
 // Index and constraint names return to the migration-defined ones, so later
@@ -613,17 +701,8 @@ func reclaimRenameInto(ctx context.Context, tx pgx.Tx) error {
 	if err != nil {
 		return err
 	}
-	names := []string{}
-	for rows.Next() {
-		var name string
-		if err = rows.Scan(&name); err != nil {
-			rows.Close()
-			return err
-		}
-		names = append(names, name)
-	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
 		return err
 	}
 	for _, name := range names {
@@ -635,75 +714,101 @@ func reclaimRenameInto(ctx context.Context, tx pgx.Tx) error {
 	return nil
 }
 
-// reclaimVerify compares the copied receipts with the old relation before it can
-// be dropped: every count, plus a byte digest of a random sample.
+// reclaimVerify compares the live relation with the old one before it can be
+// dropped. Per receipt, an unmarked receipt must hold every old row and a marked
+// one exactly the rows that outlive expiry. A random sample also compares bytes.
 func (s *Store) reclaimVerify(ctx context.Context, req CandidateReclaimRequest, result *CandidateReclaimResult) error {
 	if req.SampleReceipts == 0 {
 		req.SampleReceipts = 200
 	}
-	var mismatched, unsettled int64
+	var mismatched int64
 	if err := s.pool.QueryRow(ctx, `WITH old_rows AS (
-  SELECT c.receipt_id,count(*) AS rows FROM `+candidateReclaimOldTable+` c
-  WHERE EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.copied d WHERE d.receipt_id=c.receipt_id) GROUP BY 1),
+  SELECT c.receipt_id,count(*) AS total,count(*) FILTER (WHERE `+retainedCandidateSQL+`) AS kept FROM `+candidateReclaimOldTable+` c GROUP BY 1),
  live_rows AS (
-  SELECT c.receipt_id,count(*) AS rows FROM cairn.retrieval_candidate c
-  WHERE EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.copied d WHERE d.receipt_id=c.receipt_id) GROUP BY 1)
- SELECT count(*) FROM `+candidateReclaimLock+`.copied d
- LEFT JOIN old_rows o USING(receipt_id) LEFT JOIN live_rows l USING(receipt_id)
- WHERE COALESCE(o.rows,0)<>COALESCE(l.rows,0)`).Scan(&mismatched); err != nil {
+  SELECT c.receipt_id,count(*) AS rows FROM cairn.retrieval_candidate c GROUP BY 1)
+ SELECT count(*) FROM old_rows o
+ JOIN cairn.retrieval_receipt r USING(receipt_id)
+ LEFT JOIN live_rows l USING(receipt_id)
+ WHERE COALESCE(l.rows,0)<>CASE WHEN r.candidate_detail_expired_at IS NULL THEN o.total ELSE o.kept END`).Scan(&mismatched); err != nil {
 		return err
 	}
 	if mismatched != 0 {
-		return failure("INTEGRITY_FAILURE", fmt.Sprintf("%d rewritten receipts hold a different row count than the old relation", mismatched))
+		return failure("INTEGRITY_FAILURE", fmt.Sprintf("%d receipts hold different row counts in the old and rewritten relations; the old relation is intact", mismatched))
 	}
-	// Every planned receipt was either marked or, having become protected, copied.
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM `+candidateReclaimLock+`.expiring e JOIN cairn.retrieval_receipt r USING(receipt_id)
- WHERE r.candidate_detail_expired_at IS NULL AND NOT EXISTS(SELECT 1 FROM `+candidateReclaimLock+`.copied d WHERE d.receipt_id=e.receipt_id)`).Scan(&unsettled); err != nil {
-		return err
-	}
-	if unsettled != 0 {
-		return failure("INTEGRITY_FAILURE", fmt.Sprintf("%d planned receipts are neither expired nor copied", unsettled))
-	}
-	rows, err := s.pool.Query(ctx, `SELECT receipt_id::text FROM `+candidateReclaimLock+`.copied WHERE rows>0 ORDER BY random() LIMIT $1`, req.SampleReceipts)
+	rows, err := s.pool.Query(ctx, `SELECT receipt_id::text,false FROM (SELECT receipt_id FROM `+candidateReclaimLock+`.copied WHERE rows>0 ORDER BY random() LIMIT $1) whole
+ UNION ALL
+ SELECT receipt_id::text,true FROM (SELECT r.receipt_id FROM cairn.retrieval_receipt r
+  WHERE r.candidate_detail_expired_at IS NOT NULL AND EXISTS(SELECT 1 FROM cairn.retrieval_candidate c WHERE c.receipt_id=r.receipt_id) LIMIT $1) kept`, req.SampleReceipts)
 	if err != nil {
 		return err
 	}
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
+	type sample struct {
+		id           string
+		retainedOnly bool
 	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
+	samples, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (sample, error) {
+		var item sample
+		return item, row.Scan(&item.id, &item.retainedOnly)
+	})
+	if err != nil {
 		return err
 	}
-	const digest = `SELECT count(*),COALESCE(md5(string_agg(t::text,E'\n' ORDER BY record_id,version)),'') FROM %s t WHERE receipt_id=$1`
-	for _, id := range ids {
+	const digest = `SELECT count(*),COALESCE(md5(string_agg(c::text,E'\n' ORDER BY record_id,version)),'') FROM %s c WHERE receipt_id=$1 AND %s`
+	for _, item := range samples {
+		filter := "true"
+		if item.retainedOnly {
+			filter = retainedCandidateSQL
+		}
 		var oldRows, newRows int64
 		var oldDigest, newDigest string
-		if err = s.pool.QueryRow(ctx, fmt.Sprintf(digest, candidateReclaimOldTable), id).Scan(&oldRows, &oldDigest); err != nil {
+		if err = s.pool.QueryRow(ctx, fmt.Sprintf(digest, candidateReclaimOldTable, filter), item.id).Scan(&oldRows, &oldDigest); err != nil {
 			return err
 		}
-		if err = s.pool.QueryRow(ctx, fmt.Sprintf(digest, "cairn.retrieval_candidate"), id).Scan(&newRows, &newDigest); err != nil {
+		if err = s.pool.QueryRow(ctx, fmt.Sprintf(digest, "cairn.retrieval_candidate", "true"), item.id).Scan(&newRows, &newDigest); err != nil {
 			return err
 		}
 		if oldRows != newRows || oldDigest != newDigest {
-			return failure("INTEGRITY_FAILURE", "receipt "+id+" differs between the old and rewritten relations")
+			return failure("INTEGRITY_FAILURE", "receipt "+item.id+" differs between the old and rewritten relations; the old relation is intact")
 		}
 	}
-	result.VerifiedReceipts = len(ids)
+	result.VerifiedReceipts = len(samples)
 	_, err = s.pool.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET state=$1`, candidateReclaimVerified)
 	return err
 }
 
 // reclaimFinish is the only irreversible phase: it drops the old relation.
-func (s *Store) reclaimFinish(ctx context.Context, req CandidateReclaimRequest) error {
+func (s *Store) reclaimFinish(ctx context.Context, req CandidateReclaimRequest, deadline time.Time) error {
 	if !req.ConfirmDropOld {
 		return failure("INVALID_REQUEST", "finish drops the old relation and requires confirm_drop_old")
 	}
-	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
+	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
+}
+
+// reclaimAbort restores exactly what plan and marking changed. Every row of a planned
+// receipt is still in the live relation until the swap, so clearing its marker makes
+// it whole again. The state change stops a half-aborted rewrite from being continued.
+func (s *Store) reclaimAbort(ctx context.Context, req CandidateReclaimRequest, deadline time.Time) error {
+	if _, err := s.pool.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET state=$1`, candidateReclaimAborting); err != nil {
+		return err
+	}
+	for {
+		tx, err := s.begin(ctx)
+		if err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE cairn.retrieval_receipt r SET candidate_detail_expired_at=NULL FROM (
+ SELECT x.receipt_id FROM `+candidateReclaimLock+`.expiring e JOIN cairn.retrieval_receipt x USING(receipt_id)
+ WHERE x.candidate_detail_expired_at IS NOT NULL LIMIT 500) p WHERE p.receipt_id=r.receipt_id`)
+		if err == nil {
+			err = tx.Commit(ctx)
+		}
+		if err != nil {
+			_ = tx.Rollback(context.Background())
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			break
+		}
+	}
+	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
 }

@@ -35,10 +35,12 @@ const runBoundReceiptSQL = `(r.launch_claimed
  OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt x WHERE x.receipt_id=r.receipt_id))`
 
 // newestSelectingReceiptsSQL keeps a bounded set of restore-verification fixtures:
-// the newest receipts per repository that delivered bodies. $1 is the per-repository limit.
+// the newest receipts that delivered bodies, per owning channel and repository,
+// because verification recompiles only receipts its own channel owns and a paused
+// store cannot compile a new one. $1 is the limit for each channel and repository.
 const newestSelectingReceiptsSQL = `SELECT receipt_id FROM (
- SELECT b.receipt_id,row_number() OVER (PARTITION BY b.repo ORDER BY b.created_at DESC,b.receipt_id) AS position FROM (
-  SELECT DISTINCT r.receipt_id,r.scope->>'repo' AS repo,r.created_at FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
+ SELECT b.receipt_id,row_number() OVER (PARTITION BY b.caller,b.repo ORDER BY b.created_at DESC,b.receipt_id) AS position FROM (
+  SELECT DISTINCT r.receipt_id,r.caller,r.scope->>'repo' AS repo,r.created_at FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
   WHERE u.exposure_kind='body' AND r.payload_deleted_by IS NULL) b) ranked WHERE position<=$1`
 
 // CandidateRetentionRequest expires one bounded slice of candidate detail. There
@@ -110,6 +112,8 @@ type candidateMaintenanceGuard struct {
 	startLSN int64
 	lastLSN  int64
 	dataDir  string
+	// reserve is extra headroom the next step needs on top of MinFreeBytes.
+	reserve int64
 }
 
 func (s *Store) newCandidateMaintenanceGuard(ctx context.Context, limits CandidateMaintenanceLimits) (*candidateMaintenanceGuard, error) {
@@ -143,7 +147,7 @@ func (g *candidateMaintenanceGuard) pressure(ctx context.Context) (string, error
 		return "max_wal_dir_bytes", nil
 	case backlog > g.limits.MaxArchiveBacklog:
 		return "max_archive_backlog_segments", nil
-	case int64(fs.Bavail)*int64(fs.Bsize) < g.limits.MinFreeBytes:
+	case int64(fs.Bavail)*int64(fs.Bsize) < g.limits.MinFreeBytes+g.reserve:
 		return "min_free_bytes", nil
 	}
 	return "", nil
@@ -221,7 +225,9 @@ func (s *Store) ExpireCandidateDetail(ctx context.Context, req CandidateRetentio
 		if err != nil {
 			return result, err
 		}
-		if state == candidateReclaimPlanned || state == candidateReclaimBuilt {
+		// Rows must stay as the rewrite recorded them until it finishes: verification
+		// compares the live relation with the old one.
+		if state != candidateReclaimNone {
 			return result, failure("MAINTENANCE_ACTIVE", "a candidate storage rewrite is in progress; finish or abort it before expiring detail")
 		}
 	}
@@ -271,7 +277,7 @@ func (s *Store) ExpireCandidateDetail(ctx context.Context, req CandidateRetentio
 				result.StoppedBy = limit
 				return result, nil
 			}
-			outcome, err := s.expireReceiptDetail(ctx, id, result.Cutoff)
+			outcome, err := s.expireReceiptDetail(ctx, id, result.Cutoff, true)
 			if err != nil {
 				return result, err
 			}
@@ -343,7 +349,9 @@ type receiptExpiry struct {
 // expireReceiptDetail serializes with launches and new references: FOR UPDATE
 // conflicts with their foreign-key locks, and protection is checked in a later
 // statement whose fresh READ COMMITTED snapshot sees anything that committed first.
-func (s *Store) expireReceiptDetail(ctx context.Context, id string, cutoff time.Time) (receiptExpiry, error) {
+//
+// A rewrite marks without deleting: it replaces the rows by not copying them.
+func (s *Store) expireReceiptDetail(ctx context.Context, id string, cutoff time.Time, removeRows bool) (receiptExpiry, error) {
 	var out receiptExpiry
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -376,13 +384,15 @@ func (s *Store) expireReceiptDetail(ctx context.Context, id string, cutoff time.
 	if _, err = tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET candidate_detail_expired_at=clock_timestamp() WHERE receipt_id=$1`, id); err != nil {
 		return out, err
 	}
-	tag, err := tx.Exec(ctx, `DELETE FROM cairn.retrieval_candidate c WHERE c.receipt_id=$1 AND NOT `+retainedCandidateSQL, id)
-	if err != nil {
-		return out, err
-	}
-	out.deleted = tag.RowsAffected()
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_candidate WHERE receipt_id=$1`, id).Scan(&out.retained); err != nil {
-		return out, err
+	if removeRows {
+		tag, err := tx.Exec(ctx, `DELETE FROM cairn.retrieval_candidate c WHERE c.receipt_id=$1 AND NOT `+retainedCandidateSQL, id)
+		if err != nil {
+			return out, err
+		}
+		out.deleted = tag.RowsAffected()
+		if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_candidate WHERE receipt_id=$1`, id).Scan(&out.retained); err != nil {
+			return out, err
+		}
 	}
 	out.expired = true
 	return out, tx.Commit(ctx)
