@@ -202,8 +202,11 @@ creates one high-priority Plane work item through the installed `plane` CLI,
 at most `max_new` (default 5) per run; the rest are `deferred` to the next
 run. The state file records alerted conditions, so a continuing condition stays
 quiet however many deliveries it gains. A complete scan that no longer sees a
-condition clears it, and a later recurrence alerts again; a partial scan
-cannot clear. Each work item carries an `external_id` naming the episode, so a
+condition clears it and moves its work item to Done with a comment, at most
+`max_new` per run; a later recurrence alerts again, as a new item. Clearing means
+the deliveries were handled or failed, or the session stopped, so read the
+comment before assuming they were handled. A partial scan cannot clear, and a
+close that fails stays recorded and retries. Each work item carries an `external_id` naming the episode, so a
 retry after a lost state write finds the existing item instead of creating a
 duplicate. A failed notification is not recorded and the command exits with an
 error so the unit shows as failed; the next run retries it.

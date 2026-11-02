@@ -71,6 +71,7 @@ type deliveryAlertsResult struct {
 	New             []deliveryAlertOutcome `json:"new"`
 	Ongoing         int                    `json:"ongoing"`
 	Cleared         []string               `json:"cleared"`
+	Resolved        []deliveryAlertOutcome `json:"resolved"`
 	Sent            int                    `json:"sent"`
 	Failed          int                    `json:"failed"`
 	Deferred        int                    `json:"deferred"`
@@ -85,6 +86,9 @@ type starvationAlert struct {
 }
 
 type alertNotifier func(context.Context, starvationAlert) (string, error)
+
+// alertResolver closes the work item of a condition that is no longer present.
+type alertResolver func(context.Context, deliveryAlertEntry, time.Time) error
 
 func deliveryAlertKey(s core.StarvedSession) string {
 	return s.Recipient + "|" + s.ExecutionID + "|" + s.Condition
@@ -130,14 +134,15 @@ func newStarvationAlert(s core.StarvedSession, name string, now time.Time) starv
 		b.WriteString("<li><strong>" + e(row[0]) + ":</strong> " + e(row[1]) + "</li>")
 	}
 	b.WriteString("</ul><p>Inspect: <code>cairn coordination-review &lt;&lt;&lt; '" + e(review) + "'</code></p>")
-	b.WriteString("<p>cairn delivery-alerts takes no recovery action; it alerts once per new condition and stays quiet while the condition continues.</p>")
+	b.WriteString("<p>cairn delivery-alerts takes no recovery action; it alerts once per new condition, stays quiet while the condition continues, and closes this item when a complete scan no longer sees it.</p>")
 	return starvationAlert{Session: s, Key: key, ExternalID: deliveryAlertExternalID(key, s.OldestDeliveryID), Title: title, DescriptionHTML: b.String()}
 }
 
 // applyDeliveryAlerts is the dedupe policy. A nil notifier reports without
-// recording. Failed notifications are not recorded, so the next run retries.
-func applyDeliveryAlerts(ctx context.Context, current []core.StarvedSession, complete bool, previous deliveryAlertState, limits deliveryAlertLimits, notify alertNotifier, now time.Time) (deliveryAlertsResult, deliveryAlertState, error) {
-	res := deliveryAlertsResult{Complete: complete, StarvedSessions: current, New: []deliveryAlertOutcome{}, Cleared: []string{}}
+// recording. Failed notifications are not recorded, so the next run retries. A
+// condition whose work item could not be closed stays recorded, for the same reason.
+func applyDeliveryAlerts(ctx context.Context, current []core.StarvedSession, complete bool, previous deliveryAlertState, limits deliveryAlertLimits, notify alertNotifier, resolve alertResolver, now time.Time) (deliveryAlertsResult, deliveryAlertState, error) {
+	res := deliveryAlertsResult{Complete: complete, StarvedSessions: current, New: []deliveryAlertOutcome{}, Cleared: []string{}, Resolved: []deliveryAlertOutcome{}}
 	next := deliveryAlertState{Schema: deliveryAlertSchema, Scope: previous.Scope, Alerts: map[string]deliveryAlertEntry{}}
 	for k, v := range previous.Alerts {
 		next.Alerts[k] = v
@@ -174,13 +179,30 @@ func applyDeliveryAlerts(ctx context.Context, current []core.StarvedSession, com
 		res.New = append(res.New, deliveryAlertOutcome{Key: key, Ref: ref, Status: "sent"})
 	}
 	if complete {
+		keys := make([]string, 0, len(previous.Alerts))
 		for key := range previous.Alerts {
 			if !live[key] {
-				delete(next.Alerts, key)
-				res.Cleared = append(res.Cleared, key)
+				keys = append(keys, key)
 			}
 		}
-		sort.Strings(res.Cleared)
+		sort.Strings(keys)
+		for _, key := range keys {
+			entry := previous.Alerts[key]
+			if resolve != nil {
+				if len(res.Resolved) >= limits.MaxNew {
+					res.Deferred++
+					continue
+				}
+				if err := resolve(ctx, entry, now); err != nil {
+					failures = append(failures, entry.Recipient+": "+err.Error())
+					res.Resolved = append(res.Resolved, deliveryAlertOutcome{Key: key, Ref: entry.Ref, Status: "failed", Error: err.Error()})
+					continue
+				}
+				res.Resolved = append(res.Resolved, deliveryAlertOutcome{Key: key, Ref: entry.Ref, Status: "closed"})
+			}
+			delete(next.Alerts, key)
+			res.Cleared = append(res.Cleared, key)
+		}
 	}
 	if len(next.Alerts) > 1000 {
 		return res, previous, invalid("delivery alert state exceeds 1000 conditions")
@@ -233,6 +255,45 @@ func planeNotifier(project string) alertNotifier {
 	}
 }
 
+// planeResolver closes a cleared condition's work item. A later recurrence opens a
+// new one, because it is a new episode. Clearing does not mean the deliveries were
+// handled: the session may have stopped, which the comment says.
+func planeResolver(project string) alertResolver {
+	return func(ctx context.Context, entry deliveryAlertEntry, now time.Time) error {
+		if entry.Ref == "" {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		update := exec.CommandContext(ctx, "plane", "issue", "update", entry.Ref, "-p", project, "--state", "Done")
+		var stdout, stderr bytes.Buffer
+		update.Stdout, update.Stderr = &stdout, &stderr
+		runErr := update.Run()
+		var envelope struct {
+			OK    bool `json:"ok"`
+			Error struct {
+				Message    string `json:"message"`
+				HTTPStatus int    `json:"http_status"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+			return fmt.Errorf("plane: unreadable response (%v): %v %s", runErr, err, strings.TrimSpace(stderr.String()))
+		}
+		// A deleted work item has nothing left to close.
+		if envelope.Error.HTTPStatus == 404 {
+			return nil
+		}
+		if !envelope.OK || runErr != nil {
+			return fmt.Errorf("plane: %s (http %d, %v)", envelope.Error.Message, envelope.Error.HTTPStatus, runErr)
+		}
+		// The state is what matters; a lost comment only loses the explanation.
+		text := "Closed by cairn delivery-alerts: a complete scan at " + now.UTC().Format(time.RFC3339) +
+			" no longer sees this condition. That means the deliveries were handled or failed, or the session stopped. A recurrence opens a new work item."
+		_ = exec.CommandContext(ctx, "plane", "comment", "add", entry.Ref, "-p", project, "--text", text).Run()
+		return nil
+	}
+}
+
 func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (any, error) {
 	var req deliveryAlertsRequest
 	if err := decode(input, &req); err != nil {
@@ -268,16 +329,17 @@ func deliveryAlerts(ctx context.Context, store *core.Store, input io.Reader) (an
 		return nil, err
 	}
 	var notify alertNotifier
+	var resolve alertResolver
 	notifier := "none (report only)"
 	if req.PlaneProject != "" {
-		notify, notifier = planeNotifier(req.PlaneProject), "plane:"+req.PlaneProject
+		notify, resolve, notifier = planeNotifier(req.PlaneProject), planeResolver(req.PlaneProject), "plane:"+req.PlaneProject
 	}
 	scope := attentionScope(struct{ Repo, Database, Home string }{req.Repo, os.Getenv("CAIRN_DATABASE_URL"), os.Getenv("CAIRN_HOME")})
 	var res deliveryAlertsResult
 	err = withDeliveryAlertState(req.StateFile, scope, notify != nil, func(previous deliveryAlertState) (deliveryAlertState, error) {
 		var next deliveryAlertState
 		var applyErr error
-		res, next, applyErr = applyDeliveryAlerts(ctx, current, complete, previous, deliveryAlertLimits{MaxNew: req.MaxNew}, notify, now)
+		res, next, applyErr = applyDeliveryAlerts(ctx, current, complete, previous, deliveryAlertLimits{MaxNew: req.MaxNew}, notify, resolve, now)
 		return next, applyErr
 	})
 	res.Scanned, res.Complete, res.Notifier = scanned, complete, notifier

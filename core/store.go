@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -175,10 +176,21 @@ func privileged[T any](ctx context.Context, s *Store, operation, requestID strin
 		select {
 		case <-ctx.Done():
 			return zero, ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		case <-time.After(serializationBackoff(attempt)):
 		}
 	}
 	return zero, failure("VERSION_CONFLICT", "serialization retry limit reached; retry the same request")
+}
+
+// serializationBackoff spreads retries of conflicting transactions. Transactions
+// that collided at the same moment would collide again on a fixed delay, so each
+// waits a random time below a ceiling that doubles per attempt, from 10 to 400 ms.
+func serializationBackoff(attempt int) time.Duration {
+	ceiling := 400 * time.Millisecond
+	if attempt < 6 {
+		ceiling = min(ceiling, 10*time.Millisecond<<attempt)
+	}
+	return time.Millisecond + rand.N(ceiling)
 }
 
 func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {

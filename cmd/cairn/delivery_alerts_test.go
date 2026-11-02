@@ -26,8 +26,10 @@ func starved(recipient, condition, oldest string) core.StarvedSession {
 }
 
 type recordingNotifier struct {
-	sent []starvationAlert
-	fail map[string]bool
+	sent        []starvationAlert
+	fail        map[string]bool
+	closed      []string
+	failResolve bool
 }
 
 func (r *recordingNotifier) notify(_ context.Context, a starvationAlert) (string, error) {
@@ -38,6 +40,14 @@ func (r *recordingNotifier) notify(_ context.Context, a starvationAlert) (string
 	return "CAIRN-" + itoa(900+len(r.sent)), nil
 }
 
+func (r *recordingNotifier) resolve(_ context.Context, e deliveryAlertEntry, _ time.Time) error {
+	if r.failResolve {
+		return errors.New("plane unavailable")
+	}
+	r.closed = append(r.closed, e.Ref)
+	return nil
+}
+
 func emptyAlertState() deliveryAlertState {
 	return deliveryAlertState{Schema: deliveryAlertSchema, Scope: "repo", Alerts: map[string]deliveryAlertEntry{}}
 }
@@ -46,7 +56,7 @@ func TestDeliveryAlertsNotifyOncePerNewCondition(t *testing.T) {
 	n := &recordingNotifier{}
 	now := starvationNow
 	current := []core.StarvedSession{starved("agent/449", "pending_starved", "d1"), starved("agent/468", "hold_stalled", "h1")}
-	res, state, err := applyDeliveryAlerts(context.Background(), current, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, now)
+	res, state, err := applyDeliveryAlerts(context.Background(), current, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, now)
 	if err != nil || res.Sent != 2 || len(n.sent) != 2 || len(state.Alerts) != 2 {
 		t.Fatalf("first run: %+v %+v %v", res, state, err)
 	}
@@ -55,7 +65,7 @@ func TestDeliveryAlertsNotifyOncePerNewCondition(t *testing.T) {
 	}
 	// The same conditions on a later run, even with more deliveries, stay quiet.
 	current[0].Count, current[0].OldestAgeSeconds = 30, 40000
-	res, state, err = applyDeliveryAlerts(context.Background(), current, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, now.Add(10*time.Minute))
+	res, state, err = applyDeliveryAlerts(context.Background(), current, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, now.Add(10*time.Minute))
 	if err != nil || res.Sent != 0 || res.Ongoing != 2 || len(n.sent) != 2 {
 		t.Fatalf("ongoing condition repeated: %+v %v", res, err)
 	}
@@ -67,31 +77,108 @@ func TestDeliveryAlertsNotifyOncePerNewCondition(t *testing.T) {
 func TestDeliveryAlertsClearOnlyOnCompleteScanAndRealertNewEpisode(t *testing.T) {
 	n := &recordingNotifier{}
 	cur := []core.StarvedSession{starved("agent/449", "pending_starved", "d1")}
-	_, state, _ := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow)
-	res, state, err := applyDeliveryAlerts(context.Background(), nil, false, state, deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow)
+	_, state, _ := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, starvationNow)
+	res, state, err := applyDeliveryAlerts(context.Background(), nil, false, state, deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, starvationNow)
 	if err != nil || len(res.Cleared) != 0 || len(state.Alerts) != 1 {
 		t.Fatalf("partial scan cleared a condition: %+v %v", res, err)
 	}
-	res, state, err = applyDeliveryAlerts(context.Background(), nil, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow)
+	res, state, err = applyDeliveryAlerts(context.Background(), nil, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, starvationNow)
 	if err != nil || len(res.Cleared) != 1 || len(state.Alerts) != 0 {
 		t.Fatalf("complete scan did not clear: %+v %v", res, err)
 	}
 	cur[0].OldestDeliveryID = "d7"
-	_, _, err = applyDeliveryAlerts(context.Background(), cur, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, starvationNow.Add(time.Hour))
+	_, _, err = applyDeliveryAlerts(context.Background(), cur, true, state, deliveryAlertLimits{MaxNew: 5}, n.notify, n.resolve, starvationNow.Add(time.Hour))
 	if err != nil || len(n.sent) != 2 || n.sent[0].ExternalID == n.sent[1].ExternalID {
 		t.Fatalf("a recurrence is a new episode with a new key: %+v %v", n.sent, err)
+	}
+}
+
+// Work items used to stay open forever: 24 of 26 open items were cleared conditions.
+func TestDeliveryAlertsCloseWorkItemsOfClearedConditions(t *testing.T) {
+	n := &recordingNotifier{}
+	limits := deliveryAlertLimits{MaxNew: 5}
+	cur := []core.StarvedSession{starved("agent/449", "pending_starved", "d1"), starved("agent/468", "hold_stalled", "h1")}
+	_, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), limits, n.notify, n.resolve, starvationNow)
+	if err != nil || len(n.sent) != 2 {
+		t.Fatalf("seed: %+v %v", n.sent, err)
+	}
+	// A partial scan proves nothing about absence.
+	res, state, err := applyDeliveryAlerts(context.Background(), nil, false, state, limits, n.notify, n.resolve, starvationNow)
+	if err != nil || len(n.closed) != 0 || len(res.Resolved) != 0 || len(state.Alerts) != 2 {
+		t.Fatalf("partial scan closed work items: %+v %v", res, err)
+	}
+	// A continuing condition stays open; only the cleared one closes.
+	res, state, err = applyDeliveryAlerts(context.Background(), cur[:1], true, state, limits, n.notify, n.resolve, starvationNow)
+	if err != nil || len(n.closed) != 1 || n.closed[0] != "CAIRN-902" || res.Ongoing != 1 || len(res.Resolved) != 1 || res.Resolved[0].Status != "closed" || len(state.Alerts) != 1 {
+		t.Fatalf("close: %+v closed=%v %v", res, n.closed, err)
+	}
+	// A failed close surfaces, stays recorded and retries on the next run.
+	n.failResolve = true
+	res, state, err = applyDeliveryAlerts(context.Background(), nil, true, state, limits, n.notify, n.resolve, starvationNow)
+	if err == nil || len(state.Alerts) != 1 || len(res.Cleared) != 0 || res.Resolved[0].Status != "failed" {
+		t.Fatalf("failed close was forgotten: %+v %+v %v", res, state, err)
+	}
+	n.failResolve = false
+	res, state, err = applyDeliveryAlerts(context.Background(), nil, true, state, limits, n.notify, n.resolve, starvationNow)
+	if err != nil || len(state.Alerts) != 0 || len(res.Cleared) != 1 || len(n.closed) != 2 {
+		t.Fatalf("retry: %+v %+v %v", res, state, err)
+	}
+	// Each run closes a bounded number; the rest wait for the next run.
+	many := emptyAlertState()
+	for i := 0; i < 4; i++ {
+		many.Alerts["key"+itoa(i)] = deliveryAlertEntry{Recipient: "agent/" + itoa(i), Ref: "CAIRN-" + itoa(i)}
+	}
+	res, many, err = applyDeliveryAlerts(context.Background(), nil, true, many, deliveryAlertLimits{MaxNew: 3}, n.notify, n.resolve, starvationNow)
+	if err != nil || len(res.Resolved) != 3 || res.Deferred != 1 || len(many.Alerts) != 1 {
+		t.Fatalf("bound: %+v %+v %v", res, many, err)
+	}
+}
+
+func TestPlaneResolverClosesAndTreatsDeletedItemsAsClosed(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+printf '%s\n' "$@" >> "` + log + `"
+case "$*" in
+  *CAIRN-404*) echo '{"ok":false,"error":{"code":"not_found","message":"gone","http_status":404}}'; exit 4;;
+  *CAIRN-500*) echo '{"ok":false,"error":{"code":"server","message":"down","http_status":502}}'; exit 6;;
+esac
+echo '{"ok":true,"data":{}}'
+`
+	if err := os.WriteFile(filepath.Join(dir, "plane"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	resolve := planeResolver("CAIRN")
+	if err := resolve(context.Background(), deliveryAlertEntry{Ref: "CAIRN-321"}, starvationNow); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(log)
+	for _, want := range []string{"issue\nupdate\nCAIRN-321\n-p\nCAIRN\n--state\nDone", "comment\nadd\nCAIRN-321", "session stopped"} {
+		if !strings.Contains(string(calls), want) {
+			t.Fatalf("plane calls lack %q:\n%s", want, calls)
+		}
+	}
+	if err := resolve(context.Background(), deliveryAlertEntry{Ref: "CAIRN-404"}, starvationNow); err != nil {
+		t.Fatalf("a deleted item must not fail every later run: %v", err)
+	}
+	if err := resolve(context.Background(), deliveryAlertEntry{Ref: "CAIRN-500"}, starvationNow); err == nil {
+		t.Fatal("server failure reported as closed")
+	}
+	if err := resolve(context.Background(), deliveryAlertEntry{}, starvationNow); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestDeliveryAlertsBoundedAndFailuresRetryLater(t *testing.T) {
 	n := &recordingNotifier{fail: map[string]bool{"agent/b": true}}
 	cur := []core.StarvedSession{starved("agent/a", "pending_starved", "1"), starved("agent/b", "pending_starved", "2"), starved("agent/c", "pending_starved", "3")}
-	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 2}, n.notify, starvationNow)
+	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 2}, n.notify, n.resolve, starvationNow)
 	if err == nil || res.Sent != 1 || res.Failed != 1 || res.Deferred != 1 || len(state.Alerts) != 1 {
 		t.Fatalf("want one sent, one failed (error), one deferred: %+v %v", res, err)
 	}
 	n.fail = nil
-	res, state, err = applyDeliveryAlerts(context.Background(), cur, true, state, deliveryAlertLimits{MaxNew: 2}, n.notify, starvationNow)
+	res, state, err = applyDeliveryAlerts(context.Background(), cur, true, state, deliveryAlertLimits{MaxNew: 2}, n.notify, n.resolve, starvationNow)
 	if err != nil || res.Sent != 2 || len(state.Alerts) != 3 {
 		t.Fatalf("failed and deferred alerts not retried: %+v %v", res, err)
 	}
@@ -99,7 +186,7 @@ func TestDeliveryAlertsBoundedAndFailuresRetryLater(t *testing.T) {
 
 func TestDeliveryAlertsReportOnlyWithoutNotifier(t *testing.T) {
 	cur := []core.StarvedSession{starved("agent/a", "pending_starved", "1")}
-	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, nil, starvationNow)
+	res, state, err := applyDeliveryAlerts(context.Background(), cur, true, emptyAlertState(), deliveryAlertLimits{MaxNew: 5}, nil, nil, starvationNow)
 	if err != nil || res.Sent != 0 || len(res.New) != 1 || len(state.Alerts) != 0 {
 		t.Fatalf("report-only run must not record alerts: %+v %+v %v", res, state, err)
 	}

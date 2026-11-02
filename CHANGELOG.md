@@ -15,6 +15,18 @@ and MCP processes.
 
 ## 2026-11-01
 
+- Overlapping searches fail far less often. Compiles that expose the same note
+  conflict by design, because that shared row is how lifecycle changes detect
+  concurrent use. They now retry up to eight times with randomized backoff instead of
+  four times with fixed delays. Three writers searching without pause went from about
+  16% failures to about 2%, and eight writers 200 ms apart from 1% to none, at the cost
+  of up to about 1.4 s of waiting under that saturation. See CAIRN-274.
+- The API now logs one JSON line per refused operation (`event`, `operation`, `code`,
+  `status`, never a message or request content), so failures that callers see one at a
+  time can be counted with `journalctl --user -u cairn-api -g '"event":"refusal"'`.
+- `cairn delivery-alerts` closes a work item when a complete scan no longer sees its
+  condition, instead of leaving it open forever. A recurrence opens a new item.
+
 - Candidate detail now has an operator-selected lifetime, so
   `retrieval_candidate` no longer grows without bound.
   `cairn candidate-retention` expires old receipts' evaluated-set rows in resumable,

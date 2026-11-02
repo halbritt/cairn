@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -402,12 +403,25 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 		if errors.As(err, &failure) {
 			id = failure.RefusalID
 		}
+		logRefusal(os.Stderr, strings.TrimPrefix(r.URL.Path, "/v1/"), code, status)
 		writeError(w, status, code, message, id)
 		return
 	}
 	// HTTP write errors mean the caller may not have received a committed result;
 	// the request's idempotency key remains its recovery mechanism. Never retry here.
 	_ = encodeSuccess(w, result)
+}
+
+// logRefusal records one line per refused operation, so failures that callers only
+// see individually can be counted from the service journal. It carries the catalog
+// operation, the fixed code and the status, and never a message or request content.
+func logRefusal(w io.Writer, operation, code string, status int) {
+	_ = json.NewEncoder(w).Encode(struct {
+		Event     string `json:"event"`
+		Operation string `json:"operation"`
+		Code      string `json:"code"`
+		Status    int    `json:"status"`
+	}{"refusal", operation, code, status})
 }
 
 // encodeSuccess writes the one success envelope. Size checks use it too, so a

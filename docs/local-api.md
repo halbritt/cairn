@@ -318,6 +318,20 @@ execution; ambiguous responses require [owner-only run status](run-status.md)
 using the same profile and receipt ID. The read grants no launch permission. [Restore fences](restore-fencing.md)
 make old receipts unusable for new claims without changing historical outcomes.
 
+### Counting refusals
+
+Each refused operation writes one JSON line to the API's standard error, with `event`,
+`operation`, `code` and `status`. It never carries a message or request content.
+Callers see refusals one at a time, so this is how to count them:
+
+```sh
+journalctl --user -u cairn-api -g '"event":"refusal"' --since -1d -o cat \
+  | jq -r '[.operation,.code] | @tsv' | sort | uniq -c | sort -rn
+```
+
+Compiles retry serialization conflicts themselves, so a `VERSION_CONFLICT` from `index`
+or `compile` means a search failed after eight attempts.
+
 ## Striatum boundary
 
 Striatum-next's accepted model requires context to enter lanes as sealed, declared

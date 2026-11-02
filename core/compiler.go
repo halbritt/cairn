@@ -194,7 +194,7 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 		return Package{}, failure("DESTINATION_PROHIBITED", "hosted binding cannot receive local content")
 	}
 	memo := &semanticMemo{}
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < compileAttempts; attempt++ {
 		pkg, err := s.compileOnce(ctx, req, destination, memo)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
@@ -203,11 +203,16 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 		select {
 		case <-ctx.Done():
 			return Package{}, ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		case <-time.After(serializationBackoff(attempt)):
 		}
 	}
 	return Package{}, failure("VERSION_CONFLICT", "compile retry limit reached")
 }
+
+// Every exposure updates its note's row, so compiles that expose the same note
+// conflict by design: that row is how lifecycle changes detect concurrent use. A
+// retry is cheap against that, and failing a search loses an agent its memory.
+const compileAttempts = 8
 
 func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination Destination, memo *semanticMemo) (Package, error) {
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)

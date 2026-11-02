@@ -496,7 +496,7 @@ func TestExpiryWithConcurrentCompilesAndExplanations(t *testing.T) {
 			for !stop.Load() {
 				req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "kappa", Purpose: "context", AvailableTokens: 32000}
 				index, err := s.Index(ctx, req, retentionLocal)
-				// Competing compiles can exhaust their own bounded retries, retention or not.
+				// Saturating compiles can still exhaust their bounded retries, retention or not.
 				if Code(err) == "VERSION_CONFLICT" {
 					continue
 				}
@@ -675,5 +675,67 @@ func TestCandidateRetentionMigrationIsSafeUnderTraffic(t *testing.T) {
 	// Whatever the rounds did, the store is at the current schema and usable.
 	if _, err := s.Explain(ctx, seed); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Compiles exposing the same note conflict by design, so spreading their retries is
+// what keeps a search from failing. Fixed delays failed about 16% of these searches.
+func TestOverlappingCompilesRarelyExhaustRetries(t *testing.T) {
+	ctx := context.Background()
+	s := retentionStore(t)
+	repo := uuid.NewString()
+	for i := 0; i < 20; i++ {
+		retentionNote(t, s, repo, fmt.Sprintf("gamma fixture note %d", i))
+	}
+	var stop atomic.Bool
+	var succeeded, conflicted atomic.Int64
+	var writers sync.WaitGroup
+	for w := 0; w < 3; w++ {
+		writers.Add(1)
+		go func() {
+			defer writers.Done()
+			for !stop.Load() {
+				_, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "gamma fixture", Purpose: "context", AvailableTokens: 32000}, retentionLocal)
+				switch {
+				case err == nil:
+					succeeded.Add(1)
+				case Code(err) == "VERSION_CONFLICT":
+					conflicted.Add(1)
+				default:
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	time.Sleep(4 * time.Second)
+	stop.Store(true)
+	writers.Wait()
+	total := succeeded.Load() + conflicted.Load()
+	if total < 20 {
+		t.Fatalf("only %d searches finished", total)
+	}
+	if float64(conflicted.Load()) > float64(total)*0.08 {
+		t.Fatalf("%d of %d overlapping searches failed", conflicted.Load(), total)
+	}
+}
+
+func TestSerializationBackoffIsBoundedAndSpread(t *testing.T) {
+	for attempt := 0; attempt < compileAttempts+2; attempt++ {
+		seen := map[time.Duration]bool{}
+		ceiling := 400 * time.Millisecond
+		if attempt < 6 {
+			ceiling = min(ceiling, 10*time.Millisecond<<attempt)
+		}
+		for i := 0; i < 200; i++ {
+			delay := serializationBackoff(attempt)
+			if delay < time.Millisecond || delay > ceiling+time.Millisecond {
+				t.Fatalf("attempt %d: delay %v outside bounds", attempt, delay)
+			}
+			seen[delay] = true
+		}
+		if len(seen) < 50 {
+			t.Fatalf("attempt %d: delays are not spread: %d distinct", attempt, len(seen))
+		}
 	}
 }
