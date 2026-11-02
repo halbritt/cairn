@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -81,6 +82,14 @@ func waitForBackends(t *testing.T, s *Store, query string, want int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d backends on %s", want, query)
+}
+
+// holdLongEnoughToPark lets a test keep a swap waiting on a lock it controls.
+func holdLongEnoughToPark(t *testing.T) {
+	t.Helper()
+	previous := candidateReclaimHoldLimit
+	candidateReclaimHoldLimit = "60s"
+	t.Cleanup(func() { candidateReclaimHoldLimit = previous })
 }
 
 func wideStore(t *testing.T, s *Store, maxConns int32) *Store {
@@ -371,6 +380,7 @@ func TestReclaimRewritesOnlyRetainedDetailUnderConcurrentWrites(t *testing.T) {
 // row. Waiting there through the swap must not let it read the new relation.
 func TestSwapFailsStaleSnapshotsInsteadOfServingPartialLists(t *testing.T) {
 	ctx := context.Background()
+	holdLongEnoughToPark(t)
 	s := wideStore(t, retentionStore(t), 40)
 	repo := uuid.NewString()
 	for i := 0; i < 25; i++ {
@@ -518,17 +528,24 @@ func TestFixtureProtectionFollowsTheOwningChannel(t *testing.T) {
 	}
 	operatorFixture := compile(s)
 	backdateReceipt(t, s, operatorFixture.ReceiptID, 40)
-	// Agents' newer selecting receipts cannot displace the operator's only fixture,
-	// which is the only kind verify-restore can recompile.
-	agent := &Store{pool: s.pool, channel: Channel{Principal: "machine:agent", Instrumented: true}}
-	agentOld := compile(agent)
-	backdateReceipt(t, s, agentOld.ReceiptID, 39)
-	for i := 0; i < 2; i++ {
-		compile(agent)
+	// Agents' newer selecting receipts cannot displace the operator's fixture, the
+	// only kind verify-restore can recompile, and each agent being its own principal
+	// must not let protection grow with the number of agents.
+	agentOld := []string{}
+	for i := 0; i < 6; i++ {
+		agent := &Store{pool: s.pool, channel: Channel{Principal: fmt.Sprintf("machine:agent-%d", i), Instrumented: true}}
+		id := compile(agent).ReceiptID
+		backdateReceipt(t, s, id, 39)
+		agentOld = append(agentOld, id)
 	}
 	result := expire(t, s, CandidateRetentionRequest{WindowDays: 14, KeepSelectedPerRepo: 2})
-	if result.ExpiredReceipts != 1 || expiredAt(t, s, agentOld.ReceiptID) == nil {
+	if result.ExpiredReceipts != len(agentOld) || result.ProtectedReceipts != 1 {
 		t.Fatalf("expiry: %+v", result)
+	}
+	for _, id := range agentOld {
+		if expiredAt(t, s, id) == nil {
+			t.Fatalf("agent receipt %s was protected", id)
+		}
 	}
 	if expiredAt(t, s, operatorFixture.ReceiptID) != nil {
 		t.Fatal("agent receipts displaced the operator's restore fixture")
@@ -564,10 +581,19 @@ func TestClaimRunRefusesExpiredDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireCode(t, s.ClaimRun(ctx, p.ReceiptID), "CANDIDATE_DETAIL_EXPIRED")
+	digest := strings.Repeat("a", 64)
+	_, err = s.BindRun(ctx, RunBindingRequest{RequestID: uuid.NewString(), ReceiptID: p.ReceiptID, TaskClass: "repair", BindingID: "fixture", CapabilityID: "fixture", CommandSHA256: digest, Revision: "fixture", WorkspaceSHA256: digest})
+	requireCode(t, err, "CANDIDATE_DETAIL_EXPIRED")
 	var claimed bool
 	if err = s.pool.QueryRow(ctx, `SELECT launch_claimed FROM cairn.retrieval_receipt WHERE receipt_id=$1`, p.ReceiptID).Scan(&claimed); err != nil || claimed {
 		t.Fatalf("an expired receipt became run-bound: %v %v", claimed, err)
 	}
+	// An observation of something already done is still kept, and restores nothing.
+	if _, err = s.RecordDelivery(ctx, DeliveryRequest{uuid.NewString(), p.ReceiptID, "fixture", "stdin", "delivered", digest, "instrumented fixture"}); err != nil {
+		t.Fatalf("late delivery observation refused: %v", err)
+	}
+	_, err = s.Explain(ctx, p.ReceiptID)
+	requireCode(t, err, "CANDIDATE_DETAIL_EXPIRED")
 }
 
 func TestReclaimAbortRestoresReceiptsAndPreflightRefuses(t *testing.T) {
@@ -592,7 +618,7 @@ func TestReclaimAbortRestoresReceiptsAndPreflightRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
-	_, err = s.ReclaimCandidateStorage(ctx, CandidateReclaimRequest{Phase: "abort", LockTimeoutMS: 50, MaxRuntimeSeconds: 1, Limits: retentionTestLimits})
+	_, err = s.ReclaimCandidateStorage(ctx, CandidateReclaimRequest{Phase: "abort", LockTimeoutMS: 50, Limits: retentionTestLimits})
 	requireCode(t, err, "MAINTENANCE_ACTIVE")
 	if elapsed := time.Since(started); elapsed > 15*time.Second {
 		t.Fatalf("abort held on for %v", elapsed)
@@ -655,6 +681,17 @@ func TestReclaimAbortRestoresReceiptsAndPreflightRefuses(t *testing.T) {
 		}
 		reclaim(t, s, CandidateReclaimRequest{Phase: "abort"})
 	}
+	// A column added after the copy would vanish, so it stops the swap too.
+	reclaimThrough(t, s, "plan", "copy", "build")
+	if _, err = s.pool.Exec(ctx, `ALTER TABLE cairn.retrieval_candidate ADD COLUMN test_extra integer`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ReclaimCandidateStorage(ctx, CandidateReclaimRequest{Phase: "swap", Limits: retentionTestLimits})
+	requireCode(t, err, "DEPENDENCY_CONFLICT")
+	if _, err = s.pool.Exec(ctx, `ALTER TABLE cairn.retrieval_candidate DROP COLUMN test_extra`); err != nil {
+		t.Fatal(err)
+	}
+	reclaim(t, s, CandidateReclaimRequest{Phase: "abort"})
 	_, err = s.ReclaimCandidateStorage(ctx, CandidateReclaimRequest{Phase: "bogus", Limits: retentionTestLimits})
 	requireCode(t, err, "INVALID_REQUEST")
 }
@@ -998,6 +1035,7 @@ func TestRewriteSurvivesAFaultAtEveryDDLStatement(t *testing.T) {
 // A killed swap backend rolls back; the operator repeats the phase.
 func TestSwapRecoversFromAKilledBackend(t *testing.T) {
 	ctx := context.Background()
+	holdLongEnoughToPark(t)
 	s := wideStore(t, retentionStore(t), 40)
 	repo := uuid.NewString()
 	retentionNote(t, s, repo, "psi fixture_error")
@@ -1037,5 +1075,51 @@ func TestSwapRecoversFromAKilledBackend(t *testing.T) {
 	}
 	if swapped := reclaim(t, s, CandidateReclaimRequest{Phase: "swap"}); swapped.State != candidateReclaimSwapped {
 		t.Fatalf("retry after a killed swap: %+v", swapped)
+	}
+}
+
+// A client that stalls while holding the drain must not hold up ordinary work.
+func TestStalledClientReleasesTheDrain(t *testing.T) {
+	ctx := context.Background()
+	s := wideStore(t, retentionStore(t), 20)
+	repo := uuid.NewString()
+	retentionNote(t, s, repo, "omega fixture_error")
+	id := retentionReceipt(t, s, retentionIndex(t, s, repo, "omega"))
+	backdateReceipt(t, s, id, 40)
+	reclaimThrough(t, s, "plan", "copy", "build")
+	previous := candidateReclaimHoldLimit
+	candidateReclaimHoldLimit = "200ms"
+	t.Cleanup(func() {
+		candidateReclaimHoldLimit = previous
+		reclaimDrainHeldHook = nil
+	})
+	var stalled sync.Once
+	released := make(chan time.Duration, 1)
+	reclaimDrainHeldHook = func() {
+		stalled.Do(func() {
+			started := time.Now()
+			// An ordinary transaction waits for the drain, then proceeds once the
+			// server has ended the idle session.
+			tx, err := s.begin(ctx)
+			if err != nil {
+				t.Error(err)
+			} else {
+				_ = tx.Rollback(ctx)
+			}
+			released <- time.Since(started)
+		})
+	}
+	result, err := s.ReclaimCandidateStorage(ctx, CandidateReclaimRequest{Phase: "swap", Limits: retentionTestLimits})
+	if waited := <-released; waited > 5*time.Second {
+		t.Fatalf("ordinary work waited %v behind a stalled client", waited)
+	}
+	// The stalled attempt fails; the state stays repeatable.
+	state, serr := s.candidateReclaimState(ctx)
+	if serr != nil || (state != candidateReclaimBuilt && state != candidateReclaimSwapped) {
+		t.Fatalf("state %s %v (%+v %v)", state, serr, result, err)
+	}
+	reclaimDrainHeldHook = nil
+	if state == candidateReclaimBuilt {
+		reclaim(t, s, CandidateReclaimRequest{Phase: "swap"})
 	}
 }

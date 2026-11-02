@@ -34,14 +34,16 @@ const runBoundReceiptSQL = `(r.launch_claimed
  OR EXISTS(SELECT 1 FROM cairn.run_retrieval x WHERE r.receipt_id IN (x.retrieval_receipt_id,x.run_receipt_id))
  OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt x WHERE x.receipt_id=r.receipt_id))`
 
-// newestSelectingReceiptsSQL keeps a bounded set of restore-verification fixtures:
-// the newest receipts that delivered bodies, per owning channel and repository,
-// because verification recompiles only receipts its own channel owns and a paused
-// store cannot compile a new one. $1 is the limit for each channel and repository.
+// newestSelectingReceiptsSQL keeps a bounded set of restore-verification fixtures.
+// Verification recompiles only receipts its own channel owns, and a paused store
+// cannot compile new ones, so this keeps the newest receipts that delivered bodies
+// to the operator channel running retention, per repository. Agent receipts are not
+// usable fixtures, and counting them would let protection grow with the agents.
+// $1 is the limit for each repository and $2 the operator principal.
 const newestSelectingReceiptsSQL = `SELECT receipt_id FROM (
- SELECT b.receipt_id,row_number() OVER (PARTITION BY b.caller,b.repo ORDER BY b.created_at DESC,b.receipt_id) AS position FROM (
-  SELECT DISTINCT r.receipt_id,r.caller,r.scope->>'repo' AS repo,r.created_at FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
-  WHERE u.exposure_kind='body' AND r.payload_deleted_by IS NULL) b) ranked WHERE position<=$1`
+ SELECT b.receipt_id,row_number() OVER (PARTITION BY b.repo ORDER BY b.created_at DESC,b.receipt_id) AS position FROM (
+  SELECT DISTINCT r.receipt_id,r.scope->>'repo' AS repo,r.created_at FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
+  WHERE u.exposure_kind='body' AND r.payload_deleted_by IS NULL AND r.caller=$2) b) ranked WHERE position<=$1`
 
 // CandidateRetentionRequest expires one bounded slice of candidate detail. There
 // is deliberately no default window: the duration is an operator policy.
@@ -309,7 +311,7 @@ func (s *Store) candidateRetentionCensus(ctx context.Context, cutoff time.Time, 
  SELECT count(*) FILTER (WHERE NOT protected),count(*) FILTER (WHERE protected) FROM (
   SELECT `+runBoundReceiptSQL+` OR r.receipt_id IN (SELECT receipt_id FROM fixtures) AS protected
   FROM cairn.retrieval_receipt r
-  WHERE r.candidate_detail_expired_at IS NULL AND r.explanation_version>0 AND r.created_at<$2) e`, keep, cutoff).Scan(&eligible, &protected)
+  WHERE r.candidate_detail_expired_at IS NULL AND r.explanation_version>0 AND r.created_at<$3) e`, keep, s.channel.Principal, cutoff).Scan(&eligible, &protected)
 	return eligible, protected, err
 }
 
@@ -322,10 +324,10 @@ func (s *Store) candidateRetentionBatch(ctx context.Context, cutoff time.Time, k
 	}
 	rows, err := s.pool.Query(ctx, `WITH fixtures AS (`+newestSelectingReceiptsSQL+`)
  SELECT r.receipt_id::text FROM cairn.retrieval_receipt r
- WHERE r.candidate_detail_expired_at IS NULL AND r.explanation_version>0 AND r.created_at<$2
+ WHERE r.candidate_detail_expired_at IS NULL AND r.explanation_version>0 AND r.created_at<$3
  AND NOT `+runBoundReceiptSQL+` AND r.receipt_id NOT IN (SELECT receipt_id FROM fixtures)
- AND NOT (r.receipt_id=ANY($3::uuid[]))
- ORDER BY r.created_at,r.receipt_id LIMIT 500`, keep, cutoff, excluded)
+ AND NOT (r.receipt_id=ANY($4::uuid[]))
+ ORDER BY r.created_at,r.receipt_id LIMIT 500`, keep, s.channel.Principal, cutoff, excluded)
 	if err != nil {
 		return nil, err
 	}

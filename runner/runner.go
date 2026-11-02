@@ -180,7 +180,7 @@ func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	_, err = store.BindRun(ctx, core.RunBindingRequest{AttemptID: req.AttemptID, RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
 		switch core.Code(err) {
-		case "INVALID_REQUEST", "AUTHORITY_DENIED", "STALE_PACKAGE", "STALE_HANDLE", "PAYLOAD_UNAVAILABLE", "NOT_FOUND":
+		case "INVALID_REQUEST", "AUTHORITY_DENIED", "STALE_PACKAGE", "STALE_HANDLE", "PAYLOAD_UNAVAILABLE", "CANDIDATE_DETAIL_EXPIRED", "NOT_FOUND":
 		default:
 			result.ProcessState = "unknown"
 		}

@@ -616,3 +616,64 @@ func TestVerifyRestoreNamesExpiredFixtures(t *testing.T) {
 		t.Fatalf("expired fixture not named: %+v", report.Problems)
 	}
 }
+
+// Migration 074 runs while the store serves traffic. Ordinary transactions lock the
+// admission row and then the receipt table, so it must not lock them the other way.
+func TestCandidateRetentionMigrationIsSafeUnderTraffic(t *testing.T) {
+	ctx := context.Background()
+	s := retentionStore(t)
+	repo := uuid.NewString()
+	for i := 0; i < 5; i++ {
+		retentionNote(t, s, repo, fmt.Sprintf("beta fixture_error %d", i))
+	}
+	seed := retentionReceipt(t, s, retentionIndex(t, s, repo, "beta"))
+	const reverse = `DROP INDEX cairn.retrieval_receipt_unexpired_detail;
+ ALTER TABLE cairn.retrieval_receipt DROP COLUMN candidate_detail_expired_at;
+ ALTER TABLE cairn.retrieval_candidate RESET (autovacuum_vacuum_scale_factor,autovacuum_analyze_scale_factor);
+ DELETE FROM public.cairn_migration WHERE version=74`
+	for round := 0; round < 4; round++ {
+		if _, err := s.pool.Exec(ctx, reverse); err != nil {
+			t.Fatal(err)
+		}
+		var stop atomic.Bool
+		var traffic sync.WaitGroup
+		failures := make(chan error, 16)
+		for i := 0; i < 4; i++ {
+			traffic.Add(1)
+			go func(i int) {
+				defer traffic.Done()
+				time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+				for !stop.Load() {
+					tx, err := s.beginLevel(ctx, "repeatable read")
+					if err != nil {
+						failures <- err
+						return
+					}
+					time.Sleep(30 * time.Millisecond)
+					var n int
+					err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_receipt WHERE receipt_id=$1`, seed).Scan(&n)
+					_ = tx.Rollback(ctx)
+					if err != nil {
+						failures <- err
+						return
+					}
+				}
+			}(i)
+		}
+		time.Sleep(50 * time.Millisecond)
+		err := s.Migrate(ctx)
+		stop.Store(true)
+		traffic.Wait()
+		close(failures)
+		for failure := range failures {
+			t.Errorf("round %d: ordinary transaction failed: %v", round, failure)
+		}
+		if err != nil {
+			t.Fatalf("round %d: migration under traffic: %v", round, err)
+		}
+	}
+	// Whatever the rounds did, the store is at the current schema and usable.
+	if _, err := s.Explain(ctx, seed); err != nil {
+		t.Fatal(err)
+	}
+}

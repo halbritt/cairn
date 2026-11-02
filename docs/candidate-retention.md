@@ -43,8 +43,10 @@ version 0 keeps its existing meaning: a legacy receipt that never had detail.
   their volume follows real runs rather than searches.
 - **Restore fixtures.** `verify-restore` requires a fixture that selected content,
   can only recompile receipts its own channel owns, and cannot compile new ones while
-  paused. So the newest 100 body-selecting receipts per channel and repository keep
-  their rows, matching its 100-fixture limit. Override with `keep_selected_per_repo`.
+  paused. So the newest 100 body-selecting receipts owned by the operator channel
+  running retention keep their rows, per repository, matching its 100-fixture limit.
+  Override with `keep_selected_per_repo`, and run retention as the same operator that
+  would run a restore. Agent receipts are not usable fixtures and get no protection.
 
 ## Ordinary deletion
 
@@ -54,8 +56,11 @@ does: once every referencing receipt has expired, a note with no other reference
 can be deleted. Any in-window receipt, `record_use` row or retained gate row still
 blocks it. Saved packages do not depend on a note they merely considered.
 
-`ClaimRun` refuses an expired receipt: a run's decisions stay reviewable, which an
-expired receipt could not support.
+Binding and launching a run (`bind-run`, `ClaimRun`) refuse an expired receipt: a run's
+decisions stay reviewable, which an expired receipt could not support. Observations
+about something that already happened, such as a delivery or an outcome, are still
+recorded, because they are worth more than the diagnostics. Recording one does not
+restore detail: protection applies to receipts bound before they expired.
 
 ## Expire detail
 
@@ -126,21 +131,27 @@ The swap writes the admission row without changing it, as `begin-restore` does, 
 repeatable-read transaction already waiting there fails with a serialization error.
 Its snapshot predates the swap, and it could otherwise read an incomplete list from
 the new relation. Compiles retry this automatically; other reads return a store error
-for that one call. Waiting for the drain does not delay ordinary work. Holding it does,
-so `lock_timeout_ms` (default 3000) bounds each statement, and after three attempts
-that held the drain and failed, the phase stops with
-`stopped_by: swap_lock_unavailable` and nothing changed. Repeat it when whatever holds
-the table has finished. The hold does not grow with the number of expiring receipts.
+for that one call. Waiting for the drain does not delay ordinary work, and
+`lock_timeout_ms` (default 3000) bounds that wait per attempt. Holding it does delay
+ordinary work, so each statement under it has a fixed three-second limit, and a client
+that stalls is disconnected by the server. After three attempts that held the drain
+and failed, the phase stops with `stopped_by: swap_lock_unavailable` and nothing
+changed. Repeat it when whatever holds the table has finished. The hold does not grow
+with the number of expiring receipts. Statements elsewhere that need strong locks
+(`build`, `abort`, `finish`) stop after three attempts in the same way.
 
 `plan` and `swap` refuse if the table has anything a swap would lose: grants, triggers,
 rules, views, policies, extended statistics, extra indexes or constraints, or another
-owner. Expiry refuses until the rewrite has finished or been aborted. If `verify`
+owner. `swap` also refuses if columns or storage options changed after `build`. Expiry refuses until the rewrite has finished or been aborted. If `verify`
 reports a mismatch, the state stays `swapped`, `finish` stays refused and the old
 relation remains; investigate before doing anything else.
 
-**Do not roll back to a binary older than migration 074 after anything has expired.**
-Older binaries do not know the marker and would report an expired receipt as having
-no candidates.
+**Install the new binary and restart the API before expiring anything, and do not roll
+back to a binary older than migration 074 afterwards.** Older binaries do not know the
+marker and would report an expired receipt as having no candidates. The migration
+itself is safe under live traffic and with older binaries still running: it adds a
+nullable column and takes one short exclusive lock, on `retrieval_receipt`, last.
+Bound it with a `lock_timeout` in the connection options and retry if it times out.
 
 ## Recovery
 

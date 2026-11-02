@@ -39,6 +39,12 @@ const (
 	candidateReclaimMaxStalls = 3
 )
 
+// candidateReclaimHoldLimit bounds each statement while the drain is held.
+var candidateReclaimHoldLimit = "3s"
+
+// reclaimDrainHeldHook lets tests act at the moment the drain is held.
+var reclaimDrainHeldHook func()
+
 // CandidateReclaimRequest runs one phase: status, plan, copy, build, swap, verify,
 // finish or abort. Only plan chooses the window; later phases use the recorded one.
 type CandidateReclaimRequest struct {
@@ -154,15 +160,15 @@ func (s *Store) ReclaimCandidateStorage(ctx context.Context, req CandidateReclai
 	case "copy":
 		result.StoppedBy, err = s.reclaimCopy(ctx, req, guard, deadline)
 	case "build":
-		result.StoppedBy, err = s.reclaimBuild(ctx, req, guard, deadline)
+		result.StoppedBy, err = s.reclaimBuild(ctx, req, guard)
 	case "swap":
 		err = s.reclaimSwap(ctx, req, guard, deadline, &result)
 	case "verify":
 		err = s.reclaimVerify(ctx, req, &result)
 	case "finish":
-		err = s.reclaimFinish(ctx, req, deadline)
+		err = s.reclaimFinish(ctx, req)
 	case "abort":
-		err = s.reclaimAbort(ctx, req, deadline)
+		err = s.reclaimAbort(ctx, req)
 	}
 	if guard != nil {
 		_, _ = guard.pressure(ctx)
@@ -271,7 +277,7 @@ func (s *Store) reclaimPlan(ctx context.Context, req CandidateReclaimRequest) er
  INSERT INTO `+candidateReclaimLock+`.expiring
  SELECT r.receipt_id FROM cairn.retrieval_receipt r, `+candidateReclaimLock+`.run p
  WHERE r.candidate_detail_expired_at IS NULL AND r.explanation_version>0 AND r.created_at<p.cutoff
- AND NOT `+runBoundReceiptSQL+` AND r.receipt_id NOT IN (SELECT receipt_id FROM fixtures)`, req.KeepSelectedPerRepo); err != nil {
+ AND NOT `+runBoundReceiptSQL+` AND r.receipt_id NOT IN (SELECT receipt_id FROM fixtures)`, req.KeepSelectedPerRepo, s.channel.Principal); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -483,8 +489,11 @@ const reclaimCopyReceiptSQL = `WITH inserted AS (
  INSERT INTO ` + candidateReclaimNewTable + ` SELECT c.* FROM cairn.retrieval_candidate c WHERE c.receipt_id=$1 RETURNING 1)
  INSERT INTO ` + candidateReclaimLock + `.copied(receipt_id,rows) SELECT $1,count(*) FROM inserted`
 
-func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, deadline time.Time, statement string) error {
-	for attempt := 0; ; attempt++ {
+// reclaimRetryDDL runs a statement that needs a strong lock. While it waits, later
+// readers of that table queue behind it, so attempts are capped rather than spread
+// over the run's whole time budget. The phase can simply be repeated later.
+func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, statement string) error {
+	for attempt := 1; ; attempt++ {
 		tx, err := s.begin(ctx)
 		if err != nil {
 			return err
@@ -501,20 +510,20 @@ func (s *Store) reclaimRetryDDL(ctx context.Context, lockTimeoutMS int, deadline
 		if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
 			return err
 		}
-		if time.Now().After(deadline) {
-			return failure("MAINTENANCE_ACTIVE", "candidate maintenance could not get its locks before max_runtime_seconds; nothing changed by this step, repeat the phase")
+		if attempt >= candidateReclaimMaxStalls {
+			return failure("MAINTENANCE_ACTIVE", "candidate maintenance could not get its locks; this step changed nothing, repeat the phase once other work has finished")
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(min(attempt+1, 5)) * time.Second):
+		case <-time.After(time.Duration(attempt) * time.Second):
 		}
 	}
 }
 
 // reclaimBuild creates constraints after the bulk copy: maintaining a random-keyed
 // index row by row would be slower and log far more. Nothing reads this table yet.
-func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard, deadline time.Time) (string, error) {
+func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, guard *candidateMaintenanceGuard) (string, error) {
 	var block, blocks int64
 	var done bool
 	if err := s.pool.QueryRow(ctx, `SELECT scan_block,scan_blocks,marking_done FROM `+candidateReclaimLock+`.run`).Scan(&block, &blocks, &done); err != nil {
@@ -560,7 +569,7 @@ func (s *Store) reclaimBuild(ctx context.Context, req CandidateReclaimRequest, g
 		statements = append(statements, `ALTER TABLE `+candidateReclaimNewTable+` SET (`+option+`)`)
 	}
 	for _, statement := range statements {
-		if err = s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, statement); err != nil {
+		if err = s.reclaimRetryDDL(ctx, req.LockTimeoutMS, statement); err != nil {
 			return "", err
 		}
 	}
@@ -626,14 +635,24 @@ func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest
 	defer tx.Rollback(context.Background())
 	timeout := strconv.Itoa(req.LockTimeoutMS) + "ms"
 	// A row-lock wait on short overlapping sharers can outlast lock_timeout, which
-	// applies to each wait, so the statement itself is bounded as well.
-	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$1,true),set_config('cairn.caller',$2,true)`, timeout, s.channel.Principal); err != nil {
+	// applies to each wait, so the statement itself is bounded as well. If this client
+	// stalls while holding the drain, the server ends the session and releases it.
+	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$1,true),set_config('idle_in_transaction_session_timeout',$2,true),set_config('cairn.caller',$3,true)`,
+		timeout, candidateReclaimHoldLimit, s.channel.Principal); err != nil {
 		return false, err
 	}
 	if err = restoreAdmission(context.WithValue(ctx, restoreTransitionKey{}, true), tx); err != nil {
 		return false, err
 	}
 	started := time.Now()
+	// Waiting for the drain delays nobody. Holding it delays everything, so from here
+	// each statement has a fixed limit however patient the caller is about the wait.
+	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$1,true)`, candidateReclaimHoldLimit); err != nil {
+		return true, err
+	}
+	if reclaimDrainHeldHook != nil {
+		reclaimDrainHeldHook()
+	}
 	if _, err = tx.Exec(ctx, `UPDATE cairn.restore_admission SET paused=paused WHERE singleton`); err != nil {
 		return true, err
 	}
@@ -643,12 +662,15 @@ func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest
 	if err = reclaimPreflight(ctx, tx); err != nil {
 		return true, err
 	}
-	var sameOptions bool
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(a.reloptions,'{}')=COALESCE(b.reloptions,'{}') FROM pg_class a,pg_class b WHERE a.oid='cairn.retrieval_candidate'::regclass AND b.oid='`+candidateReclaimNewTable+`'::regclass`).Scan(&sameOptions); err != nil {
+	var sameDefinition bool
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(a.reloptions,'{}')=COALESCE(b.reloptions,'{}') AND
+ (SELECT array_agg(x.attname||':'||format_type(x.atttypid,x.atttypmod)||':'||x.attnotnull::text ORDER BY x.attnum) FROM pg_attribute x WHERE x.attrelid=a.oid AND x.attnum>0 AND NOT x.attisdropped)=
+ (SELECT array_agg(x.attname||':'||format_type(x.atttypid,x.atttypmod)||':'||x.attnotnull::text ORDER BY x.attnum) FROM pg_attribute x WHERE x.attrelid=b.oid AND x.attnum>0 AND NOT x.attisdropped)
+ FROM pg_class a,pg_class b WHERE a.oid='cairn.retrieval_candidate'::regclass AND b.oid='`+candidateReclaimNewTable+`'::regclass`).Scan(&sameDefinition); err != nil {
 		return true, err
 	}
-	if !sameOptions {
-		return true, failure("DEPENDENCY_CONFLICT", "retrieval_candidate storage options changed after the build phase")
+	if !sameDefinition {
+		return true, failure("DEPENDENCY_CONFLICT", "retrieval_candidate columns or storage options changed after the build phase")
 	}
 	ids, err := s.reclaimPendingReceipts(ctx, tx, candidateReclaimMaxTail+1)
 	if err != nil {
@@ -777,17 +799,17 @@ func (s *Store) reclaimVerify(ctx context.Context, req CandidateReclaimRequest, 
 }
 
 // reclaimFinish is the only irreversible phase: it drops the old relation.
-func (s *Store) reclaimFinish(ctx context.Context, req CandidateReclaimRequest, deadline time.Time) error {
+func (s *Store) reclaimFinish(ctx context.Context, req CandidateReclaimRequest) error {
 	if !req.ConfirmDropOld {
 		return failure("INVALID_REQUEST", "finish drops the old relation and requires confirm_drop_old")
 	}
-	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
+	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
 }
 
 // reclaimAbort restores exactly what plan and marking changed. Every row of a planned
 // receipt is still in the live relation until the swap, so clearing its marker makes
 // it whole again. The state change stops a half-aborted rewrite from being continued.
-func (s *Store) reclaimAbort(ctx context.Context, req CandidateReclaimRequest, deadline time.Time) error {
+func (s *Store) reclaimAbort(ctx context.Context, req CandidateReclaimRequest) error {
 	if _, err := s.pool.Exec(ctx, `UPDATE `+candidateReclaimLock+`.run SET state=$1`, candidateReclaimAborting); err != nil {
 		return err
 	}
@@ -810,5 +832,5 @@ func (s *Store) reclaimAbort(ctx context.Context, req CandidateReclaimRequest, d
 			break
 		}
 	}
-	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, deadline, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
+	return s.reclaimRetryDDL(ctx, req.LockTimeoutMS, `DROP SCHEMA `+candidateReclaimLock+` CASCADE`)
 }

@@ -62,6 +62,9 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		if launched {
 			return Observation{}, failure("RUN_ALREADY_STARTED", "bind run identity before claiming launch")
 		}
+		if err := candidateDetailAvailable(ctx, tx, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
 		if err := requireExecutionReceipt(ctx, tx, req.ReceiptID); err != nil {
 			return Observation{}, err
 		}
