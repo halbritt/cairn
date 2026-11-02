@@ -11,6 +11,10 @@ import (
 	"github.com/halbritt/cairn/localapi"
 )
 
+// selfBoundedCommands enforce their own max_runtime_seconds and resume when run
+// again, so the interactive deadline would only abort long maintenance midway.
+var selfBoundedCommands = map[string]bool{"candidate-retention": true, "candidate-reclaim": true}
+
 // operatorDestination is the trusted local operator channel's destination.
 var operatorDestination = core.Destination{Name: "local", AllowLocal: true}
 

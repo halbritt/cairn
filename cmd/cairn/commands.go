@@ -184,8 +184,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if args[0] == "run" {
 		return runTask(ctx, store, args[1:])
 	}
-	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	if !selfBoundedCommands[args[0]] {
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 	switch args[0] {
 	case "capture-evidence":
 		if len(args) > 1 {

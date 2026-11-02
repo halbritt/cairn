@@ -93,6 +93,9 @@ func TestCandidateMaintenanceCommandsRequireExplicitWindow(t *testing.T) {
 		if _, listed := localapi.LookupOperation(name); listed {
 			t.Errorf("%s must stay out of the agent API", name)
 		}
+		if !selfBoundedCommands[name] {
+			t.Errorf("%s would be cancelled by the interactive deadline mid-phase", name)
+		}
 	}
 }
 
