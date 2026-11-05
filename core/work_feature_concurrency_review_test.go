@@ -134,3 +134,45 @@ WHERE datname=current_database() AND $1::integer=ANY(pg_blocking_pids(pid)))`, a
 		t.Fatalf("admitted project was lost: %+v, %v", project, err)
 	}
 }
+
+func TestWorkFeatureRetirementAfterOperatorMaintenance(t *testing.T) {
+	s := restoreTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	setStatus := func(status string) error {
+		return s.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{
+			RequestID: uuid.NewString(), FeatureName: "work-view/1", Status: status,
+		})
+	}
+	if err := setStatus("active"); err != nil {
+		t.Fatal(err)
+	}
+	req := AddWorkProjectRequest{
+		RequestID: uuid.NewString(), LocalSlug: "retirement-maintenance", Collection: "fixture:work-retire",
+		PlaneInstance: "work", PlaneOrigin: "https://plane.example.com",
+		WorkspaceUUID: uuid.New(), ProjectUUID: uuid.New(), ConfigRevision: "fixture-config-v1",
+	}
+	project, err := s.AddWorkProject(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireCode(t, setStatus("retired"), "INVALID_REQUEST")
+	disabled, err := s.DisableWorkProject(ctx, req.Collection, req.LocalSlug, uuid.NewString())
+	if err != nil || disabled.BindingID != project.BindingID || disabled.Status != "disabled" {
+		t.Fatalf("operator disable failed: %+v, %v", disabled, err)
+	}
+	if err := setStatus("disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if err := setStatus("retired"); err != nil {
+		t.Fatalf("settled feature should retire: %v", err)
+	}
+	retained, err := s.GetWorkProject(ctx, req.Collection, req.LocalSlug)
+	if err != nil || retained.BindingID != project.BindingID || retained.Status != "disabled" {
+		t.Fatalf("retirement lost retained project: %+v, %v", retained, err)
+	}
+	req.RequestID, req.LocalSlug, req.ProjectUUID = uuid.NewString(), "after-retirement", uuid.New()
+	_, err = s.AddWorkProject(ctx, req)
+	requireCode(t, err, "FEATURE_RETIRED")
+	requireCode(t, setStatus("active"), "FEATURE_RETIRED")
+}
