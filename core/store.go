@@ -74,6 +74,10 @@ func (s *Store) Close() {
 	}
 }
 
+func (s *Store) Channel() Channel {
+	return s.channel
+}
+
 // Migrate requires installer credentials and a dedicated experimental database.
 // Migrations and their checksums commit together; concurrent installers serialize.
 func (s *Store) Migrate(ctx context.Context) error {

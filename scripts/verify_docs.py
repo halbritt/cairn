@@ -288,7 +288,7 @@ def discover_cli_schema(repo_root):
         "supersession", "authorize-scope", "scope-authorization", "policy-revise",
         "policy", "policy-revision", "instruction-policy", "runs", "grants",
         "run-status", "recover-run", "set-sections", "cite", "worker-pool-configure",
-        "candidate-retention", "candidate-reclaim",
+        "candidate-retention", "candidate-reclaim", "work",
     ])
 
     subcommands = {
@@ -298,6 +298,7 @@ def discover_cli_schema(repo_root):
         "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients",
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
                   "retry", "renew", "wake-attempts"},
+        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "serve"},
     }
 
     # Extract all flags from cmd/cairn/*.go

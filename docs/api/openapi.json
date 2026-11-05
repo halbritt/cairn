@@ -26460,6 +26460,11 @@
       "source": "serveJSON"
     },
     {
+      "http_status": 504,
+      "code": "MODEL_TIMEOUT",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 404,
       "code": "NOT_FOUND",
       "source": "serveJSON"
@@ -26485,6 +26490,11 @@
       "source": "serveJSON"
     },
     {
+      "http_status": 410,
+      "code": "PROPOSAL_EXPIRED",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 426,
       "code": "PROTOCOL_UNSUPPORTED",
       "source": "protocol.go"
@@ -26492,6 +26502,16 @@
     {
       "http_status": 426,
       "code": "PROTOCOL_UNSUPPORTED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "QUEUE_FULL",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 429,
+      "code": "QUOTA_EXHAUSTED",
       "source": "serveJSON"
     },
     {
@@ -26547,6 +26567,16 @@
     {
       "http_status": 500,
       "code": "STORE_ERROR",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "UNDO_CONFLICT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 426,
+      "code": "UNSUPPORTED_DELIVERY",
       "source": "serveJSON"
     },
     {

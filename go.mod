@@ -11,6 +11,8 @@ require (
 	golang.org/x/sys v0.41.0
 )
 
+require github.com/BurntSushi/toml v1.6.0 // indirect
+
 require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/jackc/pgpassfile v1.0.0 // indirect

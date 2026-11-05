@@ -1,0 +1,82 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f4f5f7;
+  color: #172b4d;
+  line-height: 1.4;
+}
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: #ffffff;
+  border-bottom: 1px solid #dfe1e6;
+}
+.header-left { display: flex; align-items: center; gap: 1rem; }
+.header-left h1 { font-size: 1.25rem; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 0.75rem; }
+.badge {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  background: #ebecf0;
+  color: #42526e;
+}
+.badge.stale { background: #ffebe6; color: #de350b; }
+.badge.fresh { background: #e3fcef; color: #006644; }
+.alert { padding: 0.75rem 1.5rem; }
+.alert-danger { background: #ffebe6; color: #de350b; border-bottom: 1px solid #ffbdad; }
+.board-container {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  overflow-x: auto;
+  align-items: flex-start;
+  min-height: calc(100vh - 70px);
+}
+.board-column {
+  flex: 0 0 280px;
+  background: #ebecf0;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+}
+.column-header {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  min-height: 50px;
+}
+.work-card {
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 0.75rem;
+  box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25);
+  cursor: pointer;
+  word-break: break-word;
+}
+.card-id { font-size: 0.75rem; color: #6b778c; font-weight: 600; margin-bottom: 0.25rem; }
+.card-title { font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
+.modal-backdrop {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(9, 30, 66, 0.54); display: flex; justify-content: center; align-items: center;
+}
+.modal-content {
+  background: #ffffff; border-radius: 6px; width: 600px; max-width: 90%;
+  max-height: 80vh; overflow-y: auto; padding: 1.5rem;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; }

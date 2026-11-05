@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cairn Work View</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <h1>Cairn Work View</h1>
+      <select id="project-select" aria-label="Select Project">
+        <option value="">Loading projects...</option>
+      </select>
+    </div>
+    <div class="header-right">
+      <span id="staleness-indicator" class="badge">Checking status...</span>
+      <button id="refresh-btn" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div id="auth-alert" class="alert alert-danger" style="display: none;">
+    <strong>Authentication Error:</strong> Plane access credentials rejected. Cache is masked until reauthorized.
+  </div>
+
+  <main class="board-container">
+    <div class="board-column" data-group="backlog">
+      <div class="column-header">Backlog <span class="count" id="count-backlog">0</span></div>
+      <div class="card-list" id="col-backlog"></div>
+    </div>
+    <div class="board-column" data-group="unstarted">
+      <div class="column-header">Todo / Unstarted <span class="count" id="count-unstarted">0</span></div>
+      <div class="card-list" id="col-unstarted"></div>
+    </div>
+    <div class="board-column" data-group="started">
+      <div class="column-header">In Progress <span class="count" id="count-started">0</span></div>
+      <div class="card-list" id="col-started"></div>
+    </div>
+    <div class="board-column" data-group="completed">
+      <div class="column-header">Done <span class="count" id="count-completed">0</span></div>
+      <div class="card-list" id="col-completed"></div>
+    </div>
+    <div class="board-column" data-group="cancelled">
+      <div class="column-header">Cancelled <span class="count" id="count-cancelled">0</span></div>
+      <div class="card-list" id="col-cancelled"></div>
+    </div>
+  </main>
+
+  <div id="detail-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">Item Details</h2>
+        <button id="modal-close" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-meta" class="meta-section"></div>
+        <h3>Associations</h3>
+        <ul id="modal-associations" class="assoc-list"></ul>
+        <h3>Annotations</h3>
+        <ul id="modal-annotations" class="annot-list"></ul>
+        <div class="modal-actions">
+          <input type="text" id="annotation-input" placeholder="Add progress or blocker..." />
+          <button type="button" id="add-progress-btn">Add Progress</button>
+          <button type="button" id="add-blocker-btn">Add Blocker</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="login-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content" style="max-width: 400px;">
+      <h2>Operator Login</h2>
+      <p style="margin: 0.5rem 0 1rem 0; font-size: 0.875rem; color: #5e6c84;">
+        Enter the one-time launch code printed on your terminal:
+      </p>
+      <form id="login-form">
+        <input type="text" id="launch-code-input" placeholder="Launch code" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #dfe1e6; border-radius: 4px;" required />
+        <button type="submit" style="width: 100%; padding: 0.5rem; background: #0052cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+          Log In
+        </button>
+      </form>
+      <div id="login-error" style="color: #de350b; font-size: 0.875rem; margin-top: 0.5rem; display: none;"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
