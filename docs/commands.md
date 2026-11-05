@@ -131,7 +131,7 @@ Open a dispute with `cairn dispute`:
 
 `resolve` takes `request_id`, `conflict_id`, `expected_version`, `grant_id`, and
 `reason`. It records the resolving actor and retains all original members.
-Use `conflicts [--record RECORD_UUID] REPO` to find open groups and
+Use `conflicts [--record RECORD_UUID] [--include-resolved] [--limit N] [--offset N] REPO` to find open groups and
 `conflict CONFLICT_UUID` to inspect original versioned positions and resolution
 history. See [conflict inspection](conflict-inspection.md) for pagination and
 forgotten-payload behavior.
@@ -265,3 +265,28 @@ run declaration; an ordinary agent profile cannot launch. See
 Expire old candidate detail and rewrite its storage with `cairn candidate-retention`
 and `cairn candidate-reclaim`; see [candidate retention](candidate-retention.md).
 These are operator commands with no agent API route.
+
+## Inspection and reporting commands
+
+- `cairn use-report [--record RECORD_UUID] [--task TASK] [--run RUN] [--days N] [--limit N] [--offset N] REPO`: Generates record exposure and recall rollup report across tasks and runs.
+- `cairn run-report [--policy-rev REVISION_UUID|local-loop/1] [--task TASK] [--run RUN] [--limit N] [--offset N] REPO`: Lists historical task runs and policy revisions.
+- `cairn proposal PROPOSAL_UUID`: Inspects single candidate proposal by UUID.
+- `cairn evidence EVIDENCE_UUID`: Reads captured evidence object by UUID.
+- `cairn refusal REFUSAL_UUID`: Reads recorded refusal details and partial diagnostic trace.
+- `cairn evidence-checks EVIDENCE_UUID`: Lists all verification checks for an evidence object (unpaged).
+- `cairn assessments RECEIPT_UUID`: Lists qualitative task assessments for an owned receipt (unpaged).
+
+## Operator JSON and daemon administration
+
+- `set-sections`: Updates or appends Markdown `## Heading` sections within a note draft via JSON stdin.
+- `cite`: Replaces note evidence citations via JSON stdin.
+- `worker-pool-configure`: Configures worker slot capacity and execution limits via JSON stdin.
+- `cairn serve`: Starts local API daemon with optional semantic worker flags:
+  - `--semantic-command PATH`: One-shot local CPU scoring executable.
+  - `--semantic-stream-command PATH`: Persistent local CPU scoring executable.
+  - `--embedding-command PATH`: Dedicated vector embedding worker.
+  - `--semantic-idle-timeout DURATION`: Idle worker shutdown timeout.
+- `cairn opencode-install`: Installs Cairn OpenCode adapter with support for:
+  - `--tokens N` and `--max-tokens N`: Per-turn and upper-bound token limits.
+  - `--task TASK` and `--run RUN`: Scoped execution context.
+  - Context pins: `--revision`, `--workspace-sha256`, `--task-class`, `--task-phase`, `--binding`, `--capability`.

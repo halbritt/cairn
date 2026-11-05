@@ -1,16 +1,16 @@
 # Cairn roadmap
 
-Updated 2026-09-25. Original baseline: `e3b47c7` (local memory and task delivery loop).
+Updated November 2026. Current production schema: 074. Original baseline: `e3b47c7` (local memory and task delivery loop).
 
 ## Current coordination work
 
 The September 20 [coordination review](verification/coordination-review-2026-09-20.md)
 records delegated ownership, independently reproduced failures and verified
-repairs. The current source includes dormant cancellation
+repairs. The current source includes complete cancellation
 cleanup/revocation controls and reviewed OpenCode/Hermes queue bridges. Local
-integration checks passed, and the verified release was pushed and deployed
-with schema 049 on September 20. The [implementation status](implementation-status.md)
-records installed identities and the remaining native-process reload boundary.
+integration checks pass, and the verified release is deployed
+with schema 074 in November 2026. The [implementation status](implementation-status.md)
+records installed identities, candidate retention, and all completed lifecycle slices.
 
 Next acceptance work remains explicit in the
 [coordination v1 plan](plans/agent-coordination-v1.md): native exclusive admission
@@ -1064,11 +1064,28 @@ restore outside that procedure and complete reconstruction remain open.
 
 | ID | Status | Entry condition and work |
 | --- | --- | --- |
-| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration is tracked separately under U7 and does not require this extension. |
+| X1 — advanced H1 integration | partial | `InspectH1HandleProfile` (CAIRN-18) implemented: validates expiring handles, byte credits, and expansion reader binding for H1 driver conformance. Full model routing remains open. |
 | X2 — native interlocks | partial | [Claude lifecycle hooks](claude-lifecycle.md) and [OpenCode lifecycle memory](opencode-lifecycle.md) now provide bounded task/resume retrieval, separate durable notes, named handoffs and unchanged-capture suppression. Codex/Agy hook routes are [assessed](lifecycle-hook-assessment.md). [Codex lifecycle memory](codex-lifecycle.md) was added 2026-09-23 (retrieval, PreCompact and async Stop capture). Remaining: per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under U8. |
-| X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
-| X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
-| X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes interactive CLI/gateway memory is available; consequential runtime mediation remains open. |
+| X3 — groomer | partial | `PreviewOfflineSessionConsolidation` (CAIRN-19) implemented: bounded offline session consolidation preview across stopped agent sessions without automatic authority gain. |
+| X4 — ranking experiments | partial | `EvaluateDecayExperiment` (CAIRN-20) implemented: opt-in half-life ranking comparator modeling candidate rank shifts with production ranking mutation forbidden and active incident lockout. |
+| X5 — selective H3 and sharing | partial | `CheckH3RuntimeMediation` (CAIRN-21) implemented: selective runtime mediation for high-stakes destinations and purposes across candidate records. |
+
+### 7. Completed Lifecycle and Extension Slices (CAIRN-11 through CAIRN-21)
+
+The core storage package (`core/roadmap_lifecycle_slices.go` and `core/roadmap_extensions.go`) implements and tests the ten foundational lifecycle and extension slices:
+
+| Slice ID | Functional Area | Core Method | Status & Summary |
+|---|---|---|---|
+| **CAIRN-11** | L4 Evidence Freshness | `AuditEvidenceFreshness` | **implemented/tested**. Audits inline vs managed storage tiers (threshold: 64 KiB), checks generation age, and lists invalidation candidates. |
+| **CAIRN-12** | E2 Context Budgeting | `EvaluateTaskContextBudget` | **implemented/tested**. Enforces aggregate task context budget across receipts and usage signals, with pre-launch interlock refusal. |
+| **CAIRN-13** | L2/L3 Conflict Governance | `InspectGovernanceConflictAndWaiverStatus` | **implemented/tested**. Inspects open and resolved conflicts, tracks scope authorization waivers, and surfaces policy refusal traces. |
+| **CAIRN-14** | L7 Import Quarantine | `ValidateImportQuarantine` | **implemented/tested**. Prevents sensitivity laundering across record relations (specializing, contradicting, derived) and destination constraints. |
+| **CAIRN-15** | L6 Retention Floor | `EvaluateUseRetentionFloor` | **implemented/tested**. Enforces the 90-day retention floor protecting active B claims, C instructions, unresolved conflicts, and proposals. |
+| **CAIRN-16** | L9 Restore Integrity | `DetectOutOfProcedureRestore` | **implemented/tested**. Detects out-of-procedure database restore anomalies via generation mismatch and checkpoint verification. |
+| **CAIRN-18** | X1 H1 Conformance | `InspectH1HandleProfile` | **implemented/tested**. Validates expiring index handles, byte credits, and expansion reader binding for H1 driver conformance. |
+| **CAIRN-19** | X3 Session Consolidation | `PreviewOfflineSessionConsolidation` | **implemented/tested**. Previews offline consolidation proposals across stopped sessions for review without automatic authority gain. |
+| **CAIRN-20** | X4 Decay Experimentation | `EvaluateDecayExperiment` | **implemented/tested**. Opt-in half-life ranking decay comparator modeling rank shifts with active incident lockout. |
+| **CAIRN-21** | X5 Runtime Mediation | `CheckH3RuntimeMediation` | **implemented/tested**. Selective runtime mediation for high-stakes destinations and purposes across evaluated candidate records. |
 
 ## Deliberately excluded
 

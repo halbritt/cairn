@@ -5,8 +5,8 @@ not inspect campaign outputs, contact graders, or call a model provider.
 
 ## Verified handoff
 
-The existing post-attempt path is in
-[`legacy-occurrence.md`](../legacy-occurrence.md): conversion selects the
+The existing post-attempt path was designed in
+`legacy-occurrence.md`: conversion selects the
 changed pairs, blind packet drafting produces their comparison packets, the
 delivery plan binds those packets to two distinct grader sessions, and the
 delivery collector retains both submissions for the existing grading join.
@@ -17,10 +17,10 @@ from verified execution.
 The path is implemented by `trial_legacy_blind_selection`,
 `trial_legacy_grading_bundle`, `trial_grader_delivery_plan`,
 `trial_grader_delivery`, `trial_grading_custody`, and
-`trial_legacy_occurrence`. The full contracts and limits remain in
-[`legacy-grading-bundle.md`](../legacy-grading-bundle.md),
-[`grader-delivery-plan-v1.md`](../grader-delivery-plan-v1.md), and
-[`grader-delivery-v1.md`](../grader-delivery-v1.md).
+`trial_legacy_occurrence`. The historical trial contracts were specified in
+`legacy-grading-bundle.md`,
+`grader-delivery-plan-v1.md`, and
+`grader-delivery-v1.md`.
 
 ## Local verification
 

@@ -78,7 +78,7 @@ nonmaterial to the pre-release repair claim. Deployment parity is separate.
 
 ## Remaining recovery work
 
-The [baseline audit](../../CAIRN_FAILURE_MODE_AUDIT_GPT6_2026-09-08.md) traces this
+The baseline audit (`CAIRN_FAILURE_MODE_AUDIT_GPT6_2026-09-08.md`) traces this
 defect separately from missing withdrawal replay and restore admission. This
 repair closes the demonstrated propagation/backfill/inspection gap. It does not
 complete L9, reconstruct lost audit events, establish export freshness, recover

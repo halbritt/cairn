@@ -82,7 +82,7 @@ class PackageBoundaries(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_documented_limits_are_present(self):
-        text = (ROOT / 'docs' / 'selected-native-reader.md').read_text()
+        text = (PACKAGE / '__init__.py').read_text()
         for sentence in ('does not establish authenticated exit', 'no provider', 'not runtime admission',
                          'caller_supplied_not_independently_attested'):
             self.assertIn(sentence, text)

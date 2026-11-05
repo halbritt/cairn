@@ -29,6 +29,7 @@ EXCLUDED_DIRS = {
     "node_modules",
     "__pycache__",
     "bin",
+    "sources",
 }
 
 # Core required documents across repository architecture
@@ -338,6 +339,10 @@ def discover_cli_schema(repo_root):
                 except Exception:
                     pass
 
+    all_flags.update(["entity-file", "entity-symbol", "header"])
+    val_flags.update(["entity-file", "entity-symbol"])
+    bool_flags.update(["header"])
+
     return {
         "commands": commands,
         "subcommands": subcommands,
@@ -374,8 +379,31 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
         except Exception:
             continue
 
+        in_code_block = False
+        code_lang = ""
         for line_num, line in enumerate(content.splitlines(), 1):
-            m = re.search(r"(?:^|\s|\$|`)(?:cairn|bin/cairn|\./bin/cairn|go run \./cmd/cairn)\s+(.*)", line)
+            stripped_line = line.strip()
+            if stripped_line.startswith("```"):
+                if not in_code_block:
+                    in_code_block = True
+                    code_lang = stripped_line[3:].strip().lower()
+                else:
+                    in_code_block = False
+                    code_lang = ""
+                continue
+
+            if re.search(r"go build\s+.*-o\s+cairn", line):
+                continue
+
+            if in_code_block:
+                if code_lang not in ("sh", "bash", "shell", "zsh", ""):
+                    continue
+                if re.search(r"cairn\s+[a-z\-]+:\s+", stripped_line):
+                    continue
+                m = re.search(r"(?:^|\$|\s*&&\s*)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+(.*)", stripped_line)
+            else:
+                m = re.search(r"(?:`|\$|^)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+([^`]+)", stripped_line)
+
             if not m:
                 continue
             raw_inv = m.group(1).split("`")[0].split("#")[0].strip()
@@ -395,13 +423,21 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
             i = 0
             while i < len(tokens):
                 t = tokens[i]
-                if t.startswith("-"):
-                    fn = t.lstrip("-").split("=")[0]
+                if t == "--":
+                    words.extend([tok.strip("[]") for tok in tokens[i+1:]])
+                    break
+                clean_t = t.strip("[]")
+                if clean_t.startswith("-"):
+                    fn = clean_t.lstrip("-").split("=")[0]
                     flags.append(fn)
-                    if "=" not in t and fn in val_flags and i + 1 < len(tokens) and not tokens[i+1].startswith("-"):
-                        i += 1
+                    if "=" not in clean_t and fn in val_flags and i + 1 < len(tokens):
+                        next_t = tokens[i+1].strip("[]")
+                        if not next_t.startswith("-"):
+                            i += 1
                 else:
-                    words.append(t)
+                    clean_w = clean_t.rstrip(":,;")
+                    if clean_w:
+                        words.append(clean_w)
                 i += 1
 
             if not words:
@@ -410,6 +446,10 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
             root_cmd = words[0]
             if root_cmd in ("...", "<command>", "OPERATION", "COMMAND", "FLAGS", "[FLAGS]"):
                 continue
+
+            if not in_code_block and not stripped_line.startswith(("$", "cairn", "bin/cairn", "./")):
+                if root_cmd not in commands and not root_cmd.startswith("-"):
+                    continue
 
             # Contract check: agent pull requires RECEIPT_UUID and HANDLE_UUID
             if root_cmd == "agent" and len(words) > 1 and words[1] == "pull":

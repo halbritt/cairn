@@ -31,7 +31,7 @@ Everyday commands:
   agent --help | agent OPERATION --help (ordinary JSON request examples)
   version | agent [--token-file FILE] [--socket PATH] version
   clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
-  opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--recent-files] [--replace]
+  opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--tokens N] [--max-tokens N] [--task TASK] [--run RUN] [--recent-files] [--replace] [--revision REV] [--workspace-sha256 SHA] [--task-class CLASS] [--task-phase PHASE] [--binding BIND] [--capability CAP]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--tool-profile compact/1|compact/2]
   claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--tool-profile compact/1|compact/2]
@@ -53,11 +53,11 @@ Everyday commands:
   run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   adopt-context RECEIPT_UUID RUN_DIRECTORY (bring one historical run's context.txt under managed forgetting)
-  assessments-page [--after-version VERSION] [--limit N] RECEIPT_UUID
-  evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID
+  assessments-page [--after-version VERSION] [--limit N] RECEIPT_UUID | assessments RECEIPT_UUID
+  evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID | evidence-checks EVIDENCE_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
-  proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
-  list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] [--days N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST | proposal PROPOSAL_UUID | evidence EVIDENCE_UUID | refusal REFUSAL_UUID
+  list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--task TASK] [--run RUN] [--limit N] [--offset N] [--days N] REPO | run-report [--policy-rev REVISION_UUID|local-loop/1] [--task TASK] [--run RUN] [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)
@@ -65,8 +65,8 @@ JSON commands (read one request from stdin):
   delivery-alerts (local operator; owner alerts for starved online sessions; see docs/delivery-health.md)
   session-successor-authorize session-successor-revoke (local operator takeover; see docs/successor-event-continuity.md)
   event-schedule schedule-list schedule-cancel schedule-tick schedule-serve (local operator; see docs/event-scheduling.md)
-  create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
-  promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
+  create edit revise append replace set-sections cite delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
+  promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history worker-pool-configure candidate-retention candidate-reclaim
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
   policy-revise | policy REPO | policy-revision REVISION_UUID
@@ -80,7 +80,7 @@ Administration: recovery-export FILE | recovery-inspect FILE...
   recovery-export --directory DIR | recovery-inspect --directory DIR
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
-  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)] [--semantic-command PATH | --semantic-stream-command PATH | --embedding-command PATH] [--semantic-idle-timeout DURATION]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.

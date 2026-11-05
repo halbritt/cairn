@@ -239,6 +239,7 @@ Before saving knowledge that may replace an existing note, use
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 | `cairn_assessments` | Known `receipt_id` owned by the configured profile. Reads ordered assessment history with reasons and evidence IDs, without evidence bodies. |
 | `cairn_assess` | A complete assessment request with stable `request_id` and reviewed `expected_version`. Appends a review; returns identifiers and attribution without the reason. Agent reviews remain testimony. See [native review workflow](use-outcome-loop.md#native-review-tools). |
+| `cairn_client_info` | No parameters (`{}`). Read-only diagnostic tool returning running MCP facade build identity, active `search_view` and `tool_profile`, budget capabilities, and source-opening binding. |
 
 When the vocabulary of a saved note is unknown, call `cairn_search` with
 `{"browse": true}` to inspect available topics, then pull relevant entries or
@@ -361,6 +362,45 @@ a new search; an unknown receipt returns `NOT_FOUND`. Startup diagnostics use
 stderr, and normal EOF emits no extra Cairn response envelope on stdout.
 
 The facade does not expose operator actions, run observation or automatic capture.
+
+### Complete MCP Tool Catalog & Parameter Reference
+
+Cairn implements ten standard MCP tools across discovery, expansion, capture, mutation, inspection, and review:
+
+1. **`cairn_search`**: Scoped memory search returning mandatory instructions and candidate previews with expansion handles and `pull_arguments`.
+   - *Parameters*: `query` (string), `browse` (boolean), `semantic` (boolean), `offset` (integer), `available_tokens` (integer), `memory_budget_bytes` (integer), `min_pull_bytes` (integer), `inspection_policy` (string), `advisory_conflicts` (boolean), `entities` (array of `{kind, name}`), `kinds` (array of string), `context` (object).
+2. **`cairn_pull`**: Reads full text or bounded byte excerpt of a memory record using receipt and handle.
+   - *Parameters*: `receipt_id` (UUID), `handle` (UUID), `span` (`{offset: int, length: int}`), `opening_bytes` (integer, 1–768), `request_id` (UUID).
+3. **`cairn_pull_evidence`**: Discloses captured evidence object with cryptographic hash verification and optional byte span selection.
+   - *Parameters*: `receipt_id` (UUID), `handle` (UUID), `evidence_id` (UUID), `expected_sha256` (64-hex digest), `span` (`{offset: int, length: int}`), `request_id` (UUID).
+4. **`cairn_remember`**: Captures explicitly selected knowledge note under authenticated profile.
+   - *Parameters*: `body` (1–65536 bytes UTF-8), `kind` (default `note`), `scope` (`repository`, `task`, `run`), `entities` (array), `pins` (object), `shareable` (boolean), `request_id` (UUID).
+5. **`cairn_edit`**: Atomically updates active Class A note, enforcing version locks and optimistic concurrency.
+   - *Parameters*: `record_id` (UUID), `expected_version` (integer), `request_id` (UUID), and exactly one exclusive edit mode: `body` (string), `append` (string), `replace` (`{old_text, new_text}`), `set_sections` (map of heading title to content), `draft` (object), or `evidence_citations` (array of UUIDs).
+6. **`cairn_prepare_note`**: Searches candidate predecessors to inform knowledge capture without writing a note.
+   - *Parameters*: `query` (string), `entities` (array), `context` (object), `available_tokens` (integer), `memory_budget_bytes` (integer), `min_pull_bytes` (integer), `inspection_policy` (string), `request_id` (UUID).
+7. **`cairn_client_info`**: Read-only inspection of running MCP facade build identity, active `search_view`, active `tool_profile`, source opening bindings, and budget allowances.
+   - *Parameters*: None (`{}`).
+8. **`cairn_assess`**: Appends qualitative task assessment to an owned retrieval receipt.
+   - *Parameters*: `receipt_id` (UUID), `expected_version` (integer), `task_outcome` (string), `failure_domain` (string), `failure_kind` (string), `error_signature_sha256` (string), `method` (string), `evidence_ids` (array of UUIDs), `reason` (8–4000 chars), `request_id` (UUID).
+9. **`cairn_assessments`**: Reads ordered qualitative assessment history for an owned receipt in ascending version order.
+   - *Parameters*: `receipt_id` (UUID).
+10. **`cairn_history`**: Inspects retained historical versions or byte excerpts of a note without operator database access.
+    - *Parameters*: `record_id` (UUID), `version` (positive integer for body, omit/0 for metadata), `before_version` (integer), `limit` (max 100), `span` (`{offset: int, length: int}`), `available_tokens` (integer), `memory_budget_bytes` (integer).
+
+### Tool Profiles, Search Views, and Token Budgeting
+
+- **Tool Profiles (`--tool-profile`)**:
+  - Default: Full verbose tool descriptions and JSON schemas for maximum self-describing capability.
+  - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, reducing schema token overhead.
+  - `compact/2`: Shortens descriptions across all ten MCP tools, reducing prompt overhead by ~27% (~1,350 proxy tokens) for context-constrained models.
+- **Search View Compaction (`--search-view compact/1`)**:
+  - Emits `cairn.mcp-search-compact/1` instead of `cairn.mcp-search/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
+- **Token Budgeting (`--tokens` and `--max-tokens`)**:
+  - `--tokens` (default: 32,000): Configures default memory allowance per tool result.
+  - `--max-tokens` (default: 1,000,000): Upper limit for explicit `available_tokens` declarations and maximum pull expansion output.
+- **Byte Span Parameters (`span: {offset, length}`)**:
+  - Accepted by `cairn_pull`, `cairn_pull_evidence`, and `cairn_history`. Allows models to read bounded excerpts (e.g., specific lines or sections) of large notes or evidence files without exhausting conversation context. `offset` and `length` must be non-negative byte integers within file limits.
 
 ## Claude Code
 

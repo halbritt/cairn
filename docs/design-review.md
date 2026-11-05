@@ -1,5 +1,8 @@
 # Design evaluation and first implementation
 
+> **Historical Document Disclaimer (2026-09-07 UTC)**  
+> This document is a historical review of pre-implementation design v1.0. It captures the initial architectural evaluation and intentional sequencing decisions made prior to repository construction. Items noted below as deferred in the initial slice—including root authority grants, production destination delivery, managed deletion, and multi-machine coordination—have since been fully implemented across database migrations 002 through 074. For current implementation status and operational capabilities, refer to [Implementation Status](implementation-status.md), [Roadmap](roadmap.md), and [README.md](../README.md).
+
 Reviewed 2026-09-07 UTC against the operator-supplied design version 1.0.
 
 ## Verdict

@@ -65,7 +65,7 @@ when the whole source exceeds their context budget. Spans retain the full source
 identity and carry a separate checksum for the selected bytes.
 
 Long saved notes also support [explicit body excerpts](docs/index-and-pull.md#index-and-expansion-contract)
-through `cairn agent pull --offset N --length N` and native `cairn_pull` span
+through `cairn agent pull [--offset N] [--length N] RECEIPT_UUID HANDLE_UUID` and native `cairn_pull` span
 arguments. Instructions retain whole-body delivery.
 Search previews now include source byte positions for A/B notes, so the same
 excerpt tool can locate a buried passage without first fetching the whole body.
@@ -159,11 +159,11 @@ bash scripts/local-store.sh backup
 bash scripts/local-store.sh stop
 ```
 
-`start` also applies checksummed forward migrations. Back up before upgrading an
-existing store. The database retains captured evidence bytes and semantic
-packages, so a PostgreSQL backup covers those. Run-directory copies require
-separate retention accounting. No backup rotation, timer, or automatic deletion
-is enabled.
+`start` also applies checksummed forward migrations (through current schema 074).
+Back up before upgrading an existing store. The database retains captured
+evidence bytes and semantic packages, so a PostgreSQL backup covers those.
+Run-directory copies require separate retention accounting. No backup rotation,
+timer, or automatic deletion is enabled.
 For recovery, follow the [explicit restore-session workflow](docs/restore-admission.md),
 which pauses ordinary transactions until reconciliation and operator resume.
 
@@ -184,14 +184,20 @@ preloads ordinary hosted memory and launches the harness. The existing native
 tools handle later pulls under their normal permissions. See
 [compact startup](docs/compact-start.md) for the OpenCode command and budget limits.
 
-`cairn opencode-config` generates the native server configuration with explicit
-connection and task scope. See the [OpenCode setup](docs/mcp.md#opencode-example)
-for the command, context flags and optional memory-only permission policy.
+### Configuration generators
 
-`cairn codex-config` generates a Codex MCP TOML entry using the same connection
-flags and either `--codex-thread` or explicit `--task`/`--run` scope. See the
-[Codex setup](docs/mcp.md#codex-example). It prints the entry for review and leaves
-existing host configuration in place.
+Generate verified MCP configurations for supported harnesses:
+
+```sh
+cairn codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--tool-profile compact/1|compact/2]
+cairn claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--tool-profile compact/1|compact/2]
+cairn opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
+```
+
+`cairn opencode-config` generates native OpenCode configuration.
+`cairn codex-config` generates a Codex MCP TOML block with thread or task scope.
+`cairn claude-config` generates Claude Desktop / Code MCP JSON.
+See [MCP memory tools](docs/mcp.md) for full generator options and context flags.
 
 For a remote model, explicitly allow a note to be delivered outside the local
 machine when you create it:
@@ -384,6 +390,56 @@ an impact preview to expand applicability within the same repository. The record
 keeps its class and independent qualification. Revoking its separate scope grant
 excludes fresh use; the original scopes and grants remain visible in historical
 packages. `scope-authorization RECORD_UUID` inspects the latest scope decision.
+
+## Agent sessions and supervision
+
+Cairn maintains live agent session presence and coordinates request execution across harnesses:
+
+- **Agent Sessions (`cairn agents`)**:
+  - `cairn agents register`: Registers session presence, harness capabilities, and project binding.
+  - `cairn agents context`: Updates concise task description and metadata for a registered session.
+  - `cairn agents heartbeat`: Renews 90-second session presence.
+  - `cairn agents leave`: Gracefully marks session stopped.
+  - `cairn agents list`: Queries active or offline sessions with project, harness, and state filters.
+  - `cairn agents resolve`: Resolves the exact target session for point-to-point event routing.
+  See [native inbox delivery](docs/native-inbox.md).
+
+- **Supervision & Workers (`cairn wake`)**:
+  - `cairn wake check --config FILE`: Validates worker binding and resource quota configuration.
+  - `cairn wake serve --config FILE`: Runs supervisor daemon monitoring inbox request events.
+  - `cairn wake worker --config FILE --attempt ATTEMPT_UUID`: One-shot execution entry point launched by supervisor.
+  See [agent wakeups](docs/agent-wakeups.md).
+
+## Multi-machine administration
+
+Extend Cairn memory and event routing across multiple hosts via secure TLS relays:
+
+- **Central Administration (`cairn machine`)**:
+  - `cairn machine provision --machine ID --upstream https://HOST[:PORT] --out FILE`: Provisions enrollment bundle with scoped bearer tokens.
+  - `cairn machine rotate --machine ID --upstream https://HOST[:PORT] --out FILE`: Issues rotated tokens for an enrolled machine.
+  - `cairn machine revoke --machine ID`: Revokes machine access.
+  - `cairn machine list`: Lists enrolled remote hosts.
+- **Joining Host Enrollment & Relay (`cairn relay`)**:
+  - `cairn machine enroll --file FILE`: Installs credentials and systemd relay service on joining host.
+  - `cairn machine status`: Verifies connectivity and build compatibility with central host.
+  - `cairn machine unenroll`: Tears down local configuration and stops relay.
+  - `cairn relay --upstream https://HOST[:PORT] [--socket PATH]`: Forwards local Unix socket calls to central API over HTTPS.
+  See [multi-machine administration](docs/multi-machine.md).
+
+## Disaster recovery and audit checkpoints
+
+Cairn provides cryptographic audit checkpoints and an auditable restore fencing workflow:
+
+- **Disaster Recovery Snapshots**:
+  - `cairn recovery-export FILE` (or `--directory DIR`): Exports recovery snapshot.
+  - `cairn recovery-inspect FILE...`: Validates snapshot integrity and authority root grants.
+  - `cairn recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE`: Reapplies restrictions from verified recovery export.
+- **Audit Checkpoints**:
+  - `cairn checkpoint [--header] < request.json`: Computes cryptographic checkpoint over storage audit subset.
+  - `cairn verify-checkpoint < expectation.json`: Validates audit subset against external catalog.
+- **Restore Fencing Session**:
+  - `cairn begin-restore`, `cairn verify-restore`, and `cairn resume-restore`: Enforces restore admission fence, blocking mutations until restore verification succeeds.
+  See [restore admission](docs/restore-admission.md) and [recovery reapplication](docs/recovery-reapplication.md).
 
 ## Verify changes
 

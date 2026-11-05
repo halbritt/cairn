@@ -51,6 +51,6 @@ CAIRN-107 remains open. Its remaining acceptance evidence includes valid blind
 second-grader coverage and agreement for changed pairs, another consecutive
 complete weekly run without provider-limit losses, a sound whole-run capacity
 precheck, and a branch-request path that needs no manual setup. See
-[grader delivery](../grader-delivery-v1.md) for the one-shot response contract
+the historical grader delivery contract (`grader-delivery-v1.md`)
 and [the measured plan](../plans/token-efficiency-2026-10-23.md) for the broader
 evaluation gate.
