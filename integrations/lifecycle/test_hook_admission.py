@@ -29,6 +29,23 @@ def event(name="UserPromptSubmit", **fields):
 
 
 class DecisionTableTests(unittest.TestCase):
+    def test_codex_signed_observation_is_bounded_and_preserved_without_authenticating_it(self):
+        origin = dict(version=1, source="unknown", admission="unknown", input_id=None)
+        signature = dict(schema="cairn.owner-input-attestation/1", payload="e30", signature="A" * 86)
+        hook = event(turn_id="turn-one", owner_input_origin=origin, owner_input_attestation=signature)
+        result = admission.observe(dict(harness="codex"), hook, probe=probe())
+        self.assertTrue(result.run)
+        self.assertEqual(result.observation()["owner_input_origin"], origin)
+        self.assertEqual(result.observation()["owner_input_attestation"], signature)
+        for bad in (dict(signature, payload="A" * 2733), dict(signature, signature="A" * 87),
+                    dict(signature, payload="bad="), dict(signature, unexpected="field")):
+            with self.subTest(bad=bad):
+                self.assertFalse(admission.observe(dict(harness="codex"),
+                    dict(hook, owner_input_attestation=bad), probe=probe()).run)
+        for other in (dict(hook, hook_event_name="Stop"),):
+            self.assertNotIn("owner_input_attestation", admission.observe(
+                dict(harness="codex"), other, probe=probe()).observation())
+
     def check(self, kind, config, hook, environ, fs, verdict, reason=None, **expect):
         result = admission.decide(kind, config, hook, environ=environ, probe=fs)
         self.assertEqual((result.verdict, result.reason), (verdict, reason), (kind, environ, hook))

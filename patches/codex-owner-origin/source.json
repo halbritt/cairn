@@ -1,0 +1,9 @@
+{
+  "schema": "cairn.codex-owner-origin-source/1",
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "upstream_tag": "rust-v0.166.0",
+  "patch_sha256": "4211c7d4e6e7b83bf5eeb70c0112f6fad6864d5bede0f14b7d0e115e10adf833",
+  "contract": "codex.owner-input/1",
+  "toolchain": "1.99.1",
+  "attestation_contract": "cairn.owner-input-attestation/1"
+}

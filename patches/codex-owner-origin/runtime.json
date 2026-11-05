@@ -1,0 +1,39 @@
+{
+  "contract": "codex.owner-input/1",
+  "attestation_contract": "cairn.owner-input-attestation/1",
+  "version": 1,
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "patch_sha256": "4211c7d4e6e7b83bf5eeb70c0112f6fad6864d5bede0f14b7d0e115e10adf833",
+  "binary_sha256": "f1d57253dfd284924b9bb326b4aeb465ac68bb97efa45be30514e37b71beb0f3",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "strip": "GNU strip (GNU Binutils for Ubuntu) 2.46",
+  "schema": "cairn.codex-owner-origin-runtime/1",
+  "target": "x86_64-unknown-linux-gnu",
+  "profile": "dev",
+  "debug_information": "stripped from packaged artifact",
+  "capability_verified": true,
+  "launcher_manifest_verified": true,
+  "production_installed": false,
+  "applied_source_sha256": "96337d0f13af22c8209ad2369f1416ef848965ee0617d85cf7c79f71e36a8349",
+  "code_mode_host": {
+    "filename": "codex-code-mode-host",
+    "sha256": "d685c6b968035a731c55284ac22bee2544aa9680abbcc86ed97dc42cc6e0289e"
+  },
+  "v8_inputs": {
+    "version": "152.2.0",
+    "target": "x86_64-unknown-linux-gnu",
+    "release_url": "https://github.com/openai/codex/releases/download/rusty-v8-v152.2.0/",
+    "manifest_sha256": "1ec730635970ab1c0e8f4764ea113ad29d69d7f8d4c2ae69f3d766434a759350",
+    "archive_sha256": "b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd",
+    "binding_sha256": "3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5"
+  },
+  "build_helper_sha256": "99ababa08575b167fc37a1d9c7a377659e6a29b0b996f2e5b465838802316b22",
+  "package_contract_sha256": "2535102db83ae7b201b9383b788d9baab139d0e05456f32b447719d9e2ec0234",
+  "workflow_validation": {
+    "default_code_mode": true,
+    "provider": "local scripted Responses fixture",
+    "model_usefulness_measured": false,
+    "production_installed": false
+  }
+}

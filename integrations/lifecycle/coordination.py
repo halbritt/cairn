@@ -1531,12 +1531,17 @@ def session_ref(agent):
 
 
 def registration(config, observation, metadata=None):
-    return dict(request_id=str(uuid.uuid4()), repo=config["repo"], binding=config["binding"],
-                native_session_id=observation["native_id"], metadata=metadata or dict(
-                    harness=config["harness"], model=config.get("model", ""),
-                    observed_model=observation["observed_model"], project=observation["project"],
-                    workspace=observation["workspace"], state="idle" if observation["phase"] == "start" else observation["phase"],
-                    delivery_mode="fresh-worker" if config.get('_wake') else "existing-session"))
+    meta = metadata or dict(
+        harness=config["harness"], model=config.get("model", ""),
+        observed_model=observation["observed_model"], project=observation["project"],
+        workspace=observation["workspace"], state="idle" if observation["phase"] == "start" else observation["phase"],
+        delivery_mode="fresh-worker" if config.get('_wake') else "existing-session")
+    req = dict(request_id=str(uuid.uuid4()), repo=config["repo"], binding=config["binding"],
+               native_session_id=observation["native_id"], metadata=meta)
+    launch_id = os.environ.get("CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID")
+    if launch_id and config.get("harness") == "codex":
+        req["launch_id"] = launch_id
+    return req
 
 
 def wake_context(config):
@@ -2221,11 +2226,15 @@ def compact_inbox_command(argv):
                 raise CoordinationError('STALE_SESSION', 'native batch item changed during advance')
             request = dict(request_id=context['batch_advance_request_id'], session=attempt['session'],
                            attempt_id=attempt['attempt_id'], version=1)
-            if state.get('batch_advance_intent') not in (None, request):
-                raise CoordinationError('SESSION_BUSY', 'another notice handoff is unresolved')
-            state['batch_advance_intent'] = request
-            write_state(state_path, state)
-            result = advance_batch_intent(config, state, state_path)
+            if attempt.get('admission_kind') == 'organic':
+                request['root_id'] = attempt['organic_root']
+                result = native_session(config, state, state_path).advance_organic_notice(request)
+            else:
+                if state.get('batch_advance_intent') not in (None, request):
+                    raise CoordinationError('SESSION_BUSY', 'another notice handoff is unresolved')
+                state['batch_advance_intent'] = request
+                write_state(state_path, state)
+                result = advance_batch_intent(config, state, state_path)
             if result['attempt'] is None:
                 print(json.dumps(dict(schema='cairn.compact-inbox-batch/1', ok=True,
                                       next=None, remainder=result['remainder'])))
@@ -2515,6 +2524,8 @@ def advance_opencode_cancel(config, state, path):
 
 
 def watch_inbox(config, state, path):
+    if state.get('organic_claim_intent') or state.get('organic_advance_intent'):
+        recover_inbox(config, state, path)
     if not state.get('inbox_intent'):
         # A reply journaled after its attempt was reconciled still needs replay.
         flush_inbox_intents(config, state)
@@ -2682,6 +2693,17 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     if (config.get('harness') == 'claude' and observation['event'] == 'SessionStart'
             and claude_daemon_managed(state.get('process'))):
         return ''  # A background worker's start has no turn to own the claim (CAIRN-178).
+    if state.get('organic_claim_intent') or state.get('organic_advance_intent'):
+        recover_inbox(config, state, path)
+    if (config.get('harness') == 'codex' and observation['event'] == 'UserPromptSubmit'
+            and observation.get('owner_input_attestation')):
+        # Every signed observation reaches Store, even while a request is held
+        # or the queue owns ordinary admission. Only Store may authenticate and
+        # admit it. Recording an ineligible observation preserves the old hold.
+        recover_inbox(config, state, path)
+        native_session(config, state, path).admit_organic_notice(
+            observation['native_turn_id'], observation['owner_input_origin'],
+            observation['owner_input_attestation'])
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
     if owner_turn and owner_turn != observation.get('native_turn_id'):
         if config.get('harness') == 'opencode' and observation['event'] == 'TurnStart':
@@ -2763,7 +2785,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                 len(native_turn_id.encode('utf-8')) <= 256 and
                 not any(ord(character) < 32 for character in native_turn_id)):
             ordinary_codex_binding = dict(native_turn_id=native_turn_id)
-        native_session(config, state, path).admit_inbox(wake_binding or replay_binding or ordinary_codex_binding)
+        if not state.get('inbox_attempt'):
+            native_session(config, state, path).admit_inbox(wake_binding or replay_binding or ordinary_codex_binding)
     attempt = state.get('inbox_attempt')
     if not attempt:
         return ''
