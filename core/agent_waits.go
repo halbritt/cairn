@@ -413,6 +413,44 @@ func (s *Store) CreateWait(ctx context.Context, req CreateWaitRequest, dest Dest
 			return AgentWait{}, err
 		}
 
+		var depPublisher, depKind, depDestType, depDestName string
+		var depCorrID *string
+		var depCreatedAt time.Time
+		err = tx.QueryRow(ctx, `SELECT publisher, kind, destination_type, destination_name, correlation_id::text, created_at FROM cairn.agent_event WHERE event_id=$1 AND repo=$2`, req.DependencyEventUUID, repo).Scan(&depPublisher, &depKind, &depDestType, &depDestName, &depCorrID, &depCreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AgentWait{}, failure("NOT_FOUND", "dependency event not found in collection")
+		}
+		if err != nil {
+			return AgentWait{}, err
+		}
+
+		if depPublisher != ownerPrincipal && depPublisher != agent.ProfileOwner {
+			return AgentWait{}, failure("AUTHORITY_DENIED", "caller is not the owner of the dependency event")
+		}
+
+		var grpState, grpCode string
+		var grpDeadline time.Time
+		var grpClosedAt *time.Time
+
+		if req.PredicateKind == WaitPredicateRequestResponse {
+			if depKind != "request" || depDestType != "agent" {
+				return AgentWait{}, failure("INVALID_REQUEST", "request_response predicate requires direct-agent request dependency")
+			}
+		} else if req.PredicateKind == WaitPredicateResponseGroupClosed {
+			var isGroup bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group WHERE event_id=$1)`, req.DependencyEventUUID).Scan(&isGroup)
+			if err != nil {
+				return AgentWait{}, err
+			}
+			if !isGroup {
+				return AgentWait{}, failure("INVALID_REQUEST", "response_group_closed predicate requires response group dependency")
+			}
+			grpState, grpCode, grpDeadline, grpClosedAt, err = reconcileDueResponseGroupTx(ctx, tx, req.DependencyEventUUID, now)
+			if err != nil {
+				return AgentWait{}, err
+			}
+		}
+
 		var sessionWaitCount int
 		if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_wait WHERE collection=$1 AND owner_agent_uuid=$2 AND state='waiting'`, repo, ownerAgentUUID).Scan(&sessionWaitCount); err != nil {
 			return AgentWait{}, err
@@ -435,36 +473,6 @@ func (s *Store) CreateWait(ctx context.Context, req CreateWaitRequest, dest Dest
 		}
 		if activeExists {
 			return AgentWait{}, failure("OPEN_CONFLICT", "an active wait already exists for this dependency and predicate")
-		}
-
-		var depPublisher, depKind, depDestType, depDestName string
-		var depCorrID *string
-		var depCreatedAt time.Time
-		err = tx.QueryRow(ctx, `SELECT publisher, kind, destination_type, destination_name, correlation_id::text, created_at FROM cairn.agent_event WHERE event_id=$1 AND repo=$2`, req.DependencyEventUUID, repo).Scan(&depPublisher, &depKind, &depDestType, &depDestName, &depCorrID, &depCreatedAt)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return AgentWait{}, failure("NOT_FOUND", "dependency event not found in collection")
-		}
-		if err != nil {
-			return AgentWait{}, err
-		}
-
-		if depPublisher != ownerPrincipal && depPublisher != agent.ProfileOwner {
-			return AgentWait{}, failure("AUTHORITY_DENIED", "caller is not the owner of the dependency event")
-		}
-
-		if req.PredicateKind == WaitPredicateRequestResponse {
-			if depKind != "request" || depDestType != "agent" {
-				return AgentWait{}, failure("INVALID_REQUEST", "request_response predicate requires direct-agent request dependency")
-			}
-		} else if req.PredicateKind == WaitPredicateResponseGroupClosed {
-			var isGroup bool
-			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group WHERE event_id=$1)`, req.DependencyEventUUID).Scan(&isGroup)
-			if err != nil {
-				return AgentWait{}, err
-			}
-			if !isGroup {
-				return AgentWait{}, failure("INVALID_REQUEST", "response_group_closed predicate requires response group dependency")
-			}
 		}
 
 		waitUUID := uuid.NewString()
@@ -505,10 +513,6 @@ ORDER BY position ASC LIMIT 1`, req.DependencyEventUUID, repo, origConsumer, dep
 				return AgentWait{}, err
 			}
 		} else if req.PredicateKind == WaitPredicateResponseGroupClosed {
-			grpState, grpCode, grpDeadline, grpClosedAt, err := reconcileDueResponseGroupTx(ctx, tx, req.DependencyEventUUID, now)
-			if err != nil {
-				return AgentWait{}, err
-			}
 			if grpState != "" && grpState != "open" && grpCode != "restore_fenced" {
 				effectiveTime := grpDeadline
 				if grpCode == "all_responded" && grpClosedAt != nil {

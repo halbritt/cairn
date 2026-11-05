@@ -294,6 +294,9 @@ FOR UPDATE`, groupEventID).Scan(&curState, &curCode, &partialPolicy, &curDeadlin
 		if err != nil {
 			return "", "", time.Time{}, nil, err
 		}
+		if err = resolveWaitsOnGroupClosure(ctx, tx, groupEventID, newCode, curDeadline); err != nil {
+			return "", "", time.Time{}, nil, err
+		}
 		curState = newState
 		curCode = newCode
 		curClosedAt = &now

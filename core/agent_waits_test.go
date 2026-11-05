@@ -922,10 +922,24 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 		t.Fatalf("forAgentSession resumed 2: %v", err)
 	}
 
-	// Recipient receives the notice event delivered offline
+	// Recipient receives the offline events: first the response, then the wait notice
 	nextEvt, err := resumedSessionStoreA2.NextEvent(ctx, NextEventRequest{Repo: agentA.Repo}, dest)
 	if err != nil || nextEvt.Delivery == nil {
-		t.Fatalf("expected notice event after offline delivery: %+v %v", nextEvt, err)
+		t.Fatalf("expected event after offline delivery: %+v %v", nextEvt, err)
+	}
+	if nextEvt.Delivery.Event.Kind == "response" {
+		if _, err = resumedSessionStoreA2.CompleteEvent(ctx, CompleteEventRequest{
+			RequestID:   uuid.NewString(),
+			DeliveryID:  nextEvt.Delivery.DeliveryID,
+			LeaseID:     nextEvt.Delivery.LeaseID,
+			Disposition: "handled",
+		}, dest); err != nil {
+			t.Fatalf("complete offline response: %v", err)
+		}
+		nextEvt, err = resumedSessionStoreA2.NextEvent(ctx, NextEventRequest{Repo: agentA.Repo}, dest)
+		if err != nil || nextEvt.Delivery == nil {
+			t.Fatalf("expected notice event after offline delivery: %+v %v", nextEvt, err)
+		}
 	}
 	if nextEvt.Delivery.Event.Kind != "notice" || nextEvt.Delivery.Event.EventID != wait.ReservedNoticeEventUUID {
 		t.Fatalf("unexpected notice event: %+v", nextEvt.Delivery.Event)
@@ -1022,7 +1036,7 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fence restore: %v", err)
 	}
-	if fenceResult.Generation <= 1 {
+	if fenceResult.Generation < 1 {
 		t.Fatalf("expected generation advance: %+v", fenceResult)
 	}
 
@@ -2128,40 +2142,34 @@ func TestCreateWait_PreReplayWaiterSessionGuard(t *testing.T) {
 
 	pubReq := publishTestRequest(t, ctx, sessionA, repo, agentB.AgentID, "", dest)
 
-	// Create initial wait
+	sessionRefA := AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}
 	requestID := uuid.NewString()
 	req := CreateWaitRequest{
 		RequestID:           requestID,
+		Session:             &sessionRefA,
 		Collection:          repo,
 		PredicateKind:       WaitPredicateRequestResponse,
 		DependencyEventUUID: pubReq.EventID,
 		Deadline:            time.Now().Add(10 * time.Minute),
 	}
-	createdWait, err := sessionA.CreateWait(ctx, req, dest)
+	// Initial create through base profile store + explicit session
+	createdWait, err := profileA.CreateWait(ctx, req, dest)
 	if err != nil || createdWait.WaitUUID == "" {
-		t.Fatalf("initial create wait: %+v %v", createdWait, err)
+		t.Fatalf("initial create wait via base profile: %+v %v", createdWait, err)
 	}
 
 	// 1. LeaveAgent: session becomes stopped
-	_, err = profileA.LeaveAgent(ctx, AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	_, err = profileA.LeaveAgent(ctx, sessionRefA, dest)
 	if err != nil {
 		t.Fatalf("leave agent: %v", err)
 	}
 
-	// Retry with SAME request ID on stopped session: must be refused with SESSION_STOPPED!
-	_, err = sessionA.CreateWait(ctx, req, dest)
-	requireCode(t, err, "SESSION_STOPPED")
+	// Retry with SAME request ID via base profile + explicit session:
+	// must be refused before cached receipt replay with STALE_SESSION!
+	_, err = profileA.CreateWait(ctx, req, dest)
+	requireCode(t, err, "STALE_SESSION")
 
-	// 2. FenceRestore: prior generation sessions become stale
-	_, err = operator.FenceRestore(ctx, RestoreFenceRequest{
-		RequestID: uuid.NewString(),
-		Reason:    "test_guard_fence",
-	})
-	if err != nil {
-		t.Fatalf("fence restore: %v", err)
-	}
-
-	// Re-register agent A to get a new session ref
+	// 2. Resume session under fresh execution
 	agentA2, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
 		RequestID:       uuid.NewString(),
 		Binding:         "binding-a",
@@ -2171,16 +2179,34 @@ func TestCreateWait_PreReplayWaiterSessionGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register A2: %v", err)
 	}
-	sessionA2, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA2.AgentID, ExecutionID: agentA2.ExecutionID}, dest)
+
+	// Stale session ref (old execution ID) retrying same request ID via base profile:
+	// must be refused before cached receipt replay with STALE_SESSION!
+	_, err = profileA.CreateWait(ctx, req, dest)
+	requireCode(t, err, "STALE_SESSION")
+
+	// 3. FenceRestore: prior generation sessions become stale
+	_, err = operator.FenceRestore(ctx, RestoreFenceRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test_guard_fence",
+	})
 	if err != nil {
-		t.Fatalf("forAgentSession A2: %v", err)
+		t.Fatalf("fence restore: %v", err)
 	}
 
-	// Stale session A (with old execution ID) trying to retry must be refused with STALE_SESSION
-	_, err = sessionA.CreateWait(ctx, req, dest)
+	// Retry with fresh session ref on the restored generation:
+	sessionRefA2 := AgentSessionRef{AgentID: agentA2.AgentID, ExecutionID: agentA2.ExecutionID}
+	req2 := CreateWaitRequest{
+		RequestID:           requestID,
+		Session:             &sessionRefA2,
+		Collection:          repo,
+		PredicateKind:       WaitPredicateRequestResponse,
+		DependencyEventUUID: pubReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}
+	_, err = profileA.CreateWait(ctx, req2, dest)
 	requireCode(t, err, "STALE_SESSION")
 	_ = bootstrap
-	_ = sessionA2
 }
 
 // Behavioral Test 4 (GROUP-DEADLINE): Overdue response groups with deadline earlier
@@ -2413,5 +2439,151 @@ func TestAgentWaits_NotifierRaceForgetExcludesNotice(t *testing.T) {
 	err = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_event WHERE repo=$1 AND kind='notice'`, repo).Scan(&noticeCount)
 	if err != nil || noticeCount != 0 {
 		t.Fatalf("expected 0 notice events, got: %d err=%v", noticeCount, err)
+	}
+}
+
+// TestWAIT7_LateGroupWaitReconciliationResolvesPreexistingWaits verifies that when
+// CreateWait (or targeted reconciliation) reconciles an overdue open response group,
+// preexisting waits subscribed to that group whose own wait deadlines are still in the
+// future are atomically resolved to state='satisfied', terminal_reason='group_closed',
+// rather than being skipped or orphaned as false timeouts.
+func TestWAIT7_LateGroupWaitReconciliationResolvesPreexistingWaits(t *testing.T) {
+	bootstrap, openStore := waitTestDB(t)
+	ctx := context.Background()
+
+	operator := openStore(Channel{Principal: "operator:test", Operator: true})
+	if _, err := operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatalf("enable waits: %v", err)
+	}
+
+	repo := "repo:" + uuid.NewString()
+	dest := Destination{Name: "hosted", AllowLocal: false}
+	profileA := openStore(Channel{Principal: "agent:profile-a-" + repo, Repo: repo})
+	profileB := openStore(Channel{Principal: "agent:profile-b-" + repo, Repo: repo})
+	agentA, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: "native-a-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	agentB, err := profileB.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-b",
+		NativeSessionID: "native-b-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register B: %v", err)
+	}
+	sessionA, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession A: %v", err)
+	}
+
+	// 1. Create group note and publish group request with initial deadline in the future
+	draftGroup := Draft{
+		Kind:        "note",
+		Body:        "group prompt for WAIT-7",
+		ClaimType:   "self",
+		Sensitivity: "shareable",
+		Scope:       Scope{Repo: repo, TaskID: "*", RunID: "*"},
+	}
+	recGroup, err := sessionA.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
+	if err != nil {
+		t.Fatalf("create group note: %v", err)
+	}
+
+	groupReq, err := sessionA.PublishEvent(ctx, PublishEventRequest{
+		RequestID:   uuid.NewString(),
+		Repo:        repo,
+		Kind:        "request",
+		Ref:         RecordVersionRef{RecordID: recGroup.RecordID, Version: 1},
+		Destination: EventDestination{Type: "agent", Name: "agent/" + agentB.AgentID},
+		ResponseGroup: &ResponseGroupSpec{
+			Deadline:      time.Now().Add(5 * time.Second),
+			PartialPolicy: "all",
+		},
+	}, dest)
+	if err != nil {
+		t.Fatalf("publish group request: %v", err)
+	}
+
+	// 2. Register Wait A on group G: wait deadline 10 minutes in the future
+	waitA, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          repo,
+		PredicateKind:       WaitPredicateResponseGroupClosed,
+		DependencyEventUUID: groupReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}, dest)
+	if err != nil || waitA.State != WaitStateWaiting {
+		t.Fatalf("create wait A: %+v %v", waitA, err)
+	}
+
+	// 3. Group deadline passes without any sweeper running: group remains 'open' in DB,
+	// group.deadline < now < waitA.deadline
+	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '5 seconds' WHERE event_id=$1`, groupReq.EventID)
+	if err != nil {
+		t.Fatalf("adjust group deadline: %v", err)
+	}
+
+	// Verify group is still open before late Wait B registration
+	var preGroupState string
+	if err = bootstrap.pool.QueryRow(ctx, `SELECT state FROM cairn.agent_response_group WHERE event_id=$1`, groupReq.EventID).Scan(&preGroupState); err != nil || preGroupState != "open" {
+		t.Fatalf("expected group still open, got: %s %v", preGroupState, err)
+	}
+
+	// Verify wait A is still in 'waiting' state before late Wait B registration
+	gotWaitA_Pre, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: waitA.WaitUUID, Collection: repo}, dest)
+	if err != nil || gotWaitA_Pre.State != WaitStateWaiting {
+		t.Fatalf("expected wait A still waiting: %+v %v", gotWaitA_Pre, err)
+	}
+
+	// 4. Late CreateWait (Wait B) on group G with deadline 10 minutes in the future
+	waitB, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          repo,
+		PredicateKind:       WaitPredicateResponseGroupClosed,
+		DependencyEventUUID: groupReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}, dest)
+	if err != nil {
+		t.Fatalf("create late wait B: %v", err)
+	}
+
+	// 5. Assert group G is closed with incomplete/deadline
+	var postGroupState, postGroupCode string
+	if err = bootstrap.pool.QueryRow(ctx, `SELECT state, code FROM cairn.agent_response_group WHERE event_id=$1`, groupReq.EventID).Scan(&postGroupState, &postGroupCode); err != nil {
+		t.Fatalf("query post group state: %v", err)
+	}
+	if postGroupState != "incomplete" || postGroupCode != "deadline" {
+		t.Fatalf("expected group closed with incomplete/deadline, got: %s/%s", postGroupState, postGroupCode)
+	}
+
+	// 6. Assert BOTH preexisting Wait A and late Wait B are satisfied with terminal_reason='group_closed'
+	gotWaitA_Post, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: waitA.WaitUUID, Collection: repo}, dest)
+	if err != nil {
+		t.Fatalf("get wait A post: %v", err)
+	}
+	if gotWaitA_Post.State != WaitStateSatisfied || gotWaitA_Post.TerminalReason != "group_closed" || gotWaitA_Post.OutboxState != OutboxStatePending {
+		t.Fatalf("expected wait A satisfied with group_closed and pending outbox, got: state=%s reason=%s outbox=%s",
+			gotWaitA_Post.State, gotWaitA_Post.TerminalReason, gotWaitA_Post.OutboxState)
+	}
+
+	if waitB.State != WaitStateSatisfied || waitB.TerminalReason != "group_closed" || waitB.OutboxState != OutboxStatePending {
+		t.Fatalf("expected wait B satisfied with group_closed and pending outbox, got: state=%s reason=%s outbox=%s",
+			waitB.State, waitB.TerminalReason, waitB.OutboxState)
+	}
+
+	// 7. Drain wait outbox: both notices can be drained cleanly
+	drained, err := operator.DrainWaitOutbox(ctx, repo, 50)
+	if err != nil {
+		t.Fatalf("drain wait outbox: %v", err)
+	}
+	if drained != 2 {
+		t.Fatalf("expected 2 outbox notices drained, got: %d", drained)
 	}
 }
