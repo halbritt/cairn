@@ -61,6 +61,15 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 	if err := s.requireOperator(); err != nil {
 		return WorkAssociation{}, err
 	}
+	if req.Collection == "" {
+		req.Collection = s.channel.Repo
+		if req.Collection == "" {
+			req.Collection = "default"
+		}
+	}
+	if err := s.checkRepo(req.Collection); err != nil {
+		return WorkAssociation{}, err
+	}
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAssociation{}, failure("INVALID_REQUEST", "project slug required")
 	}
@@ -130,13 +139,14 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			var metaRaw []byte
 			var actualExecUUID uuid.UUID
 			err = tx.QueryRow(ctx, `SELECT execution_id, metadata FROM cairn.agent_session WHERE agent_id = $1`, aUUID).Scan(&actualExecUUID, &metaRaw)
-			if err == nil {
+			if err == nil && actualExecUUID == eUUID {
 				var meta AgentMetadata
 				_ = json.Unmarshal(metaRaw, &meta)
 				taskSummary = meta.TaskSummary
 			}
 			targetAgentID = &aUUID
 			targetExecID = &eUUID
+			req.TargetID = fmt.Sprintf("%s:%s", aUUID, eUUID)
 
 		case "request":
 			targetRunID = req.TargetID
@@ -150,6 +160,7 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 				return WorkAssociation{}, failure("INVALID_REQUEST", "event target_id must be a UUID")
 			}
 			targetEventID = &evUUID
+			req.TargetID = evUUID.String()
 
 		case "result_record", "record", "result":
 			delim := ":"
@@ -157,24 +168,37 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 				delim = "/"
 			}
 			parts := strings.Split(req.TargetID, delim)
-			if len(parts) == 2 {
-				rUUID, err1 := uuid.Parse(parts[0])
-				ver, err2 := strconv.Atoi(parts[1])
-				if err1 == nil && err2 == nil {
-					targetRecordID = &rUUID
-					targetVersion = &ver
-				}
-			} else if len(parts) == 1 {
-				rUUID, err1 := uuid.Parse(parts[0])
-				if err1 == nil {
-					targetRecordID = &rUUID
-				}
+			if len(parts) != 2 {
+				return WorkAssociation{}, failure("INVALID_REQUEST", "result_record target_id must be <record_uuid>:<version> or <record_uuid>/<version>")
 			}
+			rUUID, err1 := uuid.Parse(parts[0])
+			ver, err2 := strconv.Atoi(parts[1])
+			if err1 != nil || err2 != nil || ver <= 0 {
+				return WorkAssociation{}, failure("INVALID_REQUEST", "result_record requires a valid record UUID and positive version")
+			}
+			var exists bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM cairn.memory_record r
+				JOIN cairn.record_version v ON r.record_id = v.record_id
+				WHERE r.record_id = $1 AND v.version = $2 AND r.repo = $3
+			)`, rUUID, ver, req.Collection).Scan(&exists)
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if !exists {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("record %s version %d not found in collection %q", rUUID, ver, req.Collection))
+			}
+			targetRecordID = &rUUID
+			targetVersion = &ver
+			req.TargetID = fmt.Sprintf("%s:%d", rUUID, ver)
 
 		case "response_group":
-			if grpUUID, err := uuid.Parse(req.TargetID); err == nil {
-				targetGroupID = &grpUUID
+			grpUUID, err := uuid.Parse(req.TargetID)
+			if err != nil {
+				return WorkAssociation{}, failure("INVALID_REQUEST", "response_group target_id must be a valid UUID")
 			}
+			targetGroupID = &grpUUID
+			req.TargetID = grpUUID.String()
 
 		case "run_receipt":
 			targetRunID = req.TargetID
@@ -277,8 +301,46 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 	if err := s.requireOperator(); err != nil {
 		return WorkAssociation{}, err
 	}
+	if req.Collection == "" {
+		req.Collection = s.channel.Repo
+		if req.Collection == "" {
+			req.Collection = "default"
+		}
+	}
+	if err := s.checkRepo(req.Collection); err != nil {
+		return WorkAssociation{}, err
+	}
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAssociation{}, failure("INVALID_REQUEST", "project slug required")
+	}
+
+	// Canonicalize target_id if provided
+	if req.TargetType == "session" || req.TargetType == "execution" {
+		delim := ":"
+		if strings.Contains(req.TargetID, "/") {
+			delim = "/"
+		}
+		parts := strings.Split(req.TargetID, delim)
+		if len(parts) == 2 {
+			aUUID, err1 := uuid.Parse(parts[0])
+			eUUID, err2 := uuid.Parse(parts[1])
+			if err1 == nil && err2 == nil {
+				req.TargetID = fmt.Sprintf("%s:%s", aUUID, eUUID)
+			}
+		}
+	} else if req.TargetType == "result_record" || req.TargetType == "record" || req.TargetType == "result" {
+		delim := ":"
+		if strings.Contains(req.TargetID, "/") {
+			delim = "/"
+		}
+		parts := strings.Split(req.TargetID, delim)
+		if len(parts) == 2 {
+			rUUID, err1 := uuid.Parse(parts[0])
+			ver, err2 := strconv.Atoi(parts[1])
+			if err1 == nil && err2 == nil {
+				req.TargetID = fmt.Sprintf("%s:%d", rUUID, ver)
+			}
+		}
 	}
 
 	return mutate(ctx, s, "work-unassociate", req.RequestID, req, func(tx pgx.Tx) (WorkAssociation, error) {
@@ -297,7 +359,8 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 			err = tx.QueryRow(ctx, `SELECT association_id, revision, binding_id, plane_item_uuid, target_type, target_id,
 				rationale, task_summary, author, state, created_at
 				FROM cairn.work_association
-				WHERE binding_id = $1 AND association_id = $2`,
+				WHERE binding_id = $1 AND association_id = $2
+				FOR UPDATE`,
 				bindingID, req.AssociationID).Scan(
 				&assoc.AssociationID, &assoc.Revision, &assoc.BindingID, &assoc.PlaneItemUUID, &assoc.TargetType, &assoc.TargetID,
 				&rationale, &taskSummary, &assoc.Author, &assoc.State, &assoc.CreatedAt)
@@ -314,7 +377,8 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 			err = tx.QueryRow(ctx, `SELECT association_id, revision, binding_id, plane_item_uuid, target_type, target_id,
 				rationale, task_summary, author, state, created_at
 				FROM cairn.work_association
-				WHERE binding_id = $1 AND plane_item_uuid = $2 AND target_type = $3 AND target_id = $4`,
+				WHERE binding_id = $1 AND plane_item_uuid = $2 AND target_type = $3 AND target_id = $4
+				FOR UPDATE`,
 				bindingID, planeItemUUID, req.TargetType, req.TargetID).Scan(
 				&assoc.AssociationID, &assoc.Revision, &assoc.BindingID, &assoc.PlaneItemUUID, &assoc.TargetType, &assoc.TargetID,
 				&rationale, &taskSummary, &assoc.Author, &assoc.State, &assoc.CreatedAt)
@@ -354,9 +418,9 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 		assoc.RemovedAt = &removedAt
 		assoc.RemovedBy = s.channel.Principal
 
-		// Record history row (STORE-3)
+		// Record history row (STORE-3): record remover as author of this transition
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.work_association_history (association_id, revision, state, rationale, task_summary, author)
-			VALUES ($1, $2, $3, $4, $5, $6)`, assoc.AssociationID, assoc.Revision, assoc.State, assoc.Rationale, assoc.TaskSummary, assoc.Author)
+			VALUES ($1, $2, $3, $4, $5, $6)`, assoc.AssociationID, assoc.Revision, assoc.State, assoc.Rationale, assoc.TaskSummary, s.channel.Principal)
 		if err != nil {
 			return WorkAssociation{}, err
 		}

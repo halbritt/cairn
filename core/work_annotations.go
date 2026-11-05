@@ -230,6 +230,15 @@ func (s *Store) AddBlockerAnnotation(ctx context.Context, req AddBlockerAnnotati
 	if err := s.requireOperator(); err != nil {
 		return WorkAnnotation{}, err
 	}
+	if req.Collection == "" {
+		req.Collection = s.channel.Repo
+		if req.Collection == "" {
+			req.Collection = "default"
+		}
+	}
+	if err := s.checkRepo(req.Collection); err != nil {
+		return WorkAnnotation{}, err
+	}
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "project slug required")
 	}
@@ -305,6 +314,15 @@ func (s *Store) ResolveBlockerAnnotation(ctx context.Context, req ResolveBlocker
 	if err := s.requireOperator(); err != nil {
 		return WorkAnnotation{}, err
 	}
+	if req.Collection == "" {
+		req.Collection = s.channel.Repo
+		if req.Collection == "" {
+			req.Collection = "default"
+		}
+	}
+	if err := s.checkRepo(req.Collection); err != nil {
+		return WorkAnnotation{}, err
+	}
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "project slug required")
 	}
@@ -315,22 +333,38 @@ func (s *Store) ResolveBlockerAnnotation(ctx context.Context, req ResolveBlocker
 	return mutate(ctx, s, "work-blocker-resolve", req.RequestID, req, func(tx pgx.Tx) (WorkAnnotation, error) {
 		var an WorkAnnotation
 		var srcRefsRaw []byte
-		err := tx.QueryRow(ctx, `SELECT annotation_id, revision, binding_id, plane_item_uuid, kind, body, state, author, source_references, created_at, updated_at
-			FROM cairn.work_annotation WHERE annotation_id = $1`, req.AnnotationID).Scan(
+		err := tx.QueryRow(ctx, `SELECT a.annotation_id, a.revision, a.binding_id, a.plane_item_uuid, a.kind, a.body, a.state, a.author, a.source_references, a.created_at, a.updated_at
+			FROM cairn.work_annotation a
+			JOIN cairn.work_project p ON a.binding_id = p.binding_id
+			WHERE a.annotation_id = $1 AND p.collection = $2 AND p.local_slug = $3
+			FOR UPDATE OF a`, req.AnnotationID, req.Collection, req.ProjectSlug).Scan(
 			&an.AnnotationID, &an.Revision, &an.BindingID, &an.PlaneItemUUID, &an.Kind, &an.Body, &an.State, &an.Author, &srcRefsRaw, &an.CreatedAt, &an.UpdatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return WorkAnnotation{}, failure("NOT_FOUND", "blocker annotation not found")
+			return WorkAnnotation{}, failure("NOT_FOUND", "blocker annotation not found in requested project and collection")
 		}
 		if err != nil {
 			return WorkAnnotation{}, err
 		}
 		_ = json.Unmarshal(srcRefsRaw, &an.SourceReferences)
 
+		if req.ItemUUID != uuid.Nil {
+			var match bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND plane_item_uuid = $2 AND (item_id = $3 OR plane_item_uuid = $3)
+			)`, an.BindingID, an.PlaneItemUUID, req.ItemUUID).Scan(&match)
+			if err != nil {
+				return WorkAnnotation{}, err
+			}
+			if !match {
+				return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("annotation %s does not belong to item %s", req.AnnotationID, req.ItemUUID))
+			}
+		}
+
 		if an.Kind != "blocker" {
 			return WorkAnnotation{}, failure("INVALID_REQUEST", "target annotation is not a blocker")
 		}
 
-		if an.Revision != req.ExpectedRevision {
+		if req.ExpectedRevision > 0 && an.Revision != req.ExpectedRevision {
 			return WorkAnnotation{}, failure("VERSION_CONFLICT", fmt.Sprintf("expected revision %d, current is %d", req.ExpectedRevision, an.Revision))
 		}
 
