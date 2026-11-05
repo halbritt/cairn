@@ -145,6 +145,42 @@
         <h3>Run receipts</h3>
         <ul id="modal-run-receipts" class="detail-list"></ul>
       </section>
+      <section id="item-coordination" aria-labelledby="item-coordination-title">
+        <h3 id="item-coordination-title">Waits and quiet notices</h3>
+        <p id="coordination-observed" class="hint" role="status">No current coordination observation.</p>
+        <p class="hint">Each page is a current read. Links and source visibility may change between pages.</p>
+        <div id="coordination-error" class="alert alert-danger" role="alert" hidden></div>
+        <button id="coordination-reload" type="button" disabled>Reload linked coordination</button>
+        <section aria-labelledby="coordination-waits-title">
+          <h4 id="coordination-waits-title">Waits for linked dependencies</h4>
+          <p class="hint">Wait satisfaction, notification publication and recipient handling are separate observations. Reading this view does not resolve waits.</p>
+          <p id="coordination-waits-status" class="hint" hidden></p>
+          <p id="coordination-waits-empty" hidden>No explicitly associated dependency matched.</p>
+          <div class="artifact-pages">
+            <button id="coordination-waits-first" type="button" disabled>First waits page</button>
+            <span id="coordination-waits-page" role="status"></span>
+            <button id="coordination-waits-more" type="button" disabled>More waits</button>
+          </div>
+          <ul id="coordination-waits" class="detail-list coordination-rows"></ul>
+        </section>
+        <section aria-labelledby="coordination-notices-title">
+          <h4 id="coordination-notices-title">Quiet notices for linked events and conversations</h4>
+          <p class="hint">Conversation backlog may concern other work. Admission or flush does not prove that a notice was handled. This view does not claim, flush or acknowledge notices.</p>
+          <p id="coordination-notices-status" class="hint" hidden></p>
+          <p id="coordination-queue-summary" role="status" hidden></p>
+          <h5>Explicitly linked recipients</h5>
+          <p id="coordination-recipients-empty" hidden>No explicitly associated session matched.</p>
+          <ul id="coordination-recipients" class="detail-list coordination-rows"></ul>
+          <h5>Matching notices</h5>
+          <p id="coordination-notices-empty" hidden>No explicitly associated event or recipient matched.</p>
+          <div class="artifact-pages">
+            <button id="coordination-notices-first" type="button" disabled>First notices page</button>
+            <span id="coordination-notices-page" role="status"></span>
+            <button id="coordination-notices-more" type="button" disabled>More notices</button>
+          </div>
+          <ul id="coordination-notices" class="detail-list coordination-rows"></ul>
+        </section>
+      </section>
       <h3>Associations</h3>
       <ul id="modal-associations" class="detail-list"></ul>
       <div class="assoc-actions">

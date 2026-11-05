@@ -111,3 +111,6 @@ summary { cursor: pointer; padding: .5rem 0; }
   .artifact-form { padding: .75rem; }
   .artifact-pages > span { flex: 1; }
 }
+/* Coordination observations render only selected typed metadata. */
+.coordination-rows > li { margin-block: 0.8rem; padding-block: 0.5rem; border-bottom: 1px solid #d5d9e2; overflow-wrap: anywhere; }
+.coordination-provenance { margin-top: 0.4rem; padding-left: 1.3rem; }

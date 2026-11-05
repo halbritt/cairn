@@ -15,6 +15,14 @@
   let refreshTimer = null;
   let presenceTimer = null;
   let projectRefreshBlocked = true;
+  let coordinationIdentity = null;
+  let coordinationRequest = 0;
+  let coordinationTimer = null;
+  let coordinationAbort = null;
+  const coordinationPages = {
+    waits: { cursor: "", next: "", page: 1 },
+    notices: { cursor: "", next: "", page: 1 }
+  };
   let currentProjectStatus = "";
   let artifactStatus = "";
   let artifactItemKey = "";
@@ -69,6 +77,7 @@
     const item = currentItemUUID;
     detailRequest++;
     clearTimeout(presenceTimer);
+    clearCoordination();
     artifactListRequest++;
     artifactHistoryRequest++;
     currentItemUUID = "";
@@ -80,7 +89,7 @@
     }
   }
 
-  async function apiFetch(path, options = {}) {
+  async function apiFetch(path, options = {}, unauthorized = showLogin) {
     const headers = new Headers(options.headers);
     if (options.method === "POST" && csrfToken) headers.set("X-CSRF-Token", csrfToken);
     const response = await fetch(path, { ...options, headers, cache: "no-store" });
@@ -88,7 +97,7 @@
     if (token) csrfToken = token;
     const body = await response.json();
     if (!response.ok) {
-      if (response.status === 401) showLogin();
+      if (response.status === 401) unauthorized();
       throw new Error(body.message || body.error || `Request failed (${response.status})`);
     }
     return body;
@@ -338,6 +347,7 @@
   async function showDetail(itemUUID) {
     const project = currentProject;
     const sequence = ++detailRequest;
+    clearCoordination("Reading current linked coordination…");
     try {
       const detail = await apiFetch("/api/work/item?" + new URLSearchParams({ project, item: itemUUID }));
       if (sequence !== detailRequest || project !== currentProject) return;
@@ -477,9 +487,221 @@
         const draft = drafts.get(input.closest(".annot-item").dataset.annotationId);
         if (draft?.focused) { input.focus(); input.setSelectionRange(draft.start, draft.end); }
       }
+      coordinationIdentity = { collection: detail.collection, binding: detail.item.binding_id,
+        item: detail.item.plane_item_uuid, project };
+      loadCoordination();
       await loadItemArtifacts();
     } catch (error) {
       message(byID("detail-modal").hidden ? "view-error" : "detail-error", "Could not load item: " + error.message);
+    }
+  }
+
+  function clearCoordination(text = "No current coordination observation.") {
+    coordinationRequest++;
+    clearTimeout(coordinationTimer);
+    coordinationAbort?.abort();
+    coordinationAbort = null;
+    coordinationIdentity = null;
+    for (const page of Object.values(coordinationPages)) Object.assign(page, { cursor: "", next: "", page: 1 });
+    clearCoordinationRows();
+    message("coordination-observed", text);
+    message("coordination-error");
+    byID("coordination-reload").disabled = true;
+  }
+
+  function clearCoordinationRows() {
+    for (const id of ["coordination-waits", "coordination-notices", "coordination-recipients"]) byID(id).replaceChildren();
+    for (const id of ["coordination-waits-empty", "coordination-notices-empty", "coordination-recipients-empty"]) byID(id).hidden = true;
+    for (const id of ["coordination-waits-status", "coordination-notices-status", "coordination-queue-summary"]) message(id);
+    for (const panel of ["waits", "notices"]) {
+      byID(`coordination-${panel}-page`).textContent = "";
+      byID(`coordination-${panel}-first`).disabled = true;
+      byID(`coordination-${panel}-more`).disabled = true;
+    }
+  }
+
+  function coordinationStillSelected(identity, sequence) {
+    return sequence === coordinationRequest && coordinationIdentity === identity
+      && currentProject === identity.project && currentItemUUID === identity.item && !byID("detail-modal").hidden;
+  }
+
+  async function loadCoordination() {
+    const identity = coordinationIdentity;
+    if (!identity || byID("detail-modal").hidden || document.hidden) return;
+    clearTimeout(coordinationTimer);
+    coordinationAbort?.abort();
+    const controller = new AbortController();
+    coordinationAbort = controller;
+    const sequence = ++coordinationRequest;
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    byID("coordination-reload").disabled = true;
+    for (const panel of ["waits", "notices"]) {
+      byID(`coordination-${panel}-first`).disabled = true;
+      byID(`coordination-${panel}-more`).disabled = true;
+    }
+    const query = new URLSearchParams({ project: identity.project, item: identity.item, limit: 25 });
+    if (coordinationPages.waits.cursor) query.set("wait_cursor", coordinationPages.waits.cursor);
+    if (coordinationPages.notices.cursor) query.set("notice_cursor", coordinationPages.notices.cursor);
+    try {
+      const data = await apiFetch("/api/work/item/coordination?" + query, { signal: controller.signal }, () => {
+        if (coordinationStillSelected(identity, sequence)) showLogin();
+      });
+      if (!coordinationStillSelected(identity, sequence)) return;
+      if (data.schema !== "cairn.work-coordination-view/1" || data.collection !== identity.collection
+        || data.binding_id !== identity.binding || data.plane_item_uuid !== identity.item
+        || !Number.isSafeInteger(data.restore_generation) || data.restore_generation < 1
+        || !Number.isFinite(Date.parse(data.observed_at))) throw new Error("Unexpected coordination identity or observation");
+      for (const panel of [data.waits, data.quiet_notices]) {
+        if (!panel || !Array.isArray(panel.items) || typeof panel.feature_status !== "string"
+          || (panel.next_cursor !== null && typeof panel.next_cursor !== "string")) throw new Error("Incomplete coordination panel");
+      }
+      if (!Array.isArray(data.quiet_notices.recipients)
+        || !Number.isSafeInteger(data.quiet_notices.queued_count) || data.quiet_notices.queued_count < 0
+        || !Number.isSafeInteger(data.quiet_notices.overdue_queued_count) || data.quiet_notices.overdue_queued_count < 0) throw new Error("Incomplete quiet-notice summary");
+      const openWaits = new Set([...document.querySelectorAll(".coordination-wait details[open]")].map(node => node.parentElement.dataset.waitId));
+      const openNotices = new Set([...document.querySelectorAll(".coordination-notice details[open]")].map(node => node.parentElement.dataset.noticeId));
+      const focused = document.activeElement?.closest(".coordination-wait, .coordination-notice");
+      const focusedID = focused?.dataset.waitId || focused?.dataset.noticeId;
+      clearCoordinationRows();
+      renderWaits(data.waits.items, openWaits);
+      renderQuietNotices(data.quiet_notices, openNotices);
+      if (focusedID) {
+        const current = [...document.querySelectorAll(".coordination-wait, .coordination-notice")]
+          .find(node => (node.dataset.waitId || node.dataset.noticeId) === focusedID);
+        current?.querySelector("summary").focus({ preventScroll: true });
+      }
+      message("coordination-observed", `Observed ${dateLabel(data.observed_at)}. Updates every 30 seconds while this detail is visible.`);
+      message("coordination-error");
+      for (const [panel, value] of [["waits", data.waits], ["notices", data.quiet_notices]]) {
+        const page = coordinationPages[panel];
+        page.next = value.next_cursor || "";
+        message(`coordination-${panel}-status`, `Feature status: ${value.feature_status}.`);
+        byID(`coordination-${panel}-page`).textContent = `Page ${page.page}`;
+        byID(`coordination-${panel}-first`).disabled = !page.cursor;
+        byID(`coordination-${panel}-more`).disabled = !page.next;
+      }
+    } catch (error) {
+      if (!coordinationStillSelected(identity, sequence)) return;
+      clearCoordinationRows();
+      message("coordination-observed", "Current coordination state could not be read.");
+      message("coordination-error", "Could not read linked coordination: " + (error.name === "AbortError" ? "read timed out" : error.message)
+        + ". Reload linked coordination to start from the first pages.");
+      for (const page of Object.values(coordinationPages)) Object.assign(page, { cursor: "", next: "", page: 1 });
+    } finally {
+      clearTimeout(timeout);
+      if (coordinationStillSelected(identity, sequence)) {
+        coordinationAbort = null;
+        byID("coordination-reload").disabled = writing;
+        if (!document.hidden) coordinationTimer = setTimeout(loadCoordination, 30000);
+      }
+    }
+  }
+
+  function coordinationField(parent, label, value) {
+    const line = document.createElement("div");
+    const heading = document.createElement("strong");
+    heading.textContent = label + ": ";
+    line.append(heading, document.createTextNode(value == null || value === "" ? "Not recorded" : String(value)));
+    parent.append(line);
+  }
+
+  function coordinationAssociations(row, associations) {
+    if (!Array.isArray(associations) || !associations.length) throw new Error("Coordination row lacks explicit association provenance");
+    const labels = { explicit_event: "Linked event", explicit_response_group: "Linked response group",
+      linked_recipient_conversation: "Backlog for linked conversation", admitted_execution: "Admitted to linked execution" };
+    const list = document.createElement("ul");
+    list.className = "coordination-provenance hint";
+    for (const association of associations) {
+      if (!validUUID(association.association_id) || !Number.isSafeInteger(association.revision) || association.revision < 1) throw new Error("Invalid association provenance");
+      const item = document.createElement("li");
+      item.textContent = `${labels[association.basis] || "Unknown relationship: " + String(association.basis)} · ${association.association_id} · revision ${association.revision}`;
+      list.append(item);
+    }
+    row.append(list);
+  }
+
+  function coordinationDelivery(row, delivery) {
+    if (!delivery) { coordinationField(row, "Delivery", "No delivery observed"); return; }
+    coordinationField(row, "Delivery", `${delivery.state || "unknown"} · ${delivery.delivery_id || "identity unavailable"}`);
+    if (delivery.code) coordinationField(row, "Delivery code", delivery.code);
+    if (delivery.completed_at) coordinationField(row, "Delivery completed", dateLabel(delivery.completed_at));
+  }
+
+  function renderWaits(waits, open) {
+    byID("coordination-waits-empty").hidden = waits.length !== 0;
+    for (const wait of waits) {
+      if (!validUUID(wait.wait_uuid) || !wait.predicate || !wait.notification) throw new Error("Incomplete wait observation");
+      const item = document.createElement("li");
+      item.className = "coordination-wait";
+      item.dataset.waitId = wait.wait_uuid;
+      const row = document.createElement("details"), summary = document.createElement("summary");
+      row.open = open.has(wait.wait_uuid);
+      summary.textContent = `${wait.state || "Unknown state"} · ${wait.predicate.kind || "Unknown predicate"} · deadline ${dateLabel(wait.deadline)}${wait.overdue ? " · overdue observation" : ""}${wait.historical ? " · historical" : ""}`;
+      row.append(summary);
+      item.append(row);
+      coordinationField(row, "Persisted wait state", wait.state);
+      if (wait.historical) coordinationField(row, "Execution", "Historical");
+      if (wait.overdue) coordinationField(row, "Deadline observation", "Overdue; no timeout is implied by this read");
+      coordinationField(row, "Wait", wait.wait_uuid);
+      coordinationField(row, "Owner", wait.owner_agent_uuid);
+      coordinationField(row, "Creation execution", wait.creation_execution_uuid);
+      coordinationField(row, "Predicate", `${wait.predicate.kind || "unknown"} · version ${wait.predicate.version ?? "unknown"}`);
+      coordinationField(row, "Dependency", wait.predicate.dependency_event_uuid);
+      coordinationField(row, "Dependency availability", wait.dependency_status);
+      coordinationField(row, "Deadline", dateLabel(wait.deadline));
+      coordinationField(row, "Created", dateLabel(wait.created_at));
+      if (wait.resolved_at) coordinationField(row, "Resolved", dateLabel(wait.resolved_at));
+      coordinationField(row, "Terminal reason", wait.terminal_reason);
+      coordinationField(row, "Notification publication", wait.notification.outbox_state);
+      if (wait.notification.restriction_reason) coordinationField(row, "Notification restriction", wait.notification.restriction_reason);
+      if (wait.notification.restore_fenced) coordinationField(row, "Notification restore fence", "Fenced");
+      coordinationField(row, "Notification event", wait.notification.event_id || "Not materialized");
+      coordinationDelivery(row, wait.notification.delivery);
+      coordinationAssociations(row, wait.associations);
+      byID("coordination-waits").append(item);
+    }
+  }
+
+  function renderQuietNotices(panel, open) {
+    message("coordination-queue-summary", `${panel.queued_count} queued · ${panel.overdue_queued_count} overdue queued. Oldest queued: ${panel.oldest_queued_at ? dateLabel(panel.oldest_queued_at) : "None"}. Earliest expiry: ${panel.earliest_expiry ? dateLabel(panel.earliest_expiry) : "None"}.`);
+    byID("coordination-notices-empty").hidden = panel.items.length !== 0;
+    byID("coordination-recipients-empty").hidden = panel.recipients.length !== 0;
+    for (const recipient of panel.recipients) {
+      const row = document.createElement("li");
+      row.className = "coordination-recipient";
+      row.dataset.agentId = recipient.agent_id;
+      row.dataset.executionId = recipient.execution_id;
+      coordinationField(row, "Linked recipient", `${recipient.agent_id} / ${recipient.execution_id}`);
+      coordinationField(row, "Execution observation", recipient.historical ? "Historical execution" : recipient.online ? "Online at this view observation" : "Offline at this view observation");
+      coordinationField(row, "Quiet-notice support", recipient.support);
+      coordinationField(row, "Association", `${recipient.association_id} · revision ${recipient.association_revision}`);
+      byID("coordination-recipients").append(row);
+    }
+    for (const notice of panel.items) {
+      if (!validUUID(notice.notice_id) || !validUUID(notice.event_id)) throw new Error("Incomplete quiet-notice observation");
+      const item = document.createElement("li");
+      item.className = "coordination-notice";
+      item.dataset.noticeId = notice.notice_id;
+      const row = document.createElement("details"), summary = document.createElement("summary");
+      row.open = open.has(notice.notice_id);
+      summary.textContent = `${notice.state || "Unknown state"} · expires ${dateLabel(notice.expires_at)}${notice.expiry_overdue ? " · overdue observation" : ""}${notice.historical ? " · historical" : ""}`;
+      row.append(summary);
+      item.append(row);
+      coordinationField(row, "Persisted notice state", notice.state);
+      if (notice.historical) coordinationField(row, "Execution", "Historical");
+      if (notice.expiry_overdue) coordinationField(row, "Expiry observation", "Overdue; the persisted state has not been changed by this read");
+      coordinationField(row, "Notice", notice.notice_id);
+      coordinationField(row, "Event", notice.event_id);
+      coordinationField(row, "Recipient", notice.recipient_agent_id);
+      coordinationField(row, "Source availability", notice.source_status);
+      if (notice.unavailable_reason) coordinationField(row, "Unavailable reason", notice.unavailable_reason);
+      coordinationField(row, "Created", dateLabel(notice.created_at));
+      coordinationField(row, "Expires", dateLabel(notice.expires_at));
+      coordinationField(row, "Admitted execution", notice.admitted_execution_id || "Not admitted");
+      if (notice.admitted_at) coordinationField(row, "Admitted", dateLabel(notice.admitted_at));
+      coordinationDelivery(row, notice.delivery);
+      coordinationAssociations(row, notice.associations);
+      byID("coordination-notices").append(item);
     }
   }
 
@@ -1010,6 +1232,27 @@
   });
   window.addEventListener("popstate", loadRoute);
 
+  byID("coordination-reload").addEventListener("click", () => {
+    for (const page of Object.values(coordinationPages)) Object.assign(page, { cursor: "", next: "", page: 1 });
+    loadCoordination();
+  });
+  for (const panel of ["waits", "notices"]) {
+    byID(`coordination-${panel}-first`).addEventListener("click", () => {
+      Object.assign(coordinationPages[panel], { cursor: "", next: "", page: 1 });
+      loadCoordination();
+    });
+    byID(`coordination-${panel}-more`).addEventListener("click", () => {
+      const page = coordinationPages[panel];
+      if (!page.next) return;
+      page.cursor = page.next;
+      page.page++;
+      loadCoordination();
+    });
+  }
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(coordinationTimer);
+    if (!document.hidden && coordinationIdentity && !byID("detail-modal").hidden) loadCoordination();
+  });
   byID("modal-close").addEventListener("click", closeDetail);
   document.addEventListener("keydown", event => {
     const modal = !byID("login-modal").hidden ? byID("login-modal") : !byID("detail-modal").hidden ? byID("detail-modal") : null;
