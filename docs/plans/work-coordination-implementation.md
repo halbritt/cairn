@@ -61,7 +61,31 @@ The earlier CAIRN-276–278 journal ownership work remains a separate structural
 campaign. WC-04 must use the current journal owner interface at implementation
 time and coordinate overlapping lifecycle edits; these feature plans do not
 silently enlarge those tickets. CAIRN-274 and CAIRN-275 retain their existing
-investigation scope. No new issue IDs are assigned by this document.
+investigation scope. The implementation items below cover this separate feature
+campaign.
+
+## Plane work items
+
+The six slices have separate implementation items in the work instance's Cairn
+project. Each item was read back after creation with its scope, acceptance checks
+and stable external identity verified. Creating these items does not establish
+implementation acceptance.
+
+| Plan slice | Plane item | Prerequisites |
+| --- | --- | --- |
+| WC-01 | [CAIRN-279](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/2431dc31-34f1-4605-90ed-03e2f59a93bf/) | None |
+| WC-02 | [CAIRN-280](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/4b1c9a95-fd1a-43e3-96bd-53811b6f5c32/) | CAIRN-279 |
+| WC-03 | [CAIRN-281](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/71d2d798-564e-417a-bda1-6cb4b0e65c85/) | CAIRN-279 for the work-view panel |
+| WC-04 | [CAIRN-282](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/f3aa8aff-d1c2-485c-b9d5-683d0cf174d3/) | CAIRN-279 |
+| WC-05 | [CAIRN-283](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/faed6088-67b9-44c6-96a2-89b92380760e/) | CAIRN-279, CAIRN-280 |
+| WC-06 | [CAIRN-284](https://proximal.tail0ecc2e.ts.net:10000/proximal/projects/afa5d2cc-95d4-4377-8cea-769f6b479c84/issues/c738e872-9fba-4d9d-a202-12c2bc64976e/) | CAIRN-279, CAIRN-280, CAIRN-281, CAIRN-282, CAIRN-283 |
+
+The item bodies retain these dependencies. Native blocking relations are not
+available through the installed CLI or this session's tools, so no native
+blocking edges are claimed. WC-03 Store/CLI development can proceed before
+WC-01; the panel remains a completion dependency. No parent was specified.
+The creation identity is `external_source: cairn-work-coordination`, with
+`external_id: cairn-wc01-v1` through `cairn-wc06-v1` in slice order.
 
 ## WC-01 — A usable work view with explicit associations
 
