@@ -125,3 +125,11 @@ delivery without inventing an acknowledgement.
 Successful reports bind the candidate, fixture, native manifest, both native
 executables and staged lifecycle bundle. They measure protocol behavior, not
 model usefulness. No installed binary or running owner session is changed.
+
+The seven-stage workflow passed on 2026-11-05 against the complete package
+recorded in `runtime.json`, including exact older-attempt retirement after
+source withdrawal. The run used 19 local scripted HTTP requests and removed
+its disposable Store. The associated lifecycle suite passed 53 tests, launcher
+suite 20 tests, and build-input verification suite 2 tests; `make check` passed.
+Store integration coverage is recorded separately by the Cairn change that
+supplies the admission and cached-disclosure guards.
