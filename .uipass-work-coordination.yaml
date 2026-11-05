@@ -85,3 +85,8 @@ surfaces:
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '#artifact-link-revision'}
+  artifact_races:
+    states:
+      unaffected_revision:
+        route: /
+        ready: '#artifact-revision-section'
