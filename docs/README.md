@@ -36,6 +36,9 @@ access. Use [maintenance](operator/maintenance.md) for upgrades and recovery.
 [documentation](developer/documentation.md) describe how to make and validate a
 change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
+Proposed work: [work coordination design](plans/work-coordination-design.md) and
+[implementation sequence](plans/work-coordination-implementation.md).
+
 ## Reference
 
 Use the [CLI reference](reference/cli.md), [HTTP API reference](reference/api-rest.md),

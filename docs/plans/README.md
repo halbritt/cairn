@@ -12,6 +12,13 @@ use the linked plan or guide, [implementation status](../implementation-status.m
 and current source. The [verification guide](../verification/README.md)
 explains the same limits for `/tmp` locators and recorded digests.
 
+## Work coordination
+
+The [work coordination design](work-coordination-design.md) and
+[implementation plan](work-coordination-implementation.md) cover the proposed
+work view, artifact links, durable waits, next-turn notices and reviewed model
+advice. They specify complete reversible features; they do not claim deployment.
+
 ## Later changes to specific receipts
 
 These notes were added on 2026-09-25. They do not change the recorded
