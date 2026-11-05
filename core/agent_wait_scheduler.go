@@ -303,14 +303,20 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 		// Addressed offline delivery to registered conversations is preserved.
 		var currentBinding, currentVisibility string
 		err = tx.QueryRow(ctx, `SELECT binding, visibility FROM cairn.agent_session WHERE agent_id=$1 AND repo=$2 FOR SHARE`, item.ownerAgentUUID, item.collection).Scan(&currentBinding, &currentVisibility)
-		if errors.Is(err, pgx.ErrNoRows) || (item.bindingID != "" && currentBinding != item.bindingID) {
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='binding_revoked', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+					return 0, err
+				}
+				continue
+			}
+			return 0, err
+		}
+		if item.bindingID != "" && currentBinding != item.bindingID {
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='binding_revoked', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
 				return 0, err
 			}
 			continue
-		}
-		if err != nil {
-			return 0, err
 		}
 
 		// 2. Resolve dependency event details
@@ -337,7 +343,9 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 			if err = json.Unmarshal(item.responseRefJSON, &respRef); err == nil && respRef.RecordID != "" {
 				respRecordID = respRef.RecordID
 				respVersion = respRef.Version
-				_ = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE record_id=$1 AND version=$2 AND repo=$3 LIMIT 1`, respRecordID, respVersion, item.collection).Scan(&respSensitivity)
+				if qErr := tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE record_id=$1 AND version=$2 AND repo=$3 LIMIT 1`, respRecordID, respVersion, item.collection).Scan(&respSensitivity); qErr != nil && !errors.Is(qErr, pgx.ErrNoRows) {
+					return 0, qErr
+				}
 			}
 		}
 
@@ -380,12 +388,16 @@ FROM cairn.memory_record m
 JOIN cairn.record_version v ON v.record_id=m.record_id 
 WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3
 FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, &rDeleted)
-			if errors.Is(err, pgx.ErrNoRows) || rLife != "active" || rDeleted {
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					recordsIneligible = true
+					break
+				}
+				return 0, err
+			}
+			if rLife != "active" || rDeleted {
 				recordsIneligible = true
 				break
-			}
-			if err != nil {
-				return 0, err
 			}
 			recInfos[rv] = recordInfo{sensitivity: rSens, lifecycle: rLife, payloadDeleted: rDeleted}
 		}
