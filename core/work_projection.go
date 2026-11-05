@@ -983,31 +983,15 @@ func isTerminalDeliveryState(st string) bool {
 	}
 }
 
-func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug string, itemIDOrIdentifier string) (WorkItemDetail, error) {
-	if err := s.requireOperator(); err != nil {
-		return WorkItemDetail{}, err
-	}
-	if err := s.checkRepo(collection); err != nil {
-		return WorkItemDetail{}, err
-	}
-	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
-	if err != nil {
-		return WorkItemDetail{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	if err := s.checkWorkReadableTx(ctx, tx); err != nil {
-		return WorkItemDetail{}, err
-	}
-
+func (s *Store) resolveWorkItemAndAssociationsTx(ctx context.Context, tx pgx.Tx, collection, slug, itemIDOrIdentifier string, now time.Time) (uuid.UUID, WorkItem, bool, []WorkAssociation, error) {
 	var bindingID uuid.UUID
 	var authRejected bool
-	err = tx.QueryRow(ctx, `SELECT binding_id, auth_rejected FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, collection, slug).Scan(&bindingID, &authRejected)
+	err := tx.QueryRow(ctx, `SELECT binding_id, auth_rejected FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, collection, slug).Scan(&bindingID, &authRejected)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return WorkItemDetail{}, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", slug, collection))
+		return uuid.Nil, WorkItem{}, false, nil, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", slug, collection))
 	}
 	if err != nil {
-		return WorkItemDetail{}, err
+		return uuid.Nil, WorkItem{}, false, nil, err
 	}
 
 	var it WorkItem
@@ -1032,10 +1016,10 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 		&it.UpdatedAtSource, &it.SourceURL, &it.CacheGeneration, &it.IsAbsent,
 		&it.LastRefreshedAt, &refreshErr)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return WorkItemDetail{}, failure("NOT_FOUND", fmt.Sprintf("work item %q not found in project %q", itemIDOrIdentifier, slug))
+		return uuid.Nil, WorkItem{}, false, nil, failure("NOT_FOUND", fmt.Sprintf("work item %q not found in project %q", itemIDOrIdentifier, slug))
 	}
 	if err != nil {
-		return WorkItemDetail{}, err
+		return uuid.Nil, WorkItem{}, false, nil, err
 	}
 	it.StateID = stateID
 	if refreshErr != nil {
@@ -1049,7 +1033,7 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 	if it.AssigneeNames == nil {
 		it.AssigneeNames = make([]string, 0)
 	}
-	if it.LastRefreshedAt == nil || time.Since(*it.LastRefreshedAt) > 2*time.Minute || it.CacheGeneration == 0 {
+	if it.LastRefreshedAt == nil || now.Sub(*it.LastRefreshedAt) > 2*time.Minute || it.CacheGeneration == 0 {
 		it.IsStale = true
 	}
 
@@ -1067,27 +1051,13 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 		it.RefreshError = "Plane auth rejected"
 	}
 
-	detail := WorkItemDetail{
-		Item:           it,
-		ProjectSlug:    slug,
-		Collection:     collection,
-		AuthRejected:   authRejected,
-		Associations:   make([]WorkAssociation, 0),
-		Sessions:       make([]AssociatedSession, 0),
-		Requests:       make([]AssociatedRequest, 0),
-		ResponseGroups: make([]AssociatedResponseGroup, 0),
-		ResultRecords:  make([]AssociatedResultRecord, 0),
-		RunReceipts:    make([]AssociatedRunReceipt, 0),
-		Annotations:    make([]WorkAnnotation, 0),
-	}
-
-	// Read associations
+	associations := make([]WorkAssociation, 0)
 	assocRows, err := tx.Query(ctx, `SELECT association_id, revision, binding_id, plane_item_uuid, target_type, target_id,
 		target_agent_id, target_execution_id, target_event_id, target_record_id, target_version, target_group_id, target_run_id,
 		rationale, task_summary, author, state, created_at, removed_at, removed_by
-		FROM cairn.work_association WHERE binding_id = $1 AND plane_item_uuid = $2 AND state = 'active' ORDER BY created_at`, bindingID, it.PlaneItemUUID)
+		FROM cairn.work_association WHERE binding_id = $1 AND plane_item_uuid = $2 AND state = 'active' ORDER BY created_at, association_id`, bindingID, it.PlaneItemUUID)
 	if err != nil {
-		return WorkItemDetail{}, err
+		return uuid.Nil, WorkItem{}, false, nil, err
 	}
 	for assocRows.Next() {
 		var a WorkAssociation
@@ -1097,7 +1067,7 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 			&a.TargetAgentID, &a.TargetExecutionID, &a.TargetEventID, &a.TargetRecordID, &a.TargetVersion, &a.TargetGroupID, &a.TargetRunID,
 			&rationale, &taskSummary, &a.Author, &a.State, &a.CreatedAt, &a.RemovedAt, &removedBy); err != nil {
 			assocRows.Close()
-			return WorkItemDetail{}, err
+			return uuid.Nil, WorkItem{}, false, nil, err
 		}
 		if rationale != nil {
 			a.Rationale = *rationale
@@ -1108,13 +1078,52 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 		if removedBy != nil {
 			a.RemovedBy = *removedBy
 		}
-		detail.Associations = append(detail.Associations, a)
+		associations = append(associations, a)
 	}
 	if err = assocRows.Err(); err != nil {
 		assocRows.Close()
-		return WorkItemDetail{}, err
+		return uuid.Nil, WorkItem{}, false, nil, err
 	}
 	assocRows.Close()
+
+	return bindingID, it, authRejected, associations, nil
+}
+
+func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug string, itemIDOrIdentifier string) (WorkItemDetail, error) {
+	if err := s.requireOperator(); err != nil {
+		return WorkItemDetail{}, err
+	}
+	if err := s.checkRepo(collection); err != nil {
+		return WorkItemDetail{}, err
+	}
+	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
+	if err != nil {
+		return WorkItemDetail{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := s.checkWorkReadableTx(ctx, tx); err != nil {
+		return WorkItemDetail{}, err
+	}
+
+	bindingID, it, authRejected, associations, err := s.resolveWorkItemAndAssociationsTx(ctx, tx, collection, slug, itemIDOrIdentifier, time.Now())
+	if err != nil {
+		return WorkItemDetail{}, err
+	}
+
+	detail := WorkItemDetail{
+		Item:           it,
+		ProjectSlug:    slug,
+		Collection:     collection,
+		AuthRejected:   authRejected,
+		Associations:   associations,
+		Sessions:       make([]AssociatedSession, 0),
+		Requests:       make([]AssociatedRequest, 0),
+		ResponseGroups: make([]AssociatedResponseGroup, 0),
+		ResultRecords:  make([]AssociatedResultRecord, 0),
+		RunReceipts:    make([]AssociatedRunReceipt, 0),
+		Annotations:    make([]WorkAnnotation, 0),
+	}
 
 	for _, a := range detail.Associations {
 		// Process session associations (AC-03, STORE-3)

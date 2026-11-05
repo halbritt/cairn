@@ -196,9 +196,6 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if args[0] == "schedule-serve" {
 		return serveSchedules(ctx, store, args[1:], os.Stderr)
 	}
-	if args[0] == "work" {
-		return workCommand(ctx, store, args[1:])
-	}
 	if args[0] == "run" {
 		return runTask(ctx, store, args[1:])
 	}
