@@ -1,9 +1,9 @@
 # 0002 — Local memory loop and operating defaults
 
-Status: selected for implementation, 2026-09-07. The operator delegated the
-remaining decisions and authorized continued work while away. This supersedes
-the initial review's decision deferrals; it does not assert unimplemented gates
-already work.
+Status: accepted, 2026-09-07. This decision records the initial operating
+defaults. It supersedes the initial design review's deferred choices. Later
+capabilities, including optional semantic discovery, are described in the
+[current capability overview](../implementation-status.md).
 
 | Design decision | Selected default |
 |---|---|
@@ -36,4 +36,4 @@ an observed process result, never verified task acceptance.
 
 No model call or background grooming job is necessary for this loop. The next
 decision is driven by measured use on actual recurring work, not a commitment
-to implement every proposed subsystem before the owner can try it.
+to implement every proposed subsystem before users can try it.

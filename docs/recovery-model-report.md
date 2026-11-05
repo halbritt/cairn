@@ -1,4 +1,8 @@
-# Local recovery model report
+# Report model work during recovery
+
+Use this report to examine which model turns can be connected to recorded
+recovery actions and settlement failures. It combines selected local evidence
+without copying the underlying messages into the report.
 
 `scripts/recovery_model_report.py` joins a local
 `cairn.workflow-model-report/1` file with selected, payload-free recovery

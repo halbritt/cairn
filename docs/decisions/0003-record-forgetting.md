@@ -1,9 +1,12 @@
 # Record forgetting and retained copies
 
 Decision: implement record-body forgetting as a Class D transition with immediate
-logical exclusion and durable database purge effects. This is a partial delivery
-of design §10 and roadmap L5. The user delegated implementation decisions; no
-operational forgetting request was made or executed during development.
+logical exclusion and durable database purge effects.
+
+This record explains the original database deletion design. For the current
+workflow, including managed files and restore reconciliation, see
+[deletion](../deletion.md), [managed context](../managed-context.md), and
+[restore admission](../restore-admission.md).
 
 The current store retains three distinct body copies: record versions, canonical
 retrieval packages (including index summaries), and mutation response JSON.
@@ -43,11 +46,6 @@ Reopen the design when adding managed copies, metadata/evidence redaction,
 retention, external failure recovery, or post-backup security reconciliation.
 Those remain required work, not acceptance inferred from current green checks.
 
-Pincite's validated release `d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`
-(corpus `corpus-2026-07-12-a11702cc9217`, doctrine
-`doctrine-f6bbb5196a3f8bf9`) supplied the bounded atomicity, temporal-completion,
-explicit-failure and authority review. Repository contracts governed the choice.
-The typed decision receipt is retained locally at
-`/tmp/cairn-deletion-decision-receipt.json`; its unresolved generic obligations
-are classified there. No cost, performance, physical-erasure or usefulness claim
-is made from these implementation tests.
+The initial review considered atomicity, failure reporting, and authority at the
+mutation boundary. Repository contracts govern the decision. Implementation tests
+do not establish physical erasure, performance, or task usefulness.

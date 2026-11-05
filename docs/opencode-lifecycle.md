@@ -31,11 +31,11 @@ native task/run labels are retained.
 ## Host boundaries
 
 The plugin transforms task request messages, without modifying persisted user
-messages or adding memory to auxiliary title requests. Each new owner message
+messages or adding memory to auxiliary title requests. Each new user message
 triggers selective search. A bounded set of memory blocks remains in subsequent
 request copies, so tool continuations retain context without accumulating copies.
 Combined memory context is at most 12,000 UTF-8 bytes per request. Replaced versions
-and evicted blocks become eligible for fresh retrieval. At most 128 owner sessions
+and evicted blocks become eligible for fresh retrieval. At most 128 top-level sessions
 are tracked per process; child sessions do not trigger automatic memory.
 
 Successful read/edit/write paths and diagnostic identifiers from failed tools
@@ -58,9 +58,8 @@ reads and capture. To uninstall, remove
 only `plugins/cairn-lifecycle.ts` and restart OpenCode. Memory-service and selector
 failures report a labelled warning; use explicit native tools when needed.
 
-The [earlier system-hook investigation](verification/opencode-startup-hook-2026-09-09.md)
-remains valid for that hook. This implementation uses the explicitly authorized
-message boundary instead. Pinned OpenCode 1.18.21 sources show the
+The plugin uses the task-message transformation boundary. Pinned OpenCode
+1.18.21 sources document the
 [task transform](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/session/prompt.ts),
 [compaction boundary](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/session/compaction.ts)
 and [plugin disposal](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/plugin/index.ts).

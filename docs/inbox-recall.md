@@ -225,7 +225,7 @@ reader uses them. Activation decisions keep the newest 64 and the current turn.
 An unadmitted wake, the activation decision and the engine's own prompt grants
 never compact; the engine's save keeps the folded section unchanged. A
 corrupt folded section refuses like any other corrupt ledger. A bridge from
-before this change ignores the folded section, so a rollback loses only the
+without folded-ledger support ignores the folded section, so a rollback loses only the
 repeat check for folded grants.
 
 The existing Codex native-turn ledger also records the grant. A matching

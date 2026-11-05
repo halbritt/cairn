@@ -10,13 +10,11 @@ Keep its token separate from an ordinary agent's token. The server derives the
 principal, observation role and destination from its private configuration; flags
 cannot choose a different principal or elevate an agent profile.
 
-The owner's installation has separate `observer.token` (local destination) and
-`hosted-observer.token` (hosted destination) profiles. A hosted OpenCode launch
-uses the latter with `--destination hosted`. Its MCP process uses the separate
-ordinary `hosted-agent.token`; do not pass the observer token to the model.
-The [native MCP task report](verification/mcp-host-use-2026-09-08.md) records this
-setup and the resulting retrieval/outcome associations. Hosted observer access
-does not expose the protected `use-report`; operator inspection remains separate.
+Provision separate observer profiles for local and hosted destinations when both
+are needed. A hosted harness launch requires a hosted observer profile and
+`--destination hosted`. Its MCP process uses an ordinary hosted agent profile;
+do not pass the observer token to the model. Hosted observer access does not
+expose the protected `use-report`; operator inspection remains separate.
 
 ```sh
 cairn agent --token-file ~/.local/share/cairn/observer.token run \
@@ -110,7 +108,7 @@ an owned, claimed, current receipt and available payload. Normal operator purge
 uses that registered copy and its ownership marker. The new endpoint records
 filesystem observations; it does not write or remove files on the host's behalf.
 This remains a cooperative same-UID boundary, not isolation from hostile local
-processes that can access the owner's files.
+processes that can access the same user's files.
 
 The local context file contains the rendered memory package, excluding the task
 prompt. The host forwards the combined package and transient prompt to the child,

@@ -1,62 +1,47 @@
-# Agy MCP setup
+# Agy MCP configuration
 
-Agy 1.2.1 is now connected to the owner's [shared memory across projects](shared-memory.md).
-The global `cairn` registration uses `~/.local/bin/cairn-shared-mcp agy`;
-the launcher supplies the shared collection and a fresh session label. Start a
-new Agy conversation in any project and use its Cairn tools. Native search,
-pull, and editing worked in a normal Pincite session on 2026-09-11: Agy corrected
-the saved priority decision from the current roadmap and read the saved revision.
+Agy can use Cairn's ordinary memory tools through a stdio MCP registration.
+Start with the [Agy and Hermes setup guide](mcp/agy-hermes.md) for prerequisites.
+Use [shared memory](shared-memory.md) when one collection serves several projects.
 
-## Earlier explicit-scope setup
+## Explicit task and run scope
 
-The 2026-09-09 check used Agy 1.2.0's native stdio MCP registration. It stored a
-command for Cairn's existing MCP server, so no additional adapter was needed for this setup
-step. Registration, argument preservation and configuration updates were verified
-in an isolated home. Native tool discovery/execution was unverified at that
-checkpoint. [Historical evidence](verification/agy-configuration-2026-09-09.md).
+A fixed MCP registration keeps the same collection, task, and run arguments until
+you change it. Agy's project or conversation selection does not automatically
+update those arguments. Use distinct labels for unrelated work, or configure a
+session-aware launcher as described in the setup guide.
 
-The observed configuration is **user-wide** at
-`~/.gemini/config/mcp_config.json`; the registration command exposes no project
-scope flag. The following example has fixed Cairn repository/task/run scope.
-Choose actual task/run identifiers before using it, and keep the registration
-enabled only for that work. Agy's project or conversation selection does not
-automatically update these arguments. Concurrent unrelated sessions should not
-share one fixed task/run registration.
+This example uses the registration interface checked with Agy 1.2.0. Confirm the
+installed Agy command's help if its interface differs:
 
 ```sh
 cairn_bin="$(command -v cairn)"
-agy mcp add cairn-cairn -- "$cairn_bin" mcp \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" --task investigate-storage --run agy-1 \
+agy mcp add cairn -- "$cairn_bin" mcp \
+  --socket /absolute/path/to/api.sock \
+  --token-file /absolute/path/to/agent.token \
+  --repo /path/to/collection --task investigate-storage --run agy-1 \
   --tokens 32000
 agy mcp list
 ```
 
-Use an existing ordinary profile for the intended destination. The example names
-a token file, not token bytes, and supplies no database credentials. Agy's `--`
-separator before the command preserves Cairn's flags as server arguments.
-Absolute executable, socket and token paths avoid dependence on the harness's
-working directory. Existing `--revision`, `--workspace-sha256`, `--task-class`,
-`--task-phase`, `--binding` and `--capability` arguments can follow `--tokens`.
+Supply your provisioned collection and ordinary agent profile. The token-file
+argument names a file, not token bytes. The `--` separator preserves Cairn's
+flags as server arguments. Absolute executable, socket, and token paths avoid
+relying on Agy's working directory.
 
-`agy mcp add` updates an existing registration with the same name. Inspect that
-name before replacing it. To change task/run scope, repeat registration with the
-new arguments. To stop exposing the configured server to other work:
+Registration is user-wide in the checked configuration. Inspect an existing
+registration before replacing it. Start a fresh conversation after changing the
+configuration, then confirm that the [MCP tools](reference/mcp-tools.md) appear.
+Registration alone does not demonstrate a successful memory request.
+
+## Disable or remove a registration
 
 ```sh
-agy mcp disable cairn-cairn
+agy mcp disable cairn
+agy mcp enable cairn
+agy mcp remove cairn
 ```
 
-`agy mcp enable cairn-cairn` enables it again; `agy mcp remove cairn-cairn` removes
-the registration. Registration and enablement do not establish that an already
-running session reloaded its tools. Session reload and permission behavior still
-were unverified at that checkpoint. No owner registration was made during that
-earlier check; the 2026-09-11 installation above supersedes that state.
-
-The expected tools are Cairn's existing `cairn_search`, `cairn_pull`,
-`cairn_pull_evidence`, `cairn_remember`, `cairn_edit`, `cairn_history`,
-`cairn_assess` and `cairn_assessments`. Their
-[MCP contract](mcp.md#tools) retains ordinary testimony, explicit sharing,
-compare-and-swap editing, currentness checks and bounded pulls. The shared-memory
-installation above supplies the later native execution evidence.
+Use disable/enable to retain configuration while controlling availability;
+remove deletes the registration. The [historical configuration check](verification/agy-configuration-2026-09-09.md)
+records the tested Agy version and its limitations.

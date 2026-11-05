@@ -2,7 +2,7 @@
 
 Files in this directory describe what a particular run or review established at
 the time it was written. They are historical records, not a live status page.
-Use [implementation status](../implementation-status.md), the current source and
+Start with [current capabilities](../implementation-status.md), the current source and
 a fresh local validation run to assess the present build. A later implementation
 can supersede one row in an earlier report without changing that report's other
 observations.

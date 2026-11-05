@@ -1,8 +1,13 @@
 # MCP memory tools
 
-[File and symbol associations](entity-search.md) are explicit versioned metadata.
-Native capture and search accept `entities`; body-only edits preserve them, full
-draft edits can replace them, and exact-version history reads expose them.
+Use Cairn's MCP server to give an agent tools for finding, saving, and correcting
+memory. The usual workflow is to search for relevant guidance, pull complete
+sources, and save selected knowledge that should survive the conversation.
+
+For first-time setup, choose your client in the [MCP setup guide](mcp/overview.md).
+This reference covers server configuration, retrieval budgets, and tool contracts.
+
+## Connect to the API
 
 `cairn mcp` runs a local stdio MCP server for harnesses that support MCP tools.
 It connects to the existing authenticated Unix API. PostgreSQL credentials are
@@ -13,9 +18,11 @@ and a repository/task/run identity:
 cairn mcp \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" --task investigate-storage --run attempt-1
+  --repo "/projects/shared-memory" --task investigate-storage --run attempt-1
 ```
 
+Replace `/projects/shared-memory` with your profile's collection identifier.
+It need not be the current working directory; see [shared memory](shared-memory.md).
 This command waits for an MCP client on stdin. Use the provisioned ordinary agent
 profile for the intended destination. A hosted model needs a hosted profile;
 the facade cannot infer the model's destination or correct a host's wrong token
@@ -30,6 +37,8 @@ process (surface `mcp`, its own build, the retrieval support it implements and a
 optional `--client-harness` label you configure; never inferred). The API keeps it
 only in memory and lists it with [observed clients](client-observations.md).
 It never changes a request.
+
+## Scope and applicability
 
 By default, searches use the fixed startup scope. Capture saves reusable notes in that
 repository with task/run `*`. Pulls retain the API's caller/destination/handle
@@ -53,9 +62,12 @@ instruction requiring unavailable context can refuse the search with
 Leaving all context flags empty and omitting the per-call argument preserves
 searches without a context object.
 
-For a smaller allowance on one search, supply
-[`available_tokens`](search-room.md). It may lower the startup `--tokens` ceiling
-without changing subsequent calls. Repeat the allowance on retries and pages.
+## Retrieval budgets
+
+Supply [`available_tokens`](search-room.md) to set the available context for one
+search. It may be smaller than the startup `--tokens` default, or larger for an
+explicit read up to `--max-tokens`. It does not change subsequent calls. Repeat
+the allowance on retries and pages.
 
 To allocate less memory than the available input context, also supply
 `memory_budget_bytes`. For example, if 24,000 conservative UTF-8 bytes of input
@@ -99,6 +111,8 @@ at least `--tokens`. OpenCode's native adapter uses the corresponding
 `tokens` and `max_tokens` settings. These are limits, not measurements of free
 conversation room. A running MCP process keeps its startup settings and code
 until it is restarted.
+
+## Compact responses and tool descriptions
 
 The MCP facade accepts an opt-in `--search-view compact/1` startup flag.
 `codex-config`, `claude-config` and `opencode-config` pass it through when
@@ -144,15 +158,11 @@ reviewed for this profile. Codex and Claude configuration generators pass the
 selected profile to their MCP command; this flag does not change OpenCode's
 native tool profile.
 
-A Claude Code 2.1.310 loopback request fixture prepared one local request for
-each profile. The canonical declaration array measured 25,139 bytes / 5,032
-`o200k_base` proxy tokens for full, 20,500 / 4,175 for compact/1, and 17,707 /
-3,674 for compact/2. Thus compact/2 reduced the full declaration array by 7,432
-bytes / 1,358 proxy tokens (29.6% / 27.0%), with all ten tools and per-tool
-validation schema hashes unchanged. These are local declaration-shape results;
-the proxy tokenizer is not verified for Claude, and the fixture did not measure
-provider cache/usage, tool-selection quality, or accepted task outcomes. See
-the [full per-tool comparison](verification/claude-compact-all-tools-2026-10-25.md).
+The [declaration-size comparison](verification/claude-compact-all-tools-2026-10-25.md)
+records measurements for the full and compact profiles. Smaller declarations do
+not by themselves establish lower provider costs or better task outcomes.
+
+## Reserve room for source inspection
 
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
@@ -235,7 +245,7 @@ Before saving knowledge that may replace an existing note, use
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `scope`, `kind`, `shareable`, `entities` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
 | `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `request_id`, `available_tokens`, `memory_budget_bytes` and `min_pull_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
-| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
+| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, `set_sections` for named workstream sections, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 | `cairn_assessments` | Known `receipt_id` owned by the configured profile. Reads ordered assessment history with reasons and evidence IDs, without evidence bodies. |
 | `cairn_assess` | A complete assessment request with stable `request_id` and reviewed `expected_version`. Appends a review; returns identifiers and attribution without the reason. Agent reviews remain testimony. See [native review workflow](use-outcome-loop.md#native-review-tools). |
@@ -520,7 +530,7 @@ Generate the server entry with the installed Cairn executable:
 cairn opencode-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" --task actual-task-id --run actual-run-id \
+  --repo "/projects/shared-memory" --task actual-task-id --run actual-run-id \
   > /tmp/cairn-opencode.json
 ```
 

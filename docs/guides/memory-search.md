@@ -1,133 +1,91 @@
-# Memory Search Guide
+# Search and inspect memory
 
-Cairn provides a multi-mode, token-budgeted memory search engine designed specifically for autonomous AI agents and developer workflows. Memory retrieval balances precision, context efficiency, and relevance across repositories, tasks, and execution runs.
+Search Cairn before repeating an investigation or applying a remembered project
+decision. Search finds potentially useful notes; reading the complete note and
+checking current source establishes whether it applies to your task.
 
----
+These CLI examples assume `CAIRN_COLLECTION` contains your provisioned collection
+name and the default socket and `agent.token` are configured. Add `--socket` and
+`--token-file` immediately after `cairn agent` for other profiles. Search requires
+explicit `--task` and `--run` labels.
 
-## 1. Search Modes
+## Choose a query
 
-Cairn supports four complementary search mechanisms:
-
-### Lexical Search
-
-The default search mode uses lexical token matching, term frequency ranking, and BM25 scoring over indexed memory bodies:
-
-```sh
-cairn agent search --repo "$HOME/git/cairn" "PostgreSQL schema migrations"
-```
-
-Lexical search is fast, deterministic, and ideal when searching for general technical concepts and procedures.
-
-### Exact Quoted Search
-
-When searching for exact identifiers, source code paths, error messages, or configuration keys, wrap the target terms in escaped ASCII double quotes:
+Start with the project, problem, and any known identifiers:
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" '"core/schema"'
+cairn agent search --repo "$CAIRN_COLLECTION" \
+  --task storage-repair --run attempt-1 'schema migration rollback'
 ```
 
-Quoted terms are evaluated before optional ranking terms. The search engine scores documents containing the exact verbatim substring first, eliminating ambiguity for paths like `"core/schema"` or exact error codes like `"AUTHORITY_DENIED"`.
-
-### Entity Search
-
-Cairn records explicit, versioned associations between memories and codebase entities:
-- **File entities**: `--entity-file <relative/path>`
-- **Symbol entities**: `--entity-symbol <qualified_symbol>`
+Lexical search matches words in eligible notes. An ASCII double-quoted phrase
+prefers an exact body substring before optional matches:
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" --entity-file "cmd/cairn/serve.go" "daemon flags"
+cairn agent search --repo "$CAIRN_COLLECTION" \
+  --task storage-repair --run attempt-1 'repair "core/currentness.go"'
 ```
 
-Entity search targets notes explicitly linked to specific source files or code symbols, avoiding false positives from casual mentions in prose.
+Quotes improve ranking; they do not resolve file identity or guarantee that every
+result concerns that file. When notes have explicit file or symbol associations,
+add `--entity-file core/currentness.go` or `--entity-symbol Store.Compile`.
+Associations are retrieval hints, not verified workspace observations. See
+[entity search](../entity-search.md) and [quoted search](../quoted-search.md).
 
-### Semantic Search
-
-Semantic search uses vector embeddings to retrieve memories conceptually related to a query, even when the exact vocabulary differs:
+Use `--semantic` when you know the concept but not the saved wording:
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" --semantic "storage engine recovery procedures"
+cairn agent search --repo "$CAIRN_COLLECTION" \
+  --task storage-repair --run attempt-1 --semantic \
+  'recover after restoring an old database backup'
 ```
 
-If the local semantic daemon or embedding worker is temporarily offline or unconfigured, Cairn gracefully falls back to lexical matching with a labeled diagnostic (`discovery.state: lexical_fallback`), ensuring searches never fail abruptly.
+Semantic retrieval requires a configured backend. Inspect `discovery.state` to
+see whether semantic discovery ran or Cairn returned a labelled lexical fallback.
+Other request failures still require handling. See
+[semantic discovery](../semantic-discovery.md).
 
----
+## Read the result
 
-## 2. Pagination
+Read required context in `selected`. Candidate entries in `index` are previews:
+use a relevant entry's complete returned `pull_command` for the CLI, or copy its
+complete `pull_arguments` into `cairn_pull` for MCP. Do not construct handles from
+record IDs. Pulls check eligibility and version again; after an expired or stale
+handle, search again.
 
-Search results can be navigated incrementally using `--offset`:
+A preview can omit prerequisites or exceptions. Read required instructions and
+competing positions whole. For a large ordinary note, an explicit byte span can
+answer a narrow question, but broader conclusions require the whole source.
+See [index and pull](../index-and-pull.md).
 
-```sh
-cairn agent search --repo "$HOME/git/cairn" --offset 0 "lifecycle slices"
-```
+## Set a budget
 
-If additional results are eligible within the search scope, the response includes `page.next_offset`. To fetch the next page, pass the returned offset:
-
-```sh
-cairn agent search --repo "$HOME/git/cairn" --offset 10 "lifecycle slices"
-```
-
-Each page is independently budgeted against the model context limit.
-
----
-
-## 3. Token Budgeting & Context Economy
-
-To prevent context window exhaustion in LLM agents, Cairn strictly enforces memory budgets:
-
-- `--tokens N`: Declares the maximum token ceiling for the search response.
-- `available_tokens`: Total free input room currently remaining in the model conversation.
-- `memory_budget_bytes`: Conservative byte limit allocated specifically for search index previews and expanded bodies.
-- `min_pull_bytes`: Threshold below which preview bodies are pulled automatically rather than requiring a separate pull turn.
-
-When using MCP tools, declare both `available_tokens` and `memory_budget_bytes` in `cairn_search` calls:
+Declare the room available for memory, including response metadata. In MCP:
 
 ```json
 {
-  "query": "disaster recovery drill",
+  "query": "migration rollback",
   "available_tokens": 16000,
-  "memory_budget_bytes": 4000
-}
-```
-
-This ensures search index previews never overflow the available agent context.
-
----
-
-## 4. Inspection Policies
-
-When agents need to retrieve complete source bodies rather than partial previews, Cairn provides inspection policies:
-
-- `first-fitting-whole/1`: Automatically pulls the first candidate note whose entire body fits within the allocated memory budget.
-- `first-fitting-whole/2`: Advanced policy that packs complete bodies for eligible candidate notes into the response until the budget is saturated.
-
-In MCP `cairn_search`, supply the policy as an argument:
-
-```json
-{
-  "query": "operational store",
-  "memory_budget_bytes": 8000,
+  "memory_budget_bytes": 6000,
   "inspection_policy": "first-fitting-whole/2"
 }
 ```
 
----
+`available_tokens` uses Cairn's conservative UTF-8 byte accounting; it is not a
+model's advertised context size. `memory_budget_bytes` narrows the allowance
+shared by search and later pulls. `first-fitting-whole/2` reserves room for a
+complete eligible source or competing group. It does not pull it automatically
+or guarantee relevance. `/1` retains the older 24,000-byte expansion ceiling.
+`min_pull_bytes` is an alternative manual reservation, not an automatic-pull
+threshold; do not combine it with an inspection policy. See
+[whole-source allocation](../inspection-allocation.md).
 
-## 5. Pulling Candidate Bodies
+## Browse or request another page
 
-Search index results include preview summaries and two critical identifiers: `receipt_id` and `handle`. To read the full, unabbreviated body of a candidate note:
-
-```sh
-cairn agent pull RECEIPT_UUID HANDLE_UUID
-```
-
-Handles are time-bounded, caller-authenticated, and destination-restricted. If a handle expires, reissue a fresh search to acquire a new handle.
-
----
-
-## Related Documentation
-
-- [Memory Capture Guide](memory-capture.md): Storing and revising memories.
-- [Session Coordination Guide](session-coordination.md): Multi-agent directory and inbox.
-- [Agent Workflows Guide](agent-workflows.md): Multi-agent delegation and handoff patterns.
-- [CLI Reference](../reference/cli.md): Comprehensive CLI reference.
-- [MCP Tools Catalog](../reference/mcp-tools.md): MCP tools parameter specifications.
+Use `--browse` without a query when the stored vocabulary is unfamiliar. Optional
+`--kind decision --kind preference` filters ordinary results by their labels.
+Start paged search with `--offset 0`, then follow `page.next_offset`; browsing
+uses `browse.next_offset`. Keep query, scope, semantic mode, filters, and context
+unchanged across pages. Each page has its own budget, so account for their
+combined size. No result means no eligible match was returned, not proof that
+no relevant knowledge exists.

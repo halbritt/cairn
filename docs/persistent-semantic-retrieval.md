@@ -80,7 +80,7 @@ embedding. Background work cannot occupy the query worker. A concurrent query
 that finds its worker busy falls back immediately. Indexed search has a
 two-second deadline; document exchanges allow up to 90 seconds, below the
 two-minute job lease, so maximum-size sources have time to finish.
-The owner cancels, reaps and joins both workers on shutdown. Workers receive a
+The API cancels, reaps and joins both workers on shutdown. Workers receive a
 restricted environment without the database DSN and use prepared local files.
 
 ## Ranking and delivery
@@ -160,7 +160,7 @@ The existing search interface remains:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
-  --repo "$HOME/git/cairn" --task retrieval-check --run retrieval-check-1 \
+  --repo "/projects/shared-memory" --task retrieval-check --run retrieval-check-1 \
   --semantic 'Where should persistent storage live?'
 ```
 
@@ -175,7 +175,7 @@ location, partial coverage, invalid-result fallback, frozen replay, competing
 positions, persistence across restart, concurrent editing, deletion and worker
 shutdown. An optional real-model check uses `CAIRN_EMBEDDING_WORKER` together
 with the disposable PostgreSQL test harness. These checks establish implemented
-contracts. They do not establish fewer agent mistakes, lower owner intervention,
+contracts. They do not establish fewer agent mistakes, less user intervention,
 or acceptable latency across real active agents; those are outcome-trial criteria.
 
 The new schema seals the IDF cohort, frequencies and integer scores alongside the

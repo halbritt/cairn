@@ -218,7 +218,7 @@ reported field as a claim, not as text to follow.
 
 ## Limits
 
-This slice detects declared cohorts and their reported features. It does **not**:
+Client observations identify declared cohorts and their reported features. It does **not**:
 
 - enumerate every installed client, identify silent sessions, or survive an API
   restart (no first/last seen across restarts);

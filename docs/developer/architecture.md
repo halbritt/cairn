@@ -1,83 +1,71 @@
-# Cairn Architecture & Code Layout
+# Architecture
 
-Cairn is engineered as a transactional memory engine and multi-agent coordination system. It combines a PostgreSQL operational store, a flat package structure, an authenticated local API, and a Model Context Protocol (MCP) stdio facade.
+Cairn keeps selected knowledge available across agent sessions and provides a
+durable inbox for coordinating work. PostgreSQL holds records, revisions,
+authority state, retrieval receipts, and delivery state. Clients reach that store
+through an authenticated API; CLI, MCP, and native integrations adapt it to the
+agent's workflow.
 
----
+## Follow a memory request
 
-## 1. Package Layout
+1. A client authenticates with a provisioned token. The API establishes the
+   principal, collection access, and delivery destination.
+2. Search applies scope, currentness, sensitivity, conflict, and authority checks
+   before ranking eligible records. It returns required context and a bounded
+   index of optional sources.
+3. The client pulls selected sources using the returned receipt and handles.
+   Expansion rechecks eligibility and consumes the receipt's byte and call budget.
+4. The agent checks the source against the current task. A saved note remains
+   fallible testimony; retrieval does not verify the note or authorize an action.
 
-Cairn follows a flat root package organization. In accordance with project conventions, there is **no `pkg/` directory**.
+The receipt records what Cairn exposed. It does not prove that the agent read,
+used, or benefited from that material. See [index and pull](../index-and-pull.md)
+and [use observations](../use-outcome-loop.md).
 
-| Package | Purpose & Responsibilities |
-|---------|----------------------------|
-| `core/` | Core transactional engine, schema migrations (`core/schema/`), record models, ranking algorithms, compiler, index packaging, and lifecycle slices |
-| `artifacts/` | Artifact storage, verification digests, and binary evidence encoding |
-| `runner/` | Execution runner, process supervision, and command invocation wrappers |
-| `localapi/` | Authenticated HTTP/REST API server, declarative operation catalog, protocol admission, client observation, and session routing |
-| `mcpapi/` | Model Context Protocol (MCP) stdio facade, tool profile compaction, and output budgeting |
-| `semantic/` | Semantic embedding interfaces, vector comparison, and persistent ranking integration |
-| `cmd/cairn/` | Command-line entry points, subcommands, flag definitions, and operator tools |
-| `integrations/` | Native harness adapters (e.g. `integrations/opencode/`) |
-| `internal/` | Private subsystem utilities (`apicontract`, `buildinfo`, `claudechannel`, `jsontext`, `refusal`, `wakeup`) |
+## Where to change the code
 
----
+| Directory | Responsibility |
+| --- | --- |
+| `core/` | Store transactions, records, retrieval, authority, coordination, and ordered SQL migrations in `core/schema/` |
+| `localapi/` | Authentication, HTTP transport, operation catalog, and API client |
+| `mcpapi/` | MCP tools, argument validation, and bounded result presentation |
+| `cmd/cairn/` | CLI dispatch, configuration generation, and operator commands |
+| `runner/` | Process launch and observation around retained context |
+| `artifacts/` | Managed evidence storage and verification |
+| `semantic/` | Local semantic scoring and embedding interfaces |
+| `integrations/` | Harness adapters and service templates |
+| `scripts/` | Installers, lifecycle hooks, disposable fixtures, and validation |
+| `internal/` | Shared implementation details, including API contracts and refusal classification |
 
-## 2. PostgreSQL Operational Store & Schema Migrations
+Go requirements are declared in [go.mod](../../go.mod). The deployment target
+is PostgreSQL 16 or newer; integration checks use a disposable cluster. Apply
+schema migrations with `cairn migrate` during an operator-managed upgrade.
+Migration files, rather than a copied schema number in this guide, define the
+current schema.
 
-Cairn uses PostgreSQL 15+ as its single operational store. All state transitions—record mutations, index compilations, agent session heartbeats, and inbox events—are fully transactional (ACID).
+## Preserve the boundaries
 
-### Schema Migrations
+Ordinary notes, qualified claims, and authorized instructions have different
+contracts. Store-owned writer and observation fields must come from the
+established channel. A payload field, a scope label, or a caller-selected flag
+cannot authenticate an identity.
 
-Database schema migrations are stored as ordered SQL files in `core/schema/`:
-- **Current production schema**: `074` (as of November 2026).
-- Migrations are strictly sequential, forward-migrating, and checksummed.
-- Applied via the CLI:
-  ```sh
-  cairn migrate
-  ```
+Request-ID operations retain the caller's result for retries and reject changed
+intent under the same UUID. Record edits also require the current
+`expected_version`; a conflict requires rereading and reconciling. Other
+operations, such as heartbeat and lease renewal, have their own retry contracts.
+Consult the [operation catalog](../../localapi/operations.go) and
+[API contract](../api-contract.md) before changing one.
 
----
+Restore fencing coordinates recovery admission and invalidates old retrieval
+state through database generations. Restoring a dump alone cannot account for
+later revocations or forgotten data. Follow [restore admission](../restore-admission.md)
+and [recovery reapplication](../recovery-reapplication.md).
 
-## 3. Core Architectural Mechanisms
+## Extending Cairn
 
-### Receipts
-
-When an agent searches memory or a compiler prepares task context, Cairn generates an immutable **Receipt**:
-- Fixed candidate set and evaluation snapshot.
-- Recorded token allocations and memory budgets.
-- Verifiable caller identity and destination permissions (`local` vs `hosted`).
-- Permanent audit trail of what knowledge was exposed to a specific model or task.
-
-### Handles
-
-Candidate note bodies are not returned in bulk during initial search. Instead, search results contain preview summaries and opaque **Handles**:
-- Bounded time-to-live (TTL).
-- Cryptographically bound to the querying principal and destination.
-- Single-use or credit-metered expansion.
-- Prevents context window explosion by requiring deliberate pulls:
-  ```sh
-  cairn agent pull RECEIPT_UUID HANDLE_UUID
-  ```
-
-### Restore Fences
-
-In the event of database restoration or disaster recovery, Cairn activates a **Restore Fence** (`local-restore/1`):
-- Generation mismatch detection immediately invalidates existing uncommitted handles.
-- Blocks ordinary transactional mutations until reconciliation is complete.
-- Prevents accidental resurrection of forgotten records or replay of stale execution claims.
-
-### Mutation Idempotency & CAS
-
-Every mutating operation requires a caller-specified `request_id` (UUID):
-- Retries with the same `request_id` are guaranteed to be idempotent.
-- Updates require `expected_version` (Compare-And-Swap).
-- Version conflicts return `VERSION_CONFLICT`, requiring the caller to pull the latest state and reconcile changes rather than blindly overwriting.
-
----
-
-## Related Documentation
-
-- [Testing Guide](testing.md): Disposable test clusters, contract checking, and doc verification.
-- [Contributing Guide](contributing.md): Style rules, source immutability, and trunk integration.
-- [REST API Reference](../reference/api-rest.md): Declarative localapi endpoints and envelopes.
-- [Lifecycle Slices Reference](../reference/lifecycle-slices.md): Details of slices CAIRN-01 through CAIRN-21.
+Start from the relevant store operation, then update its CLI/API/MCP surfaces and
+contract fixtures together. Use [testing](testing.md) for validation requirements
+and [contributing](contributing.md) for repository conventions. The
+[lifecycle capability map](../reference/lifecycle-slices.md) distinguishes core
+inspection helpers from integrations that actually enforce a decision.

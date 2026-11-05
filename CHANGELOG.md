@@ -2,14 +2,14 @@
 
 Cairn is an untagged local alpha. Entries below summarize user-visible development
 changes by source-commit date; they are not numbered releases. The
-[implementation history](docs/implementation-status.md#implementation-history)
+[implementation history](docs/history/implementation-log.md#implementation-history)
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
 Installed binaries change independently from this source history. Check an
 installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
-See [implementation status](docs/implementation-status.md) for dated deployment
+See the [implementation log](docs/history/implementation-log.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
@@ -907,7 +907,7 @@ and MCP processes.
   historical recompilation and bounded index/pull.
 - Added evidence-attached review, standalone failed-task proposals, conflict
   inspection, durable refusal records, ordinary deletion, audited forgetting and
-  guarded lifecycle operations. [Full history](docs/implementation-status.md#implementation-history)
+  guarded lifecycle operations. [Full history](docs/history/implementation-log.md#implementation-history)
   records the individual changes and verification limits.
 
 ## 2026-09-06

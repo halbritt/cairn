@@ -57,7 +57,9 @@ savings. Compare complete sender, recipient and capture workflows with
 CAIRN-214's `scripts/workflow_model_report.py` on frozen paired inputs before
 accepting a rollout claim. No live binding is enabled by this source change.
 
-## Bounded notice batches (CAIRN-221)
+<a id="bounded-notice-batches-cairn-221"></a>
+
+## Bounded notice batches
 
 Add `--notice-batch` to an installation that also uses `--compact-inbox` to opt
 that Codex or Claude binding into `notice_batch_version: 1`. This requires

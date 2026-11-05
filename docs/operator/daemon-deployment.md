@@ -1,140 +1,79 @@
-# Daemon & Multi-Machine Deployment Guide
+# Add background services and remote clients
 
-This guide covers advanced daemon configuration, background worker pools, the wake supervisor, and multi-machine administration across distributed Cairn instances.
+Ordinary memory access needs the API and PostgreSQL. Add other processes when a
+workflow requires semantic search, scheduled publication, or fresh agent workers.
+Each has its own configuration and failure behavior.
 
----
+## Semantic retrieval
 
-## 1. Background Worker Pools
+`cairn serve` accepts one semantic backend mode at a time:
 
-Cairn uses worker pools to execute background tasks, process event subscriptions, and perform asynchronous memory compilation.
+| Flag | Backend |
+| --- | --- |
+| `--semantic-command PATH` | A local scoring executable invoked for requests. |
+| `--semantic-stream-command PATH` | A reusable local scoring process. |
+| `--embedding-command PATH` | Persistent passage retrieval with a local embedding executable. |
 
-### Configuring Worker Pools
+The executable must implement Cairn's protocol; an arbitrary embedding CLI is
+not interchangeable. `--semantic-idle-timeout` applies only to
+`--semantic-stream-command`. The default reusable-worker idle lifetime is 30
+seconds. A persistent embedding backend has a different lifecycle.
 
-Configure worker pool concurrency and routing:
+Follow [semantic discovery](../semantic-discovery.md) or
+[persistent retrieval](../persistent-semantic-retrieval.md) for setup and model
+requirements. Clients request semantic discovery explicitly and inspect the
+reported state; unavailable scoring can produce a labelled lexical fallback.
 
-```sh
-cairn worker-pool-configure < config.json
-```
+## Scheduled publication
 
-Where `config.json` specifies:
+`cairn schedule-serve --repo COLLECTION` runs the operator's one-shot schedule
+processor. It publishes due events and performs the bounded request-control
+sweep. It is not a pool worker and does not execute an assignment itself.
 
-```json
-{
-  "request_id": "NEW_REQUEST_UUID",
-  "pool": "default",
-  "concurrency": 4,
-  "harness": "claude-code",
-  "capabilities": ["build", "test"]
-}
-```
+Create schedules through `event-schedule` with an exact source version, due time,
+and grace period. Follow [event scheduling](../event-scheduling.md) for request
+shapes, late-publication behavior, and restore handling. Recurring schedules are
+not part of this contract.
 
-Run the scheduler daemon:
+## Wake supervisors and fresh-work pools
 
-```sh
-cairn schedule-serve --repo "$HOME/git/cairn"
-```
-
----
-
-## 2. Wake Supervisor Daemon
-
-The Cairn wake supervisor manages scheduled wakeups, turn timeouts, and delayed event releases.
-
-### Running Wake Supervisor
+A wake binding fixes a worker's profile, workspace, launch command, observation
+profile, and deadline. Check and run a binding with:
 
 ```sh
-cairn wake serve --config "$HOME/.local/share/cairn/wake-binding.json"
+cairn wake check --config /absolute/path/to/binding.json
+cairn wake serve --config /absolute/path/to/binding.json
 ```
 
-### Running Wake Workers
+Prepare that file using the [wake binding contract](../agent-wakeups.md).
+`wake worker` is the entry point launched for an admitted attempt by the
+supervisor; do not invoke it with an invented attempt UUID. Source text cannot
+choose the worker's command or workspace.
 
-Run an active wake worker process to execute scheduled wakeup triggers:
+A fresh-work pool queues requests for eligible configured slots. Pool admission
+limits belong to `worker-pool-configure`; slot routing belongs to each wake
+binding's `worker` object. These are separate configurations. Follow
+[worker pools](../worker-pools.md) for the exact JSON and revision checks.
 
-```sh
-cairn wake worker --config "$HOME/.local/share/cairn/wake-binding.json" --attempt "b183ebd3-0bfb-450d-a91b-9c348125c7dd"
-```
+The supervisor uses systemd user units to control worker process trees. Process
+exit, reported completion, and independent task acceptance remain distinct.
+Review provider failures and uncertain execution before retries; a queue does
+not make external effects exactly once. See
+[provider failures](../provider-failures.md) and [request controls](../request-controls.md).
 
-### Checking Wake Health
+## Connect another machine
 
-Inspect the status of the wake supervisor and pending wakeup queues:
+Multi-machine Cairn uses one central API and PostgreSQL store. A joining machine
+runs a relay from its private Unix socket to the central HTTPS API. It does not
+run an independent replicated memory store.
 
-```sh
-cairn wake check --config "$HOME/.local/share/cairn/wake-binding.json"
-```
+Use [multi-machine deployment](../multi-machine.md) for provisioning, enrollment,
+protocol compatibility, token rotation, and service setup. Provisioning writes a
+private enrollment file; transfer it privately and enroll on the joining host.
+The central API must reload changed identities before the new credentials work.
+Do not expose a remote listener without the documented TLS or HTTPS-proxy
+configuration and remote-profile restrictions.
 
----
-
-## 3. Multi-Machine Administration
-
-Cairn allows multiple physical or virtual machines to coordinate memory and session state across a shared operational cluster.
-
-### Machine Provisioning
-
-Provision an enrollment file for a new machine from the central host:
-
-```sh
-cairn machine provision --machine "node-02" --upstream "https://central.example.com:8443" --collection "$HOME/git/cairn" --out "node-02.enroll"
-```
-
-### Machine Enrollment
-
-Enroll the joining host using the provisioned enrollment file:
-
-```sh
-cairn machine enroll --file "node-02.enroll"
-```
-
-### Key Rotation
-
-Rotate machine credentials from the central host:
-
-```sh
-cairn machine rotate --machine "node-02" --upstream "https://central.example.com:8443" --out "node-02.enroll"
-```
-
-### Listing Enrolled Machines
-
-View all registered machines on the central host:
-
-```sh
-cairn machine list
-```
-
-Inspect local machine enrollment status on a joining host:
-
-```sh
-cairn machine status
-```
-
----
-
-## 4. API Relaying (`cairn relay`)
-
-For environments where worker nodes cannot connect directly to PostgreSQL or the primary localapi socket, `cairn relay` forwards authenticated API calls securely across network boundaries to an upstream HTTPS origin:
-
-```sh
-cairn relay --upstream "https://10.0.0.2:8443" --socket "$HOME/.local/share/cairn/api.sock"
-```
-
----
-
-## 5. Semantic Embedding Daemons
-
-To enable vector semantic search without adding latency to interactive turns, Cairn can be connected to local embedding workers:
-
-```sh
-cairn serve \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --semantic-command "/opt/cairn/bin/semantic-scorer" \
-  --semantic-idle-timeout "60s"
-```
-
-For persistent high-throughput embeddings, use `--embedding-command` or `--semantic-stream-command`.
-
----
-
-## Related Documentation
-
-- [Deployment Guide](deployment.md): Production deployment and systemd units.
-- [Configuration Guide](configuration.md): Environment variables and tokens.
-- [CLI Reference](../reference/cli.md): Full command catalog.
+After service changes, check both client and API [build identity](../build-identity.md),
+then exercise the specific path you enabled. A running process alone does not
+verify memory delivery or worker execution.

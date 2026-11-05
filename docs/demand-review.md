@@ -171,7 +171,8 @@ A retained conversion reference prevents ordinary deletion even after a proposal
 is reopened. Use the existing `preview-delete` and audited forgetting workflow
 when removal is required. Forgetting and purging can remove the lesson bytes while
 retaining review IDs and version metadata. Review reasons retain their existing
-policy; this change does not add general metadata redaction or retention pruning.
+policy; general metadata redaction and retention pruning are outside this review
+workflow.
 
 Apply migration 032 with the new binary before using the new read/write paths.
 It adds nullable metadata to individual review rows and does not backfill old

@@ -8,10 +8,14 @@ The MCP and native OpenCode `cairn_search` tools accept an optional
 ```
 
 Cairn's current tokenizer uses UTF-8 bytes as a conservative token upper bound.
-The value must be an integer from 256 through the host's configured ceiling:
-MCP `--tokens`, or OpenCode's `.opencode/cairn.json` `tokens` setting. Omission
-uses that ceiling, normally 32,000. A call cannot raise the ceiling, and its
-smaller allowance does not change later calls or host settings.
+The value must be an integer from 256 through the host's configured maximum:
+MCP `--max-tokens`, or OpenCode's `max_tokens` setting. Their default maximum is
+1,000,000. Omission uses the ordinary search default, configured with MCP
+`--tokens` or OpenCode `tokens`, normally 32,000.
+
+An explicit request may use less than the default, or more for a deliberate
+larger read, up to the maximum. It does not change later calls or host settings.
+These configured numbers are limits; they do not measure available model context.
 
 The API compiles the search with this room and its existing optional-memory
 policy. Required instructions and presentation overhead must fit; insufficient

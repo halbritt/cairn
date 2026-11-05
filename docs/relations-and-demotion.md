@@ -72,9 +72,9 @@ updated for authenticated responses. [Verification](verification/retraction-evid
 
 The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a
-retraction. [Ordinary deletion](ordinary-delete.md) now removes unreferenced A
+retraction. [Ordinary deletion](ordinary-delete.md) removes unreferenced A
 notes; [D forgetting and purge effects](deletion.md) cover retained record bodies
-and known managed copies. [Evidence impact](evidence-impact.md) now traces exact
+and known managed copies. [Evidence impact](evidence-impact.md) traces exact
 captured-evidence references through the same versioned relations and lists their
 recorded uses. Source-span predicates and automatic dependent qualification remain
 unfinished. Retracting a source

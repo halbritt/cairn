@@ -1,161 +1,100 @@
-# Session Coordination Guide
+# Coordinate agent sessions
 
-Cairn provides a multi-agent coordination subsystem that tracks agent presence, manages live task context, and routes asynchronous, durable messages through agent inboxes.
+Use Cairn's directory to find a running conversation and its inbox to send a
+durable request. Memory stores reusable knowledge; inbox events refer to exact
+versions of selected source notes and track each recipient's handling.
 
----
+## Find the right session
 
-## 1. Agent Session Directory
+A registered session has a canonical UUID, an `agent-N` display name, a current
+execution UUID, and an inbox named `agent/UUID`. Use UUIDs in commands. Harness,
+model, project, workspace, and task are reported metadata, useful for finding a
+session but not proof of its capabilities.
 
-Autonomous agents register with Cairn to announce presence, declare their runtime environment, and coordinate work across processes.
-
-### Registration
-
-When an agent initializes, it registers a session:
-
-```sh
-cairn agents register \
-  --request-id "REQ_UUID" \
-  --binding "claude-code" \
-  --native-session "sess-9428" \
-  --harness "claude-code" \
-  --model "claude-3-7-sonnet" \
-  --project "cairn" \
-  --workspace "$HOME/git/cairn"
-```
-
-Registration returns an agent session record and establishes an inbox channel.
-
-### Maintaining Task Context
-
-Agents declare and update their active objective and task context:
+With your existing token path in `CAIRN_TOKEN_FILE`:
 
 ```sh
-cairn agents context \
-  --request-id "REQ_UUID" \
-  --agent-id "agent-1113" \
-  --execution-id "exec-9428" \
-  --expected-revision 1 \
-  --harness "claude-code" \
-  --project "cairn" \
-  --workspace "$HOME/git/cairn" \
-  --task "Authoring user and operator documentation suite"
+cairn agents list --token-file "$CAIRN_TOKEN_FILE" --project example
+cairn agents resolve --token-file "$CAIRN_TOKEN_FILE" --project example
 ```
 
-Other agents and human operators can inspect active task descriptions to prevent duplicate or conflicting work.
+Resolution returns `unique`, `ambiguous`, `no-match`, or `stale`. Inspect ambiguous
+results and narrow your selector. A unique result includes `data.resolution`;
+save that exact object for publication when you need Cairn to recheck the
+recipient's presence and context. Explicit `--to agent/UUID` also supports offline
+mail and does not perform that freshness check.
 
-### Liveness & Heartbeats
+## Registration and presence
 
-To keep session presence active, agents emit periodic heartbeats:
+Installed native coordination hooks manage registration and presence. Use the
+agent and execution UUIDs they supply; do not register again to bypass stale or
+failed native work. If you are building an integration, see the
+[session contract](../agent-sessions.md) for `agents register`, `agents context`,
+`agents heartbeat`, and `agents leave`.
+
+Presence expires after 90 seconds without a heartbeat. Expiry makes the session
+offline; it does not establish that its process stopped. `leave` explicitly marks
+the execution stopped. Presence alone does not prove that an inbox reached the
+agent's conversation.
+
+## Send a request
+
+A request source should state the task, relevant context, constraints, and expected
+result. Use a dedicated coordination task scope so one-off assignments do not
+clutter ordinary memory searches. The
+[event guide](../agent-event-fabric.md#dedicated-assignment-sources-and-search-scope)
+provides a retry-safe `agent send` recipe and the manual save/publish sequence.
+
+To publish an already saved source, supply its exact record ID and version, a
+new request UUID, and the intended recipient. These uppercase values are
+placeholders:
 
 ```sh
-cairn agents heartbeat \
-  --agent-id "agent-1113" \
-  --execution-id "exec-9428"
+cairn publish --token-file "$CAIRN_TOKEN_FILE" \
+  --agent-id SENDER_AGENT_UUID --execution-id SENDER_EXECUTION_UUID \
+  --request-id PUBLICATION_UUID --to agent/RECIPIENT_UUID \
+  --kind request --version SOURCE_VERSION SOURCE_UUID
 ```
 
-If an agent process terminates or misses heartbeats beyond the expiration threshold, its session is marked stopped.
+Use `--resolution FILE` instead of `--to` for a saved unique resolution. Keep the
+same publication UUID and exact arguments when retrying an uncertain response.
+A stale resolution for new intent requires resolving again. Source creation and
+publication are separate operations; a failed publication may leave the source
+saved.
 
-### Session Termination
+## Handle an inbox item
 
-When an agent completes its work, it gracefully leaves the directory:
+Native integrations supply the exact commands for their admitted item. Use those
+commands. For a custom polling consumer, claim one item from its own session:
 
 ```sh
-cairn agents leave \
-  --agent-id "agent-1113" \
-  --execution-id "exec-9428"
+cairn inbox next --token-file "$CAIRN_TOKEN_FILE" \
+  --agent-id AGENT_UUID --execution-id EXECUTION_UUID
 ```
 
-### Inspecting Sessions
+An empty inbox returns `delivery: null`. Otherwise, read the exact source version
+with `cairn agent history` using the returned reference. A later edit does not
+change the source of an existing event. The request still needs to be within the
+recipient's authorized scope.
 
-To view all active and registered agent sessions across the host:
+For a request, `complete` saves selected result text and records handling in one
+transaction. For a notice or response, `ack` records handling without a result
+note. Use the returned delivery and lease UUIDs; both commands require a stable
+request UUID. A reply is a separate `publish --kind response` with
+`--causation-id` set to the original event UUID. Completion alone does not publish
+that reply. See `cairn complete --help` and the [event contract](../agent-event-fabric.md).
 
-```sh
-cairn agents list
-```
+`renew` extends a current lease; `retry` releases work for another attempt.
+`STALE_LEASE` means the old claim can no longer complete. External side effects
+need their own retry protection: a delivery lease cannot make them exactly once.
 
-To inspect or resolve a specific agent session by identifier:
+## Delivery and result checks
 
-```sh
-cairn agents resolve --agent-id "agent-1113"
-```
+Use `cairn event-status EVENT_UUID` with your connection and session flags before
+the UUID to inspect handling. Saved publication, delivery to a host, a reported
+result, and independently verified task success are different observations.
 
----
-
-## 2. Durable Agent Inbox
-
-The Cairn agent inbox provides transactional, at-least-once messaging between agents.
-
-### Publishing Messages
-
-Agents publish events and work requests directly to recipient inboxes:
-
-```sh
-cairn agent publish \
-  --request-id "REQ_UUID" \
-  --to "agent-1113" \
-  --kind "task" \
-  --version 1 \
-  --repo "$HOME/git/cairn" \
-  "RECORD_UUID"
-```
-
-### Checking Inboxes
-
-Agents inspect pending events delivered to their inbox:
-
-```sh
-cairn agent inbox next --repo "$HOME/git/cairn"
-```
-
-Pending events are returned with event UUIDs, sender attribution, timestamps, and payload envelopes.
-
-### Event Lifecycle
-
-The lifecycle of an inbox event follows strict transactional states:
-
-1. **Publish**: The event is written to `cairn.agent_events` in `waiting` state.
-2. **Lease/Claim**: The recipient leases the event for a bounded processing duration.
-3. **Acknowledge / Complete**: Upon successfully handling the event, the agent completes it (providing result text via `--stdin`):
-
-```sh
-echo "Task execution completed successfully" | cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" --stdin "DELIVERY_UUID"
-```
-
-Alternatively, acknowledge reception:
-
-```sh
-cairn agent ack --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
-```
-
-4. **Retry / Renew**: If processing takes longer than the lease, the agent renews the lease:
-
-```sh
-cairn agent renew --lease "LEASE_UUID" --lease-seconds 300 "DELIVERY_UUID"
-```
-
-If processing fails or needs to be retried:
-
-```sh
-cairn agent retry --lease "LEASE_UUID" "DELIVERY_UUID"
-```
-
-### Urgent vs Routine Notices
-
-Cairn differentiates high-priority requests from routine background notices:
-- **Urgent / Direct**: Immediately delivered to the agent on its current turn.
-- **Routine Deferred**: Notices can be deferred for up to 60 seconds to bundle notifications and reduce turn interruptions.
-
-To immediately release deferred notices:
-
-```sh
-cairn notice-flush --request-id "REQ_UUID" "EVENT_UUID"
-```
-
----
-
-## Related Documentation
-
-- [Agent Workflows Guide](agent-workflows.md): Multi-agent patterns and handoffs.
-- [Memory Capture Guide](memory-capture.md): Storing session findings.
-- [CLI Reference](../reference/cli.md): Command flags and options.
-- [REST API Reference](../reference/api-rest.md): REST endpoints for agent sessions and events.
+Existing sessions receive native delivery at supported host boundaries. Urgent
+notices skip routine deferral; they do not guarantee immediate interruption of a
+running turn. Fresh-worker launch requires a configured
+[wake supervisor](../agent-wakeups.md) or [pool](../worker-pools.md).

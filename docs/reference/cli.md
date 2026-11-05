@@ -1,276 +1,137 @@
-# Cairn Command-Line Interface (CLI) Reference
+# CLI reference
 
-This document provides a comprehensive command and flag reference for the `cairn` binary (`cmd/cairn/`).
+The `cairn` binary has two access paths. Authenticated client commands use a
+provisioned API profile; operator commands use the local store configuration.
+Use the client path from an agent. Database credentials belong to deployment and
+maintenance workflows.
 
----
-
-## 1. Global Conventions & Connection Flags
-
-Most client and agent subcommands accept global flags to locate the API daemon and provide credentials:
-
-- `--socket PATH`: Path to the Cairn Unix domain socket (default: `~/.local/share/cairn/api.sock`).
-- `--token-file FILE`: Path to the bearer token file (default: `~/.local/share/cairn/hosted-agent.token`).
-- `--repo PATH`: Canonical repository identity or collection name.
-- `--help`, `-h`: Display command-line usage information.
-
----
-
-## 2. Server & Service Commands
-
-### `cairn serve`
-Starts the Cairn local API daemon.
+## Inspect commands without connecting
 
 ```sh
-cairn serve --socket "$HOME/.local/share/cairn/api.sock"
+cairn --help
+cairn agent search --help
+cairn agent edit --help
+cairn agents --help
 ```
 
-- `--identities FILE`: Path to owner-only identity configuration JSON.
-- `--socket PATH`: Private Unix domain socket path.
-- `--listen ADDR`: Optional remote TCP address (e.g. `0.0.0.0:8443`).
-- `--tls-cert FILE`: Remote listener TLS certificate.
-- `--tls-key FILE`: Remote listener TLS private key.
-- `--tls-terminated-proxy`: Explicit loopback backend behind reverse proxy HTTPS.
-- `--machine-id ID`: Local directory machine ID.
-- `--semantic-command PATH`: Local CPU semantic scoring executable.
-- `--semantic-stream-command PATH`: Reusable local CPU semantic scoring executable.
-- `--embedding-command PATH`: Local embedding executable.
-- `--semantic-idle-timeout DURATION`: Idle timeout for semantic worker (default: `30s`).
+Operation help describes flags or the JSON request expected on stdin. Put flags
+before positional arguments. The [command guide](../commands.md) covers operator
+commands and [local API](../local-api.md) covers authenticated operations.
 
-### `cairn mcp`
-Runs the Model Context Protocol (MCP) stdio server.
+## Connect with an existing profile
+
+`cairn agent` accepts connection options before the operation name:
 
 ```sh
-cairn mcp --socket "$HOME/.local/share/cairn/api.sock" --token-file "$HOME/.local/share/cairn/hosted-agent.token" --repo "$HOME/git/cairn"
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token version
 ```
 
-- `--tool-profile compact/1|compact/2`: Enable token-saving compact tool definitions.
-- `--task TASK`: Scoped task identifier.
-- `--run RUN`: Scoped run identifier.
-- `--codex-thread`: Inherit scope from Codex thread.
+Use paths supplied by your deployment. Defaults resolve under Cairn's data
+directory; an enrolled machine can select different defaults. `--profile NAME`
+selects a provisioned event profile and cannot be combined with `--token-file`.
+`--agent-id UUID --execution-id UUID` selects a registered session under the same
+profile. [Configuration](../operator/configuration.md) explains deployment paths.
 
-### `cairn version`
-Reports client, server, and protocol versions.
+`cairn version` reports the local CLI build. The authenticated `agent version`
+command reports both client and server builds and protocol information.
 
-```sh
-cairn version
-```
+## Save and retrieve memory
 
-### `cairn clients`
-Lists active observed client connections and diagnostics.
-
-```sh
-cairn clients
-```
-
----
-
-## 3. Agent Operations (`cairn agent <subcommand>`)
-
-### `cairn agent search`
-Searches scoped memory.
+These examples assume the default authenticated profile is configured. Replace
+`/path/to/collection` with its exact collection identity, and keep the same task
+and run identifiers throughout a task.
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" "operational store"
-```
-
-- `--entity-file PATH`: Target notes explicitly associated with a file path.
-- `--entity-symbol SYMBOL`: Target notes explicitly associated with a code symbol.
-- `--semantic`: Enable vector embedding similarity search.
-- `--offset N`: Pagination offset.
-- `--tokens N`: Declare maximum memory input room.
-
-### Pulling Memory Bodies (`cairn agent pull RECEIPT_UUID HANDLE_UUID`)
-Pulls complete or bounded body for a search preview. Requires positional `RECEIPT_UUID` and `HANDLE_UUID`.
-
-```sh
+cairn agent search --repo /path/to/collection --task docs-review --run review-1 \
+  'database test procedure'
 cairn agent pull RECEIPT_UUID HANDLE_UUID
+cairn agent remember --repo /path/to/collection --kind procedure --shareable \
+  'Run database tests in a disposable PostgreSQL cluster.'
 ```
 
-### `cairn agent remember`
-Saves an explicitly selected note as ordinary testimony.
+Use the `pull_command` returned by search when available. It preserves the receipt,
+handle, and connection context. A stale handle requires a new search.
+
+Useful search options include `--semantic`, `--entity-file`, `--entity-symbol`,
+`--browse`, `--kind`, and `--offset`. Budget controls include `--tokens`,
+`--memory-budget-bytes`, and `--inspection-policy`; these have distinct meanings
+in [search room](../search-room.md). Omit `--offset` for unpaged search or set it
+to zero to begin ranked pagination.
+
+`remember` defaults to repository-wide applicability and local sensitivity.
+`--shareable` permits hosted delivery. Supported ordinary kinds are `note`,
+`observation`, `claim`, `lesson`, `procedure`, `decision`, and `preference`.
+For deliberate retryable writes, choose `--request-id UUID` before the first
+attempt. Use `--stdin` to supply a selected body from stdin.
+
+For edits, supply the operation's JSON request:
 
 ```sh
-cairn agent remember --repo "$HOME/git/cairn" --kind decision "Note body"
+cairn agent edit < edit-request.json
 ```
 
-- `--kind KIND`: `decision`, `preference`, `fact`, `procedure`, `observation`, `reflection`.
-- `--task TASK`: Task scope (defaults to "*").
-- `--run RUN`: Run scope (defaults to "*").
-- `--shareable`: Allow delivery to hosted models.
+The request needs the record ID, expected current version, a new request UUID,
+and the replacement draft. Body-only operations include `revise`, `append`,
+`replace`, and `set-sections`; inspect their help for exact fields. See
+[memory capture](../guides/memory-capture.md) and [record history](../record-history.md).
 
-### `cairn agent inbox`
-Inspects pending inbox events.
+## Coordinate sessions
 
-```sh
-cairn agent inbox next --repo "$HOME/git/cairn"
-```
-
-### `cairn agent publish`
-Publishes an event to an agent inbox.
-
-```sh
-cairn agent publish --request-id "REQ_UUID" --to "agent-1113" --kind "task" --version 1 --repo "$HOME/git/cairn" "RECORD_UUID"
-```
-
-### `cairn agent complete`
-Marks an inbox event complete and records a result note. Requires `--stdin` with the result text provided via standard input.
-
-```sh
-echo "Task result description" | cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" --stdin "DELIVERY_UUID"
-```
-
-- `--request-id UUID`: Stable idempotency UUID for retrying mutations.
-- `--lease UUID`: Active event lease UUID.
-- `--stdin`: Mandatory flag indicating result body is read from standard input.
-- `--shareable`: Mark result draft as shareable with hosted models (defaults to local).
-- `--kind KIND`: Result record kind (defaults to `note`).
-- `--task TASK`: Task scope label for the result draft (defaults to `*`).
-- `--run RUN`: Run scope label for the result draft (defaults to `*`).
-
-### `cairn agent ack`
-Acknowledges receipt of an inbox event.
-
-```sh
-cairn agent ack --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
-```
-
-### `cairn agent renew`
-Renews an active event lease.
-
-```sh
-cairn agent renew --lease "LEASE_UUID" --lease-seconds 300 "DELIVERY_UUID"
-```
-
-### `cairn agent retry`
-Releases an event lease for retry.
-
-```sh
-cairn agent retry --lease "LEASE_UUID" "DELIVERY_UUID"
-```
-
-### `cairn notice-flush`
-Releases pending routine deferred delivery for an event published by the authenticated caller.
-
-```sh
-cairn notice-flush --request-id "REQ_UUID" "EVENT_UUID"
-```
-
-- `--request-id UUID`: Stable idempotency UUID.
-- `EVENT_UUID`: Target deferred event UUID.
-
----
-
-## 4. Agent Session Directory (`cairn agents <subcommand>`)
-
-### `cairn agents register`
-Registers an active agent session.
-
-```sh
-cairn agents register --request-id "REQ_UUID" --binding "claude" --native-session "sess-1" --harness "claude" --model "sonnet" --project "cairn" --workspace "$HOME/git/cairn"
-```
-
-### `cairn agents context`
-Updates active task context.
-
-```sh
-cairn agents context --request-id "REQ_UUID" --agent-id "agent-1" --execution-id "exec-1" --expected-revision 1 --harness "claude" --project "cairn" --workspace "$HOME/git/cairn" --task "Testing"
-```
-
-### `cairn agents heartbeat`
-Emits session liveness heartbeat.
-
-```sh
-cairn agents heartbeat --agent-id "agent-1" --execution-id "exec-1"
-```
-
-### `cairn agents leave`
-Unregisters an agent session.
-
-```sh
-cairn agents leave --agent-id "agent-1" --execution-id "exec-1"
-```
-
-### `cairn agents list`
-Lists all active registered agent sessions.
+Use [session coordination](../guides/session-coordination.md) for the full
+publish, lease, exact-source read, completion, and response sequence.
 
 ```sh
 cairn agents list
+cairn agents resolve --agent-id AGENT_UUID
+cairn inbox next
+cairn watch --once
 ```
 
-### `cairn agents resolve`
-Resolves status of a specific agent.
+The inbox command can claim work; `watch` observes without claiming. Native
+integrations usually maintain their own registration and delivery lifecycle.
+Use the current session identifiers they supply rather than registering again.
+
+To publish an existing source record to a known inbox:
 
 ```sh
-cairn agents resolve --agent-id "agent-1"
+cairn publish --request-id REQUEST_UUID --to agent/AGENT_UUID \
+  --kind request --version 1 RECORD_UUID
 ```
 
----
+Substitute actual UUIDs and the retained source version. Completion requires the
+current delivery and lease IDs. Acknowledging a notice and completing a request
+are different operations; [event fabric](../agent-event-fabric.md) explains them.
 
-## 5. Configuration Generators
+## Configure integrations
 
-### `cairn claude-config`
-Generates Claude Code and Desktop MCP JSON configuration.
+`claude-config`, `codex-config`, and `opencode-config` generate configuration;
+`opencode-install` installs the native adapter. Start with the relevant
+[integration guide](../mcp/overview.md) and its prerequisites.
+
+A generic MCP process with explicit task/run scope is:
 
 ```sh
-cairn claude-config --socket "$HOME/.local/share/cairn/api.sock" --token-file "$HOME/.local/share/cairn/hosted-agent.token" --repo "$HOME/git/cairn" --task "dev" --run "1"
+cairn mcp --socket /path/to/api.sock --token-file /path/to/agent.token \
+  --repo /path/to/collection --task docs-review --run review-1
 ```
 
-### `cairn codex-config`
-Generates OpenAI Codex MCP TOML configuration.
+`--codex-thread` derives scope from supported Codex thread metadata and is
+exclusive with explicit `--task` and `--run`. Optional `--tool-profile compact/1`
+or `compact/2` changes tool descriptions; `--search-view compact/1` changes result
+presentation. Neither option grants access or changes note authority.
 
-```sh
-cairn codex-config --socket "$HOME/.local/share/cairn/api.sock" --token-file "$HOME/.local/share/cairn/hosted-agent.token" --repo "$HOME/git/cairn" --codex-thread
-```
+## Operate the service
 
-### `cairn opencode-config`
-Generates OpenCode adapter configuration JSON.
+| Task | Starting point |
+| --- | --- |
+| Build, migrate, start the API | [Deployment](../operator/deployment.md) |
+| Configure semantic retrieval | [Semantic discovery](../semantic-discovery.md) |
+| Install background services | [Daemon deployment](../operator/daemon-deployment.md) |
+| Back up and restore | [Maintenance](../operator/maintenance.md) |
+| Enroll another machine | [Multi-machine access](../multi-machine.md) |
+| Schedule an event | [Event scheduling](../event-scheduling.md) |
+| Configure a worker pool | [Worker pools](../worker-pools.md) |
 
-```sh
-cairn opencode-config --socket "$HOME/.local/share/cairn/api.sock" --token-file "$HOME/.local/share/cairn/hosted-agent.token" --repo "$HOME/git/cairn" --task "dev" --run "1"
-```
-
-### `cairn opencode-install`
-Installs Cairn adapter directly into an OpenCode project.
-
-```sh
-cairn opencode-install --project "$HOME/git/cairn" --socket "$HOME/.local/share/cairn/api.sock" --token-file "$HOME/.local/share/cairn/hosted-agent.token" --repo "$HOME/git/cairn"
-```
-
----
-
-## 6. Operator & Lifecycle Commands
-
-### Database & Disaster Recovery
-
-- `cairn migrate`: Apply schema migrations (up to 074).
-- `cairn checkpoint < request.json`: Generate cryptographic audit checkpoint.
-- `cairn verify-checkpoint < expectation.json`: Verify checkpoint against catalog.
-- `cairn recovery-export FILE` (or `--directory DIR`): Export surviving audit records to a recovery file or directory bundle.
-- `cairn recovery-inspect FILE...` (or `--directory DIR`): Validate recovery snapshot integrity and authority root grants.
-- `cairn begin-restore < request.json`: Place database into restore fence.
-- `cairn recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE`: Reapply newer deletions and retractions from a recovery file.
-- `cairn resume-restore < request.json`: Resume normal transactions after restore.
-
-### Daemons & Infrastructure
-
-- `cairn wake serve --config /absolute/binding.json`: Run wake supervisor daemon.
-- `cairn wake worker --config /absolute/binding.json --attempt UUID`: Run wake worker.
-- `cairn wake check --config /absolute/binding.json`: Check wake supervisor status.
-- `cairn schedule-serve --repo REPO`: Run background worker pool.
-- `cairn worker-pool-configure < config.json`: Configure worker pools.
-- `cairn machine provision --machine "node-1" --upstream "https://HOST:PORT" --collection REPO --out FILE`: Provision node enrollment file.
-- `cairn machine enroll --file "node-1.enroll"`: Enroll node.
-- `cairn machine rotate --machine "node-1" --upstream "https://HOST:PORT" --out FILE`: Rotate credentials.
-- `cairn machine list`: List cluster nodes.
-- `cairn machine status`: Query local node status.
-- `cairn relay --upstream "https://HOST:PORT" [--socket PATH]`: Relay API calls across network boundaries.
-- `cairn candidate-retention < request.json`: Inspect diagnostic candidate rows.
-- `cairn candidate-reclaim < request.json`: Purge expired candidate rows.
-
----
-
-## Related Documentation
-
-- [Quickstart Guide](../quickstart.md): 5-minute onboarding.
-- [MCP Tools Reference](mcp-tools.md): MCP tools parameter catalog.
-- [REST API Reference](api-rest.md): Localapi endpoints specification.
+Check each command's help before applying it to an operational store. Configuration
+and recovery commands have different input and authority requirements from
+ordinary memory commands.

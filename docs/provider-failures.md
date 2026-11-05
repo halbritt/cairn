@@ -1,8 +1,9 @@
 # Worker provider failures
 
-Migration 042 records a selected provider failure on a wake attempt and changes
-its owning worker slot to `unavailable` in the same PostgreSQL transaction.
-Both Codex homes and both Claude homes retain independent slot health. The
+Cairn marks a worker slot `unavailable` when a supported provider observation
+reports a rate limit or billing failure. It records the observation on the wake
+attempt and changes slot health in the same PostgreSQL transaction. Each
+configured account home has independent slot health. The
 existing profile and supervisor UUID associate the observation with the slot;
 this adds no session credentials or local security boundary.
 

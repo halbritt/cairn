@@ -1,154 +1,86 @@
-# Maintenance & Disaster Recovery Guide
+# Maintain and recover a Cairn store
 
-This guide covers routine operational maintenance, schema migrations, candidate retention reclamation, and disaster recovery procedures for Cairn.
+Keep database backups and the external records needed to assess a restore.
+A PostgreSQL dump alone cannot tell you which restrictions or external effects
+occurred after it was taken. Cairn's restore workflow checks known audit history
+and keeps ordinary consumers fenced until explicit admission.
 
----
+## Upgrade the schema
 
-## 1. Schema Migrations
-
-Cairn maintains strict database versioning through sequential SQL migrations in `core/schema/`.
-
-### Applying Migrations
-
-To apply pending migrations to the operational store:
+Back up the store and stop consumers, scheduling, and dispatch before a planned
+migration. Build the matching Cairn executable, configure its intended database,
+and run:
 
 ```sh
 cairn migrate
 ```
 
-Migrations run within serial transactions. If any migration step fails, the entire transaction rolls back, preventing database corruption.
+Migrations live in `core/schema/`. They use a migration lock and transactional
+application. A failure must be investigated before restarting dependent services;
+do not remove migration checks or alter recorded checksums to force acceptance.
+Validate changes locally using disposable databases, as described in
+[developer testing](../developer/testing.md).
 
----
+## Back up a managed local store
 
-## 2. Routine Database Maintenance
-
-For sustained database health, schedule periodic PostgreSQL vacuuming and query planning analysis:
-
-```sh
-# Vacuum and re-index Cairn database
-sudo -u postgres psql -d cairn -c "VACUUM ANALYZE;"
-```
-
-PostgreSQL connection pooling (via PgBouncer) is recommended for installations with dozens of concurrent agents.
-
----
-
-## 3. Checkpoints & Audit Verification
-
-Cairn provides cryptographic audit checkpoints to detect tampering or accidental record loss:
-
-### Generating a Checkpoint
+For a cluster managed by `scripts/local-store.sh`, run from the matching checkout:
 
 ```sh
-cairn checkpoint < request.json
+bash scripts/local-store.sh backup
 ```
 
-Where `request.json` contains:
+The script writes a PostgreSQL custom-format dump, its checksum, and a backup
+catalog under `CAIRN_HOME/backups`. The catalog retains the expectation for an
+audit checkpoint committed before the dump. Keep the catalog and checksums with
+the backup, and retain a trusted copy outside the database being restored.
+Verify the dump checksum before using it.
 
-```json
-{
-  "request_id": "NEW_REQUEST_UUID",
-  "repo": "/home/halbritt/git/cairn"
-}
-```
+A checkpoint covers selected authority and deletion audit metadata. It does not
+verify all note bodies, prove their truth, or establish that no later history is
+missing. See [audit checkpoints](../audit-checkpoints.md) for its exact coverage.
+For an independently managed PostgreSQL database, use its backup procedure and
+retain the corresponding Cairn checkpoint expectation separately.
 
-### Verifying a Checkpoint
+## Restore into isolation
 
-Verify the current audit state against an external checkpoint catalog:
+Use the complete [restore admission procedure](../restore-admission.md), including
+its request formats. The sequence is:
 
-```sh
-cairn verify-checkpoint < expectation.json
-```
+1. Stop dispatch and consumers. Restore the database and coordinated artifacts
+   into an isolated environment with external execution disabled.
+2. Apply current migrations and call `begin-restore` before connecting ordinary
+   consumers. A raw database restore does not automatically establish this fence.
+3. Inspect trusted external recovery records and reapply known newer
+   restrictions using [recovery reapplication](../recovery-reapplication.md).
+4. Rebuild required projections, reconcile deletion effects, and run
+   `verify-restore` with the external checkpoint, recovery expectations, and
+   retained compiler fixtures.
+5. Resolve failures, then call `resume-restore` for explicit admission. Restart
+   consumers only after that operation succeeds.
 
-Where `expectation.json` contains:
+Do not skip verification between reapplication and resume. A successful
+verification is a snapshot; it does not itself authorize serving. An old backup
+cannot establish whether work ran after it was taken. Reconcile uncertain
+external effects before publishing replacement requests.
 
-```json
-{
-  "repo": "/home/halbritt/git/cairn",
-  "expected_digest": "SHA256_HEX_DIGEST"
-}
-```
+For larger stores, [recovery bundles](../recovery-bundles.md) provide streamed
+exports and inspection. Preserve their manifest digests and every required part
+outside the restored database. These records supplement database backups.
 
----
+## Manage retained diagnostic data
 
-## 4. Disaster Recovery Lifecycle
+Search evaluations can retain candidate details for replay and diagnosis.
+`candidate-retention` can preview eligibility or expire old candidate detail.
+`candidate-reclaim` rewrites the table to return space to the filesystem under
+the [retention contract](../candidate-retention.md).
+They do not provide general note deletion or database cleanup. Review the
+request and effect before reclaiming data needed by a restore fixture.
 
-When restoring a database from backups, Cairn enforces a strict, step-by-step disaster recovery lifecycle to prevent the resurrecting of forgotten data or replay of stale credentials:
+For note removal, distinguish [ordinary deletion](../ordinary-delete.md) from
+[audited forgetting](../deletion.md). Editing a note or deleting a current row is
+not a substitute for the required effects on retained history and references.
 
-### Step 1: Export Current State
-
-Before restoring an older snapshot, export surviving audit records:
-
-```sh
-cairn recovery-export /path/to/recovery-export.json
-```
-
-For large stores, export as a streamed directory bundle:
-
-```sh
-cairn recovery-export --directory /path/to/recovery-bundle
-```
-
-### Step 2: Restore PostgreSQL Backup
-
-Restore your database dump using native PostgreSQL utilities:
-
-```sh
-pg_restore -d cairn backup.dump
-```
-
-### Step 3: Enter Restore Fence (`begin-restore`)
-
-Immediately place the database into the `local-restore/1` fence:
-
-```sh
-cairn begin-restore < request.json
-```
-
-The restore fence invalidates all active index handles and pauses ordinary agent mutations.
-
-### Step 4: Reapply Newer Revocations & Deletions
-
-Reapply all newer retractions, deletions, and forgotten records from the verified recovery export:
-
-```sh
-cairn recovery-reapply --request-id "REQ_UUID" --expected-sha256 "DIGEST" --reason "Restore reapplication" /path/to/recovery-export.json
-```
-
-### Step 5: Resume Normal Operations (`resume-restore`)
-
-Once state reconciliation is verified, exit the restore fence:
-
-```sh
-cairn resume-restore < request.json
-```
-
-Normal agent transactions and retrievals resume immediately.
-
----
-
-## 5. Candidate Retention & Reclamation
-
-During high-volume memory evaluations, diagnostic evaluated-set rows accumulate. Operators reclaim storage using candidate retention utilities:
-
-### Inspect Candidate Retention
-
-```sh
-cairn candidate-retention < request.json
-```
-
-### Reclaim Expired Candidates
-
-Purge expired diagnostic evaluation candidates beyond the retention window:
-
-```sh
-cairn candidate-reclaim < request.json
-```
-
----
-
-## Related Documentation
-
-- [Deployment Guide](deployment.md): Systemd units and service setup.
-- [Architecture Guide](../developer/architecture.md): Restore fences and receipts.
-- [CLI Reference](../reference/cli.md): CLI maintenance commands.
+Use normal PostgreSQL monitoring and maintenance for the database itself.
+Cairn's tests and recovery reports establish specific checked properties;
+[historical verification records](../verification/README.md) are evidence for
+their recorded runs, not a live health report for your installation.

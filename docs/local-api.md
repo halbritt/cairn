@@ -1,5 +1,14 @@
 # Authenticated local access
 
+Use the authenticated API to give agents memory and coordination access without
+providing database credentials. A provisioned token fixes the caller's identity,
+collection, observation role, and delivery destination. Requests cannot widen
+those permissions.
+
+For transport and envelope details, see the [HTTP reference](reference/api-rest.md).
+For setup, see [profile configuration](#configure-a-profile); for payloads, use
+[offline help](#find-an-ordinary-request-format) or the [generated contract](api/openapi.json).
+
 ## Agent event operations
 
 The [event fabric](agent-event-fabric.md) uses this same token-bound API. All
@@ -24,7 +33,7 @@ Completed deliveries remain in event history. Status never exposes lease tokens.
 An expired or replaced lease returns HTTP 409 / `STALE_LEASE`. Completion request
 retries return the original result, with no duplicated result note.
 
-## Existing memory API
+## Memory API
 
 JSON request text must be valid UTF-8 with paired Unicode surrogate escapes.
 Malformed text that would decode with replacement characters returns
@@ -144,7 +153,7 @@ when the server starts). Use `destination: hosted` for a
 profile whose retrieved context goes to a remote model. Hosted profiles cannot
 read local record bodies or protected usage reports. As with the operator CLI,
 this is a cooperative local trust boundary; it does not isolate hostile processes
-sharing the owner's Unix account.
+sharing the same Unix account.
 
 In another terminal, submit one JSON request to an agent operation:
 
@@ -278,7 +287,7 @@ candidate refuses the whole inspection, and
 [expired detail](candidate-retention.md) refuses with `CANDIDATE_DETAIL_EXPIRED`. See
 [candidate inspection](currentness-and-replay.md#inspect-retained-candidate-decisions)
 for continuation, byte limits and the distinction from verified reconstruction.
-`assessments` takes `receipt_id` and returns the owner's full assessment versions
+`assessments` takes `receipt_id` and returns the receipt owner's full assessment versions
 in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;
 an owned receipt with no assessments returns `[]`. It explicitly refuses more

@@ -1,16 +1,19 @@
 # Agent event fabric v1
 
-Status: selected for implementation, 2026-09-15. The owner authorized finishing
-the specification, choosing the implementation, and delivering the functionality.
-This supersedes the transport recommendation and underspecified contracts in
-`/tmp/cairn-agent-event-fabric-spec-v0.md`.
+Cairn's event fabric delivers durable requests, responses, and notices between
+agents. Use it to hand off work, collect a reply, or notify a session that a
+selected source has changed. Events refer to exact record versions so recipients
+can inspect the same source even after later edits.
+
+For a walkthrough, start with [session coordination](guides/session-coordination.md).
+This page specifies identity, delivery, retry, and recovery contracts.
 
 ## Purpose and boundary
 
 Agents publish small durable notifications pointing at selected Cairn record
 versions. Direct inboxes and topic subscriptions support agents that poll later.
 Cairn retains communication history, recipient deliveries and reported handling.
-The first transport is PostgreSQL-backed polling. No broker is required; losing
+Delivery uses PostgreSQL-backed polling. No broker is required; losing
 an API process or client connection does not lose pending work. A future broker
 is a replaceable notification accelerator and cannot own unique delivery state.
 
@@ -23,9 +26,10 @@ An acknowledgment is a report of handling, not independent evidence of success.
 
 The authenticated channel principal is the publisher and inbox owner. Destination
 names are exact principal strings; `--agent` is an optional assertion of the
-caller's own principal, never impersonation. Existing tokens with the same
-principal share an inbox by default. Registered [sessions](agent-sessions.md)
-select separate UUID inboxes through the same existing profile.
+caller's own principal, never impersonation. Base-profile requests use that
+principal's inbox; configured identities must have distinct principals. Registered
+[sessions](agent-sessions.md) select separate UUID inboxes through the same
+existing profile.
 Topics use 1–128 ASCII letters, digits, dots, underscores or hyphens. Principals
 use the existing channel identity contract. The session directory lists reported live context. Direct publication still
 accepts an exact principal without checking its presence; publishing to a
@@ -268,7 +272,7 @@ The profile selects an authenticated token, not a caller-supplied identity field
 Operators can provision them with:
 
 ```sh
-python3 scripts/provision-event-profiles.py --repo "$HOME/git/cairn" \
+python3 scripts/provision-event-profiles.py --repo /path/to/collection \
   worker-01 worker-02 worker-03 worker-04 worker-05 worker-06 worker-07
 systemctl --user restart cairn-api.service
 ```

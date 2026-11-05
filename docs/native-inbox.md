@@ -1,9 +1,13 @@
 # Native session inbox delivery
 
-Native adapters deliver into an existing conversation at supported turn
-boundaries. They use its Cairn UUID and current execution through the existing
-profile. No session credentials are created. Migration 039 retains native
-delivery attempts and idempotent polls in PostgreSQL.
+Use native inbox delivery to send a request or notice to an agent's existing
+conversation. The adapter adds the message at a supported turn boundary, and
+Cairn retains delivery attempts so the sender can inspect what happened.
+
+Adapters use the conversation's Cairn UUID and current execution through its
+configured profile. They do not create separate session credentials. For a
+first coordination workflow, see [session coordination](guides/session-coordination.md).
+This reference describes admission, recovery, and client-specific behavior.
 
 For the explicit same-delivery task-source and memory binding, see
 [recall on an admitted inbox request](inbox-recall.md). It is disabled by default.
@@ -12,7 +16,8 @@ For optional compact notice and response handling, see [compact native inbox](co
 ## Boundaries and ownership
 
 Enable with `scripts/install-agent-coordination.py --native-delivery` after
-upgrading the API to schema 039 and the matching implementation. Each account
+installing compatible API and integration builds; see
+[agent session setup](agent-sessions.md). Each account
 home keeps its own binding; agents keep their conversation UUIDs across resume.
 
 - Codex and Claude receive context at their start/prompt hooks. A request arriving
@@ -71,11 +76,10 @@ session", with a reminder to end the turn at a safe point so the items can
 arrive. The cue also names this session's exact self-drain command (`cairn inbox
 next` with the profile token path and this session's agent and execution UUIDs):
 if native delivery has not delivered for about 10 minutes, the agent may drain
-its own inbox one item at a time, as described in the cairn skill's
-`references/events.md`. The owner rejected the earlier rule against an agent
-draining its own inbox on 2026-10-21. Claiming another session's inbox,
-registering again, replaying failed or held deliveries, and starting a parallel
-consumer for an attempt the hook already supplied remain forbidden. The automatic
+its own inbox one item at a time using the session-bound wrapper below.
+Claiming another session's inbox, registering again,
+replaying failed or held deliveries, and starting a parallel consumer for an
+attempt the hook already supplied are not part of self-draining. The automatic
 wake prompt says the same: "Do not register again, claim another session's inbox,
 or launch a replacement conversation." Every recognizer, including the memory
 engine's `taskless_notification`, accepts this wording and the earlier one
@@ -432,7 +436,7 @@ Add `--check-only` to validate without changing state or contacting the store. T
 - an initialized bridge ledger with no grant, no joined prompt, no observed tools and no command
   journal progress beyond the claim.
 
-Bridges now write their empty ledger and marker under the session lock before the required lookup,
+Bridges write their empty ledger and marker under the session lock before the required lookup,
 so a later refusal leaves an initialized ledger naming no grant. An attempt refused by an earlier
 bridge at that lookup has neither file. This explicit recovery, and not the watcher's automatic
 settlement, treats that case as absent only when the recorded diagnostic shows `recall_phase`

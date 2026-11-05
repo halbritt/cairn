@@ -111,7 +111,7 @@ same object as `--pins` JSON. For example:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" remember \
-  --repo "$HOME/git/cairn" --kind procedure --shareable \
+  --repo /path/to/collection --kind procedure --shareable \
   --pins '{"task_phase":"validation"}' \
   'When validating applicability changes, check matching, missing and mismatched context.'
 ```

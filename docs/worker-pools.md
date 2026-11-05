@@ -9,7 +9,7 @@ The existing local operator configures a pool with `cairn worker-pool-configure`
 and JSON on stdin:
 
 ```json
-{"request_id":"NEW_UUID","repo":"/home/halbritt/git/cairn","name":"coding","enabled":true,"max_pending":100,"max_pending_per_publisher":20,"expected_revision":0}
+{"request_id":"NEW_UUID","repo":"/projects/shared-memory","name":"coding","enabled":true,"max_pending":100,"max_pending_per_publisher":20,"expected_revision":0}
 ```
 
 Revision zero creates a pool. Later changes require its current revision. Limits
@@ -21,7 +21,7 @@ pre-launch retries. They do not terminate already running work.
 Add a `worker` object to the existing wake supervisor configuration:
 
 ```json
-{"name":"worker-02","harness":"codex","model":"gpt-6-astra","workspace":"/home/halbritt/git/cairn","pools":["coding"],"capabilities":["review"],"launch_spacing_seconds":3}
+{"name":"worker-02","harness":"codex","model":"gpt-6-astra","workspace":"/projects/shared-memory","pools":["coding"],"capabilities":["review"],"launch_spacing_seconds":3}
 ```
 
 Its name and workspace must match the enclosing launcher's name and directory.
@@ -43,7 +43,7 @@ separately.
 Save a shareable source note, then publish its exact version:
 
 ```sh
-cairn publish --profile codex --request-id NEW_UUID --pool coding   --workspace /home/halbritt/git/cairn --capability review   --kind request --version 1 RECORD_UUID
+cairn publish --profile codex --request-id NEW_UUID --pool coding   --workspace /projects/shared-memory --capability review   --kind request --version 1 RECORD_UUID
 ```
 
 Workspace is mandatory and exact. Optional `--harness`, `--model`, and repeated

@@ -1,9 +1,11 @@
 # Automated agent wakeups
 
-Status: implementation contract, 2026-09-15. The owner delegated design,
-implementation and deployment, including seven worker slots across five harnesses.
+Configure a wake service when a durable request should start a fresh agent
+process. Each binding fixes the workspace, executable, credentials, and runtime
+limit before a request arrives. For delivery into an existing conversation, use
+[native inbox delivery](native-inbox.md).
 
-## Selected behavior
+## How a wake request runs
 
 A host-side `cairn wake serve --config FILE` process polls every two seconds.
 Each owner-written binding fixes the authenticated inbox profile, workspace,
@@ -73,7 +75,7 @@ restore invalidates leases but retains wake holds. Stop supervisors and worker
 units before restoring; only restart against the fenced, verified database.
 This is a single-host systemd user-service contract. Moving a database to another
 host requires stopping old workers first. Local commands are not a sandbox and
-must operate within the owner's authorized task scope.
+must operate within the task scope authorized by the operator.
 
 ## Scope and validation
 
@@ -158,35 +160,19 @@ Worker stdout/stderr prefixes are retained locally, capped at 4 MiB each. Runner
 artifacts include full-stream hashes and pending outcomes where applicable.
 Neither worker logs nor source prompts are automatically captured as notes.
 
-## Installed worker slots
+<a id="installed-worker-slots"></a>
 
-Each slot has a distinct `agent/worker-NN` principal, event token and
-`cairn-wake-worker-NN.service`. Names are independent of account/harness choices.
-All currently launch fresh tasks from the configured Cairn workspace.
+## Worker slots and interactive sessions
 
-| Slot | Harness | Account configuration | Model |
-| --- | --- | --- | --- |
-| `worker-01` | Codex | `~/.codex` | `gpt-6-astra` |
-| `worker-02` | Codex | `~/.codex-harm` | `gpt-6-astra` |
-| `worker-03` | Claude Code | `~/.claude` | `claude-fable-5-1[1m]` |
-| `worker-04` | Claude Code | `~/.claude-harm` | `claude-sonnet-5` |
-| `worker-05` | OpenCode | Dedicated wake configuration | `llamacpp/qwen3.8-27b` |
-| `worker-06` | Agy | Existing default profile | `gemini-3.8-flash-high` |
-| `worker-07` | Hermes | Existing default profile | `deepseek/deepseek-v4.1-flash` |
+Give each configured worker slot its own inbox principal, event profile, and
+service binding. Select the harness, account home, model, and workspace in that
+binding. A running service does not establish that the provider account can
+accept a task; account authentication and usage limits can still prevent launch.
 
-The first Codex account hit its provider usage limit in the selected live check;
-its installed service cannot bypass that limit. The additional Claude account
-completed with Fable. Account availability is separate from service liveness.
-
-Legacy harness-named services are disabled. Their identities, tokens and inbox
-histories remain intact for manual handling, including pending response events.
-No existing event is redirected or relabelled.
-
-Slots do not identify live interactive sessions. Agent UUIDs, display ordinals,
-harness/model/project metadata and fresh recipient resolution are specified in
-the [coordination v1 plan](plans/agent-coordination-v1.md). The [session registry foundation](agent-sessions.md) provides explicit registration
-and directory reads. These slot bindings do not register interactive conversations
-or deliver into existing sessions.
+Slots do not identify interactive conversations. The [session registry](agent-sessions.md)
+tracks those conversations with agent UUIDs and current execution UUIDs. Use
+fresh directory resolution when publication depends on a recipient's current
+context. A slot binding alone does not deliver into an existing session.
 
 ## Coordination API
 

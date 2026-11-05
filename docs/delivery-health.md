@@ -103,7 +103,7 @@ remain distinct `last_start` values and retain the existing exact-item retry
 rule. None authorizes another queue add. Offset-paged queue listings are not an
 atomic absence proof and are not used by this diagnostic. An ordinary owner
 prompt does not claim work when the Codex native queue owns inbox admission.
-There is no new operator reconciliation command in this change.
+This diagnosis does not provide an operator reconciliation command.
 
 ## Opt-in attention on the operator review
 
@@ -112,7 +112,7 @@ Add `attention` to the existing local operator `coordination-review` request:
 ```sh
 cairn coordination-review <<'JSON'
 {
-  "repo": "/home/halbritt/git/cairn",
+  "repo": "/path/to/collection",
   "state": "pending",
   "limit": 100,
   "attention": {
@@ -190,8 +190,8 @@ leased and held deliveries for one repository and applies the same detector:
 
 ```sh
 cairn delivery-alerts <<'JSON'
-{"repo":"/home/halbritt/git/cairn",
- "state_file":"/home/halbritt/.local/state/cairn/delivery-alerts.json",
+{"repo":"/path/to/collection",
+ "state_file":"/path/to/state/delivery-alerts.json",
  "plane_project":"CAIRN"}
 JSON
 ```
@@ -215,26 +215,25 @@ The command takes no recovery action: it does not claim, release, reissue or
 notify the starving session. Use `coordination-review` and the recovery
 commands in [event recovery](event-recovery.md) to decide what to do.
 
-`deploy/cairn-delivery-alerts.service` and `.timer` run it every ten minutes.
-They are installed but not enabled; enable with
+The templates `deploy/cairn-delivery-alerts.service` and `.timer` schedule a run
+every ten minutes. Adapt their paths and install them as user units, then enable with
 `systemctl --user enable --now cairn-delivery-alerts.timer`.
 
 ## What to measure
 
-The OpenRig comparison found pending requests whose refusal conditions were
-already logged but difficult to connect to the request's status. The proposed
-benefit is earlier recognition of wanted, stalled work with less journal
-inspection. More diagnostics alone do not establish that benefit.
+Delivery diagnostics should help an operator recognize stalled work and connect
+a refusal to its request without repeated journal inspection. Evaluate whether
+the alerts reduce that work.
 
 Use a bounded trial with representative wanted requests. Record when a useful
-condition first appears, when the owner notices it, and which action it informs.
+condition first appears, when the operator notices it, and which action it informs.
 Count repeated unchanged warnings and false alarms from intentional waiting.
 Check that progress clears or supersedes the condition, and that incomplete
 coverage stays visible. Keep the feature if it improves recognition at an
 acceptable attention cost. Synthetic tests establish the mechanics only.
 
-Complete-and-reply, automatic recovery, and changes to team structure are outside
-this change.
+Delivery diagnosis does not complete requests, initiate recovery, or change team
+structure.
 
 The [verification report](verification/delivery-health-2026-09-27.md) records
 the inspected commits, executed checks, cross-review corrections and rollout

@@ -1,8 +1,8 @@
 # Managed context files
 
-New wrapped runs register their `context.txt` file before writing its bytes.
+Wrapped runs register their `context.txt` file before writing its bytes.
 Record forgetting includes each registered file as a `managed_context` purge
-effect. `cairn purge-deletion DELETION_UUID` now performs both database and owned
+effect. `cairn purge-deletion DELETION_UUID` performs both database and owned
 context-file effects. It preserves `outcome.json`, the recovery request, and the
 run directory's ownership marker.
 
@@ -181,8 +181,10 @@ The worker cannot recall in-process or provider copies. Filesystem snapshots,
 backups, hard-link aliases, underlying storage and metadata remain outside this
 slot-unlink observation. Overall deletion therefore still reports `limited`
 after available effects finish. Metadata/evidence redaction, adoption beyond the
-narrow case below, backup inventory, retention and newer-deletion restore
-reconciliation remain roadmap work.
+narrow case described above, backup inventory, and automatic retention remain
+outside this file-custody contract. Use [restore admission](restore-admission.md)
+and [recovery reapplication](recovery-reapplication.md) to reconcile withdrawals
+that occurred after a restored backup.
 
 ## Verification
 

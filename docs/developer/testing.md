@@ -1,93 +1,92 @@
-# Developer Testing Guide
+# Testing
 
-Cairn emphasizes rigorous local automated testing. Tests validate transactional invariants, API contract integrity, documentation freshness, and disaster recovery drills.
+Run Cairn's validation locally. Database tests use disposable PostgreSQL clusters;
+never set a test DSN to an operational database. The [Makefile](../../Makefile)
+and test scripts define the checks that run for this checkout.
 
----
+## Choose the required checks
 
-## 1. Local Testing Philosophy
+| Change | Checks |
+| --- | --- |
+| Any Go change | `make check` and relevant package tests |
+| Store or database behavior | `make test-integration` and `make check` |
+| Backup, restore, or lifecycle recovery | `make test-lifecycle` plus affected integration tests |
+| Python lifecycle hooks | Relevant Python tests and affected native integration fixtures |
+| OpenCode adapter | Node checks and affected integration fixtures |
+| Documentation | `python3 scripts/verify_docs.py` plus manual source/example review |
 
-- **No Remote CI Dependency**: Cairn uses local validation on Linux. The project deliberately does not use GitHub Actions workflows for testing (owner decision, 2026-09-16).
-- **Disposable PostgreSQL Clusters**: Tests never touch production or operational databases. Integration suites spin up ephemeral, disposable PostgreSQL clusters on loopback sockets.
-- **Strict Verification Gates**: All checks must pass cleanly before trunk integration.
+`make check` runs Go vet, generated API contract comparison, Go formatting checks,
+and pinned design-source validation. It does not run the test suites or the
+separate documentation checker.
 
----
-
-## 2. Test Commands & Suites
-
-### Unit Tests
-
-Run unit tests across all packages:
-
-```sh
-go test ./...
-```
-
-Unit tests cover memory ranking, token counting, JSON Unicode integrity, command flag parsing, and MCP tool formatting.
-
-### Static Analysis & Contract Verification (`make check`)
-
-Run linting, code formatting, API contract checking, and design source validation:
-
-```sh
-make check
-```
-
-This target runs:
-1. `go vet ./...`: Standard Go static analysis.
-2. `go run ./internal/apicontract/cmd/cairn-contract -check`: Verifies parity between Go struct definitions and REST/localapi operation specifications.
-3. `gofmt -l`: Checks Go formatting.
-4. `python3 -B scripts/check_design_sources.py`: Ensures pinned historical design documents have not been modified.
-
-### Integration Tests (`make test-integration`)
-
-Run database integration tests against disposable PostgreSQL clusters:
+## Run database integration tests
 
 ```sh
 make test-integration
 ```
 
-This suite executes:
-- Transactional rollback and CAS concurrency.
-- Schema migration replays (001 through 074).
-- MCP stdio server interaction and tool execution.
-- Agent session registration, heartbeats, and durable inbox delivery.
+The target runs `scripts/test-postgres.sh`, starts a private PostgreSQL cluster,
+and assigns separate databases to Go packages. Go integration tests run with the
+race detector. The script stops the cluster on exit; failed runs retain artifacts
+and print their location for diagnosis. See [disposable fixtures](../disposable-fixtures.md)
+for the fixture contract.
 
-### Lifecycle & Recovery Drills (`make test-lifecycle`)
+To work on a particular Python integration fixture:
 
-Execute backup, checkpoint, and disaster recovery validation:
+```sh
+CAIRN_TEST_ONLY='check_fixture_name.py' make test-integration
+```
+
+Replace the pattern with an existing fixture name. This focused mode skips the
+Go package suites and does not replace the full required integration run.
+
+`go test ./...` and `make test` skip database coverage unless
+`CAIRN_TEST_DATABASE_URL` is supplied. Prefer the integration target, which
+creates and cleans up its own database.
+
+## Run unit and adapter checks
+
+```sh
+make test
+```
+
+This runs Go tests, Python unit discovery, and the SDK spawn/IPC Node checks.
+Node-based checks require Node.js 24 or newer. Python checks involving native
+Codex queue connections need `websocket-client`. Model-report checks need
+`tiktoken==0.12.0`; an isolated invocation is:
+
+```sh
+uv run --with tiktoken==0.12.0 python -m unittest discover -s scripts -p 'test_*model*.py'
+```
+
+For the OpenCode adapter:
+
+```sh
+node scripts/check_opencode_recent_files.mjs
+node scripts/check_opencode_lifecycle.mjs
+```
+
+## Exercise backup and recovery
 
 ```sh
 make test-lifecycle
 ```
 
-Verifies restore fencing, candidate retention reclamation, and out-of-procedure restore detection.
+This builds the CLI and runs `scripts/test-local-lifecycle.sh` against disposable
+state. It exercises startup, backup/restore, recovery expectations, replay,
+recompilation, and invalidation of restored handles. Passing this test does not
+validate a particular deployment's backup location or recovery catalog.
 
----
-
-## 3. Documentation Verification (`scripts/verify_docs.py`)
-
-Cairn includes an automated four-tier documentation testing suite:
+## Check documentation
 
 ```sh
-# Run all verification tiers
 python3 scripts/verify_docs.py
-
-# Run specific tier(s)
-python3 scripts/verify_docs.py --tier 1,2,3
-python3 scripts/verify_docs.py --tier 4
+python3 scripts/verify_docs.py --tier 1,3
 ```
 
-| Tier | Purpose | Target Scope |
-|------|---------|--------------|
-| **Tier 1** | Link & Anchor Integrity | Resolves all internal markdown links and heading slug anchors |
-| **Tier 2** | CLI Flag Alignment | Compares documented CLI invocations against Go source flag sets |
-| **Tier 3** | Code Block Syntax | Validates fenced JSON blocks with `json.loads` and shell blocks with `bash -n` |
-| **Tier 4** | Document Completeness | Enforces presence and substance of all 25 architecture documents |
-
----
-
-## Related Documentation
-
-- [Architecture Guide](architecture.md): Code layout and system concepts.
-- [Contributing Guide](contributing.md): Contribution guidelines and trunk integration.
-- [Operator Maintenance](../operator/maintenance.md): Production backup and recovery.
+The checker scans links and anchors, known CLI syntax, fenced JSON and shell
+syntax, and the presence of required guides. It uses heuristics; it does not
+execute examples or prove their semantics. [Documentation validation](../../TEST_INFRA.md)
+explains coverage and limitations. Dated reports in
+[verification](../verification/README.md) retain historical evidence, not a live
+pass/fail status.

@@ -1,7 +1,7 @@
 # Durable policy refusals
 
 Compiler budget/conflict/unenforceable-policy failures and blocked B demotions or
-retractions now return a `refusal_id` after retaining an observation. The refused
+retractions return a `refusal_id` after retaining an observation. The refused
 operation commits no content or authority change. Its denial is recorded in a
 separate transaction before the error returns. A database or process failure can
 still prevent that observation from committing; Cairn never claims a durable ID

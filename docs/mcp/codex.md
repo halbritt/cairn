@@ -1,83 +1,44 @@
-# OpenAI Codex Integration Guide
+# Use Cairn in Codex
 
-This guide explains how to connect OpenAI Codex CLI to Cairn using Model Context Protocol (MCP) TOML configuration.
+Connect Codex to Cairn to carry selected project decisions and procedures between
+conversations. This guide uses Cairn's configuration generator, which writes the
+MCP entry without reading tokens or changing existing Codex settings.
 
----
+## Generate the entry
 
-## 1. Generating Configuration (`cairn codex-config`)
-
-Cairn generates verified Codex MCP configuration blocks:
-
-### Thread-Scoped Configuration
-
-For interactive sessions where task and run scopes follow the Codex conversation thread:
+Set `CAIRN_HOME` and `CAIRN_COLLECTION` as in the [quickstart](../quickstart.md),
+or substitute your provisioned socket, token, and collection:
 
 ```sh
 cairn codex-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --codex-thread
+  --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" \
+  --repo "$CAIRN_COLLECTION" --codex-thread \
+  --tool-profile compact/2
 ```
 
-### Explicit Task-Scoped Configuration
+The generated TOML uses `[mcp_servers.cairn]`. Merge that block into the Codex
+configuration you intend to use; avoid duplicate entries with the same name.
+The generator uses an absolute executable path, so install Cairn at a stable
+location before generating a persistent entry.
 
-For automated batch runs with fixed task and run identifiers:
+`--codex-thread` groups searches by Codex tool-call thread metadata. For a batch
+with explicit labels, replace it with `--task TASK --run RUN`; do not combine the
+two modes. Missing native thread metadata is refused in thread mode. These labels
+organize retrieval and are not authenticated execution identities.
 
-```sh
-cairn codex-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --task "bugfix-102" \
-  --run "attempt-1"
-```
+## Check a fresh session
 
-### Compact Tool Profiles
+Start a new Codex session. Call `cairn_client_info`, search for a known shareable
+note, and pull its complete body. Then use the
+[search](../guides/memory-search.md) and [capture](../guides/memory-capture.md)
+workflows during real tasks. Capture only selected reusable information.
 
-Add `--tool-profile compact/1` or `--tool-profile compact/2` to reduce prompt overhead:
+`--required` makes the generated entry require a connection at startup. Leave it
+off when Cairn should be optional. Tool availability does not force an agent to
+search on every task. Automatic recall, capture, and inbox handling require their
+separate [lifecycle](../codex-lifecycle.md) and [native inbox](../native-inbox.md)
+integrations.
 
-```sh
-cairn codex-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --codex-thread \
-  --tool-profile compact/1
-```
-
----
-
-## 2. Adding to `.codex/config.toml`
-
-Append the generated TOML snippet to your project's `.codex/config.toml` or global `~/.codex/config.toml`:
-
-```toml
-[mcp.servers.cairn]
-command = "/usr/local/bin/cairn"
-args = [
-  "mcp",
-  "--socket", "/home/halbritt/.local/share/cairn/api.sock",
-  "--token-file", "/home/halbritt/.local/share/cairn/hosted-agent.token",
-  "--repo", "/home/halbritt/git/cairn",
-  "--codex-thread",
-  "--tool-profile", "compact/1"
-]
-```
-
----
-
-## 3. Workflow in Codex Sessions
-
-Codex interacts with Cairn seamlessly:
-1. **Initial Search**: Queries repository memory for relevant decisions using `cairn_search`.
-2. **Targeted Read**: Expands specific candidate notes using `cairn_pull`.
-3. **Capture**: Saves new insights or updated technical procedures using `cairn_remember`.
-
----
-
-## Related Documentation
-
-- [MCP Overview](overview.md): Architecture and tool compaction.
-- [Claude Code Integration](claude-code.md): Setup for Claude Code CLI.
-- [CLI Reference](../reference/cli.md): CLI options and flags.
+See the [MCP overview](overview.md) for budget and connection troubleshooting and
+`cairn codex-config --help` for the generator's complete options.

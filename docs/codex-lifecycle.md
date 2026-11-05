@@ -1,8 +1,9 @@
 # Ambient memory in Codex
 
-Cairn's optional Codex hooks give Codex the automatic retrieval and checkpoint
-capture that Claude Code already has. They use the shared lifecycle engine,
-`integrations/lifecycle/memory.py`, in the same shared collection.
+Cairn's optional Codex hooks retrieve saved knowledge when a task starts or
+resumes and capture selected checkpoints before compaction. They use the shared
+lifecycle engine, `integrations/lifecycle/memory.py`. Install the [MCP tools](mcp/codex.md)
+for explicit search and correction, then follow [hook installation](#install).
 
 | Codex event | Behavior |
 | --- | --- |

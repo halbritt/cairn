@@ -6,7 +6,7 @@ For example:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
-  --repo "$HOME/git/cairn" --task applicability-review --run review-1 \
+  --repo "/projects/shared-memory" --task applicability-review --run review-1 \
   'repair review "core/currentness.go"'
 ```
 
@@ -16,7 +16,7 @@ Both Codex MCP and native OpenCode accept the same query:
 {"query":"repair review \"core/currentness.go\""}
 ```
 
-The exact path now takes precedence over a note that only mentions “core,”
+The exact path takes precedence over a note that only mentions “core,”
 “currentness” and “Go,” even if that other note matches more words. A saved error
 message or signature digest can be quoted the same way. The text must already be
 in the note body; Cairn does not inspect files or infer observed failures.

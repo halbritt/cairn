@@ -1,19 +1,22 @@
 # Run a harness with an observed compact index
 
-An observer can now supply bounded memory previews to a harness, let its ordinary
+Use an observer profile to supply bounded memory previews to a harness, let its ordinary
 Cairn tools pull selected bodies and evidence, and retain the process outcome on
 the original receipt. Both fresh and retained indexes use the existing process
 wrapper. This supplies a tool route for the initial index; it does not observe
 internal compaction or establish that the model used memory well.
 
-For the owner's configured hosted profiles and native OpenCode tools:
+The example below requires a hosted observer profile, an ordinary agent profile
+whose principal is `agent:project-memory`, and OpenCode with Cairn tools installed.
+Replace the profile paths, collection, principal, and working directory with your
+configuration:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-observer.token" run \
-  --index --expansion-reader agent:cairn-hosted \
+  --index --expansion-reader agent:project-memory \
   --pull-tool cairn_pull --search-tool cairn_search \
   --destination hosted --carrier stdin \
-  --repo "$HOME/git/cairn" --dir "$HOME/git/cairn" \
+  --repo "/projects/shared-memory" --dir "$PWD" \
   --task storage-review --run storage-review-1 \
   --query 'storage tests' --tokens 32000 \
   --task-class review --binding opencode/process-h0 --capability unknown \

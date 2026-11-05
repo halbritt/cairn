@@ -1,8 +1,8 @@
 # Request expiry, deadlines and cancellation
 
-Migration 046 adds three distinct controls to the existing event and supervisor
-path. UUIDs still identify sessions and inboxes on the trusted host; these
-controls introduce no session credentials.
+Use admission expiry to limit how long a request can wait, a task deadline to
+stop a managed worker, and cancellation to withdraw queued or managed work.
+These controls apply at different stages:
 
 | Control | Meaning | Supported destinations |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ The existing local operator runs `cairn work-cancel` with JSON on stdin:
 ```json
 {
   "request_id": "d761690f-8ba1-43bb-a3f4-7aa2da9d07a6",
-  "repo": "/home/halbritt/git/cairn",
+  "repo": "/projects/shared-memory",
   "delivery_id": "bf97aab7-a199-42fd-b5b2-9732f080e971",
   "reason": "The requested work is no longer needed"
 }
@@ -200,7 +200,7 @@ marker, and its independent `/proc` ledger checks for false release.
 
 ## Sweep, review and recovery
 
-`cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.
+`cairn request-control-sweep` accepts `{"repo":"/projects/shared-memory"}`.
 One transaction processes at most 100 unassigned pool requests, 100 deliveries
 and 100 due [response groups](response-groups.md).
 The scheduler service runs this sweep before each scheduling tick. Claim paths

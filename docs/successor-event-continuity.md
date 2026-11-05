@@ -108,7 +108,7 @@ Authorize a successor session:
 cairn session-successor-authorize <<'JSON'
 {
   "request_id": "NEW_UUID",
-  "repo": "/home/halbritt/git/cairn",
+  "repo": "/projects/shared-memory",
   "predecessor_agent_id": "PREDECESSOR_AGENT_UUID",
   "successor": {
     "agent_id": "SUCCESSOR_AGENT_UUID",

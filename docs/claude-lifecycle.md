@@ -1,5 +1,18 @@
 # Ambient memory in Claude Code
 
+Cairn's optional lifecycle hooks retrieve relevant saved knowledge at task and
+resume boundaries, then select reusable notes and checkpoints before compaction
+or exit. This reduces the setup an agent must repeat in a new session while
+keeping explicit search, correction, and capture available through MCP.
+
+Install the [ordinary MCP tools](mcp/claude-code.md) first, then follow
+[installation](#install) below. Use [selected capture](#selected-capture) to
+understand what can be saved and [bounds and failures](#bounds-and-failures) to
+diagnose missing context. The [task-agent recall mode](#optional-recall-through-the-task-agent)
+lets the main agent choose which optional sources to inspect.
+
+## Recall and capture observations
+
 If a whole optional pull succeeds but its rendered context is too large, the hook
 derives the bounded excerpt from that validated body and labels it
 `span_origin: whole_pull`. The receipt retains the cost of the whole pull; no
@@ -299,7 +312,7 @@ tools with the intended authenticated scope and destination. The source cue
 cannot certify tool availability or agent compliance. Unavailable tools or room
 must be reported honestly; there is no automatic model-selector fallback. This
 mode implements delegated inspection, not measured successful retrieval or task
-improvement. Installation remains subject to the owner's production authorization.
+improvement. Install it only in the account configuration intended for this workflow.
 
 Cairn's optional Claude Code hooks retrieve memory before a task and preserve
 selected context before compaction or exit. Install them once at user scope;

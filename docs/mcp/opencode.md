@@ -1,70 +1,56 @@
-# OpenCode Integration Guide
+# Use Cairn in OpenCode
 
-This guide covers integrating OpenCode with Cairn, using both the native tools adapter and the MCP configuration generator.
+OpenCode can access Cairn through its native tools adapter or through MCP. Both
+routes use the authenticated API and a provisioned agent token. Choose one route
+for a project to avoid duplicate memory tools.
 
----
+## Install the native adapter
 
-## 1. Native Tools Installation (`cairn opencode-install`)
-
-Cairn provides a dedicated native adapter (`integrations/opencode/`) that integrates directly into OpenCode projects without requiring external daemon wrappers:
-
-```sh
-cairn opencode-install \
-  --project "$HOME/git/cairn" \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn"
-```
-
-### Options:
-- `--project PATH`: Target project directory (defaults to current directory).
-- `--replace`: Overwrite existing adapter and configuration files if versions differ.
-- `--recent-files`: Install optional session-local recent-file search hints.
-- `--tokens N`: Set memory input room per tool result (default: 32000).
-
----
-
-## 2. Generating OpenCode Configuration (`cairn opencode-config`)
-
-Alternatively, generate OpenCode JSON configuration:
+With the connection variables from the [quickstart](../quickstart.md), run this
+from the project where you want the tools:
 
 ```sh
-cairn opencode-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --task "testing" \
-  --run "run-1"
+cairn opencode-install --project "$PWD" \
+  --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" \
+  --repo "$CAIRN_COLLECTION"
 ```
 
-To restrict OpenCode to memory operations only (omitting coordination tools):
+The installer writes `.opencode/tools/cairn.ts` and `.opencode/cairn.json`.
+The project directory must already exist. Identical reruns are safe; differing
+existing files require explicit `--replace` after you inspect them. The adapter
+still needs the Cairn API service.
+
+Native sessions supply retrieval labels by default. `--task TASK` selects a
+shared task; optional `--run RUN` requires that task. The collection identity
+stays fixed even when the working project changes. `--recent-files` also installs
+a plugin for session-local file hints; these are optional retrieval hints, not
+proof of a file's contents.
+
+## Use MCP instead
+
+Generate an OpenCode configuration entry with explicit retrieval labels:
 
 ```sh
 cairn opencode-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --task "testing" \
-  --run "run-1" \
-  --memory-only
+  --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" \
+  --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1
 ```
 
----
+Merge the generated `mcp.cairn` entry into your OpenCode configuration. The
+optional `--memory-only` output denies all tools except Cairn search and body
+pull. It is a restricted inspection configuration, not an option that merely
+hides coordination tools; do not use it for an ordinary coding session.
 
-## 3. Verifying OpenCode Setup
+## Verify the integration
 
-Start OpenCode in your configured project:
+Start a fresh OpenCode session and check that the Cairn tools are available.
+Search for a known shareable note and pull it, then inspect the connected build
+with the client-info tool. Configuration changes do not establish that an
+already running session reloaded.
 
-```sh
-opencode
-```
-
-Verify that Cairn tools (`cairn_search`, `cairn_pull`, `cairn_remember`) are listed in the available tools directory.
-
----
-
-## Related Documentation
-
-- [MCP Overview](overview.md): Architecture and tool profiles.
-- [Claude Code Integration](claude-code.md): Claude Code integration.
-- [MCP Tools Reference](../reference/mcp-tools.md): Complete tools catalog.
+See the [native adapter contract](../opencode-tools.md) for names and behavior,
+the [MCP overview](overview.md) for the alternate route, and
+[OpenCode lifecycle integration](../opencode-lifecycle.md) for optional automatic
+recall and capture.

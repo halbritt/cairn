@@ -7,12 +7,12 @@ joining machine keep using the socket and token files they already use; they
 never hold database credentials. The design and its accepted limits are in
 [the proposal](plans/multi-machine-cairn.md).
 
-Status: deployed on Proximal and Archon at release `b46a0e1`. The live
-verification exercised enrollment, shared memory through MCP, native request
-delivery, explicit completion and a linked reply. See the
-[acceptance record](plans/multi-machine-acceptance.md) for tested claims and
-limits. No remote worker pools, conversation migration, offline memory,
-repository sync or automatic placement exist.
+Use this setup to share one collection and agent directory across machines.
+The relay supports memory access and session inbox coordination. It does not
+provide remote worker pools, conversation migration, offline memory, repository
+synchronization, or automatic task placement. The
+[acceptance record](plans/multi-machine-acceptance.md) documents the original
+cross-machine checks and their limits.
 
 ## What joining installs
 
@@ -22,7 +22,7 @@ and one token per role. `cairn machine enroll` installs:
 | Path on the joining machine | Contents |
 | --- | --- |
 | `~/.local/share/cairn/hosted-agent.token` | ordinary agent profile `machine:ID/agent` |
-| `~/.local/share/cairn/hosted-observer.token` | host observer profile, only when provisioned with `--observer`; it has no remote authority beyond `version` in this slice |
+| `~/.local/share/cairn/hosted-observer.token` | host observer profile, only when provisioned with `--observer`; it has no remote authority beyond `version` |
 | `~/.local/share/cairn/machine.json` | machine ID, upstream, collection and principals; no secrets |
 | `~/.config/systemd/user/cairn-relay.service` | `cairn relay --socket ~/.local/share/cairn/api.sock --upstream URL` |
 
@@ -44,21 +44,11 @@ shared files. Operator commands that open a local database are unaffected.
 
 - Cairn builds where the central API supports the
   [API protocol](api-compatibility.md) each joining host declares. A host
-  declares its current protocol, so overlapping ranges alone are not enough. Enrollment and every later request check the protocol, not the
-  VCS build. A build older than protocol declaration (such as `b46a0e1`) speaks
-  protocol 1. The build identity is still reported for diagnosis, and a clean,
-  identical build on every host remains the simplest release practice. Go 1.25
-  stamps only in a checkout whose `.git` is a directory. A linked
-  `git worktree` (where `.git` is a file) produces an unknown stamp even with
-  `-buildvcs=true`. Build a release from a clean ordinary clone:
-
-  ```sh
-  git clone --no-local ~/git/cairn /tmp/cairn-build && cd /tmp/cairn-build
-  git checkout COMMIT && go build -o cairn ./cmd/cairn
-  ./cairn version   # vcs_revision is COMMIT and vcs_modified is false
-  ```
-
-  Install that one binary on the central host and on every joining host.
+  declares its current protocol, so overlapping ranges alone are not enough.
+  Enrollment and every later request check the protocol, not the VCS build.
+  Build identity is diagnostic, not protocol negotiation. Install a clean build
+  on each machine and inspect both CLI and API identity with the
+  [build identity commands](build-identity.md).
 - An HTTPS route from each joining machine to the central API, verified with the
   system's ordinary certificate roots. On a tailnet, keep the API listener on
   loopback and let Tailscale terminate TLS:
@@ -86,14 +76,16 @@ shared files. Operator commands that open a local database are unaffected.
 On the central host, provision the machine. `--collection` must match an
 existing identity's repository unless `--allow-new-collection` is given, which
 catches typos that would silently create a separate memory collection.
+Replace the example collection, machine name, and HTTPS hostname with your
+configuration.
 
 ```sh
-cairn machine provision --machine archon \
-  --upstream https://proximal.TAILNET.ts.net:8443 \
-  --collection "$HOME/git/cairn" --out ~/archon.enroll --restart
+cairn machine provision --machine worker-1 \
+  --upstream https://central.TAILNET.ts.net:8443 \
+  --collection "/projects/shared-memory" --out ~/worker-1.enroll --restart
 ```
 
-This adds `machine:archon/agent` (and `machine:archon/observer` with
+This adds `machine:worker-1/agent` (and `machine:worker-1/observer` with
 `--observer`) to `identities.json` under the same lock
 `scripts/provision-event-profiles.py` uses. Existing entries are preserved
 exactly, and a timestamped owner-only backup is written first. The enrollment
@@ -107,8 +99,8 @@ uncertain (see below).
 Copy the file privately and enroll:
 
 ```sh
-scp -p ~/archon.enroll archon:archon.enroll && rm ~/archon.enroll
-ssh archon 'chmod 600 archon.enroll && cairn machine enroll --file archon.enroll'
+scp -p ~/worker-1.enroll worker-1:worker-1.enroll && rm ~/worker-1.enroll
+ssh worker-1 'chmod 600 worker-1.enroll && cairn machine enroll --file worker-1.enroll'
 ```
 
 Enrollment checks every target before its first write. It refuses:
@@ -158,7 +150,7 @@ Configure harnesses as on the central host, passing the canonical collection:
 ```sh
 cairn claude-config --socket ~/.local/share/cairn/api.sock \
   --token-file ~/.local/share/cairn/hosted-agent.token \
-  --repo /home/OWNER/git/cairn --task TASK --run RUN
+  --repo /projects/shared-memory --task TASK --run RUN
 ```
 
 Remote profiles use the hosted destination: local-only notes are not returned
@@ -170,16 +162,12 @@ record uses and outcomes therefore get `AUTHORITY_DENIED` on a joining machine.
 Memory search, notes, the directory, native inbox delivery, completion and
 replies work.
 
-The harness must permit calls to the local Unix socket. In the live trial,
-Archon Codex 0.154.0 blocked CLI socket creation with networking disabled;
-MCP and hooks were unaffected because they ran outside that sandbox. The
-isolated test agent explicitly enabled network access while retaining workspace
-write limits. This was a test setting, not a change to the default agent
-sandbox. Completion and response journals also let the host recover calls
-that could not reach the socket; source reads still need an accessible tool. With the standard Cairn MCP
-configuration, `cairn_history` can read the exact `record_id` and `version` from
-the native context without an in-turn Unix socket call. Do not substitute a
-search preview or a different record version.
+The harness must permit calls to the local Unix socket. A sandbox that blocks
+socket creation can prevent in-turn CLI access even when MCP and hooks run
+outside that sandbox. Check the actual tool path in your client. With the
+standard Cairn MCP configuration, `cairn_history` can read the exact `record_id`
+and `version` from native inbox context without an in-turn CLI socket call.
+Do not substitute a search preview or a different record version.
 
 Directory output attributes each session to its server-configured
 machine. Use `cairn agents list --machine-id ID` or `agents resolve --machine-id
@@ -214,7 +202,7 @@ When `--restart` cannot bring the API back, or a new token is not accepted, the
 error names the backup and the exact rollback:
 
 ```sh
-install -m 600 ~/.local/share/cairn/identities.json.before-provision-archon-TIMESTAMP \
+install -m 600 ~/.local/share/cairn/identities.json.before-provision-worker-1-TIMESTAMP \
   ~/.local/share/cairn/identities.json
 systemctl --user restart cairn-api.service
 ```
@@ -224,12 +212,10 @@ Rolling back after provisioning leaves an unused enrollment file. Delete it.
 To disable a deployed remote endpoint, stop the remote relay, remove only that
 endpoint's Tailscale Serve route, restore the saved identity configuration and
 remove the added listener flags while retaining existing API flags. Restart the
-API once. The current binary can keep serving local clients against schema 054.
-Do not restore a database backup merely to undo network setup: that would discard
-later writes. If restoring an older binary, do not run its migration command
-against schema 054; it refuses a database newer than its migration set. The
-store service runs migration on startup, so keep the store running during that
-binary-only rollback or retain the new binary.
+API once. Removing a network endpoint does not require restoring the database;
+doing so would discard later writes. Before rolling back a binary, check that it
+supports the installed schema and protocols. A migration command refuses a
+store newer than its supported migration set.
 
 ## Errors through the relay
 

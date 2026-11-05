@@ -18,7 +18,7 @@ then run from that project with your OpenCode executable on `PATH`:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" start \
-  --repo "$HOME/git/cairn" --task storage-review --run storage-review-1 \
+  --repo /path/to/collection --task storage-review --run storage-review-1 \
   --query 'storage tests' \
   --prompt 'Review the storage changes and explain what needs testing.' \
   --carrier stdin \

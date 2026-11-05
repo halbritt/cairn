@@ -1,6 +1,7 @@
 # Response groups
 
-Migration 047 adds bounded reply collection to request publication. A group fixes
+Use a response group to collect replies to one request from a known set of
+recipients until a deadline. A group fixes
 its recipient list when the request is published and records explicit replies.
 It does not evaluate their conclusions or infer task acceptance from handling.
 
@@ -46,7 +47,7 @@ Use an ordinary `response` publication with:
 The publisher must be the store-associated consumer in the fixed snapshot.
 Do not substitute a harness or account name for the addressed session UUID.
 Native inbox context already supplies a response argument array. For grouped
-fresh workers, `CAIRN_WAKE_CONTEXT` now supplies `response` and `response_group`.
+fresh workers, `CAIRN_WAKE_CONTEXT` supplies `response` and `response_group`.
 After completion, append `--version RESULT_VERSION RESULT_RECORD_UUID` from its
 result reference to that response array. It retains the slot's ownership and a
 fixed reply request UUID. Retry unchanged arguments after a lost response.

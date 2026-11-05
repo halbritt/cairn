@@ -1,58 +1,65 @@
-# Production Deployment Guide
+# Deploy the local API
 
-This guide covers production deployment of Cairn on Linux systems, including database provisioning, systemd user services, and socket/network configuration.
+A Cairn installation needs a PostgreSQL store, an API process, and profiles for
+its agent clients. Start with the [quickstart](../quickstart.md) to verify that
+capture, search, and pull work before adding persistent services or remote
+machines.
 
----
+## Choose a PostgreSQL setup
 
-## 1. System Requirements
+The repository's `scripts/local-store.sh` manages a dedicated cluster under
+`CAIRN_HOME`. It runs as an ordinary user, uses a private Unix socket, and never
+redirects to the system PostgreSQL service. It requires Linux, Bash, `flock`,
+Python 3, and PostgreSQL server/client tools. PostgreSQL 17 is used by lifecycle
+validation; building Cairn requires Go 1.25 or newer.
 
-- **Operating System**: Linux (systemd-based distribution, e.g. Ubuntu 22.04+, Debian 12+, Fedora 38+).
-- **Database**: PostgreSQL 15 or newer.
-- **Runtime**: Compiled `cairn` binary installed in system or user `$PATH` (e.g. `/usr/local/bin/cairn` or `~/.local/bin/cairn`).
-
----
-
-## 2. Database Provisioning
-
-Cairn requires a dedicated PostgreSQL database and role:
-
-```sh
-# Create role and database
-sudo -u postgres psql -c "CREATE ROLE cairn WITH LOGIN PASSWORD 'secure_password';"
-sudo -u postgres psql -c "CREATE DATABASE cairn OWNER cairn;"
-```
-
-Configure your connection string:
+From your Cairn checkout:
 
 ```sh
-export CAIRN_DATABASE_URL="postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable"
+make build
+bash scripts/local-store.sh start
+bash scripts/local-store.sh status
 ```
 
-Initialize the database schema:
+Alternatively, provision a dedicated database and role through your PostgreSQL
+administration process, set `CAIRN_DATABASE_URL` to that connection, and run
+`bin/cairn migrate`. The role must be able to apply the schema. Keep credentials
+out of agent configuration and committed files. See
+[configuration](configuration.md) for connection defaults.
+
+## Install and start the API
+
+Install the binary at a stable path so generated client configurations do not
+point into a temporary build directory:
 
 ```sh
-cairn migrate
+install -d "$HOME/.local/bin"
+install -m 0755 bin/cairn "$HOME/.local/bin/cairn"
 ```
 
----
+Create the private identity and token files using the
+[profile recipe](../quickstart.md#create-an-agent-profile). Then run:
 
-## 3. Systemd Service Units
+```sh
+"$HOME/.local/bin/cairn" serve
+```
 
-Cairn components run cleanly as systemd user services under the hosting user account.
+The default Unix socket is `~/.local/share/cairn/api.sock`, mode 0600, in a
+private directory. The service still requires bearer authentication. Test an
+agent request before installing it as a background service.
 
-### 1. API Server (`cairn-localapi.service`)
+## Run under a systemd user service
 
-Create `~/.config/systemd/user/cairn-localapi.service`:
+For the default paths above, create
+`~/.config/systemd/user/cairn-api.service`:
 
 ```ini
 [Unit]
-Description=Cairn Local API Daemon
-After=network.target postgresql.service
+Description=Cairn authenticated API
 
 [Service]
 Type=simple
-Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
-ExecStart=/usr/local/bin/cairn serve --socket %h/.local/share/cairn/api.sock
+ExecStart=%h/.local/bin/cairn serve
 Restart=on-failure
 RestartSec=5s
 
@@ -60,100 +67,48 @@ RestartSec=5s
 WantedBy=default.target
 ```
 
-### 2. Worker Pool (`cairn-worker-pool.service`)
+This unit assumes the database is already running. Configure its startup
+separately using your chosen PostgreSQL setup. The checked-in
+[systemd integrations](../../integrations/systemd/) provide additional service
+examples; inspect and adapt their checkout, state, and profile paths before use.
+For a nondefault state directory or database, supply the same configuration to
+the service as to migration commands. A protected environment file can hold the
+database connection; do not embed a password in a public unit example.
 
-Create `~/.config/systemd/user/cairn-worker-pool.service`:
-
-```ini
-[Unit]
-Description=Cairn Background Worker Pool
-After=cairn-localapi.service
-
-[Service]
-Type=simple
-Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
-ExecStart=/usr/local/bin/cairn schedule-serve --repo %h/git/cairn
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
-
-### 3. Wake Supervisor (`cairn-wake.service`)
-
-Create `~/.config/systemd/user/cairn-wake.service`:
-
-```ini
-[Unit]
-Description=Cairn Wake Supervisor
-After=cairn-localapi.service
-
-[Service]
-Type=simple
-Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
-ExecStart=/usr/local/bin/cairn wake serve --config %h/.local/share/cairn/wake-binding.json
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
-
-### Enable & Start Services
+Enable the unit and inspect failures:
 
 ```sh
 systemctl --user daemon-reload
-systemctl --user enable --now cairn-localapi
-systemctl --user enable --now cairn-worker-pool
-systemctl --user enable --now cairn-wake
+systemctl --user enable --now cairn-api.service
+systemctl --user status cairn-api.service
+journalctl --user -u cairn-api.service -n 50
 ```
 
-Verify service status:
+User-service startup depends on the system's user-manager configuration. Arrange
+boot persistence according to your host's service policy if the API must run
+without an interactive login.
+
+## Verify client access
+
+Use the profile's socket and token paths to query the running API build:
 
 ```sh
-systemctl --user status cairn-localapi
-```
-
----
-
-## 4. Socket vs TCP Network Configuration
-
-### Local Domain Socket (Default)
-
-For single-host agent environments, Unix domain sockets provide optimal security, low latency, and automatic file-permission boundaries:
-
-```sh
-cairn serve --socket "$HOME/.local/share/cairn/api.sock"
-```
-
-The socket file permissions ensure that only the local user account can access the API.
-
-### Remote TCP Listener with TLS
-
-To expose Cairn across a trusted network to remote machines, configure a TLS listener:
-
-```sh
-cairn serve \
+"$HOME/.local/bin/cairn" agent \
   --socket "$HOME/.local/share/cairn/api.sock" \
-  --listen "0.0.0.0:8443" \
-  --tls-cert "/etc/cairn/tls.crt" \
-  --tls-key "/etc/cairn/tls.key"
+  --token-file "$HOME/.local/share/cairn/agent.token" version
 ```
 
-Alternatively, if Cairn is deployed behind a reverse proxy terminating HTTPS:
+`cairn version` reports the executable; `cairn agent ... version` reports the
+server. Search and pull a known shareable note through a hosted profile to check
+the intended delivery path. See [build identity](../build-identity.md).
 
-```sh
-cairn serve \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --listen "127.0.0.1:8080" \
-  --tls-terminated-proxy
-```
+## Add optional services
 
----
+Semantic workers, scheduling, and agent wake supervisors are separate choices;
+they are not required for ordinary lexical memory access. Follow
+[background services](daemon-deployment.md) for their contracts. To serve another
+machine, use [multi-machine deployment](../multi-machine.md), which configures
+HTTPS, remote profiles, and a local relay on the joining host.
 
-## Related Documentation
-
-- [Configuration Guide](configuration.md): Tokens, profiles, and environment variables.
-- [Maintenance Guide](maintenance.md): Schema migrations, vacuuming, and recovery.
-- [Daemon Deployment Guide](daemon-deployment.md): Worker pools and multi-machine operations.
+Before upgrades or restore drills, follow [maintenance](maintenance.md). Test
+with disposable clusters, never the operational database.

@@ -163,7 +163,7 @@ in immutable rows and compared without decoding a whole manifest in Go. Use
 4. **Rebuild.** Page `rebuild-restore` with a request UUID, `limit` and `after`
    until `complete`. Each completed page is durable and idempotent.
 5. **Verify and explicitly resume.** Supply any original part as `recovery` and
-   the retained backup checkpoint expectation. Other parts are now retained by
+   the retained backup checkpoint expectation. Other parts are retained by
    their applications. Verification refuses missing positions, conflicting
    metadata and late corruptions. Resume repeats the current checks under the
    existing exclusive boundary and preserves generation fencing.

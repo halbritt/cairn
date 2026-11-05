@@ -1,7 +1,8 @@
 # Agent connection repair transfer experiment
 
-This experiment repairs a current Cairn defect: explicit agent socket and token
-paths still require HOME because defaults are resolved before flags are parsed.
+This frozen experiment tests repair of a historical Cairn defect: explicit agent
+socket and token paths required HOME because defaults were resolved before flags
+were parsed.
 The frozen task and inputs are in `scenario.json`.
 
 The three conditions use the same source, model, task, tool permissions and

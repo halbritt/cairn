@@ -13,7 +13,7 @@ CLI equivalent:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
-  --repo "$HOME/git/cairn" --task TASK --run RUN \
+  --repo /path/to/collection --task TASK --run RUN \
   --memory-budget-bytes 4500 --inspection-policy first-fitting-whole/1 \
   'deployment rollback'
 ```

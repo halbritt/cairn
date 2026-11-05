@@ -1,86 +1,67 @@
-# Operator Configuration Guide
+# Configure access and storage
 
-This guide details environment variables, profile tokens, authentication identities, and TLS setup for administering Cairn.
+Cairn separates database administration from agent access. The API service opens
+PostgreSQL; agents connect through an authenticated socket with a provisioned
+profile. A profile binds the caller's identity, collection, and destination.
 
----
+## Paths and database connection
 
-## 1. Environment Variables
+| Setting | Behavior |
+| --- | --- |
+| `CAIRN_HOME` | State and default connection directory; defaults to `~/.local/share/cairn`. |
+| `CAIRN_DATABASE_URL` | Overrides the database connection for commands that open the store. Without it, Cairn uses the private socket under `CAIRN_HOME/socket`, database `cairn`, and the current Unix username. |
+| `CAIRN_PG_BIN` | PostgreSQL binary directory for `scripts/local-store.sh`; defaults to `pg_config --bindir`. |
+| `CAIRN_BINARY` | Cairn executable for the local-store script; defaults to the checkout's `bin/cairn`. |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CAIRN_DATABASE_URL` | PostgreSQL connection DSN override | `postgres://localhost:5432/cairn?sslmode=disable` (or scripts/local-store.sh) |
-| `CAIRN_HOME` | Base configuration and state directory | `~/.local/share/cairn` |
+`cairn serve` defaults to `CAIRN_HOME/identities.json` and
+`CAIRN_HOME/api.sock`. Override them with `--identities` and `--socket`.
+Ordinary agent connections use `--socket` and `--token-file`; provide both to
+avoid dependence on home-directory defaults. MCP requires explicit paths.
 
-Socket paths, authentication tokens, and repository identities are configured via command-line flags (`--socket`, `--token-file`, `--repo`), CLI commands, or systemd unit definitions rather than ambient environment variables.
+The `repo` value is a collection identity, not a directory that the API scans.
+Agent requests must use their profile's provisioned value. A collection may
+contain several projects; keep project context in each note.
 
----
+## Provision identities
 
-## 2. Profile Tokens & Identities
+The [quickstart](../quickstart.md#create-an-agent-profile) creates one token and
+identity file without putting token bytes into shell history. The identity file
+is a JSON array; each entry contains:
 
-Cairn uses cryptographically random bearer tokens mapped to authenticated principals in `~/.local/share/cairn/identities.json`.
+| Field | Meaning |
+| --- | --- |
+| `token_sha256` | SHA-256 digest of the bearer token. Store the plaintext token only in its private token file. |
+| `principal` | Authenticated writer and default inbox identity. |
+| `repo` | Authorized collection identity. |
+| `role` | `agent` for ordinary operations, or `observer` for host-observed execution facts. |
+| `destination` | `hosted` or `local`. Hosted access excludes local-only bodies. |
+| `remote`, `machine_id` | Remote-profile fields managed by machine provisioning. |
 
-### Identity Roles
+The configuration and tokens must be regular files owned by the service user
+with owner-only permissions. The server accepts up to 32 profiles and reads them
+at startup. Restart it after identity changes. Each configured profile requires
+a distinct token digest and principal.
+Sessions sharing a profile use its default inbox unless they select their own
+registered session UUIDs.
 
-1. **`agent`**: Standard autonomous agent profile. Permitted to search memory, pull candidate notes, capture ordinary testimony, and manage session inbox events.
-2. **`observer`**: Instrumented runner channel. Permitted to record verified test executions and instrumented evidence.
-3. **`operator`**: Administrative profile. Permitted to issue mandatory instructions, promote claims, grant scope authorizations, and run maintenance operations.
+There is no `operator` API role. Administrative commands use the trusted local
+store channel. An `observer` token does not grant authority to issue instructions
+or promote claims. Neither a body field nor a caller-selected label authenticates
+an observation.
 
-### Hosted vs Local Destination Profiles
+A local destination can read eligible local content as well as shareable content.
+It still has collection and operation restrictions. Use a hosted profile for
+hosted models; do not substitute local access to bypass a withheld result.
+These controls assume a trusted Unix account, not hostile processes sharing that
+account.
 
-- **Hosted Profile** (`~/.local/share/cairn/hosted-agent.token`): Used when interacting with hosted AI models (Claude, OpenAI). Content marked `sensitivity: local` is automatically filtered out by the API.
-- **Local Profile**: Used on the local machine for unrestricted access to both local and shareable memories.
+## Remote access
 
-### Generating Identities Configuration (`identities.json`)
+For multiple machines, use [machine enrollment](../multi-machine.md). The
+central API can serve TLS directly with `--listen`, `--tls-cert`, and `--tls-key`,
+or use a loopback listener with `--tls-terminated-proxy` behind a managed HTTPS
+proxy. Transport authentication uses bearer tokens; these flags do not configure
+mutual TLS. Remote profiles have a narrower operation allowlist.
 
-The identities file maps SHA-256 digests of bearer tokens to principals:
-
-```json
-[
-  {
-    "token_sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
-    "principal": "hosted-agent",
-    "role": "agent",
-    "repo": "/home/halbritt/git/cairn",
-    "destination": "hosted",
-    "remote": false
-  },
-  {
-    "token_sha256": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-    "principal": "local-operator",
-    "role": "operator",
-    "repo": "/home/halbritt/git/cairn",
-    "destination": "local",
-    "remote": false
-  }
-]
-```
-
-Pass the identity file when starting the API service:
-
-```sh
-cairn serve --identities "$HOME/.local/share/cairn/identities.json"
-```
-
----
-
-## 3. Remote TLS Configuration
-
-When deploying Cairn across multiple machines, secure communication using mutual TLS:
-
-1. Generate or provision an X.509 server certificate and private key.
-2. Launch `cairn serve` with TLS parameters:
-   ```sh
-   cairn serve \
-     --listen "0.0.0.0:8443" \
-     --tls-cert "/etc/ssl/cairn/server.crt" \
-     --tls-key "/etc/ssl/cairn/server.key"
-   ```
-3. Remote clients connect using HTTPS and supply their bearer token in the `Authorization: Bearer <token>` header.
-
----
-
-## Related Documentation
-
-- [Deployment Guide](deployment.md): Systemd units and service management.
-- [Maintenance Guide](maintenance.md): Backup, disaster recovery, and migrations.
-- [CLI Reference](../reference/cli.md): Flags and commands reference.
+See [deployment](deployment.md) for service setup and
+[authenticated access](../local-api.md) for limits and failure responses.

@@ -1,5 +1,10 @@
 # Precise supporting citations
 
+Attach citations when a reader needs to inspect the source behind a note or
+qualified claim. A citation names captured evidence and can select exact byte
+ranges. It preserves which material supported a version without implying that
+the support is sufficient or still current.
+
 ## Ordinary notes
 
 An ordinary A note can cite explicitly captured sources without promotion.
@@ -26,7 +31,7 @@ with the same provisioned connection flags used for capture:
 Use actual IDs, the current note version, repository, source digest and byte
 ranges. The operator equivalent is `cairn cite`. MCP and native OpenCode use
 `cairn_edit` with the same fields except `repo`, which comes from their configured
-repository. Supply exactly one of `body`, `draft` or `evidence_citations`.
+repository. Supply `evidence_citations` without another edit mode.
 The native tools use already captured sources; source capture remains a separate
 CLI/API operation.
 

@@ -1,10 +1,13 @@
 # API protocol compatibility
 
-Status: implemented on `agent-204/api-compatibility` (base `0fb09c3`; the
-deployed release `b46a0e1` is protocol 1). Code: `localapi/protocol.go`,
-`localapi/relay.go`, `localapi/client.go`, and the enrollment/status checks in
-`cmd/cairn/machine_enroll.go`. Evidence: `localapi/protocol_test.go` and
-`scripts/check_protocol_skew.py`, which runs in `make test-integration`.
+Check protocol compatibility before connecting clients, relays, and servers
+built at different revisions. Build hashes identify binaries; protocol ranges
+and declared capabilities determine which requests they can exchange.
+
+The contract is implemented in `localapi/protocol.go`, `localapi/relay.go`,
+`localapi/client.go`, and `cmd/cairn/machine_enroll.go`. Tests include
+`localapi/protocol_test.go` and the disposable `scripts/check_protocol_skew.py`
+fixture in `make test-integration`.
 
 ## Protocol versus build
 
@@ -23,7 +26,7 @@ per request against an exact integer range, not by a matching major.
 
 | Protocol | Definition |
 | --- | --- |
-| 1 (legacy) | The deployed `b46a0e1` wire behavior. Requests carry no protocol header. The relay forwards only `Authorization`, `Content-Type`, `Cairn-Agent-ID` and `Cairn-Execution-ID`. Responses carry no protocol field. |
+| 1 (legacy) | The legacy wire behavior retained by build `b46a0e1`. Requests carry no protocol header. The relay forwards only `Authorization`, `Content-Type`, `Cairn-Agent-ID` and `Cairn-Execution-ID`. Responses carry no protocol field. |
 | 2 | Protocol 1 plus protocol declaration: the `Cairn-Protocol` request header, the envelope `protocol` object `{"min":M,"current":N}` on every reply (success and refusal), the same object in the `version` response, and a relay that forwards `Cairn-Protocol` and adds `Cairn-Relay-Protocol`. Operation bodies and semantics are unchanged from protocol 1. |
 
 This release declares server, relay and client range `[1, 2]`.

@@ -1,4 +1,50 @@
-# Cairn
+# Glossary
+
+Cairn uses these terms in its memory, retrieval, and coordination contracts.
+
+## Memory and retrieval
+
+**Collection**: The repository identity used to scope stored memory. It can be
+shared across projects and does not necessarily identify the current checkout.
+
+**Record**: A stored item with an ID, retained revisions, scope, sensitivity,
+and attribution. A revision identifies an exact version of its contents.
+
+**Class A**: Ordinary testimony, such as a saved lesson or decision. Its source
+can be known while its claim remains unverified.
+
+**Class B**: A qualified claim with supporting evidence and the authority required
+for promotion. Qualification does not make every possible use appropriate.
+
+**Class C**: An authorized instruction governed by live grants and applicability.
+Saving an ordinary note with instructional wording does not create Class C.
+
+**Scope**: Collection, task, and run labels that restrict applicability. These
+labels are not execution attestation.
+
+**Destination**: The delivery context, such as local or hosted. Sensitivity and
+the authenticated profile restrict what can reach that destination.
+
+**Receipt**: Retained retrieval state identifying a context selection, its
+conditions, and budget. Exposure does not prove use or usefulness.
+
+**Handle**: An opaque reference for expanding a source under a receipt. Handles
+expire and expansion rechecks current eligibility.
+
+**Evidence**: Explicitly captured source material with retained identity and
+digest. A citation identifies support; it does not establish that support is
+sufficient for a claim.
+
+## Coordination
+
+**Event**: A durable publication referring to an exact source record version.
+Requests, responses, and notices have different handling contracts.
+
+**Delivery**: One recipient's handling state for an event. A lease grants a
+bounded opportunity to handle that delivery.
+
+**Execution UUID**: The current registered execution of an agent session. A new
+execution fences stale session activity; the UUID itself is not a credential.
 
 ## Lifecycle integration
 

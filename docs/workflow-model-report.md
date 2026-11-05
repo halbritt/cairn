@@ -1,4 +1,8 @@
-# Local workflow model report
+# Report model work in a coordination workflow
+
+Use this report to compare observed model usage with inbox handling in a selected
+workflow. Missing or ambiguous evidence stays visible so the report does not
+attrib-ute an entire conversation to one coordination event.
 
 `scripts/workflow_model_report.py` joins retained Codex or Claude provider usage
 to Cairn native inbox contexts and committed command journals. It is read-only.

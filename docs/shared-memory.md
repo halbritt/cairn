@@ -1,97 +1,87 @@
-# Shared memory across projects
+# Share memory across projects and agents
 
-Cairn is installed for Codex, OpenCode, Agy, Claude Code, and Hermes at user scope on
-the owner's host. Start a fresh agent session in any project and use its Cairn
-tools to search, pull, save, and correct shared notes. There is no per-project
-registration step.
+Use one Cairn collection when several agents need the same decisions, procedures,
+and lessons. A note saved through one configured client can be retrieved through
+another, subject to the collection's scope and destination rules. This lets you
+carry project knowledge into a new conversation without copying entire chat logs.
 
-All use the existing collection, whose stored name is
-`/home/halbritt/git/cairn`. That name is independent of the working directory.
-Keeping it preserves the existing notes without copying or migrating them.
-Use the default `repository` capture scope for shared notes; include the actual
-project in the body when guidance applies only there. Use `shareable: true` for
-selected notes intended for these hosted agents.
+## Choose the collection
 
-| Agent | User-level installation |
-| --- | --- |
-| Codex | `cairn` MCP entry in both `~/.codex/config.toml` and `~/.codex-harm/config.toml` |
-| OpenCode | `~/.config/opencode/tools/cairn.ts` and `~/.config/opencode/cairn.json` |
-| Agy | `cairn` entry in `~/.gemini/config/mcp_config.json` |
-| Claude Code | `cairn` user-scope entry in `~/.claude.json` |
-| Hermes CLI and Slack gateway | `~/.hermes/config.yaml`, native provider in `plugins/cairn`, and shared skill |
+The `repo` setting identifies the memory collection. It does not have to match
+an agent's working directory. Configure each client with the same collection
+identifier and a profile authorized for that collection. For example, a team
+could use `/projects/shared-memory` while working in `/projects/api` and
+`/projects/web`.
 
-Codex and OpenCode use their native conversation/session labels. Agy and Claude
-launch `~/.local/bin/cairn-shared-mcp`, which selects the existing connection and
-generates a fresh label for each MCP process. No manual task/run selection is
-needed. Hermes explicit MCP tools use profile labels, while its automatic
-lifecycle requests use actual session labels. These labels organize retrievals;
-ordinary shared notes outlive them, and labels do not authenticate a caller.
-
-Existing agent processes can retain their previous tool configuration. Start a
-new session after installation. A project's explicit configuration can override
-user settings; Cairn's existing project configuration points to the same shared
+A shared collection does not create automatic per-project isolation. Include the
+project name in a note's body when its guidance applies to one project. Use
+separate collections and profiles when projects need separate access boundaries.
+Changing a client's `repo` value does not move existing records into the new
 collection.
 
-## Deliberate larger reads
+## Connect your clients
 
-Automatic recall budgets limit unsolicited context. A task model may choose a
-larger explicit read when a complete note or handoff is needed, without asking
-the user. It states the need and starts a new search using
-`inspection_policy: "first-fitting-whole/2"` with declared room for the complete
-response. Available context, tool ceilings and explicit user limits still apply.
-See [whole source allocation](inspection-allocation.md).
+First [deploy the API and provision an ordinary agent profile](operator/deployment.md).
+Then configure each client with that profile, socket, and collection:
 
-On 2026-10-18, Agy's installed route used the shared MCP launcher and global
-instructions in `~/.gemini/config/AGENTS.md`; its hooks handled coordination,
-not lifecycle memory recall. Those global instructions now describe the override.
-Existing Agy sessions may retain earlier instructions or tool definitions.
+| Client | Setup guide |
+| --- | --- |
+| Codex | [MCP configuration](mcp/codex.md) |
+| Claude Code | [MCP configuration](mcp/claude-code.md) |
+| OpenCode | [Native tools and MCP](mcp/opencode.md) |
+| Agy and Hermes | [MCP configuration](mcp/agy-hermes.md) |
 
-## Proactive use and lifecycle hooks, 2026-09-13
+Choose user-level installation to make tools available across projects. An
+explicit project configuration can override user settings. Restart the client
+after installation so it loads the new tools and configuration.
 
-The shared `cairn` skill now guides proactive recall and selected storage of
-owner corrections, decisions, verified fixes and unfinished-work checkpoints.
-[Claude lifecycle hooks](claude-lifecycle.md) add automatic task/resume retrieval
-and selected capture before compaction or exit. They are installed in both
-Claude user profiles; start a fresh session to load them. OpenCode and Hermes
-also use the shared engine, as described below.
+Task and run labels organize retrieval within a collection. Codex's thread mode
+and OpenCode's native adapter can derive these labels from their conversation
+or session. Other MCP setups supply them at startup. Labels are declarations,
+not authentication or proof of an individual execution attempt.
 
-## Installed use, 2026-09-11
+## Save knowledge that can be reused
 
-A fresh Codex app-server in Pincite discovered the globally configured tools,
-created a selected setup note, and searched and pulled it. The installed
-OpenCode native tool executor in Striatum Next read that note, appended its
-setup details, and pulled the saved revision. A normal Claude Code session in
-Pincite then read both contributions and added its own through native tools.
+1. Search for existing guidance and pull relevant notes before saving a new one.
+2. Save a selected decision, procedure, correction, or lesson with enough context
+   to explain when it applies. Include its source or verification method.
+3. Use the default `repository` capture scope for guidance shared across tasks.
+   Use `task` or `run` only when the note belongs to those configured labels.
+4. Set `shareable: true` only for content that may be delivered to hosted models.
+   Local-only notes are withheld from hosted searches.
+5. Correct an existing note with its current version when guidance changes.
 
-A normal Agy session in Pincite used native search, pull, and edit to correct the
-saved owner-priority decision to the current cross-project goal, verifying the
-new revision afterward. A second Agy session in Striatum Next read the shared
-setup note and added its own section. Fresh Codex and OpenCode sessions in the
-other projects then pulled the complete four-contributor note at version 4.
-This replaces the earlier configuration-only Agy status.
-The installed CLI remains `75eb01e` and API `bb600c5`; this setup required no
-database change or service restart.
+Ordinary notes remain fallible testimony. A saved preference or procedure does
+not override the user's current request, authenticate a caller, or prove that a
+previous task succeeded. Exclude credentials, private conversations, and raw
+session transcripts. See [capture and correction](guides/memory-capture.md) for
+examples.
 
-The shared setup record is `ee653497-482e-407e-a714-c0d88bee9708`, version 4;
-the corrected priority record is `91c075c2-32d2-4fc7-83dd-68a4956fff8d`, version 3.
-The saved Codex procedure was updated to version 12 to replace project-only
-installation advice. Selected native results are retained locally under
-`/tmp/cairn-shared-access-5B3Pim`; memory bodies and model transcripts are not
-part of this repository.
+## Retrieve complete context
 
-The host registration follows [Codex's user configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-and [Claude Code's user scope](https://code.claude.com/docs/en/mcp).
-OpenCode uses its existing native adapter in the global tools directory. Agy's
-installed customization guide documents its global MCP configuration at
-`~/.gemini/config/mcp_config.json`.
+Search before substantive work, then pass a relevant result's complete
+`pull_arguments` to `cairn_pull`. A preview can omit a qualification; read the
+whole note before relying on advice that needs its surrounding conditions.
+Check the guidance against current source and the task at hand.
 
-## Optional lifecycle memory
+Automatic recall has a bounded allowance. When a task needs a larger complete
+note or handoff, start a new search with enough available context and
+`memory_budget_bytes` for the source and response overhead. The
+`first-fitting-whole/2` inspection policy supports larger explicit reads when
+the client and API expose it. Existing receipts keep their original allowance.
+See [source inspection allocation](inspection-allocation.md).
 
-The owner's Claude profiles, OpenCode, and Hermes CLI/Slack use the shared lifecycle engine for
-selective ambient recall, separate durable memories and named workstream handoffs.
-Unchanged conversation content skips model selection after a confirmed capture.
-See [Claude setup](claude-lifecycle.md), [Codex setup](codex-lifecycle.md), [OpenCode setup](opencode-lifecycle.md),
-[Hermes setup](hermes-lifecycle.md), [Hermes verification](verification/hermes-integration-2026-09-13.md), and
-[verification](verification/lifecycle-improvements-2026-09-13.md). Codex and Agy
-continue using their ordinary tools and proactive skill; their supported hook
-routes are [documented separately](lifecycle-hook-assessment.md).
+## Add automatic recall and capture
+
+Optional lifecycle integrations retrieve relevant context at supported session
+boundaries and capture selected durable notes or workstream checkpoints. Install
+only the integration for your client, and check its documented permissions and
+capture settings:
+
+- [Claude Code lifecycle](claude-lifecycle.md)
+- [Codex lifecycle](codex-lifecycle.md)
+- [OpenCode lifecycle](opencode-lifecycle.md)
+- [Hermes lifecycle](hermes-lifecycle.md)
+
+Explicit memory tools remain available independently of these hooks. For agents
+on another machine, use the [relay and enrollment setup](multi-machine.md).

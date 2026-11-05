@@ -1,5 +1,9 @@
 # Evidence refresh and inspection
 
+Capture a selected source when a note needs inspectable supporting material.
+Cairn retains its bytes and digest so later readers can check the exact source
+cited by a record. Capture is separate from creating or qualifying a claim.
+
 Explicit evidence capture accepts up to 1 MiB of decoded source bytes.
 `cairn agent evidence` reads an `EvidenceRequest` JSON object from stdin with
 `request_id`, `repo`, `source`, optional `sensitivity` (default `local`), and
@@ -14,7 +18,7 @@ The CLI can read and encode a selected file without a JSON preparation step:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" evidence \
-  --repo "$HOME/git/cairn" --file ./selected-source.bin \
+  --repo /path/to/collection --file ./selected-source.bin \
   --source 'Selected source for the current investigation' \
   --request-id d5f3a8c5-ea2c-45aa-a392-1585fdd9fd99
 ```

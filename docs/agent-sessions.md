@@ -1,7 +1,9 @@
 # Agent sessions
 
-Status: session registry, native presence and turn-boundary inbox adapters, 2026-09-15. Pool dispatch and remaining operations stay
-in the [coordination plan](plans/agent-coordination-v1.md).
+Register a session to give a continuing agent conversation a stable inbox and
+make its current project and task discoverable. Resolve a recipient before
+publishing when delivery depends on its current presence or context. For new
+workers selected by capacity, use [worker pools](worker-pools.md).
 
 ## Identity on the trusted host
 
@@ -161,14 +163,12 @@ example through `XDG_CONFIG_HOME`, and the process needs the bridge; Herdr will 
 report OpenCode state for that directory. Without the bridge, owner prompts still
 claim pending work.
 
-Hook installation follows `CLAUDE_CONFIG_DIR`. The installed Claude 2.1.273
-still lists memory from the default `~/.claude/CLAUDE.md` in the second
-account, so a configured directory is not proof that second-home memory loads.
-Omit the variable when launching the default account: an explicit `~/.claude`
-there redirects onboarding JSON and falsely triggers login. Native inbox
-handling remains an owner-authorized read/completion/reply capability; the
-owner-installed trusted-host coordination guidance in each account's
-`CLAUDE.md` describes that workflow. This installer never modifies memory files.
+Hook installation follows `CLAUDE_CONFIG_DIR`. Check which instruction files
+your Claude version actually loads when using multiple account homes; changing
+the configuration directory does not by itself verify that account-specific
+memory is active. Native inbox handling requires the configured authorization
+for source reads, completion, and replies. This installer does not modify
+`CLAUDE.md` or other memory files.
 
 Hooks associate the real native conversation ID with a process PID, start time
 and host boot ID. The watcher heartbeats every 30 seconds while that process

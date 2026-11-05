@@ -5,7 +5,7 @@ Claude sessions use a different, already-reviewed recall engine or config. Every
 other session, and every capture event, keeps the exact original command.
 
 It exists so that named sessions can try a recall mode, such as the
-`agent_tools` engine on main, without replacing the shared engine that other
+`agent_tools` recall mode, without replacing the shared engine that other
 sessions use. It is not evidence that any recall mode is more useful.
 
 ## Contract
@@ -25,8 +25,8 @@ sessions use. It is not evidence that any recall mode is more useful.
   the exact bytes to an in-memory file on stdin, and replaces itself with the
   chosen command (`execv`). The engine therefore receives the identical payload
   and keeps the hook's process ID, stdout, stderr, exit status, signals and
-  timeout. The settings timeout is unchanged, and the dispatcher adds about
-  19 ms (one Python start-up).
+  timeout. The settings timeout is unchanged. Dispatch adds a Python process
+  startup before the selected engine executes.
 - **Continuity.** A candidate config must match the original's `repo`,
   `socket`, `token_file`, `state_dir`, `harness`, `task_id` and `run_id`. Session state files and their locks
   stay shared, so capture by the original engine and recall by the candidate
@@ -52,17 +52,20 @@ a non-blocking hook error: the prompt continues without recall.
 
 ## Route file
 
+Replace `/home/USER` with your absolute home directory. JSON does not expand
+`$HOME` or `~` in command paths.
+
 ```json
 {
   "schema": "cairn.recall-dispatch/1",
   "sessions": ["NATIVE_SESSION_ID"],
-  "command": ["/usr/bin/python3", "/home/halbritt/.local/share/cairn/claude-hooks-candidate/lifecycle.py",
-              "--config", "/home/halbritt/.local/share/cairn/claude-hooks-candidate/config.json"],
+  "command": ["/usr/bin/python3", "/home/USER/.local/share/cairn/claude-hooks-candidate/lifecycle.py",
+              "--config", "/home/USER/.local/share/cairn/claude-hooks-candidate/config.json"],
   "note": "optional free text"
 }
 ```
 
-## Install plan (root performs it; nothing here is installed by this commit)
+## Install the dispatcher
 
 1. Install the reviewed candidate engine in its own directory, not over the
    shared one. For example, copy main's `integrations/lifecycle/memory.py` to
@@ -81,15 +84,15 @@ a non-blocking hook error: the prompt continues without recall.
      --settings ~/.claude/settings.json \
      --dest ~/.local/share/cairn/claude-hooks \
      --route ~/.local/share/cairn/claude-hooks/recall-route.json \
-     --original '/usr/bin/python3 /home/halbritt/.local/share/cairn/claude-hooks/lifecycle.py --config /home/halbritt/.local/share/cairn/claude-hooks/config.json'
+     --original '/usr/bin/python3 /home/USER/.local/share/cairn/claude-hooks/lifecycle.py --config /home/USER/.local/share/cairn/claude-hooks/config.json'
    ```
 
    The installer refuses an invalid route file, and refuses unless the original
    command appears exactly once on each of the two recall events. It keeps
    `settings.json.before-recall-dispatch`.
 4. Claude reads hook settings at session start. Already-running targeted
-   sessions pick up the dispatcher only after a restart or resume, which root
-   decides. The route file itself is read on every event.
+   sessions need a restart or resume to load the changed settings. The route
+   file itself is read on every event.
 
 ## Existing Codex sessions
 

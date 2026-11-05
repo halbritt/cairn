@@ -1,5 +1,11 @@
 # OpenCode historical cache repair trial
 
+This is a historical experiment protocol for a fixed repair task. It describes
+its original source snapshots, evaluation conditions, and bounded claims. It is
+not a setup guide or a recommendation for ordinary model routing. Use the
+[quickstart](../quickstart.md) to try Cairn and the
+[testing guide](../developer/testing.md) to validate changes.
+
 This opt-in trial tests whether supplemental Cairn context helps a real OpenCode
 process repair a historical Striatum defect. It is a prerequisite experiment for
 host integration; it does not alter a live Striatum graph or bypass its sealed
@@ -43,8 +49,8 @@ is an operator-reviewed finding from calibration L, with the candidate digest,
 diagnostic results and committed review locator pinned in `scenario.json`.
 It explains the environment regression and skipped-test limitation. Cairn admits
 this selected lesson through separate collector and operator promotion channels
-in a disposable store. Codex performs these reviews and promotions under the
-user's delegated operator authority. It is applied to fresh historical snapshots as a recurrence
+in a disposable store. The original experiment used explicitly authorized collector and operator
+channels for review and promotion. It is applied to fresh historical snapshots as a recurrence
 experiment; it was not available at the historical repair date. The controller
 pins the lesson to that base revision and verifies exact selection. Comparing
 these fresh runs tests a known reviewed lesson on the same repair, not transfer
@@ -123,7 +129,7 @@ To prepare an independent trial directory:
 
 ```sh
 python3 -B scripts/trial-opencode-recurrence.py prepare \
-  --source /home/halbritt/git/striatum-next --output /tmp/cairn-recurrence-new
+  --source /path/to/striatum-next --output "$HOME/.cache/cairn-recurrence-new"
 ```
 
 Then use a currently routable exact model and an installed OpenCode binary:

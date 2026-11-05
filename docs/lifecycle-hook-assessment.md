@@ -1,9 +1,9 @@
 # Codex and Agy lifecycle hook assessment — 2026-09-13
 
-Both installed harnesses expose useful lifecycle hooks. Porting Cairn is feasible,
-but the Claude adapter is not directly compatible. This assessment completes the
-requested investigation after the OpenCode integration; neither harness received
-new Cairn hooks in this change.
+Historical assessment of harness interfaces observed on 2026-09-13. For current
+installation and behavior, use [Codex lifecycle memory](codex-lifecycle.md) and
+[Agy MCP setup](agy.md). The observations below describe the versions checked;
+they are not an installation guide or a current compatibility guarantee.
 
 ## Codex
 
@@ -42,5 +42,4 @@ hook timing. Do not assume Claude event names or output fields apply. See the
 
 These findings establish documented integration routes and installed surfaces.
 They do not establish native Cairn injection/capture, compaction coverage or task
-benefit in Codex or Agy. Their current Cairn tools and proactive skill remain the
-available memory path.
+benefit in Codex or Agy. Consult the current integration guides linked above for available memory paths.

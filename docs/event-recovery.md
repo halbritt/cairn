@@ -8,7 +8,7 @@ the operational store using the normal local setup.
 
 ```sh
 cairn coordination-review <<'JSON'
-{"repo":"/home/halbritt/git/cairn","state":"failed","limit":20}
+{"repo":"/path/to/collection","state":"failed","limit":20}
 JSON
 ```
 
@@ -73,7 +73,7 @@ It never releases a hold or terminates a process for you.
 cairn event-reissue <<'JSON'
 {
   "request_id":"NEW_UUID",
-  "repo":"/home/halbritt/git/cairn",
+  "repo":"/path/to/collection",
   "delivery_id":"FAILED_DELIVERY_UUID",
   "reason":"Reviewed prior effects; repeat the selected task",
   "accept_uncertain_effects":true
@@ -114,9 +114,9 @@ attempt, the operator on the central host may release it:
 cairn native-hold-release <<'JSON'
 {
   "request_id":"NEW_UUID",
-  "repo":"/home/halbritt/git/cairn",
+  "repo":"/path/to/collection",
   "attempt_id":"NATIVE_ATTEMPT_UUID",
-  "reason":"Archon was lost during the partition; its session never returned",
+  "reason":"The worker machine was lost during the partition; its session never returned",
   "accept_uncertain_effects":true
 }
 JSON
@@ -149,7 +149,7 @@ runs automatically, and a dry run is the default first step:
 
 ```sh
 cairn stopped-inbox-expire <<'JSON'
-{"repo":"/home/halbritt/git/cairn","dry_run":true}
+{"repo":"/path/to/collection","dry_run":true}
 JSON
 ```
 
@@ -182,7 +182,7 @@ To apply, pass the reviewed session UUIDs, a reason and a new request UUID:
 cairn stopped-inbox-expire <<'JSON'
 {
   "request_id":"NEW_UUID",
-  "repo":"/home/halbritt/git/cairn",
+  "repo":"/path/to/collection",
   "agent_ids":["STOPPED_AGENT_UUID"],
   "reason":"Reviewed dry run; these sessions ended and will not resume"
 }

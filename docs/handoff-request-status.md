@@ -1,5 +1,9 @@
 # Saved handoffs and request status
 
+Use request-status inspection to check how requests mentioned in a saved handoff
+were handled. It keeps delivery status separate from the handoff's task outcome,
+so an acknowledgment cannot silently mark unfinished work complete.
+
 A saved handoff is a versioned note. Reading that note does not grant access to
 coordination events mentioned in its body. A UUID in prose is not a typed link
 or a capability. Event status uses the caller's existing publisher/consumer,

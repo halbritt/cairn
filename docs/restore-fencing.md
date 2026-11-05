@@ -34,7 +34,7 @@ cancelled processes. Retrying the same request UUID and reason returns the same
 result, without invalidating work compiled afterward. Use a new UUID for each
 subsequent restore.
 
-Old receipts now return `STALE_PACKAGE` on launch claims, bindings, managed
+Fenced receipts return `STALE_PACKAGE` on launch claims, bindings, managed
 context registration, index/pull and repeated compile requests. Guards run before
 cached mutation responses are returned. Callers must compile with a new request
 UUID. `replay`, historical recompilation, explanations and delayed outcome
@@ -48,7 +48,7 @@ whose source snapshot predates a committed fence must retry; it cannot stamp old
 source state with the new generation. Conversely, a fence waits for an already
 committing receipt and invalidates that receipt afterward.
 
-The authenticated observer API now exposes `POST /v1/claim-run` with
+The authenticated observer API exposes `POST /v1/claim-run` with
 `{"receipt_id":"UUID"}`; `cairn agent claim-run` uses that endpoint. An agent
 profile cannot claim a host launch, and the receipt must belong to the caller's
 principal and repository. Success reserves one launch. A repeated claim returns

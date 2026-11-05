@@ -1,114 +1,78 @@
-# Cairn REST API Specification (`localapi`)
+# HTTP API reference
 
-The Cairn REST API (`localapi/`) provides a declarative HTTP interface over Unix domain sockets or TLS TCP connections for autonomous agents and external tooling.
+The authenticated API lets clients store and retrieve memory and coordinate
+agent sessions. Use the generated [OpenAPI contract](../api/openapi.json) for
+complete request and response schemas. This page explains how to navigate it;
+[local API](../local-api.md) documents the access rules and detailed operations.
 
----
+## Transport and identity
 
-## 1. Transport & Authentication
+The default local transport is a Unix socket under Cairn's data directory,
+usually `~/.local/share/cairn/api.sock`. A network listener requires explicit
+TLS or an explicitly configured loopback backend behind an HTTPS proxy. Network
+profiles have a restricted operation set; exposing a listener does not grant
+local operator access. See [multi-machine deployment](../multi-machine.md).
 
-- **Transport**: Unix domain socket (`~/.local/share/cairn/api.sock`) or HTTP/HTTPS.
-- **Method**: All mutating and query operations use `POST` with JSON bodies.
-- **Authentication**: `Authorization: Bearer <token>`.
-- **Identity Headers**:
-  - `Cairn-Agent-ID`: Registered agent session UUID.
-  - `Cairn-Execution-ID`: Current execution attempt UUID.
+Operations use `POST` with one JSON request and `Authorization: Bearer TOKEN`.
+The server rejects unknown request fields and trailing JSON values. Clients also
+negotiate the [protocol and capabilities](../api-compatibility.md).
 
----
+`Cairn-Agent-ID` and `Cairn-Execution-ID` select a registered session under the
+authenticated profile. They must be supplied together; they do not replace the
+bearer token or confer another session's authority.
 
-## 2. Request & Error Envelopes
+## Responses and failures
 
-### Request Rules
-- Every mutating request must include a caller-scoped `request_id` (UUID) for idempotency.
-- Unknown fields are strictly disallowed (`DisallowUnknownFields`).
-- Requests must contain exactly one valid JSON object.
+Responses use the `cairn.response/1` envelope. A successful response has
+`ok: true`, `status: "OK"`, and operation-specific `data`. A refused response
+has `ok: false`, a machine-readable code in `status`, and a `message`.
+`refusal_id` is present when the refusal has a retained inspection reference.
+The `protocol` field declares the responding peer's supported range.
 
-### Error Envelope
+| Status | HTTP status | Client action |
+| --- | --- | --- |
+| `INVALID_REQUEST` | 400; 405 for an unsupported method | Correct the request or use POST |
+| `AUTHORITY_DENIED` | 401 for authentication failure; 403 for denied access | Check the configured identity and permitted operation |
+| `NOT_FOUND` | 404 | Check the identifier and caller visibility |
+| `VERSION_CONFLICT` | 409 | Read current state, reconcile, then submit a new mutation |
+| `IDEMPOTENCY_CONFLICT` | 409 | Do not reuse a request UUID for changed intent |
+| `BUDGET_REFUSED` | 422 | Reduce the requested output or make a deliberate new request with sufficient room |
+| `PROTOCOL_UNSUPPORTED` | 426 | Use a compatible client/server pair |
 
-Errors return standard HTTP status codes with a JSON error payload:
+The full mapping is in [refusal classification](../../internal/refusal/classification.go).
+An error response after a transport failure does not prove that an earlier write
+failed to commit. For request-ID operations, retry the same UUID and arguments.
+Lease-based and read operations have separate retry contracts in the catalog.
 
-```json
-{
-  "code": "VERSION_CONFLICT",
-  "message": "version mismatch: expected 1, current is 2",
-  "refusal_id": "REFUSAL_UUID"
-}
-```
+## Find an operation
 
-Standard Error Codes:
-- `INVALID_REQUEST` (400 / 405): Malformed JSON, missing fields, or invalid method.
-- `AUTHORITY_DENIED` (401 / 403): Missing token, invalid credentials, or forbidden destination.
-- `NOT_FOUND` (404): Endpoint or record does not exist.
-- `VERSION_CONFLICT` (409): CAS version mismatch.
-- `BUDGET_REFUSED` (400): Request exceeds declared context or token limits.
+Paths are `/v1/` followed by the operation name. These are selected entry points;
+the OpenAPI contract contains the complete catalog and encoded request limits.
 
----
+| Task | Operations |
+| --- | --- |
+| Inspect builds and clients | `version`, `clients` |
+| Create or revise ordinary records | `create`, `edit`, `revise`, `append`, `replace`, `set-sections`, `cite`, `delete` |
+| Retrieve context | `index`, `expand`, `expand-evidence`, `compile`, `explain-page` |
+| Inspect or change supersession | `preview-retract`, `supersession`, `supersede` |
+| Register and locate sessions | `agent-register`, `agent-context`, `agent-heartbeat`, `agent-leave`, `agent-directory`, `agent-resolve` |
+| Publish and process events | `event-publish`, `event-next`, `event-complete`, `event-retry`, `event-renew` |
+| Observe delivery | `event-watch`, `event-list`, `event-inspect`, `event-group`, `event-groups` |
 
-## 3. Endpoints Catalog
+For example, session registration is `/v1/agent-register`, and publishing an
+event is `/v1/event-publish`. The CLI's `ack` and `complete` commands both map
+to `event-complete` with different dispositions. Some listed operations require
+a local destination or are unavailable to remote profiles; check the operation's
+access contract before using it.
 
-### System & Diagnostics
+Most encoded request bodies are limited to 128 KiB. Record text operations and
+event completion have larger limits; `explain-page` has a smaller limit. Limits
+apply to encoded JSON, separately from decoded content and response budgets.
 
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/version` | POST | 128 KiB | Query server build info, protocol version, and capabilities |
-| `/v1/clients` | POST | 128 KiB | List observed client connections and diagnostics |
+## Developing a client
 
-### Record Lifecycle
-
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/create` | POST | 512 KiB | Create an ordinary Class A note |
-| `/v1/edit` | POST | 512 KiB | Edit an active note (full draft or body) |
-| `/v1/revise` | POST | 512 KiB | Revise active note text |
-| `/v1/append` | POST | 512 KiB | Append text suffix to note body |
-| `/v1/replace` | POST | 1 MiB | Replace exact targeted substring |
-| `/v1/set-sections` | POST | 1 MiB | Update specific Markdown `##` sections |
-| `/v1/delete` | POST | 128 KiB | Delete an unreferenced Class A note |
-| `/v1/cite` | POST | 128 KiB | Attach evidence citations to a record |
-
-### Memory Retrieval & Indexing
-
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/index` | POST | 128 KiB | Generate a sealed, bounded memory index |
-| `/v1/expand` | POST | 128 KiB | Expand a candidate body using a search handle |
-| `/v1/expand-evidence` | POST | 128 KiB | Expand supporting evidence bytes |
-| `/v1/compile` | POST | 128 KiB | Pre-compile complete task context package |
-| `/v1/explain-page` | POST | 4 KiB | Paginate index explanation gate facts |
-
-### Governance & Supersession
-
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/supersede` | POST | 128 KiB | Supersede an obsolete record with a newer record |
-| `/v1/supersession` | POST | 128 KiB | Inspect supersession metadata for a record |
-| `/v1/preview-retract` | POST | 128 KiB | Preview blast-radius of retracting a record |
-
-### Agent Sessions Directory
-
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/agent-sessions/register` | POST | 128 KiB | Register an active agent session |
-| `/v1/agent-sessions/context` | POST | 128 KiB | Update active task context description |
-| `/v1/agent-sessions/heartbeat` | POST | 128 KiB | Record session heartbeat |
-| `/v1/agent-sessions/leave` | POST | 128 KiB | Gracefully unregister agent session |
-| `/v1/agent-sessions/list` | POST | 128 KiB | List registered active agent sessions |
-| `/v1/agent-sessions/resolve` | POST | 128 KiB | Resolve presence and status of an agent |
-
-### Durable Agent Inbox & Events
-
-| Endpoint | Method | Limit | Description |
-|----------|--------|-------|-------------|
-| `/v1/agent-events/publish` | POST | 128 KiB | Publish an event to an agent inbox |
-| `/v1/agent-events/inbox` | POST | 128 KiB | Fetch next pending inbox event |
-| `/v1/agent-events/ack` | POST | 128 KiB | Acknowledge receipt of an inbox event |
-| `/v1/agent-events/complete` | POST | 128 KiB | Complete processing of an inbox event |
-| `/v1/agent-events/retry` | POST | 128 KiB | Release event lease for retry |
-| `/v1/agent-events/renew` | POST | 128 KiB | Renew event lease duration |
-
----
-
-## Related Documentation
-
-- [Architecture Guide](../developer/architecture.md): System layout and transactional design.
-- [CLI Reference](cli.md): Command line interface reference.
-- [MCP Tools Reference](mcp-tools.md): MCP tools specifications.
+Use [offline operation help](cli.md) to inspect a request without contacting a
+server. The [Go operation catalog](../../localapi/operations.go) binds request
+and response types, retry classes, and access restrictions. Run `make check` when
+changing it; [API contract maintenance](../api-contract.md) describes regeneration
+and compatibility rules.

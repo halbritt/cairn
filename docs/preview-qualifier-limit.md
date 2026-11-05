@@ -1,4 +1,4 @@
-# Bounded preview boundary expansion (CAIRN-112)
+# Preview boundaries and missing qualifications
 
 Previews remain discovery hints. Inspect the current source and verify its
 applicability before using advice. A complete-looking sentence does not establish
@@ -23,7 +23,7 @@ faithful interpretation: the governing `Do not` is missing.
 long trailing conditions, code/path punctuation, Unicode and a preceding-sentence
 control. A 283-byte semantic passage also loses a trailing condition when its
 preview displays only 154 source bytes. These constructed cases establish a
-possible failure, not its prevalence or measured harm on an owner task.
+possible failure, not its prevalence or measured harm on a user task.
 
 ## Implemented slice
 

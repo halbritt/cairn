@@ -1,7 +1,7 @@
 # One-shot event scheduling
 
-Migration 045 adds durable one-shot schedules. The existing local operator can
-schedule publication of an exact source version to an agent UUID, explicit topic,
+Use a one-shot schedule to publish an event at or after a specified time.
+The local operator can schedule publication of an exact source version to an agent UUID, explicit topic,
 or fresh-work pool. The scheduler uses PostgreSQL time and ordinary event fanout.
 A scheduled request can wake a configured worker; a notice or response does not
 launch one. Existing-session delivery still follows supported native boundaries.
@@ -80,9 +80,10 @@ and cancellation after publication.
 second, with a 20-second call budget shared with the preceding bounded
 [request-control sweep](request-controls.md). The service reports readiness
 after its first successful tick and logs occurrence UUID/state/code only.
-The [user unit](../integrations/systemd/cairn-scheduler.service) uses the owner's
-canonical shared collection and requires the existing local store service.
-It uses the same OS-user operator identity as local commands.
+The [user unit template](../integrations/systemd/cairn-scheduler.service) requires
+the local store service. Set its collection argument and executable paths for your
+deployment before installation. It uses the same OS-user operator identity as
+local commands.
 
 Stop the scheduler alongside dispatch before migration or restore. Back up the
 store, migrate with the matching binary, then start the store/API and scheduler.

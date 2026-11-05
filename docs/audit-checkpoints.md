@@ -1,6 +1,6 @@
 # Audit checkpoints and the backup catalog
 
-`bash scripts/local-store.sh backup` now writes a PostgreSQL dump, its SHA-256
+`bash scripts/local-store.sh backup` writes a PostgreSQL dump, its SHA-256
 sidecar, and a `.catalog.json` expectation beside it. Retain the catalog separately
 from a restored database. A restore can be internally consistent yet omit newer
 commits; the catalog supplies the expected checkpoint identity and membership

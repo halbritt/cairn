@@ -1,56 +1,67 @@
-# Contributing to Cairn
+# Contributing
 
-This document details development standards, design constraints, and trunk integration requirements for contributing to Cairn.
+Start with the [architecture](architecture.md) and the guide for the behavior you
+want to change. Cairn's most important contracts concern what a client may read,
+who may change authority, and what survives retries and recovery. Explain the
+observable behavior in a change description and test that boundary.
 
----
+## Development conventions
 
-## 1. Code Style & Standards
+Use the existing Go packages and standard formatting. Keep transactions and
+validation in the store when they protect stored invariants. Preserve structured
+`core.Error` codes across adapters; use the existing refusal classification
+instead of introducing a second mapping.
 
-- **Standard Go Idioms**: Write idiomatic Go adhering to standard conventions. Avoid unnecessary abstractions.
-- **No `pkg/` Directory**: Cairn maintains a flat root package structure (`core/`, `artifacts/`, `runner/`, `localapi/`, `mcpapi/`, `semantic/`, `internal/`). Do not introduce a `pkg/` directory.
-- **Formatting**: Format all Go files with `gofmt`. Run `make check` to verify compliance.
-- **Error Handling**: Return typed `core.Error` instances with standardized error codes (e.g. `INVALID_REQUEST`, `AUTHORITY_DENIED`, `VERSION_CONFLICT`, `BUDGET_REFUSED`).
+Read [AGENTS.md](../../AGENTS.md) for repository-specific work and integration
+instructions. Those instructions govern agent sessions in this checkout. Public
+contributors need their own repository access and development environment; the
+maintainer's local helpers are not prerequisites for building Cairn.
 
----
+Keep the pinned design documents under `docs/sources/` unchanged. Their hashes
+are checked by `scripts/check_design_sources.py`. Describe changed requirements
+in current documentation or a new decision record, with a link to the original
+source where relevant.
 
-## 2. Design Source Immutability
+## Validate a change
 
-Historical design specifications and operator synthesis documents located in `docs/sources/` are **permanently immutable**:
-- Never edit, overwrite, or delete files in `docs/sources/`.
-- `scripts/check_design_sources.py` validates SHA-256 digests of these snapshots on every `make check`.
-- If requirements evolve, create new documents in `docs/` or update current guides rather than altering historical sources.
+Run checks locally. This project does not depend on GitHub Actions CI.
 
----
+```sh
+make check
+```
 
-## 3. Trunk Integration & Worktree Hygiene
+For store changes, also run:
 
-Development in Cairn is performed by parallel autonomous agents without human pull-request reviews. Every contributor and agent is strictly required to follow the trunk-integration lifecycle:
+```sh
+make test-integration
+```
 
-1. **Clean Worktrees**: Never leave uncommitted or untracked changes before concluding a turn. `git status --porcelain` must be clean.
-2. **No Worktrees in `/tmp`**: System cleanup daemons (`systemd-tmpfiles-clean`) remove aged files in `/tmp` while leaving `.git` references intact, corrupting repositories. When creating worktrees, use `git-wt create <slug>` (placing worktrees under `~/.cache/agent-worktrees/cairn/<slug>`).
-3. **Never Leave Unmerged Branches**: Rebase work onto `origin/main` cleanly, run required checks (`make check`, `go test ./...`), and fast-forward `main`.
-4. **Push Verified Work**: Local commits that are not pushed to `origin/main` are invisible to other agents and hosts. Always execute:
-   ```sh
-   git push origin main
-   ```
-5. **Clean Removal**: Delete temporary worktrees and branches upon landing changes.
+Use `make test-lifecycle` for backup, restore, and recovery changes. Run the
+relevant Python or native adapter checks when changing integrations. See
+[testing](testing.md) for commands and dependencies. `go test ./...` alone skips
+database tests when no test DSN is set and is insufficient for store changes.
 
----
+For documentation changes, run:
 
-## 4. Pre-Commit Verification Checklist
+```sh
+python3 scripts/verify_docs.py
+```
 
-Before committing and pushing changes:
+The documentation checker detects some broken links, syntax errors, and CLI
+drift. Verify examples against the parser or executable help as well; a green
+report does not establish that an example works.
 
-- [ ] `go test ./...` passes without errors.
-- [ ] `make check` passes cleanly (vet, contract, formatting, design sources).
-- [ ] `python3 scripts/verify_docs.py` passes 100% across all 4 tiers.
-- [ ] `git status --porcelain` shows only intended modifications.
-- [ ] Commit message clearly states what changed and why.
+## Write documentation people can use
 
----
+Follow the [documentation guidelines](documentation.md) for audience, structure,
+and source verification.
 
-## Related Documentation
+Lead with the problem a feature solves, then give prerequisites, commands, expected
+results, and recovery from common failures. Use portable example paths and state
+which values a reader must supply. Keep current instructions in guides and
+reference pages; keep dated experiments in `docs/verification/`. Avoid claiming
+that a successful fixture proves live deployment or general memory usefulness.
 
-- [Architecture Guide](architecture.md): Package layout and core concepts.
-- [Testing Guide](testing.md): Test commands, fixtures, and verification suites.
-- [Roadmap](../roadmap.md): Project roadmap and implementation status.
+Before publishing a change, inspect the diff for credentials, generated binaries,
+private sessions, operational memory, and scratch output. Follow the integration
+workflow in [AGENTS.md](../../AGENTS.md) when working as an agent on this repository.

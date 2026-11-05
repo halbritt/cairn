@@ -7,9 +7,8 @@ bounds it. Memory records, receipts, seals, saved package bytes and `record_use`
 are not touched.
 
 The operator chooses how long detail stays available. **There is no default
-window.** The deployed value and its rationale belong to the host's records; on
-Proximal, see `hosts/proximal/config/cairn/candidate-retention.md` in the infra
-repository.
+window.** Record the selected value and its rationale in your deployment
+configuration so operators can assess which diagnostic history will expire.
 
 ## What each path needs
 

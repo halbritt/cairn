@@ -1,184 +1,91 @@
-# Memory Capture & Knowledge Management Guide
+# Save and correct useful notes
 
-Cairn allows autonomous agents and human operators to capture, classify, revise, and supersede knowledge with transactional integrity. Every captured note maintains strict provenance, sensitivity classifications, and explicit version history.
+Save information that another session can act on: a decision and its reason, a
+verified repair procedure, a recurring preference, or a handoff for unfinished
+work. Include the project, conditions, and a way to check the claim. Avoid raw
+conversation logs and temporary output that will not help later work.
 
----
+## Save a note
 
-## 1. Capturing Memories
-
-Knowledge is saved using the CLI command `cairn agent remember` or the `cairn_remember` MCP tool.
-
-### CLI Example
-
-```sh
-cairn agent remember \
-  --repo "$HOME/git/cairn" \
-  --kind decision \
-  "Adopted PostgreSQL as operational store; test suites use disposable clusters."
-```
-
-### MCP Tool Example
-
-```json
-{
-  "request_id": "b183ebd3-0bfb-450d-a91b-9c348125c7dd",
-  "body": "Adopted PostgreSQL as operational store; test suites use disposable clusters.",
-  "kind": "decision",
-  "scope": "repository",
-  "shareable": false
-}
-```
-
----
-
-## 2. Memory Kinds
-
-Cairn categorizes memories into structured kinds to assist retrieval ranking and lifecycle management:
-
-| Kind | Description | Intended Use |
-|------|-------------|--------------|
-| `decision` | Architectural or policy choices | Recording technology choices, design decisions, invariants |
-| `preference` | Operator or project preferences | Working conventions, formatting choices, tool preferences |
-| `fact` | Verifiable technical statements | Environment details, verified build outputs, schema configurations |
-| `procedure` | Step-by-step technical guides | Setup sequences, deployment steps, recovery workflows |
-| `observation` | Direct empirical measurements | Test benchmarks, failure traces, timing measurements |
-| `reflection` | Synthesized insights and retrospectives | Post-mortems, evaluation summaries, lessons learned |
-
----
-
-## 3. Scope & Sensitivity
-
-### Scope
-
-Memories can be scoped at three hierarchical levels:
-- **Repository** (`--repo PATH`, with default `--task "*"` and `--run "*"`): Applies across the entire repository and all tasks.
-- **Task** (`--task TASK_ID`): Restricted to the active task ID across runs.
-- **Run** (`--task TASK_ID --run RUN_ID`): Restricted to a single execution attempt.
-
-In the `cairn_remember` MCP tool, scope is set via the `"scope"` argument (`"repository"` [default], `"task"`, or `"run"`).
-
-Re-usable project guidelines and architectural decisions should always use repository scope.
-
-### Sensitivity
-
-- `local` (default): Stays strictly on the local machine. Never delivered to external or hosted models.
-- `shareable` (`--shareable`): Explicitly permitted to be delivered to hosted LLMs (e.g. Claude Code, OpenAI Codex).
-
----
-
-## 4. Editing & Updating Notes
-
-Cairn preserves prior versions of all modified records. Revisions are performed using `cairn agent edit` or `cairn_edit`. Cairn supports several targeted mutation modes:
-
-### Body Replacement
-
-Replaces the entire text body of an active note while preserving stored metadata:
-
-```json
-{
-  "record_id": "RECORD_UUID",
-  "expected_version": 1,
-  "request_id": "NEW_REQUEST_UUID",
-  "body": "Updated body text replacing version 1 completely."
-}
-```
-
-### Text Append
-
-Appends text to the existing body without rewriting the entire content:
-
-```json
-{
-  "record_id": "RECORD_UUID",
-  "expected_version": 1,
-  "request_id": "NEW_REQUEST_UUID",
-  "append": "\n\nAdditional verified findings appended to version 1."
-}
-```
-
-### Exact Passage Replacement
-
-Replaces an exact targeted substring within the note body:
-
-```json
-{
-  "record_id": "RECORD_UUID",
-  "expected_version": 1,
-  "request_id": "NEW_REQUEST_UUID",
-  "replace": {
-    "old_text": "schema 049",
-    "new_text": "schema 074"
-  }
-}
-```
-
-The `old_text` must match exactly once in the target document.
-
-### Section Updates
-
-Updates specific Markdown `##` sections by title:
-
-```json
-{
-  "record_id": "RECORD_UUID",
-  "expected_version": 1,
-  "request_id": "NEW_REQUEST_UUID",
-  "set_sections": {
-    "Prerequisites": "Updated prerequisite list: Go 1.22+, PostgreSQL 15+."
-  }
-}
-```
-
----
-
-## 5. Superseding Knowledge
-
-When a new decision or policy replaces an earlier one, do not silently delete the old note. Use explicit supersession:
+Use an existing profile and its provisioned collection. This example uses the
+default socket and token paths; connection overrides go after `cairn agent`.
 
 ```sh
-cairn supersede < request.json
+capture_request="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+cairn agent remember --repo "$CAIRN_COLLECTION" \
+  --request-id "$capture_request" --kind procedure --shareable \
+  'Example project: run database tests against disposable clusters. Check the test runner configuration before changing the database URL.'
 ```
 
-Where `request.json` contains:
+Keep the request UUID and exact arguments if you need to retry a lost response.
+A changed request with the same UUID returns `IDEMPOTENCY_CONFLICT`; generating
+a new UUID creates new intent. Use `--stdin < note.txt` for an explicitly selected
+text file. A body must contain 1–65,536 bytes of nonblank UTF-8 text.
 
-```json
-{
-  "request_id": "NEW_REQUEST_UUID",
-  "record_id": "OLD_RECORD_UUID",
-  "expected_version": 1,
-  "replacement_id": "NEW_RECORD_UUID",
-  "reason": "Superseded by updated architecture decision after November 2026 review."
-}
-```
+The MCP equivalent is `cairn_remember` with `request_id`, `body`, `kind`,
+`shareable`, and optional `scope`. Ordinary capture creates Class A testimony:
+authentication identifies the writer, but does not establish truth or grant
+permission to act.
 
-This retains full audit trails while ensuring searches prefer the superseding record.
+## Choose scope and sharing
 
----
+Repository scope is the default for reusable guidance. In the CLI it uses the
+provisioned `--repo` with task and run wildcards. Set `--task TASK` for guidance
+limited to a task, and add `--run RUN` for a particular run. MCP accepts
+`scope: "repository"`, `"task"`, or `"run"` using the host's configured labels.
+These labels control retrieval applicability; they are not execution attestation
+or independent access-control boundaries.
 
-## 6. Attaching Evidence & Citations
+The collection's `repo` value may be shared by several projects. Include the
+actual project in the note so readers can judge applicability.
 
-Claims can be backed by immutable evidence receipts and citations:
+Notes default to `local` sensitivity. Use `--shareable` in the CLI or
+`shareable: true` in MCP only for content suitable for hosted delivery. A hosted
+profile cannot read a local note. Local destination permits local content under
+the profile's other access checks; it does not imply unrestricted access.
 
-```sh
-cairn cite < citation.json
-```
+Kinds such as `note`, `decision`, `preference`, `lesson`, and `procedure` help
+organize and filter notes. Choose the label that describes the content. A kind
+does not certify a claim or make an instruction authoritative.
 
-Where `citation.json` contains:
+## Correct an existing note
+
+Search and pull the current note before editing it. Correct the existing record
+when the same decision or procedure has changed, keeping unrelated information
+and explaining what superseded the old guidance.
+
+For MCP, replace the body with `cairn_edit`:
 
 ```json
 {
   "request_id": "NEW_REQUEST_UUID",
   "record_id": "RECORD_UUID",
-  "expected_version": 1,
-  "evidence_ids": ["EVIDENCE_UUID"]
+  "expected_version": 3,
+  "body": "Example project: the updated procedure and its verification context."
 }
 ```
 
----
+Replace UUID placeholders with actual IDs. Supply exactly one edit mode:
+`body`, `append`, `replace`, `set_sections`, `draft`, or `evidence_citations`.
+Body edits preserve stored metadata. `replace` takes `old_text` and `new_text`,
+and the old text must occur exactly once. `set_sections` maps Markdown `##`
+heading titles to replacement section bodies.
 
-## Related Documentation
+The CLI JSON interface differs: `cairn agent revise` replaces a body,
+`append` and `replace` make targeted changes, and `edit` requires a complete
+`draft`. Use their `--help` output for request shapes. Do not send the MCP
+example unchanged to `agent edit`.
 
-- [Memory Search Guide](memory-search.md): Querying and retrieving memories.
-- [Session Coordination Guide](session-coordination.md): Agent directory and messaging.
-- [MCP Tools Catalog](../reference/mcp-tools.md): Specification for `cairn_remember` and `cairn_edit`.
-- [CLI Reference](../reference/cli.md): Command options and arguments.
+`VERSION_CONFLICT` means someone changed the record after your read. Pull the
+current version and reconcile it before making a new request. Earlier versions
+remain in [record history](../record-history.md), subject to forgetting and
+access checks.
+
+## Evidence and lifecycle changes
+
+Attach [evidence citations](../evidence-citations.md) when a note needs a retained
+source. Citations require the source identity and digest; they do not promote an
+ordinary note into a qualified claim. Operator workflows for
+[supersession](../supersession.md), [ordinary deletion](../ordinary-delete.md),
+and [audited forgetting](../deletion.md) have separate contracts. Choose the
+operation for the intended effect; editing a body does not erase history.

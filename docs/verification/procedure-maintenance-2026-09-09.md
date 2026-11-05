@@ -102,6 +102,8 @@ it did not observe a failed downstream task caused by the omissions or establish
 improved comprehension or net task benefit. It also supplies contrary evidence
 to assuming that shorter guidance necessarily preserves its practical value.
 
+<a id="2026-09-10-separate-ordinary-tools-from-harness-launch-instructions"></a>
+
 ## 2026-09-10 — separate ordinary tools from harness launch instructions
 
 OpenCode's procedure had grown to **14,087 bytes** at v16 as startup, observed

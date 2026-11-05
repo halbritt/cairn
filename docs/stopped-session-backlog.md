@@ -11,17 +11,13 @@ operator review, exposes stopped-recipient diagnosis to the original publisher
 through `event-status`, and provides an opt-in, deduplicated publisher
 notification during operator review without mutating the original deliveries.
 
-## Motivating incident (2026-10-19)
+## Why stopped sessions need review
 
-At 08:19 PDT on 2026-10-19, `agent-463` was stopped with 35 pending notices and
-`attempts=0`. The oldest delivery (`473dfc21-3361-4ea3-8563-7849d13720c6`) had a
-retained `codex-queue` wake reporting `refused` with `offline` freshness;
-historical queue admission remained unknown. Although the owner had started
-`agent-469` on related work, `agent-463`'s inbox retained an unanswered
-placer-search proposal and subsequent candidate-launch notices from
-`integrator449`. Attention reporting ignored the backlog because `agent-463` had
-zero pending requests, and `offline` host freshness folded the group condition
-into `unknown`.
+A stopped session can retain notices and responses even when it has no pending
+requests. Review all unresolved delivery kinds before closing a workstream.
+Starting another agent on related work does not transfer the old inbox or prove
+that its messages were handled. Use an explicit successor grant when a new
+session must inspect predecessor events; see [successor continuity](successor-event-continuity.md).
 
 ## Presence boundaries
 
@@ -102,7 +98,7 @@ deliveries to confirmed-stopped sessions:
 ```sh
 cairn coordination-review <<'JSON'
 {
-  "repo": "/home/halbritt/git/cairn",
+  "repo": "/projects/shared-memory",
   "state": "pending",
   "limit": 100,
   "attention": {

@@ -1,74 +1,45 @@
-# Claude Code Integration Guide
+# Use Cairn in Claude Code
 
-This guide explains how to connect Anthropic's Claude Code CLI to Cairn using the Model Context Protocol (MCP).
+Connect Claude Code to Cairn to search prior project decisions, inspect their
+sources, and save selected findings. Start with a working
+[Cairn API and agent profile](../quickstart.md).
 
----
+## Generate a configuration for a task
 
-## 1. Generating Configuration (`cairn claude-config`)
-
-Cairn includes a configuration generator that produces verified Claude MCP configuration blocks:
-
-```sh
-cairn claude-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --task "documentation" \
-  --run "run-1"
-```
-
-To enable token-saving compact tool profiles:
+Set the connection variables from the quickstart, then generate an MCP file:
 
 ```sh
 cairn claude-config \
-  --socket "$HOME/.local/share/cairn/api.sock" \
-  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" \
-  --task "documentation" \
-  --run "run-1" \
-  --tool-profile compact/1
+  --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" \
+  --repo "$CAIRN_COLLECTION" --task investigate-storage --run attempt-1 \
+  --tool-profile compact/2 > cairn-claude.json
+claude --mcp-config cairn-claude.json
 ```
 
----
+Use labels for the actual work. The output contains `mcpServers.cairn` with a
+stdio command and absolute paths. The generator does not install a server,
+modify Claude's permissions, or change other registrations. Keep the generated
+file local to your configuration workflow; it contains deployment paths and
+retrieval labels.
 
-## 2. Installing in Claude Configuration
+Claude configuration requires explicit task/run labels. `--codex-thread` is
+rejected. Reusing fixed labels combines retrieval observations from those
+sessions; it does not identify individual native turns.
 
-Add the generated JSON block to your user Claude configuration (`~/.claude.json`) or project-level configuration (`.claude.json`):
+## Verify and use the tools
 
-```json
-{
-  "mcpServers": {
-    "cairn": {
-      "command": "/usr/local/bin/cairn",
-      "args": [
-        "mcp",
-        "--socket", "/home/halbritt/.local/share/cairn/api.sock",
-        "--token-file", "/home/halbritt/.local/share/cairn/hosted-agent.token",
-        "--repo", "/home/halbritt/git/cairn",
-        "--task", "documentation",
-        "--run", "run-1",
-        "--tool-profile", "compact/1"
-      ]
-    }
-  }
-}
-```
+In a fresh session, call `cairn_client_info`, search for a known shareable note,
+and pull it with the returned arguments. Follow
+[searching memory](../guides/memory-search.md) before using saved guidance and
+[saving notes](../guides/memory-capture.md) when retaining a useful finding.
+The model's tool use remains subject to Claude's normal permissions.
 
----
+For persistent registration, use your installed Claude client's MCP configuration
+commands. The generated `mcpServers.cairn` object is the server entry; the whole
+document is the file accepted by `--mcp-config`. Regenerate the entry if you change
+its explicit scope or installed Cairn path.
 
-## 3. Using Cairn in Claude Code
-
-Once configured, Claude Code automatically gains access to all 10 Cairn MCP tools:
-
-- **Recalling Prior Decisions**: Claude searches memory at the start of a task to check established architecture rules and owner preferences.
-- **Pulling Exact Guidelines**: Claude inspects candidates using `cairn_pull` to follow repository conventions.
-- **Recording Lessons**: When resolving complex bugs, Claude records the fix with `cairn_remember`.
-- **Handoffs**: Before exiting or pausing, Claude records structured handoffs for subsequent sessions.
-
----
-
-## Related Documentation
-
-- [MCP Overview](overview.md): Architecture and tool profiles.
-- [Codex Integration](codex.md): Setup for OpenAI Codex.
-- [MCP Tools Reference](../reference/mcp-tools.md): Complete parameter catalog.
+Optional [Claude lifecycle hooks](../claude-lifecycle.md) add automatic recall
+and selected capture. They are separate from MCP installation. See the
+[MCP overview](overview.md) for connection failures and context budgets.

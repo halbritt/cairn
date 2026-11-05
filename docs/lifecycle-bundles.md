@@ -43,8 +43,8 @@ import cache.
 ## Upgrade and rollback
 
 Existing installed copies keep their existing behavior until explicitly
-upgraded. This change does not deploy code, rewrite credentials, move state, or
-change account and collection bindings.
+upgraded. A bundle upgrade preserves credentials, state locations, and account
+and collection bindings.
 
 Keep the existing drain and restart procedure. Ordinary capture invocations must
 finish before switching engines. For bound inbox recall, stage a complete pinned

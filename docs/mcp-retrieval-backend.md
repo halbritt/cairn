@@ -1,4 +1,8 @@
-# MCP retrieval backend
+# Embed a read-only MCP retrieval server
+
+Use this Go interface when an application needs Cairn search and pull tools backed
+by its own retrieval implementation. For ordinary agent setup, use the
+[standard MCP server](mcp.md).
 
 `mcpapi.NewReadOnlyServer(backend, config)` registers exactly `cairn_search` and
 `cairn_pull`, with the same tool declarations, argument schemas, normalization,
@@ -44,7 +48,7 @@ account for their mutable pointer/slice aliases and release them under its own
 resource contract. This interface does not supply reservations or a traffic
 pool, and does not make an arbitrary backend safe for concurrent use.
 
-## Scope of this prerequisite
+## Trust boundary and integration limits
 
 Implementations must retain authenticated API and current-read checks. Config,
 typed requests, tool names and implementing this Go interface do not authenticate

@@ -1,135 +1,113 @@
-# Quickstart Guide: 5 Minutes to Cairn
+# Quickstart
 
-Cairn is a durable, transactional memory engine and multi-agent coordination system designed for autonomous AI agents, developer tooling, and engineering workflows. This guide gets you up and running with Cairn in under five minutes.
+Cairn gives agents memory they can use in later sessions: project decisions,
+preferences, procedures, and lessons from completed work. This guide builds Cairn,
+starts a private local store, and saves and retrieves a note. You can then connect
+an agent through MCP.
 
----
+## Prerequisites
 
-## 1. Prerequisites
+Use Linux with Go 1.25 or newer, PostgreSQL 17 server and client tools, Python 3,
+Bash, Make, and `flock`. PostgreSQL 17 is the version used by the local lifecycle
+tests. Run the local store as your ordinary Unix user, not root. `pg_config`
+must identify the installation containing `initdb`, `pg_ctl`, and `psql`.
 
-Before starting, ensure you have:
-- **Go 1.22+** (if building from source) or the compiled `cairn` binary.
-- **PostgreSQL 15+** operational database.
-- A valid PostgreSQL connection string (e.g. `export CAIRN_DATABASE_URL="postgres://localhost:5432/cairn?sslmode=disable"`).
+For an existing installation, obtain its socket path, token-file path, and
+collection name from its administrator, then skip to **Save and find a note**.
+The collection name is the `repo` value provisioned for your profile; it need
+not equal your current working directory.
 
-To verify your installation:
+## Build and start a local store
 
 ```sh
+git clone https://github.com/halbritt/cairn.git
+cd cairn
+make build
+export PATH="$PWD/bin:$PATH"
+export CAIRN_HOME="$HOME/.local/share/cairn"
+export CAIRN_COLLECTION="$PWD"
+bash scripts/local-store.sh start
 cairn version
 ```
 
----
+The store script creates a dedicated PostgreSQL cluster under `CAIRN_HOME`,
+listening on a private Unix socket, and applies Cairn's migrations. It does not
+use the system PostgreSQL service. Keep `CAIRN_DATABASE_URL` unset for this
+setup; that variable overrides the default connection. For another PostgreSQL
+deployment, see [deployment](operator/deployment.md).
 
-## 2. Initialize Database & Schema
+## Create an agent profile
 
-Cairn manages its relational schema using numbered transactional migrations. Initialize or upgrade your database to the current schema (version 074):
-
-```sh
-export CAIRN_DATABASE_URL="postgres://localhost:5432/cairn?sslmode=disable"
-cairn migrate
-```
-
-This sets up tables for records, revisions, evidence, citations, search indices, agent sessions, and durable inboxes.
-
----
-
-## 3. Start the Cairn Service
-
-Run the Cairn local API server. By default, it communicates over an authenticated Unix domain socket or TCP port:
+The API authenticates agents with token files. For this new installation, create
+one profile whose notes may be read by hosted models:
 
 ```sh
-cairn serve --socket "$HOME/.local/share/cairn/api.sock"
+python3 - <<'PYPROFILE'
+import hashlib, json, os, pathlib, secrets
+root = pathlib.Path(os.environ['CAIRN_HOME'])
+root.mkdir(mode=0o700, parents=True, exist_ok=True)
+paths = [root / 'agent.token', root / 'identities.json']
+if any(path.exists() for path in paths):
+    raise SystemExit('Profile already exists; use it or configure a separate profile.')
+token = secrets.token_urlsafe(32)
+identity = dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
+                principal='agent:example', repo=os.environ['CAIRN_COLLECTION'],
+                role='agent', destination='hosted')
+for path, text in zip(paths, [token + '\n', json.dumps([identity]) + '\n']):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(text)
+PYPROFILE
+cairn serve
 ```
 
-The daemon provides REST endpoints for agent clients, administrative tools, and the MCP stdio facade.
+Leave `cairn serve` running. It reads the identity file and serves the authenticated
+API at `$CAIRN_HOME/api.sock`. Token bytes stay in the token file. See
+[configuration](operator/configuration.md) to add profiles or choose a local
+destination.
 
----
+## Save and find a note
 
-## 4. Remembering Knowledge
-
-Autonomous agents and operators save durable knowledge using `cairn agent remember` or the `cairn_remember` MCP tool. Knowledge can be categorized by kind (`decision`, `preference`, `fact`, `procedure`, `observation`, `reflection`) and scoped (`repository`, `task`, `run`).
-
-### CLI Example
+Open a second terminal in the same checkout. Set `CAIRN_HOME`,
+`CAIRN_COLLECTION`, and `PATH` as above. For an existing installation, substitute
+your provisioned paths and collection.
 
 ```sh
-cairn agent remember \
-  --repo "$HOME/git/cairn" \
-  --kind decision \
-  "Adopted PostgreSQL as operational store; test suites use disposable clusters."
+cairn agent --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" remember \
+  --repo "$CAIRN_COLLECTION" --kind procedure --shareable \
+  'Example project: run database tests against disposable clusters.'
+
+cairn agent --socket "$CAIRN_HOME/api.sock" \
+  --token-file "$CAIRN_HOME/agent.token" search \
+  --repo "$CAIRN_COLLECTION" --task quickstart --run first-try \
+  'disposable clusters'
 ```
 
-By default, notes are local to the host. Add `--shareable` if the note should be exposed to hosted AI models (e.g. Claude, OpenAI Codex).
+A successful capture returns a record ID and version. Search returns required
+context and candidate previews; run the returned `pull_command` for a relevant
+candidate to read its body. Check the note against current project facts before
+using it. Search labels organize retrieval; saving this note uses repository
+scope so it is eligible in later tasks.
 
----
+`--shareable` allows hosted delivery. Without it, a note is local-only and will
+not appear through this hosted profile. `CLIENT_SETUP_FAILED` indicates a token
+file problem; `API_CONNECTION_FAILED` indicates a socket or service problem.
+Check the configured paths and running service before retrying. For a capture
+whose response was lost, reuse a request UUID supplied with `--request-id` and
+identical arguments; a new invocation without it may create another note.
 
-## 5. Searching & Pulling Memories
+## Connect an agent
 
-Cairn separates discovery from inspection to keep LLM context windows bounded and economical.
+Follow the [MCP overview](mcp/overview.md), then the guide for
+[Codex](mcp/codex.md), [Claude Code](mcp/claude-code.md),
+[OpenCode](mcp/opencode.md), or [Agy and Hermes](mcp/agy-hermes.md).
+MCP provides explicit memory tools. Automatic recall and capture require the
+separate lifecycle integration for your agent host.
 
-### Search Memory
-
-Search across indexed notes in a repository:
-
-```sh
-cairn agent search --repo "$HOME/git/cairn" "PostgreSQL operational store"
-```
-
-For exact identifiers, file paths, or error messages, enclose the target in escaped quotes:
-
-```sh
-cairn agent search --repo "$HOME/git/cairn" '"core/schema"'
-```
-
-### Pull Note Body
-
-Search results return index previews along with receipt and handle identifiers. To read the complete body of a candidate note:
-
-```sh
-cairn agent pull RECEIPT_UUID HANDLE_UUID
-```
-
----
-
-## 6. Checking Status & Connected Clients
-
-Inspect running client connections and diagnostic metadata:
-
-```sh
-cairn clients
-```
-
-Verify service status and capabilities:
-
-```sh
-cairn version
-```
-
----
-
-## Next Steps
-
-Explore the complete documentation suites:
-- **User Guides**:
-  - [Memory Search](guides/memory-search.md): Lexical, quoted, entity, and semantic search.
-  - [Memory Capture](guides/memory-capture.md): Kinds, scopes, editing, superseding, and citations.
-  - [Session Coordination](guides/session-coordination.md): Multi-agent directory, heartbeat, and durable inboxes.
-  - [Agent Workflows](guides/agent-workflows.md): Multi-agent orchestration, delegation, and handoffs.
-- **Developer Documentation**:
-  - [Architecture](developer/architecture.md): Flat package layout, receipts, handles, and restore fences.
-  - [Testing](developer/testing.md): Disposable database fixtures and automated verification.
-  - [Contributing](developer/contributing.md): Style, immutability, and trunk integration.
-- **Operator Guides**:
-  - [Deployment](operator/deployment.md): Systemd user units and socket configuration.
-  - [Configuration](operator/configuration.md): Tokens, identities, and environment variables.
-  - [Maintenance](operator/maintenance.md): Migrations, backups, and disaster recovery.
-  - [Daemon Deployment](operator/daemon-deployment.md): Worker pools and wake supervisor.
-- **Model Context Protocol (MCP)**:
-  - [MCP Overview](mcp/overview.md): Stdio facade, compaction, and tool profiles.
-  - [Claude Code Integration](mcp/claude-code.md): Setup for Claude Code CLI.
-  - [Codex Integration](mcp/codex.md): Setup for OpenAI Codex CLI.
-  - [OpenCode Integration](mcp/opencode.md): Native tools adapter for OpenCode.
-  - [Agy & Hermes Integration](mcp/agy-hermes.md): Integration for Agy and Hermes agents.
-- **Reference**:
-  - [CLI Reference](reference/cli.md): Full command and flag reference.
-  - [MCP Tools Catalog](reference/mcp-tools.md): Detailed specifications for all 10 MCP tools.
-  - [REST API](reference/api-rest.md): Endpoints, limits, and request/response envelopes.
-  - [Lifecycle Slices](reference/lifecycle-slices.md): Roadmap slices CAIRN-01 through CAIRN-21.
+Continue with [searching memory](guides/memory-search.md),
+[saving and correcting notes](guides/memory-capture.md), or
+[coordinating sessions](guides/session-coordination.md). For a persistent service,
+use the [deployment guide](operator/deployment.md). To stop this foreground
+example, press Ctrl-C in the server terminal, then run
+`bash scripts/local-store.sh stop` from the checkout.

@@ -11,7 +11,7 @@ The CLI equivalent is:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
-  --repo "$HOME/git/cairn" --task TASK_ID --run RUN_ID \
+  --repo /path/to/collection --task TASK_ID --run RUN_ID \
   --advisory-conflicts 'connection strategy'
 ```
 

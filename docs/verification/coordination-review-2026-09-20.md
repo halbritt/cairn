@@ -302,6 +302,8 @@ is `/tmp/cairn-agent88-b5-review/review_native_path.py`. Both source snapshots
 remain isolated. Agent 2 has a bounded corrective assignment covering the
 API failure behavior, hook ownership and upstream regressions.
 
+<a id="corrective-bridge-review-at-69f6a95-131e95b"></a>
+
 ### Corrective bridge review at `69f6a95` / `131e95b`
 
 Independent review now passes the bounded behavior checks. Admission, the native

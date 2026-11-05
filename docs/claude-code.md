@@ -1,24 +1,15 @@
 # Claude Code memory access
 
-Claude Code is now registered at user scope on the owner's host for
-[shared memory across projects](shared-memory.md). Start a fresh session in any
-project and use the `cairn` MCP tools. The installed launcher supplies connection
-settings and session labels automatically. A normal Claude session in Pincite
-read a setup note contributed by Codex and OpenCode, appended its own setup
-details, and read the saved revision on 2026-09-11.
-
-For automatic task/resume retrieval and selected checkpoints before compaction
-or exit, install the optional [lifecycle hooks](claude-lifecycle.md).
+Connect Claude Code to Cairn to search saved knowledge, inspect sources, and save
+selected lessons from a task. Start with the [Claude setup guide](mcp/claude-code.md)
+for prerequisites. Optional [lifecycle hooks](claude-lifecycle.md) add automatic
+retrieval and selected checkpoints before compaction or exit.
 
 ## Explicit configuration generator
 
-`cairn claude-config` generates the Claude Code MCP configuration for Cairn's
-ordinary tools: search, body/evidence pull, capture, edit and retained history.
-Claude Code 2.1.265 has accepted the generated entry and executed search,
-body/evidence pull, capture and edit in scripted native sessions. The newer
-`cairn_history` operation has MCP/OpenCode coverage; native Claude execution of
-that operation remains unverified. The later shared-memory installation verifies
-model-selected search, pull, and edit; broader task benefit remains open.
+`cairn claude-config` generates an MCP server configuration for one collection,
+task, and run. Use this when you want to control retrieval scope for a particular
+invocation instead of relying on an installed session-aware launcher.
 
 Generate a configuration for the intended task and execution:
 
@@ -26,16 +17,16 @@ Generate a configuration for the intended task and execution:
 cairn claude-config \
   --socket "$HOME/.local/share/cairn/api.sock" \
   --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
-  --repo "$HOME/git/cairn" --task investigate-storage --run attempt-1 \
-  > /tmp/cairn-claude.json
-claude --mcp-config /tmp/cairn-claude.json
+  --repo /path/to/collection --task investigate-storage --run attempt-1 \
+  > ./cairn-claude.json
+claude --mcp-config ./cairn-claude.json
 ```
 
 Use the repository identity and ordinary hosted profile provisioned for the
 project. Replace task/run names for the actual work; reusing them combines
 retrieval observations. Native Claude session metadata is not assumed:
-`--codex-thread` is refused. Capture remains repository-wide, and task/run
-scope describes retrieval rather than an authenticated execution attempt.
+`--codex-thread` is refused. Capture defaults to repository scope; individual saves can choose task or run
+scope. These labels describe applicability, not an authenticated execution attempt.
 
 The output uses [Claude's documented MCP format](https://code.claude.com/docs/en/mcp):
 

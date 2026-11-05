@@ -6,7 +6,7 @@ dynamic-registration callback handling, token/ID-token validation, an
 account-scoped model catalog check, and streamed Responses function calling
 with only Cairn search and pull. Tests use local stub transports and generated
 test keys; they do not contact OpenAI or register an OAuth client. The
-`cmd/auth_probe` command is offline by default. This task did not run its
+`cmd/auth_probe` command is offline by default. The recorded scaffold validation did not run its
 authorization or inference options.
 
 `TrialStoreTools` adapts one explicitly identified disposable task-eval store to

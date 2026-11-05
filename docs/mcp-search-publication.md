@@ -1,4 +1,9 @@
-# Attempt-only search preparation publication
+# Prepare search results for an attempt-scoped MCP backend
+
+Use this embedding interface when a trusted parent must associate the exact MCP
+search result with the operation that produced it before returning that result.
+It extends the [read-only retrieval backend](mcp-retrieval-backend.md); it is not
+a separate CLI mode.
 
 `NewAttemptReadOnlyServer` requires an `AttemptRetrievalBackend` and registers
 only the existing search and pull tool contracts. Ordinary `NewServer` and
@@ -55,5 +60,5 @@ messages. Pull retains its existing typed dispatch, budgets and error semantics.
 The final successful check establishes local preparation only. Cancellation
 after that check, transport writing, native consumption, usable receipt membership,
 the native MCP-child owner/endpoint handoff and hosted dispatch/reply still need
-their separate owner contracts. Nothing here admits a native runtime or completes
-the weekly evaluation.
+their separate owner contracts. This interface alone does not authorize native runtime admission or establish
+end-to-end execution.
