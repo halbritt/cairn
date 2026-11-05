@@ -323,7 +323,7 @@ func TestAC04_OperatorPrivilegeSeparation(t *testing.T) {
 }
 
 func TestAC05_RequestStatusSeparateFromPlane(t *testing.T) {
-	s := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	s := restoreTestStore(t)
 	ctx := context.Background()
 
 	ws := uuid.New()
@@ -420,8 +420,8 @@ func TestAC05_RequestStatusSeparateFromPlane(t *testing.T) {
 		t.Fatal("expected payload_available true")
 	}
 
-	// Deliver and complete event using consumer store
-	consumerStore := testStore(t, Channel{Principal: "agent:consumer", Repo: p.Collection})
+	// Deliver and complete event using consumer store on the same database
+	consumerStore := &Store{pool: s.pool, channel: Channel{Principal: "agent:consumer", Repo: p.Collection}, compatibility: DefaultCompatibilityPolicy()}
 	nextRes, err := consumerStore.NextEvent(ctx, NextEventRequest{Repo: p.Collection}, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -527,14 +527,23 @@ func TestAC06_CacheSwapAndAuthRejectionMasking(t *testing.T) {
 		t.Fatalf("unexpected snapshot gen 1: %+v", snap1)
 	}
 
-	// Add an association to item 1
+	// Add a real retrieval receipt association to item 1
+	pkg, err := s.Compile(ctx, CompileRequest{
+		RequestID:       uuid.NewString(),
+		Scope:           Scope{Repo: p.Collection, TaskID: "t-cache", RunID: "r-cache"},
+		Purpose:         "context",
+		AvailableTokens: 64000,
+	}, Destination{Name: "local", AllowLocal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = s.AssociateWork(ctx, AssociateWorkRequest{
 		RequestID:   uuid.NewString(),
 		Collection:  p.Collection,
 		ProjectSlug: p.LocalSlug,
 		ItemUUID:    item1,
 		TargetType:  "run_receipt",
-		TargetID:    uuid.NewString(),
+		TargetID:    pkg.ReceiptID,
 		Rationale:   "Associated with run",
 	})
 	if err != nil {
@@ -550,6 +559,9 @@ func TestAC06_CacheSwapAndAuthRejectionMasking(t *testing.T) {
 			StateName:     "Done",
 			StateGroup:    "completed",
 		},
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE cairn.work_project SET next_refresh_allowed_at = NULL WHERE binding_id = $1`, p.BindingID); err != nil {
+		t.Fatal(err)
 	}
 	refCtx2, err := s.PrepareRefresh(ctx, p.Collection, p.LocalSlug)
 	if err != nil {
@@ -573,14 +585,15 @@ func TestAC06_CacheSwapAndAuthRejectionMasking(t *testing.T) {
 	}
 
 	// STORE-5: Auth rejection refresh: external auth failed
+	if _, err := s.pool.Exec(ctx, `UPDATE cairn.work_project SET next_refresh_allowed_at = NULL WHERE binding_id = $1`, p.BindingID); err != nil {
+		t.Fatal(err)
+	}
 	refCtx3, err := s.PrepareRefresh(ctx, p.Collection, p.LocalSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.CommitRefreshSnapshot(ctx, refCtx3, nil, true, nil)
-	if err != plane.ErrAuthRejected {
-		t.Fatalf("expected ErrAuthRejected, got %v", err)
-	}
+	requireCode(t, err, "AUTH_REJECTED")
 
 	// Check item 1: external fields MUST be completely masked on read (STORE-5), but association intact!
 	detail1, err := s.GetWorkItemDetail(ctx, p.Collection, p.LocalSlug, item1.String())
@@ -796,6 +809,9 @@ func TestAC09_PurgeExclusionAndRestorePersistence(t *testing.T) {
 			StateName:     "Todo",
 			StateGroup:    "unstarted",
 		},
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE cairn.work_project SET next_refresh_allowed_at = NULL WHERE binding_id = $1`, p.BindingID); err != nil {
+		t.Fatal(err)
 	}
 	refCtx2, err := s.PrepareRefresh(ctx, p.Collection, p.LocalSlug)
 	if err != nil {
@@ -1016,6 +1032,9 @@ func TestSTORE6_StagedRefreshOrderingAndRestoreFence(t *testing.T) {
 	requireCode(t, err, "VERSION_CONFLICT")
 
 	// Restore fence occurs during fetch:
+	if _, err := s.pool.Exec(ctx, `UPDATE cairn.work_project SET next_refresh_allowed_at = NULL WHERE binding_id = $1`, p.BindingID); err != nil {
+		t.Fatal(err)
+	}
 	refCtx3, err := s.PrepareRefresh(ctx, p.Collection, p.LocalSlug)
 	if err != nil {
 		t.Fatal(err)
@@ -1312,6 +1331,7 @@ func TestRELEASE02_AdmissionVsReadableSeparation(t *testing.T) {
 
 	// Purge metadata must continue to succeed
 	_, err = s.PurgeMetadata(ctx, PurgeMetadataRequest{
+		RequestID:   uuid.NewString(),
 		Collection:  p.Collection,
 		ProjectSlug: p.LocalSlug,
 		Pattern:     "Initial",
@@ -1583,12 +1603,14 @@ func TestCommitRefreshSnapshot_NoSelfDeadlockOnFailure(t *testing.T) {
 
 	slug := "deadlock-test-" + uuid.NewString()[:8]
 	proj, err := s.AddWorkProject(ctx, AddWorkProjectRequest{
-		RequestID:     uuid.NewString(),
-		Collection:    "repo:test",
-		LocalSlug:     slug,
-		PlaneOrigin:   "https://plane.example.com",
-		WorkspaceUUID: uuid.New(),
-		ProjectUUID:   uuid.New(),
+		RequestID:      uuid.NewString(),
+		Collection:     "repo:test",
+		LocalSlug:      slug,
+		PlaneInstance:  "work",
+		PlaneOrigin:    "https://plane.example.com",
+		WorkspaceUUID:  uuid.New(),
+		ProjectUUID:    uuid.New(),
+		ConfigRevision: "rev1",
 	})
 	if err != nil {
 		t.Fatalf("AddWorkProject failed: %v", err)
@@ -1678,12 +1700,14 @@ func TestRecordRefreshFailure_ExclusionRevisionAndClaimFences(t *testing.T) {
 
 	slug := "fence-test-" + uuid.NewString()[:8]
 	proj, err := s.AddWorkProject(ctx, AddWorkProjectRequest{
-		RequestID:     uuid.NewString(),
-		Collection:    "repo:test",
-		LocalSlug:     slug,
-		PlaneOrigin:   "https://plane.example.com",
-		WorkspaceUUID: uuid.New(),
-		ProjectUUID:   uuid.New(),
+		RequestID:      uuid.NewString(),
+		Collection:     "repo:test",
+		LocalSlug:      slug,
+		PlaneInstance:  "work",
+		PlaneOrigin:    "https://plane.example.com",
+		WorkspaceUUID:  uuid.New(),
+		ProjectUUID:    uuid.New(),
+		ConfigRevision: "rev1",
 	})
 	if err != nil {
 		t.Fatalf("AddWorkProject failed: %v", err)
