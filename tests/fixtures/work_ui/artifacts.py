@@ -6,10 +6,10 @@ import uuid
 
 def artifact_fixture(base, uid, dump, require):
     class ArtifactFixture(base):
-        states = ("artifact_workflow", "artifact_empty", "artifact_unavailable", "artifact_disabled")
+        states = ("artifact_workflow", "artifact_empty", "artifact_unavailable", "artifact_disabled", "artifact_races")
 
         def item_count(self, name):
-            return 55 if name == "artifact_workflow" else 2
+            return 55 if name in ("artifact_workflow", "artifact_races") else 2
 
         def artifact(self, *args, expected="OK"):
             return self.work("artifact", *args, expected=expected)
@@ -58,12 +58,13 @@ def artifact_fixture(base, uid, dump, require):
             link = self.artifact("link", "--project", self.slug, "--item", self.item_id,
                 "--revision", older["revision_id"], "--role", "input", "--rationale", "Selected fixture input")
             self.artifact_case = dict(revision=older, newer=newer, link=link)
-            if name == "artifact_workflow":
+            if name in ("artifact_workflow", "artifact_races"):
                 for index in range(1, 55):
                     self.artifact("link", "--project", self.slug, "--item", uid(f"{name}:item:{index}"),
                                   "--revision", older["revision_id"], "--role", "input")
                 self.artifact("link", "--project", self.slug, "--item", self.item_id,
                               "--revision", older["revision_id"], "--role", "evidence")
+            if name == "artifact_workflow":
                 # All history transitions use the real CLI, not table inserts.
                 for index in range(26):
                     self.artifact("unlink", "--project", self.slug, "--item", self.item_id,
@@ -83,7 +84,11 @@ def artifact_fixture(base, uid, dump, require):
                 self.artifact("link", "--project", self.slug, "--item", self.item_id,
                               "--revision", extra["revision_id"], "--role", "output")
                 self.artifact_case["retained"] = extra
-                self.work("features", "disable", "--feature", "work-artifacts/1")
+                if name == "artifact_disabled":
+                    self.work("features", "disable", "--feature", "work-artifacts/1")
+                else:
+                    self.artifact_case["other"] = self.artifact("register", "--kind", "report",
+                        "--url", "https://reports.fixture.invalid/unaffected", "--revision", "unaffected-v1")
 
         def headers(self, page):
             session = page.request.get(self.url + "/api/auth/session")
@@ -200,6 +205,22 @@ def artifact_fixture(base, uid, dump, require):
                     expect(row).to_have_attribute("data-state", "removed")
                     require(next(entry for entry in self.links() if entry["link_id"] == link["link_id"])["state"] == "removed",
                             "browser unlink was not persisted")
+                row = page.locator(f'.artifact-link-item[data-link-id="{link["link_id"]}"]')
+                row.locator(".inspect-artifact-btn").click()
+                details = page.locator("#artifact-revision-details")
+                expect(details).to_contain_text(revision["revision_id"])
+                identity = (revision.get("git_commit_oid") if kind == "git" else revision["artifact"].get("report_locator")
+                    if kind == "report" else revision["artifact"].get("ci_run_id") if kind == "ci"
+                    else revision["artifact"].get("cairn_record_id"))
+                require(identity, "registered exact kind identity is missing")
+                expect(details).to_contain_text(identity)
+                if kind == "cairn_result":
+                    expect(details.locator("a")).to_have_count(0)
+                else:
+                    locator = revision["artifact"].get("report_locator") or revision["artifact"].get("git_repo") or revision["artifact"].get("ci_repo")
+                    expect(details.locator("a")).to_have_attribute("href", locator)
+                page.locator("#artifact-return-item").click()
+                expect(page.locator("#detail-modal")).to_be_visible()
             require("ARTIFACT_SOURCE_BODY_NEVER_RENDERED" not in page.content(), "artifact UI fetched/rendered result body")
             old = self.artifact_case["revision"]
             row = page.locator(f'.artifact-link-item[data-link-id="{self.artifact_case["link"]["link_id"]}"]')
@@ -275,6 +296,66 @@ def artifact_fixture(base, uid, dump, require):
             retained = self.artifact("show", "--revision", self.artifact_case["retained"]["revision_id"])
             require(retained["revision_id"] == self.artifact_case["retained"]["revision_id"], "maintenance erased an unrelated artifact")
 
+        def current_read_races(self, page):
+            from playwright.sync_api import expect
+            old = self.artifact_case["revision"]
+            page.goto(self.url + "/?artifact_revision=" + old["revision_id"])
+            expect(page.locator("#artifact-revision-details")).to_contain_text("selected-v1")
+            expect(page.locator("#artifact-impact-next")).to_be_enabled()
+            self.artifact("purge", "--artifact", old["artifact_id"])
+            with page.expect_response(lambda response: "/api/work/artifact/impact?" in response.url) as pending:
+                page.locator("#artifact-impact-next").click()
+            require(pending.value.status == 404 and pending.value.json().get("code") == "NOT_FOUND",
+                    "purged current impact read did not refuse the exact revision")
+            expect(page.locator("#artifact-error")).to_contain_text("Could not read reverse impact")
+            expect(page.locator("#artifact-revision-details")).to_be_empty()
+            expect(page.locator("#artifact-purge-btn")).to_be_disabled()
+            require("https://reports.fixture.invalid/selected" not in page.content(),
+                    "refused current read retained the old report locator")
+
+            def inspect(revision):
+                page.locator("#artifact-lookup-id").fill(revision["revision_id"])
+                page.locator("#artifact-lookup-form button").click()
+                expect(page.locator("#artifact-revision-details")).to_contain_text(revision["revision_id"])
+                expect(page.locator("#artifact-impact-page")).to_contain_text("Page 1")
+
+            other, target = self.artifact_case["other"], self.artifact_case["retained"]
+            inspect(other)
+            inspect(target)
+            delivered = []
+
+            def reply_after_navigation(route):
+                response = route.fetch()
+                require(response.ok and response.json().get("artifact_id") == target["artifact_id"],
+                        "pending purge did not commit its exact real target")
+                # Browser Back is available even while application buttons are
+                # disabled. Forward the actual response after that navigation.
+                page.evaluate("history.back()")
+                page.wait_for_url("**artifact_revision=" + other["revision_id"])
+                delivered.append(response.json())
+                route.fulfill(response=response)
+
+            page.route(self.url + "/api/work/artifact/purge", reply_after_navigation, times=1)
+            page.once("dialog", lambda dialog: dialog.accept())
+            self.browser_write(page, "/api/work/artifact/purge", lambda: page.locator("#artifact-purge-btn").click())
+            require(len(delivered) == 1, "real delayed purge reply was not exercised")
+            expect(page.locator("#artifact-revision-details")).to_contain_text(other["revision_id"])
+            expect(page.locator("#artifact-notice")).to_be_hidden()
+            require(other["revision_id"] in page.url, "late purge reply replaced the selected artifact route")
+            self.artifact("show", "--revision", target["revision_id"], expected="NOT_FOUND")
+            require(self.artifact("show", "--revision", other["revision_id"])["revision_id"] == other["revision_id"],
+                    "navigation changed the purge mutation target")
+
+            before = self.host.sql("SELECT count(*) FROM cairn.work_artifact_revision")
+            body = dict(request_id=str(uuid.uuid4()), kind="report", report_locator="https://reports.fixture.invalid/invalid-trailing",
+                        revision_label="must-not-register")
+            response = page.request.post(self.url + "/api/work/artifact/register", data=json.dumps(body) + "}",
+                headers=dict(self.headers(page), **{"Content-Type": "application/json"}))
+            require(response.status == 400 and response.json().get("code") == "INVALID_REQUEST",
+                    "trailing closing delimiter was accepted by the artifact mutation parser")
+            require(self.host.sql("SELECT count(*) FROM cairn.work_artifact_revision") == before,
+                    "malformed trailing-body request retained a registration")
+
         def prepare_manifest(self, name, manifest):
             for state in manifest["surfaces"][name]["states"].values():
                 for action in state.get("actions", []):
@@ -286,6 +367,8 @@ def artifact_fixture(base, uid, dump, require):
                 states["link_history"]["actions"][1]["selector"] = f'.artifact-link-item[data-link-id="{self.artifact_case["link"]["link_id"]}"] .artifact-history-btn'
             elif name == "artifact_unavailable":
                 manifest["surfaces"][name]["states"]["retained_unavailable"]["route"] = "/?artifact_revision=" + self.artifact_case["revision"]["revision_id"]
+            elif name == "artifact_races":
+                manifest["surfaces"][name]["states"]["unaffected_revision"]["route"] = "/?artifact_revision=" + self.artifact_case["other"]["revision_id"]
 
         def run_state(self, browser, name):
             self.seed(name)
@@ -303,7 +386,10 @@ def artifact_fixture(base, uid, dump, require):
                             self.check("artifact browser journey " + viewport, lambda: self.workflow(ui, viewport), ui)
                 else:
                     page.set_default_timeout(7000)
-                    self.check("artifact state " + name, lambda: self.state_checks(page, name), page)
+                    if name == "artifact_races":
+                        self.check("artifact current-read and delayed-purge races", lambda: self.current_read_races(page), page)
+                    else:
+                        self.check("artifact state " + name, lambda: self.state_checks(page, name), page)
                 self.check("UIPass " + name, lambda: self.uipass(name, storage))
                 self.check("artifact view preserves coordination " + name,
                     lambda: require(self.coordination_state() == unchanged, "artifact browser changed sessions/events/deliveries"))

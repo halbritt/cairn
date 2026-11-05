@@ -79,3 +79,7 @@ selected after a newer one is registered. Separate states cover empty links,
 forgotten result metadata and disabled artifact admission with retained reads,
 unlink and purge. UIPass captures the item links, history and exact-revision
 surfaces; the agent must also inspect the retained scrolled screenshots.
+Current-read cases purge a source through the real CLI and require a refused
+impact read to clear old metadata. Another case forwards a real purge reply only
+after browser Back selects a different revision; that reply must not replace the
+new view. A malformed trailing JSON body must refuse without registering a row.
