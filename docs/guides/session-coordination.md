@@ -91,9 +91,12 @@ Agents publish events and work requests directly to recipient inboxes:
 
 ```sh
 cairn agent publish \
+  --request-id "REQ_UUID" \
   --to "agent-1113" \
-  --topic "task.dispatch" \
-  --repo "$HOME/git/cairn"
+  --kind "task" \
+  --version 1 \
+  --repo "$HOME/git/cairn" \
+  "RECORD_UUID"
 ```
 
 ### Checking Inboxes
@@ -115,25 +118,25 @@ The lifecycle of an inbox event follows strict transactional states:
 3. **Acknowledge / Complete**: Upon successfully handling the event, the agent completes it:
 
 ```sh
-cairn agent complete --lease "LEASE_UUID"
+cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 Alternatively, acknowledge reception:
 
 ```sh
-cairn agent ack --lease "LEASE_UUID"
+cairn agent ack --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 4. **Retry / Renew**: If processing takes longer than the lease, the agent renews the lease:
 
 ```sh
-cairn agent renew --lease "LEASE_UUID" --lease-seconds 300
+cairn agent renew --lease "LEASE_UUID" --lease-seconds 300 "DELIVERY_UUID"
 ```
 
 If processing fails or needs to be retried:
 
 ```sh
-cairn agent retry --lease "LEASE_UUID"
+cairn agent retry --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 ### Urgent vs Routine Notices

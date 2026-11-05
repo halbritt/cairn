@@ -307,7 +307,7 @@ def discover_cli_schema(repo_root):
     file_flags = defaultdict(set)
     if os.path.exists(cmd_dir):
         flag_re = re.compile(
-            r"\.(?:String|StringVar|Bool|BoolVar|Int|IntVar|Int64|Int64Var|Duration|DurationVar|Var)\s*\(\s*(?:&[a-zA-Z0-9_\.]+\s*,\s*)?\"([a-zA-Z0-9\-]+)\""
+            r"\.(?:String|StringVar|Bool|BoolVar|Int|IntVar|Int64|Int64Var|Duration|DurationVar|Var|Func)\s*\(\s*(?:&[a-zA-Z0-9_\.]+\s*,\s*)?\"([a-zA-Z0-9\-]+)\""
         )
         for fname in os.listdir(cmd_dir):
             if fname.endswith(".go") and not fname.endswith("_test.go"):
@@ -317,7 +317,7 @@ def discover_cli_schema(repo_root):
                         c = f.read()
                     for m in re.finditer(r"\.(Bool|BoolVar)\s*\(\s*(?:&[a-zA-Z0-9_\.]+\s*,\s*)?\"([a-zA-Z0-9\-]+)\"", c):
                         bool_flags.add(m.group(2))
-                    for m in re.finditer(r"\.(String|StringVar|Int|IntVar|Int64|Int64Var|Duration|DurationVar|Var)\s*\(\s*(?:&[a-zA-Z0-9_\.]+\s*,\s*)?\"([a-zA-Z0-9\-]+)\"", c):
+                    for m in re.finditer(r"\.(String|StringVar|Int|IntVar|Int64|Int64Var|Duration|DurationVar|Var|Func)\s*\(\s*(?:&[a-zA-Z0-9_\.]+\s*,\s*)?\"([a-zA-Z0-9\-]+)\"", c):
                         val_flags.add(m.group(2))
                     for m in flag_re.finditer(c):
                         flag_name = m.group(1)
@@ -381,7 +381,11 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
 
         in_code_block = False
         code_lang = ""
-        for line_num, line in enumerate(content.splitlines(), 1):
+        lines = content.splitlines()
+        idx = 0
+        while idx < len(lines):
+            line = lines[idx]
+            line_num = idx + 1
             stripped_line = line.strip()
             if stripped_line.startswith("```"):
                 if not in_code_block:
@@ -390,26 +394,46 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 else:
                     in_code_block = False
                     code_lang = ""
+                idx += 1
                 continue
 
             if re.search(r"go build\s+.*-o\s+cairn", line):
+                idx += 1
                 continue
 
             if in_code_block:
                 if code_lang not in ("sh", "bash", "shell", "zsh", ""):
+                    idx += 1
                     continue
                 if re.search(r"cairn\s+[a-z\-]+:\s+", stripped_line):
+                    idx += 1
                     continue
                 m = re.search(r"(?:^|\$|\s*&&\s*)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+(.*)", stripped_line)
             else:
                 m = re.search(r"(?:`|\$|^)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+([^`]+)", stripped_line)
 
             if not m:
+                idx += 1
                 continue
-            raw_inv = m.group(1).split("`")[0].split("#")[0].strip()
-            raw_inv = re.split(r"[<>;|]", raw_inv)[0].strip()
+            full_inv_text = m.group(1).split("`")[0].split("#")[0]
+
+            # Accumulate multiline continuation lines ending with \
+            while full_inv_text.rstrip().endswith("\\") and idx + 1 < len(lines):
+                idx += 1
+                next_line = lines[idx]
+                if next_line.strip().startswith("```"):
+                    idx -= 1
+                    break
+                next_part = next_line.split("`")[0].split("#")[0]
+                full_inv_text = full_inv_text.rstrip()[:-1] + (" " + next_part if next_part else "")
+
+            has_stdin = "<" in full_inv_text
+            raw_inv = re.split(r"[<>;|]", full_inv_text)[0].strip()
             if raw_inv.endswith("\\"):
                 raw_inv = raw_inv[:-1].strip()
+
+            idx += 1
+
             try:
                 tokens = shlex.split(raw_inv)
             except Exception:
@@ -451,9 +475,9 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 if root_cmd not in commands and not root_cmd.startswith("-"):
                     continue
 
-            # Contract check: agent pull requires RECEIPT_UUID and HANDLE_UUID
+            # Contract check: agent pull requires RECEIPT_UUID and HANDLE_UUID (unless reading from stdin)
             if root_cmd == "agent" and len(words) > 1 and words[1] == "pull":
-                if "help" not in flags and "h" not in flags:
+                if "help" not in flags and "h" not in flags and not has_stdin:
                     pos = [w for w in words[2:] if not w.startswith("-") and w not in ("N", "...")]
                     if len(pos) < 2 and "RECEIPT_UUID" not in raw_inv and "<receipt" not in raw_inv.lower():
                         syntax_violations.append({

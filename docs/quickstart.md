@@ -9,7 +9,7 @@ Cairn is a durable, transactional memory engine and multi-agent coordination sys
 Before starting, ensure you have:
 - **Go 1.22+** (if building from source) or the compiled `cairn` binary.
 - **PostgreSQL 15+** operational database.
-- A valid PostgreSQL connection string (e.g. `export CAIRN_DSN="postgres://localhost:5432/cairn?sslmode=disable"`).
+- A valid PostgreSQL connection string (e.g. `export CAIRN_DATABASE_URL="postgres://localhost:5432/cairn?sslmode=disable"`).
 
 To verify your installation:
 
@@ -24,7 +24,7 @@ cairn version
 Cairn manages its relational schema using numbered transactional migrations. Initialize or upgrade your database to the current schema (version 074):
 
 ```sh
-export CAIRN_DSN="postgres://localhost:5432/cairn?sslmode=disable"
+export CAIRN_DATABASE_URL="postgres://localhost:5432/cairn?sslmode=disable"
 cairn migrate
 ```
 
@@ -76,7 +76,7 @@ cairn agent search --repo "$HOME/git/cairn" "PostgreSQL operational store"
 For exact identifiers, file paths, or error messages, enclose the target in escaped quotes:
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" ""core/schema""
+cairn agent search --repo "$HOME/git/cairn" '"core/schema"'
 ```
 
 ### Pull Note Body

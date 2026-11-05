@@ -23,7 +23,7 @@ Lexical search is fast, deterministic, and ideal when searching for general tech
 When searching for exact identifiers, source code paths, error messages, or configuration keys, wrap the target terms in escaped ASCII double quotes:
 
 ```sh
-cairn agent search --repo "$HOME/git/cairn" ""core/schema""
+cairn agent search --repo "$HOME/git/cairn" '"core/schema"'
 ```
 
 Quoted terms are evaluated before optional ranking terms. The search engine scores documents containing the exact verbatim substring first, eliminating ambiguity for paths like `"core/schema"` or exact error codes like `"AUTHORITY_DENIED"`.
@@ -114,7 +114,7 @@ In MCP `cairn_search`, supply the policy as an argument:
 
 ## 5. Pulling Candidate Bodies
 
-Search index results include preview summaries and two critical identifiers: `receipt_id` and `handle_id`. To read the full, unabbreviated body of a candidate note:
+Search index results include preview summaries and two critical identifiers: `receipt_id` and `handle`. To read the full, unabbreviated body of a candidate note:
 
 ```sh
 cairn agent pull RECEIPT_UUID HANDLE_UUID

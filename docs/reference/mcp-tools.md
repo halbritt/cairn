@@ -37,8 +37,9 @@ Pulls the full or bounded body of a candidate note discovered in search results.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
+| `request_id` | string (UUID) | Yes | Client-chosen UUID for idempotent retries. |
 | `receipt_id` | string (UUID) | Yes | Search receipt UUID returned by `cairn_search`. |
-| `handle_id` | string (UUID) | Yes | Time-bounded handle UUID returned in the index entry. |
+| `handle` | string | Yes | Time-bounded handle returned in the index entry. |
 | `span` | object | No | Byte range slice: `{"offset": N, "length": N}`. |
 | `opening_bytes` | integer | No | Optional prefix opening length (1-768 bytes). |
 
@@ -56,8 +57,9 @@ Pulls exact supporting evidence bytes referenced by an expanded memory.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
+| `request_id` | string (UUID) | Yes | Unique request UUID for idempotent retries. |
 | `receipt_id` | string (UUID) | Yes | Search receipt UUID. |
-| `handle_id` | string (UUID) | Yes | Expansion handle UUID. |
+| `handle` | string | Yes | Expansion handle from search index. |
 | `evidence_id` | string (UUID) | Yes | Evidence identifier. |
 | `expected_sha256` | string (hex) | Yes | Expected SHA-256 digest of full evidence object. |
 | `span` | object | No | Optional byte range slice: `{"offset": N, "length": N}`. |
@@ -76,13 +78,13 @@ Saves an explicitly selected note as ordinary Class A testimony.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `draft` | object | Yes | Memory draft payload. |
-| `draft.kind` | string | Yes | `decision`, `preference`, `fact`, `procedure`, `observation`, `reflection`. |
-| `draft.body` | string | Yes | Note text content. |
-| `draft.scope` | object | Yes | Scope object: `{"repo": "...", "task_id": "*", "run_id": "*"}`. |
-| `draft.sensitivity` | string | No | `local` (default) or `shareable`. |
-| `draft.entities` | array | No | Explicit file or symbol associations. |
-| `request_id` | string (UUID) | No | Optional stable retry UUID. |
+| `body` | string | Yes | Selected reusable knowledge with source and verification context. |
+| `request_id` | string (UUID) | Yes | A UUID chosen before capture; reuse exactly for retries of this note. |
+| `kind` | string | No | Ordinary record kind (`decision`, `preference`, `fact`, `procedure`, `observation`, `reflection`); defaults to `note`. |
+| `scope` | string | No | Capture applicability: `repository` (default), `task`, or `run`. |
+| `shareable` | boolean | No | Explicitly allow this content to reach hosted models. Defaults to `false` (local). |
+| `entities` | array | No | Explicit file or symbol associations (`[{"file": "...", "symbol": "..."}]`), at most 16. |
+| `pins` | object | No | Explicit applicability restrictions. |
 
 ### Output
 

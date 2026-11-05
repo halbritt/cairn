@@ -25,7 +25,7 @@ sudo -u postgres psql -c "CREATE DATABASE cairn OWNER cairn;"
 Configure your connection string:
 
 ```sh
-export CAIRN_DSN="postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable"
+export CAIRN_DATABASE_URL="postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable"
 ```
 
 Initialize the database schema:
@@ -51,7 +51,7 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-Environment=CAIRN_DSN=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
+Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
 ExecStart=/usr/local/bin/cairn serve --socket %h/.local/share/cairn/api.sock
 Restart=on-failure
 RestartSec=5s
@@ -71,8 +71,8 @@ After=cairn-localapi.service
 
 [Service]
 Type=simple
-Environment=CAIRN_DSN=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
-ExecStart=/usr/local/bin/cairn schedule-serve --socket %h/.local/share/cairn/api.sock
+Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
+ExecStart=/usr/local/bin/cairn schedule-serve --repo %h/git/cairn
 Restart=on-failure
 RestartSec=5s
 
@@ -91,8 +91,8 @@ After=cairn-localapi.service
 
 [Service]
 Type=simple
-Environment=CAIRN_DSN=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
-ExecStart=/usr/local/bin/cairn wake serve --socket %h/.local/share/cairn/api.sock
+Environment=CAIRN_DATABASE_URL=postgres://cairn:secure_password@localhost:5432/cairn?sslmode=disable
+ExecStart=/usr/local/bin/cairn wake serve --config %h/.local/share/cairn/wake-binding.json
 Restart=on-failure
 RestartSec=5s
 

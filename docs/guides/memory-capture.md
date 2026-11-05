@@ -14,7 +14,6 @@ Knowledge is saved using the CLI command `cairn agent remember` or the `cairn_re
 cairn agent remember \
   --repo "$HOME/git/cairn" \
   --kind decision \
-  --scope repo \
   "Adopted PostgreSQL as operational store; test suites use disposable clusters."
 ```
 
@@ -22,16 +21,11 @@ cairn agent remember \
 
 ```json
 {
-  "draft": {
-    "kind": "decision",
-    "scope": {
-      "repo": "/home/halbritt/git/cairn",
-      "task_id": "*",
-      "run_id": "*"
-    },
-    "sensitivity": "local",
-    "body": "Adopted PostgreSQL as operational store; test suites use disposable clusters."
-  }
+  "request_id": "b183ebd3-0bfb-450d-a91b-9c348125c7dd",
+  "body": "Adopted PostgreSQL as operational store; test suites use disposable clusters.",
+  "kind": "decision",
+  "scope": "repository",
+  "shareable": false
 }
 ```
 
@@ -57,9 +51,11 @@ Cairn categorizes memories into structured kinds to assist retrieval ranking and
 ### Scope
 
 Memories can be scoped at three hierarchical levels:
-- `repository` (`--scope repo`): Applies across the entire repository and all tasks.
-- `task` (`--scope task`): Restricted to the active task ID.
-- `run` (`--scope run`): Restricted to a single execution attempt.
+- **Repository** (`--repo PATH`, with default `--task "*"` and `--run "*"`): Applies across the entire repository and all tasks.
+- **Task** (`--task TASK_ID`): Restricted to the active task ID across runs.
+- **Run** (`--task TASK_ID --run RUN_ID`): Restricted to a single execution attempt.
+
+In the `cairn_remember` MCP tool, scope is set via the `"scope"` argument (`"repository"` [default], `"task"`, or `"run"`).
 
 Re-usable project guidelines and architectural decisions should always use repository scope.
 

@@ -94,7 +94,8 @@ cairn agent remember --repo "$HOME/git/cairn" --kind decision "Note body"
 ```
 
 - `--kind KIND`: `decision`, `preference`, `fact`, `procedure`, `observation`, `reflection`.
-- `--scope SCOPE`: `repo`, `task`, `run`.
+- `--task TASK`: Task scope (defaults to "*").
+- `--run RUN`: Run scope (defaults to "*").
 - `--shareable`: Allow delivery to hosted models.
 
 ### `cairn agent inbox`
@@ -108,35 +109,35 @@ cairn agent inbox next --repo "$HOME/git/cairn"
 Publishes an event to an agent inbox.
 
 ```sh
-cairn agent publish --to "agent-1113" --topic "task.dispatch" --repo "$HOME/git/cairn"
+cairn agent publish --request-id "REQ_UUID" --to "agent-1113" --kind "task" --version 1 --repo "$HOME/git/cairn" "RECORD_UUID"
 ```
 
 ### `cairn agent complete`
 Marks an inbox event complete.
 
 ```sh
-cairn agent complete --lease "LEASE_UUID"
+cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 ### `cairn agent ack`
 Acknowledges receipt of an inbox event.
 
 ```sh
-cairn agent ack --lease "LEASE_UUID"
+cairn agent ack --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 ### `cairn agent renew`
 Renews an active event lease.
 
 ```sh
-cairn agent renew --lease "LEASE_UUID" --lease-seconds 300
+cairn agent renew --lease "LEASE_UUID" --lease-seconds 300 "DELIVERY_UUID"
 ```
 
 ### `cairn agent retry`
 Releases an event lease for retry.
 
 ```sh
-cairn agent retry --lease "LEASE_UUID"
+cairn agent retry --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
 
 ---
@@ -234,17 +235,17 @@ cairn opencode-install --project "$HOME/git/cairn" --socket "$HOME/.local/share/
 
 ### Daemons & Infrastructure
 
-- `cairn wake serve`: Run wake supervisor daemon.
-- `cairn wake worker`: Run wake worker.
-- `cairn wake check`: Check wake supervisor status.
-- `cairn schedule-serve`: Run background worker pool.
+- `cairn wake serve --config /absolute/binding.json`: Run wake supervisor daemon.
+- `cairn wake worker --config /absolute/binding.json --attempt UUID`: Run wake worker.
+- `cairn wake check --config /absolute/binding.json`: Check wake supervisor status.
+- `cairn schedule-serve --repo REPO`: Run background worker pool.
 - `cairn worker-pool-configure < config.json`: Configure worker pools.
-- `cairn machine provision --machine-id "node-1"`: Provision node certificate.
-- `cairn machine enroll --machine-id "node-1"`: Enroll node.
-- `cairn machine rotate --machine-id "node-1"`: Rotate credentials.
+- `cairn machine provision --machine "node-1" --upstream "https://HOST:PORT" --collection REPO --out FILE`: Provision node enrollment file.
+- `cairn machine enroll --file "node-1.enroll"`: Enroll node.
+- `cairn machine rotate --machine "node-1" --upstream "https://HOST:PORT" --out FILE`: Rotate credentials.
 - `cairn machine list`: List cluster nodes.
-- `cairn machine status --machine-id "node-1"`: Query node status.
-- `cairn relay`: Relay API calls across network boundaries.
+- `cairn machine status`: Query local node status.
+- `cairn relay --upstream "https://HOST:PORT" [--socket PATH]`: Relay API calls across network boundaries.
 - `cairn candidate-retention < request.json`: Inspect diagnostic candidate rows.
 - `cairn candidate-reclaim < request.json`: Purge expired candidate rows.
 

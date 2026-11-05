@@ -8,10 +8,10 @@ This guide details environment variables, profile tokens, authentication identit
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CAIRN_DSN` | PostgreSQL connection DSN | `postgres://localhost:5432/cairn?sslmode=disable` |
-| `CAIRN_SOCKET` | Path to Unix domain API socket | `~/.local/share/cairn/api.sock` |
-| `CAIRN_TOKEN_FILE` | Default API bearer token file | `~/.local/share/cairn/hosted-agent.token` |
-| `CAIRN_REPO` | Default repository identity / collection | Current working directory or Git repository root |
+| `CAIRN_DATABASE_URL` | PostgreSQL connection DSN override | `postgres://localhost:5432/cairn?sslmode=disable` (or scripts/local-store.sh) |
+| `CAIRN_HOME` | Base configuration and state directory | `~/.local/share/cairn` |
+
+Socket paths, authentication tokens, and repository identities are configured via command-line flags (`--socket`, `--token-file`, `--repo`), CLI commands, or systemd unit definitions rather than ambient environment variables.
 
 ---
 

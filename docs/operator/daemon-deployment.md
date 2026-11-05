@@ -31,7 +31,7 @@ Where `config.json` specifies:
 Run the scheduler daemon:
 
 ```sh
-cairn schedule-serve --socket "$HOME/.local/share/cairn/api.sock"
+cairn schedule-serve --repo "$HOME/git/cairn"
 ```
 
 ---
@@ -43,7 +43,7 @@ The Cairn wake supervisor manages scheduled wakeups, turn timeouts, and delayed 
 ### Running Wake Supervisor
 
 ```sh
-cairn wake serve --socket "$HOME/.local/share/cairn/api.sock"
+cairn wake serve --config "$HOME/.local/share/cairn/wake-binding.json"
 ```
 
 ### Running Wake Workers
@@ -51,7 +51,7 @@ cairn wake serve --socket "$HOME/.local/share/cairn/api.sock"
 Run an active wake worker process to execute scheduled wakeup triggers:
 
 ```sh
-cairn wake worker --socket "$HOME/.local/share/cairn/api.sock"
+cairn wake worker --config "$HOME/.local/share/cairn/wake-binding.json" --attempt "b183ebd3-0bfb-450d-a91b-9c348125c7dd"
 ```
 
 ### Checking Wake Health
@@ -59,7 +59,7 @@ cairn wake worker --socket "$HOME/.local/share/cairn/api.sock"
 Inspect the status of the wake supervisor and pending wakeup queues:
 
 ```sh
-cairn wake check --socket "$HOME/.local/share/cairn/api.sock"
+cairn wake check --config "$HOME/.local/share/cairn/wake-binding.json"
 ```
 
 ---
@@ -70,50 +70,50 @@ Cairn allows multiple physical or virtual machines to coordinate memory and sess
 
 ### Machine Provisioning
 
-Provision an identity certificate for a new machine:
+Provision an enrollment file for a new machine from the central host:
 
 ```sh
-cairn machine provision --machine-id "node-02"
+cairn machine provision --machine "node-02" --upstream "https://central.example.com:8443" --collection "$HOME/git/cairn" --out "node-02.enroll"
 ```
 
 ### Machine Enrollment
 
-Enroll the new node in the cluster directory:
+Enroll the joining host using the provisioned enrollment file:
 
 ```sh
-cairn machine enroll --machine-id "node-02"
+cairn machine enroll --file "node-02.enroll"
 ```
 
 ### Key Rotation
 
-Rotate machine credentials periodically:
+Rotate machine credentials from the central host:
 
 ```sh
-cairn machine rotate --machine-id "node-02"
+cairn machine rotate --machine "node-02" --upstream "https://central.example.com:8443" --out "node-02.enroll"
 ```
 
 ### Listing Enrolled Machines
 
-View all registered machines and their active network presence:
+View all registered machines on the central host:
 
 ```sh
 cairn machine list
 ```
 
-Inspect a specific machine:
+Inspect local machine enrollment status on a joining host:
 
 ```sh
-cairn machine status --machine-id "node-02"
+cairn machine status
 ```
 
 ---
 
 ## 4. API Relaying (`cairn relay`)
 
-For environments where worker nodes cannot connect directly to PostgreSQL or the primary localapi socket, `cairn relay` forwards authenticated API calls securely across network boundaries:
+For environments where worker nodes cannot connect directly to PostgreSQL or the primary localapi socket, `cairn relay` forwards authenticated API calls securely across network boundaries to an upstream HTTPS origin:
 
 ```sh
-cairn relay --socket "$HOME/.local/share/cairn/api.sock" --listen "10.0.0.2:8443"
+cairn relay --upstream "https://10.0.0.2:8443" --socket "$HOME/.local/share/cairn/api.sock"
 ```
 
 ---

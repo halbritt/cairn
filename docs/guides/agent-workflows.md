@@ -69,7 +69,6 @@ Agents preserve handoffs as durable Cairn memories:
 cairn agent remember \
   --repo "$HOME/git/cairn" \
   --kind decision \
-  --scope repo \
   "Milestone 2 completed: aligned README.md, docs/mcp.md, docs/roadmap.md, and cmd/cairn/commands.go with schema 074."
 ```
 
