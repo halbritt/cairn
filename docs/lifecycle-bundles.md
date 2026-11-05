@@ -64,7 +64,7 @@ change. Historical frozen trials retain their original source pins; they are not
 silently refreshed with current helper files.
 
 [Prospective trials](plans/task-evaluation.md) select an already staged bundle
-with an explicit sidecar pin. The [historical weekly exporter](weekly-runner-reconciliation.md)
+with an explicit sidecar pin. The historical weekly exporter
 retains its two-file contract and refuses current bundle code; selecting two
 source files cannot select their dependencies.
 

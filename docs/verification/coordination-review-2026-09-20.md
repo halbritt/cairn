@@ -6,7 +6,7 @@ integration checks. Native cancellation enablement and deployment remain held;
 passing fixture tests do not establish native host acceptance.
 
 The findings below retain their original snapshots and rejected candidates.
-The latest [corrective bridge review](#corrective-bridge-review-at-69f6a95--131e95b)
+The latest [corrective bridge review](#corrective-bridge-review-at-69f6a95-131e95b)
 records the repaired behavior and the limits of its evidence.
 
 The reviewed main checkout was `93d08d63961e348e00afeb60f89130830b0e0332`

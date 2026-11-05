@@ -358,7 +358,7 @@ A retained-version follow-up found missing browse arguments and semantic setup
 prerequisites and restored them. This qualifies the original preservation claim:
 smaller notes still need review for lost instructions, and upkeep has a cost.
 
-A [later topic separation](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions)
+A [later topic separation](verification/procedure-maintenance-2026-09-09.md#2026-09-10-separate-ordinary-tools-from-harness-launch-instructions)
 moved the accumulated OpenCode launcher instructions verbatim into a separate
 file-associated procedure. Ordinary-tool reads now retrieve a smaller note;
 reading both procedures costs more. Exact old/current bodies preserve all original
@@ -454,7 +454,7 @@ than the accepted usefulness features with those names.
 
 ### 2. Establish the observed use/outcome join
 
-The [2026-09-10 native adoption check](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+The [2026-09-10 native adoption check](native-striatum-context.md#shared-rfc-adoption-check-2026-09-10)
 found a separate unfinished amendment on RFC 0004, which Cairn also needs.
 U1 adoption must reconcile that shared identity before issuing a Cairn amendment
 there. Its existing request and dispatch failures belong to the other feature.

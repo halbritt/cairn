@@ -323,7 +323,7 @@ regressions and passes full repository and focused native race checks. Its
 accepted catalog remains `observation@1`/`build@3`; native adoption and real-build
 benefit remain open. That integration left the installed Striatum Driver unchanged.
 
-The [native adoption check](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+The [native adoption check](native-striatum-context.md#shared-rfc-adoption-check-2026-09-10)
 also found an unfinished, separate amendment on RFC 0004. Its request and
 escalations do not advance Cairn; the shared RFC requires sequencing before
 Cairn's proposed contracts can enter the accepted stages.
@@ -356,7 +356,7 @@ complete competing positions with currentness and privacy checks; default omissi
 and binding refusals remain. Clean `4df17af` is installed in the CLI, API and adapter. Task benefit is
 unmeasured.
 
-[OpenCode guidance is separated by workflow](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions):
+[OpenCode guidance is separated by workflow](verification/procedure-maintenance-2026-09-09.md#2026-09-10-separate-ordinary-tools-from-harness-launch-instructions):
 the current setup/tool note is 9,270 bytes, while launcher instructions have a
 separate 6,229-byte procedure. Every original passage remains verbatim in a
 current note and the former v16 body remains in history. Setup-only pulls are
@@ -3680,7 +3680,7 @@ Setup-only body delivery is 4,817 bytes (34.2%) smaller. Reading both notes cost
 1,412 bytes more, and historical storage grows. These are byte measurements and
 an editorial workflow choice, not proof of better model decisions, an avoided
 failure, net savings or durable task benefit. No new model calls or automated
-grooming were introduced. See [the maintained procedure report](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions)
+grooming were introduced. See [the maintained procedure report](verification/procedure-maintenance-2026-09-09.md#2026-09-10-separate-ordinary-tools-from-harness-launch-instructions)
 and its exact partition evidence. All prior implementation history is preserved.
 
 
@@ -4370,7 +4370,7 @@ from request 408483. Its nine horizon lapses and escalations 409639/409640 are
 not Cairn trials. An initial subject-name inference was corrected after reading
 the exact retained intent; no request, resolution or retry was issued.
 
-[Adoption guidance](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+[Adoption guidance](native-striatum-context.md#shared-rfc-adoption-check-2026-09-10)
 now requires reconciliation of the shared RFC sequence before Cairn stage
 production and personal acceptance. No relevant acceptance candidate was queued;
 the live projection listed RFC 0007's Decision as stale. Source and installed
