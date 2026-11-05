@@ -188,7 +188,7 @@ tools handle later pulls under their normal permissions. See
 
 Generate verified MCP configurations for supported harnesses:
 
-```sh
+```text
 cairn codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required] [--tool-profile compact/1|compact/2]
 cairn claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N] [--tool-profile compact/1|compact/2]
 cairn opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
