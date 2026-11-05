@@ -90,15 +90,25 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 	if strings.TrimSpace(req.TargetID) == "" {
 		return WorkAssociation{}, failure("INVALID_REQUEST", "target_id required")
 	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	return mutate(ctx, s, "work-associate", req.RequestID, req, func(tx pgx.Tx) (WorkAssociation, error) {
+		if err := s.checkWorkAdmissionTx(ctx, tx); err != nil {
+			return WorkAssociation{}, err
+		}
 		var bindingID uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT binding_id FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID)
+		var projStatus string
+		err := tx.QueryRow(ctx, `SELECT binding_id, status FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID, &projStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", req.ProjectSlug, req.Collection))
 		}
 		if err != nil {
 			return WorkAssociation{}, err
+		}
+		if projStatus != "active" {
+			return WorkAssociation{}, failure("INVALID_REQUEST", fmt.Sprintf("work project %q is %s", req.ProjectSlug, projStatus))
 		}
 
 		// Verify target item exists
@@ -138,8 +148,14 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			}
 			var metaRaw []byte
 			var actualExecUUID uuid.UUID
-			err = tx.QueryRow(ctx, `SELECT execution_id, metadata FROM cairn.agent_session WHERE agent_id = $1`, aUUID).Scan(&actualExecUUID, &metaRaw)
-			if err == nil && actualExecUUID == eUUID {
+			err = tx.QueryRow(ctx, `SELECT execution_id, metadata FROM cairn.agent_session WHERE agent_id = $1 AND repo = $2`, aUUID, req.Collection).Scan(&actualExecUUID, &metaRaw)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("session agent %s not found in collection %q", aUUID, req.Collection))
+			}
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if actualExecUUID == eUUID {
 				var meta AgentMetadata
 				_ = json.Unmarshal(metaRaw, &meta)
 				taskSummary = meta.TaskSummary
@@ -158,6 +174,14 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			evUUID, err := uuid.Parse(req.TargetID)
 			if err != nil {
 				return WorkAssociation{}, failure("INVALID_REQUEST", "event target_id must be a UUID")
+			}
+			var evExists bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_event WHERE event_id = $1 AND repo = $2)`, evUUID, req.Collection).Scan(&evExists)
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if !evExists {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("event %s not found in collection %q", evUUID, req.Collection))
 			}
 			targetEventID = &evUUID
 			req.TargetID = evUUID.String()
@@ -180,7 +204,7 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			err = tx.QueryRow(ctx, `SELECT EXISTS(
 				SELECT 1 FROM cairn.memory_record r
 				JOIN cairn.record_version v ON r.record_id = v.record_id
-				WHERE r.record_id = $1 AND v.version = $2 AND r.repo = $3
+				WHERE r.record_id = $1 AND v.version = $2 AND v.repo = $3 AND r.lifecycle = 'active' AND v.payload_deleted_by IS NULL
 			)`, rUUID, ver, req.Collection).Scan(&exists)
 			if err != nil {
 				return WorkAssociation{}, err
@@ -197,11 +221,32 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			if err != nil {
 				return WorkAssociation{}, failure("INVALID_REQUEST", "response_group target_id must be a valid UUID")
 			}
+			var grpExists bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group g JOIN cairn.agent_event e USING(event_id) WHERE g.event_id = $1 AND e.repo = $2)`, grpUUID, req.Collection).Scan(&grpExists)
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if !grpExists {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("response_group %s not found in collection %q", grpUUID, req.Collection))
+			}
 			targetGroupID = &grpUUID
 			req.TargetID = grpUUID.String()
 
 		case "run_receipt":
-			targetRunID = req.TargetID
+			receiptUUID, err := uuid.Parse(req.TargetID)
+			if err != nil {
+				return WorkAssociation{}, failure("INVALID_REQUEST", "run_receipt target_id must be a valid UUID")
+			}
+			var receiptExists bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.retrieval_receipt WHERE receipt_id = $1 AND scope->>'repo' = $2)`, receiptUUID, req.Collection).Scan(&receiptExists)
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if !receiptExists {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("retrieval receipt %s not found in collection %q", receiptUUID, req.Collection))
+			}
+			targetRunID = receiptUUID.String()
+			req.TargetID = receiptUUID.String()
 		}
 
 		// Check if association already exists
@@ -211,7 +256,8 @@ func (s *Store) AssociateWork(ctx context.Context, req AssociateWorkRequest) (Wo
 			target_agent_id, target_execution_id, target_event_id, target_record_id, target_version, target_group_id, target_run_id,
 			rationale, task_summary, author, state, created_at, removed_at
 			FROM cairn.work_association
-			WHERE binding_id = $1 AND plane_item_uuid = $2 AND target_type = $3 AND target_id = $4`,
+			WHERE binding_id = $1 AND plane_item_uuid = $2 AND target_type = $3 AND target_id = $4
+			FOR UPDATE`,
 			bindingID, planeItemUUID, req.TargetType, req.TargetID).Scan(
 			&existing.AssociationID, &existing.Revision, &existing.BindingID, &existing.PlaneItemUUID, &existing.TargetType, &existing.TargetID,
 			&existing.TargetAgentID, &existing.TargetExecutionID, &existing.TargetEventID, &existing.TargetRecordID, &existing.TargetVersion, &existing.TargetGroupID, &existing.TargetRunID,
@@ -313,6 +359,15 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAssociation{}, failure("INVALID_REQUEST", "project slug required")
 	}
+	if req.ItemUUID == uuid.Nil {
+		return WorkAssociation{}, failure("INVALID_REQUEST", "item UUID required")
+	}
+	if req.ExpectedRevision == nil || *req.ExpectedRevision <= 0 {
+		return WorkAssociation{}, failure("INVALID_REQUEST", "positive expected_revision required")
+	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	// Canonicalize target_id if provided
 	if req.TargetType == "session" || req.TargetType == "execution" {
@@ -344,6 +399,9 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 	}
 
 	return mutate(ctx, s, "work-unassociate", req.RequestID, req, func(tx pgx.Tx) (WorkAssociation, error) {
+		if err := s.checkWorkReadableTx(ctx, tx); err != nil {
+			return WorkAssociation{}, err
+		}
 		var bindingID uuid.UUID
 		err := tx.QueryRow(ctx, `SELECT binding_id FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -364,6 +422,24 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 				bindingID, req.AssociationID).Scan(
 				&assoc.AssociationID, &assoc.Revision, &assoc.BindingID, &assoc.PlaneItemUUID, &assoc.TargetType, &assoc.TargetID,
 				&rationale, &taskSummary, &assoc.Author, &assoc.State, &assoc.CreatedAt)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return WorkAssociation{}, failure("NOT_FOUND", "association not found")
+			}
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+
+			// Verify association belongs to the requested item
+			var match bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND plane_item_uuid = $2 AND (item_id = $3 OR plane_item_uuid = $3)
+			)`, bindingID, assoc.PlaneItemUUID, req.ItemUUID).Scan(&match)
+			if err != nil {
+				return WorkAssociation{}, err
+			}
+			if !match {
+				return WorkAssociation{}, failure("NOT_FOUND", fmt.Sprintf("association %s does not belong to item %s", req.AssociationID, req.ItemUUID))
+			}
 		} else {
 			var planeItemUUID uuid.UUID
 			err = tx.QueryRow(ctx, `SELECT plane_item_uuid FROM cairn.work_item WHERE binding_id = $1 AND (item_id = $2 OR plane_item_uuid = $2)`, bindingID, req.ItemUUID).Scan(&planeItemUUID)
@@ -382,12 +458,12 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 				bindingID, planeItemUUID, req.TargetType, req.TargetID).Scan(
 				&assoc.AssociationID, &assoc.Revision, &assoc.BindingID, &assoc.PlaneItemUUID, &assoc.TargetType, &assoc.TargetID,
 				&rationale, &taskSummary, &assoc.Author, &assoc.State, &assoc.CreatedAt)
-		}
-		if errors.Is(err, pgx.ErrNoRows) {
-			return WorkAssociation{}, failure("NOT_FOUND", "association not found")
-		}
-		if err != nil {
-			return WorkAssociation{}, err
+			if errors.Is(err, pgx.ErrNoRows) {
+				return WorkAssociation{}, failure("NOT_FOUND", "association not found")
+			}
+			if err != nil {
+				return WorkAssociation{}, err
+			}
 		}
 		if rationale != nil {
 			assoc.Rationale = *rationale
@@ -396,12 +472,12 @@ func (s *Store) UnassociateWork(ctx context.Context, req UnassociateWorkRequest)
 			assoc.TaskSummary = *taskSummary
 		}
 
-		if assoc.State == "removed" {
-			return assoc, nil
+		if assoc.Revision != *req.ExpectedRevision {
+			return WorkAssociation{}, failure("VERSION_CONFLICT", fmt.Sprintf("expected revision %d, current is %d", *req.ExpectedRevision, assoc.Revision))
 		}
 
-		if req.ExpectedRevision != nil && assoc.Revision != *req.ExpectedRevision {
-			return WorkAssociation{}, failure("VERSION_CONFLICT", fmt.Sprintf("expected revision %d, current is %d", *req.ExpectedRevision, assoc.Revision))
+		if assoc.State == "removed" {
+			return WorkAssociation{}, failure("VERSION_CONFLICT", "association is already removed")
 		}
 
 		newRev := assoc.Revision + 1

@@ -26416,6 +26416,16 @@
     },
     {
       "http_status": 409,
+      "code": "FEATURE_DISABLED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "FEATURE_RETIRED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "FORGET_REQUIRED",
       "source": "serveJSON"
     },
@@ -26512,6 +26522,16 @@
     {
       "http_status": 429,
       "code": "QUOTA_EXHAUSTED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "REFRESH_IN_PROGRESS",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 429,
+      "code": "REFRESH_RATE_LIMITED",
       "source": "serveJSON"
     },
     {
@@ -26636,6 +26656,7 @@
     "ATTEMPT_TERMINAL",
     "ATTRIBUTION_UNRECONCILED",
     "AUTHORITY_DENIED",
+    "AUTH_REJECTED",
     "BUDGET_REFUSED",
     "CANDIDATE_DETAIL_EXPIRED",
     "CHECKPOINT_MISMATCH",
@@ -26647,6 +26668,8 @@
     "DEPENDENCY_CONFLICT",
     "DESTINATION_PROHIBITED",
     "EVIDENCE_UNAVAILABLE",
+    "FEATURE_DISABLED",
+    "FEATURE_RETIRED",
     "FORGET_REQUIRED",
     "GROUP_EMPTY",
     "GROUP_EXPIRED",
@@ -26668,6 +26691,8 @@
     "PROTOCOL_UNSUPPORTED",
     "PURGE_UNRECORDED",
     "RECOVERY_UNINITIALIZED",
+    "REFRESH_IN_PROGRESS",
+    "REFRESH_RATE_LIMITED",
     "REFUSAL_UNRECORDED",
     "REPLAY_INCOMPLETE",
     "REQUEST_CANCELLED",

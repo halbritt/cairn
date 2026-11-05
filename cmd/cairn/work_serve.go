@@ -11,12 +11,29 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/refusal"
 	"github.com/halbritt/cairn/web/workview"
 )
+
+func writeWorkHTTPError(w http.ResponseWriter, err error) {
+	code := core.Code(err)
+	status := refusal.Classify(code).HTTPStatus
+	if status == 0 {
+		status = http.StatusInternalServerError
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": err.Error(),
+		"code":  code,
+	})
+}
 
 type workServer struct {
 	store           *core.Store
@@ -157,16 +174,36 @@ func (s *workServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if (r.URL.Path == "/api/auth/session" || r.URL.Path == "/api/auth/status") && r.Method == http.MethodGet {
+		sess, authenticated := s.validateSession(r)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if !authenticated {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"authenticated": false,
+			})
+			return
+		}
+		s.sessionMu.RLock()
+		csrf := s.csrfTokens[sess]
+		s.sessionMu.RUnlock()
+		w.Header().Set("X-CSRF-Token", csrf)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authenticated": true,
+			"csrf_token":    csrf,
+		})
+		return
+	}
+
 	// API authentication gate
 	sess, authenticated := s.validateSession(r)
-	if !authenticated && r.URL.Path != "/api/auth/login" {
+	if !authenticated && r.URL.Path != "/api/auth/login" && r.URL.Path != "/api/auth/session" && r.URL.Path != "/api/auth/status" {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 
 	// CSRF validation on mutating API requests
 	if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
-		if r.URL.Path != "/api/auth/login" {
+		if r.URL.Path != "/api/auth/login" && r.URL.Path != "/api/auth/session" && r.URL.Path != "/api/auth/status" {
 			s.sessionMu.RLock()
 			expectedCSRF := s.csrfTokens[sess]
 			s.sessionMu.RUnlock()
@@ -192,6 +229,26 @@ func (s *workServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if strings.HasPrefix(r.URL.Path, "/api/work/") {
+		if s.store == nil {
+			http.Error(w, `{"error":"store unavailable"}`, http.StatusServiceUnavailable)
+			return
+		}
+		st, err := s.store.GetWorkFeatureStatus(ctx, "work-view/1")
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if st == "retired" {
+			writeWorkHTTPError(w, &core.Error{Code: "FEATURE_RETIRED", Message: "work-view/1 feature is retired"})
+			return
+		}
+		if st != "active" {
+			writeWorkHTTPError(w, &core.Error{Code: "FEATURE_DISABLED", Message: "work-view/1 feature is disabled"})
+			return
+		}
+	}
+
 	switch {
 	case r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost:
 		var req struct {
@@ -238,7 +295,7 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/work/projects" && r.Method == http.MethodGet:
 		projects, err := s.store.ListWorkProjects(ctx, s.collection)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			writeWorkHTTPError(w, err)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
@@ -248,17 +305,28 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 		if slug == "" {
 			slug = s.defaultSlug
 		}
+		stateGroup := r.URL.Query().Get("state_group")
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = 50
+		}
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		blockerOnly := r.URL.Query().Get("blocker_only") == "1" || r.URL.Query().Get("blocker_only") == "true"
+
 		proj, err := s.store.GetWorkProject(ctx, s.collection, slug)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			writeWorkHTTPError(w, err)
 			return
 		}
-		items, _, err := s.store.ListWorkItems(ctx, s.collection, slug, "", 0, 0)
+		items, total, err := s.store.ListWorkItemsExtended(ctx, s.collection, slug, stateGroup, blockerOnly, limit, offset)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			writeWorkHTTPError(w, err)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"project": proj, "items": items})
+		if items == nil {
+			items = make([]core.WorkItem, 0)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"project": proj, "items": items, "total": total})
 
 	case r.URL.Path == "/api/work/item" && r.Method == http.MethodGet:
 		slug := r.URL.Query().Get("project")
@@ -267,15 +335,336 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		itemUUIDStr := r.URL.Query().Get("item")
 		if itemUUIDStr == "" {
-			http.Error(w, `{"error":"missing item identifier or uuid"}`, http.StatusBadRequest)
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "missing item identifier or uuid"})
 			return
 		}
 		detail, err := s.store.GetWorkItemDetail(ctx, s.collection, slug, itemUUIDStr)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+			writeWorkHTTPError(w, err)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(detail)
+
+	case r.URL.Path == "/api/work/refresh" && r.Method == http.MethodPost:
+		slug := r.URL.Query().Get("project")
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		snap, err := refreshWorkProject(ctx, s.store, s.collection, slug)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(snap)
+
+	case r.URL.Path == "/api/work/progress/add" && r.Method == http.MethodPost:
+		var req struct {
+			Project   string `json:"project"`
+			ItemUUID  string `json:"item_uuid"`
+			Item      string `json:"item"`
+			Text      string `json:"text"`
+			RequestID string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		ann, err := s.store.AddProgressAnnotation(ctx, core.AddProgressAnnotationRequest{
+			RequestID:   req.RequestID,
+			Collection:  s.collection,
+			ProjectSlug: slug,
+			ItemUUID:    itemUUID,
+			Body:        req.Text,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ann)
+
+	case r.URL.Path == "/api/work/progress/edit" && r.Method == http.MethodPost:
+		var req struct {
+			Project          string `json:"project"`
+			ItemUUID         string `json:"item_uuid"`
+			Item             string `json:"item"`
+			AnnotationID     string `json:"annotation_id"`
+			Text             string `json:"text"`
+			ExpectedRevision *int64 `json:"expected_revision"`
+			RequestID        string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		if req.ExpectedRevision == nil || *req.ExpectedRevision <= 0 {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "expected_revision must be positive"})
+			return
+		}
+		annotUUID, err := uuid.Parse(req.AnnotationID)
+		if err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid annotation_id"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		ann, err := s.store.EditProgressAnnotation(ctx, core.EditProgressAnnotationRequest{
+			RequestID:        req.RequestID,
+			Collection:       s.collection,
+			ProjectSlug:      slug,
+			ItemUUID:         itemUUID,
+			AnnotationID:     annotUUID,
+			Body:             req.Text,
+			ExpectedRevision: *req.ExpectedRevision,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ann)
+
+	case r.URL.Path == "/api/work/blocker/add" && r.Method == http.MethodPost:
+		var req struct {
+			Project   string `json:"project"`
+			ItemUUID  string `json:"item_uuid"`
+			Item      string `json:"item"`
+			Text      string `json:"text"`
+			RequestID string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		ann, err := s.store.AddBlockerAnnotation(ctx, core.AddBlockerAnnotationRequest{
+			RequestID:   req.RequestID,
+			Collection:  s.collection,
+			ProjectSlug: slug,
+			ItemUUID:    itemUUID,
+			Body:        req.Text,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ann)
+
+	case r.URL.Path == "/api/work/blocker/resolve" && r.Method == http.MethodPost:
+		var req struct {
+			Project          string `json:"project"`
+			ItemUUID         string `json:"item_uuid"`
+			Item             string `json:"item"`
+			AnnotationID     string `json:"annotation_id"`
+			ExpectedRevision *int64 `json:"expected_revision"`
+			RequestID        string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		if req.ExpectedRevision == nil || *req.ExpectedRevision <= 0 {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "expected_revision must be positive"})
+			return
+		}
+		annotUUID, err := uuid.Parse(req.AnnotationID)
+		if err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid annotation_id"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		ann, err := s.store.ResolveBlockerAnnotation(ctx, core.ResolveBlockerAnnotationRequest{
+			RequestID:        req.RequestID,
+			Collection:       s.collection,
+			ProjectSlug:      slug,
+			ItemUUID:         itemUUID,
+			AnnotationID:     annotUUID,
+			ExpectedRevision: *req.ExpectedRevision,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ann)
+
+	case r.URL.Path == "/api/work/associate" && r.Method == http.MethodPost:
+		var req struct {
+			Project    string `json:"project"`
+			ItemUUID   string `json:"item_uuid"`
+			Item       string `json:"item"`
+			TargetType string `json:"target_type"`
+			TargetID   string `json:"target_id"`
+			Rationale  string `json:"rationale"`
+			RequestID  string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		assoc, err := s.store.AssociateWork(ctx, core.AssociateWorkRequest{
+			RequestID:   req.RequestID,
+			Collection:  s.collection,
+			ProjectSlug: slug,
+			ItemUUID:    itemUUID,
+			TargetType:  req.TargetType,
+			TargetID:    req.TargetID,
+			Rationale:   req.Rationale,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(assoc)
+
+	case r.URL.Path == "/api/work/unassociate" && r.Method == http.MethodPost:
+		var req struct {
+			Project          string `json:"project"`
+			ItemUUID         string `json:"item_uuid"`
+			Item             string `json:"item"`
+			AssociationID    string `json:"association_id"`
+			ExpectedRevision *int64 `json:"expected_revision"`
+			RequestID        string `json:"request_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid json"})
+			return
+		}
+		if req.ExpectedRevision == nil || *req.ExpectedRevision <= 0 {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "expected_revision must be positive"})
+			return
+		}
+		assocUUID, err := uuid.Parse(req.AssociationID)
+		if err != nil {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "invalid association_id"})
+			return
+		}
+		slug := req.Project
+		if slug == "" {
+			slug = s.defaultSlug
+		}
+		rawItem := req.ItemUUID
+		if rawItem == "" {
+			rawItem = req.Item
+		}
+		if strings.TrimSpace(rawItem) == "" {
+			writeWorkHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "item or item_uuid is required"})
+			return
+		}
+		itemUUID, err := s.store.ResolveWorkItemUUID(ctx, s.collection, slug, rawItem)
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		if req.RequestID == "" {
+			req.RequestID = uuid.NewString()
+		}
+		assoc, err := s.store.UnassociateWork(ctx, core.UnassociateWorkRequest{
+			RequestID:        req.RequestID,
+			Collection:       s.collection,
+			ProjectSlug:      slug,
+			AssociationID:    assocUUID,
+			ItemUUID:         itemUUID,
+			ExpectedRevision: req.ExpectedRevision,
+		})
+		if err != nil {
+			writeWorkHTTPError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(assoc)
 
 	default:
 		http.NotFound(w, r)

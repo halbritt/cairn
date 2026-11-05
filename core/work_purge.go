@@ -71,6 +71,9 @@ func (s *Store) PurgeMetadata(ctx context.Context, req PurgeMetadataRequest) (Pu
 	}
 
 	return mutate(ctx, s, "work-metadata-purge", req.RequestID, req, func(tx pgx.Tx) (PurgeResult, error) {
+		if err := s.checkWorkReadableTx(ctx, tx); err != nil {
+			return PurgeResult{}, err
+		}
 		var bindingID uuid.UUID
 		var newRev int64
 		err := tx.QueryRow(ctx, `UPDATE cairn.work_project
@@ -88,7 +91,7 @@ func (s *Store) PurgeMetadata(ctx context.Context, req PurgeMetadataRequest) (Pu
 		patternParam := "%" + req.Pattern + "%"
 
 		// 1. Purge titles in work_item
-		if req.FieldName == "title" || req.FieldName == "all" {
+		if req.FieldName == "title" || req.FieldName == "all" || req.FieldName == "" {
 			tag, err := tx.Exec(ctx, `UPDATE cairn.work_item
 				SET title = '[purged]'
 				WHERE binding_id = $1 AND title ILIKE $2`, bindingID, patternParam)
@@ -96,6 +99,20 @@ func (s *Store) PurgeMetadata(ctx context.Context, req PurgeMetadataRequest) (Pu
 				return PurgeResult{}, err
 			}
 			res.PurgedItems = tag.RowsAffected()
+
+			if _, err := tx.Exec(ctx, `UPDATE cairn.work_project
+				SET last_refresh_error = CASE WHEN last_refresh_error ILIKE $2 THEN '[purged]' ELSE last_refresh_error END,
+				    last_auth_error = CASE WHEN last_auth_error ILIKE $2 THEN '[purged]' ELSE last_auth_error END
+				WHERE binding_id = $1 AND (last_refresh_error ILIKE $2 OR last_auth_error ILIKE $2)`,
+				bindingID, patternParam); err != nil {
+				return PurgeResult{}, err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE cairn.work_item
+				SET refresh_error = '[purged]'
+				WHERE binding_id = $1 AND refresh_error ILIKE $2`,
+				bindingID, patternParam); err != nil {
+				return PurgeResult{}, err
+			}
 		}
 
 		// 2. Purge annotations in work_annotation and work_annotation_history
@@ -123,19 +140,32 @@ func (s *Store) PurgeMetadata(ctx context.Context, req PurgeMetadataRequest) (Pu
 		if err != nil {
 			return PurgeResult{}, err
 		}
-		_, _ = tx.Exec(ctx, `UPDATE cairn.work_association_history h
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_association_history h
 			SET rationale = '[purged]'
 			FROM cairn.work_association a
-			WHERE h.association_id = a.association_id AND a.binding_id = $1 AND h.rationale ILIKE $2`, bindingID, patternParam)
+			WHERE h.association_id = a.association_id AND a.binding_id = $1 AND h.rationale ILIKE $2`, bindingID, patternParam); err != nil {
+			return PurgeResult{}, err
+		}
 		res.PurgedAssocs = tagAssoc.RowsAffected()
 
 		// 4. Scrub mutation_request responses tied to this exact binding
-		_, _ = tx.Exec(ctx, `UPDATE cairn.mutation_request
-			SET response = '{"purged": true}'::jsonb, ordinary_deleted = true
+		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request
+			SET response = NULL, ordinary_deleted = true
 			WHERE operation LIKE 'work-%'
-			  AND (response->>'binding_id' = $1::text OR response->>'project_slug' = $2 OR request_payload->>'project_slug' = $2)
-			  AND (response->>'body' ILIKE $3 OR response->>'text' ILIKE $3 OR response->>'rationale' ILIKE $3 OR response::text ILIKE $3)`,
-			bindingID, req.ProjectSlug, patternParam)
+			  AND response IS NOT NULL
+			  AND response->>'binding_id' = $1::text
+			  AND (response->>'body' ILIKE $2 OR response->>'rationale' ILIKE $2 OR response->>'title' ILIKE $2)`,
+			bindingID, patternParam)
+		if err != nil {
+			return PurgeResult{}, err
+		}
+
+		// Record purge entry in cairn.work_metadata_purge (whether req.Exclude is true or false)
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.work_metadata_purge (binding_id, field_name, pattern, revision)
+			VALUES ($1, $2, $3, $4)`, bindingID, req.FieldName, req.Pattern, newRev)
+		if err != nil {
+			return PurgeResult{}, err
+		}
 
 		// 5. Register persistent exclusion
 		if req.Exclude {
@@ -177,6 +207,9 @@ func (s *Store) ExcludeMetadata(ctx context.Context, req ExcludeMetadataRequest)
 	}
 
 	return mutate(ctx, s, "work-metadata-exclude", req.RequestID, req, func(tx pgx.Tx) (WorkMetadataExclusion, error) {
+		if err := s.checkWorkReadableTx(ctx, tx); err != nil {
+			return WorkMetadataExclusion{}, err
+		}
 		var bindingID uuid.UUID
 		var newRev int64
 		err := tx.QueryRow(ctx, `UPDATE cairn.work_project
@@ -203,7 +236,7 @@ func (s *Store) ExcludeMetadata(ctx context.Context, req ExcludeMetadataRequest)
 	})
 }
 
-// ReapplyExclusions reapplies all stored exclusions across work items and annotations.
+// ReapplyExclusions reapplies all stored exclusions across work items, annotations, associations, and mutations.
 // Called during restore recovery (AC-09).
 func ReapplyExclusions(ctx context.Context, tx pgx.Tx) error {
 	rows, err := tx.Query(ctx, `SELECT binding_id, field_name, pattern FROM cairn.work_metadata_exclusion`)
@@ -227,19 +260,71 @@ func ReapplyExclusions(ctx context.Context, tx pgx.Tx) error {
 	rows.Close()
 
 	for _, e := range exclusions {
-		patternParam := "%" + e.pattern + "%"
-		if e.fieldName == "title" || e.fieldName == "all" {
-			_, err = tx.Exec(ctx, `UPDATE cairn.work_item SET title = '[redacted]' WHERE binding_id = $1 AND title ILIKE $2`, e.bindingID, patternParam)
-			if err != nil {
-				return err
-			}
+		if err := PurgeBindingMetadata(ctx, tx, e.bindingID, e.fieldName, e.pattern); err != nil {
+			return err
 		}
-		if e.fieldName == "annotation" || e.fieldName == "all" {
-			_, err = tx.Exec(ctx, `UPDATE cairn.work_annotation SET body = '[redacted]' WHERE binding_id = $1 AND body ILIKE $2`, e.bindingID, patternParam)
-			if err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+// PurgeBindingMetadata redacts metadata across work_item, work_annotation, work_annotation_history,
+// work_association, work_association_history, and mutation_request for a specific binding.
+func PurgeBindingMetadata(ctx context.Context, tx pgx.Tx, bindingID uuid.UUID, fieldName, pattern string) error {
+	patternParam := "%" + pattern + "%"
+	if fieldName == "title" || fieldName == "all" || fieldName == "" {
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_item
+			SET title = '[redacted]'
+			WHERE binding_id = $1 AND title ILIKE $2`, bindingID, patternParam); err != nil {
+			return err
 		}
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_project
+			SET last_refresh_error = CASE WHEN last_refresh_error ILIKE $2 THEN '[redacted]' ELSE last_refresh_error END,
+			    last_auth_error = CASE WHEN last_auth_error ILIKE $2 THEN '[redacted]' ELSE last_auth_error END
+			WHERE binding_id = $1 AND (last_refresh_error ILIKE $2 OR last_auth_error ILIKE $2)`,
+			bindingID, patternParam); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_item
+			SET refresh_error = '[redacted]'
+			WHERE binding_id = $1 AND refresh_error ILIKE $2`,
+			bindingID, patternParam); err != nil {
+			return err
+		}
+	}
+	if fieldName == "annotation" || fieldName == "all" || fieldName == "" {
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_annotation
+			SET body = '[redacted]', updated_at = clock_timestamp()
+			WHERE binding_id = $1 AND body ILIKE $2`, bindingID, patternParam); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_annotation_history h
+			SET body = '[redacted]'
+			FROM cairn.work_annotation a
+			WHERE h.annotation_id = a.annotation_id AND a.binding_id = $1 AND h.body ILIKE $2`, bindingID, patternParam); err != nil {
+			return err
+		}
+	}
+	if fieldName == "all" || fieldName == "" {
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_association
+			SET rationale = '[redacted]'
+			WHERE binding_id = $1 AND rationale ILIKE $2`, bindingID, patternParam); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE cairn.work_association_history h
+			SET rationale = '[redacted]'
+			FROM cairn.work_association a
+			WHERE h.association_id = a.association_id AND a.binding_id = $1 AND h.rationale ILIKE $2`, bindingID, patternParam); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE cairn.mutation_request
+		SET response = NULL, ordinary_deleted = true
+		WHERE operation LIKE 'work-%'
+		  AND response IS NOT NULL
+		  AND response->>'binding_id' = $1::text
+		  AND (response->>'body' ILIKE $2 OR response->>'rationale' ILIKE $2 OR response->>'title' ILIKE $2)`,
+		bindingID, patternParam); err != nil {
+		return err
 	}
 	return nil
 }

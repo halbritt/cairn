@@ -7,83 +7,149 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="app-header">
-    <div class="header-left">
-      <h1>Cairn Work View</h1>
-      <select id="project-select" aria-label="Select Project">
-        <option value="">Loading projects...</option>
-      </select>
-    </div>
-    <div class="header-right">
-      <span id="staleness-indicator" class="badge">Checking status...</span>
-      <button id="refresh-btn" type="button">Refresh</button>
-    </div>
-  </header>
+  <div id="work-app">
+    <header class="app-header">
+      <div class="header-left">
+        <h1>Cairn Work View</h1>
+        <select id="project-select" aria-label="Select project" disabled>
+          <option value="">Loading projects…</option>
+        </select>
+      </div>
+      <div class="header-right">
+        <span id="staleness-indicator" class="badge" role="status">Checking status…</span>
+        <button id="refresh-btn" type="button" disabled>Refresh</button>
+      </div>
+    </header>
 
-  <div id="auth-alert" class="alert alert-danger" style="display: none;">
-    <strong>Authentication Error:</strong> Plane access credentials rejected. Cache is masked until reauthorized.
+    <nav class="toolbar" aria-label="Work filters and pages">
+      <label for="filter-state-group">State
+        <select id="filter-state-group">
+          <option value="">All states</option>
+          <option value="backlog">Backlog</option>
+          <option value="unstarted">To do</option>
+          <option value="started">In progress</option>
+          <option value="completed">Done</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <label class="checkbox-label" for="filter-blocker-only">
+        <input type="checkbox" id="filter-blocker-only"> Open blockers only
+      </label>
+      <div class="pagination-controls">
+        <button type="button" id="page-prev-btn" disabled>Previous</button>
+        <span id="page-info" role="status">Page 1</span>
+        <button type="button" id="page-next-btn" disabled>Next</button>
+      </div>
+    </nav>
+
+    <div id="auth-alert" class="alert alert-danger" role="alert" hidden>
+      <strong>Plane access rejected.</strong> External fields are hidden. Restore access to the configured Plane account, then refresh.
+    </div>
+    <div id="view-error" class="alert alert-danger" role="alert" hidden></div>
+    <div id="refresh-error" class="alert alert-danger" role="status" hidden></div>
+    <p id="refresh-availability" class="board-summary" role="status" hidden></p>
+    <p id="board-summary" class="board-summary" role="status"></p>
+    <p id="empty-state" class="empty-state" hidden>No work items in this project.</p>
+    <main class="board-container" aria-label="Work items by Plane state">
+      <section class="board-column" data-group="unknown" aria-labelledby="heading-unknown" hidden>
+        <h2 class="column-header" id="heading-unknown">State unavailable <span class="count" id="count-unknown">0</span></h2>
+        <div class="card-list" id="col-unknown"></div>
+      </section>
+      <section class="board-column" data-group="backlog" aria-labelledby="heading-backlog">
+        <h2 class="column-header" id="heading-backlog">Backlog <span class="count" id="count-backlog">0</span></h2>
+        <div class="card-list" id="col-backlog"></div>
+      </section>
+      <section class="board-column" data-group="unstarted" aria-labelledby="heading-unstarted">
+        <h2 class="column-header" id="heading-unstarted">To do <span class="count" id="count-unstarted">0</span></h2>
+        <div class="card-list" id="col-unstarted"></div>
+      </section>
+      <section class="board-column" data-group="started" aria-labelledby="heading-started">
+        <h2 class="column-header" id="heading-started">In progress <span class="count" id="count-started">0</span></h2>
+        <div class="card-list" id="col-started"></div>
+      </section>
+      <section class="board-column" data-group="completed" aria-labelledby="heading-completed">
+        <h2 class="column-header" id="heading-completed">Done <span class="count" id="count-completed">0</span></h2>
+        <div class="card-list" id="col-completed"></div>
+      </section>
+      <section class="board-column" data-group="cancelled" aria-labelledby="heading-cancelled">
+        <h2 class="column-header" id="heading-cancelled">Cancelled <span class="count" id="count-cancelled">0</span></h2>
+        <div class="card-list" id="col-cancelled"></div>
+      </section>
+    </main>
   </div>
 
-  <main class="board-container">
-    <div class="board-column" data-group="backlog">
-      <div class="column-header">Backlog <span class="count" id="count-backlog">0</span></div>
-      <div class="card-list" id="col-backlog"></div>
-    </div>
-    <div class="board-column" data-group="unstarted">
-      <div class="column-header">Todo / Unstarted <span class="count" id="count-unstarted">0</span></div>
-      <div class="card-list" id="col-unstarted"></div>
-    </div>
-    <div class="board-column" data-group="started">
-      <div class="column-header">In Progress <span class="count" id="count-started">0</span></div>
-      <div class="card-list" id="col-started"></div>
-    </div>
-    <div class="board-column" data-group="completed">
-      <div class="column-header">Done <span class="count" id="count-completed">0</span></div>
-      <div class="card-list" id="col-completed"></div>
-    </div>
-    <div class="board-column" data-group="cancelled">
-      <div class="column-header">Cancelled <span class="count" id="count-cancelled">0</span></div>
-      <div class="card-list" id="col-cancelled"></div>
-    </div>
-  </main>
-
-  <div id="detail-modal" class="modal-backdrop" style="display: none;">
-    <div class="modal-content">
+  <div id="detail-modal" class="modal-backdrop" hidden>
+    <section class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-header">
-        <h2 id="modal-title">Item Details</h2>
-        <button id="modal-close" class="close-btn">&times;</button>
+        <h2 id="modal-title">Item details</h2>
+        <button id="modal-close" type="button" class="close-btn" aria-label="Close item details">×</button>
       </div>
-      <div class="modal-body">
-        <div id="modal-meta" class="meta-section"></div>
-        <h3>Associations</h3>
-        <ul id="modal-associations" class="assoc-list"></ul>
-        <h3>Annotations</h3>
-        <ul id="modal-annotations" class="annot-list"></ul>
-        <div class="modal-actions">
-          <input type="text" id="annotation-input" placeholder="Add progress or blocker..." />
-          <button type="button" id="add-progress-btn">Add Progress</button>
-          <button type="button" id="add-blocker-btn">Add Blocker</button>
-        </div>
+      <div id="detail-error" class="alert alert-danger" role="alert" hidden></div>
+      <div id="modal-meta" class="meta-section"></div>
+      <section id="sessions-section" hidden>
+        <h3>Linked executions</h3>
+        <ul id="modal-sessions" class="detail-list"></ul>
+      </section>
+      <section id="requests-section" hidden>
+        <h3>Linked events</h3>
+        <ul id="modal-requests" class="detail-list"></ul>
+      </section>
+      <section id="response-groups-section" hidden>
+        <h3>Response groups</h3>
+        <ul id="modal-response-groups" class="detail-list"></ul>
+      </section>
+      <section id="result-records-section" hidden>
+        <h3>Result records</h3>
+        <ul id="modal-result-records" class="detail-list"></ul>
+      </section>
+      <section id="run-receipts-section" hidden>
+        <h3>Run receipts</h3>
+        <ul id="modal-run-receipts" class="detail-list"></ul>
+      </section>
+      <h3>Associations</h3>
+      <ul id="modal-associations" class="detail-list"></ul>
+      <div class="assoc-actions">
+        <label for="assoc-target-type">Target type
+          <select id="assoc-target-type">
+            <option value="session">Session execution</option>
+            <option value="event">Event</option>
+            <option value="response_group">Response group</option>
+            <option value="run_receipt">Run receipt</option>
+            <option value="result_record">Result record</option>
+          </select>
+        </label>
+        <label for="assoc-target-id">Exact target
+          <input type="text" id="assoc-target-id" aria-describedby="assoc-target-help">
+        </label>
+        <p id="assoc-target-help" class="hint">Agent UUID:execution UUID</p>
+        <label for="assoc-rationale">Reason for linking (optional)
+          <input type="text" id="assoc-rationale">
+        </label>
+        <button type="button" id="add-assoc-btn">Add association</button>
       </div>
-    </div>
+      <h3>Selected progress and blockers</h3>
+      <ul id="modal-annotations" class="detail-list"></ul>
+      <label for="annotation-input">Progress or blocker note</label>
+      <textarea id="annotation-input" rows="3"></textarea>
+      <div class="modal-actions">
+        <button type="button" id="add-progress-btn">Add progress</button>
+        <button type="button" id="add-blocker-btn">Add blocker</button>
+      </div>
+    </section>
   </div>
 
-  <div id="login-modal" class="modal-backdrop" style="display: none;">
-    <div class="modal-content" style="max-width: 400px;">
-      <h2>Operator Login</h2>
-      <p style="margin: 0.5rem 0 1rem 0; font-size: 0.875rem; color: #5e6c84;">
-        Enter the one-time launch code printed on your terminal:
-      </p>
+  <div id="login-modal" class="modal-backdrop" hidden>
+    <section class="modal-content login-content" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <h2 id="login-title">Operator login</h2>
+      <p>Enter the one-time launch code printed in your terminal.</p>
       <form id="login-form">
-        <input type="text" id="launch-code-input" placeholder="Launch code" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #dfe1e6; border-radius: 4px;" required />
-        <button type="submit" style="width: 100%; padding: 0.5rem; background: #0052cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
-          Log In
-        </button>
+        <label for="launch-code-input">Launch code</label>
+        <input type="text" id="launch-code-input" autocomplete="off" spellcheck="false" required>
+        <button type="submit">Log in</button>
       </form>
-      <div id="login-error" style="color: #de350b; font-size: 0.875rem; margin-top: 0.5rem; display: none;"></div>
-    </div>
+      <div id="login-error" class="alert alert-danger" role="alert" hidden></div>
+    </section>
   </div>
-
   <script src="app.js"></script>
 </body>
 </html>

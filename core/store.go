@@ -27,11 +27,33 @@ type Store struct {
 	semanticRanker    SemanticRanker
 	semanticRetriever SemanticRetriever
 	session           *agentSessionChannel
+	compatibility     CompatibilityPolicy
 }
 
-// Open must be called by trusted host code. Agents must never receive the DSN
-// or choose the Channel. The local CLI uses OS identity and testimony only.
-func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
+func defaultMaxMigrationVersion() int {
+	files, err := schemas.ReadDir("schema")
+	if err != nil {
+		return 0
+	}
+	return len(files)
+}
+
+func DefaultCompatibilityPolicy() CompatibilityPolicy {
+	return CompatibilityPolicy{
+		MaxMigrationVersion: defaultMaxMigrationVersion(),
+		SupportedWorkFeatures: map[string]bool{
+			"work-view/1": true,
+		},
+	}
+}
+
+func (s *Store) WithCompatibilityPolicy(policy CompatibilityPolicy) *Store {
+	s.compatibility = policy
+	return s
+}
+
+// OpenWithCompatibility enables trusted host code to specify an explicit compatibility policy.
+func OpenWithCompatibility(ctx context.Context, dsn string, channel Channel, policy CompatibilityPolicy) (*Store, error) {
 	if strings.TrimSpace(channel.Principal) == "" || len(channel.Principal) > 256 {
 		return nil, failure("AUTHORITY_DENIED", "trusted channel identity required")
 	}
@@ -46,7 +68,20 @@ func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
 		pool.Close()
 		return nil, &Error{Code: "STORE_UNREACHABLE", Message: "cannot connect to the configured Cairn database", Cause: err}
 	}
-	return &Store{pool: pool, channel: channel}, nil
+	s := &Store{pool: pool, channel: channel, compatibility: policy}
+	if channel.Role != RoleInstaller {
+		if err := s.checkCompatibility(ctx); err != nil {
+			pool.Close()
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+// Open must be called by trusted host code. Agents must never receive the DSN
+// or choose the Channel. The local CLI uses OS identity and testimony only.
+func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
+	return OpenWithCompatibility(ctx, dsn, channel, DefaultCompatibilityPolicy())
 }
 
 // OpenWithSemanticRanker enables an optional host-owned scorer before the store
@@ -76,6 +111,19 @@ func (s *Store) Close() {
 
 func (s *Store) Channel() Channel {
 	return s.channel
+}
+
+// CheckCompatibilityFloor verifies that the database has applied migrations up to minVersion.
+func (s *Store) CheckCompatibilityFloor(ctx context.Context, minVersion int) error {
+	var maxVersion int
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(max(version), 0) FROM public.cairn_migration`).Scan(&maxVersion)
+	if err != nil {
+		return err
+	}
+	if maxVersion < minVersion {
+		return failure("SCHEMA_MISMATCH", fmt.Sprintf("database schema version %d is below required floor %d", maxVersion, minVersion))
+	}
+	return nil
 }
 
 // Migrate requires installer credentials and a dedicated experimental database.
@@ -129,6 +177,113 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return tx.Commit(ctx)
 }
 
+func (s *Store) checkCompatibility(ctx context.Context) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err := s.checkCompatibilityTx(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) effectivePolicy() CompatibilityPolicy {
+	pol := s.compatibility
+	if pol.MaxMigrationVersion == 0 {
+		pol.MaxMigrationVersion = defaultMaxMigrationVersion()
+	}
+	if pol.SupportedWorkFeatures == nil {
+		pol.SupportedWorkFeatures = map[string]bool{
+			"work-view/1": true,
+		}
+	}
+	return pol
+}
+
+func (s *Store) checkCompatibilityTx(ctx context.Context, tx pgx.Tx) error {
+	var migTableExists bool
+	err := tx.QueryRow(ctx, `SELECT to_regclass('public.cairn_migration') IS NOT NULL`).Scan(&migTableExists)
+	if err != nil {
+		return err
+	}
+	if !migTableExists {
+		return nil
+	}
+	policy := s.effectivePolicy()
+	var maxVersion int
+	err = tx.QueryRow(ctx, `SELECT COALESCE(max(version), 0) FROM public.cairn_migration`).Scan(&maxVersion)
+	if err != nil {
+		return err
+	}
+	if policy.MaxMigrationVersion > 0 && maxVersion > policy.MaxMigrationVersion {
+		return failure("SCHEMA_MISMATCH", fmt.Sprintf("database schema version %d exceeds supported version %d", maxVersion, policy.MaxMigrationVersion))
+	}
+	if maxVersion >= 75 {
+		var wfExists bool
+		err = tx.QueryRow(ctx, `SELECT to_regclass('cairn.work_feature') IS NOT NULL`).Scan(&wfExists)
+		if err != nil {
+			return err
+		}
+		if wfExists {
+			rows, err := tx.Query(ctx, `SELECT feature_name, status FROM cairn.work_feature WHERE status = 'active'`)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var featName, status string
+				if err := rows.Scan(&featName, &status); err != nil {
+					rows.Close()
+					return err
+				}
+				if !policy.SupportedWorkFeatures[featName] {
+					rows.Close()
+					return failure("SCHEMA_MISMATCH", fmt.Sprintf("active work feature %q is not supported by policy", featName))
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+		}
+
+		for _, feat := range []string{"work-view/1", "work-artifacts/1", "coordination-waits/1", "next-turn-notices/1", "work-advice/1"} {
+			if !policy.SupportedWorkFeatures[feat] {
+				count, reason, err := countRequiredWorkFeatureState(ctx, tx, feat)
+				if err != nil {
+					return err
+				}
+				if count > 0 {
+					return failure("SCHEMA_MISMATCH", fmt.Sprintf("%s; feature %s is not supported by policy", reason, feat))
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) checkWorkSchemaFloorTx(ctx context.Context, tx pgx.Tx) error {
+	var tableExists bool
+	err := tx.QueryRow(ctx, `SELECT to_regclass('public.cairn_migration') IS NOT NULL`).Scan(&tableExists)
+	if err != nil {
+		return err
+	}
+	if !tableExists {
+		return failure("SCHEMA_MISMATCH", "database schema version 0 is below required floor 75")
+	}
+	var maxVersion int
+	err = tx.QueryRow(ctx, `SELECT COALESCE(max(version), 0) FROM public.cairn_migration`).Scan(&maxVersion)
+	if err != nil {
+		return err
+	}
+	if maxVersion < 75 {
+		return failure("SCHEMA_MISMATCH", fmt.Sprintf("database schema version %d is below required floor 75", maxVersion))
+	}
+	return nil
+}
+
 func (s *Store) begin(ctx context.Context) (pgx.Tx, error) {
 	return s.beginLevel(ctx, pgx.ReadCommitted)
 }
@@ -149,6 +304,12 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 	if err = restoreAdmission(ctx, tx); err != nil {
 		tx.Rollback(context.Background())
 		return nil, err
+	}
+	if s.channel.Role != RoleInstaller {
+		if err = s.checkCompatibilityTx(ctx, tx); err != nil {
+			tx.Rollback(context.Background())
+			return nil, err
+		}
 	}
 	if s.session != nil {
 		a, checkErr := currentAgentSession(ctx, tx, s.session.Ref, s.session.Profile, s.channel.Repo, false, s.session.Destination)

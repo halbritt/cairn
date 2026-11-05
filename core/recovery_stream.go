@@ -96,7 +96,7 @@ func streamStagedRecovery(ctx context.Context, staged *recoveryStage, emit func(
 }
 
 func (s *recoveryStage) fresh() RecoveryRecord {
-	return RecoveryRecord{Schema: recoverySchema, RootGrantID: s.root, CapturedAt: s.captured, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
+	return RecoveryRecord{Schema: recoverySchema, RootGrantID: s.root, CapturedAt: s.captured, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}, WorkExclusions: []RecoveryWorkExclusion{}, WorkPurges: []RecoveryWorkExclusion{}}
 }
 
 // small is bounded by both legacy per-list counts and one record's bytes. A
@@ -111,7 +111,7 @@ func (s *recoveryStage) small(ctx context.Context) (RecoveryRecord, bool, error)
 		return record, false, nil
 	}
 	bytes := 0
-	for _, kind := range []string{"audit", "withdrawal", "context"} {
+	for _, kind := range []string{"audit", "withdrawal", "context", "work_exclusion", "work_purge"} {
 		after := ""
 		for {
 			bodies, keys, err := s.page(ctx, kind, after, recoveryPageSize)
@@ -145,6 +145,18 @@ func (s *recoveryStage) small(ctx context.Context) (RecoveryRecord, bool, error)
 						return record, false, err
 					}
 					record.Contexts = append(record.Contexts, item)
+				case "work_exclusion":
+					var item RecoveryWorkExclusion
+					if err = json.Unmarshal(body, &item); err != nil {
+						return record, false, err
+					}
+					record.WorkExclusions = append(record.WorkExclusions, item)
+				case "work_purge":
+					var item RecoveryWorkExclusion
+					if err = json.Unmarshal(body, &item); err != nil {
+						return record, false, err
+					}
+					record.WorkPurges = append(record.WorkPurges, item)
 				}
 			}
 			after = keys[len(keys)-1]

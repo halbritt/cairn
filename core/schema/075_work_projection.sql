@@ -17,6 +17,11 @@ CREATE TABLE cairn.work_project (
     auth_rejected boolean NOT NULL DEFAULT false,
     last_auth_error text,
     last_successful_refresh_at timestamptz,
+    refresh_inflight_token uuid,
+    refresh_inflight_expires_at timestamptz,
+    next_refresh_allowed_at timestamptz,
+    last_refresh_error text,
+    last_refresh_error_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT work_project_collection_origin_workspace_project UNIQUE (collection, plane_origin, workspace_uuid, project_uuid),
@@ -132,7 +137,17 @@ CREATE TABLE cairn.work_metadata_exclusion (
 );
 CREATE INDEX work_excl_binding ON cairn.work_metadata_exclusion(binding_id);
 
-CREATE UNIQUE INDEX work_assoc_unique_target ON cairn.work_association(binding_id, plane_item_uuid, target_type, target_id) WHERE state = 'active';
+CREATE UNIQUE INDEX work_assoc_unique_target ON cairn.work_association(binding_id, plane_item_uuid, target_type, target_id);
+
+CREATE TABLE cairn.work_metadata_purge (
+    purge_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    binding_id uuid NOT NULL REFERENCES cairn.work_project(binding_id) ON DELETE CASCADE,
+    field_name text NOT NULL CHECK (field_name IN ('title', 'annotation', 'all')),
+    pattern text NOT NULL,
+    revision bigint NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX work_purge_binding ON cairn.work_metadata_purge(binding_id);
 
 CREATE TABLE cairn.work_feature (
     feature_name text PRIMARY KEY,

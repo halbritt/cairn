@@ -13,32 +13,38 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/google/uuid"
 )
 
 const (
-	MaxCLIOutputBytes = 16 * 1024 * 1024 // 16 MiB
-	DefaultTimeout    = 30 * time.Second
-	MaxItemLimit      = 10000
+	MaxCLIOutputBytes    = 16 * 1024 * 1024 // 16 MiB
+	MaxCLIErrOutputBytes = 1 * 1024 * 1024  // 1 MiB
+	DefaultTimeout       = 30 * time.Second
+	MaxItemLimit         = 10000
+	routingSchemaVersion = "plane-routing/1"
 )
 
 type Error struct {
 	Code    string
 	Message string
+	Cause   error
 }
 
-func (e *Error) Error() string {
-	return e.Message
-}
+func (e *Error) Error() string { return e.Message }
+func (e *Error) Unwrap() error { return e.Cause }
 
 var (
-	ErrAuthRejected = &Error{Code: "AUTHORITY_DENIED", Message: "Plane authentication/authorization rejected"}
-	ErrTooLarge     = &Error{Code: "PROJECT_TOO_LARGE", Message: "Plane project exceeds maximum of 10,000 items"}
+	ErrAuthRejected   = &Error{Code: "AUTHORITY_DENIED", Message: "Plane authentication/authorization rejected"}
+	ErrTooLarge       = &Error{Code: "PROJECT_TOO_LARGE", Message: "Plane project exceeds maximum of 10,000 items"}
+	errStderrTooLarge = errors.New("plane stderr exceeded maximum size")
 )
 
 type NormalizedItem struct {
@@ -54,11 +60,30 @@ type NormalizedItem struct {
 	SourceURL       string     `json:"source_url,omitempty"`
 }
 
+type ConfigSelector struct {
+	ConfigPath string
+	Instance   string
+	BaseURL    string
+	Workspace  string
+	Project    string
+}
+
+type EffectiveConfig struct {
+	ConfigPath    string `json:"config_path,omitempty"`
+	Instance      string `json:"instance,omitempty"`
+	PlaneOrigin   string `json:"plane_origin"`
+	WorkspaceSlug string `json:"workspace_slug"`
+	Project       string `json:"project,omitempty"`
+}
+
 type ProjectBindingConfig struct {
 	PlaneOrigin       string    `json:"plane_origin"`
 	WorkspaceUUID     uuid.UUID `json:"workspace_uuid"`
+	WorkspaceSlug     string    `json:"workspace_slug"`
 	ProjectUUID       uuid.UUID `json:"project_uuid"`
 	ProjectIdentifier string    `json:"project_identifier"`
+	PlaneInstance     string    `json:"plane_instance"`
+	ConnectorIdentity string    `json:"connector_identity"`
 	ConfigRevision    string    `json:"config_revision"`
 }
 
@@ -66,6 +91,9 @@ type Connector struct {
 	BinaryPath string
 	ConfigPath string
 	Timeout    time.Duration
+	Getenv     func(string) string
+	wrapStdout func(io.Reader) io.Reader
+	wrapStderr func(io.Reader) io.Reader
 }
 
 func NewConnector() *Connector {
@@ -73,21 +101,223 @@ func NewConnector() *Connector {
 	if bin == "" {
 		bin = "plane"
 	}
-	cfg := os.Getenv("PLANE_CONFIG")
-	if cfg == "" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			cfg = filepath.Join(home, ".config", "plane-cli", "config.toml")
-		}
-	}
-	return &Connector{
-		BinaryPath: bin,
-		ConfigPath: cfg,
-		Timeout:    DefaultTimeout,
-	}
+	return &Connector{BinaryPath: bin, Timeout: DefaultTimeout}
 }
 
-// Disallow mutating commands strictly.
+func (c *Connector) getenv(key string) string {
+	if c != nil && c.Getenv != nil {
+		return c.Getenv(key)
+	}
+	return os.Getenv(key)
+}
+
+type tomlConfigFile struct {
+	BaseURL          string                        `toml:"base_url"`
+	Workspace        string                        `toml:"workspace"`
+	Project          string                        `toml:"project"`
+	DefaultInstance  string                        `toml:"default_instance"`
+	Instances        map[string]tomlConfigInstance `toml:"instance"`
+	ProjectOverrides map[string]tomlConfigOverride `toml:"project_overrides"`
+}
+
+type tomlConfigInstance struct {
+	BaseURL   string `toml:"base_url"`
+	Workspace string `toml:"workspace"`
+}
+
+type tomlConfigOverride struct {
+	Instance  string `toml:"instance"`
+	BaseURL   string `toml:"base_url"`
+	Workspace string `toml:"workspace"`
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func (c *Connector) resolveConfigPath(flagPath string) string {
+	if flagPath != "" {
+		return flagPath
+	}
+	if c != nil && c.ConfigPath != "" {
+		return c.ConfigPath
+	}
+	if p := c.getenv("PLANE_CONFIG"); p != "" {
+		return p
+	}
+	base := c.getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return ""
+		}
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "plane-cli", "config.toml")
+}
+
+func (c *Connector) ResolveEffectiveConfig(sel ConfigSelector) (EffectiveConfig, error) {
+	var f tomlConfigFile
+	path := c.resolveConfigPath(sel.ConfigPath)
+	if path != "" {
+		if _, err := toml.DecodeFile(path, &f); err != nil && !os.IsNotExist(err) {
+			return EffectiveConfig{}, &Error{
+				Code:    "INVALID_REQUEST",
+				Message: fmt.Sprintf("plane config file %s: %v", path, err),
+			}
+		}
+	}
+
+	project := firstNonEmpty(sel.Project, c.getenv("PLANE_PROJECT"), f.Project)
+
+	var ov tomlConfigOverride
+	if project != "" && len(f.ProjectOverrides) > 0 {
+		keys := make([]string, 0, len(f.ProjectOverrides))
+		for k := range f.ProjectOverrides {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, name := range keys {
+			if strings.EqualFold(name, project) {
+				ov = f.ProjectOverrides[name]
+				break
+			}
+		}
+	}
+
+	instName := firstNonEmpty(sel.Instance, c.getenv("PLANE_INSTANCE"))
+	explicit := instName != ""
+	if !explicit {
+		instName = firstNonEmpty(ov.Instance, f.DefaultInstance)
+	}
+	if explicit && ov.Instance != "" && !strings.EqualFold(ov.Instance, instName) {
+		ov = tomlConfigOverride{}
+	}
+
+	var inst tomlConfigInstance
+	canonicalInst := ""
+	if instName != "" {
+		keys := make([]string, 0, len(f.Instances))
+		for k := range f.Instances {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		found := false
+		for _, name := range keys {
+			if strings.EqualFold(name, instName) {
+				inst = f.Instances[name]
+				canonicalInst = name
+				found = true
+				break
+			}
+		}
+		if !found {
+			return EffectiveConfig{}, &Error{
+				Code:    "CONFIG_MISMATCH",
+				Message: fmt.Sprintf("Plane instance %q is not defined in %s", instName, path),
+			}
+		}
+	}
+
+	fileBase := firstNonEmpty(ov.BaseURL, inst.BaseURL, f.BaseURL)
+	fileWS := firstNonEmpty(ov.Workspace, inst.Workspace, f.Workspace)
+	rawBase := firstNonEmpty(sel.BaseURL, c.getenv("PLANE_BASE_URL"), fileBase)
+	if strings.TrimSpace(rawBase) == "" {
+		return EffectiveConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: "Plane base URL is not configured (set PLANE_BASE_URL or base_url in config.toml)",
+		}
+	}
+	normOrigin, err := NormalizeOrigin(rawBase)
+	if err != nil {
+		return EffectiveConfig{}, err
+	}
+	wsSlug := strings.TrimSpace(firstNonEmpty(sel.Workspace, c.getenv("PLANE_WORKSPACE"), fileWS))
+	if wsSlug == "" {
+		return EffectiveConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: "Plane workspace slug is not configured (set PLANE_WORKSPACE or workspace in config.toml)",
+		}
+	}
+	return EffectiveConfig{
+		ConfigPath: path, Instance: canonicalInst, PlaneOrigin: normOrigin, WorkspaceSlug: wsSlug, Project: project,
+	}, nil
+}
+
+func NormalizeOrigin(rawURL string) (string, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return "", &Error{Code: "INVALID_REQUEST", Message: "empty Plane base URL"}
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return "", &Error{Code: "INVALID_REQUEST", Message: "invalid Plane base URL: " + err.Error()}
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", &Error{Code: "INVALID_REQUEST", Message: "plane origin must use http or https scheme"}
+	}
+	if u.Host == "" {
+		return "", &Error{Code: "INVALID_REQUEST", Message: "plane origin must include a host"}
+	}
+	if u.User != nil {
+		return "", &Error{Code: "INVALID_REQUEST", Message: "plane origin must not embed credentials"}
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Path = ""
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func parseCanonicalUUID(raw string) (uuid.UUID, error) {
+	if len(raw) != 36 {
+		return uuid.Nil, fmt.Errorf("expected canonical 36-character UUID, got %q", raw)
+	}
+	for _, idx := range []int{8, 13, 18, 23} {
+		if raw[idx] != '-' {
+			return uuid.Nil, fmt.Errorf("expected hyphenated RFC 4122 UUID, got %q", raw)
+		}
+	}
+	return uuid.Parse(raw)
+}
+
+func (c *Connector) ConnectorIdentity() string {
+	bin := "plane"
+	if c != nil && c.BinaryPath != "" {
+		bin = c.BinaryPath
+	}
+	if resolved, err := exec.LookPath(bin); err == nil {
+		if eval, err2 := filepath.EvalSymlinks(resolved); err2 == nil {
+			return filepath.Clean(eval)
+		}
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(bin)
+}
+
+func ComputeConfigRevision(connectorIdentity, normOrigin, workspaceSlug string, workspaceUUID, projectUUID uuid.UUID) string {
+	payload, _ := json.Marshal(struct {
+		Schema            string `json:"schema"`
+		ConnectorIdentity string `json:"connector_identity"`
+		PlaneOrigin       string `json:"plane_origin"`
+		WorkspaceSlug     string `json:"workspace_slug"`
+		WorkspaceUUID     string `json:"workspace_uuid"`
+		ProjectUUID       string `json:"project_uuid"`
+	}{
+		Schema: routingSchemaVersion, ConnectorIdentity: connectorIdentity, PlaneOrigin: normOrigin,
+		WorkspaceSlug: workspaceSlug, WorkspaceUUID: workspaceUUID.String(), ProjectUUID: projectUUID.String(),
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:16])
+}
+
 var allowedSubcommands = map[string]map[string]bool{
 	"project":   {"get": true, "list": true, "summary": true},
 	"state":     {"list": true, "get": true},
@@ -97,31 +327,64 @@ var allowedSubcommands = map[string]map[string]bool{
 	"version":   {"": true},
 }
 
+var allowedValueFlags = map[string]bool{
+	"-p": true, "--project": true,
+	"-i": true, "--instance": true,
+	"-w": true, "--workspace": true,
+	"--base-url": true, "--config": true,
+	"--fields": true, "--limit": true, "--cursor": true,
+	"--order-by": true, "--timeout": true, "--max-retries": true,
+	"--expand": true, "--priority": true, "--state": true,
+	"--label": true, "--assignee": true, "--count-fields": true,
+	"--external-id": true, "--external-source": true,
+}
+
+var allowedBoolFlags = map[string]bool{
+	"--no-resolve": true, "--debug": true, "--workspace-wide": true,
+}
+
 func (c *Connector) validateReadCommand(args []string) error {
 	var cmd, subcmd string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "-" || arg == "--" {
+			return &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("disallowed Plane argument: %s", arg)}
+		}
 		if strings.HasPrefix(arg, "-") {
-			if arg == "-p" || arg == "--project" || arg == "-i" || arg == "--instance" ||
-				arg == "-w" || arg == "--workspace" || arg == "--config" || arg == "--fields" ||
-				arg == "--limit" || arg == "--order-by" || arg == "--timeout" || arg == "--expand" {
-				i++
+			flagName := arg
+			hasInlineValue := false
+			if eq := strings.IndexByte(arg, '='); eq > 0 {
+				flagName = arg[:eq]
+				hasInlineValue = true
 			}
-			continue
+			if allowedBoolFlags[flagName] {
+				continue
+			}
+			if allowedValueFlags[flagName] {
+				if !hasInlineValue {
+					if i+1 >= len(args) {
+						return &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("missing value for Plane flag %s", flagName)}
+					}
+					i++
+				}
+				continue
+			}
+			return &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("disallowed Plane flag: %s", flagName)}
 		}
 		if cmd == "" {
 			cmd = arg
 		} else if subcmd == "" {
 			subcmd = arg
-			break
 		}
 	}
-
 	allowedSubs, ok := allowedSubcommands[cmd]
 	if !ok {
 		return &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("disallowed Plane command: %s", cmd)}
 	}
 	if allowedSubs[""] {
+		if subcmd != "" {
+			return &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("unexpected argument %q for Plane command %s", subcmd, cmd)}
+		}
 		return nil
 	}
 	if !allowedSubs[subcmd] {
@@ -130,12 +393,30 @@ func (c *Connector) validateReadCommand(args []string) error {
 	return nil
 }
 
-// boundedBuffer captures up to limit bytes, erroring and killing process if exceeded.
+func pinnedArgs(eff EffectiveConfig, projectUUID uuid.UUID, tail ...string) []string {
+	args := make([]string, 0, 12+len(tail))
+	if eff.ConfigPath != "" {
+		args = append(args, "--config", eff.ConfigPath)
+	}
+	if eff.Instance != "" {
+		args = append(args, "--instance", eff.Instance)
+	}
+	args = append(args,
+		"--base-url", eff.PlaneOrigin,
+		"--workspace", eff.WorkspaceSlug,
+		"--project", projectUUID.String(),
+		"--no-resolve",
+	)
+	args = append(args, tail...)
+	return args
+}
+
 type boundedReader struct {
-	r     io.Reader
-	limit int64
-	read  int64
-	kill  func()
+	r        io.Reader
+	limit    int64
+	read     int64
+	limitErr error
+	kill     func()
 }
 
 func (b *boundedReader) Read(p []byte) (int, error) {
@@ -146,30 +427,29 @@ func (b *boundedReader) Read(p []byte) (int, error) {
 			if b.kill != nil {
 				b.kill()
 			}
-			return n, ErrTooLarge
+			return n, b.limitErr
 		}
 	}
 	return n, err
 }
 
-func (c *Connector) run(ctx context.Context, args []string) ([]byte, error) {
+func (c *Connector) run(parentCtx context.Context, args []string) ([]byte, error) {
 	if err := c.validateReadCommand(args); err != nil {
 		return nil, err
 	}
-
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, c.BinaryPath, args...)
+	cmd := exec.Command(c.BinaryPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Scrub conflicting environment variables to ensure exact effective config
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, e := range os.Environ() {
+	baseEnv := os.Environ()
+	env := make([]string, 0, len(baseEnv)+1)
+	for _, e := range baseEnv {
 		if strings.HasPrefix(e, "PLANE_BASE_URL=") ||
 			strings.HasPrefix(e, "PLANE_WORKSPACE=") ||
 			strings.HasPrefix(e, "PLANE_PROJECT=") ||
@@ -179,57 +459,111 @@ func (c *Connector) run(ctx context.Context, args []string) ([]byte, error) {
 		}
 		env = append(env, e)
 	}
-	if c.ConfigPath != "" {
-		env = append(env, "PLANE_CONFIG="+c.ConfigPath)
+	if cfgPath := c.resolveConfigPath(""); cfgPath != "" {
+		env = append(env, "PLANE_CONFIG="+cfgPath)
 	}
 	cmd.Env = env
 
-	stdoutPipe, err := cmd.StdoutPipe()
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, &Error{Code: "STORE_ERROR", Message: "failed to open stdout pipe: " + err.Error()}
 	}
-	stderrPipe, err := cmd.StderrPipe()
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, &Error{Code: "STORE_ERROR", Message: "failed to open stderr pipe: " + err.Error()}
 	}
-
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
 	if err := cmd.Start(); err != nil {
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
+		_ = stderrR.Close()
+		_ = stderrW.Close()
 		return nil, &Error{Code: "STORE_ERROR", Message: "failed to start plane CLI: " + err.Error()}
 	}
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 
-	killFunc := func() {
+	pgid := cmd.Process.Pid
+	killGroup := func() {
+		if pgid > 0 {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			_ = cmd.Process.Kill()
 		}
 	}
-
+	doneCh := make(chan struct{})
+	var killedByCtx atomic.Bool
+	go func() {
+		select {
+		case <-runCtx.Done():
+			killedByCtx.Store(true)
+			killGroup()
+			_ = stdoutR.Close()
+			_ = stderrR.Close()
+		case <-doneCh:
+		}
+	}()
+	var outReader io.Reader = stdoutR
+	if c.wrapStdout != nil {
+		outReader = c.wrapStdout(stdoutR)
+	}
+	var errReader io.Reader = stderrR
+	if c.wrapStderr != nil {
+		errReader = c.wrapStderr(stderrR)
+	}
 	var stdoutBuf, stderrBuf bytes.Buffer
-	boundedStdout := &boundedReader{r: stdoutPipe, limit: MaxCLIOutputBytes, kill: killFunc}
-	boundedStderr := &boundedReader{r: stderrPipe, limit: 1024 * 1024, kill: killFunc}
+	boundedStdout := &boundedReader{r: outReader, limit: MaxCLIOutputBytes, limitErr: ErrTooLarge, kill: killGroup}
+	boundedStderr := &boundedReader{r: errReader, limit: MaxCLIErrOutputBytes, limitErr: errStderrTooLarge, kill: killGroup}
 
 	var wg sync.WaitGroup
-	var stdoutErr error
+	var stdoutErr, stderrErr error
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		_, stdoutErr = io.Copy(&stdoutBuf, boundedStdout)
+		if stdoutErr != nil {
+			_ = stdoutR.Close()
+			killGroup()
+		}
 	}()
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(&stderrBuf, boundedStderr)
+		_, stderrErr = io.Copy(&stderrBuf, boundedStderr)
+		if stderrErr != nil {
+			_ = stderrR.Close()
+			killGroup()
+		}
 	}()
 
 	waitErr := cmd.Wait()
-	wg.Wait()
+	killGroup() // Terminate any background descendant in -pgid retaining inherited pipe write FDs
+	wg.Wait()   // Drain buffered output while runCtx deadline remains armed on stdoutR/stderrR
+	close(doneCh)
+	_ = stdoutR.Close()
+	_ = stderrR.Close()
 
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		killFunc()
-		return nil, &Error{Code: "MODEL_TIMEOUT", Message: "Plane CLI execution timed out"}
-	}
 	if errors.Is(stdoutErr, ErrTooLarge) || stdoutBuf.Len() > MaxCLIOutputBytes {
 		return nil, ErrTooLarge
+	}
+	if errors.Is(stderrErr, errStderrTooLarge) || stderrBuf.Len() > MaxCLIErrOutputBytes {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane CLI diagnostic output exceeded maximum size"}
+	}
+	if killedByCtx.Load() || runCtx.Err() != nil {
+		if errors.Is(parentCtx.Err(), context.Canceled) {
+			return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane CLI execution cancelled", Cause: context.Canceled}
+		}
+		return nil, &Error{Code: "MODEL_TIMEOUT", Message: "Plane CLI execution timed out", Cause: context.DeadlineExceeded}
+	}
+	if stdoutErr != nil {
+		return nil, &Error{Code: "STORE_ERROR", Message: "failed reading Plane CLI stdout: " + stdoutErr.Error(), Cause: stdoutErr}
+	}
+	if stderrErr != nil {
+		return nil, &Error{Code: "STORE_ERROR", Message: "failed reading Plane CLI stderr: " + stderrErr.Error(), Cause: stderrErr}
 	}
 
 	var exitCode int
@@ -247,7 +581,6 @@ func (c *Connector) run(ctx context.Context, args []string) ([]byte, error) {
 		return nil, ErrAuthRejected
 	}
 
-	// Parse JSON envelope
 	var envelope struct {
 		OK    bool            `json:"ok"`
 		Data  json.RawMessage `json:"data"`
@@ -257,22 +590,22 @@ func (c *Connector) run(ctx context.Context, args []string) ([]byte, error) {
 			HTTPStatus int    `json:"http_status"`
 		} `json:"error"`
 	}
-
 	if len(raw) > 0 {
-		if jsonErr := json.Unmarshal(raw, &envelope); jsonErr == nil {
-			if !envelope.OK && envelope.Error != nil {
-				if envelope.Error.HTTPStatus == 401 || envelope.Error.HTTPStatus == 403 || envelope.Error.Code == "AUTH_ERROR" {
+		if jsonErr := json.Unmarshal(raw, &envelope); jsonErr == nil && !envelope.OK {
+			if envelope.Error != nil {
+				if envelope.Error.HTTPStatus == 401 || envelope.Error.HTTPStatus == 403 ||
+					strings.EqualFold(envelope.Error.Code, "auth") || strings.EqualFold(envelope.Error.Code, "AUTH_ERROR") {
 					return nil, ErrAuthRejected
 				}
 				return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane API error: " + envelope.Error.Message}
 			}
+			return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane CLI returned non-OK envelope"}
 		}
 	}
 
 	if exitCode != 0 {
-		return nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("Plane CLI exited with code %d: %s", exitCode, strings.TrimSpace(stderrBuf.String()))}
+		return nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("Plane CLI exited with code %d", exitCode)}
 	}
-
 	return raw, nil
 }
 
@@ -280,16 +613,237 @@ func (c *Connector) RunReadCommand(ctx context.Context, args []string) ([]byte, 
 	return c.run(ctx, args)
 }
 
+func extractCanonicalUUID(raw json.RawMessage) (uuid.UUID, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return uuid.Nil, errors.New("missing UUID value")
+	}
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return uuid.Nil, err
+		}
+		return parseCanonicalUUID(s)
+	case '{':
+		var obj struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(trimmed, &obj); err != nil {
+			return uuid.Nil, err
+		}
+		return parseCanonicalUUID(obj.ID)
+	default:
+		return uuid.Nil, fmt.Errorf("unexpected JSON token for UUID: %s", string(trimmed))
+	}
+}
+
+type fetchedProject struct {
+	ProjectUUID   uuid.UUID
+	WorkspaceUUID uuid.UUID
+	Identifier    string
+}
+
+func (c *Connector) fetchProject(ctx context.Context, eff EffectiveConfig, projectUUID uuid.UUID) (fetchedProject, error) {
+	args := pinnedArgs(eff, projectUUID, "project", "get", projectUUID.String(), "--fields", "id,workspace,identifier")
+	raw, err := c.run(ctx, args)
+	if err != nil {
+		return fetchedProject{}, err
+	}
+
+	var env struct {
+		OK   bool            `json:"ok"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: "invalid Plane project envelope: " + err.Error()}
+	}
+	if !env.OK {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: "Plane project get returned ok=false"}
+	}
+	trimmedData := bytes.TrimSpace(env.Data)
+	if len(trimmedData) == 0 || trimmedData[0] != '{' {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: "Plane project get returned missing or non-object data"}
+	}
+
+	var projData struct {
+		ID         string          `json:"id"`
+		Workspace  json.RawMessage `json:"workspace"`
+		Identifier string          `json:"identifier"`
+	}
+	if err := json.Unmarshal(trimmedData, &projData); err != nil {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: "malformed Plane project data: " + err.Error()}
+	}
+	pUUID, err := parseCanonicalUUID(projData.ID)
+	if err != nil {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("Plane project has invalid UUID %q: %v", projData.ID, err)}
+	}
+	wUUID, err := extractCanonicalUUID(projData.Workspace)
+	if err != nil {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("Plane project workspace is not a valid UUID: %v", err)}
+	}
+	ident := strings.TrimSpace(projData.Identifier)
+	if ident == "" {
+		return fetchedProject{}, &Error{Code: "INVALID_REQUEST", Message: "Plane project get omitted required project identifier"}
+	}
+	return fetchedProject{ProjectUUID: pUUID, WorkspaceUUID: wUUID, Identifier: ident}, nil
+}
+
+func (c *Connector) ResolveBinding(ctx context.Context, sel ConfigSelector, expectedWorkspaceUUID, expectedProjectUUID uuid.UUID) (ProjectBindingConfig, error) {
+	if expectedProjectUUID == uuid.Nil || expectedWorkspaceUUID == uuid.Nil {
+		return ProjectBindingConfig{}, &Error{Code: "INVALID_REQUEST", Message: "valid workspace and project UUIDs are required"}
+	}
+
+	var expectedOrigin string
+	if strings.TrimSpace(sel.BaseURL) != "" {
+		norm, err := NormalizeOrigin(sel.BaseURL)
+		if err != nil {
+			return ProjectBindingConfig{}, err
+		}
+		expectedOrigin = norm
+	}
+
+	eff, err := c.ResolveEffectiveConfig(ConfigSelector{
+		ConfigPath: sel.ConfigPath,
+		Instance:   sel.Instance,
+		Workspace:  sel.Workspace,
+		Project:    expectedProjectUUID.String(),
+	})
+	if err != nil {
+		return ProjectBindingConfig{}, err
+	}
+	if expectedOrigin != "" && eff.PlaneOrigin != expectedOrigin {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: fmt.Sprintf("requested origin %q differs from Plane profile origin %q", expectedOrigin, eff.PlaneOrigin),
+		}
+	}
+
+	fp, err := c.fetchProject(ctx, eff, expectedProjectUUID)
+	if err != nil {
+		return ProjectBindingConfig{}, err
+	}
+	if fp.ProjectUUID != expectedProjectUUID {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: fmt.Sprintf("Plane project UUID mismatch: expected %s, got %s", expectedProjectUUID, fp.ProjectUUID),
+		}
+	}
+	if fp.WorkspaceUUID != expectedWorkspaceUUID {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: fmt.Sprintf("Plane workspace UUID mismatch: expected %s, got %s", expectedWorkspaceUUID, fp.WorkspaceUUID),
+		}
+	}
+
+	connIdent := c.ConnectorIdentity()
+	configRev := ComputeConfigRevision(connIdent, eff.PlaneOrigin, eff.WorkspaceSlug, fp.WorkspaceUUID, fp.ProjectUUID)
+	return ProjectBindingConfig{
+		PlaneOrigin:       eff.PlaneOrigin,
+		WorkspaceUUID:     fp.WorkspaceUUID,
+		WorkspaceSlug:     eff.WorkspaceSlug,
+		ProjectUUID:       fp.ProjectUUID,
+		ProjectIdentifier: fp.Identifier,
+		PlaneInstance:     sel.Instance,
+		ConnectorIdentity: connIdent,
+		ConfigRevision:    configRev,
+	}, nil
+}
+
+func (c *Connector) VerifyRefreshBinding(ctx context.Context, planeInstance, pinnedOrigin string, pinnedWorkspaceUUID, pinnedProjectUUID uuid.UUID, pinnedConfigRev string) (ProjectBindingConfig, error) {
+	eff, err := c.ResolveEffectiveConfig(ConfigSelector{
+		Instance: planeInstance,
+		Project:  pinnedProjectUUID.String(),
+	})
+	if err != nil {
+		return ProjectBindingConfig{}, err
+	}
+	if eff.PlaneOrigin != pinnedOrigin {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: fmt.Sprintf("Plane origin changed from pinned %q to %q", pinnedOrigin, eff.PlaneOrigin),
+		}
+	}
+	fp, err := c.fetchProject(ctx, eff, pinnedProjectUUID)
+	if err != nil {
+		return ProjectBindingConfig{}, err
+	}
+	if fp.ProjectUUID != pinnedProjectUUID || fp.WorkspaceUUID != pinnedWorkspaceUUID {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: "Plane project or workspace UUID differs from pinned binding",
+		}
+	}
+	connIdent := c.ConnectorIdentity()
+	configRev := ComputeConfigRevision(connIdent, eff.PlaneOrigin, eff.WorkspaceSlug, fp.WorkspaceUUID, fp.ProjectUUID)
+	if configRev != pinnedConfigRev {
+		return ProjectBindingConfig{}, &Error{
+			Code:    "CONFIG_MISMATCH",
+			Message: "Plane effective routing configuration revision differs from pinned binding",
+		}
+	}
+	return ProjectBindingConfig{
+		PlaneOrigin:       eff.PlaneOrigin,
+		WorkspaceUUID:     fp.WorkspaceUUID,
+		WorkspaceSlug:     eff.WorkspaceSlug,
+		ProjectUUID:       fp.ProjectUUID,
+		ProjectIdentifier: fp.Identifier,
+		PlaneInstance:     planeInstance,
+		ConnectorIdentity: connIdent,
+		ConfigRevision:    configRev,
+	}, nil
+}
+
+type rawPlaneIssue struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Priority    string          `json:"priority"`
+	StateID     string          `json:"state_id"`
+	State       json.RawMessage `json:"state"`
+	StateDetail *struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Group string `json:"group"`
+	} `json:"state_detail"`
+	UpdatedAt       string          `json:"updated_at"`
+	SequenceID      *int            `json:"sequence_id"`
+	Assignees       json.RawMessage `json:"assignees"`
+	AssigneeDetails []struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+	} `json:"assignee_details"`
+	ProjectDetail *struct {
+		ID         string `json:"id"`
+		Identifier string `json:"identifier"`
+	} `json:"project_detail"`
+}
+
 func (c *Connector) RefreshIssues(ctx context.Context, instanceName string, projectUUID uuid.UUID, baseOrigin string, workspaceSlug string, projectIdent string) ([]NormalizedItem, error) {
-	// Request 10001 items to bound acquisition while detecting >10,000 items (PLANE-4)
-	args := []string{
+	normOrigin, err := NormalizeOrigin(baseOrigin)
+	if err != nil {
+		return nil, err
+	}
+	wsSlug := strings.TrimSpace(workspaceSlug)
+	if wsSlug == "" {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "workspace slug is required for Plane issue refresh"}
+	}
+	pIdent := strings.TrimSpace(projectIdent)
+	if pIdent == "" {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "project identifier is required for Plane issue refresh"}
+	}
+
+	eff := EffectiveConfig{
+		ConfigPath:    c.resolveConfigPath(""),
+		Instance:      strings.TrimSpace(instanceName),
+		PlaneOrigin:   normOrigin,
+		WorkspaceSlug: wsSlug,
+		Project:       projectUUID.String(),
+	}
+	args := pinnedArgs(eff, projectUUID,
 		"issue", "list",
-		"--instance", instanceName,
-		"-p", projectUUID.String(),
-		"--no-resolve",
 		"--limit", "10001",
 		"--expand", "state,assignees",
-	}
+	)
 
 	raw, err := c.run(ctx, args)
 	if err != nil {
@@ -297,34 +851,8 @@ func (c *Connector) RefreshIssues(ctx context.Context, instanceName string, proj
 	}
 
 	var envelope struct {
-		OK   bool `json:"ok"`
-		Data []struct {
-			ID          string `json:"id"`
-			Name        string `json:"name"`
-			Priority    string `json:"priority"`
-			StateID     string `json:"state_id"`
-			UpdatedAt   string `json:"updated_at"`
-			SequenceID  *int   `json:"sequence_id"`
-			StateDetail *struct {
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Group string `json:"group"`
-			} `json:"state_detail"`
-			StateObj *struct {
-				ID    string `json:"id"`
-				Name  string `json:"name"`
-				Group string `json:"group"`
-			} `json:"state"`
-			Assignees       json.RawMessage `json:"assignees"`
-			AssigneeDetails []struct {
-				ID          string `json:"id"`
-				DisplayName string `json:"display_name"`
-			} `json:"assignee_details"`
-			ProjectDetail *struct {
-				ID         string `json:"id"`
-				Identifier string `json:"identifier"`
-			} `json:"project_detail"`
-		} `json:"data"`
+		OK   bool            `json:"ok"`
+		Data json.RawMessage `json:"data"`
 		Meta *struct {
 			Pagination *struct {
 				Drained    bool `json:"drained"`
@@ -333,35 +861,64 @@ func (c *Connector) RefreshIssues(ctx context.Context, instanceName string, proj
 			} `json:"pagination"`
 		} `json:"meta"`
 	}
-
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, &Error{Code: "STORE_ERROR", Message: "failed to parse Plane CLI output: " + err.Error()}
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "failed to parse Plane CLI output: " + err.Error()}
 	}
-
-	if !envelope.OK || envelope.Data == nil {
-		return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane CLI returned non-OK or empty envelope"}
+	if !envelope.OK {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane CLI returned non-OK envelope"}
 	}
-
-	if len(envelope.Data) > MaxItemLimit {
+	if envelope.Meta == nil || envelope.Meta.Pagination == nil {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane issue list omitted required pagination metadata"}
+	}
+	pg := envelope.Meta.Pagination
+	if pg.TotalCount > MaxItemLimit || pg.Fetched > MaxItemLimit {
 		return nil, ErrTooLarge
 	}
 
-	// Verify pagination completeness if pagination metadata is present (PLANE-4)
-	if envelope.Meta != nil && envelope.Meta.Pagination != nil {
-		if envelope.Meta.Pagination.TotalCount > MaxItemLimit {
-			return nil, ErrTooLarge
+	trimmedData := bytes.TrimSpace(envelope.Data)
+	if len(trimmedData) == 0 {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane issue list omitted data field"}
+	}
+
+	var rawIssues []rawPlaneIssue
+	if bytes.Equal(trimmedData, []byte("null")) {
+		if !pg.Drained || pg.Fetched != 0 || pg.TotalCount != 0 {
+			return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane issue list returned null data with non-empty pagination metadata"}
 		}
-		if !envelope.Meta.Pagination.Drained && envelope.Meta.Pagination.TotalCount > len(envelope.Data) {
-			return nil, &Error{Code: "INVALID_REQUEST", Message: "incomplete Plane issue list acquisition; pagination not drained"}
+		rawIssues = []rawPlaneIssue{}
+	} else {
+		if trimmedData[0] != '[' {
+			return nil, &Error{Code: "INVALID_REQUEST", Message: "Plane issue list data must be a JSON array"}
+		}
+		if err := json.Unmarshal(trimmedData, &rawIssues); err != nil {
+			return nil, &Error{Code: "INVALID_REQUEST", Message: "malformed Plane issue list data: " + err.Error()}
 		}
 	}
 
-	items := make([]NormalizedItem, 0, len(envelope.Data))
-	seenIDs := make(map[uuid.UUID]bool, len(envelope.Data))
+	if len(rawIssues) > MaxItemLimit {
+		return nil, ErrTooLarge
+	}
+	if !pg.Drained {
+		return nil, &Error{Code: "INVALID_REQUEST", Message: "incomplete Plane issue list acquisition: pagination not drained"}
+	}
+	if pg.Fetched != len(rawIssues) {
+		return nil, &Error{
+			Code:    "INVALID_REQUEST",
+			Message: fmt.Sprintf("Plane pagination fetched count (%d) does not match returned items (%d)", pg.Fetched, len(rawIssues)),
+		}
+	}
+	if pg.TotalCount > len(rawIssues) {
+		return nil, &Error{
+			Code:    "INVALID_REQUEST",
+			Message: fmt.Sprintf("Plane pagination total_count (%d) exceeds returned items (%d)", pg.TotalCount, len(rawIssues)),
+		}
+	}
 
-	for i, rawIssue := range envelope.Data {
-		// Strict hexadecimal RFC 4122 UUID validation (PLANE-4)
-		itemUUID, err := uuid.Parse(rawIssue.ID)
+	items := make([]NormalizedItem, 0, len(rawIssues))
+	seenIDs := make(map[uuid.UUID]bool, len(rawIssues))
+
+	for i, rawIssue := range rawIssues {
+		itemUUID, err := parseCanonicalUUID(rawIssue.ID)
 		if err != nil {
 			return nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("item %d has invalid UUID %q: %v", i, rawIssue.ID, err)}
 		}
@@ -370,66 +927,43 @@ func (c *Connector) RefreshIssues(ctx context.Context, instanceName string, proj
 		}
 		seenIDs[itemUUID] = true
 
-		ident := rawIssue.Name
-		pIdent := projectIdent
-		if rawIssue.ProjectDetail != nil && rawIssue.ProjectDetail.Identifier != "" {
-			pIdent = rawIssue.ProjectDetail.Identifier
+		if rawIssue.SequenceID == nil || *rawIssue.SequenceID < 0 {
+			return nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("item %s omitted valid sequence_id", itemUUID)}
 		}
-		if pIdent != "" && rawIssue.SequenceID != nil {
-			ident = fmt.Sprintf("%s-%d", pIdent, *rawIssue.SequenceID)
-		} else if rawIssue.SequenceID != nil {
-			ident = fmt.Sprintf("ISSUE-%d", *rawIssue.SequenceID)
+		itemIdentPrefix := pIdent
+		if rawIssue.ProjectDetail != nil && strings.TrimSpace(rawIssue.ProjectDetail.Identifier) != "" {
+			itemIdentPrefix = strings.TrimSpace(rawIssue.ProjectDetail.Identifier)
 		}
+		ident := fmt.Sprintf("%s-%d", itemIdentPrefix, *rawIssue.SequenceID)
 
-		var stateUUID *uuid.UUID
-		stateName := ""
-		stateGroup := ""
-
-		if rawIssue.StateDetail != nil {
-			if su, err := uuid.Parse(rawIssue.StateDetail.ID); err == nil {
-				stateUUID = &su
-			}
-			stateName = rawIssue.StateDetail.Name
-			stateGroup = rawIssue.StateDetail.Group
-		} else if rawIssue.StateObj != nil {
-			if su, err := uuid.Parse(rawIssue.StateObj.ID); err == nil {
-				stateUUID = &su
-			}
-			stateName = rawIssue.StateObj.Name
-			stateGroup = rawIssue.StateObj.Group
-		} else if rawIssue.StateID != "" {
-			if su, err := uuid.Parse(rawIssue.StateID); err == nil {
-				stateUUID = &su
-			}
+		stateUUID, stateName, stateGroup, err := normalizeIssueState(rawIssue)
+		if err != nil {
+			return nil, err
 		}
 
-		assigneeIDs := make([]string, 0)
-		assigneeNames := make([]string, 0)
-		if len(rawIssue.AssigneeDetails) > 0 {
-			for _, ad := range rawIssue.AssigneeDetails {
-				assigneeIDs = append(assigneeIDs, ad.ID)
-				assigneeNames = append(assigneeNames, ad.DisplayName)
-			}
-		} else if len(rawIssue.Assignees) > 0 {
-			var strList []string
-			if err := json.Unmarshal(rawIssue.Assignees, &strList); err == nil {
-				assigneeIDs = append(assigneeIDs, strList...)
-			}
+		assigneeIDs, assigneeNames, err := normalizeIssueAssignees(rawIssue)
+		if err != nil {
+			return nil, err
 		}
 
 		var updatedAt *time.Time
-		if rawIssue.UpdatedAt != "" {
-			if t, err := time.Parse(time.RFC3339Nano, rawIssue.UpdatedAt); err == nil {
-				updatedAt = &t
-			} else if t, err := time.Parse(time.RFC3339, rawIssue.UpdatedAt); err == nil {
-				updatedAt = &t
+		if strings.TrimSpace(rawIssue.UpdatedAt) != "" {
+			t, err := time.Parse(time.RFC3339Nano, rawIssue.UpdatedAt)
+			if err != nil {
+				t, err = time.Parse(time.RFC3339, rawIssue.UpdatedAt)
+				if err != nil {
+					return nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("item %s has invalid updated_at %q", itemUUID, rawIssue.UpdatedAt)}
+				}
 			}
+			updatedAt = &t
 		}
 
-		sourceURL := ""
-		if baseOrigin != "" && workspaceSlug != "" {
-			sourceURL = fmt.Sprintf("%s/%s/projects/%s/issues/%s", strings.TrimRight(baseOrigin, "/"), workspaceSlug, projectUUID.String(), itemUUID.String())
-		}
+		sourceURL := fmt.Sprintf("%s/%s/projects/%s/issues/%s",
+			strings.TrimRight(normOrigin, "/"),
+			url.PathEscape(wsSlug),
+			projectUUID.String(),
+			itemUUID.String(),
+		)
 
 		items = append(items, NormalizedItem{
 			PlaneItemUUID:   itemUUID,
@@ -448,120 +982,126 @@ func (c *Connector) RefreshIssues(ctx context.Context, instanceName string, proj
 	return items, nil
 }
 
-func NormalizeOrigin(rawURL string) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", &Error{Code: "INVALID_REQUEST", Message: "invalid Plane base URL: " + err.Error()}
+func normalizeIssueState(rawIssue rawPlaneIssue) (*uuid.UUID, string, string, error) {
+	if rawIssue.StateDetail != nil && rawIssue.StateDetail.ID != "" {
+		su, err := parseCanonicalUUID(rawIssue.StateDetail.ID)
+		if err != nil {
+			return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid state_detail UUID %q", rawIssue.StateDetail.ID)}
+		}
+		return &su, rawIssue.StateDetail.Name, rawIssue.StateDetail.Group, nil
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", &Error{Code: "INVALID_REQUEST", Message: "plane origin must use http or https scheme"}
+	trimmed := bytes.TrimSpace(rawIssue.State)
+	if len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) {
+		switch trimmed[0] {
+		case '{':
+			var st struct {
+				ID    string `json:"id"`
+				Name  string `json:"name"`
+				Group string `json:"group"`
+			}
+			if err := json.Unmarshal(trimmed, &st); err != nil {
+				return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: "malformed expanded state object"}
+			}
+			var suPtr *uuid.UUID
+			if st.ID != "" {
+				su, err := parseCanonicalUUID(st.ID)
+				if err != nil {
+					return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid state UUID %q", st.ID)}
+				}
+				suPtr = &su
+			}
+			return suPtr, st.Name, st.Group, nil
+		case '"':
+			var s string
+			if err := json.Unmarshal(trimmed, &s); err != nil {
+				return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: "malformed state UUID string"}
+			}
+			if s != "" {
+				su, err := parseCanonicalUUID(s)
+				if err != nil {
+					return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid state UUID %q", s)}
+				}
+				return &su, "", "", nil
+			}
+		default:
+			return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: "unexpected JSON value for state"}
+		}
 	}
-	u.Path = ""
-	u.RawQuery = ""
-	u.Fragment = ""
-	return strings.TrimRight(u.String(), "/"), nil
+	if strings.TrimSpace(rawIssue.StateID) != "" {
+		su, err := parseCanonicalUUID(strings.TrimSpace(rawIssue.StateID))
+		if err != nil {
+			return nil, "", "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid state_id UUID %q", rawIssue.StateID)}
+		}
+		return &su, "", "", nil
+	}
+	return nil, "", "", nil
 }
 
-func (c *Connector) ResolveBinding(ctx context.Context, instanceName string, workspaceStr string, projectStr string) (ProjectBindingConfig, string, error) {
-	// First resolve project and workspace UUIDs via real plane CLI calls (PLANE-1)
-	args := []string{"project", "get", projectStr, "--instance", instanceName, "--no-resolve"}
-	raw, err := c.run(ctx, args)
-	if err != nil {
-		// If --no-resolve fails, try without it to resolve by name
-		args = []string{"project", "get", projectStr, "--instance", instanceName}
-		raw, err = c.run(ctx, args)
-		if err != nil {
-			return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("could not resolve project %q in instance %q: %v", projectStr, instanceName, err)}
+func normalizeIssueAssignees(rawIssue rawPlaneIssue) ([]string, []string, error) {
+	ids := make([]string, 0)
+	names := make([]string, 0)
+	trimmed := bytes.TrimSpace(rawIssue.Assignees)
+	if len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) {
+		var elems []json.RawMessage
+		if err := json.Unmarshal(trimmed, &elems); err != nil {
+			return nil, nil, &Error{Code: "INVALID_REQUEST", Message: "malformed assignees array"}
 		}
-	}
-
-	var projEnv struct {
-		OK   bool `json:"ok"`
-		Data struct {
-			ID         string `json:"id"`
-			Workspace  string `json:"workspace"`
-			Identifier string `json:"identifier"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &projEnv); err != nil || !projEnv.OK || projEnv.Data.ID == "" {
-		return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid project response for %q: %v", projectStr, err)}
-	}
-
-	projUUID, err := uuid.Parse(projEnv.Data.ID)
-	if err != nil {
-		return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("project has non-UUID ID %q: %v", projEnv.Data.ID, err)}
-	}
-
-	wsUUID, err := uuid.Parse(projEnv.Data.Workspace)
-	if err != nil {
-		// If workspace returned was not UUID, try parsing workspaceStr
-		if w, err2 := uuid.Parse(workspaceStr); err2 == nil {
-			wsUUID = w
-		} else {
-			return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("workspace is not a valid UUID: %q", projEnv.Data.Workspace)}
-		}
-	}
-
-	cfgContent, err := os.ReadFile(c.ConfigPath)
-	if err != nil {
-		return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("cannot read plane-cli config at %s: %v", c.ConfigPath, err)}
-	}
-
-	// Parse instance config
-	lines := strings.Split(string(cfgContent), "\n")
-	inTargetInstance := false
-	baseURL := ""
-	workspaceSlug := ""
-	apiKeyFile := ""
-
-	targetHeader := fmt.Sprintf("[instance.%s]", instanceName)
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			inTargetInstance = (trimmed == targetHeader)
-			continue
-		}
-		if inTargetInstance && strings.Contains(trimmed, "=") {
-			parts := strings.SplitN(trimmed, "=", 2)
-			k := strings.TrimSpace(parts[0])
-			v := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-			switch k {
-			case "base_url":
-				baseURL = v
-			case "workspace":
-				workspaceSlug = v
-			case "api_key_file":
-				apiKeyFile = v
+		for _, elem := range elems {
+			et := bytes.TrimSpace(elem)
+			if len(et) == 0 || bytes.Equal(et, []byte("null")) {
+				continue
+			}
+			switch et[0] {
+			case '{':
+				var obj struct {
+					ID          string `json:"id"`
+					DisplayName string `json:"display_name"`
+					FirstName   string `json:"first_name"`
+					LastName    string `json:"last_name"`
+				}
+				if err := json.Unmarshal(et, &obj); err != nil {
+					return nil, nil, &Error{Code: "INVALID_REQUEST", Message: "malformed expanded assignee object"}
+				}
+				u, err := parseCanonicalUUID(obj.ID)
+				if err != nil {
+					return nil, nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid assignee UUID %q", obj.ID)}
+				}
+				ids = append(ids, u.String())
+				dn := strings.TrimSpace(obj.DisplayName)
+				if dn == "" {
+					dn = strings.TrimSpace(obj.FirstName + " " + obj.LastName)
+				}
+				if dn != "" {
+					names = append(names, dn)
+				}
+			case '"':
+				var s string
+				if err := json.Unmarshal(et, &s); err != nil {
+					return nil, nil, &Error{Code: "INVALID_REQUEST", Message: "malformed assignee UUID string"}
+				}
+				u, err := parseCanonicalUUID(s)
+				if err != nil {
+					return nil, nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid assignee UUID %q", s)}
+				}
+				ids = append(ids, u.String())
+			default:
+				return nil, nil, &Error{Code: "INVALID_REQUEST", Message: "unexpected assignee JSON element"}
 			}
 		}
 	}
-
-	if baseURL == "" {
-		return ProjectBindingConfig{}, "", &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("instance %q not found in %s", instanceName, c.ConfigPath)}
-	}
-
-	normOrigin, err := NormalizeOrigin(baseURL)
-	if err != nil {
-		return ProjectBindingConfig{}, "", err
-	}
-
-	var apiKeyHash string
-	if apiKeyFile != "" {
-		if keyBytes, err := os.ReadFile(apiKeyFile); err == nil {
-			h := sha256.Sum256(keyBytes)
-			apiKeyHash = hex.EncodeToString(h[:])
+	if len(names) == 0 && len(rawIssue.AssigneeDetails) > 0 {
+		for _, ad := range rawIssue.AssigneeDetails {
+			u, err := parseCanonicalUUID(ad.ID)
+			if err != nil {
+				return nil, nil, &Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("invalid assignee_details UUID %q", ad.ID)}
+			}
+			if len(ids) == 0 {
+				ids = append(ids, u.String())
+			}
+			if strings.TrimSpace(ad.DisplayName) != "" {
+				names = append(names, strings.TrimSpace(ad.DisplayName))
+			}
 		}
 	}
-
-	revInput := fmt.Sprintf("%s|%s|%s|%s", normOrigin, workspaceSlug, apiKeyFile, apiKeyHash)
-	revSum := sha256.Sum256([]byte(revInput))
-	configRev := hex.EncodeToString(revSum[:16])
-
-	return ProjectBindingConfig{
-		PlaneOrigin:       normOrigin,
-		WorkspaceUUID:     wsUUID,
-		ProjectUUID:       projUUID,
-		ProjectIdentifier: projEnv.Data.Identifier,
-		ConfigRevision:    configRev,
-	}, workspaceSlug, nil
+	return ids, names, nil
 }

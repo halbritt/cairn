@@ -33,12 +33,20 @@ func Code(err error) string {
 // SourceOpeningBinding makes new context-index receipts bind the source-opening
 // policy; it is off unless the host sets it, and it follows the authenticated
 // profile into agent-session views rather than the session's own principal.
+const RoleInstaller = "installer"
+
 type Channel struct {
 	Principal            string
 	Instrumented         bool
 	Operator             bool
 	Repo                 string
 	SourceOpeningBinding bool
+	Role                 string
+}
+
+type CompatibilityPolicy struct {
+	MaxMigrationVersion   int
+	SupportedWorkFeatures map[string]bool
 }
 
 type Scope struct {

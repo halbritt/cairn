@@ -89,15 +89,25 @@ func (s *Store) AddProgressAnnotation(ctx context.Context, req AddProgressAnnota
 	if len([]byte(req.Body)) > MaxAnnotationBodyBytes {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("progress annotation exceeds %d bytes", MaxAnnotationBodyBytes))
 	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	return mutate(ctx, s, "work-progress-add", req.RequestID, req, func(tx pgx.Tx) (WorkAnnotation, error) {
+		if err := s.checkWorkAdmissionTx(ctx, tx); err != nil {
+			return WorkAnnotation{}, err
+		}
 		var bindingID uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT binding_id FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID)
+		var projStatus string
+		err := tx.QueryRow(ctx, `SELECT binding_id, status FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID, &projStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", req.ProjectSlug, req.Collection))
 		}
 		if err != nil {
 			return WorkAnnotation{}, err
+		}
+		if projStatus != "active" {
+			return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("work project %q is %s", req.ProjectSlug, projStatus))
 		}
 
 		var planeItemUUID uuid.UUID
@@ -167,8 +177,14 @@ func (s *Store) EditProgressAnnotation(ctx context.Context, req EditProgressAnno
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "project slug required")
 	}
+	if req.ItemUUID == uuid.Nil {
+		return WorkAnnotation{}, failure("INVALID_REQUEST", "item UUID required")
+	}
 	if req.AnnotationID == uuid.Nil {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "annotation UUID required")
+	}
+	if req.ExpectedRevision <= 0 {
+		return WorkAnnotation{}, failure("INVALID_REQUEST", "positive expected_revision required")
 	}
 	if strings.TrimSpace(req.Body) == "" {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "annotation body required")
@@ -176,29 +192,53 @@ func (s *Store) EditProgressAnnotation(ctx context.Context, req EditProgressAnno
 	if len([]byte(req.Body)) > MaxAnnotationBodyBytes {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("progress annotation exceeds %d bytes", MaxAnnotationBodyBytes))
 	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	return mutate(ctx, s, "work-progress-edit", req.RequestID, req, func(tx pgx.Tx) (WorkAnnotation, error) {
+		if err := s.checkWorkAdmissionTx(ctx, tx); err != nil {
+			return WorkAnnotation{}, err
+		}
 		var an WorkAnnotation
 		var srcRefsRaw []byte
-		err := tx.QueryRow(ctx, `SELECT a.annotation_id, a.revision, a.binding_id, a.plane_item_uuid, a.kind, a.body, a.state, a.author, a.source_references, a.created_at, a.updated_at
+		var projStatus string
+		err := tx.QueryRow(ctx, `SELECT a.annotation_id, a.revision, a.binding_id, a.plane_item_uuid, a.kind, a.body, a.state, a.author, a.source_references, a.created_at, a.updated_at, p.status
 			FROM cairn.work_annotation a
 			JOIN cairn.work_project p ON a.binding_id = p.binding_id
 			WHERE a.annotation_id = $1 AND p.collection = $2 AND p.local_slug = $3
 			FOR UPDATE OF a`, req.AnnotationID, req.Collection, req.ProjectSlug).Scan(
-			&an.AnnotationID, &an.Revision, &an.BindingID, &an.PlaneItemUUID, &an.Kind, &an.Body, &an.State, &an.Author, &srcRefsRaw, &an.CreatedAt, &an.UpdatedAt)
+			&an.AnnotationID, &an.Revision, &an.BindingID, &an.PlaneItemUUID, &an.Kind, &an.Body, &an.State, &an.Author, &srcRefsRaw, &an.CreatedAt, &an.UpdatedAt, &projStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WorkAnnotation{}, failure("NOT_FOUND", "annotation not found in requested project and collection")
 		}
 		if err != nil {
 			return WorkAnnotation{}, err
 		}
+		if projStatus != "active" {
+			return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("work project %q is %s", req.ProjectSlug, projStatus))
+		}
 		_ = json.Unmarshal(srcRefsRaw, &an.SourceReferences)
+		if an.SourceReferences == nil {
+			an.SourceReferences = make([]string, 0)
+		}
+
+		var match bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND plane_item_uuid = $2 AND (item_id = $3 OR plane_item_uuid = $3)
+		)`, an.BindingID, an.PlaneItemUUID, req.ItemUUID).Scan(&match)
+		if err != nil {
+			return WorkAnnotation{}, err
+		}
+		if !match {
+			return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("annotation %s does not belong to item %s", req.AnnotationID, req.ItemUUID))
+		}
 
 		if an.Kind != "progress" {
 			return WorkAnnotation{}, failure("INVALID_REQUEST", "target annotation is not a progress annotation")
 		}
 
-		if req.ExpectedRevision > 0 && an.Revision != req.ExpectedRevision {
+		if an.Revision != req.ExpectedRevision {
 			return WorkAnnotation{}, failure("VERSION_CONFLICT", fmt.Sprintf("expected revision %d, current is %d", req.ExpectedRevision, an.Revision))
 		}
 
@@ -251,15 +291,25 @@ func (s *Store) AddBlockerAnnotation(ctx context.Context, req AddBlockerAnnotati
 	if len([]byte(req.Body)) > MaxAnnotationBodyBytes {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("blocker annotation exceeds %d bytes", MaxAnnotationBodyBytes))
 	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	return mutate(ctx, s, "work-blocker-add", req.RequestID, req, func(tx pgx.Tx) (WorkAnnotation, error) {
+		if err := s.checkWorkAdmissionTx(ctx, tx); err != nil {
+			return WorkAnnotation{}, err
+		}
 		var bindingID uuid.UUID
-		err := tx.QueryRow(ctx, `SELECT binding_id FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID)
+		var projStatus string
+		err := tx.QueryRow(ctx, `SELECT binding_id, status FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, req.Collection, req.ProjectSlug).Scan(&bindingID, &projStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", req.ProjectSlug, req.Collection))
 		}
 		if err != nil {
 			return WorkAnnotation{}, err
+		}
+		if projStatus != "active" {
+			return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("work project %q is %s", req.ProjectSlug, projStatus))
 		}
 
 		var planeItemUUID uuid.UUID
@@ -326,50 +376,67 @@ func (s *Store) ResolveBlockerAnnotation(ctx context.Context, req ResolveBlocker
 	if strings.TrimSpace(req.ProjectSlug) == "" {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "project slug required")
 	}
+	if req.ItemUUID == uuid.Nil {
+		return WorkAnnotation{}, failure("INVALID_REQUEST", "item UUID required")
+	}
 	if req.AnnotationID == uuid.Nil {
 		return WorkAnnotation{}, failure("INVALID_REQUEST", "annotation UUID required")
 	}
+	if req.ExpectedRevision <= 0 {
+		return WorkAnnotation{}, failure("INVALID_REQUEST", "positive expected_revision required")
+	}
+	if req.RequestID == "" {
+		req.RequestID = uuid.NewString()
+	}
 
 	return mutate(ctx, s, "work-blocker-resolve", req.RequestID, req, func(tx pgx.Tx) (WorkAnnotation, error) {
+		if err := s.checkWorkAdmissionTx(ctx, tx); err != nil {
+			return WorkAnnotation{}, err
+		}
 		var an WorkAnnotation
 		var srcRefsRaw []byte
-		err := tx.QueryRow(ctx, `SELECT a.annotation_id, a.revision, a.binding_id, a.plane_item_uuid, a.kind, a.body, a.state, a.author, a.source_references, a.created_at, a.updated_at
+		var projStatus string
+		err := tx.QueryRow(ctx, `SELECT a.annotation_id, a.revision, a.binding_id, a.plane_item_uuid, a.kind, a.body, a.state, a.author, a.source_references, a.created_at, a.updated_at, p.status
 			FROM cairn.work_annotation a
 			JOIN cairn.work_project p ON a.binding_id = p.binding_id
 			WHERE a.annotation_id = $1 AND p.collection = $2 AND p.local_slug = $3
 			FOR UPDATE OF a`, req.AnnotationID, req.Collection, req.ProjectSlug).Scan(
-			&an.AnnotationID, &an.Revision, &an.BindingID, &an.PlaneItemUUID, &an.Kind, &an.Body, &an.State, &an.Author, &srcRefsRaw, &an.CreatedAt, &an.UpdatedAt)
+			&an.AnnotationID, &an.Revision, &an.BindingID, &an.PlaneItemUUID, &an.Kind, &an.Body, &an.State, &an.Author, &srcRefsRaw, &an.CreatedAt, &an.UpdatedAt, &projStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WorkAnnotation{}, failure("NOT_FOUND", "blocker annotation not found in requested project and collection")
 		}
 		if err != nil {
 			return WorkAnnotation{}, err
 		}
+		if projStatus != "active" {
+			return WorkAnnotation{}, failure("INVALID_REQUEST", fmt.Sprintf("work project %q is %s", req.ProjectSlug, projStatus))
+		}
 		_ = json.Unmarshal(srcRefsRaw, &an.SourceReferences)
+		if an.SourceReferences == nil {
+			an.SourceReferences = make([]string, 0)
+		}
 
-		if req.ItemUUID != uuid.Nil {
-			var match bool
-			err = tx.QueryRow(ctx, `SELECT EXISTS(
-				SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND plane_item_uuid = $2 AND (item_id = $3 OR plane_item_uuid = $3)
-			)`, an.BindingID, an.PlaneItemUUID, req.ItemUUID).Scan(&match)
-			if err != nil {
-				return WorkAnnotation{}, err
-			}
-			if !match {
-				return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("annotation %s does not belong to item %s", req.AnnotationID, req.ItemUUID))
-			}
+		var match bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND plane_item_uuid = $2 AND (item_id = $3 OR plane_item_uuid = $3)
+		)`, an.BindingID, an.PlaneItemUUID, req.ItemUUID).Scan(&match)
+		if err != nil {
+			return WorkAnnotation{}, err
+		}
+		if !match {
+			return WorkAnnotation{}, failure("NOT_FOUND", fmt.Sprintf("annotation %s does not belong to item %s", req.AnnotationID, req.ItemUUID))
 		}
 
 		if an.Kind != "blocker" {
 			return WorkAnnotation{}, failure("INVALID_REQUEST", "target annotation is not a blocker")
 		}
 
-		if req.ExpectedRevision > 0 && an.Revision != req.ExpectedRevision {
+		if an.Revision != req.ExpectedRevision {
 			return WorkAnnotation{}, failure("VERSION_CONFLICT", fmt.Sprintf("expected revision %d, current is %d", req.ExpectedRevision, an.Revision))
 		}
 
 		if an.State == "resolved" {
-			return an, nil
+			return WorkAnnotation{}, failure("VERSION_CONFLICT", "blocker is already resolved")
 		}
 
 		newRev := an.Revision + 1

@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/halbritt/cairn/core"
 )
 
 func TestWorkServerHostOriginValidation(t *testing.T) {
@@ -286,5 +290,205 @@ func TestWorkServerCSRFEnforcement(t *testing.T) {
 	// Because /api/work/refresh is not implemented in handleAPI (or 404), it MUST NOT be 403
 	if rec.Code == http.StatusForbidden {
 		t.Fatalf("did not expect 403 when valid CSRF token is provided, got %d", rec.Code)
+	}
+}
+
+func TestWorkServerAuthSessionEndpoint(t *testing.T) {
+	srv, err := newWorkServer(nil, "default", "", 8085)
+	if err != nil {
+		t.Fatalf("failed to create work server: %v", err)
+	}
+
+	// 1. Unauthenticated GET /api/auth/session returns 200 {"authenticated": false}
+	unauthReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8085/api/auth/session", nil)
+	unauthReq.Host = "127.0.0.1:8085"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, unauthReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unauthenticated /api/auth/session, got %d", rec.Code)
+	}
+	var unauthResp struct {
+		Authenticated bool   `json:"authenticated"`
+		CSRFToken     string `json:"csrf_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &unauthResp); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if unauthResp.Authenticated {
+		t.Fatalf("expected authenticated=false, got true")
+	}
+
+	// 2. Unauthenticated GET /api/auth/status returns 200 {"authenticated": false}
+	statusReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8085/api/auth/status", nil)
+	statusReq.Host = "127.0.0.1:8085"
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, statusReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unauthenticated /api/auth/status, got %d", rec.Code)
+	}
+	var statusResp struct {
+		Authenticated bool `json:"authenticated"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &statusResp); err != nil || statusResp.Authenticated {
+		t.Fatalf("expected authenticated=false for status endpoint")
+	}
+
+	// 3. GET /api/auth/session with non-loopback host fails with 403
+	forbiddenReq := httptest.NewRequest(http.MethodGet, "http://evil.com:8085/api/auth/session", nil)
+	forbiddenReq.Host = "evil.com:8085"
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, forbiddenReq)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 on non-loopback host for /api/auth/session, got %d", rec.Code)
+	}
+
+	// 4. Authenticated GET /api/auth/session returns 200 {"authenticated": true, "csrf_token": ...} and X-CSRF-Token header
+	sess, csrf := srv.issueSession()
+	authReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8085/api/auth/session", nil)
+	authReq.Host = "127.0.0.1:8085"
+	authReq.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, authReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated /api/auth/session, got %d", rec.Code)
+	}
+	if gotHeader := rec.Header().Get("X-CSRF-Token"); gotHeader != csrf {
+		t.Fatalf("expected X-CSRF-Token header %q, got %q", csrf, gotHeader)
+	}
+	var authResp struct {
+		Authenticated bool   `json:"authenticated"`
+		CSRFToken     string `json:"csrf_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &authResp); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if !authResp.Authenticated || authResp.CSRFToken != csrf {
+		t.Fatalf("expected authenticated=true and csrf_token=%q, got %+v", csrf, authResp)
+	}
+
+	// 5. Authenticated GET /api/auth/status returns 200 {"authenticated": true, "csrf_token": ...} and X-CSRF-Token header
+	statusAuthReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8085/api/auth/status", nil)
+	statusAuthReq.Host = "127.0.0.1:8085"
+	statusAuthReq.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, statusAuthReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated /api/auth/status, got %d", rec.Code)
+	}
+	if gotHeader := rec.Header().Get("X-CSRF-Token"); gotHeader != csrf {
+		t.Fatalf("expected X-CSRF-Token header %q, got %q", csrf, gotHeader)
+	}
+
+	// 6. Expired cookie returns 200 {"authenticated": false}
+	srv.sessionMu.Lock()
+	srv.sessionTokens[sess] = time.Now().Add(-1 * time.Hour)
+	srv.sessionMu.Unlock()
+
+	expReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8085/api/auth/session", nil)
+	expReq.Host = "127.0.0.1:8085"
+	expReq.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, expReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for expired session /api/auth/session, got %d", rec.Code)
+	}
+	var expResp struct {
+		Authenticated bool `json:"authenticated"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &expResp); err != nil || expResp.Authenticated {
+		t.Fatalf("expected authenticated=false for expired session")
+	}
+}
+
+func TestWorkServerGuardedMutationsNegativeValidation(t *testing.T) {
+	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("skipping test requiring database; run make test-integration")
+	}
+	ctx := context.Background()
+	store, err := core.Open(ctx, dsn, core.Channel{Principal: "operator", Operator: true, Repo: "test-repo"})
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer store.Close()
+
+	srv, err := newWorkServer(store, "default", "test-repo", 8085)
+	if err != nil {
+		t.Fatalf("failed to create work server: %v", err)
+	}
+	sess, csrf := srv.issueSession()
+
+	endpoints := []string{
+		"/api/work/progress/edit",
+		"/api/work/blocker/resolve",
+		"/api/work/unassociate",
+	}
+
+	for _, ep := range endpoints {
+		// Test 1: missing expected_revision
+		t.Run(ep+"_missing_revision", func(t *testing.T) {
+			payload := map[string]any{
+				"project":        "default",
+				"item":           "item-123",
+				"annotation_id":  "00000000-0000-0000-0000-000000000001",
+				"association_id": "00000000-0000-0000-0000-000000000001",
+				"text":           "update",
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8085"+ep, bytes.NewReader(body))
+			req.Host = "127.0.0.1:8085"
+			req.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+			req.Header.Set("X-CSRF-Token", csrf)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for missing expected_revision, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
+
+		// Test 2: non-positive expected_revision (0)
+		t.Run(ep+"_zero_revision", func(t *testing.T) {
+			rev := int64(0)
+			payload := map[string]any{
+				"project":           "default",
+				"item":              "item-123",
+				"annotation_id":     "00000000-0000-0000-0000-000000000001",
+				"association_id":    "00000000-0000-0000-0000-000000000001",
+				"expected_revision": rev,
+				"text":              "update",
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8085"+ep, bytes.NewReader(body))
+			req.Host = "127.0.0.1:8085"
+			req.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+			req.Header.Set("X-CSRF-Token", csrf)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for expected_revision=0, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
+
+		// Test 3: missing item
+		t.Run(ep+"_missing_item", func(t *testing.T) {
+			rev := int64(1)
+			payload := map[string]any{
+				"project":           "default",
+				"annotation_id":     "00000000-0000-0000-0000-000000000001",
+				"association_id":    "00000000-0000-0000-0000-000000000001",
+				"expected_revision": rev,
+				"text":              "update",
+			}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8085"+ep, bytes.NewReader(body))
+			req.Host = "127.0.0.1:8085"
+			req.AddCookie(&http.Cookie{Name: "work_session", Value: sess})
+			req.Header.Set("X-CSRF-Token", csrf)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for missing item, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
