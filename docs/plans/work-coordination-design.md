@@ -411,12 +411,29 @@ notifications, tool continuations, bootstrap/compaction, repeated callbacks and
 owner input joined into a turn already owned by a wake. Absence of a recorded
 wake is not proof of user origin.
 
-The installed host binding advertises this capability only after its adapter
-propagates typed origin from the native input seam. Implement Codex, Claude,
-OpenCode and Hermes origin handling as part of this feature. Agy remains
-explicitly unsupported until it has an equivalent stable owner-turn contract;
-publication refuses `UNSUPPORTED_DELIVERY`, rather than accepting a notice that
-cannot be consumed. This is a supported-product matrix, not an experiment gate.
+The first release requires a verified patched Codex 0.166 local TUI through the
+existing Cairn launcher, `scripts/launch-codex-coordination.py`. The launcher runs
+that TUI with `--remote unix://SOCKET` against its own local app-server. Extend
+this existing route with a per-launch inherited-FD proof that authenticates the
+owner TUI connection. On that connection, the actual composer submission marker
+and Core's fresh-start versus joined/recovery observation produce versioned hook
+provenance. A public RPC client's label, claimed source or copied composer marker
+cannot authenticate an owner turn. An embedded-only integration does not satisfy
+this launcher workflow.
+
+The installed binding advertises support only after verification of the pinned
+native contract/build, launcher and complete lifecycle bundle together. Keep the
+patch and its verification evidence with the native slice; its planned contract
+reference is `docs/native-owner-origin.md`. Unpatched Codex, Claude 2.1.318,
+OpenCode, Hermes and Agy refuse `UNSUPPORTED_DELIVERY` before publication. Support
+for another binding requires its own verified owner-origin contract.
+
+This is an evidence-based scope correction dated 2026-11-05: review of the native
+input boundaries did not establish the promised contract for all four originally
+named runtimes. The initial release therefore supports the patched Codex workflow.
+It still delivers publication, quiet queueing, next-user-turn admission, up to
+three separately settled notices, inspection, explicit flush, expiry and restore
+handling as a complete feature.
 
 Add host-only `session-organic-notice-claim` through the existing base-profile
 and session association. Ordinary session-selected API calls cannot supply an
@@ -571,12 +588,22 @@ first-party subscription; reject an unknown shape, API-key route, alternate
 provider override or policy configuration whose behavior cannot be established.
 Do not copy, print or provision credentials.
 
-Use print mode with JSON schema output, safe mode, empty tools and MCP configuration,
-no slash commands, browser integration, session persistence or interactive
-permission prompts, and no project setting sources. The installed CLI checked
-for this design supports those controls. Implement the driver against verified
-help/version fixtures and check that disabling project settings does not discard
-the selected subscription identity. Do not use API-key-only bare mode or fallback
+For the inspected Claude 2.1.318 interface, use `--print --output-format json`
+without `--verbose` or `--json-schema`. Require a successful process exit and one
+native terminal result object with `type: result`, `subtype: success`,
+`is_error: false` and a string `result`. Parse that string as exactly one JSON
+proposal object and validate the closed application schema, action types and
+snapshot IDs. Reject malformed output, extra text, unknown proposal fields or an
+unexpected envelope without a repair prompt or rerun. Native JSON-schema mode's
+internal repair generation is excluded from this adapter.
+
+Use safe mode, empty tools and MCP configuration, no slash commands, browser
+integration, session persistence or interactive permission prompts, and no project
+setting sources. Implement the driver against verified help/version fixtures and
+check that disabling project settings preserves the selected subscription identity.
+Safe mode retains managed policy settings: verify the effective policy cannot
+enable model/provider fallback, or refuse before launch. Omitting fallback flags
+alone does not establish that policy. Do not use API-key-only bare mode or fallback
 model flags. Child environment removes API-key and provider-routing overrides;
 model/profile choice never comes from source text. Launch from an empty private
 working directory with input on stdin and arguments as an array.

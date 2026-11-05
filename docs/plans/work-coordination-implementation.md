@@ -242,11 +242,28 @@ with new request IDs. Tag attempts with admission kind/root; reject unrelated
 attempts during advance. Materialize one delivery at a time atomically with
 its nonexclusive attempt; never make the whole quiet backlog generically claimable.
 
-Implement typed input-origin propagation for Codex, Claude, OpenCode and Hermes,
-including joined prompts and background/queue origins. Advertise support only from
-the installed binding. Agy returns unsupported until its contract exists. Include
-installed lifecycle bundle closure, old/new capability behavior and work-view queue
-panel. Reuse the current journal owner after any CAIRN-276–278 integration.
+Deliver the initial native workflow through a verified patched Codex 0.166 local
+TUI and the existing `scripts/launch-codex-coordination.py` route: `--remote
+unix://SOCKET` connects to the launcher's own app-server. Extend that route with
+per-launch inherited-FD proof authenticating the owner TUI connection. Combine
+the actual composer submission marker with Core's fresh-start versus
+joined/recovery observation to produce versioned hook provenance. Public RPC
+client labels or claimed source cannot grant owner origin. An embedded-only
+path does not satisfy this deliverable.
+
+Pin the advertised capability to the verified native contract/build, launcher
+and complete installed lifecycle bundle. The native slice supplies the patch,
+contract and verification evidence; its planned reference is
+`docs/native-owner-origin.md`. Unpatched Codex, Claude 2.1.318, OpenCode, Hermes
+and Agy refuse `UNSUPPORTED_DELIVERY` before publication. Include old/new
+capability behavior and the work-view queue panel. Reuse the current journal
+owner after any CAIRN-276–278 integration.
+
+This 2026-11-05 scope correction replaces the original four-runtime promise
+because native-boundary review did not establish the required owner-origin
+contract for those runtimes. All five features remain required; WC-04 delivers
+its complete publish/queue/next-turn/settle/inspect/flush/expiry/restore workflow
+on the supported patched Codex binding.
 
 **Acceptance.**
 
@@ -255,6 +272,10 @@ panel. Reuse the current journal owner after any CAIRN-276–278 integration.
 - A new supported user-input turn can admit; a queue/channel message, repeated
   callback, background notification, compact/resume or joined wake-owned prompt
   cannot. Missing/ambiguous origin remains ineligible, never guessed.
+- The launcher-owned local server authenticates the TUI connection through its
+  per-launch inherited-FD proof. Public RPC labels/source fields and copied
+  composer markers on other connections cannot admit. Native build/contract or
+  lifecycle bundle mismatch removes support before publication.
 - Root admission, including none, is stable across retries. Later arrivals do
   not join the burst. Every advance requires settlement and rechecks priority;
   at most three quiet notices materialize in one root turn.
@@ -272,11 +293,15 @@ panel. Reuse the current journal owner after any CAIRN-276–278 integration.
   not silently downgrade delivery mode. Disable leaves queued work visible for
   publisher flush or expiry, without mass wakes.
 
-**Verification.** Disposable Store races and actual adapter hook fixtures for each
-supported origin path; installed-bundle import tests; native process/queue fixture
-that counts turns and per-item outcomes; UI checks; `make test-integration`,
+**Verification.** Disposable Store races, actual adapter hook fixtures and a
+patched Codex 0.166 local TUI run through the existing launcher and owned remote
+server; exercise authentic composer input, joined/recovery paths and forged RPC
+origin claims. Verify the pinned native contract/build and installed bundle,
+including unsupported bindings and mismatch refusal. Use a native process/queue
+fixture that counts turns and per-item outcomes; UI checks; `make test-integration`,
 `make check`, `make test-lifecycle` and docs checks. Verify zero notice-induced
-turns before explicit flush or independently initiated user input.
+turns before explicit flush or independently initiated user input. Patch presence
+or an embedded-only fixture does not establish launcher-path acceptance.
 
 **Rollout/recovery.** Upgrade compatible server, scheduler and complete host bundles,
 verify each binding's advertised origin capability, then enable publication.
@@ -298,6 +323,13 @@ Claude subscription adapter with verified flags/auth shape, typed output,
 owned-process cleanup and no tools or alternate routes. Do not import trial
 harness code or widen lesson proposals.
 
+For Claude 2.1.318, use `--print --output-format json` without `--verbose` or
+`--json-schema`. Validate the successful native terminal result envelope, then
+parse its string `result` as exactly one proposal object under the strict
+application schema. Malformed output refuses without repair or another model
+invocation. Verify effective managed policy cannot enable model/provider fallback;
+safe mode and omitted fallback flags alone are insufficient.
+
 Implement generation/list/show/apply/reject/undo through private transaction helpers
 for existing work annotations/links. Render before/after changes, attribution,
 expiry and stale/purged reasons in CLI and UI. Feature controls independently
@@ -311,6 +343,11 @@ disable generation and apply while preserving cleanup and retained outcome reads
 - Deterministic provider fixtures prove unknown IDs/actions, malformed output,
   proposed arbitrary URLs, tool requests and oversize data cause no operational
   mutation or fetch.
+- Native terminal-result fixtures cover process failure, error envelopes,
+  unexpected envelopes, malformed `result` JSON, extra text and unknown proposal
+  fields.
+  Each output refusal follows exactly one invocation, with no repair/rerun;
+  launch arguments omit verbose and native JSON-schema modes.
 - Explicit source selection cannot bypass hosted eligibility; local inputs refuse
   before launch. Currentness/expiry/source privacy/execution replacement/restore
   invalidate apply, including known copied text under forgetting.
@@ -321,7 +358,8 @@ disable generation and apply while preserving cleanup and retained outcome reads
 - Undo of blocker creation withdraws that annotation; undo of blocker resolution
   reopens its prior state with a new revision. Both reject intervening edits.
 - Quota/auth failure stops the operation without another provider/account/model.
-  Unrecognized profile/managed settings or changed executable refuses before use.
+  Unrecognized profile/managed settings, fallback-enabled effective policy or a
+  changed executable refuses before use.
 - Timeout, output overflow and cancellation terminate and verify the owned process
   group; restart reconciles uncertain execution without another model invocation.
   A late result cannot bypass expiry or create a second application.
