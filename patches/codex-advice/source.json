@@ -1,0 +1,7 @@
+{
+  "schema": "cairn.codex-advice-source/1",
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "upstream_tag": "rust-v0.166.0",
+  "patch_sha256": "455c7b0121d5fa7d63b42c05871061306d45db87ba08011e74cdc37042c633b7",
+  "toolchain": "1.99.1"
+}

@@ -1,0 +1,2731 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index 1d27abb..065cddf 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -287,7 +287,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
+ 
+ [[package]]
+ name = "app_test_support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1888,7 +1888,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+@@ -1900,7 +1900,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-graph-store"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-state",
+@@ -1915,7 +1915,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-identity"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1935,7 +1935,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-message-board-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -1958,7 +1958,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-message-board-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-extension-api",
+  "codex-message-board",
+@@ -1972,7 +1972,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-agent-roles"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-config",
+  "codex-file-system",
+@@ -1985,7 +1985,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-analytics"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-app-server-protocol",
+  "codex-git-utils",
+@@ -2008,7 +2008,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-ansi-escape"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "ansi-to-tui",
+  "pretty_assertions",
+@@ -2019,7 +2019,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-api"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "assert_matches",
+@@ -2057,7 +2057,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2174,7 +2174,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-app-server",
+  "codex-app-server-protocol",
+@@ -2202,7 +2202,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-daemon"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "blake3",
+@@ -2232,7 +2232,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-protocol"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-app-server-protocol-noop-macros",
+@@ -2266,11 +2266,11 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-protocol-noop-macros"
+-version = "0.0.0"
++version = "0.166.0"
+ 
+ [[package]]
+ name = "codex-app-server-test-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2292,7 +2292,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-app-server-transport"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "axum",
+  "base64 0.22.1",
+@@ -2335,7 +2335,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-apply-patch"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -2355,7 +2355,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-arg0"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-apply-patch",
+@@ -2378,7 +2378,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-async-utils"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "rand 0.9.3",
+@@ -2388,7 +2388,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-attachment-store"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "serde",
+@@ -2398,7 +2398,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-aws-auth"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "aws-config",
+  "aws-credential-types",
+@@ -2424,7 +2424,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-backend-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-api",
+@@ -2444,7 +2444,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-backend-openapi-models"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "serde",
+  "serde_json",
+@@ -2453,7 +2453,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-build-info"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-install-context",
+  "pretty_assertions",
+@@ -2466,7 +2466,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-bwrap"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "cc",
+  "libc",
+@@ -2475,7 +2475,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-chatgpt"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2497,7 +2497,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cli"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2536,6 +2536,7 @@ dependencies = [
+  "codex-mcp",
+  "codex-memories-write",
+  "codex-model-provider",
++ "codex-model-provider-info",
+  "codex-models-manager",
+  "codex-multi-env-copy-file",
+  "codex-plugin",
+@@ -2592,6 +2593,7 @@ dependencies = [
+  "tracing-subscriber",
+  "unicode-segmentation",
+  "url",
++ "uuid",
+  "vt100",
+  "which 8.0.0",
+  "windows-sys 0.61.2",
+@@ -2601,7 +2603,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-http-client",
+  "eventsource-stream",
+@@ -2615,7 +2617,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "async-stream",
+@@ -2639,7 +2641,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-config"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -2667,7 +2669,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2700,7 +2702,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2715,7 +2717,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-cloud-tasks-mock-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "chrono",
+  "codex-cloud-tasks-client",
+@@ -2724,7 +2726,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-code-mode-protocol",
+  "codex-http-client",
+@@ -2748,7 +2750,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-host"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -2779,7 +2781,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-protocol"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "glob",
+@@ -2797,7 +2799,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-code-mode-runtime"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-code-mode-protocol",
+@@ -2816,11 +2818,11 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-collaboration-mode-templates"
+-version = "0.0.0"
++version = "0.166.0"
+ 
+ [[package]]
+ name = "codex-config"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -2874,7 +2876,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-config-schema"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2883,7 +2885,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-connectors"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -2905,7 +2907,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-connectors-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-connectors",
+  "codex-core-plugins",
+@@ -2919,7 +2921,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-context-fragments"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-protocol-test-support",
+@@ -2930,7 +2932,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3080,7 +3082,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-api"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-analytics",
+  "codex-app-server-protocol",
+@@ -3103,7 +3105,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-plugin-common"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "semver",
+@@ -3114,7 +3116,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-core-plugins"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3171,7 +3173,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-diagnostics"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -3179,7 +3181,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-direct-tool-timing"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-critical-path",
+  "pretty_assertions",
+@@ -3190,7 +3192,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -3243,7 +3245,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3316,7 +3318,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server-cli"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "assert_matches",
+@@ -3356,7 +3358,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server-protocol"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-file-system",
+@@ -3374,7 +3376,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-exec-server-test-support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-exec-server",
+@@ -3389,7 +3391,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-execpolicy"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3407,7 +3409,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-experimental-api-macros"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "proc-macro2",
+  "quote",
+@@ -3416,7 +3418,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-extension-api"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-api",
+  "codex-config",
+@@ -3439,7 +3441,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-extension-items"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "pretty_assertions",
+@@ -3451,7 +3453,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-external-agent-migration"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "chrono",
+  "codex-analytics",
+@@ -3482,7 +3484,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-features"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-network-proxy",
+  "codex-protocol",
+@@ -3496,7 +3498,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-feedback"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -3524,7 +3526,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-search"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3540,7 +3542,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-system"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "bytes",
+  "codex-protocol",
+@@ -3554,7 +3556,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-file-watcher"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "notify",
+  "pretty_assertions",
+@@ -3565,7 +3567,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-git-attribution"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-backend-client",
+  "codex-extension-api",
+@@ -3578,7 +3580,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-git-utils"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3606,7 +3608,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-goal-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3631,7 +3633,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-context"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-context-fragments",
+  "codex-history",
+@@ -3645,7 +3647,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-reviewer"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3681,7 +3683,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-v2"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3720,7 +3722,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-guardian-v3"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-message-board",
+  "codex-protocol",
+@@ -3729,7 +3731,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-history"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-protocol",
+@@ -3741,7 +3743,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-history-notes-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-analytics",
+  "codex-client",
+@@ -3767,7 +3769,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-home"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-extension-api",
+  "codex-utils-absolute-path",
+@@ -3779,7 +3781,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-hooks"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "async-channel",
+@@ -3808,7 +3810,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-http-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "bytes",
+  "codex-utils-cargo-bin",
+@@ -3848,7 +3850,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-image-generation-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -3880,7 +3882,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-install-context"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "codex-utils-home-dir",
+@@ -3893,7 +3895,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-keyring-store"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "keyring",
+  "pretty_assertions",
+@@ -3904,7 +3906,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-linux-sandbox"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "clap",
+  "codex-core",
+@@ -3933,7 +3935,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-lmstudio"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-core",
+  "codex-http-client",
+@@ -3947,7 +3949,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-login"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -3993,7 +3995,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mcp"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -4037,7 +4039,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mcp-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4070,7 +4072,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-core",
+  "codex-extension-api",
+@@ -4092,7 +4094,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-read"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -4102,7 +4104,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-memories-write"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4139,7 +4141,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mermaid"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "insta",
+  "pretty_assertions",
+@@ -4148,7 +4150,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-message-board"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "caseless",
+@@ -4171,7 +4173,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-message-history"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-config",
+  "memchr",
+@@ -4185,7 +4187,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-model-provider"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -4224,7 +4226,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-model-provider-info"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-client",
+  "codex-http-client",
+@@ -4242,7 +4244,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-models-manager"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "chrono",
+  "codex-http-client",
+@@ -4261,7 +4263,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-multi-env-copy-file"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-config",
+@@ -4287,7 +4289,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-mxc-sandbox"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-network-proxy",
+@@ -4308,7 +4310,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-network-proxy"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "aws-credential-types",
+@@ -4359,7 +4361,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-ollama"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "assert_matches",
+  "async-stream",
+@@ -4379,7 +4381,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-otel"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "bytes",
+  "chrono",
+@@ -4418,7 +4420,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-otel-trace-websocket"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4429,7 +4431,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-plugin"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-config",
+  "codex-core-plugin-common",
+@@ -4444,7 +4446,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-plugin-host"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-cargo-bin",
+  "codex-utils-process",
+@@ -4461,7 +4463,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-process-hardening"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -4469,7 +4471,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-prompts"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-collaboration-mode-templates",
+@@ -4487,7 +4489,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-protocol"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chardetng",
+@@ -4533,14 +4535,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-protocol-test-support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+ ]
+ 
+ [[package]]
+ name = "codex-queue-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+@@ -4561,7 +4563,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-realtime-webrtc"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-build-info",
+@@ -4580,7 +4582,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-response-debug-context"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -4591,7 +4593,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-responses-api-proxy"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -4615,7 +4617,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rmcp-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4666,7 +4668,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rollout"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4699,7 +4701,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-rollout-trace"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-code-mode",
+@@ -4716,7 +4718,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-runtime-agent-instance"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-agent-identity",
+@@ -4742,7 +4744,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-sandboxing"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-mxc-sandbox",
+@@ -4770,7 +4772,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-secrets"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "age",
+  "anyhow",
+@@ -4791,7 +4793,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-shell-command"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -4814,7 +4816,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-skills"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -4831,7 +4833,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-skills-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "assert_matches",
+  "blake3",
+@@ -4871,7 +4873,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-state"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4900,7 +4902,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-stdio-to-uds"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-uds",
+@@ -4912,7 +4914,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tcp-tunnel"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -4933,7 +4935,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-terminal-detection"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "tracing",
+@@ -4941,7 +4943,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-test-binary-support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-arg0",
+  "tempfile",
+@@ -4949,7 +4951,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-thread-manager-sample"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4960,7 +4962,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-thread-store"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "chrono",
+  "codex-app-server-protocol",
+@@ -4991,7 +4993,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tools"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "bitflags 2.13.1",
+  "codex-attachment-store",
+@@ -5017,7 +5019,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-tui"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -5145,7 +5147,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-uds"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "async-io",
+  "libc",
+@@ -5159,7 +5161,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-user-verification"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "block2",
+@@ -5180,7 +5182,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-absolute-path"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "dirs",
+  "dunce",
+@@ -5194,14 +5196,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-approval-presets"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-audio"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-protocol",
+@@ -5215,7 +5217,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cache"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "lru",
+  "sha1 0.10.6",
+@@ -5224,7 +5226,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cargo-bin"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "assert_cmd",
+  "runfiles",
+@@ -5233,7 +5235,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-cli"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "clap",
+  "codex-protocol",
+@@ -5245,22 +5247,22 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-critical-path"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-elapsed"
+-version = "0.0.0"
++version = "0.166.0"
+ 
+ [[package]]
+ name = "codex-utils-fuzzy-match"
+-version = "0.0.0"
++version = "0.166.0"
+ 
+ [[package]]
+ name = "codex-utils-git-discovery"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-git-utils",
+  "codex-utils-absolute-path",
+@@ -5273,14 +5275,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-head-tail-buffer"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-home-dir"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dirs",
+@@ -5290,7 +5292,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-image"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-cache",
+@@ -5304,7 +5306,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-json-to-toml"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "serde_json",
+@@ -5313,7 +5315,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-oss"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-core",
+  "codex-lmstudio",
+@@ -5323,7 +5325,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-output-truncation"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-string",
+@@ -5333,7 +5335,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-path"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dunce",
+@@ -5344,7 +5346,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-path-uri"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-absolute-path",
+@@ -5360,7 +5362,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-plugins"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-exec-server",
+  "codex-exec-server-protocol",
+@@ -5374,7 +5376,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-process"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "tokio",
+@@ -5382,7 +5384,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-pty"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-utils-cargo-bin",
+@@ -5401,7 +5403,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-readiness"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "assert_matches",
+  "thiserror 2.0.18",
+@@ -5411,7 +5413,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-redacted-string"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "schemars 0.8.22",
+  "serde",
+@@ -5419,14 +5421,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-rustls-provider"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "rustls",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-sandbox-summary"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-absolute-path",
+@@ -5436,7 +5438,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-sleep-inhibitor"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "core-foundation 0.9.4",
+  "libc",
+@@ -5446,14 +5448,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-stream-parser"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-utils-string"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "regex-lite",
+@@ -5463,14 +5465,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-utils-template"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+ 
+ [[package]]
+ name = "codex-v8-poc"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "pretty_assertions",
+  "v8",
+@@ -5478,7 +5480,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-voice-host"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-install-context",
+@@ -5505,7 +5507,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-web-search-extension"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-api",
+  "codex-core",
+@@ -5527,7 +5529,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-websocket-auth"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -5546,7 +5548,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-websocket-client"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-http-client",
+  "codex-utils-rustls-provider",
+@@ -5562,7 +5564,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-windows-sandbox"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -5592,7 +5594,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-windows-sandbox-service"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-cloud-config",
+@@ -5610,14 +5612,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-windows-sandbox-test-support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "dirs",
+ ]
+ 
+ [[package]]
+ name = "codex-workload-identity"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "codex-http-client",
+  "pretty_assertions",
+@@ -5632,7 +5634,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "codex-worktree"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "codex-git-utils",
+@@ -5885,7 +5887,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "core_test_support"
+-version = "0.0.0"
++version = "0.166.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+diff --git a/codex-rs/cli/Cargo.toml b/codex-rs/cli/Cargo.toml
+index ffff79d..1122483 100644
+--- a/codex-rs/cli/Cargo.toml
++++ b/codex-rs/cli/Cargo.toml
+@@ -63,6 +63,7 @@ codex-login = { workspace = true }
+ codex-memories-write = { workspace = true }
+ codex-mcp = { workspace = true }
+ codex-model-provider = { workspace = true }
++codex-model-provider-info = { workspace = true }
+ codex-models-manager = { workspace = true }
+ codex-plugin = { workspace = true }
+ codex-protocol = { workspace = true }
+@@ -111,6 +112,7 @@ tracing-appender = { workspace = true }
+ tracing-subscriber = { workspace = true }
+ unicode-segmentation = { workspace = true }
+ url = { workspace = true }
++uuid = { workspace = true }
+ which = { workspace = true }
+ 
+ [target.'cfg(all(target_os = "linux", target_env = "musl", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
+diff --git a/codex-rs/cli/src/advice.rs b/codex-rs/cli/src/advice.rs
+new file mode 100644
+index 0000000..30b2310
+--- /dev/null
++++ b/codex-rs/cli/src/advice.rs
+@@ -0,0 +1,591 @@
++//! One bounded subscription request. This deliberately does not start an agent session.
++use clap::Parser;
++use codex_api::{
++    ApiError, Provider, ResponseEvent, ResponsesApiRequest, ResponsesClient, ResponsesOptions,
++    SharedAuthProvider,
++};
++use codex_app_server::in_process::EmbeddedNetworkPolicy;
++use codex_cloud_config::managed_config_bundle_loader_for_storage;
++use codex_config::config_toml::ConfigToml;
++use codex_config::{CloudConfigBundleLoader, ConfigLoadOptions, LoaderOverrides};
++use codex_core::config::{
++    ConfigBuilder, ConfigOverrides, bootstrap_auth_config, find_codex_home,
++    load_config_toml_with_layer_stack,
++};
++use codex_http_client::{
++    ClientRouteClass, HttpTransport, Request, ReqwestTransport, Response, StreamResponse,
++    TransportError,
++};
++use codex_login::default_client::set_default_client_residency_requirement;
++use codex_login::{AuthConfig, AuthManager, CodexAuth};
++use codex_model_provider::{
++    WorkspaceRoutingContext, auth_provider_from_auth, create_model_provider, resolve_api_provider,
++};
++use codex_model_provider_info::ModelProviderInfo;
++use codex_protocol::models::{ContentItem, ResponseItem};
++use futures::StreamExt;
++use serde::Deserialize;
++use serde_json::{Value, json};
++use std::sync::Arc;
++use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
++use std::time::Duration;
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tracing::instrument::WithSubscriber;
++use uuid::Uuid;
++
++const REQUEST_SCHEMA: &str = "cairn.codex-advice-request/1";
++const RESULT_SCHEMA: &str = "cairn.codex-advice-result/1";
++const INPUT_LIMIT: usize = 262_144;
++const STREAM_LIMIT: usize = 2_097_152;
++const TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
++
++#[derive(Debug, Parser)]
++pub struct Cli {
++    /// Print the nonsecret contract without reading input, configuration or credentials.
++    #[arg(long)]
++    pub capabilities: bool,
++    #[arg(long, required_unless_present = "capabilities")]
++    pub model: Option<String>,
++    #[arg(long, default_value_t = 90_000, value_parser = clap::value_parser!(u64).range(10_000..=180_000))]
++    pub timeout_ms: u64,
++    #[arg(long, default_value_t = 65_536, value_parser = clap::value_parser!(u64).range(1_024..=262_144))]
++    pub max_output_bytes: u64,
++}
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Input {
++    schema: String,
++    request_id: String,
++    prompt: String,
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum Failure {
++    InvalidRequest,
++    AuthUnavailable,
++    AuthUnsupported,
++    PolicyRefused,
++    QuotaExhausted,
++    ProviderError,
++    Timeout,
++    OutputLimit,
++    Cancelled,
++}
++impl Failure {
++    fn code(self) -> &'static str {
++        match self {
++            Self::InvalidRequest => "INVALID_REQUEST",
++            Self::AuthUnavailable => "AUTH_UNAVAILABLE",
++            Self::AuthUnsupported => "AUTH_UNSUPPORTED",
++            Self::PolicyRefused => "POLICY_REFUSED",
++            Self::QuotaExhausted => "QUOTA_EXHAUSTED",
++            Self::ProviderError => "PROVIDER_ERROR",
++            Self::Timeout => "TIMEOUT",
++            Self::OutputLimit => "OUTPUT_LIMIT",
++            Self::Cancelled => "CANCELLED",
++        }
++    }
++    fn message(self) -> &'static str {
++        match self {
++            Self::InvalidRequest => "The advice request is invalid.",
++            Self::AuthUnavailable => "The selected subscription authentication is unavailable.",
++            Self::AuthUnsupported => "The selected authentication is not supported for advice.",
++            Self::PolicyRefused => "The selected policy or route does not permit advice.",
++            Self::QuotaExhausted => "The subscription quota or rate limit prevents advice.",
++            Self::ProviderError => "The provider did not return a complete advice result.",
++            Self::Timeout => "The advice deadline expired.",
++            Self::OutputLimit => "The advice output exceeded its bound.",
++            Self::Cancelled => "The advice operation was cancelled.",
++        }
++    }
++}
++
++fn failure_value(id: Option<&str>, failure: Failure) -> Value {
++    json!({"schema":RESULT_SCHEMA,"request_id":id,"ok":false,"error":{"code":failure.code(),"message":failure.message()}})
++}
++fn success_value(id: &str, model: &str, result: &str) -> Value {
++    json!({"schema":RESULT_SCHEMA,"request_id":id,"ok":true,"model":model,"provider":"openai","auth_method":"chatgpt_subscription","result":result})
++}
++fn parse_input(bytes: &[u8]) -> Result<Input, Failure> {
++    if bytes.len() > INPUT_LIMIT {
++        return Err(Failure::InvalidRequest);
++    }
++    let input: Input = serde_json::from_slice(bytes).map_err(|_| Failure::InvalidRequest)?;
++    let id = Uuid::parse_str(&input.request_id).map_err(|_| Failure::InvalidRequest)?;
++    if input.schema != REQUEST_SCHEMA
++        || id.is_nil()
++        || id.to_string() != input.request_id
++        || input.prompt.trim().is_empty()
++    {
++        return Err(Failure::InvalidRequest);
++    }
++    Ok(input)
++}
++
++/// The caller owns process-group termination; SIGINT/SIGTERM also close our request promptly.
++pub async fn run(cli: Cli) -> i32 {
++    if cli.capabilities {
++        println!(
++            "{}",
++            json!({"schema":"cairn.codex-advice-capabilities/1","request_schema":REQUEST_SCHEMA,"result_schema":RESULT_SCHEMA,"provider":"openai","auth_method":"chatgpt_subscription","one_request":true,"tools":false,"retries":false,"upstream_commit":"6ff1e1ca3b30fc8b914720681fcf5fe62e95f856","patch_sha256":option_env!("CAIRN_ADVICE_PATCH_SHA256").unwrap_or("unverified")})
++        );
++        return 0;
++    }
++    let mut id = None;
++    let operation = async {
++        let model = cli.model.as_deref().ok_or(Failure::InvalidRequest)?;
++        if model.is_empty()
++            || model.len() > 128
++            || !model
++                .bytes()
++                .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
++        {
++            return Err(Failure::InvalidRequest);
++        }
++        let mut bytes = Vec::new();
++        tokio::io::stdin()
++            .take((INPUT_LIMIT + 1) as u64)
++            .read_to_end(&mut bytes)
++            .await
++            .map_err(|_| Failure::InvalidRequest)?;
++        let input = parse_input(&bytes)?;
++        id = Some(input.request_id.clone());
++        let result = generate(
++            &input,
++            model,
++            cli.max_output_bytes as usize,
++            Duration::from_millis(cli.timeout_ms),
++        )
++        .await?;
++        Ok(success_value(&input.request_id, model, &result))
++    };
++    let result = tokio::select! {
++        result = tokio::time::timeout(Duration::from_millis(cli.timeout_ms), operation.with_subscriber(tracing::subscriber::NoSubscriber::default())) => result.unwrap_or(Err(Failure::Timeout)),
++        _ = cancelled() => Err(Failure::Cancelled),
++    };
++    let mut value = match result {
++        Ok(value) => value,
++        Err(error) => failure_value(id.as_deref(), error),
++    };
++    let mut bytes = serde_json::to_vec(&value).expect("advice envelope is serializable");
++    if bytes.len() + 1 > cli.max_output_bytes as usize {
++        value = failure_value(id.as_deref(), Failure::OutputLimit);
++        bytes = serde_json::to_vec(&value).expect("advice error is serializable");
++    }
++    bytes.push(b'\n');
++    let ok = value["ok"] == true;
++    let mut stdout = tokio::io::stdout();
++    if stdout.write_all(&bytes).await.is_err() || stdout.flush().await.is_err() {
++        return 1;
++    }
++    if ok { 0 } else { 1 }
++}
++async fn cancelled() {
++    #[cfg(unix)]
++    {
++        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
++            .expect("SIGTERM handler");
++        tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
++    }
++    #[cfg(not(unix))]
++    {
++        let _ = tokio::signal::ctrl_c().await;
++    }
++}
++
++fn check_environment() -> Result<(), Failure> {
++    const FORBIDDEN: &[&str] = &[
++        "OPENAI_API_KEY",
++        "CODEX_API_KEY",
++        "CODEX_ACCESS_TOKEN",
++        "OPENAI_BASE_URL",
++        "OPENAI_ORGANIZATION",
++        "OPENAI_PROJECT",
++        "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
++        "CODEX_REVOKE_TOKEN_URL_OVERRIDE",
++        "CODEX_APP_SERVER_LOGIN_CLIENT_ID",
++        "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
++        "OPENAI_FEDERATION_RULE_ID",
++        "OPENAI_IDENTITY_TOKEN_FILE",
++        "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
++    ];
++    if FORBIDDEN.iter().any(|key| std::env::var_os(key).is_some())
++        || codex_login::is_workload_identity_selected()
++    {
++        return Err(Failure::PolicyRefused);
++    }
++    Ok(())
++}
++fn check_config(config: &ConfigToml) -> Result<(), Failure> {
++    if config
++        .model_provider
++        .as_deref()
++        .is_some_and(|id| id != "openai")
++        || config.model_providers.contains_key("openai")
++        || config.openai_base_url.is_some()
++        || config
++            .chatgpt_base_url
++            .as_deref()
++            .is_some_and(|url| url.trim_end_matches('/') != "https://chatgpt.com/backend-api")
++    {
++        return Err(Failure::PolicyRefused);
++    }
++    Ok(())
++}
++fn check_auth(auth: &CodexAuth) -> Result<(), Failure> {
++    if !matches!(auth, CodexAuth::Chatgpt(_)) {
++        return Err(Failure::AuthUnsupported);
++    }
++    let tokens = auth
++        .get_token_data()
++        .map_err(|_| Failure::AuthUnavailable)?;
++    if tokens.oauth_provenance.as_ref().is_some_and(|p| {
++        p.issuer.trim_end_matches('/') != "https://auth.openai.com"
++            || p.client_id != codex_login::CLIENT_ID
++    }) {
++        return Err(Failure::PolicyRefused);
++    }
++    if tokens.access_token.is_empty() || auth.get_account_id().is_none() {
++        return Err(Failure::AuthUnavailable);
++    }
++    Ok(())
++}
++fn pin_auth(mut auth: AuthConfig) -> Result<AuthConfig, Failure> {
++    if auth
++        .chatgpt_base_url
++        .as_deref()
++        .is_some_and(|url| url.trim_end_matches('/') != "https://chatgpt.com/backend-api")
++    {
++        return Err(Failure::PolicyRefused);
++    }
++    auth.auth_route_config = auth.auth_route_config.with_authentication_endpoints(
++        [TOKEN_ENDPOINT.parse().expect("fixed OAuth URL")]
++            .into_iter()
++            .collect(),
++    );
++    Ok(auth)
++}
++fn check_destination(destination: &str) -> Result<(), Failure> {
++    let url = url::Url::parse(destination).map_err(|_| Failure::PolicyRefused)?;
++    if url.scheme() != "https"
++        || url.port_or_known_default() != Some(443)
++        || !url.username().is_empty()
++        || url.password().is_some()
++        || url.query().is_some()
++        || url.fragment().is_some()
++        || url.path().trim_end_matches('/') != "/backend-api/codex"
++        || !url
++            .host_str()
++            .is_some_and(|host| host == "chatgpt.com" || host.ends_with(".chatgpt.com"))
++    {
++        return Err(Failure::PolicyRefused);
++    }
++    Ok(())
++}
++async fn generate(
++    input: &Input,
++    model: &str,
++    max_output: usize,
++    timeout: Duration,
++) -> Result<String, Failure> {
++    check_environment()?;
++    let home = find_codex_home().map_err(|_| Failure::PolicyRefused)?;
++    let overrides = LoaderOverrides {
++        ignore_project_config: true,
++        ignore_user_and_project_exec_policy_rules: true,
++        ..Default::default()
++    };
++    let policy = EmbeddedNetworkPolicy::load(&overrides).await;
++    let bootstrap = load_config_toml_with_layer_stack(
++        home.as_path(),
++        None,
++        vec![],
++        ConfigLoadOptions {
++            loader_overrides: overrides.clone(),
++            strict_config: true,
++            cloud_config_bundle: CloudConfigBundleLoader::default(),
++        },
++    )
++    .await
++    .map_err(|_| Failure::PolicyRefused)?;
++    check_config(&bootstrap.config_toml)?;
++    let bootstrap_auth = pin_auth(policy.bind_bootstrap_auth(
++        bootstrap_auth_config(home.as_path(), &bootstrap).map_err(|_| Failure::PolicyRefused)?,
++    ))?;
++    check_auth(
++        &bootstrap_auth
++            .load_auth(false)
++            .await
++            .map_err(|_| Failure::AuthUnavailable)?
++            .ok_or(Failure::AuthUnavailable)?,
++    )?;
++    let cloud = managed_config_bundle_loader_for_storage(
++        bootstrap_auth,
++        bootstrap.config_layer_stack.requirements_toml(),
++        false,
++    )
++    .await
++    .map_err(|_| Failure::PolicyRefused)?;
++    let mut config = ConfigBuilder::default()
++        .codex_home(home.to_path_buf())
++        .loader_overrides(overrides)
++        .without_project_context()
++        .harness_overrides(ConfigOverrides {
++            model: Some(model.to_owned()),
++            ephemeral: Some(true),
++            ..Default::default()
++        })
++        .strict_config(true)
++        .cloud_config_bundle(cloud)
++        .build_with_validation(|config, _, _| {
++            check_config(config).map_err(|_| std::io::Error::other("advice policy refused"))
++        })
++        .await
++        .map_err(|_| Failure::PolicyRefused)?;
++    config
++        .config_layer_stack
++        .ensure_config_server_applied()
++        .map_err(|_| Failure::PolicyRefused)?;
++    if config.model_provider != ModelProviderInfo::create_openai_provider(None)
++        || config.model_provider_id != "openai"
++        || config.chatgpt_base_url.trim_end_matches('/') != "https://chatgpt.com/backend-api"
++        || config.model.as_deref() != Some(model)
++    {
++        return Err(Failure::PolicyRefused);
++    }
++    policy.activate(&mut config);
++    set_default_client_residency_requirement(config.enforce_residency.value());
++    let auth_config = pin_auth(config.auth_config())?;
++    let manager = AuthManager::shared_from_auth_config(auth_config.clone(), false)
++        .await
++        .map_err(|_| Failure::AuthUnavailable)?;
++    check_auth(&manager.auth_cached().ok_or(Failure::AuthUnavailable)?)?;
++    let (auth, factory) = manager
++        .try_auth_with_http_client_factory()
++        .await
++        .map_err(|_| Failure::AuthUnavailable)?
++        .ok_or(Failure::AuthUnavailable)?;
++    check_auth(&auth)?;
++    if !auth_config.allows_auth(&auth) || manager.refresh_failure_for_auth(&auth).is_some() {
++        return Err(Failure::AuthUnavailable);
++    }
++    let mut info = ModelProviderInfo::create_openai_provider(None);
++    info.env_http_headers = None;
++    info.request_max_retries = Some(0);
++    info.stream_max_retries = Some(0);
++    let provider = resolve_api_provider(&info, Some(&auth)).map_err(|_| Failure::PolicyRefused)?;
++    let owner = create_model_provider(info, Some(manager));
++    let route = owner
++        .route_responses_api_provider(
++            provider,
++            Some(&auth),
++            &WorkspaceRoutingContext::new(config.chatgpt_base_url.clone()),
++        )
++        .await
++        .map_err(|_| Failure::PolicyRefused)?;
++    check_destination(&route.provider.base_url)?;
++    let destination = route.provider.url_for_path("responses");
++    request_once(
++        request_transport(&factory, &destination)?,
++        route.provider,
++        auth_provider_from_auth(&auth),
++        input,
++        model,
++        max_output,
++        timeout,
++    )
++    .await
++}
++
++fn request_transport(
++    factory: &codex_http_client::HttpClientFactory,
++    destination: &str,
++) -> Result<ReqwestTransport, Failure> {
++    let client = codex_http_client::HttpClientBuilder::new()
++        .default_headers(codex_login::default_client::default_headers())
++        .with_chatgpt_cookies(factory)
++        .without_redirects()
++        .without_retries()
++        .without_request_logging()
++        .build_respecting_outbound_proxy_policy(factory, destination, ClientRouteClass::Api)
++        .map_err(|_| Failure::PolicyRefused)?;
++    Ok(ReqwestTransport::from_http_client(client))
++}
++
++struct OnceTransport<T> {
++    inner: T,
++    started: AtomicBool,
++    destination: String,
++    timeout: Duration,
++    stream_failure: Arc<AtomicU8>,
++}
++impl<T: HttpTransport> HttpTransport for OnceTransport<T> {
++    async fn execute(&self, _request: Request) -> Result<Response, TransportError> {
++        Err(TransportError::Build(
++            "advice requires one streaming request".into(),
++        ))
++    }
++    async fn stream(&self, mut request: Request) -> Result<StreamResponse, TransportError> {
++        if request.method != http::Method::POST
++            || request.url != self.destination
++            || self.started.swap(true, Ordering::SeqCst)
++        {
++            return Err(TransportError::Build("advice request refused".into()));
++        }
++        request.response_body_limit_bytes = Some(STREAM_LIMIT);
++        request.timeout = Some(self.timeout);
++        let mut response = self.inner.stream(request).await?;
++        let failure = Arc::clone(&self.stream_failure);
++        response.bytes = Box::pin(response.bytes.map(move |chunk| {
++            if let Err(error) = &chunk {
++                let code = match error {
++                    TransportError::ResponseTooLarge { .. } => 1,
++                    TransportError::Timeout => 2,
++                    TransportError::Policy(_) => 3,
++                    _ => 0,
++                };
++                failure.store(code, Ordering::SeqCst);
++            }
++            chunk
++        }));
++        Ok(response)
++    }
++}
++fn api_failure(error: ApiError) -> Failure {
++    match error {
++        ApiError::Transport(TransportError::ResponseTooLarge { .. }) => Failure::OutputLimit,
++        ApiError::Transport(TransportError::Timeout) => Failure::Timeout,
++        ApiError::Transport(TransportError::Policy(_)) => Failure::PolicyRefused,
++        ApiError::Transport(TransportError::Http { status, .. }) | ApiError::Api { status, .. }
++            if status == http::StatusCode::UNAUTHORIZED
++                || status == http::StatusCode::FORBIDDEN =>
++        {
++            Failure::AuthUnavailable
++        }
++        ApiError::Transport(TransportError::Http { status, .. }) | ApiError::Api { status, .. }
++            if status == http::StatusCode::TOO_MANY_REQUESTS
++                || status == http::StatusCode::PAYMENT_REQUIRED =>
++        {
++            Failure::QuotaExhausted
++        }
++        ApiError::QuotaExceeded
++        | ApiError::UsageNotIncluded
++        | ApiError::RateLimitExceeded { .. }
++        | ApiError::RateLimit(_) => Failure::QuotaExhausted,
++        _ => Failure::ProviderError,
++    }
++}
++async fn request_once<T: HttpTransport>(
++    transport: T,
++    mut provider: Provider,
++    auth: SharedAuthProvider,
++    input: &Input,
++    model: &str,
++    max_output: usize,
++    timeout: Duration,
++) -> Result<String, Failure> {
++    provider.retry.max_attempts = 1;
++    provider.retry.retry_429 = false;
++    provider.retry.retry_5xx = false;
++    provider.retry.retry_transport = false;
++    let stream_failure = Arc::new(AtomicU8::new(0));
++    let transport = OnceTransport {
++        destination: provider.url_for_path("responses"),
++        inner: transport,
++        started: AtomicBool::new(false),
++        timeout,
++        stream_failure: Arc::clone(&stream_failure),
++    };
++    let request = ResponsesApiRequest {
++        model: model.into(),
++        stream: true,
++        service_tier: None,
++        input: vec![ResponseItem::Message {
++            encrypted_content: None,
++            status: None,
++            id: None,
++            role: "user".into(),
++            content: vec![ContentItem::InputText {
++                text: input.prompt.clone(),
++            }],
++            phase: None,
++            internal_chat_message_metadata_passthrough: None,
++        }],
++        tools: Some(
++            Arc::<serde_json::value::RawValue>::from(
++                serde_json::value::RawValue::from_string("[]".into()).expect("empty tools JSON"),
++            )
++            .into(),
++        ),
++        tool_choice: "none".into(),
++        parallel_tool_calls: false,
++        reasoning: None,
++        store: false,
++        stream_options: None,
++        include: vec![],
++        prompt_cache_key: None,
++        text: None,
++        client_metadata: None,
++        access_programs: None,
++    };
++    let mut stream = ResponsesClient::new(transport, provider, auth)
++        .stream_request(request, ResponsesOptions::default())
++        .await
++        .map_err(api_failure)?;
++    let mut text = String::new();
++    while let Some(event) = stream.next().await {
++        let event = event.map_err(|error| match stream_failure.load(Ordering::SeqCst) {
++            1 => Failure::OutputLimit,
++            2 => Failure::Timeout,
++            3 => Failure::PolicyRefused,
++            _ => api_failure(error),
++        })?;
++        match event {
++            ResponseEvent::ServerModel(actual) if actual != model => {
++                return Err(Failure::PolicyRefused);
++            }
++            ResponseEvent::OutputItemAdded(ResponseItem::Message { role, .. })
++                if role == "assistant" => {}
++            ResponseEvent::OutputItemAdded(ResponseItem::Reasoning { .. }) => {}
++            ResponseEvent::OutputItemAdded(_) => return Err(Failure::ProviderError),
++            ResponseEvent::OutputItemDone(ResponseItem::Message { role, content, .. })
++                if role == "assistant" =>
++            {
++                for content in content {
++                    let ContentItem::OutputText { text: part, .. } = content else {
++                        return Err(Failure::ProviderError);
++                    };
++                    if text.len() + part.len() > max_output {
++                        return Err(Failure::OutputLimit);
++                    }
++                    text.push_str(&part);
++                }
++            }
++            ResponseEvent::OutputItemDone(ResponseItem::Reasoning { .. }) => {}
++            ResponseEvent::OutputItemDone(_) | ResponseEvent::ToolCallInputDelta { .. } => {
++                return Err(Failure::ProviderError);
++            }
++            ResponseEvent::Completed { end_turn, .. } => {
++                if text.is_empty() || end_turn == Some(false) {
++                    return Err(Failure::ProviderError);
++                }
++                if serde_json::to_vec(&success_value(&input.request_id, model, &text))
++                    .map_err(|_| Failure::ProviderError)?
++                    .len()
++                    + 1
++                    > max_output
++                {
++                    return Err(Failure::OutputLimit);
++                }
++                return Ok(text);
++            }
++            _ => {}
++        }
++    }
++    Err(Failure::ProviderError)
++}
++
++#[cfg(test)]
++#[path = "advice_tests.rs"]
++mod tests;
+diff --git a/codex-rs/cli/src/advice_tests.rs b/codex-rs/cli/src/advice_tests.rs
+new file mode 100644
+index 0000000..ad9c7b7
+--- /dev/null
++++ b/codex-rs/cli/src/advice_tests.rs
+@@ -0,0 +1,308 @@
++use super::*;
++use codex_http_client::{HttpClientFactory, OutboundProxyPolicy};
++use codex_model_provider::unauthenticated_auth_provider;
++use wiremock::matchers::{method, path};
++use wiremock::{Mock, MockServer, ResponseTemplate};
++fn input() -> Input {
++    Input {
++        schema: REQUEST_SCHEMA.into(),
++        request_id: "431bda54-eb71-41ac-8412-2c47617cc851".into(),
++        prompt: "Return the selected advice.".into(),
++    }
++}
++fn success_stream(text: &str) -> String {
++    [json!({"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":text}]}}), json!({"type":"response.completed","response":{"id":"response-fixture","status":"completed","output":[]}})]
++        .into_iter().map(|event| format!("data: {event}\n\n")).collect()
++}
++async fn fixture_request(server: &MockServer, limit: usize) -> Result<String, Failure> {
++    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
++    let mut provider = resolve_api_provider(
++        &ModelProviderInfo::create_openai_provider(None),
++        Some(&auth),
++    )
++    .unwrap();
++    // This test changes only its network boundary; production has no endpoint override.
++    provider.base_url = server.uri();
++    let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
++    request_once(
++        request_transport(&factory, &provider.url_for_path("responses")).unwrap(),
++        provider,
++        unauthenticated_auth_provider(),
++        &input(),
++        "gpt-fixture",
++        limit,
++        Duration::from_secs(2),
++    )
++    .await
++}
++#[tokio::test]
++async fn one_request_returns_terminal_text_without_tools_or_session() {
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .and(path("/responses"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "text/event-stream")
++                .set_body_string(success_stream("{\"actions\":[]}")),
++        )
++        .mount(&server)
++        .await;
++    assert_eq!(
++        fixture_request(&server, 4096).await,
++        Ok("{\"actions\":[]}".into())
++    );
++    let requests = server.received_requests().await.unwrap();
++    assert_eq!(requests.len(), 1, "one generation is a product contract");
++    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
++    assert_eq!(body["model"], "gpt-fixture");
++    assert_eq!(body["tools"], json!([]));
++    assert_eq!(body["tool_choice"], "none");
++    assert_eq!(body["parallel_tool_calls"], false);
++    assert_eq!(body["store"], false);
++    assert_eq!(body["input"].as_array().unwrap().len(), 1);
++    assert_eq!(body["input"][0]["content"][0]["text"], input().prompt);
++    assert!(body.get("previous_response_id").is_none());
++    assert!(
++        body.get("text").is_none(),
++        "native schema repair is unavailable"
++    );
++}
++#[tokio::test]
++async fn auth_quota_and_retryable_failures_never_send_another_request() {
++    for (status, expected) in [
++        (401, Failure::AuthUnavailable),
++        (403, Failure::AuthUnavailable),
++        (429, Failure::QuotaExhausted),
++        (500, Failure::ProviderError),
++    ] {
++        let server = MockServer::start().await;
++        Mock::given(method("POST"))
++            .respond_with(
++                ResponseTemplate::new(status)
++                    .set_body_string("private provider diagnostics must not escape"),
++            )
++            .mount(&server)
++            .await;
++        assert_eq!(fixture_request(&server, 4096).await, Err(expected));
++        assert_eq!(server.received_requests().await.unwrap().len(), 1);
++        assert!(
++            !failure_value(Some(&input().request_id), expected)
++                .to_string()
++                .contains("private")
++        );
++    }
++}
++#[tokio::test]
++async fn missing_terminal_output_and_tool_calls_refuse_without_repair() {
++    for body in [
++        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"status\":\"completed\"}}\n\n",
++        "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"name\":\"shell\",\"arguments\":\"{}\",\"call_id\":\"call\"}}\n\n",
++    ] {
++        let server = MockServer::start().await;
++        Mock::given(method("POST"))
++            .respond_with(ResponseTemplate::new(200).set_body_string(body))
++            .mount(&server)
++            .await;
++        assert_eq!(
++            fixture_request(&server, 4096).await,
++            Err(Failure::ProviderError)
++        );
++        assert_eq!(server.received_requests().await.unwrap().len(), 1);
++    }
++}
++#[tokio::test]
++async fn serialized_output_and_raw_stream_are_independently_bounded() {
++    for (body, limit) in [
++        (success_stream(&"\"".repeat(900)), 1024),
++        ("x".repeat(STREAM_LIMIT + 1), 4096),
++    ] {
++        let server = MockServer::start().await;
++        Mock::given(method("POST"))
++            .respond_with(ResponseTemplate::new(200).set_body_string(body))
++            .mount(&server)
++            .await;
++        assert_eq!(
++            fixture_request(&server, limit).await,
++            Err(Failure::OutputLimit)
++        );
++        assert_eq!(server.received_requests().await.unwrap().len(), 1);
++    }
++}
++#[test]
++fn only_exact_subscription_auth_and_destination_are_eligible() {
++    assert_eq!(
++        check_auth(&CodexAuth::from_api_key("fake-test-key")),
++        Err(Failure::AuthUnsupported)
++    );
++    assert_eq!(
++        check_auth(&CodexAuth::create_dummy_chatgpt_auth_for_testing()),
++        Ok(())
++    );
++    for url in [
++        "https://api.openai.com/v1",
++        "https://example.test/backend-api/codex",
++        "http://chatgpt.com/backend-api/codex",
++        "https://chatgpt.com:8443/backend-api/codex",
++        "https://chatgpt.com/backend-api/codex?route=other",
++    ] {
++        assert_eq!(check_destination(url), Err(Failure::PolicyRefused), "{url}");
++    }
++    assert_eq!(
++        check_destination("https://chatgpt.com/backend-api/codex"),
++        Ok(())
++    );
++    assert_eq!(
++        check_destination("https://us.chatgpt.com/backend-api/codex"),
++        Ok(())
++    );
++}
++#[test]
++fn input_requires_one_closed_bounded_object_with_canonical_identity() {
++    let good =
++        json!({"schema":REQUEST_SCHEMA,"request_id":input().request_id,"prompt":"selected input"})
++            .to_string();
++    assert!(parse_input(good.as_bytes()).is_ok());
++    for bad in [
++        format!("{good}{good}"),
++        good.replace("selected input", ""),
++        good.replace(
++            "431bda54-eb71-41ac-8412-2c47617cc851",
++            "00000000-0000-0000-0000-000000000000",
++        ),
++        good.replace("\"prompt\":", "\"provider\":\"other\",\"prompt\":"),
++        " ".repeat(INPUT_LIMIT + 1),
++    ] {
++        assert!(matches!(
++            parse_input(bad.as_bytes()),
++            Err(Failure::InvalidRequest)
++        ));
++    }
++}
++
++#[tokio::test]
++async fn failed_proactive_refresh_is_an_error_and_cannot_reuse_old_credentials() {
++    let home = tempfile::TempDir::new().unwrap();
++    let id_token = concat!(
++        "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.",
++        "eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJlbnRlcnByaXNlIiwiY2hhdGdwdF9hY2NvdW50X2lkIjoid29ya3NwYWNlIn19.",
++        "c2lnbmF0dXJl"
++    );
++    let fixture = serde_json::to_vec(&json!({"auth_mode":"chatgpt","tokens":{"id_token":id_token,"access_token":"fake-old-token","refresh_token":"fake-refresh","account_id":"workspace"},"last_refresh":"2000-01-01T00:00:00Z"})).unwrap();
++    std::fs::write(home.path().join("auth.json"), &fixture).unwrap();
++    let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault).with_network_policy(
++        codex_http_client::NetworkPolicy::unmanaged().restrict_to_endpoints(Default::default()),
++    );
++    let config = AuthConfig {
++        codex_home: home.path().to_path_buf(),
++        auth_credentials_store_mode: codex_login::AuthCredentialsStoreMode::File,
++        keyring_backend_kind: Default::default(),
++        forced_login_method: None,
++        chatgpt_base_url: Some("https://chatgpt.com/backend-api/".into()),
++        forced_chatgpt_workspace_id: None,
++        managed_auth_policy: Default::default(),
++        auth_route_config: codex_login::AuthRouteConfig::from_http_client_factory(factory),
++    };
++    let manager = AuthManager::shared_from_auth_config(config, false)
++        .await
++        .unwrap();
++    assert!(matches!(manager.auth_cached(), Some(CodexAuth::Chatgpt(_))));
++    assert!(
++        tokio::time::timeout(
++            Duration::from_secs(2),
++            manager.try_auth_with_http_client_factory()
++        )
++        .await
++        .unwrap()
++        .is_err()
++    );
++    assert_eq!(
++        std::fs::read(home.path().join("auth.json")).unwrap(),
++        fixture
++    );
++}
++
++#[tokio::test]
++async fn redirect_does_not_send_the_prompt_to_another_endpoint() {
++    let first = MockServer::start().await;
++    let second = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(
++            ResponseTemplate::new(307)
++                .insert_header("location", format!("{}/responses", second.uri())),
++        )
++        .mount(&first)
++        .await;
++    assert_eq!(
++        fixture_request(&first, 4096).await,
++        Err(Failure::ProviderError)
++    );
++    assert_eq!(first.received_requests().await.unwrap().len(), 1);
++    assert!(second.received_requests().await.unwrap().is_empty());
++}
++
++#[tokio::test]
++async fn provider_deadline_stops_without_retry() {
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .set_body_string(success_stream("late"))
++                .set_delay(Duration::from_secs(3)),
++        )
++        .mount(&server)
++        .await;
++    assert_eq!(fixture_request(&server, 4096).await, Err(Failure::Timeout));
++    assert_eq!(server.received_requests().await.unwrap().len(), 1);
++}
++
++#[tokio::test]
++async fn a_tool_item_is_refused_when_added_even_if_followed_by_valid_text() {
++    let server = MockServer::start().await;
++    let tool = json!({"type":"response.output_item.added","item":{"type":"function_call","name":"shell","arguments":"{}","call_id":"call"}});
++    let body = format!("data: {tool}\n\n{}", success_stream("{\"actions\":[]}"));
++    Mock::given(method("POST"))
++        .respond_with(ResponseTemplate::new(200).set_body_string(body))
++        .mount(&server)
++        .await;
++    assert_eq!(
++        fixture_request(&server, 4096).await,
++        Err(Failure::ProviderError)
++    );
++    assert_eq!(server.received_requests().await.unwrap().len(), 1);
++}
++
++#[tokio::test]
++async fn reported_model_mismatch_and_incomplete_terminal_are_refused() {
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("openai-model", "other-model")
++                .set_body_string(success_stream("valid text")),
++        )
++        .mount(&server)
++        .await;
++    assert_eq!(
++        fixture_request(&server, 4096).await,
++        Err(Failure::PolicyRefused)
++    );
++    assert_eq!(server.received_requests().await.unwrap().len(), 1);
++    for terminal in [
++        json!({"type":"response.completed","response":{"id":"r","end_turn":false}}),
++        json!({"type":"response.incomplete","response":{"id":"r","incomplete_details":{"reason":"interrupted"}}}),
++        json!({"type":"response.incomplete","response":{"id":"r","incomplete_details":{"reason":"max_output_tokens"}}}),
++    ] {
++        let server = MockServer::start().await;
++        let item = json!({"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial text"}]}});
++        let body = format!("data: {item}\n\ndata: {terminal}\n\n");
++        Mock::given(method("POST"))
++            .respond_with(ResponseTemplate::new(200).set_body_string(body))
++            .mount(&server)
++            .await;
++        assert_eq!(
++            fixture_request(&server, 4096).await,
++            Err(Failure::ProviderError)
++        );
++        assert_eq!(server.received_requests().await.unwrap().len(), 1);
++    }
++}
+diff --git a/codex-rs/cli/src/lib.rs b/codex-rs/cli/src/lib.rs
+index cc91f5b..93ddcdf 100644
+--- a/codex-rs/cli/src/lib.rs
++++ b/codex-rs/cli/src/lib.rs
+@@ -1,3 +1,4 @@
++pub mod advice;
+ pub mod cloud_config;
+ pub(crate) mod debug_sandbox;
+ mod exit_status;
+diff --git a/codex-rs/cli/src/main.rs b/codex-rs/cli/src/main.rs
+index 8a578c3..833b84b 100644
+--- a/codex-rs/cli/src/main.rs
++++ b/codex-rs/cli/src/main.rs
+@@ -144,6 +144,9 @@ struct MultitoolCli {
+ 
+ #[derive(Debug, clap::Subcommand)]
+ enum Subcommand {
++    /// Make one bounded ChatGPT subscription advice request.
++    CairnAdvice(codex_cli::advice::Cli),
++
+     /// Browse all agent sessions on the shared local app-server daemon.
+     Agents(AgentsCommand),
+ 
+@@ -1038,6 +1041,31 @@ fn stage_str(stage: Stage) -> &'static str {
+ 
+ fn main() -> anyhow::Result<()> {
+     codex_build_info::initialize!();
++    // This command must not load .env files or install agent helper aliases.
++    // Only the exact registered first-argument form enters this path.
++    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("cairn-advice")) {
++        let cli = codex_cli::advice::Cli::parse_from(std::env::args_os().skip(1));
++        tracing::subscriber::set_global_default(tracing::subscriber::NoSubscriber::default())
++            .map_err(|_| anyhow::anyhow!("advice diagnostics could not be disabled"))?;
++        let code = std::thread::Builder::new()
++            .name("codex-advice".into())
++            .stack_size(8 * 1024 * 1024)
++            .spawn(move || -> std::io::Result<i32> {
++                let runtime = tokio::runtime::Builder::new_multi_thread()
++                    .worker_threads(2)
++                    .thread_stack_size(8 * 1024 * 1024)
++                    .enable_all()
++                    .build()?;
++                let code = runtime.block_on(codex_cli::advice::run(cli));
++                // A cancelled Tokio stdin read can remain blocked on its OS thread.
++                // Do not wait for that thread before the owned process exits.
++                runtime.shutdown_background();
++                Ok(code)
++            })?
++            .join()
++            .map_err(|_| anyhow::anyhow!("advice runtime failed"))??;
++        std::process::exit(code);
++    }
+     let remote_control_disabled = codex_app_server::take_remote_control_disabled_env();
+     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
+         // Keep the CLI dispatcher off the runtime's stack while the TUI rebuilds a thread.
+@@ -1103,6 +1131,11 @@ async fn cli_main(
+ 
+     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
+     match subcommand {
++        Some(Subcommand::CairnAdvice(_)) => {
++            anyhow::bail!(
++                "cairn-advice must be the first argument; global options are unavailable"
++            );
++        }
+         None | Some(Subcommand::Agents(_)) => {
+             prepend_config_flags(
+                 &mut interactive.config_overrides,
+@@ -2390,6 +2423,7 @@ fn unsupported_subcommand_name_for_strict_config(
+         Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
+         Some(Subcommand::Features(_)) => Some("features"),
+         Some(Subcommand::TcpTunnel(_)) => Some("tcp-tunnel"),
++        Some(Subcommand::CairnAdvice(_)) => Some("cairn-advice"),
+     }
+ }
+ 
+diff --git a/codex-rs/http-client/src/client_builder.rs b/codex-rs/http-client/src/client_builder.rs
+index 7de37b9..ed11189 100644
+--- a/codex-rs/http-client/src/client_builder.rs
++++ b/codex-rs/http-client/src/client_builder.rs
+@@ -37,6 +37,7 @@ pub struct HttpClientBuilder {
+     http2_prior_knowledge: bool,
+     pub(crate) default_headers: Option<HeaderMap>,
+     follow_redirects: bool,
++    retry_protocol_nacks: bool,
+     pub(crate) redirect_observed: Option<Arc<AtomicBool>>,
+     pub(crate) connect_timeout: Option<Duration>,
+     chatgpt_cloudflare_cookie_store: bool,
+@@ -123,6 +124,12 @@ impl HttpClientBuilder {
+         self
+     }
+ 
++    /// Refuses even the HTTP library's default protocol-level request replay.
++    pub fn without_retries(mut self) -> Self {
++        self.retry_protocol_nacks = false;
++        self
++    }
++
+     /// Marks the supplied flag when a redirect is encountered, preserving the default policy.
+     /// Use a fresh flag for each operation whose retry safety depends on its redirect history.
+     pub fn with_redirect_tracking(mut self, redirect_observed: Arc<AtomicBool>) -> Self {
+@@ -382,6 +389,9 @@ impl HttpClientBuilder {
+ 
+     fn base_reqwest_builder(self) -> reqwest::ClientBuilder {
+         let mut builder = reqwest::Client::builder();
++        if !self.retry_protocol_nacks {
++            builder = builder.retry(reqwest::retry::never());
++        }
+         #[cfg(windows)]
+         if let Some(path) = self.windows_proxy_pipe_path {
+             builder = builder.windows_named_pipe(path);
+@@ -428,6 +438,7 @@ impl Default for HttpClientBuilder {
+             http2_prior_knowledge: false,
+             default_headers: None,
+             follow_redirects: true,
++            retry_protocol_nacks: true,
+             redirect_observed: None,
+             connect_timeout: None,
+             chatgpt_cloudflare_cookie_store: false,
+diff --git a/codex-rs/login/src/auth/manager.rs b/codex-rs/login/src/auth/manager.rs
+index 15864c4..eda4b87 100644
+--- a/codex-rs/login/src/auth/manager.rs
++++ b/codex-rs/login/src/auth/manager.rs
+@@ -2520,6 +2520,32 @@ impl AuthManager {
+         Some((cached.auth.clone()?, self.http_client_factory()))
+     }
+ 
++    /// Captures managed credentials and their policy, refusing a failed proactive refresh.
++    /// Unlike `auth`, this never returns a stale credential after a refresh error.
++    /// External authentication is intentionally unavailable to this bounded path.
++    pub async fn try_auth_with_http_client_factory(
++        &self,
++    ) -> Result<Option<(CodexAuth, HttpClientFactory)>, RefreshTokenError> {
++        if self.has_external_auth() {
++            return Err(RefreshTokenError::Transient(std::io::Error::other(
++                "external authentication is unavailable for a frozen request",
++            )));
++        }
++        let Some(auth) = self.auth_cached() else {
++            return Ok(None);
++        };
++        if let Some(reason) = Self::proactive_refresh_reason(&auth) {
++            self.refresh_token_with_reason(reason, Some(&auth)).await?;
++        }
++        let cached = self.inner.read().map_err(|_| {
++            RefreshTokenError::Transient(std::io::Error::other("authentication state unavailable"))
++        })?;
++        Ok(cached
++            .auth
++            .clone()
++            .map(|auth| (auth, self.http_client_factory())))
++    }
++
+     pub async fn agent_identity_auth(
+         &self,
+         policy: AgentIdentityAuthPolicy,
+diff --git a/codex-rs/login/src/outbound_proxy.rs b/codex-rs/login/src/outbound_proxy.rs
+index be183a5..ef18da8 100644
+--- a/codex-rs/login/src/outbound_proxy.rs
++++ b/codex-rs/login/src/outbound_proxy.rs
+@@ -10,15 +10,90 @@ pub struct AuthRouteConfig {
+     http_client_factory: HttpClientFactory,
+     application_network_policy: NetworkPolicy,
+     local_bootstrap_factory: Option<HttpClientFactory>,
++    authentication_endpoints: Option<std::collections::BTreeSet<url::Url>>,
++}
++
++#[cfg(test)]
++mod cairn_advice_tests {
++    use super::*;
++    use codex_http_client::DestinationPolicy;
++    use codex_http_client::NetworkPolicyController;
++    use codex_http_client::OutboundProxyPolicy;
++
++    #[test]
++    fn authentication_endpoint_pin_preserves_bootstrap_and_managed_policy() {
++        let token: url::Url = "https://auth.openai.com/oauth/token".parse().unwrap();
++        let foreign: url::Url = "https://example.test/oauth/token".parse().unwrap();
++        let config: url::Url = "https://chatgpt.com/backend-api/wham/config"
++            .parse()
++            .unwrap();
++        let controller = NetworkPolicyController::default();
++        controller.publish(
++            controller.policy().revision(),
++            DestinationPolicy::Unrestricted,
++        );
++        let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault)
++            .with_network_policy(controller.policy());
++        let route = AuthRouteConfig::from_http_client_factory(factory.clone())
++            .with_local_bootstrap_factory(factory)
++            .with_authentication_endpoints([token.clone()].into_iter().collect());
++        assert!(
++            route
++                .authentication_factory(token.as_str())
++                .network_policy()
++                .acquire(&token)
++                .is_ok()
++        );
++        assert!(
++            route
++                .authentication_factory(foreign.as_str())
++                .network_policy()
++                .acquire(&foreign)
++                .is_err()
++        );
++        assert!(
++            route
++                .http_client_factory_for_bootstrap([config.clone()])
++                .network_policy()
++                .acquire(&config)
++                .is_ok()
++        );
++        controller.publish(
++            controller.policy().revision(),
++            DestinationPolicy::Restricted {
++                allowed_hosts: Default::default(),
++            },
++        );
++        assert!(
++            route
++                .authentication_factory(token.as_str())
++                .network_policy()
++                .acquire(&token)
++                .is_err()
++        );
++    }
+ }
+ 
+ impl AuthRouteConfig {
++    /// Narrows token traffic without changing managed bootstrap or content policy.
++    /// The restriction survives a later credential reload selecting another issuer.
++    pub fn with_authentication_endpoints(
++        mut self,
++        endpoints: std::collections::BTreeSet<url::Url>,
++    ) -> Self {
++        self.authentication_endpoints = Some(match &self.authentication_endpoints {
++            Some(existing) => existing.intersection(&endpoints).cloned().collect(),
++            None => endpoints,
++        });
++        self
++    }
+     /// Adapts an application-resolved HTTP client factory for auth requests.
+     pub fn from_http_client_factory(http_client_factory: HttpClientFactory) -> Self {
+         Self {
+             application_network_policy: http_client_factory.network_policy().clone(),
+             http_client_factory,
+             local_bootstrap_factory: None,
++            authentication_endpoints: None,
+         }
+     }
+ 
+@@ -37,10 +112,20 @@ impl AuthRouteConfig {
+     }
+ 
+     pub(crate) fn authentication_factory(&self, endpoint: &str) -> HttpClientFactory {
+-        if self.local_bootstrap_factory.is_none() {
+-            return self.http_client_factory.clone();
++        let factory = if self.local_bootstrap_factory.is_none() {
++            self.http_client_factory.clone()
++        } else {
++            self.http_client_factory_for_bootstrap(endpoint.parse::<url::Url>())
++        };
++        match &self.authentication_endpoints {
++            Some(endpoints) => factory.clone().with_network_policy(
++                factory
++                    .network_policy()
++                    .clone()
++                    .restrict_to_endpoints(endpoints.clone()),
++            ),
++            None => factory,
+         }
+-        self.http_client_factory_for_bootstrap(endpoint.parse::<url::Url>())
+     }
+ 
+     /// Uses local administrator network rules when available, limited to the supplied endpoints.
