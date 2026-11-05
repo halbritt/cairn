@@ -176,7 +176,8 @@
     message("refresh-availability", project.refresh_in_flight
       ? "A refresh is running. This view shows the last saved snapshot."
       : limited ? "Refresh available after " + dateLabel(project.next_refresh_allowed_at) + "." : "");
-    const deadlines = [nextAllowed, project.refresh_in_flight ? inFlightExpires : NaN].filter(value => value > now);
+    const staleAt = last ? Date.parse(last) + 120000 : NaN;
+    const deadlines = [nextAllowed, project.refresh_in_flight ? inFlightExpires : NaN, staleAt].filter(value => value > now);
     if (deadlines.length) refreshTimer = setTimeout(loadBoard, Math.max(1000, Math.min(60000, Math.min(...deadlines) - now + 100)));
     const filtered = byID("filter-state-group").value || byID("filter-blocker-only").checked;
     message("empty-state", items.length ? "" : filtered ? "No items match the current filters." : "No work items in this project.");
