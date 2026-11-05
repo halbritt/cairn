@@ -394,42 +394,28 @@ func (s *Store) ClaimOrganicNotice(ctx context.Context, req SessionOrganicNotice
 			return failure("AUTHORITY_DENIED", "stale execution or generation for reserved launch pair")
 		}
 
-		var hasAdmittedAttempt bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(
-			SELECT 1 FROM cairn.agent_session_attempt att
-			WHERE att.attempt_id = $1
-		)`, req.RequestID).Scan(&hasAdmittedAttempt)
+		// The request may recover an older attempt from this same turn. Recheck
+		// the exact frozen disclosure, not the request UUID or a live successor.
+		var response []byte
+		var responseDeleted bool
+		err = tx.QueryRow(ctx, `SELECT response,payload_deleted_by IS NOT NULL OR ordinary_deleted
+			FROM cairn.mutation_request WHERE caller=$1 AND operation='session-organic-notice-claim' AND request_id=$2`,
+			s.channel.Principal, req.RequestID).Scan(&response, &responseDeleted)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
-		if hasAdmittedAttempt {
-			var attAgentID, attExecutionID string
-			err = tx.QueryRow(ctx, `SELECT att.agent_id::text, att.execution_id::text
-				FROM cairn.agent_session_attempt att
-				WHERE att.attempt_id = $1`, req.RequestID).Scan(&attAgentID, &attExecutionID)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return err
-			}
-			if attAgentID != "" && (attAgentID != a.AgentID || attExecutionID != a.ExecutionID) {
-				return failure("AUTHORITY_DENIED", "stale execution or agent for attempt")
-			}
-			var sourceVisible bool
-			err = tx.QueryRow(ctx, `SELECT EXISTS(
-				SELECT 1 FROM cairn.agent_session_attempt att
-				JOIN cairn.agent_delivery d USING(delivery_id)
-				JOIN cairn.agent_event e USING(event_id)
-				JOIN cairn.memory_record m USING(record_id)
-				JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=e.version
-				WHERE att.attempt_id = $1
-				  AND m.lifecycle='active' AND v.payload_deleted_by IS NULL
-				  AND (m.sensitivity='shareable' OR $2)
-			)`, req.RequestID, dest.AllowLocal).Scan(&sourceVisible)
-			if err != nil {
-				return err
-			}
-			if !sourceVisible {
-				return failure("NOT_FOUND", "source version unavailable")
-			}
+		if responseDeleted {
+			return nil // mutate returns PAYLOAD_UNAVAILABLE without disclosing the receipt.
+		}
+		var original SessionOrganicNoticeResult
+		if err = json.Unmarshal(response, &original); err != nil {
+			return err
+		}
+		if original.Attempt != nil {
+			return s.checkOrganicClaimSource(ctx, tx, original.Attempt.ID, req.Session, original.RootID, req.NativeOwnerTurnID, dest)
 		}
 
 		return nil
@@ -513,6 +499,9 @@ func (s *Store) ClaimOrganicNotice(ctx context.Context, req SessionOrganicNotice
 				return SessionOrganicNoticeResult{RootID: existingRootID, Decision: "admitted", Remainder: "already_admitted"}, nil
 			}
 			if err != nil {
+				return empty, err
+			}
+			if err = s.checkOrganicClaimSource(ctx, tx, attemptID, req.Session, existingRootID, req.NativeOwnerTurnID, dest); err != nil {
 				return empty, err
 			}
 			att, rErr := s.readSessionInboxAttempt(ctx, tx, attemptID, req.Session, dest)
@@ -706,6 +695,39 @@ func (s *Store) ClaimOrganicNotice(ctx context.Context, req SessionOrganicNotice
 		}
 		return SessionOrganicNoticeResult{RootID: rootID, Decision: "admitted", Attempt: &attempt}, nil
 	}, guard)
+}
+
+func (s *Store) checkOrganicClaimSource(ctx context.Context, tx pgx.Tx, attemptID string, ref AgentSessionRef, rootID, nativeTurnID string, dest Destination) error {
+	var agentID, executionID, attemptRoot, attemptTurn string
+	err := tx.QueryRow(ctx, `SELECT agent_id::text,execution_id::text,COALESCE(organic_root::text,''),native_turn_id
+		FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2`, attemptID, s.channel.Principal).
+		Scan(&agentID, &executionID, &attemptRoot, &attemptTurn)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return failure("NOT_FOUND", "native inbox attempt not found")
+	}
+	if err != nil {
+		return err
+	}
+	if agentID != ref.AgentID || executionID != ref.ExecutionID || attemptRoot != rootID || attemptTurn != nativeTurnID {
+		return failure("AUTHORITY_DENIED", "organic attempt does not match the claimed execution and turn")
+	}
+	var sourceVisible bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM cairn.agent_session_attempt att
+		JOIN cairn.agent_delivery d USING(delivery_id)
+		JOIN cairn.agent_event e USING(event_id)
+		JOIN cairn.memory_record m USING(record_id)
+		JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=e.version
+		WHERE att.attempt_id=$1 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL
+		  AND (m.sensitivity='shareable' OR $2)
+	)`, attemptID, dest.AllowLocal).Scan(&sourceVisible)
+	if err != nil {
+		return err
+	}
+	if !sourceVisible {
+		return failure("NOT_FOUND", "source version unavailable")
+	}
+	return nil
 }
 
 func (s *Store) AdvanceOrganicNotice(ctx context.Context, req SessionOrganicNoticeAdvance, dest Destination) (SessionInboxAdvanceResult, error) {
