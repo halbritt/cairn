@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,16 +149,16 @@ ORDER BY position ASC LIMIT 1`, ow.depEventUUID, ow.collection, origConsumer, or
 				}
 			}
 		} else if ow.predicateKind == WaitPredicateResponseGroupClosed {
-			var grpState, grpCode string
-			var grpDeadline time.Time
-			var grpClosedAt *time.Time
-			err = tx.QueryRow(ctx, `SELECT state, code, deadline, closed_at FROM cairn.agent_response_group WHERE event_id=$1`, ow.depEventUUID).Scan(&grpState, &grpCode, &grpDeadline, &grpClosedAt)
-			if err == nil && grpState != "open" && grpCode != "restore_fenced" {
+			grpState, grpCode, grpDeadline, grpClosedAt, err := reconcileDueResponseGroupTx(ctx, tx, ow.depEventUUID, now)
+			if err != nil {
+				return 0, err
+			}
+			if grpState != "" && grpState != "open" && grpCode != "restore_fenced" {
 				effectiveTime := grpDeadline
 				if grpCode == "all_responded" && grpClosedAt != nil {
 					effectiveTime = *grpClosedAt
 				}
-				if effectiveTime.Before(ow.deadline) {
+				if !effectiveTime.After(ow.deadline) {
 					state = WaitStateSatisfied
 					terminalReason = "group_closed"
 				}
@@ -297,11 +298,11 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 
 	publishedCount := int64(0)
 	for _, item := range items {
-		// 1. Revalidate binding: check if session exists and binding has not changed.
+		// 1. Revalidate binding and lock recipient session row FOR SHARE.
 		// Note: stopped is NOT checked because LeaveAgent is normal offline presence, NOT revocation.
 		// Addressed offline delivery to registered conversations is preserved.
 		var currentBinding, currentVisibility string
-		err = tx.QueryRow(ctx, `SELECT binding, visibility FROM cairn.agent_session WHERE agent_id=$1 AND repo=$2`, item.ownerAgentUUID, item.collection).Scan(&currentBinding, &currentVisibility)
+		err = tx.QueryRow(ctx, `SELECT binding, visibility FROM cairn.agent_session WHERE agent_id=$1 AND repo=$2 FOR SHARE`, item.ownerAgentUUID, item.collection).Scan(&currentBinding, &currentVisibility)
 		if errors.Is(err, pgx.ErrNoRows) || (item.bindingID != "" && currentBinding != item.bindingID) {
 			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='binding_revoked', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
 			continue
@@ -310,7 +311,7 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 			return 0, err
 		}
 
-		// 2. Revalidate dependency exact source/version eligibility and payload deletion
+		// 2. Resolve dependency event details
 		var depRecordID string
 		var depVersion int
 		var depSensitivity string
@@ -322,42 +323,74 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 		if err != nil {
 			return 0, err
 		}
-		var depRecordSensitivity string
-		var depLifecycle string
-		var depPayloadDeleted bool
-		err = tx.QueryRow(ctx, `SELECT m.sensitivity, m.lifecycle, v.payload_deleted_by IS NOT NULL 
-FROM cairn.memory_record m 
-JOIN cairn.record_version v ON v.record_id=m.record_id 
-WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3`, depRecordID, depVersion, item.collection).Scan(&depRecordSensitivity, &depLifecycle, &depPayloadDeleted)
-		if errors.Is(err, pgx.ErrNoRows) || depLifecycle != "active" || depPayloadDeleted {
-			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
-			continue
-		}
-		if err != nil {
-			return 0, err
-		}
 
-		// 3. Revalidate response exact source/version eligibility and payload deletion
+		// 3. Resolve response ref details (if present)
+		var respRecordID string
+		var respVersion int
 		var respSensitivity string
-		var respRecordSensitivity string
 		if len(item.responseRefJSON) > 0 {
 			var respRef RecordVersionRef
 			if err = json.Unmarshal(item.responseRefJSON, &respRef); err == nil && respRef.RecordID != "" {
-				var respLifecycle string
-				var respPayloadDeleted bool
-				err = tx.QueryRow(ctx, `SELECT m.sensitivity, m.lifecycle, v.payload_deleted_by IS NOT NULL 
+				respRecordID = respRef.RecordID
+				respVersion = respRef.Version
+				_ = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE record_id=$1 AND version=$2 AND repo=$3 LIMIT 1`, respRecordID, respVersion, item.collection).Scan(&respSensitivity)
+			}
+		}
+
+		// Collect referenced record IDs, deduplicate and sort in ascending UUID order
+		refMap := make(map[string]struct{})
+		if depRecordID != "" {
+			refMap[depRecordID] = struct{}{}
+		}
+		if respRecordID != "" {
+			refMap[respRecordID] = struct{}{}
+		}
+		sortedRecordIDs := make([]string, 0, len(refMap))
+		for rid := range refMap {
+			sortedRecordIDs = append(sortedRecordIDs, rid)
+		}
+		sort.Strings(sortedRecordIDs)
+
+		// Lock referenced memory records with FOR SHARE OF m in ascending UUID order
+		type recordInfo struct {
+			sensitivity    string
+			lifecycle      string
+			payloadDeleted bool
+		}
+		recInfos := make(map[string]recordInfo)
+		recordsIneligible := false
+		for _, rid := range sortedRecordIDs {
+			var ver int
+			if rid == depRecordID {
+				ver = depVersion
+			} else {
+				ver = respVersion
+			}
+			var rSens, rLife string
+			var rDeleted bool
+			err = tx.QueryRow(ctx, `SELECT m.sensitivity, m.lifecycle, v.payload_deleted_by IS NOT NULL 
 FROM cairn.memory_record m 
 JOIN cairn.record_version v ON v.record_id=m.record_id 
-WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3`, respRef.RecordID, respRef.Version, item.collection).Scan(&respRecordSensitivity, &respLifecycle, &respPayloadDeleted)
-				if errors.Is(err, pgx.ErrNoRows) || respLifecycle != "active" || respPayloadDeleted {
-					_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
-					continue
-				}
-				if err != nil {
-					return 0, err
-				}
-				_ = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE record_id=$1 AND version=$2 AND repo=$3 LIMIT 1`, respRef.RecordID, respRef.Version, item.collection).Scan(&respSensitivity)
+WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3
+FOR SHARE OF m`, rid, ver, item.collection).Scan(&rSens, &rLife, &rDeleted)
+			if errors.Is(err, pgx.ErrNoRows) || rLife != "active" || rDeleted {
+				recordsIneligible = true
+				break
 			}
+			if err != nil {
+				return 0, err
+			}
+			recInfos[rid] = recordInfo{sensitivity: rSens, lifecycle: rLife, payloadDeleted: rDeleted}
+		}
+		if recordsIneligible {
+			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+			continue
+		}
+
+		depRecordSensitivity := recInfos[depRecordID].sensitivity
+		var respRecordSensitivity string
+		if respRecordID != "" {
+			respRecordSensitivity = recInfos[respRecordID].sensitivity
 		}
 
 		// 4. Intersect original registration destination ceiling with owner's current valid binding visibility

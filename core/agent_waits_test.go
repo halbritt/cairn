@@ -442,7 +442,12 @@ func TestAC20_DeadlineAndSchedulerDowntimePreservesTimelyResponse(t *testing.T) 
 	resp2 := publishTestResponse(t, ctx, sessionB, agentA.Repo, agentA.AgentID, pubReq2.EventID, "", "response", dest)
 
 	// Simulate that scheduler was down and deadline passed with wait still in 'waiting' state:
-	// Set wait state back to 'waiting', terminal_reason to '', and deadline to 100ms AFTER response, but in the PAST relative to now!
+	// Set wait state back to 'waiting', terminal_reason to '', delete any prior outbox row,
+	// and deadline to 1 second AFTER response, but in the PAST relative to now!
+	_, err = bootstrap.pool.Exec(ctx, `DELETE FROM cairn.agent_wait_outbox WHERE wait_uuid=$1`, wait2.WaitUUID)
+	if err != nil {
+		t.Fatalf("delete outbox: %v", err)
+	}
 	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_wait 
 SET state='waiting', terminal_reason='', resolved_at=NULL, 
     deadline=clock_timestamp() - interval '1 second'
@@ -469,6 +474,36 @@ WHERE event_id=$1`, resp2.EventID)
 	got2, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: wait2.WaitUUID, Collection: agentA.Repo}, dest)
 	if err != nil || got2.State != WaitStateSatisfied || got2.TerminalReason != "response" {
 		t.Fatalf("timely response before deadline must satisfy wait on sweep: %+v %v", got2, err)
+	}
+	if got2.OutboxState != OutboxStatePending {
+		t.Fatalf("sweep satisfaction must create pending outbox row: %+v", got2)
+	}
+
+	// Explicit Deadline Equality Check:
+	// If response.created_at == wait.deadline, equality belongs to timeout (created_at < deadline satisfies).
+	pubReqEq := publishTestRequest(t, ctx, sessionA, agentA.Repo, agentB.AgentID, "", dest)
+	waitEq, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          agentA.Repo,
+		PredicateKind:       WaitPredicateRequestResponse,
+		DependencyEventUUID: pubReqEq.EventID,
+		Deadline:            time.Now().Add(5 * time.Second),
+	}, dest)
+	if err != nil {
+		t.Fatalf("create waitEq: %v", err)
+	}
+	respEq := publishTestResponse(t, ctx, sessionB, agentA.Repo, agentA.AgentID, pubReqEq.EventID, "", "response", dest)
+	_, _ = bootstrap.pool.Exec(ctx, `DELETE FROM cairn.agent_wait_outbox WHERE wait_uuid=$1`, waitEq.WaitUUID)
+	// Force exact equality: created_at == deadline in past
+	_, _ = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_wait SET state='waiting', terminal_reason='', resolved_at=NULL, deadline=clock_timestamp()-interval '1 second' WHERE wait_uuid=$1`, waitEq.WaitUUID)
+	_, _ = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_event SET created_at=(SELECT deadline FROM cairn.agent_wait WHERE wait_uuid=$1) WHERE event_id=$2`, waitEq.WaitUUID, respEq.EventID)
+	_, err = operator.SweepWaitTimeouts(ctx, agentA.Repo)
+	if err != nil {
+		t.Fatalf("sweep equality wait: %v", err)
+	}
+	gotEq, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: waitEq.WaitUUID, Collection: agentA.Repo}, dest)
+	if err != nil || gotEq.State != WaitStateTimedOut {
+		t.Fatalf("exact deadline equality must result in timeout, got: %+v %v", gotEq, err)
 	}
 
 	// Now test scheduler sweep on overdue wait with no response:
@@ -560,10 +595,57 @@ func TestAC21_CrashRecoveryAndOutboxIdempotency(t *testing.T) {
 		t.Fatalf("expected pending outbox: %+v %v", gotWait, err)
 	}
 
-	// Drain outbox: first execution
-	drained, err := operator.DrainWaitOutbox(ctx, agentA.Repo, 50)
+	// Mid-outbox failure/rollback boundary: inject trigger failure on notice event insert
+	// to verify that the transaction cleanly rolls back the memory_record insert with 0 leaked rows.
+	_, err = bootstrap.pool.Exec(ctx, `
+CREATE OR REPLACE FUNCTION fail_notice_insert() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'injected failure on notice insert';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fail_notice_insert
+BEFORE INSERT ON cairn.agent_event
+FOR EACH ROW
+WHEN (NEW.kind = 'notice')
+EXECUTE FUNCTION fail_notice_insert();`)
+	if err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	_, failErr := operator.DrainWaitOutbox(ctx, agentA.Repo, 50)
+	if failErr == nil {
+		t.Fatalf("expected drain to fail under injected trigger exception")
+	}
+
+	// Verify clean transaction rollback: 0 memory_record rows, 0 event rows, 0 delivery rows leaked
+	var recCountBefore, eventCountBefore, delCountBefore int
+	_ = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.memory_record WHERE record_id=$1`, wait.ReservedSourceRecordUUID).Scan(&recCountBefore)
+	_ = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_event WHERE event_id=$1`, wait.ReservedNoticeEventUUID).Scan(&eventCountBefore)
+	_ = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_delivery WHERE event_id=$1`, wait.ReservedNoticeEventUUID).Scan(&delCountBefore)
+	if recCountBefore != 0 || eventCountBefore != 0 || delCountBefore != 0 {
+		t.Fatalf("rollback leak! recs=%d events=%d dels=%d", recCountBefore, eventCountBefore, delCountBefore)
+	}
+
+	// Outbox row must remain pending
+	gotWaitPending, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: wait.WaitUUID, Collection: agentA.Repo}, dest)
+	if err != nil || gotWaitPending.OutboxState != OutboxStatePending {
+		t.Fatalf("expected outbox to remain pending after rollback: %+v %v", gotWaitPending, err)
+	}
+
+	// Drop the fault-injection trigger
+	_, err = bootstrap.pool.Exec(ctx, `
+DROP TRIGGER IF EXISTS trg_fail_notice_insert ON cairn.agent_event;
+DROP FUNCTION IF EXISTS fail_notice_insert();`)
+	if err != nil {
+		t.Fatalf("drop failure trigger: %v", err)
+	}
+
+	// Reopen Store and retry drain: must succeed cleanly with exact 1 reserved set
+	operatorReopened := openStore(Channel{Principal: "operator:test", Operator: true})
+	drained, err := operatorReopened.DrainWaitOutbox(ctx, agentA.Repo, 50)
 	if err != nil || drained != 1 {
-		t.Fatalf("drain outbox 1: %d %v", drained, err)
+		t.Fatalf("drain outbox retry after recovery: %d %v", drained, err)
 	}
 
 	// Verify outbox is now published
@@ -715,6 +797,9 @@ func TestAC22_RealNativeRecipientDeliveryAndAcknowledgment(t *testing.T) {
 	if err != nil || len(history.Versions) == 0 {
 		t.Fatalf("exact source read: %+v %v", history, err)
 	}
+	if history.CurrentVersion != 1 || history.Versions[0].Body == nil || !strings.Contains(*history.Versions[0].Body, wait.WaitUUID) {
+		t.Fatalf("unexpected notice source body: %+v", history)
+	}
 
 	// D) Finish/acknowledge notice delivery
 	ackRes, err := sessionA.CompleteEvent(ctx, CompleteEventRequest{
@@ -807,37 +892,62 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 		t.Fatalf("resumed execution must be able to inspect wait: %+v %v", gotWait, err)
 	}
 
-	// 2. Offline delivery: expire agent A's presence (set expires_at in past, but NOT stopped)
-	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '2 hours' WHERE agent_id=$1`, agentA.AgentID)
+	// 2. Offline delivery: agent A leaves its session (stopped=true)
+	_, err = profileA.LeaveAgent(ctx, AgentSessionRef{AgentID: resumedA.AgentID, ExecutionID: resumedA.ExecutionID}, dest)
 	if err != nil {
-		t.Fatalf("expire presence: %v", err)
+		t.Fatalf("leave agent A: %v", err)
 	}
 
-	// Cancel wait to resolve it with outbox notice
-	cancelledWait, err := resumedSessionStoreA.CancelWait(ctx, CancelWaitRequest{
-		RequestID:  uuid.NewString(),
-		WaitUUID:   wait.WaitUUID,
-		Collection: agentA.Repo,
-	}, dest)
-	if err != nil || cancelledWait.State != WaitStateCancelled {
-		t.Fatalf("resumed execution cancel wait: %+v %v", cancelledWait, err)
-	}
+	// While agent A is offline, responder B publishes response -> wait satisfied, outbox pending
+	publishTestResponse(t, ctx, sessionB, agentA.Repo, resumedA.AgentID, pubReq.EventID, "", "response", dest)
 
 	// Outbox row is pending; drain it while recipient is offline
 	drained, err := operator.DrainWaitOutbox(ctx, agentA.Repo, 50)
-	if err != nil {
-		t.Fatalf("drain outbox for offline recipient: %v", err)
+	if err != nil || drained != 1 {
+		t.Fatalf("drain outbox for offline recipient: %d %v", drained, err)
 	}
-	_ = drained
+
+	// Recipient resumes conversation with fresh execution
+	resumedA2, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: agentA.NativeSessionID,
+		Metadata:        agentA.Metadata,
+	}, dest)
+	if err != nil {
+		t.Fatalf("resume agent A second time: %v", err)
+	}
+	resumedSessionStoreA2, err := profileA.ForAgentSession(AgentSessionRef{AgentID: resumedA2.AgentID, ExecutionID: resumedA2.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession resumed 2: %v", err)
+	}
+
+	// Recipient receives the notice event delivered offline
+	nextEvt, err := resumedSessionStoreA2.NextEvent(ctx, NextEventRequest{Repo: agentA.Repo}, dest)
+	if err != nil || nextEvt.Delivery == nil {
+		t.Fatalf("expected notice event after offline delivery: %+v %v", nextEvt, err)
+	}
+	if nextEvt.Delivery.Event.Kind != "notice" || nextEvt.Delivery.Event.EventID != wait.ReservedNoticeEventUUID {
+		t.Fatalf("unexpected notice event: %+v", nextEvt.Delivery.Event)
+	}
+	// Acknowledge notice
+	if _, err = resumedSessionStoreA2.CompleteEvent(ctx, CompleteEventRequest{
+		RequestID:   uuid.NewString(),
+		DeliveryID:  nextEvt.Delivery.DeliveryID,
+		LeaseID:     nextEvt.Delivery.LeaseID,
+		Disposition: "handled",
+	}, dest); err != nil {
+		t.Fatalf("complete offline notice: %v", err)
+	}
 
 	// 3. Response group closed predicate:
 	draftGroup := projectNote(agentA.Repo)
 	draftGroup.Sensitivity = "shareable"
-	recGroup, err := resumedSessionStoreA.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
+	recGroup, err := resumedSessionStoreA2.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
 	if err != nil {
 		t.Fatalf("create group note: %v", err)
 	}
-	groupReq, err := resumedSessionStoreA.PublishEvent(ctx, PublishEventRequest{
+	groupReq, err := resumedSessionStoreA2.PublishEvent(ctx, PublishEventRequest{
 		RequestID:   uuid.NewString(),
 		Repo:        agentA.Repo,
 		Kind:        "request",
@@ -852,7 +962,7 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 		t.Fatalf("publish response group request: %v", err)
 	}
 
-	waitGroup, err := resumedSessionStoreA.CreateWait(ctx, CreateWaitRequest{
+	waitGroup, err := resumedSessionStoreA2.CreateWait(ctx, CreateWaitRequest{
 		RequestID:           uuid.NewString(),
 		Collection:          agentA.Repo,
 		PredicateKind:       WaitPredicateResponseGroupClosed,
@@ -867,19 +977,19 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 	}
 
 	// B responds -> group all_responded and closes
-	publishTestResponse(t, ctx, sessionB, agentA.Repo, resumedA.AgentID, groupReq.EventID, groupReq.EventID, "response", dest)
+	publishTestResponse(t, ctx, sessionB, agentA.Repo, resumedA2.AgentID, groupReq.EventID, groupReq.EventID, "response", dest)
 
-	gotWaitGroup, err := resumedSessionStoreA.GetWait(ctx, GetWaitRequest{WaitUUID: waitGroup.WaitUUID, Collection: agentA.Repo}, dest)
+	gotWaitGroup, err := resumedSessionStoreA2.GetWait(ctx, GetWaitRequest{WaitUUID: waitGroup.WaitUUID, Collection: agentA.Repo}, dest)
 	if err != nil || gotWaitGroup.State != WaitStateSatisfied || gotWaitGroup.TerminalReason != "group_closed" {
 		t.Fatalf("response group closure must satisfy wait: %+v %v", gotWaitGroup, err)
 	}
 
 	// Test restore_fenced closure does NOT satisfy response_group_closed
-	recGroup2, err := resumedSessionStoreA.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
+	recGroup2, err := resumedSessionStoreA2.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
 	if err != nil {
 		t.Fatalf("create group note 2: %v", err)
 	}
-	groupReq2, err := resumedSessionStoreA.PublishEvent(ctx, PublishEventRequest{
+	groupReq2, err := resumedSessionStoreA2.PublishEvent(ctx, PublishEventRequest{
 		RequestID:   uuid.NewString(),
 		Repo:        agentA.Repo,
 		Kind:        "request",
@@ -893,7 +1003,7 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish group 2: %v", err)
 	}
-	waitGroup2, err := resumedSessionStoreA.CreateWait(ctx, CreateWaitRequest{
+	waitGroup2, err := resumedSessionStoreA2.CreateWait(ctx, CreateWaitRequest{
 		RequestID:           uuid.NewString(),
 		Collection:          agentA.Repo,
 		PredicateKind:       WaitPredicateResponseGroupClosed,
@@ -903,17 +1013,31 @@ func TestAC23_ConversationResumeAndOfflineDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create wait group 2: %v", err)
 	}
-	// Simulate restore fence on the group
-	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET state='incomplete', code='restore_fenced', closed_at=clock_timestamp() WHERE event_id=$1`, groupReq2.EventID)
+
+	// Execute actual FenceRestore
+	fenceResult, err := operator.FenceRestore(ctx, RestoreFenceRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test_response_group_restore_fence",
+	})
 	if err != nil {
-		t.Fatalf("fence group: %v", err)
+		t.Fatalf("fence restore: %v", err)
 	}
-	gotWaitGroup2, err := resumedSessionStoreA.GetWait(ctx, GetWaitRequest{WaitUUID: waitGroup2.WaitUUID, Collection: agentA.Repo}, dest)
-	if err != nil {
-		t.Fatalf("get wait group 2: %v", err)
+	if fenceResult.Generation <= 1 {
+		t.Fatalf("expected generation advance: %+v", fenceResult)
 	}
-	if gotWaitGroup2.State == WaitStateSatisfied {
-		t.Fatalf("restore_fenced group must NEVER satisfy wait!")
+
+	// Inspect retained response group: state must be 'incomplete', code 'restore_fenced'
+	var grpState, grpCode string
+	err = bootstrap.pool.QueryRow(ctx, `SELECT state, code FROM cairn.agent_response_group WHERE event_id=$1`, groupReq2.EventID).Scan(&grpState, &grpCode)
+	if err != nil || grpState != "incomplete" || grpCode != "restore_fenced" {
+		t.Fatalf("expected incomplete/restore_fenced group: state=%s code=%s err=%v", grpState, grpCode, err)
+	}
+
+	// Inspect wait: state must be 'restore_fenced', NEVER satisfied
+	var waitState, waitTerm string
+	err = bootstrap.pool.QueryRow(ctx, `SELECT state, terminal_reason FROM cairn.agent_wait WHERE wait_uuid=$1`, waitGroup2.WaitUUID).Scan(&waitState, &waitTerm)
+	if err != nil || waitState != "restore_fenced" || waitTerm != "restore_fenced" {
+		t.Fatalf("expected restore_fenced wait: state=%s term=%s err=%v", waitState, waitTerm, err)
 	}
 }
 
@@ -1285,9 +1409,10 @@ func TestAC26_DestinationCeilingAndSensitivityRevalidation(t *testing.T) {
 	}
 	publishTestResponse(t, ctx, sessionB, repo, agentA.AgentID, pubReqOffline.EventID, "", "response", hostedDest)
 
-	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_session SET stopped=true WHERE agent_id=$1`, agentA.AgentID)
+	// Recipient leaves session (LeaveAgent) to test normal offline presence
+	_, err = profileA.LeaveAgent(ctx, AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, hostedDest)
 	if err != nil {
-		t.Fatalf("set stopped: %v", err)
+		t.Fatalf("leave agent A: %v", err)
 	}
 
 	// Drain outbox while stopped: offline delivery IS preserved!
@@ -1296,13 +1421,42 @@ func TestAC26_DestinationCeilingAndSensitivityRevalidation(t *testing.T) {
 		t.Fatalf("drain outbox for offline session must succeed: %d %v", drainedOffline, err)
 	}
 
-	// 4. Widened successor profile cannot expose local response from hosted wait registration
-	gotWaitHosted, err := operator.GetWait(ctx, GetWaitRequest{WaitUUID: wait.WaitUUID, Collection: repo}, localDest)
+	// 4. Widened successor profile: resume the SAME conversation under localDest (AllowLocal: true)
+	resumedWidenedA, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: agentA.NativeSessionID,
+		Metadata:        agentA.Metadata,
+	}, localDest)
 	if err != nil {
-		t.Fatalf("get wait hosted: %v", err)
+		t.Fatalf("register widened successor: %v", err)
 	}
-	if gotWaitHosted.ResponseRef != nil {
-		t.Fatalf("widened successor must not expose local response from hosted wait: %+v", gotWaitHosted.ResponseRef)
+	widenedSessionStore, err := profileA.ForAgentSession(AgentSessionRef{
+		AgentID:     resumedWidenedA.AgentID,
+		ExecutionID: resumedWidenedA.ExecutionID,
+	}, localDest)
+	if err != nil {
+		t.Fatalf("forAgentSession widened: %v", err)
+	}
+
+	// Widened successor GetWait: retained registration ceiling must mask local response
+	gotWaitWidened, err := widenedSessionStore.GetWait(ctx, GetWaitRequest{WaitUUID: wait.WaitUUID, Collection: repo}, localDest)
+	if err != nil {
+		t.Fatalf("widened successor get wait: %v", err)
+	}
+	if gotWaitWidened.ResponseRef != nil {
+		t.Fatalf("widened successor must not expose local response from hosted wait registration: %+v", gotWaitWidened.ResponseRef)
+	}
+
+	// Widened successor ListWaits: must also retain registration ceiling
+	listWidened, err := widenedSessionStore.ListWaits(ctx, ListWaitsRequest{Collection: repo}, localDest)
+	if err != nil || len(listWidened.Waits) == 0 {
+		t.Fatalf("widened successor list waits: %+v %v", listWidened, err)
+	}
+	for _, w := range listWidened.Waits {
+		if w.WaitUUID == wait.WaitUUID && w.ResponseRef != nil {
+			t.Fatalf("widened successor list must not expose local response from hosted wait: %+v", w.ResponseRef)
+		}
 	}
 }
 
@@ -1319,10 +1473,12 @@ func TestConcurrentSameSessionWaitRegistration(t *testing.T) {
 
 	const concurrency = 5
 	errCh := make(chan error, concurrency)
+	startCh := make(chan struct{})
 
 	for i := 0; i < concurrency; i++ {
 		go func(idx int) {
 			pubReq := publishTestRequest(t, ctx, sessionA, agentA.Repo, agentB.AgentID, "", dest)
+			<-startCh
 			_, err := sessionA.CreateWait(ctx, CreateWaitRequest{
 				RequestID:           uuid.NewString(),
 				Collection:          agentA.Repo,
@@ -1333,6 +1489,7 @@ func TestConcurrentSameSessionWaitRegistration(t *testing.T) {
 			errCh <- err
 		}(i)
 	}
+	close(startCh)
 
 	for i := 0; i < concurrency; i++ {
 		select {
@@ -1343,6 +1500,175 @@ func TestConcurrentSameSessionWaitRegistration(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("deadlock detected during concurrent same-session wait creation!")
 		}
+	}
+}
+
+// TestConcurrency_RegistrationAndCancellationOverlappingResponse tests deterministic
+// concurrency barriers across collection/session/wait lock boundaries:
+// 1. Wait registration overlapping response publication.
+// 2. Wait cancellation overlapping response publication.
+func TestConcurrency_RegistrationAndCancellationOverlappingResponse(t *testing.T) {
+	bootstrap, openStore := waitTestDB(t)
+	ctx := context.Background()
+
+	operator := openStore(Channel{Principal: "operator:test", Operator: true})
+	if _, err := operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatalf("enable waits: %v", err)
+	}
+
+	_, _, agentA, agentB, sessionA, sessionB, dest := waitFixture(t, openStore)
+
+	// Subtest 1: Wait registration overlapping response publication
+	pubReq := publishTestRequest(t, ctx, sessionA, agentA.Repo, agentB.AgentID, "", dest)
+	startBarrier1 := make(chan struct{})
+	regDone := make(chan error, 1)
+	respDone := make(chan error, 1)
+
+	var regWait AgentWait
+	go func() {
+		<-startBarrier1
+		var err error
+		regWait, err = sessionA.CreateWait(ctx, CreateWaitRequest{
+			RequestID:           uuid.NewString(),
+			Collection:          agentA.Repo,
+			PredicateKind:       WaitPredicateRequestResponse,
+			DependencyEventUUID: pubReq.EventID,
+			Deadline:            time.Now().Add(10 * time.Minute),
+		}, dest)
+		regDone <- err
+	}()
+
+	go func() {
+		<-startBarrier1
+		respDraft := projectNote(agentA.Repo)
+		respDraft.Sensitivity = "shareable"
+		respRec, err := sessionB.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: respDraft})
+		if err != nil {
+			respDone <- err
+			return
+		}
+		_, err = sessionB.PublishEvent(ctx, PublishEventRequest{
+			RequestID:   uuid.NewString(),
+			Repo:        agentA.Repo,
+			Kind:        "response",
+			Ref:         RecordVersionRef{RecordID: respRec.RecordID, Version: 1},
+			Destination: EventDestination{Type: "agent", Name: "agent/" + agentA.AgentID},
+			CausationID: pubReq.EventID,
+		}, dest)
+		respDone <- err
+	}()
+
+	close(startBarrier1)
+	select {
+	case err := <-regDone:
+		if err != nil {
+			t.Fatalf("registration overlapping response failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("deadlock during registration overlapping response!")
+	}
+	select {
+	case err := <-respDone:
+		if err != nil {
+			t.Fatalf("response publish overlapping registration failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("deadlock during response publish overlapping registration!")
+	}
+
+	// Winner check: wait must be satisfied, exactly 1 outbox row
+	finalWait, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: regWait.WaitUUID, Collection: agentA.Repo}, dest)
+	if err != nil || finalWait.State != WaitStateSatisfied {
+		t.Fatalf("wait must be satisfied after concurrent response: %+v %v", finalWait, err)
+	}
+	var outboxCount int
+	err = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_wait_outbox WHERE wait_uuid=$1`, regWait.WaitUUID).Scan(&outboxCount)
+	if err != nil || outboxCount != 1 {
+		t.Fatalf("expected exactly 1 outbox entry: count=%d %v", outboxCount, err)
+	}
+
+	// Subtest 2: Cancellation overlapping response publication
+	pubReq2 := publishTestRequest(t, ctx, sessionA, agentA.Repo, agentB.AgentID, "", dest)
+	waitToCancel, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          agentA.Repo,
+		PredicateKind:       WaitPredicateRequestResponse,
+		DependencyEventUUID: pubReq2.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}, dest)
+	if err != nil {
+		t.Fatalf("create waitToCancel: %v", err)
+	}
+
+	startBarrier2 := make(chan struct{})
+	cancelDone := make(chan error, 1)
+	respDone2 := make(chan error, 1)
+
+	go func() {
+		<-startBarrier2
+		_, err := sessionA.CancelWait(ctx, CancelWaitRequest{
+			RequestID:  uuid.NewString(),
+			WaitUUID:   waitToCancel.WaitUUID,
+			Collection: agentA.Repo,
+		}, dest)
+		cancelDone <- err
+	}()
+
+	go func() {
+		<-startBarrier2
+		respDraft2 := projectNote(agentA.Repo)
+		respDraft2.Sensitivity = "shareable"
+		respRec2, err := sessionB.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: respDraft2})
+		if err != nil {
+			respDone2 <- err
+			return
+		}
+		_, err = sessionB.PublishEvent(ctx, PublishEventRequest{
+			RequestID:   uuid.NewString(),
+			Repo:        agentA.Repo,
+			Kind:        "response",
+			Ref:         RecordVersionRef{RecordID: respRec2.RecordID, Version: 1},
+			Destination: EventDestination{Type: "agent", Name: "agent/" + agentA.AgentID},
+			CausationID: pubReq2.EventID,
+		}, dest)
+		respDone2 <- err
+	}()
+
+	close(startBarrier2)
+	select {
+	case err := <-cancelDone:
+		if err != nil {
+			t.Fatalf("cancel overlapping response failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("deadlock during cancel overlapping response!")
+	}
+	select {
+	case err := <-respDone2:
+		if err != nil {
+			t.Fatalf("response publish overlapping cancel failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("deadlock during response publish overlapping cancel!")
+	}
+
+	// Winner check: either cancelled (0 outbox) or satisfied (1 outbox), never both or corrupted
+	cancelledOrSatisfied, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: waitToCancel.WaitUUID, Collection: agentA.Repo}, dest)
+	if err != nil {
+		t.Fatalf("get cancelled or satisfied wait: %v", err)
+	}
+	var outboxCount2 int
+	_ = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_wait_outbox WHERE wait_uuid=$1`, waitToCancel.WaitUUID).Scan(&outboxCount2)
+	if cancelledOrSatisfied.State == WaitStateCancelled {
+		if outboxCount2 != 0 {
+			t.Fatalf("cancelled wait must have 0 outbox entries, got: %d", outboxCount2)
+		}
+	} else if cancelledOrSatisfied.State == WaitStateSatisfied {
+		if outboxCount2 != 1 {
+			t.Fatalf("satisfied wait must have 1 outbox entry, got: %d", outboxCount2)
+		}
+	} else {
+		t.Fatalf("unexpected state after concurrent cancel and response: %s", cancelledOrSatisfied.State)
 	}
 }
 
@@ -1759,5 +2085,333 @@ func TestCreateWait_CachedIdempotentRetryMasksDemotedResponseRef(t *testing.T) {
 	}
 	if retryWait.ResponseRef != nil {
 		t.Fatalf("cached mutation retry must re-check eligibility and mask demoted ResponseRef to nil! Got: %+v", retryWait.ResponseRef)
+	}
+}
+
+// Behavioral Test 3: Pre-mutate waiter validation guard ensures that retrying an
+// already-cached CreateWait request after LeaveAgent or FenceRestore fails before replay.
+func TestCreateWait_PreReplayWaiterSessionGuard(t *testing.T) {
+	bootstrap, openStore := waitTestDB(t)
+	ctx := context.Background()
+
+	operator := openStore(Channel{Principal: "operator:test", Operator: true})
+	if _, err := operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatalf("enable waits: %v", err)
+	}
+
+	repo := "repo:" + uuid.NewString()
+	dest := Destination{Name: "hosted", AllowLocal: false}
+	profileA := openStore(Channel{Principal: "agent:profile-a-" + repo, Repo: repo})
+	profileB := openStore(Channel{Principal: "agent:profile-b-" + repo, Repo: repo})
+	agentA, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: "native-a-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	agentB, err := profileB.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-b",
+		NativeSessionID: "native-b-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register B: %v", err)
+	}
+	sessionA, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession A: %v", err)
+	}
+
+	pubReq := publishTestRequest(t, ctx, sessionA, repo, agentB.AgentID, "", dest)
+
+	// Create initial wait
+	requestID := uuid.NewString()
+	req := CreateWaitRequest{
+		RequestID:           requestID,
+		Collection:          repo,
+		PredicateKind:       WaitPredicateRequestResponse,
+		DependencyEventUUID: pubReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}
+	createdWait, err := sessionA.CreateWait(ctx, req, dest)
+	if err != nil || createdWait.WaitUUID == "" {
+		t.Fatalf("initial create wait: %+v %v", createdWait, err)
+	}
+
+	// 1. LeaveAgent: session becomes stopped
+	_, err = profileA.LeaveAgent(ctx, AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("leave agent: %v", err)
+	}
+
+	// Retry with SAME request ID on stopped session: must be refused with SESSION_STOPPED!
+	_, err = sessionA.CreateWait(ctx, req, dest)
+	requireCode(t, err, "SESSION_STOPPED")
+
+	// 2. FenceRestore: prior generation sessions become stale
+	_, err = operator.FenceRestore(ctx, RestoreFenceRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test_guard_fence",
+	})
+	if err != nil {
+		t.Fatalf("fence restore: %v", err)
+	}
+
+	// Re-register agent A to get a new session ref
+	agentA2, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: agentA.NativeSessionID,
+		Metadata:        agentA.Metadata,
+	}, dest)
+	if err != nil {
+		t.Fatalf("register A2: %v", err)
+	}
+	sessionA2, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA2.AgentID, ExecutionID: agentA2.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession A2: %v", err)
+	}
+
+	// Stale session A (with old execution ID) trying to retry must be refused with STALE_SESSION
+	_, err = sessionA.CreateWait(ctx, req, dest)
+	requireCode(t, err, "STALE_SESSION")
+	_ = bootstrap
+	_ = sessionA2
+}
+
+// Behavioral Test 4 (GROUP-DEADLINE): Overdue response groups with deadline earlier
+// than wait deadline must be reconciled to normal closure and satisfy waits with
+// terminal_reason='group_closed', never becoming false timeouts after downtime.
+func TestAgentWaits_GroupDeadlineOverdueReconciliation(t *testing.T) {
+	bootstrap, openStore := waitTestDB(t)
+	ctx := context.Background()
+
+	operator := openStore(Channel{Principal: "operator:test", Operator: true})
+	if _, err := operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatalf("enable waits: %v", err)
+	}
+
+	repo := "repo:" + uuid.NewString()
+	dest := Destination{Name: "hosted", AllowLocal: false}
+	profileA := openStore(Channel{Principal: "agent:profile-a-" + repo, Repo: repo})
+	profileB := openStore(Channel{Principal: "agent:profile-b-" + repo, Repo: repo})
+	agentA, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: "native-a-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	agentB, err := profileB.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-b",
+		NativeSessionID: "native-b-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register B: %v", err)
+	}
+	sessionA, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession A: %v", err)
+	}
+
+	// Create group note and publish group request with deadline earlier than wait deadline
+	draftGroup := Draft{
+		Kind:        "note",
+		Body:        "group prompt",
+		ClaimType:   "self",
+		Sensitivity: "shareable",
+		Scope:       Scope{Repo: repo, TaskID: "*", RunID: "*"},
+	}
+	recGroup, err := sessionA.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draftGroup})
+	if err != nil {
+		t.Fatalf("create group note: %v", err)
+	}
+
+	// Group deadline 5s in future, wait deadline 10s in future
+	groupReq, err := sessionA.PublishEvent(ctx, PublishEventRequest{
+		RequestID:   uuid.NewString(),
+		Repo:        repo,
+		Kind:        "request",
+		Ref:         RecordVersionRef{RecordID: recGroup.RecordID, Version: 1},
+		Destination: EventDestination{Type: "agent", Name: "agent/" + agentB.AgentID},
+		ResponseGroup: &ResponseGroupSpec{
+			Deadline:      time.Now().Add(5 * time.Second),
+			PartialPolicy: "all",
+		},
+	}, dest)
+	if err != nil {
+		t.Fatalf("publish group request: %v", err)
+	}
+
+	wait, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          repo,
+		PredicateKind:       WaitPredicateResponseGroupClosed,
+		DependencyEventUUID: groupReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Second),
+	}, dest)
+	if err != nil || wait.State != WaitStateWaiting {
+		t.Fatalf("create wait: %+v %v", wait, err)
+	}
+
+	// Simulate downtime: both deadlines have elapsed, group is still 'open' (no sweeper ran)
+	// group deadline = 2s ago, wait deadline = 1s ago (group deadline <= wait deadline < now)
+	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '2 seconds' WHERE event_id=$1`, groupReq.EventID)
+	if err != nil {
+		t.Fatalf("adjust group deadline: %v", err)
+	}
+	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.agent_wait SET deadline=clock_timestamp()-interval '1 second' WHERE wait_uuid=$1`, wait.WaitUUID)
+	if err != nil {
+		t.Fatalf("adjust wait deadline: %v", err)
+	}
+
+	// Single wait timeout sweep tick with NO other sweeper running
+	swept, err := operator.SweepWaitTimeouts(ctx, repo)
+	if err != nil {
+		t.Fatalf("sweep wait timeouts: %v", err)
+	}
+	if swept != 1 {
+		t.Fatalf("expected 1 wait swept, got: %d", swept)
+	}
+
+	// The wait MUST be satisfied with terminal_reason='group_closed', NEVER timed_out!
+	gotWait, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: wait.WaitUUID, Collection: repo}, dest)
+	if err != nil || gotWait.State != WaitStateSatisfied || gotWait.TerminalReason != "group_closed" {
+		t.Fatalf("expected satisfied with group_closed: %+v %v", gotWait, err)
+	}
+	if gotWait.OutboxState != OutboxStatePending {
+		t.Fatalf("expected pending outbox: %+v", gotWait)
+	}
+
+	// Verify the underlying response group was reconciled and closed
+	var grpState, grpCode string
+	err = bootstrap.pool.QueryRow(ctx, `SELECT state, code FROM cairn.agent_response_group WHERE event_id=$1`, groupReq.EventID).Scan(&grpState, &grpCode)
+	if err != nil || grpState != "incomplete" || grpCode != "deadline" {
+		t.Fatalf("expected group state incomplete/deadline: state=%s code=%s err=%v", grpState, grpCode, err)
+	}
+}
+
+// Behavioral Test 5 (NOTIFIER-RACE): If Forget marks a response or dependency record
+// deleted/tombstoned before DrainWaitOutbox acquires the row lock, DrainWaitOutbox must
+// mark the outbox restricted with 'source_ineligible' and publish zero notice events.
+func TestAgentWaits_NotifierRaceForgetExcludesNotice(t *testing.T) {
+	bootstrap, openStore := waitTestDB(t)
+	ctx := context.Background()
+
+	operator := openStore(Channel{Principal: "operator:test", Operator: true})
+	if _, err := operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatalf("enable waits: %v", err)
+	}
+
+	repo := "repo:" + uuid.NewString()
+	dest := Destination{Name: "hosted", AllowLocal: false}
+	profileA := openStore(Channel{Principal: "agent:profile-a-" + repo, Repo: repo})
+	profileB := openStore(Channel{Principal: "agent:profile-b-" + repo, Repo: repo})
+	agentA, err := profileA.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-a",
+		NativeSessionID: "native-a-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	agentB, err := profileB.RegisterAgent(ctx, RegisterAgentRequest{
+		RequestID:       uuid.NewString(),
+		Binding:         "binding-b",
+		NativeSessionID: "native-b-" + uuid.NewString(),
+		Metadata:        AgentMetadata{Harness: "claude", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
+	}, dest)
+	if err != nil {
+		t.Fatalf("register B: %v", err)
+	}
+	sessionA, err := profileA.ForAgentSession(AgentSessionRef{AgentID: agentA.AgentID, ExecutionID: agentA.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession A: %v", err)
+	}
+	sessionB, err := profileB.ForAgentSession(AgentSessionRef{AgentID: agentB.AgentID, ExecutionID: agentB.ExecutionID}, dest)
+	if err != nil {
+		t.Fatalf("forAgentSession B: %v", err)
+	}
+
+	pubReq := publishTestRequest(t, ctx, sessionA, repo, agentB.AgentID, "", dest)
+	wait, err := sessionA.CreateWait(ctx, CreateWaitRequest{
+		RequestID:           uuid.NewString(),
+		Collection:          repo,
+		PredicateKind:       WaitPredicateRequestResponse,
+		DependencyEventUUID: pubReq.EventID,
+		Deadline:            time.Now().Add(10 * time.Minute),
+	}, dest)
+	if err != nil {
+		t.Fatalf("create wait: %v", err)
+	}
+
+	// Publish response
+	respNote, err := sessionB.Create(ctx, CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: Draft{
+			Kind:        "note",
+			Body:        "response to forget",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       Scope{Repo: repo, TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create resp note: %v", err)
+	}
+	_, err = sessionB.PublishEvent(ctx, PublishEventRequest{
+		RequestID:   uuid.NewString(),
+		Repo:        repo,
+		Kind:        "response",
+		CausationID: pubReq.EventID,
+		Ref:         RecordVersionRef{RecordID: respNote.RecordID, Version: 1},
+		Destination: EventDestination{Type: "agent", Name: "agent/" + agentA.AgentID},
+	}, dest)
+	if err != nil {
+		t.Fatalf("publish response: %v", err)
+	}
+
+	// Wait is satisfied, outbox is pending
+	gotWait, err := sessionA.GetWait(ctx, GetWaitRequest{WaitUUID: wait.WaitUUID, Collection: repo}, dest)
+	if err != nil || gotWait.State != WaitStateSatisfied || gotWait.OutboxState != OutboxStatePending {
+		t.Fatalf("expected satisfied wait with pending outbox: %+v %v", gotWait, err)
+	}
+
+	// Simulate Forget winning before drain: payload deleted by Forget
+	_, err = bootstrap.pool.Exec(ctx, `UPDATE cairn.record_version SET payload_deleted_by=gen_random_uuid() WHERE record_id=$1`, respNote.RecordID)
+	if err != nil {
+		t.Fatalf("simulate forget: %v", err)
+	}
+
+	// Now execute DrainWaitOutbox: must detect ineligible source, mark restricted, and publish 0 notices
+	drained, err := operator.DrainWaitOutbox(ctx, repo, 50)
+	if err != nil {
+		t.Fatalf("drain wait outbox: %v", err)
+	}
+	if drained != 0 {
+		t.Fatalf("expected 0 drained items due to restricted outbox, got: %d", drained)
+	}
+
+	// Check outbox state: must be restricted with source_ineligible
+	var outboxState, errReason string
+	err = bootstrap.pool.QueryRow(ctx, `SELECT state, error_reason FROM cairn.agent_wait_outbox WHERE wait_uuid=$1`, wait.WaitUUID).Scan(&outboxState, &errReason)
+	if err != nil || outboxState != "restricted" || errReason != "source_ineligible" {
+		t.Fatalf("expected outbox restricted with source_ineligible: state=%s reason=%s err=%v", outboxState, errReason, err)
+	}
+
+	// Zero notice events published in collection
+	var noticeCount int
+	err = bootstrap.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_event WHERE repo=$1 AND kind='notice'`, repo).Scan(&noticeCount)
+	if err != nil || noticeCount != 0 {
+		t.Fatalf("expected 0 notice events, got: %d err=%v", noticeCount, err)
 	}
 }

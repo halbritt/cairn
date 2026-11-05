@@ -371,6 +371,10 @@ func (s *Store) CreateWait(ctx context.Context, req CreateWaitRequest, dest Dest
 	if err != nil {
 		return AgentWait{}, err
 	}
+	guard := func(tx pgx.Tx) error {
+		_, err := s.resolveWaiterIdentity(ctx, tx, req.Session, repo, dest)
+		return err
+	}
 	out, err := mutate(ctx, s, "wait-create", req.RequestID, req, func(tx pgx.Tx) (AgentWait, error) {
 		if err := s.checkCoordinationWaitsEnabled(ctx, tx); err != nil {
 			return AgentWait{}, err
@@ -501,16 +505,16 @@ ORDER BY position ASC LIMIT 1`, req.DependencyEventUUID, repo, origConsumer, dep
 				return AgentWait{}, err
 			}
 		} else if req.PredicateKind == WaitPredicateResponseGroupClosed {
-			var grpState, grpCode string
-			var grpDeadline time.Time
-			var grpClosedAt *time.Time
-			err = tx.QueryRow(ctx, `SELECT state, code, deadline, closed_at FROM cairn.agent_response_group WHERE event_id=$1`, req.DependencyEventUUID).Scan(&grpState, &grpCode, &grpDeadline, &grpClosedAt)
-			if err == nil && grpState != "open" && grpCode != "restore_fenced" {
+			grpState, grpCode, grpDeadline, grpClosedAt, err := reconcileDueResponseGroupTx(ctx, tx, req.DependencyEventUUID, now)
+			if err != nil {
+				return AgentWait{}, err
+			}
+			if grpState != "" && grpState != "open" && grpCode != "restore_fenced" {
 				effectiveTime := grpDeadline
 				if grpCode == "all_responded" && grpClosedAt != nil {
 					effectiveTime = *grpClosedAt
 				}
-				if effectiveTime.Before(req.Deadline) {
+				if !effectiveTime.After(req.Deadline) {
 					state = WaitStateSatisfied
 					resolvedAt = &now
 					terminalReason = "group_closed"
@@ -519,8 +523,6 @@ ORDER BY position ASC LIMIT 1`, req.DependencyEventUUID, repo, origConsumer, dep
 					resolvedAt = &now
 					terminalReason = "timeout"
 				}
-			} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return AgentWait{}, err
 			}
 		}
 
@@ -593,7 +595,7 @@ VALUES($1,$2,$3,'pending',$4)`, waitUUID, reservedNoticeEventUUID, reservedSourc
 			TerminalReason:           terminalReason,
 			OutboxState:              outboxState,
 		}, nil
-	})
+	}, guard)
 	if err != nil {
 		return AgentWait{}, err
 	}
@@ -605,7 +607,7 @@ VALUES($1,$2,$3,'pending',$4)`, waitUUID, reservedNoticeEventUUID, reservedSourc
 		}
 		defer readTx.Rollback(ctx)
 		refJSON, _ := json.Marshal(out.ResponseRef)
-		checkedRef, cErr := resolveEligibleResponseRef(ctx, readTx, req.Collection, refJSON, out.RegistrationDestination, out.SensitivityCeiling, dest)
+		checkedRef, cErr := resolveEligibleResponseRef(ctx, readTx, repo, refJSON, out.RegistrationDestination, out.SensitivityCeiling, dest)
 		if cErr != nil {
 			return AgentWait{}, cErr
 		}

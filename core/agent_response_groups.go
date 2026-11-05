@@ -261,6 +261,46 @@ func expireResponseGroups(ctx context.Context, tx pgx.Tx, repo, eventID string) 
 	return int64(len(expired)), nil
 }
 
+// reconcileDueResponseGroupTx inspects the specified response group under row lock FOR UPDATE.
+// If the group is open and its deadline has elapsed (deadline <= now), it closes the group in tx,
+// recording state 'partial' (if at least one reply) or 'incomplete', closed_at=now, and code='deadline'.
+// It returns the updated (or existing) group state, code, deadline, closed_at, and error.
+func reconcileDueResponseGroupTx(ctx context.Context, tx pgx.Tx, groupEventID string, now time.Time) (state string, code string, deadline time.Time, closedAt *time.Time, err error) {
+	var curState, curCode, partialPolicy string
+	var curDeadline time.Time
+	var curClosedAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT state, code, partial_policy, deadline, closed_at
+FROM cairn.agent_response_group
+WHERE event_id=$1
+FOR UPDATE`, groupEventID).Scan(&curState, &curCode, &partialPolicy, &curDeadline, &curClosedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", time.Time{}, nil, nil
+	}
+	if err != nil {
+		return "", "", time.Time{}, nil, err
+	}
+	if curState == "open" && !curDeadline.After(now) {
+		var hasReplies bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND response_event_id IS NOT NULL)`, groupEventID).Scan(&hasReplies)
+		if err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		newState := "incomplete"
+		if partialPolicy == "partial" && hasReplies {
+			newState = "partial"
+		}
+		newCode := "deadline"
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_response_group SET state=$2, closed_at=$3, code=$4 WHERE event_id=$1`, groupEventID, newState, now, newCode)
+		if err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		curState = newState
+		curCode = newCode
+		curClosedAt = &now
+	}
+	return curState, curCode, curDeadline, curClosedAt, nil
+}
+
 func (s *Store) ResponseGroups(ctx context.Context, req ResponseGroupListRequest, dest Destination) (ResponseGroupPage, error) {
 	out := ResponseGroupPage{Groups: []ResponseGroupSummary{}, NextAfter: req.After}
 	if err := validEventDestination(dest); err != nil {
