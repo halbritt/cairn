@@ -42,6 +42,8 @@ type SessionInboxAttempt struct {
 	TerminalScan  string          `json:"terminal_scan,omitempty"`
 	Cancel        *SessionCancel  `json:"cancel,omitempty"`
 	Tools         []SessionTool   `json:"tools,omitempty"`
+	AdmissionKind string          `json:"admission_kind,omitempty"`
+	OrganicRoot   string          `json:"organic_root,omitempty"`
 }
 type SessionInboxResult struct {
 	Attempt *SessionInboxAttempt `json:"attempt"`
@@ -112,7 +114,7 @@ func (s *Store) nativeInboxProfile(ref AgentSessionRef, dest Destination) error 
 func (s *Store) readSessionInboxAttempt(ctx context.Context, tx pgx.Tx, id string, ref AgentSessionRef, dest Destination) (SessionInboxAttempt, error) {
 	var out SessionInboxAttempt
 	var deliveryID, leaseID string
-	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive,COALESCE(batch_root::text,''),batch_index,batch_limit FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive, &out.BatchRoot, &out.BatchIndex, &out.BatchLimit)
+	err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,delivery_id::text,lease_id::text,created_at,finished_at,reason,native_turn_id,turn_exclusive,COALESCE(batch_root::text,''),batch_index,batch_limit,admission_kind,COALESCE(organic_root::text,'') FROM cairn.agent_session_attempt WHERE attempt_id=$1 AND owner=$2 AND agent_id=$3 AND execution_id=$4`, id, s.channel.Principal, ref.AgentID, ref.ExecutionID).Scan(&out.ID, &out.Session.AgentID, &out.Session.ExecutionID, &deliveryID, &leaseID, &out.CreatedAt, &out.FinishedAt, &out.Reason, &out.NativeTurnID, &out.TurnExclusive, &out.BatchRoot, &out.BatchIndex, &out.BatchLimit, &out.AdmissionKind, &out.OrganicRoot)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, failure("NOT_FOUND", "native inbox attempt not found for this execution")
 	}

@@ -37,6 +37,14 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 			}
 			return nil, err
 		}
+		_, err = store.SweepNoticeExpiries(tickCtx, core.NoticeExpirySweepRequest{Repo: *repo})
+		if err != nil {
+			cancel()
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			return nil, err
+		}
 		result, err := store.TickSchedules(tickCtx, core.ScheduleTickRequest{Repo: *repo, Limit: 100})
 		if err != nil {
 			cancel()

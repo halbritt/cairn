@@ -26,6 +26,7 @@ type agentSubcommandSpec struct {
 var eventCommandOperations = map[string]string{
 	"publish":         "event-publish",
 	"notice-flush":    "event-notice-flush",
+	"notice-pending":  "event-notice-pending",
 	"inbox":           "event-next",
 	"ack":             "event-complete",
 	"complete":        "event-complete",

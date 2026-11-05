@@ -50,6 +50,7 @@ type RegisterAgentRequest struct {
 	Repo            string        `json:"repo,omitempty"`
 	Binding         string        `json:"binding"`
 	NativeSessionID string        `json:"native_session_id"`
+	LaunchID        string        `json:"launch_id,omitempty"`
 	Metadata        AgentMetadata `json:"metadata"`
 }
 
@@ -202,20 +203,56 @@ func (s *Store) RegisterAgent(ctx context.Context, req RegisterAgentRequest, des
 		}
 		var existing string
 		err = tx.QueryRow(ctx, `SELECT agent_id::text FROM cairn.agent_session WHERE repo=$1 AND owner=$2 AND binding=$3 AND native_session_id=$4 FOR UPDATE`, req.Repo, s.channel.Principal, req.Binding, req.NativeSessionID).Scan(&existing)
+		var instance AgentInstance
 		if errors.Is(err, pgx.ErrNoRows) {
-			return scanAgentSession(tx.QueryRow(ctx, `INSERT INTO cairn.agent_session(agent_id,repo,binding,native_session_id,visibility,execution_id,database_generation,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING `+agentSessionColumns, uuid.NewString(), req.Repo, req.Binding, req.NativeSessionID, dest.Name, uuid.NewString(), generation, req.Metadata))
+			instance, err = scanAgentSession(tx.QueryRow(ctx, `INSERT INTO cairn.agent_session(agent_id,repo,binding,native_session_id,visibility,execution_id,database_generation,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING `+agentSessionColumns, uuid.NewString(), req.Repo, req.Binding, req.NativeSessionID, dest.Name, uuid.NewString(), generation, req.Metadata))
+		} else if err == nil {
+			var held bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND (consumer=$2 OR agent_id=$3) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$3 AND finished_at IS NULL)`, req.Repo, "agent/"+existing, existing).Scan(&held); err != nil {
+				return AgentInstance{}, err
+			}
+			if held {
+				return AgentInstance{}, failure("AGENT_BUSY", "reconcile the active delivery attempt before resuming this agent")
+			}
+			instance, err = scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET execution_id=$2,database_generation=$3,metadata=$4,visibility=$5,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds',stopped=false WHERE agent_id=$1 RETURNING `+agentSessionColumns, existing, uuid.NewString(), generation, req.Metadata, dest.Name))
 		}
 		if err != nil {
 			return AgentInstance{}, err
 		}
-		var held bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND (consumer=$2 OR agent_id=$3) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$3 AND finished_at IS NULL)`, req.Repo, "agent/"+existing, existing).Scan(&held); err != nil {
-			return AgentInstance{}, err
+
+		if req.LaunchID != "" {
+			if err := validID(req.LaunchID); err != nil {
+				return AgentInstance{}, err
+			}
+			var lRepo, lOwner, lBinding, lStatus string
+			var lGen int64
+			err = tx.QueryRow(ctx, `SELECT repo, profile_principal, binding, status, restore_generation FROM cairn.agent_native_owner_launch WHERE launch_id = $1`, req.LaunchID).Scan(&lRepo, &lOwner, &lBinding, &lStatus, &lGen)
+			if errors.Is(err, pgx.ErrNoRows) || lStatus != "active" {
+				return AgentInstance{}, failure("AUTHORITY_DENIED", "native owner launch not found or inactive")
+			}
+			if err != nil {
+				return AgentInstance{}, err
+			}
+			if lGen != generation {
+				return AgentInstance{}, failure("STALE_SESSION", "launch registration predates restore")
+			}
+			if lOwner != s.channel.Principal || lRepo != req.Repo || lBinding != req.Binding {
+				return AgentInstance{}, failure("AUTHORITY_DENIED", "launch parameters do not match agent session")
+			}
+			var dummyAgentID string
+			err = tx.QueryRow(ctx, `SELECT agent_id::text FROM cairn.agent_native_owner_session_binding WHERE launch_id = $1 AND native_session_id = $2 FOR UPDATE`, req.LaunchID, req.NativeSessionID).Scan(&dummyAgentID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_native_owner_session_binding(launch_id, native_session_id, repo, agent_id, execution_id, restore_generation, state, reserved_at) VALUES($1, $2, $3, $4, $5, $6, 'pending', clock_timestamp())`,
+					req.LaunchID, req.NativeSessionID, req.Repo, instance.AgentID, instance.ExecutionID, generation)
+				if err != nil {
+					return AgentInstance{}, err
+				}
+			} else if err != nil {
+				return AgentInstance{}, err
+			}
+			// If already present, never rebind to a new execution!
 		}
-		if held {
-			return AgentInstance{}, failure("AGENT_BUSY", "reconcile the active delivery attempt before resuming this agent")
-		}
-		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET execution_id=$2,database_generation=$3,metadata=$4,visibility=$5,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds',stopped=false WHERE agent_id=$1 RETURNING `+agentSessionColumns, existing, uuid.NewString(), generation, req.Metadata, dest.Name))
+		return instance, nil
 	}, guard)
 }
 

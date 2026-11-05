@@ -189,6 +189,7 @@ func buildOperatorOperations() map[string]operatorOperation {
 		readerOperation("delivery-alerts", deliveryAlerts),
 		storeOperation("event-reissue", (*core.Store).ReissueEvent),
 		storeOperation("native-hold-release", (*core.Store).ReleaseNativeHold),
+		storeOperation("native-owner-launch-register", (*core.Store).RegisterNativeOwnerLaunch),
 		storeOperation("stopped-inbox-expire", (*core.Store).ExpireStoppedInboxes),
 		storeOperation("session-successor-authorize", (*core.Store).AuthorizeSessionSuccessor),
 		storeOperation("session-successor-revoke", (*core.Store).RevokeSessionSuccessor),

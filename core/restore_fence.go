@@ -97,6 +97,13 @@ SELECT reserved_notice_event_uuid,$1,clock_timestamp() FROM cairn.agent_wait WHE
 ON CONFLICT (event_uuid,generation) DO NOTHING`, result.Generation); err != nil {
 		return result, err
 	}
+	if _, err = tx.Exec(ctx, `DO $$ BEGIN
+		IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'cairn' AND tablename = 'agent_organic_notice') THEN
+			UPDATE cairn.agent_organic_notice SET state='restore_fenced' WHERE state='queued';
+		END IF;
+	END $$;`); err != nil {
+		return result, err
+	}
 	if _, err = tx.Exec(ctx, `UPDATE cairn.work_item SET cache_generation=0, refresh_error='database restore fence: projection invalidated'`); err != nil {
 		return result, err
 	}

@@ -36,15 +36,14 @@ var classifications = map[string]Classification{
 	"DESTINATION_PROHIBITED":   {HTTPStatus: 422, ExitCode: 2},
 	"EVIDENCE_UNAVAILABLE":     {HTTPStatus: 422, ExitCode: 2},
 	"FEATURE_DISABLED":         {HTTPStatus: 409, ExitCode: 4},
-<<<<<<< HEAD
+	"FEATURE_IN_USE":           {HTTPStatus: 409, ExitCode: 4},
 	"FEATURE_RETIRED":          {HTTPStatus: 409, ExitCode: 4},
-=======
->>>>>>> 5206356fd4d59a9928d8a5b6d643cf149abf7840
 	"FORGET_REQUIRED":          {HTTPStatus: 409, ExitCode: 4},
 	"HOLD_RELEASED":            {HTTPStatus: 422, ExitCode: 4},
 	"IDEMPOTENCY_CONFLICT":     {HTTPStatus: 409, ExitCode: 4},
 	"IMPACT_PREVIEW_REQUIRED":  {HTTPStatus: 422, ExitCode: 2},
 	"INAPPLICABLE":             {HTTPStatus: 422, ExitCode: 2},
+	"INPUT_ID_REUSED":          {HTTPStatus: 409, ExitCode: 4},
 	"INSTALL_FAILED":           {HTTPStatus: 422, ExitCode: 7},
 	"INTEGRITY_FAILURE":        {HTTPStatus: 422, ExitCode: 7},
 	"INVALID_PROPOSAL":         {HTTPStatus: 422, ExitCode: 2},
@@ -62,6 +61,7 @@ var classifications = map[string]Classification{
 	"PROTOCOL_UNSUPPORTED":     {HTTPStatus: 426, ExitCode: 7},
 	"PURGE_UNRECORDED":         {HTTPStatus: 422, ExitCode: 7},
 	"QUEUE_FULL":               {HTTPStatus: 409, ExitCode: 4},
+	"QUEUE_OVERFLOW":           {HTTPStatus: 409, ExitCode: 4},
 	"QUOTA_EXHAUSTED":          {HTTPStatus: 429, ExitCode: 4},
 	"REFRESH_IN_PROGRESS":      {HTTPStatus: 409, ExitCode: 4},
 	"REFRESH_RATE_LIMITED":     {HTTPStatus: 429, ExitCode: 4},

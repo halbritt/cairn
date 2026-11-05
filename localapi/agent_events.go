@@ -26,6 +26,8 @@ var agentEventOperations = []OperationSpec{
 		return c.store.PublishEvent(ctx, req, c.destination)
 	}),
 	bindDestination(OperationSpec{Name: "event-notice-flush", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).FlushNotice),
+	bindDestination(OperationSpec{Name: "event-notice-pending", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).NoticePending),
+	bindStore(OperationSpec{Name: "notice-expiry-sweep", SourceFile: "agent_events.go", RemoteAllowed: false, RetryClass: "idempotent"}, (*core.Store).SweepNoticeExpiries),
 	bindDestination(OperationSpec{Name: "event-next", SourceFile: "agent_events.go", RemoteAllowed: false, RetryClass: "no-key"}, (*core.Store).NextEvent),
 	bindDestination(OperationSpec{Name: "event-complete", SourceFile: "agent_events.go", RemoteAllowed: true, RequestBodyLimit: 512 * 1024, RetryClass: "request-id"}, (*core.Store).CompleteEvent),
 	bindOperation(OperationSpec{Name: "event-retry", SourceFile: "agent_events.go", RemoteAllowed: false, RetryClass: "lease"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.EventLeaseRequest) (core.AgentDelivery, error) {
