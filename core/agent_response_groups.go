@@ -141,9 +141,17 @@ func observeGroupResponse(ctx context.Context, tx pgx.Tx, event AgentEvent) erro
 		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_response_group_member SET response_event_id=$3 WHERE event_id=$1 AND consumer=$2`, event.CausationID, event.From, event.EventID); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_response_group SET state='collected',closed_at=clock_timestamp(),code='all_responded' WHERE event_id=$1 AND state='open' AND NOT EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND response_event_id IS NULL)`, event.CausationID)
+		var closedAt time.Time
+		err = tx.QueryRow(ctx, `UPDATE cairn.agent_response_group SET state='collected',closed_at=clock_timestamp(),code='all_responded' WHERE event_id=$1 AND state='open' AND NOT EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND response_event_id IS NULL) RETURNING closed_at`, event.CausationID).Scan(&closedAt)
+		if err == nil {
+			if err = resolveWaitsOnGroupClosure(ctx, tx, event.CausationID, "all_responded", closedAt); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 const responseGroupColumns = `g.event_id::text,e.position,e.correlation_id::text,g.deadline,g.partial_policy,g.state,g.closed_at,g.code,(SELECT count(*) FROM cairn.agent_response_group_member m WHERE m.event_id=g.event_id),(SELECT count(*) FROM cairn.agent_response_group_member m WHERE m.event_id=g.event_id AND m.response_event_id IS NOT NULL),g.state='open' AND g.deadline<=clock_timestamp()`
@@ -221,12 +229,79 @@ func (s *Store) ResponseGroup(ctx context.Context, req ResponseGroupQuery, dest 
 // Collection locking orders this sweep with publication and response observation.
 // Delivery failure is reported on members; only an explicit reply fills a member.
 func expireResponseGroups(ctx context.Context, tx pgx.Tx, repo, eventID string) (int64, error) {
-	tag, err := tx.Exec(ctx, `WITH due AS (
- SELECT g.event_id FROM cairn.agent_response_group g JOIN cairn.agent_event e USING(event_id)
+	rows, err := tx.Query(ctx, `WITH due AS (
+ SELECT g.event_id, g.deadline FROM cairn.agent_response_group g JOIN cairn.agent_event e USING(event_id)
  WHERE e.repo=$1 AND ($2='' OR g.event_id=NULLIF($2,'')::uuid) AND g.state='open' AND g.deadline<=clock_timestamp()
  ORDER BY g.deadline,g.event_id LIMIT 100 FOR UPDATE OF g SKIP LOCKED)
- UPDATE cairn.agent_response_group g SET state=CASE WHEN g.partial_policy='partial' AND EXISTS(SELECT 1 FROM cairn.agent_response_group_member m WHERE m.event_id=g.event_id AND m.response_event_id IS NOT NULL) THEN 'partial' ELSE 'incomplete' END,closed_at=clock_timestamp(),code='deadline' FROM due WHERE due.event_id=g.event_id`, repo, eventID)
-	return tag.RowsAffected(), err
+ UPDATE cairn.agent_response_group g SET state=CASE WHEN g.partial_policy='partial' AND EXISTS(SELECT 1 FROM cairn.agent_response_group_member m WHERE m.event_id=g.event_id AND m.response_event_id IS NOT NULL) THEN 'partial' ELSE 'incomplete' END,closed_at=clock_timestamp(),code='deadline' FROM due WHERE due.event_id=g.event_id RETURNING g.event_id::text, due.deadline`, repo, eventID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type expiredGroup struct {
+		id       string
+		deadline time.Time
+	}
+	var expired []expiredGroup
+	for rows.Next() {
+		var eg expiredGroup
+		if err = rows.Scan(&eg.id, &eg.deadline); err != nil {
+			return 0, err
+		}
+		expired = append(expired, eg)
+	}
+	rows.Close()
+
+	for _, eg := range expired {
+		if err = resolveWaitsOnGroupClosure(ctx, tx, eg.id, "deadline", eg.deadline); err != nil {
+			return int64(len(expired)), err
+		}
+	}
+	return int64(len(expired)), nil
+}
+
+// reconcileDueResponseGroupTx inspects the specified response group under row lock FOR UPDATE.
+// If the group is open and its deadline has elapsed (deadline <= now), it closes the group in tx,
+// recording state 'partial' (if at least one reply) or 'incomplete', closed_at=now, and code='deadline'.
+// It returns the updated (or existing) group state, code, deadline, closed_at, and error.
+func reconcileDueResponseGroupTx(ctx context.Context, tx pgx.Tx, groupEventID string, now time.Time) (state string, code string, deadline time.Time, closedAt *time.Time, err error) {
+	var curState, curCode, partialPolicy string
+	var curDeadline time.Time
+	var curClosedAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT state, code, partial_policy, deadline, closed_at
+FROM cairn.agent_response_group
+WHERE event_id=$1
+FOR UPDATE`, groupEventID).Scan(&curState, &curCode, &partialPolicy, &curDeadline, &curClosedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", time.Time{}, nil, nil
+	}
+	if err != nil {
+		return "", "", time.Time{}, nil, err
+	}
+	if curState == "open" && !curDeadline.After(now) {
+		var hasReplies bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_response_group_member WHERE event_id=$1 AND response_event_id IS NOT NULL)`, groupEventID).Scan(&hasReplies)
+		if err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		newState := "incomplete"
+		if partialPolicy == "partial" && hasReplies {
+			newState = "partial"
+		}
+		newCode := "deadline"
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_response_group SET state=$2, closed_at=$3, code=$4 WHERE event_id=$1`, groupEventID, newState, now, newCode)
+		if err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		if err = resolveWaitsOnGroupClosure(ctx, tx, groupEventID, newCode, curDeadline); err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		curState = newState
+		curCode = newCode
+		curClosedAt = &now
+	}
+	return curState, curCode, curDeadline, curClosedAt, nil
 }
 
 func (s *Store) ResponseGroups(ctx context.Context, req ResponseGroupListRequest, dest Destination) (ResponseGroupPage, error) {

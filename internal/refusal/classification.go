@@ -36,7 +36,10 @@ var classifications = map[string]Classification{
 	"DESTINATION_PROHIBITED":   {HTTPStatus: 422, ExitCode: 2},
 	"EVIDENCE_UNAVAILABLE":     {HTTPStatus: 422, ExitCode: 2},
 	"FEATURE_DISABLED":         {HTTPStatus: 409, ExitCode: 4},
+<<<<<<< HEAD
 	"FEATURE_RETIRED":          {HTTPStatus: 409, ExitCode: 4},
+=======
+>>>>>>> 5206356fd4d59a9928d8a5b6d643cf149abf7840
 	"FORGET_REQUIRED":          {HTTPStatus: 409, ExitCode: 4},
 	"HOLD_RELEASED":            {HTTPStatus: 422, ExitCode: 4},
 	"IDEMPOTENCY_CONFLICT":     {HTTPStatus: 409, ExitCode: 4},

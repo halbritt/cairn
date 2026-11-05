@@ -698,6 +698,11 @@ type workFeatureView struct {
 	Retired bool `json:"retired"`
 }
 
+type workFeatureSingleView struct {
+	workFeatureView
+	Features []workFeatureView `json:"features"`
+}
+
 func isValidWorkFeatureName(name string) bool {
 	switch name {
 	case "work-view/1", "work-artifacts/1", "coordination-waits/1", "next-turn-notices/1", "work-advice/1":
@@ -716,13 +721,18 @@ func workFeaturesCommand(ctx context.Context, store *core.Store, args []string) 
 	feature := f.String("feature", "", "versioned feature name (default work-view/1 on mutate)")
 	requestID := f.String("request-id", "", "idempotency request ID")
 	_ = f.String("collection", "", "collection name")
+	_ = f.String("repo", "", "alias for collection")
 	if err := f.Parse(args[1:]); err != nil {
 		return nil, invalid(err.Error())
 	}
+	targetArg := *feature
+	if targetArg == "" && f.NArg() > 0 {
+		targetArg = f.Arg(0)
+	}
 	switch sub {
 	case "status":
-		if *feature != "" && !isValidWorkFeatureName(*feature) {
-			return nil, invalid(fmt.Sprintf("unknown work feature %q", *feature))
+		if targetArg != "" && !isValidWorkFeatureName(targetArg) {
+			return nil, invalid(fmt.Sprintf("unknown work feature %q", targetArg))
 		}
 		rows, err := store.ListWorkFeatures(ctx)
 		if err != nil {
@@ -730,25 +740,28 @@ func workFeaturesCommand(ctx context.Context, store *core.Store, args []string) 
 		}
 		out := make([]workFeatureView, 0, len(rows))
 		for _, r := range rows {
-			if *feature != "" && r.FeatureName != *feature {
+			if targetArg != "" && r.FeatureName != targetArg {
 				continue
 			}
 			out = append(out, workFeatureView{WorkFeature: r, Enabled: r.Status == "active", Retired: r.Status == "retired"})
 		}
-		if *feature != "" && len(out) == 0 {
-			st, err := store.GetWorkFeatureStatus(ctx, *feature)
+		if targetArg != "" && len(out) == 0 {
+			st, err := store.GetWorkFeatureStatus(ctx, targetArg)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, workFeatureView{
-				WorkFeature: core.WorkFeature{FeatureName: *feature, Status: st},
+				WorkFeature: core.WorkFeature{FeatureName: targetArg, Status: st},
 				Enabled:     st == "active",
 				Retired:     st == "retired",
 			})
 		}
+		if targetArg != "" && len(out) == 1 {
+			return workFeatureSingleView{workFeatureView: out[0], Features: out}, nil
+		}
 		return map[string]any{"features": out}, nil
 	case "enable", "disable", "retire":
-		target := *feature
+		target := targetArg
 		if target == "" {
 			target = "work-view/1"
 		}

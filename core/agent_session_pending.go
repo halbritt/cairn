@@ -51,7 +51,7 @@ func (s *Store) SessionInboxPending(ctx context.Context, ref AgentSessionRef, de
 		count(*) FILTER (WHERE kind='response'), count(*), COALESCE(max(position),0)
 		FROM (SELECT e.kind, e.position FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
 		WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp()
-		AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+sessionInboxHold+`
+		AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+sessionInboxHold+` AND `+waitNotificationAdmissionOpen+`
 		AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))
 		ORDER BY e.position DESC LIMIT $4) pending`, a.Repo, a.Inbox, dest.AllowLocal, sessionInboxPendingLimit).
 		Scan(&out.Requests, &out.Notices, &out.Responses, &total, &out.LatestPosition)
