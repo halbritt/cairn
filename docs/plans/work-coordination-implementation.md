@@ -343,16 +343,25 @@ ship through CLI and Suggestions UI; an offline shadow score is not the feature.
 **Implementation scope.** Add WorkAdvice jobs, immutable authorized snapshots,
 actions, review revisions and application receipts. Implement operator field
 sharing policy, bounded cleanup and source-forget dependencies. Add the complete
-Claude subscription adapter with verified flags/auth shape, typed output,
-owned-process cleanup and no tools or alternate routes. Do not import trial
-harness code or widen lesson proposals.
+Codex subscription adapter with an exact executable/capability/configuration-home/
+model registration, typed output, owned-process cleanup and no tools or alternate
+routes. Do not import trial harness code or widen lesson proposals.
 
-For Claude 2.1.318, use `--print --output-format json` without `--verbose` or
-`--json-schema`. Validate the successful native terminal result envelope, then
-parse its string `result` as exactly one proposal object under the strict
-application schema. Malformed output refuses without repair or another model
-invocation. Verify effective managed policy cannot enable model/provider fallback;
-safe mode and omitted fallback flags alone are insufficient.
+Implement a narrow native `cairn-advice` command against pinned Codex source,
+packaged independently of the owner-input TUI patch. Use native authentication
+and Responses interfaces directly, require the exact ChatGPT subscription
+authentication variant, and freeze the built-in provider, validated destination
+and explicit model before one generation request. Honor native policy; refuse
+incompatible routes before sending input. Disable tools, the agent loop,
+generation retries and repair. The installed Claude settings preflight does not
+freeze dynamic managed policy and is no longer the selected adapter.
+
+Validate the `cairn.codex-advice-result/1` envelope, request UUID, route and model
+plus successful process exit, then parse its string `result` as exactly one
+proposal object under the strict application schema. Malformed output refuses
+without repair or another model invocation. Verify the native implementation's
+route lock and one-request behavior with deterministic transport tests before
+the real subscription smoke.
 
 Implement generation/list/show/apply/reject/undo through private transaction helpers
 for existing work annotations/links. Render before/after changes, attribution,
@@ -370,8 +379,9 @@ disable generation and apply while preserving cleanup and retained outcome reads
 - Native terminal-result fixtures cover process failure, error envelopes,
   unexpected envelopes, malformed `result` JSON, extra text and unknown proposal
   fields.
-  Each output refusal follows exactly one invocation, with no repair/rerun;
-  launch arguments omit verbose and native JSON-schema modes.
+  Each output refusal follows exactly one invocation, with no repair/rerun.
+  Native transport fixtures prove one generation request, no tools or fallback,
+  exact subscription authentication and refusal of alternate routes before input.
 - Explicit source selection cannot bypass hosted eligibility; local inputs refuse
   before launch. Currentness/expiry/source privacy/execution replacement/restore
   invalidate apply, including known copied text under forgetting.
@@ -382,8 +392,8 @@ disable generation and apply while preserving cleanup and retained outcome reads
 - Undo of blocker creation withdraws that annotation; undo of blocker resolution
   reopens its prior state with a new revision. Both reject intervening edits.
 - Quota/auth failure stops the operation without another provider/account/model.
-  Unrecognized profile/managed settings, fallback-enabled effective policy or a
-  changed executable refuses before use.
+  Unrecognized profile/capability, incompatible effective policy or a changed
+  executable refuses before use.
 - Timeout, output overflow and cancellation terminate and verify the owned process
   group; restart reconciles uncertain execution without another model invocation.
   A late result cannot bypass expiry or create a second application.

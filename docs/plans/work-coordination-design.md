@@ -575,38 +575,45 @@ child receives no Cairn profile credential or mutation tool.
 
 ### One complete subscription adapter
 
-Ship a `claude-subscription` adapter using an explicitly registered installed CLI,
-existing configuration home and fixed model. Do not depend on the trial execution
-harness or its alternate-provider routes. A later adapter must meet the same
-contract before being advertised; one complete working adapter is enough for
-this release.
+Ship a `codex-subscription` adapter backed by a narrow native `cairn-advice`
+command in a pinned Codex build. Register its exact executable, capability,
+existing configuration home and fixed model. Keep its source patch and build
+receipt separate from the owner-input TUI patch. Do not depend on the trial
+execution harness or its alternate-provider routes. One complete working adapter
+is enough for this release.
 
-Registration and each invocation verify executable identity/version, required
-flags and the effective subscription route. Use the CLI's auth-status interface
-under the same profile/environment as execution. Require a recognized logged-in
-first-party subscription; reject an unknown shape, API-key route, alternate
-provider override or policy configuration whose behavior cannot be established.
-Do not copy, print or provision credentials.
+The native command uses Codex's authentication and Responses client directly.
+It must select the exact first-party ChatGPT subscription authentication variant,
+the built-in OpenAI provider and its validated ChatGPT destination. Broader
+"ChatGPT login required" configuration is insufficient if it accepts other
+authentication variants. Reject API-key routes, custom providers or destinations,
+and incompatible policy before sending the prompt. Do not copy, print or provision
+credentials. Honor native authentication, workspace and network requirements.
 
-For the inspected Claude 2.1.318 interface, use `--print --output-format json`
-without `--verbose` or `--json-schema`. Require a successful process exit and one
-native terminal result object with `type: result`, `subtype: success`,
-`is_error: false` and a string `result`. Parse that string as exactly one JSON
-proposal object and validate the closed application schema, action types and
-snapshot IDs. Reject malformed output, extra text, unknown proposal fields or an
-unexpected envelope without a repair prompt or rerun. Native JSON-schema mode's
-internal repair generation is excluded from this adapter.
+Freeze the selected provider, authentication and model for one generation request.
+Send no tools, disable tool choice, and disable request/stream generation retries.
+Do not enter the agent execution loop, load MCP tools, run hooks, persist a chat
+session or perform schema-repair generation. The child receives an allowlisted
+environment without API-key/provider overrides or Cairn credentials. Launch from
+an empty private directory with arguments as an array and a bounded JSON request
+on stdin. The registered profile selects the model; source text cannot select it.
 
-Use safe mode, empty tools and MCP configuration, no slash commands, browser
-integration, session persistence or interactive permission prompts, and no project
-setting sources. Implement the driver against verified help/version fixtures and
-check that disabling project settings preserves the selected subscription identity.
-Safe mode retains managed policy settings: verify the effective policy cannot
-enable model/provider fallback, or refuse before launch. Omitting fallback flags
-alone does not establish that policy. Do not use API-key-only bare mode or fallback
-model flags. Child environment removes API-key and provider-routing overrides;
-model/profile choice never comes from source text. Launch from an empty private
-working directory with input on stdin and arguments as an array.
+The command accepts `cairn.codex-advice-request/1` with a request UUID and prompt.
+It returns exactly one `cairn.codex-advice-result/1` envelope with the same UUID,
+the fixed model, provider `openai`, authentication method `chatgpt_subscription`,
+explicit success and a string result. Failure returns a nonzero exit and a bounded,
+nonsecret error category. Require both successful exit and the exact successful
+envelope. Independently parse the result as one JSON proposal object under the
+closed application schema, action types and snapshot IDs. Extra text, malformed
+output, unknown fields or an unexpected envelope refuse without repair or rerun.
+
+This replaces the earlier Claude adapter choice. Inspection of installed Claude
+2.1.318 found that its same-process settings preflight does not expose the complete
+effective environment or freeze later managed-policy changes. Those changes can
+alter routing and fallback controls. A supported route lock was not established;
+the feature therefore requires the source-native adapter above. Its implementation
+and actual subscription invocation remain acceptance work, not a proven outcome
+of the source review.
 
 Run one invocation per requested generation. Default deadline is 90 seconds,
 configurable from 10 to 180; at most two jobs per host, one per work item and ten
