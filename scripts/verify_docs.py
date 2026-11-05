@@ -339,8 +339,8 @@ def discover_cli_schema(repo_root):
                 except Exception:
                     pass
 
-    all_flags.update(["entity-file", "entity-symbol", "header"])
-    val_flags.update(["entity-file", "entity-symbol"])
+    all_flags.update(["entity-file", "entity-symbol", "header", "directory", "collection", "agent-id", "execution-id"])
+    val_flags.update(["entity-file", "entity-symbol", "directory", "collection", "agent-id", "execution-id"])
     bool_flags.update(["header"])
 
     return {
@@ -351,6 +351,125 @@ def discover_cli_schema(repo_root):
         "val_flags": val_flags,
         "file_flags": file_flags,
     }
+
+COMMAND_CONTRACTS = {
+    "recovery-reapply": {
+        "required_flags": {"request-id", "expected-sha256", "reason"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+        "description": "recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE",
+    },
+    "recovery-export": {
+        "min_args": 0,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+        "custom_check": lambda flags, pos: ("directory" in flags and len(pos) == 0) or ("directory" not in flags and len(pos) == 1),
+        "custom_error": "recovery-export requires either one file argument or --directory DIR",
+    },
+    "recovery-inspect": {
+        "stdin_policy": "forbidden",
+        "custom_check": lambda flags, pos: ("directory" in flags and len(pos) == 0) or ("directory" not in flags and len(pos) >= 1),
+        "custom_error": "recovery-inspect requires file path(s) or --directory DIR",
+    },
+    "notice-flush": {
+        "required_flags": {"request-id"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+        "description": "notice-flush --request-id UUID EVENT_UUID",
+    },
+    "adopt-context": {
+        "min_args": 2,
+        "max_args": 2,
+        "stdin_policy": "forbidden",
+        "description": "adopt-context RECEIPT_UUID RUN_DIRECTORY",
+    },
+    "relay": {
+        "required_flags": {"upstream"},
+        "stdin_policy": "forbidden",
+    },
+    "schedule-serve": {
+        "required_flags": {"repo"},
+        "stdin_policy": "forbidden",
+    },
+}
+
+SUBCOMMAND_CONTRACTS = {
+    ("agent", "complete"): {
+        "required_flags": {"request-id", "lease", "stdin"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "required",
+        "description": "cairn agent complete --request-id REQ_UUID --lease LEASE_UUID --stdin DELIVERY_UUID",
+    },
+    ("agent", "ack"): {
+        "required_flags": {"request-id", "lease"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+    },
+    ("agent", "retry"): {
+        "required_flags": {"lease"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+    },
+    ("agent", "renew"): {
+        "required_flags": {"lease"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+    },
+    ("agent", "publish"): {
+        "required_flags": {"request-id", "kind", "version"},
+        "min_args": 1,
+        "max_args": 1,
+        "stdin_policy": "forbidden",
+        "custom_check": lambda flags, pos: len({"to", "topic", "resolution", "pool"}.intersection(flags)) == 1,
+        "custom_error": "publish requires exactly one target selector (--to, --topic, --resolution, or --pool)",
+    },
+    ("wake", "serve"): {
+        "required_flags": {"config"},
+        "stdin_policy": "forbidden",
+    },
+    ("wake", "worker"): {
+        "required_flags": {"config", "attempt"},
+        "stdin_policy": "forbidden",
+    },
+    ("wake", "check"): {
+        "required_flags": {"config"},
+        "stdin_policy": "forbidden",
+    },
+    ("machine", "provision"): {
+        "required_flags": {"machine", "upstream", "out"},
+        "min_args": 0,
+        "max_args": 0,
+        "stdin_policy": "forbidden",
+    },
+    ("machine", "enroll"): {
+        "required_flags": {"file"},
+        "min_args": 0,
+        "max_args": 0,
+        "stdin_policy": "forbidden",
+    },
+    ("machine", "rotate"): {
+        "required_flags": {"machine", "upstream", "out"},
+        "min_args": 0,
+        "max_args": 0,
+        "stdin_policy": "forbidden",
+    },
+    ("machine", "status"): {
+        "min_args": 0,
+        "max_args": 0,
+        "stdin_policy": "forbidden",
+    },
+}
+
+for _subcmd in ("complete", "ack", "retry", "renew", "publish"):
+    if ("agent", _subcmd) in SUBCOMMAND_CONTRACTS:
+        COMMAND_CONTRACTS[_subcmd] = SUBCOMMAND_CONTRACTS[("agent", _subcmd)]
+
 
 def run_tier2_cli(repo_root, schema=None, verbose=False):
     """Tier 2: Verify documented CLI commands and flags against codebase schema."""
@@ -408,9 +527,9 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 if re.search(r"cairn\s+[a-z\-]+:\s+", stripped_line):
                     idx += 1
                     continue
-                m = re.search(r"(?:^|\$|\s*&&\s*)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+(.*)", stripped_line)
+                m = re.search(r"(?:^|\$|\s*&&\s*|\|\s*)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+(.*)", stripped_line)
             else:
-                m = re.search(r"(?:`|\$|^)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+([^`]+)", stripped_line)
+                m = re.search(r"(?:`|\$|^|\|\s*)(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)\s+([^`]+)", stripped_line)
 
             if not m:
                 idx += 1
@@ -427,7 +546,9 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 next_part = next_line.split("`")[0].split("#")[0]
                 full_inv_text = full_inv_text.rstrip()[:-1] + (" " + next_part if next_part else "")
 
-            has_stdin = "<" in full_inv_text
+            has_stdin_redirect = bool(re.search(r"<|<<", full_inv_text))
+            has_stdin_pipe = bool(re.search(r"\|\s*(?:cairn|bin/cairn|\./cairn|\./bin/cairn|go run \./cmd/cairn)", stripped_line)) or (idx > 1 and lines[idx - 2].strip().endswith("|"))
+            has_stdin = has_stdin_redirect or has_stdin_pipe
             raw_inv = re.split(r"[<>;|]", full_inv_text)[0].strip()
             if raw_inv.endswith("\\"):
                 raw_inv = raw_inv[:-1].strip()
@@ -468,6 +589,7 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 continue
 
             root_cmd = words[0]
+            sub_cmd = words[1] if len(words) > 1 else None
             if root_cmd in ("...", "<command>", "OPERATION", "COMMAND", "FLAGS", "[FLAGS]"):
                 continue
 
@@ -476,7 +598,7 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                     continue
 
             # Contract check: agent pull requires RECEIPT_UUID and HANDLE_UUID (unless reading from stdin)
-            if root_cmd == "agent" and len(words) > 1 and words[1] == "pull":
+            if root_cmd == "agent" and sub_cmd == "pull":
                 if "help" not in flags and "h" not in flags and not has_stdin:
                     pos = [w for w in words[2:] if not w.startswith("-") and w not in ("N", "...")]
                     if len(pos) < 2 and "RECEIPT_UUID" not in raw_inv and "<receipt" not in raw_inv.lower():
@@ -496,8 +618,7 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                 })
                 continue
 
-            if root_cmd in subcommands and len(words) > 1:
-                sub_cmd = words[1]
+            if root_cmd in subcommands and sub_cmd is not None:
                 if sub_cmd not in subcommands[root_cmd] and sub_cmd not in ("--help", "-h", "help", "...", "<subcommand>", "OPERATION", "COMMAND"):
                     syntax_violations.append({
                         "file": rel_path,
@@ -505,6 +626,81 @@ def run_tier2_cli(repo_root, schema=None, verbose=False):
                         "invocation": f"cairn {raw_inv}",
                         "reason": f"Unrecognized subcommand '{sub_cmd}' for command '{root_cmd}'",
                     })
+
+            # Contract verification for executable invocations
+            # Enforce constraints on code blocks and explicit command examples
+            is_executable_cli = in_code_block or stripped_line.startswith(("$", "cairn", "bin/cairn", "./", "- `cairn", "* `cairn"))
+            if is_executable_cli and "help" not in flags and "h" not in flags:
+                contract = None
+                target_name = root_cmd
+                cmd_offset = 1
+                if sub_cmd and (root_cmd, sub_cmd) in SUBCOMMAND_CONTRACTS:
+                    contract = SUBCOMMAND_CONTRACTS[(root_cmd, sub_cmd)]
+                    target_name = f"{root_cmd} {sub_cmd}"
+                    cmd_offset = 2
+                elif root_cmd in COMMAND_CONTRACTS:
+                    contract = COMMAND_CONTRACTS[root_cmd]
+                    cmd_offset = 1
+
+                if contract:
+                    pos_args = [w for w in words[cmd_offset:] if not w.startswith("-") and w not in ("...", "N")]
+
+                    # 1. Stdin Policy
+                    if contract.get("stdin_policy") == "forbidden" and has_stdin:
+                        syntax_violations.append({
+                            "file": rel_path,
+                            "line": line_num,
+                            "invocation": f"cairn {raw_inv}",
+                            "reason": f"Command '{target_name}' does not accept standard input or redirection ('<'). Current implementation requires arguments/flags directly.",
+                        })
+                    elif contract.get("stdin_policy") == "required" and not has_stdin:
+                        if not ("stdin" in flags and any(w.isupper() and len(w) > 1 for w in words)):
+                            syntax_violations.append({
+                                "file": rel_path,
+                                "line": line_num,
+                                "invocation": f"cairn {raw_inv}",
+                                "reason": f"Command '{target_name}' requires standard input (piped '|' or redirected '<')",
+                            })
+
+                    # 2. Required Flags
+                    req_flags = contract.get("required_flags", set())
+                    missing_flags = req_flags - set(flags)
+                    if missing_flags:
+                        syntax_violations.append({
+                            "file": rel_path,
+                            "line": line_num,
+                            "invocation": f"cairn {raw_inv}",
+                            "reason": f"Command '{target_name}' is missing required flag(s): {', '.join('--' + f for f in sorted(missing_flags))}",
+                        })
+
+                    # 3. Positional Argument Arity
+                    if not any(w in ("...", "<subcommand>", "OPERATION", "COMMAND", "<command>", "[FLAGS]") for w in words):
+                        min_a = contract.get("min_args")
+                        max_a = contract.get("max_args")
+                        if min_a is not None and len(pos_args) < min_a:
+                            syntax_violations.append({
+                                "file": rel_path,
+                                "line": line_num,
+                                "invocation": f"cairn {raw_inv}",
+                                "reason": f"Command '{target_name}' requires at least {min_a} positional argument(s), got {len(pos_args)}",
+                            })
+                        if max_a is not None and len(pos_args) > max_a:
+                            syntax_violations.append({
+                                "file": rel_path,
+                                "line": line_num,
+                                "invocation": f"cairn {raw_inv}",
+                                "reason": f"Command '{target_name}' takes at most {max_a} positional argument(s), got {len(pos_args)}: {pos_args}",
+                            })
+
+                    # 4. Custom Hook Validation
+                    if "custom_check" in contract:
+                        if not contract["custom_check"](set(flags), pos_args):
+                            syntax_violations.append({
+                                "file": rel_path,
+                                "line": line_num,
+                                "invocation": f"cairn {raw_inv}",
+                                "reason": f"Command '{target_name}': {contract['custom_error']}",
+                            })
 
             for fn in flags:
                 if not fn or fn in ("flag", "flags", "opt", "help", "h"):

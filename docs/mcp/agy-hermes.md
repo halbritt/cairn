@@ -52,10 +52,10 @@ Hermes monitors the agent inbox for pending notifications and wake events:
 cairn agent inbox next --repo "$HOME/git/cairn"
 ```
 
-When work completes, Hermes emits completion status:
+When work completes, Hermes emits completion status with result text via standard input:
 
 ```sh
-cairn agent complete --lease "LEASE_UUID"
+echo "Task completed successfully" | cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" --stdin "DELIVERY_UUID"
 ```
 
 ---

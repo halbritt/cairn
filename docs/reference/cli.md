@@ -113,11 +113,19 @@ cairn agent publish --request-id "REQ_UUID" --to "agent-1113" --kind "task" --ve
 ```
 
 ### `cairn agent complete`
-Marks an inbox event complete.
+Marks an inbox event complete and records a result note. Requires `--stdin` with the result text provided via standard input.
 
 ```sh
-cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
+echo "Task result description" | cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" --stdin "DELIVERY_UUID"
 ```
+
+- `--request-id UUID`: Stable idempotency UUID for retrying mutations.
+- `--lease UUID`: Active event lease UUID.
+- `--stdin`: Mandatory flag indicating result body is read from standard input.
+- `--shareable`: Mark result draft as shareable with hosted models (defaults to local).
+- `--kind KIND`: Result record kind (defaults to `note`).
+- `--task TASK`: Task scope label for the result draft (defaults to `*`).
+- `--run RUN`: Run scope label for the result draft (defaults to `*`).
 
 ### `cairn agent ack`
 Acknowledges receipt of an inbox event.
@@ -139,6 +147,16 @@ Releases an event lease for retry.
 ```sh
 cairn agent retry --lease "LEASE_UUID" "DELIVERY_UUID"
 ```
+
+### `cairn notice-flush`
+Releases pending routine deferred delivery for an event published by the authenticated caller.
+
+```sh
+cairn notice-flush --request-id "REQ_UUID" "EVENT_UUID"
+```
+
+- `--request-id UUID`: Stable idempotency UUID.
+- `EVENT_UUID`: Target deferred event UUID.
 
 ---
 
@@ -227,10 +245,10 @@ cairn opencode-install --project "$HOME/git/cairn" --socket "$HOME/.local/share/
 - `cairn migrate`: Apply schema migrations (up to 074).
 - `cairn checkpoint < request.json`: Generate cryptographic audit checkpoint.
 - `cairn verify-checkpoint < expectation.json`: Verify checkpoint against catalog.
-- `cairn recovery-export < request.json`: Export current audit records.
-- `cairn recovery-inspect < request.json`: Inspect restored database.
+- `cairn recovery-export FILE` (or `--directory DIR`): Export surviving audit records to a recovery file or directory bundle.
+- `cairn recovery-inspect FILE...` (or `--directory DIR`): Validate recovery snapshot integrity and authority root grants.
 - `cairn begin-restore < request.json`: Place database into restore fence.
-- `cairn recovery-reapply < request.json`: Reapply newer deletions and retractions.
+- `cairn recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE`: Reapply newer deletions and retractions from a recovery file.
 - `cairn resume-restore < request.json`: Resume normal transactions after restore.
 
 ### Daemons & Infrastructure

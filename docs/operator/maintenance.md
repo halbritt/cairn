@@ -80,7 +80,13 @@ When restoring a database from backups, Cairn enforces a strict, step-by-step di
 Before restoring an older snapshot, export surviving audit records:
 
 ```sh
-cairn recovery-export < request.json
+cairn recovery-export /path/to/recovery-export.json
+```
+
+For large stores, export as a streamed directory bundle:
+
+```sh
+cairn recovery-export --directory /path/to/recovery-bundle
 ```
 
 ### Step 2: Restore PostgreSQL Backup
@@ -103,10 +109,10 @@ The restore fence invalidates all active index handles and pauses ordinary agent
 
 ### Step 4: Reapply Newer Revocations & Deletions
 
-Reapply all newer retractions, deletions, and forgotten records from the recovery export:
+Reapply all newer retractions, deletions, and forgotten records from the verified recovery export:
 
 ```sh
-cairn recovery-reapply < request.json
+cairn recovery-reapply --request-id "REQ_UUID" --expected-sha256 "DIGEST" --reason "Restore reapplication" /path/to/recovery-export.json
 ```
 
 ### Step 5: Resume Normal Operations (`resume-restore`)

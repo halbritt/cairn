@@ -115,10 +115,10 @@ The lifecycle of an inbox event follows strict transactional states:
 
 1. **Publish**: The event is written to `cairn.agent_events` in `waiting` state.
 2. **Lease/Claim**: The recipient leases the event for a bounded processing duration.
-3. **Acknowledge / Complete**: Upon successfully handling the event, the agent completes it:
+3. **Acknowledge / Complete**: Upon successfully handling the event, the agent completes it (providing result text via `--stdin`):
 
 ```sh
-cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" "DELIVERY_UUID"
+echo "Task execution completed successfully" | cairn agent complete --request-id "REQ_UUID" --lease "LEASE_UUID" --stdin "DELIVERY_UUID"
 ```
 
 Alternatively, acknowledge reception:
@@ -148,7 +148,7 @@ Cairn differentiates high-priority requests from routine background notices:
 To immediately release deferred notices:
 
 ```sh
-cairn notice-flush < request.json
+cairn notice-flush --request-id "REQ_UUID" "EVENT_UUID"
 ```
 
 ---
