@@ -30,6 +30,9 @@ surfaces:
   stale:
     states:
       failed_refresh: {route: /, ready: '.work-card >> nth=0'}
+  freshness:
+    states:
+      crossed_two_minutes: {route: /, ready: '#staleness-indicator.stale'}
   auth_rejected:
     states:
       hidden_external_fields: {route: /, ready: '#auth-alert'}

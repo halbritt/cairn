@@ -28,7 +28,7 @@ ASSETS = ROOT / "tests/fixtures/work_ui"
 ORIGIN = "https://plane.fixture.invalid"
 NAMESPACE = uuid.UUID("f431dcf6-f8f9-4bb9-8905-10b2e24671ab")
 LONG_TITLE = 'Untrusted <img src=x onerror="window.workUiInjected=true"> ' + "long-title-" * 35
-STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "auth_rejected", "unavailable", "typed")
+STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "freshness", "auth_rejected", "unavailable", "typed")
 WEB_FILES = ("web/workview/app.js", "web/workview/index.html", "web/workview/styles.css")
 EXTERNAL_FIELDS = ("identifier", "title", "state_id", "state_name", "state_group",
                    "assignee_ids", "assignee_names", "updated_at_source", "source_url")
@@ -93,6 +93,11 @@ class Fixture:
 
     def __init__(self, args):
         self.args = args
+        available_states = self.states
+        selected_states = tuple(args.state) if args.state else available_states
+        require(len(set(selected_states)) == len(selected_states) and set(selected_states).issubset(available_states),
+                "requested state is duplicate or outside the selected acceptance scope")
+        self.states = selected_states
         require(not args.output.is_symlink(), "output must not be a symlink")
         self.output = args.output.resolve()
         require(not self.output.exists() or not any(self.output.iterdir()), "output must be new or empty")
@@ -104,6 +109,7 @@ class Fixture:
                            checks=[], uipass=[], visual_review="pending actual screenshot inspection",
                            state_results={name: "not_run" for name in self.states},
                            selected_scope=args.scope,
+                           excluded_states=[name for name in available_states if name not in self.states],
                            scope="Real Cairn CLI/Store/browser; synthetic external Plane CLI only")
         self.report["fixture_inputs"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in (Path(__file__).resolve(), Path(disposable_host.__file__).resolve(),
@@ -285,6 +291,33 @@ class Fixture:
         expect(page.locator("#view-error")).to_contain_text("synthetic Plane connection failure")
         expect(page.locator("#refresh-error")).to_contain_text("Refresh failed")
         expect(page.locator("#refresh-btn")).to_be_disabled()
+
+    def browser_freshness_transition(self, page):
+        from playwright.sync_api import expect
+        self.age_refresh_window()
+        self.host.sql("UPDATE cairn.work_project SET last_successful_refresh_at=clock_timestamp()-interval '116 seconds'")
+        self.host.sql("""UPDATE cairn.work_item i SET last_refreshed_at=p.last_successful_refresh_at
+            FROM cairn.work_project p WHERE i.binding_id=p.binding_id""")
+        self.report.setdefault("clock_staging", []).append(dict(collection=self.collection,
+            field="last_successful_refresh_at,last_refreshed_at", purpose="observe actual server/browser crossing of the two-minute boundary"))
+        before = self.work("list", "--project", self.slug)
+        project = self.work("project", "show", "--project", self.slug)
+        require(project["is_stale"] is False and all(not item["is_stale"] for item in before["items"]),
+                "near-boundary snapshot was not initially fresh")
+        calls = len(self.plane_calls())
+        page.reload()
+        badge = page.locator("#staleness-indicator")
+        expect(badge).to_have_class("badge fresh")
+        with page.expect_response(lambda response: "/api/work/items?" in response.url and response.request.method == "GET", timeout=9000) as pending:
+            expect(badge).to_contain_text("Stale cache", timeout=9000)
+        response = pending.value
+        require(response.ok and response.json()["project"]["is_stale"] is True,
+                "freshness transition did not use an actually stale server observation")
+        after = self.work("list", "--project", self.slug)
+        require(self.work("project", "show", "--project", self.slug)["last_successful_refresh_at"] == project["last_successful_refresh_at"]
+                and snapshot_projection(after) == snapshot_projection(before), "display transition changed retained snapshot")
+        require(len(self.plane_calls()) == calls, "display freshness timer invoked the Plane connector")
+        expect(badge).to_have_class("badge stale")
 
     def seed_typed_targets(self):
         self.session = self.register()
@@ -643,15 +676,19 @@ class Fixture:
                         ui.goto(self.url)
                         self.check("browser mutations " + viewport,
                                    lambda: self.browser_mutations(ui, viewport), ui)
-            elif name == "typed":
+            elif name in ("typed", "freshness"):
                 for viewport, size in (("desktop", dict(width=1440, height=1000)),
                                        ("phone", dict(width=390, height=844))):
                     with browser.new_context(viewport=size, storage_state=storage) as targets:
                         ui = targets.new_page()
                         ui.set_default_timeout(5000)
                         ui.goto(self.url)
-                        self.check("typed target state " + viewport,
-                                   lambda: self.visual_state_assertions(ui, name, viewport), ui)
+                        if name == "typed":
+                            self.check("typed target state " + viewport,
+                                       lambda: self.visual_state_assertions(ui, name, viewport), ui)
+                        else:
+                            self.check("fresh-to-stale clock transition " + viewport,
+                                       lambda: self.browser_freshness_transition(ui), ui)
             else:
                 page.set_default_timeout(5000)
                 if name == "empty_failed":
@@ -784,6 +821,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scope", choices=("wc01", "wc02"), default="wc01",
                         help="explicit acceptance scope; required commands/routes fail within the selected scope")
+    parser.add_argument("--state", action="append", default=[],
+                        help="run only this explicit state within the selected scope; repeatable, exclusions recorded")
     parser.add_argument("--web-overlay", type=Path,
                         help="copy only the three workview browser files from this reviewed checkout into private build source")
     parser.add_argument("--retain-binary", action="store_true",
