@@ -13,7 +13,26 @@
   let previousFocus = null;
   let writing = false;
   let refreshTimer = null;
+  let currentProjectStatus = "";
+  let artifactStatus = "";
+  let artifactItemKey = "";
+  let artifactListRequest = 0;
+  let artifactHistoryRequest = 0;
+  let artifactHistoryLink = "";
+  let artifactHistoryCursor = "";
+  let artifactHistoryPage = 1;
+  let artifactRequest = 0;
+  let artifactRevisionID = "";
+  let artifactRevision = null;
+  let artifactImpactCursor = "";
+  let artifactImpactPage = 1;
+  let artifactReturnItem = null;
   const pendingWrites = new Map();
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function validUUID(value) {
+    return uuidPattern.test(value) && value !== "00000000-0000-0000-0000-000000000000";
+  }
 
   function escapeHTML(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -47,6 +66,8 @@
   function closeDetail() {
     const item = currentItemUUID;
     detailRequest++;
+    artifactListRequest++;
+    artifactHistoryRequest++;
     currentItemUUID = "";
     byID("detail-modal").hidden = true;
     syncModalState();
@@ -102,6 +123,8 @@
   async function loadBoard(preserveError = false) {
     if (!currentProject) return;
     clearTimeout(refreshTimer);
+    currentProjectStatus = "";
+    updateArtifactControls();
     const sequence = ++boardRequest;
     const query = new URLSearchParams({ project: currentProject, limit: pageSize, offset: (currentPage - 1) * pageSize });
     if (byID("filter-state-group").value) query.set("state_group", byID("filter-state-group").value);
@@ -123,6 +146,8 @@
   function renderBoard(data) {
     const items = data.items || [];
     const project = data.project || {};
+    currentProjectStatus = project.status || "";
+    updateArtifactControls();
     byID("auth-alert").hidden = !project.auth_rejected;
     const freshness = byID("staleness-indicator");
     const failed = project.last_refresh_error || items.some(item => item.refresh_error);
@@ -277,6 +302,17 @@
       const newlyOpened = byID("detail-modal").hidden;
       if (newlyOpened) previousFocus = document.activeElement;
       currentItemUUID = itemUUID;
+      const itemKey = JSON.stringify([project, itemUUID]);
+      if (artifactItemKey !== itemKey) {
+        artifactItemKey = itemKey;
+        byID("artifact-link-form").reset();
+        byID("artifact-register-form").reset();
+        byID("artifact-include-removed").checked = false;
+        byID("artifact-register-details").open = false;
+        updateArtifactKind();
+        message("item-artifact-notice");
+      }
+      clearArtifactHistory();
       byID("modal-title").textContent = detail.item.title;
       byID("modal-meta").innerHTML = `<div><strong>Identifier:</strong> ${escapeHTML(detail.item.identifier)}</div>
         <div><strong>UUID:</strong> ${escapeHTML(detail.item.plane_item_uuid)}</div>
@@ -356,12 +392,13 @@
       byID("detail-modal").hidden = false;
       syncModalState();
       if (newlyOpened) byID("modal-close").focus();
+      await loadItemArtifacts();
     } catch (error) {
       message(byID("detail-modal").hidden ? "view-error" : "detail-error", "Could not load item: " + error.message);
     }
   }
 
-  async function write(path, payload, success) {
+  async function write(path, payload, success, errorTarget = byID("detail-modal").hidden ? "view-error" : "detail-error") {
     if (writing) return;
     writing = true;
     const key = JSON.stringify([path, payload]);
@@ -374,16 +411,18 @@
       for (const [node, wasDisabled] of disabled) if (node.isConnected) node.disabled = wasDisabled;
       controlsRestored = true;
     };
-    const errorTarget = byID("detail-modal").hidden ? "view-error" : "detail-error";
     message(errorTarget);
     try {
-      await apiFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, request_id: pendingWrites.get(key) }) });
-      pendingWrites.delete(key);
+      const result = await apiFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, request_id: pendingWrites.get(key) }) });
       // Restore before new reads update derived pagination and action states.
       restoreControls();
-      await success();
+      await success(result);
+      pendingWrites.delete(key);
     } catch (error) {
-      message(errorTarget, "Change not confirmed: " + error.message + ". Check the item before retrying.");
+      const visibleTarget = !byID("login-modal").hidden ? "login-error" : !byID("detail-modal").hidden ? "detail-error"
+        : !byID("artifact-page").hidden ? "artifact-error" : "view-error";
+      message(byID(errorTarget).parentElement.closest("[hidden]") ? visibleTarget : errorTarget,
+        "Change not confirmed: " + error.message + ". Inspect the current state before retrying.");
     } finally {
       restoreControls();
       writing = false;
@@ -401,6 +440,486 @@
     });
   }
 
+  function artifactAdmissionLabel() {
+    return artifactStatus ? `Artifact admission: ${artifactStatus}.`
+      + (artifactStatus === "active" ? "" : " Registration and new links are disabled; retained metadata and maintenance remain available.")
+      : "Artifact admission could not be checked. Registration and new links are unavailable.";
+  }
+
+  function updateArtifactControls() {
+    byID("artifact-register-submit").disabled = artifactStatus !== "active";
+    byID("artifact-link-submit").disabled = artifactStatus !== "active" || currentProjectStatus !== "active";
+    message("artifact-admission", artifactAdmissionLabel() + (currentProjectStatus && currentProjectStatus !== "active"
+      ? ` Project admission: ${currentProjectStatus}; new links are disabled.` : ""));
+    message("artifact-page-admission", artifactAdmissionLabel());
+  }
+
+  async function readArtifactStatus() {
+    try {
+      const status = await apiFetch("/api/work/artifact/status");
+      if (status.feature_name !== "work-artifacts/1" || !["active", "disabled", "retired"].includes(status.status)) {
+        throw new Error("Unexpected artifact status response");
+      }
+      artifactStatus = status.status;
+    } catch (error) {
+      artifactStatus = "";
+      updateArtifactControls();
+      throw error;
+    }
+    updateArtifactControls();
+  }
+
+  function artifactSummary(revision) {
+    if (!revision) return "Revision metadata not returned";
+    if (revision.unavailable) return "Metadata unavailable";
+    const artifact = revision.artifact || {};
+    return artifact.display_name || ({ git: revision.git_commit_oid, report: revision.revision_label,
+      ci: `${artifact.ci_provider || "CI"} run ${artifact.ci_run_id || "unknown"}, attempt ${revision.ci_attempt ?? "unknown"}`,
+      cairn_result: `${artifact.cairn_record_id || "Record"}, version ${revision.cairn_version ?? "unknown"}`
+    })[artifact.kind] || revision.revision_id;
+  }
+
+  function artifactAvailability(revision) {
+    if (!revision) return "Availability not returned";
+    return revision.unavailable ? `Metadata unavailable${revision.unavailable_reason ? ": " + revision.unavailable_reason : ""}` : "Metadata retained";
+  }
+
+  function actionButton(label, className, action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = label;
+    button.addEventListener("click", action);
+    return button;
+  }
+
+  async function loadItemArtifacts() {
+    const project = currentProject, item = currentItemUUID, sequence = ++artifactListRequest;
+    if (!project || !item) return;
+    byID("modal-artifacts").replaceChildren();
+    byID("item-artifacts-empty").hidden = true;
+    message("item-artifact-error");
+    const query = new URLSearchParams({ project, item });
+    if (byID("artifact-include-removed").checked) query.set("include_removed", "1");
+    try {
+      await readArtifactStatus();
+      const data = await apiFetch("/api/work/artifact/list?" + query);
+      if (sequence !== artifactListRequest || currentProject !== project || currentItemUUID !== item) return;
+      if (!Array.isArray(data.artifacts)) throw new Error("Artifact list was not returned");
+      byID("item-artifacts-empty").hidden = data.artifacts.length !== 0;
+      for (const link of data.artifacts) {
+        if (link.plane_item_uuid !== item || !validUUID(link.link_id) || !validUUID(link.revision_id)) {
+          throw new Error("Artifact link identity did not match this work item");
+        }
+        const row = document.createElement("li");
+        row.className = "artifact-link-item";
+        row.dataset.linkId = link.link_id;
+        row.dataset.revisionId = link.revision_id;
+        row.dataset.revision = link.revision;
+        row.dataset.state = link.state;
+        row.innerHTML = `<strong>${escapeHTML(artifactSummary(link.artifact_revision))}</strong>
+          <div>${escapeHTML(link.role)} · ${escapeHTML(link.state)} · link revision ${escapeHTML(link.revision)}</div>
+          <span class="artifact-availability hint">${escapeHTML(artifactAvailability(link.artifact_revision))}</span>
+          <span class="hint">Artifact revision ${escapeHTML(link.revision_id)}</span>
+          <div class="artifact-rationale">${escapeHTML(link.artifact_revision?.unavailable ? "" : link.rationale)}</div>
+          <span class="hint">Linked by ${escapeHTML(link.author)} · ${escapeHTML(dateLabel(link.asserted_at))}</span>
+          ${link.removed_at ? `<span class="hint">Removed by ${escapeHTML(link.removed_by)} · ${escapeHTML(dateLabel(link.removed_at))}</span>` : ""}`;
+        const actions = document.createElement("div");
+        actions.className = "modal-actions";
+        actions.append(actionButton("Inspect revision", "inspect-artifact-btn", () => openArtifact(link.revision_id, { project, item })),
+          actionButton("Link history", "artifact-history-btn", () => loadArtifactHistory(link.link_id)));
+        if (link.state === "active") {
+          const remove = actionButton("Remove link", "unlink-artifact-btn", () => unlinkArtifact(link, project, item));
+          remove.disabled = !Number.isSafeInteger(link.revision) || link.revision < 1;
+          actions.append(remove);
+        }
+        row.append(actions);
+        byID("modal-artifacts").append(row);
+      }
+      return data.artifacts;
+    } catch (error) {
+      if (sequence === artifactListRequest) {
+        byID("modal-artifacts").replaceChildren();
+        byID("item-artifacts-empty").hidden = true;
+        message("item-artifact-error", "Could not read artifact links: " + error.message);
+      }
+    }
+  }
+
+  function clearArtifactHistory() {
+    artifactHistoryRequest++;
+    artifactHistoryLink = "";
+    artifactHistoryCursor = "";
+    byID("artifact-history-section").hidden = true;
+    byID("artifact-history").replaceChildren();
+  }
+
+  async function loadArtifactHistory(linkID, cursor = "", page = 1) {
+    const project = currentProject, item = currentItemUUID, sequence = ++artifactHistoryRequest;
+    if (!project || !item) return;
+    artifactHistoryLink = linkID;
+    artifactHistoryCursor = "";
+    artifactHistoryPage = page;
+    byID("artifact-history-section").hidden = false;
+    byID("artifact-history").replaceChildren();
+    byID("artifact-history-summary").textContent = "Loading link history…";
+    byID("artifact-history-first").disabled = byID("artifact-history-next").disabled = true;
+    message("artifact-history-error");
+    const query = new URLSearchParams({ project, item, link_id: linkID, limit: pageSize });
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const data = await apiFetch("/api/work/artifact/history?" + query);
+      if (sequence !== artifactHistoryRequest || item !== currentItemUUID || project !== currentProject) return;
+      if (data.link?.link_id !== linkID || data.link?.plane_item_uuid !== item || !Array.isArray(data.history)) {
+        throw new Error("History identity did not match this link");
+      }
+      if (data.more && !data.next_cursor) throw new Error("History continuation was not returned");
+      byID("artifact-history-summary").textContent = `${linkID} · current ${data.link.state}, revision ${data.link.revision}. ${artifactAvailability(data.link.artifact_revision)}`;
+      for (const entry of data.history) {
+        if (entry.link_id !== linkID) throw new Error("History entry did not match this link");
+        const row = document.createElement("li");
+        row.dataset.historyId = entry.history_id;
+        row.innerHTML = `<strong>Revision ${escapeHTML(entry.revision)} · ${escapeHTML(entry.state)} · ${escapeHTML(entry.role)}</strong>
+          <div>${escapeHTML(data.link.artifact_revision?.unavailable ? "" : entry.rationale)}</div><span class="hint">${escapeHTML(entry.author)} · ${escapeHTML(dateLabel(entry.created_at))}</span>`;
+        byID("artifact-history").append(row);
+      }
+      artifactHistoryCursor = data.more ? data.next_cursor : "";
+      byID("artifact-history-page").textContent = `Page ${page} · ${data.history.length} entries`;
+      byID("artifact-history-first").disabled = page === 1;
+      byID("artifact-history-next").disabled = !artifactHistoryCursor;
+      byID("artifact-history-title").focus();
+    } catch (error) {
+      if (sequence === artifactHistoryRequest) {
+        byID("artifact-history").replaceChildren();
+        byID("artifact-history-summary").textContent = linkID;
+        byID("artifact-history-page").textContent = "History unavailable";
+        byID("artifact-history-first").disabled = false;
+        message("artifact-history-error", "Could not read link history: " + error.message + ". Use First page to read current history.");
+      }
+    }
+  }
+
+  async function unlinkArtifact(link, project, item) {
+    await write("/api/work/artifact/unlink", { project, item_uuid: item, link_id: link.link_id, expected_revision: link.revision }, async result => {
+      if (result.link_id !== link.link_id || result.plane_item_uuid !== item || result.state !== "removed") throw new Error("Removed link was not confirmed");
+      if (currentProject !== project || currentItemUUID !== item) return;
+      clearArtifactHistory();
+      message("item-artifact-notice", "Link removed. Include removed links to inspect its retained history.");
+      await loadItemArtifacts();
+    }, "item-artifact-error");
+  }
+
+  function updateArtifactKind() {
+    const kind = byID("artifact-kind").value;
+    for (const fieldset of document.querySelectorAll("[data-artifact-kind]")) {
+      fieldset.hidden = fieldset.disabled = fieldset.dataset.artifactKind !== kind;
+    }
+    byID("artifact-label-field").hidden = kind === "cairn_result";
+    byID("artifact-revision-label").disabled = kind === "cairn_result";
+    byID("artifact-revision-label").required = kind === "report";
+    byID("artifact-label-hint").textContent = kind === "report" ? "(required)" : "(optional)";
+  }
+
+  function setArtifactRoute(revision = "") {
+    const url = new URL(location.href);
+    url.searchParams.delete("artifact_revision");
+    url.searchParams.delete("view");
+    if (revision) url.searchParams.set("artifact_revision", revision);
+    else if (!byID("artifact-page").hidden) url.searchParams.set("view", "artifacts");
+    if (url.href !== location.href) history.pushState(null, "", url);
+  }
+
+  function showArtifactPage() {
+    closeDetail();
+    byID("work-board").hidden = true;
+    byID("artifact-page").hidden = false;
+    byID("project-select").hidden = true;
+    document.querySelector(".header-right").hidden = true;
+    byID("board-view-btn").removeAttribute("aria-current");
+    byID("artifact-view-btn").setAttribute("aria-current", "page");
+    byID("artifact-return-item").hidden = !artifactReturnItem;
+  }
+
+  function showBoard(updateURL = true) {
+    artifactRequest++;
+    byID("artifact-page").hidden = true;
+    byID("work-board").hidden = false;
+    byID("project-select").hidden = false;
+    document.querySelector(".header-right").hidden = false;
+    byID("artifact-view-btn").removeAttribute("aria-current");
+    byID("board-view-btn").setAttribute("aria-current", "page");
+    if (updateURL) setArtifactRoute();
+    byID("board-view-btn").focus();
+  }
+
+  function appendArtifactField(list, label, value) {
+    if (value === undefined || value === null || value === "") return;
+    const term = document.createElement("dt"), detail = document.createElement("dd");
+    term.textContent = label;
+    detail.textContent = String(value);
+    list.append(term, detail);
+  }
+
+  function renderArtifactRevision(revision) {
+    if (revision.revision_id !== artifactRevisionID || !validUUID(revision.artifact_id)) throw new Error("Artifact revision identity did not match the request");
+    artifactRevision = revision;
+    const artifact = revision.artifact || {};
+    const container = byID("artifact-revision-details");
+    container.replaceChildren();
+    const heading = document.createElement("p");
+    heading.className = "artifact-availability";
+    heading.textContent = artifactAvailability(revision);
+    const list = document.createElement("dl");
+    list.className = "artifact-identity";
+    appendArtifactField(list, "Artifact revision UUID", revision.revision_id);
+    appendArtifactField(list, "Artifact UUID", revision.artifact_id);
+    appendArtifactField(list, "Kind", artifact.kind);
+    appendArtifactField(list, "Registered by", revision.created_by);
+    appendArtifactField(list, "Registered at", dateLabel(revision.created_at));
+    container.append(heading, list);
+    if (!revision.unavailable) {
+      for (const [label, value] of [
+        ["Display name", artifact.display_name], ["Revision label", revision.revision_label],
+        ["Repository", artifact.git_repo || artifact.ci_repo], ["Full commit object ID", revision.git_commit_oid],
+        ["Object format", revision.git_object_format], ["Branch hint (not identity)", revision.git_branch_hint],
+        ["Report locator", artifact.report_locator], ["Selected digest", revision.report_digest],
+        ["Recorded report provenance", revision.report_provenance], ["CI provider", artifact.ci_provider],
+        ["CI run ID", artifact.ci_run_id], ["CI attempt", revision.ci_attempt], ["Reported CI status", revision.ci_status],
+        ["CI observation time", revision.ci_reported_at ? dateLabel(revision.ci_reported_at) : ""],
+        ["Cairn record UUID", artifact.cairn_record_id], ["Exact record version", revision.cairn_version]
+      ]) appendArtifactField(list, label, value);
+      if (artifact.kind === "report" || artifact.kind === "ci") {
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.textContent = artifact.kind === "report" ? "This view does not fetch or verify report bytes." + (revision.report_mutable ? " The report locator may change." : "")
+          : "CI status is a selected observation. It does not mean Cairn executed or accepted the run.";
+        container.append(note);
+      }
+      const locator = artifact.kind === "report" ? artifact.report_locator : artifact.git_repo || artifact.ci_repo;
+      if (locator) {
+        try {
+          const url = new URL(locator);
+          if (url.protocol === "https:" && !url.username && !url.password) {
+            const link = document.createElement("a");
+            link.href = url.href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = artifact.kind === "report" ? "Open supplied report locator" : "Open repository";
+            container.append(link);
+          }
+        } catch { /* Non-URL repository identities remain text above. */ }
+      }
+      if (revision.metadata && Object.keys(revision.metadata).length) {
+        const details = document.createElement("details"), summary = document.createElement("summary"), pre = document.createElement("pre");
+        summary.textContent = "Selected metadata";
+        pre.textContent = JSON.stringify(revision.metadata, null, 2);
+        details.append(summary, pre);
+        container.append(details);
+      }
+    }
+    byID("artifact-revision-section").hidden = false;
+    byID("artifact-purge-btn").disabled = false;
+  }
+
+  async function openArtifact(revisionID = "", returnItem = artifactReturnItem, updateURL = true) {
+    artifactReturnItem = returnItem;
+    artifactRevisionID = revisionID.trim();
+    artifactRevision = null;
+    artifactImpactCursor = "";
+    artifactImpactPage = 1;
+    const sequence = ++artifactRequest;
+    showArtifactPage();
+    byID("artifact-lookup-id").value = artifactRevisionID;
+    byID("artifact-revision-section").hidden = byID("artifact-impact-section").hidden = true;
+    byID("artifact-revision-details").replaceChildren();
+    byID("artifact-impacts").replaceChildren();
+    byID("artifact-purge-btn").disabled = true;
+    message("artifact-error");
+    message("artifact-notice");
+    if (updateURL) setArtifactRoute(artifactRevisionID);
+    byID("artifact-page-title").focus();
+    try { await readArtifactStatus(); }
+    catch (error) { if (sequence === artifactRequest) message("artifact-error", "Could not read artifact admission: " + error.message); }
+    if (!artifactRevisionID || sequence !== artifactRequest) return;
+    if (!validUUID(artifactRevisionID)) { message("artifact-error", "Enter a nonzero artifact revision UUID."); return; }
+    try {
+      const revision = await apiFetch("/api/work/artifact/show?" + new URLSearchParams({ revision: artifactRevisionID }));
+      if (sequence !== artifactRequest) return;
+      renderArtifactRevision(revision);
+      await loadArtifactImpact();
+    } catch (error) {
+      if (sequence === artifactRequest) message("artifact-error", "Could not inspect revision: " + error.message);
+    }
+  }
+
+  async function loadArtifactImpact(cursor = "", page = 1) {
+    const revisionID = artifactRevisionID, sequence = ++artifactRequest;
+    artifactImpactCursor = "";
+    artifactImpactPage = page;
+    byID("artifact-impact-section").hidden = false;
+    byID("artifact-impacts").replaceChildren();
+    byID("artifact-impact-empty").hidden = true;
+    byID("artifact-impact-page").textContent = "Loading…";
+    byID("artifact-impact-first").disabled = byID("artifact-impact-next").disabled = true;
+    const query = new URLSearchParams({ revision: revisionID, limit: pageSize });
+    if (cursor) query.set("cursor", cursor);
+    try {
+      const data = await apiFetch("/api/work/artifact/impact?" + query);
+      if (sequence !== artifactRequest) return;
+      if (!Array.isArray(data.impacts) || data.more && !data.next_cursor) throw new Error("Impact page or continuation was not returned");
+      renderArtifactRevision(data.revision);
+      for (const impact of data.impacts) {
+        const row = document.createElement("li");
+        row.className = "artifact-impact-item";
+        row.dataset.linkId = impact.link_id;
+        row.dataset.itemUuid = impact.plane_item_uuid;
+        row.innerHTML = `<strong>${escapeHTML(impact.item_identifier || impact.plane_item_uuid)}</strong>
+          <div>${escapeHTML(impact.item_title)}</div><div>${escapeHTML(impact.project_slug)} · ${escapeHTML(impact.role)} · ${escapeHTML(impact.link_state)}</div>
+          <span class="hint">Plane state: ${escapeHTML(impact.state_name || impact.state_group || "Unavailable")}</span>
+          <span class="hint">Source updated: ${escapeHTML(dateLabel(impact.updated_at_source))}</span>
+          <span class="hint">Linked by ${escapeHTML(impact.link_author)} · ${escapeHTML(dateLabel(impact.link_asserted_at))}</span>`;
+        for (const [label, values] of [["Linked executions", impact.linked_sessions], ["Open blockers", impact.open_blockers]]) {
+          if (values?.length) {
+            const title = document.createElement("p"), list = document.createElement("ul");
+            title.textContent = label;
+            for (const value of values) { const entry = document.createElement("li"); entry.textContent = value; list.append(entry); }
+            row.append(title, list);
+          }
+        }
+        row.append(actionButton("Open work item", "impact-open-item", () => openImpactItem(impact.project_slug, impact.plane_item_uuid)));
+        byID("artifact-impacts").append(row);
+      }
+      artifactImpactCursor = data.more ? data.next_cursor : "";
+      byID("artifact-impact-empty").hidden = data.impacts.length !== 0;
+      byID("artifact-impact-page").textContent = `Page ${page} · ${data.impacts.length} links`;
+      byID("artifact-impact-first").disabled = page === 1;
+      byID("artifact-impact-next").disabled = !artifactImpactCursor;
+      message("artifact-error");
+    } catch (error) {
+      if (sequence === artifactRequest) {
+        artifactRevision = null;
+        byID("artifact-revision-details").replaceChildren();
+        byID("artifact-revision-section").hidden = true;
+        byID("artifact-purge-btn").disabled = true;
+        byID("artifact-impacts").replaceChildren();
+        byID("artifact-impact-page").textContent = "Impact unavailable";
+        byID("artifact-impact-first").disabled = false;
+        message("artifact-error", "Could not read reverse impact: " + error.message + ". Use First page to read current links.");
+      }
+    }
+  }
+
+  async function openImpactItem(project, item) {
+    if (![...byID("project-select").options].some(option => option.value === project) || !validUUID(item)) {
+      message("artifact-error", "The linked project or item is not available in this view.");
+      return;
+    }
+    currentProject = project;
+    currentPage = 1;
+    byID("project-select").value = project;
+    byID("filter-state-group").value = "";
+    byID("filter-blocker-only").checked = false;
+    showBoard();
+    await loadBoard();
+    await showDetail(item);
+  }
+
+  function loadRoute() {
+    const query = new URLSearchParams(location.search);
+    if (query.has("artifact_revision") || query.get("view") === "artifacts") return openArtifact(query.get("artifact_revision") || "", null, false);
+    showBoard(false);
+  }
+
+  byID("board-view-btn").addEventListener("click", () => showBoard());
+  byID("artifact-view-btn").addEventListener("click", () => openArtifact("", null));
+  byID("artifact-lookup-form").addEventListener("submit", event => {
+    event.preventDefault();
+    openArtifact(byID("artifact-lookup-id").value);
+  });
+  byID("artifact-return-item").addEventListener("click", () => {
+    if (artifactReturnItem) openImpactItem(artifactReturnItem.project, artifactReturnItem.item);
+  });
+  byID("artifact-include-removed").addEventListener("change", () => { clearArtifactHistory(); loadItemArtifacts(); });
+  byID("artifact-kind").addEventListener("change", updateArtifactKind);
+  byID("artifact-history-close").addEventListener("click", () => {
+    const linkID = artifactHistoryLink;
+    clearArtifactHistory();
+    [...byID("modal-artifacts").children].find(row => row.dataset.linkId === linkID)?.querySelector(".artifact-history-btn")?.focus();
+  });
+  byID("artifact-history-first").addEventListener("click", () => loadArtifactHistory(artifactHistoryLink));
+  byID("artifact-history-next").addEventListener("click", () => {
+    if (artifactHistoryCursor) loadArtifactHistory(artifactHistoryLink, artifactHistoryCursor, artifactHistoryPage + 1);
+  });
+  byID("artifact-impact-first").addEventListener("click", () => loadArtifactImpact());
+  byID("artifact-impact-next").addEventListener("click", () => {
+    if (artifactImpactCursor) loadArtifactImpact(artifactImpactCursor, artifactImpactPage + 1);
+  });
+  byID("artifact-link-inspect").addEventListener("click", () => {
+    const revision = byID("artifact-link-revision").value.trim();
+    if (!validUUID(revision)) { message("item-artifact-error", "Enter a nonzero artifact revision UUID."); return; }
+    openArtifact(revision, { project: currentProject, item: currentItemUUID });
+  });
+  byID("artifact-register-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const itemKey = artifactItemKey;
+    const payload = Object.fromEntries([...new FormData(event.target)].map(([key, value]) => [key, value.trim()]).filter(([, value]) => value !== ""));
+    for (const key of ["ci_attempt", "cairn_version"]) {
+      if (payload[key] !== undefined) {
+        payload[key] = Number(payload[key]);
+        if (!Number.isSafeInteger(payload[key]) || payload[key] < 1) { message("item-artifact-error", "Attempt and version must be positive whole numbers."); return; }
+      }
+    }
+    if (payload.cairn_record_id && !validUUID(payload.cairn_record_id)) { message("item-artifact-error", "Enter a nonzero Cairn record UUID."); return; }
+    await write("/api/work/artifact/register", payload, async revision => {
+      if (!validUUID(revision.revision_id) || !validUUID(revision.artifact_id) || revision.artifact?.kind !== payload.kind) {
+        throw new Error("Registered artifact identity was not returned");
+      }
+      if (itemKey !== artifactItemKey) return;
+      byID("artifact-link-revision").value = revision.revision_id;
+      message("item-artifact-notice", `Registered revision ${revision.revision_id}. Choose a role and use “Link revision to this item” to create the link.`);
+      byID("artifact-register-details").open = false;
+      byID("artifact-link-revision").focus();
+      await loadItemArtifacts();
+    }, "item-artifact-error");
+  });
+  byID("artifact-link-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const project = currentProject, item = currentItemUUID, revisionID = byID("artifact-link-revision").value.trim();
+    if (!validUUID(revisionID)) { message("item-artifact-error", "Enter a nonzero artifact revision UUID."); return; }
+    const payload = { project, item_uuid: item, revision_id: revisionID, role: byID("artifact-link-role").value, rationale: byID("artifact-link-rationale").value.trim() };
+    await write("/api/work/artifact/link", payload, async link => {
+      if (!validUUID(link.link_id) || link.plane_item_uuid !== item || link.revision_id !== revisionID || link.role !== payload.role || link.state !== "active") {
+        throw new Error("Exact artifact link was not confirmed");
+      }
+      if (currentProject !== project || currentItemUUID !== item) return;
+      clearArtifactHistory();
+      const links = await loadItemArtifacts();
+      const retained = links?.find(row => row.link_id === link.link_id);
+      if (!retained || retained.revision_id !== revisionID || retained.revision !== link.revision || retained.state !== "active" || (retained.rationale || "") !== (link.rationale || "")) {
+        throw new Error("Saved link could not be matched to its current read; inspect the item before retrying");
+      }
+      message("item-artifact-notice", (link.rationale || "") === payload.rationale ? `Revision linked as ${link.role}.`
+        : "An existing active link was returned. Its retained reason is shown in the link list; the new reason was not saved.");
+    }, "item-artifact-error");
+  });
+  byID("artifact-purge-btn").addEventListener("click", async () => {
+    const revision = artifactRevision;
+    if (!revision || !confirm(`Purge all local metadata for artifact ${revision.artifact_id}? This affects every registered revision of this artifact. External files and services are unchanged.`)) return;
+    const sequence = artifactRequest, requestedRevision = artifactRevisionID;
+    await write("/api/work/artifact/purge", { artifact_id: revision.artifact_id }, result => {
+      if (!result.purged || result.artifact_id !== revision.artifact_id) throw new Error("Purge was not confirmed for this artifact");
+      if (sequence !== artifactRequest || requestedRevision !== artifactRevisionID || byID("artifact-page").hidden) return;
+      artifactRequest++;
+      artifactRevision = null;
+      byID("artifact-revision-section").hidden = byID("artifact-impact-section").hidden = true;
+      byID("artifact-revision-details").replaceChildren();
+      byID("artifact-impacts").replaceChildren();
+      byID("artifact-purge-btn").disabled = true;
+      message("artifact-notice", `Purged local metadata for artifact ${revision.artifact_id}.`);
+    }, "artifact-error");
+  });
+  window.addEventListener("popstate", loadRoute);
+
   byID("modal-close").addEventListener("click", closeDetail);
   document.addEventListener("keydown", event => {
     const modal = !byID("login-modal").hidden ? byID("login-modal") : !byID("detail-modal").hidden ? byID("detail-modal") : null;
@@ -410,7 +929,7 @@
       if (!writing) closeDetail();
     }
     if (event.key === "Tab") {
-      const nodes = [...modal.querySelectorAll("button, a, input, select, textarea")].filter(node => !node.disabled && node.getClientRects().length);
+      const nodes = [...modal.querySelectorAll("button, a, input, select, textarea, summary")].filter(node => !node.disabled && node.getClientRects().length);
       const first = nodes[0], last = nodes[nodes.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -452,7 +971,7 @@
       message("login-error");
       syncModalState();
       await loadProjects();
-      byID("project-select").focus();
+      await loadRoute();
     } catch (error) {
       message("login-error", "Login failed: " + error.message);
     } finally { button.disabled = false; }
@@ -463,6 +982,7 @@
       if (session.authenticated) {
         csrfToken = session.csrf_token || csrfToken;
         await loadProjects();
+        await loadRoute();
       } else showLogin();
     } catch (error) {
       showLogin();
