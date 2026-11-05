@@ -44,8 +44,12 @@ missing, nonpositive and noncurrent revisions without changing the exact row.
 `review.md` separates these results from the screenshot inspection that the
 reviewing agent must perform. Screenshots and credentials are never committed.
 
-The stale fixture ages only the disposable refresh observation timestamps to
-exercise the clock boundary, then performs a real failing refresh. The unavailable fixture
+The stale fixture ages only the disposable refresh observation timestamps, then
+performs a real failing refresh. The freshness fixture starts with a successful
+snapshot 116 seconds old and waits for the real server and browser to cross the
+two-minute boundary. It requires a new HTTP read reporting stale data, the stale
+badge on both viewports, an unchanged retained snapshot and no Plane invocation.
+It does not replace the browser clock. The unavailable fixture
 publishes and associates an actual request, then forgets its payload through the
 operator preview/forget contract. Every other work transition uses the public
 CLI or browser. These cases do not establish native delivery or model behavior.
@@ -64,6 +68,9 @@ the board, progress, blockers and coordination projections described above.
 Scope selection is explicit in `report.json`. Required routes and commands in
 either scope fail when absent. Run WC02 against a candidate containing its Store,
 CLI and operator HTTP handlers, with the matching browser files.
+For a targeted regression check, repeat `--state` for each state to execute,
+such as `--state freshness --state stale`. The report lists all excluded states;
+a targeted pass does not establish the omitted workflows.
 
 The artifact scope registers all four kinds through real browser forms on both
 viewports, links and removes exact revisions, checks persisted state through the
