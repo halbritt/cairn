@@ -955,7 +955,7 @@ def main():
     parser.add_argument("--candidate-manifest", type=Path,
                         help="verified cairn.work-ui-source/1 manifest for a captured immutable source directory")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--scope", choices=("wc01", "wc02"), default="wc01",
+    parser.add_argument("--scope", choices=("wc01", "wc02", "coordination"), default="wc01",
                         help="explicit acceptance scope; required commands/routes fail within the selected scope")
     parser.add_argument("--state", action="append", default=[],
                         help="run only this explicit state within the selected scope; repeatable, exclusions recorded")
@@ -973,6 +973,13 @@ def main():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         fixture_class = module.artifact_fixture(Fixture, uid, dump, require)
+    elif args.scope == "coordination":
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("work_ui_coordination", ASSETS / "coordination.py")
+        require(spec is not None and spec.loader is not None, "coordination acceptance module is missing")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        fixture_class = module.coordination_fixture(Fixture, uid, dump, require)
     fixture = fixture_class(args)
     try:
         fixture.check("fixture setup and execution", fixture.run, category="fixture")

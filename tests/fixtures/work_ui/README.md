@@ -106,3 +106,21 @@ Current-read cases purge a source through the real CLI and require a refused
 impact read to clear old metadata. Another case forwards a real purge reply only
 after browser Back selects a different revision; that reply must not replace the
 new view. A malformed trailing JSON body must refuse without registering a row.
+
+## Coordination panel preparation
+
+The isolated `--scope coordination` fixture is a static draft awaiting a coherent
+WC01/WC03/WC04 backend. It creates real registered owners, request and response-group
+dependencies, waits, cancellation and exact work associations through existing
+CLI/API operations. Its current cases check wait membership/provenance/pagination,
+an unsupported recipient, empty membership and disabled retained reads. Missing
+schema or the selected operator endpoint fails; no successful Cairn reply is
+substituted. It compares complete retained coordination rows around browser reads.
+
+This scope does not yet establish complete coordination acceptance. Its report
+lists pending native supported-notice lifecycle/pagination, restore/privacy,
+delayed-reply/refusal and timed-read cases. Supported quiet-notice setup must reuse
+the verified native fixture's physically activated launch/session binding; no
+direct SQL binding or queue insertion is permitted. The native fixture callback
+and backend composition are pending. Do not report this draft as runtime-tested
+or integrate it into the frozen WC02 browser proof.
