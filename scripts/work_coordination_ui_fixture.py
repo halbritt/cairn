@@ -28,7 +28,7 @@ ASSETS = ROOT / "tests/fixtures/work_ui"
 ORIGIN = "https://plane.fixture.invalid"
 NAMESPACE = uuid.UUID("f431dcf6-f8f9-4bb9-8905-10b2e24671ab")
 LONG_TITLE = 'Untrusted <img src=x onerror="window.workUiInjected=true"> ' + "long-title-" * 35
-STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "freshness", "freshness_delayed", "presence", "disabled", "auth_rejected", "unavailable", "typed")
+STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "freshness", "freshness_delayed", "freshness_read_failed", "presence", "disabled", "auth_rejected", "unavailable", "typed")
 WEB_FILES = ("web/workview/app.js", "web/workview/index.html", "web/workview/styles.css")
 EXTERNAL_FIELDS = ("identifier", "title", "state_id", "state_name", "state_group",
                    "assignee_ids", "assignee_names", "updated_at_source", "source_url")
@@ -394,6 +394,42 @@ class Fixture:
                   "--target-id", self.session["agent_id"] + ":" + self.session["execution_id"])
         if viewport == "desktop":
             self.work("blocker", "add", "--project", self.slug, "--item", self.item_id, "--text", "Retained selected blocker for phone")
+
+    def browser_freshness_read_failure(self, page, viewport):
+        from playwright.sync_api import expect
+        self.age_refresh_window()
+        self.host.sql("UPDATE cairn.work_project SET last_successful_refresh_at=clock_timestamp()-interval '116 seconds'")
+        self.report.setdefault("clock_staging", []).append(dict(collection=self.collection,
+            field="last_successful_refresh_at", purpose="fail the real boundary read after an initially fresh observation"))
+        page.reload()
+        badge = page.locator("#staleness-indicator")
+        expect(badge).to_have_class("badge fresh")
+        last = badge.get_attribute("data-last-successful-refresh")
+        displayed_timestamp = badge.inner_text().removeprefix("Last refreshed ")
+        require(last, "fresh badge did not retain its last successful refresh timestamp")
+        cards = page.locator(".work-card").all_text_contents()
+        snapshot = self.work("list", "--project", self.slug)
+        calls = len(self.plane_calls())
+        observed = []
+        def drop_boundary_response(route):
+            response = route.fetch()
+            require(response.ok and response.json()["project"]["is_stale"] is True,
+                    "failed read did not reach the actual stale Store projection")
+            observed.append(response.status)
+            route.abort("failed")
+        page.route("**/api/work/items?*", drop_boundary_response, times=1)
+        expect(badge).to_contain_text("Freshness unknown; last read failed", timeout=9000)
+        expect(badge).to_have_class("badge stale")
+        expect(badge).to_have_attribute("data-last-successful-refresh", last)
+        expect(badge).to_contain_text("last successful refresh")
+        expect(badge).to_contain_text(displayed_timestamp)
+        expect(page.locator("#view-error")).to_contain_text("Could not load work items")
+        require(observed == [200], "did not drop exactly one actual successful Store read")
+        require(page.locator(".work-card").all_text_contents() == cards, "failed read replaced retained cards")
+        require(snapshot_projection(self.work("list", "--project", self.slug)) == snapshot_projection(snapshot),
+                "failed read changed the retained snapshot")
+        require(len(self.plane_calls()) == calls, "failed display read invoked Plane")
+        page.screenshot(path=str(self.output / ("freshness-read-failed-" + viewport + ".png")), full_page=True)
 
     def browser_disabled(self, page):
         from playwright.sync_api import expect
@@ -765,7 +801,7 @@ class Fixture:
                         ui.goto(self.url)
                         self.check("browser mutations " + viewport,
                                    lambda: self.browser_mutations(ui, viewport), ui)
-            elif name in ("typed", "freshness", "freshness_delayed", "presence", "disabled"):
+            elif name in ("typed", "freshness", "freshness_delayed", "freshness_read_failed", "presence", "disabled"):
                 for viewport, size in (("desktop", dict(width=1440, height=1000)),
                                        ("phone", dict(width=390, height=844))):
                     with browser.new_context(viewport=size, storage_state=storage) as targets:
@@ -780,6 +816,8 @@ class Fixture:
                                        lambda: self.browser_presence(ui, viewport), ui)
                         elif name == "disabled":
                             self.check("disabled project retained detail " + viewport, lambda: self.browser_disabled(ui), ui)
+                        elif name == "freshness_read_failed":
+                            self.check("failed boundary read " + viewport, lambda: self.browser_freshness_read_failure(ui, viewport), ui)
                         else:
                             self.check("fresh-to-stale clock transition " + viewport,
                                        lambda: self.browser_freshness_transition(ui, delayed=name == "freshness_delayed"), ui)
@@ -788,7 +826,11 @@ class Fixture:
                 if name == "empty_failed":
                     self.check("browser empty-cache refresh failure", lambda: self.browser_failed_refresh(page), page)
                 self.check("state " + name, lambda: self.visual_state_assertions(page, name), page)
-            self.check("UIPass " + name, lambda: self.uipass(name, storage))
+            if name != "freshness_read_failed":
+                self.check("UIPass " + name, lambda: self.uipass(name, storage))
+            else:
+                self.report.setdefault("uipass_scope_exclusions", []).append(dict(state=name,
+                    reason="The actual response-loss fault belongs to the existing Playwright page; a new UIPass navigation would read a different state. Inspect the two retained fault screenshots."))
             self.check("view preserves coordination " + name,
                        lambda: require(self.coordination_state() == self.expected_coordination_state,
                                        "work browser changed session, event or delivery state"))

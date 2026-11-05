@@ -53,6 +53,11 @@ badge on both viewports, an unchanged retained snapshot and no Plane invocation.
 It does not replace the browser clock. The delayed-freshness case delivers an
 actual fresh HTTP response only after its snapshot passes two minutes, then
 requires another real read to correct the display.
+The `freshness_read_failed` check drops one genuine boundary-read response and
+requires an unknown-freshness label with the retained timestamp/cards and a read
+error. Its desktop/phone screenshots come from the affected pages. The report
+explicitly excludes this page-local fault from UIPass, whose separate navigation
+would read a different state; inspect both retained fault screenshots.
 The presence case stages only the actual execution's disposable expiry timestamp,
 then verifies the qualified status changes at that deadline. It checks the exact
 expiry and Plane assignee fields, preserves focused inline and note/association
