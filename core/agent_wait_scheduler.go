@@ -304,7 +304,9 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 		var currentBinding, currentVisibility string
 		err = tx.QueryRow(ctx, `SELECT binding, visibility FROM cairn.agent_session WHERE agent_id=$1 AND repo=$2 FOR SHARE`, item.ownerAgentUUID, item.collection).Scan(&currentBinding, &currentVisibility)
 		if errors.Is(err, pgx.ErrNoRows) || (item.bindingID != "" && currentBinding != item.bindingID) {
-			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='binding_revoked', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='binding_revoked', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+				return 0, err
+			}
 			continue
 		}
 		if err != nil {
@@ -317,7 +319,9 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 		var depSensitivity string
 		err = tx.QueryRow(ctx, `SELECT record_id::text, version, sensitivity FROM cairn.agent_event WHERE event_id=$1`, item.dependencyEventUUID).Scan(&depRecordID, &depVersion, &depSensitivity)
 		if errors.Is(err, pgx.ErrNoRows) {
-			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+				return 0, err
+			}
 			continue
 		}
 		if err != nil {
@@ -337,42 +341,45 @@ FOR UPDATE OF o, w SKIP LOCKED`, repo, limit)
 			}
 		}
 
-		// Collect referenced record IDs, deduplicate and sort in ascending UUID order
-		refMap := make(map[string]struct{})
+		// Collect referenced (recordID, version) pairs, deduplicate, and sort by ascending
+		// recordID (then version) so FOR SHARE OF m locks memory_record in deterministic UUID order.
+		type recordVerKey struct {
+			recordID string
+			version  int
+		}
+		refMap := make(map[recordVerKey]struct{})
 		if depRecordID != "" {
-			refMap[depRecordID] = struct{}{}
+			refMap[recordVerKey{recordID: depRecordID, version: depVersion}] = struct{}{}
 		}
 		if respRecordID != "" {
-			refMap[respRecordID] = struct{}{}
+			refMap[recordVerKey{recordID: respRecordID, version: respVersion}] = struct{}{}
 		}
-		sortedRecordIDs := make([]string, 0, len(refMap))
-		for rid := range refMap {
-			sortedRecordIDs = append(sortedRecordIDs, rid)
+		sortedRefs := make([]recordVerKey, 0, len(refMap))
+		for rv := range refMap {
+			sortedRefs = append(sortedRefs, rv)
 		}
-		sort.Strings(sortedRecordIDs)
+		sort.Slice(sortedRefs, func(i, j int) bool {
+			if sortedRefs[i].recordID != sortedRefs[j].recordID {
+				return sortedRefs[i].recordID < sortedRefs[j].recordID
+			}
+			return sortedRefs[i].version < sortedRefs[j].version
+		})
 
-		// Lock referenced memory records with FOR SHARE OF m in ascending UUID order
 		type recordInfo struct {
 			sensitivity    string
 			lifecycle      string
 			payloadDeleted bool
 		}
-		recInfos := make(map[string]recordInfo)
+		recInfos := make(map[recordVerKey]recordInfo, len(sortedRefs))
 		recordsIneligible := false
-		for _, rid := range sortedRecordIDs {
-			var ver int
-			if rid == depRecordID {
-				ver = depVersion
-			} else {
-				ver = respVersion
-			}
+		for _, rv := range sortedRefs {
 			var rSens, rLife string
 			var rDeleted bool
 			err = tx.QueryRow(ctx, `SELECT m.sensitivity, m.lifecycle, v.payload_deleted_by IS NOT NULL 
 FROM cairn.memory_record m 
 JOIN cairn.record_version v ON v.record_id=m.record_id 
 WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3
-FOR SHARE OF m`, rid, ver, item.collection).Scan(&rSens, &rLife, &rDeleted)
+FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, &rDeleted)
 			if errors.Is(err, pgx.ErrNoRows) || rLife != "active" || rDeleted {
 				recordsIneligible = true
 				break
@@ -380,17 +387,19 @@ FOR SHARE OF m`, rid, ver, item.collection).Scan(&rSens, &rLife, &rDeleted)
 			if err != nil {
 				return 0, err
 			}
-			recInfos[rid] = recordInfo{sensitivity: rSens, lifecycle: rLife, payloadDeleted: rDeleted}
+			recInfos[rv] = recordInfo{sensitivity: rSens, lifecycle: rLife, payloadDeleted: rDeleted}
 		}
 		if recordsIneligible {
-			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='source_ineligible', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+				return 0, err
+			}
 			continue
 		}
 
-		depRecordSensitivity := recInfos[depRecordID].sensitivity
+		depRecordSensitivity := recInfos[recordVerKey{recordID: depRecordID, version: depVersion}].sensitivity
 		var respRecordSensitivity string
 		if respRecordID != "" {
-			respRecordSensitivity = recInfos[respRecordID].sensitivity
+			respRecordSensitivity = recInfos[recordVerKey{recordID: respRecordID, version: respVersion}].sensitivity
 		}
 
 		// 4. Intersect original registration destination ceiling with owner's current valid binding visibility
@@ -400,7 +409,9 @@ FOR SHARE OF m`, rid, ver, item.collection).Scan(&rSens, &rLife, &rDeleted)
 		depIsLocal := (depSensitivity == "local" || depRecordSensitivity == "local")
 		respIsLocal := (respSensitivity == "local" || respRecordSensitivity == "local")
 		if (depIsLocal || respIsLocal) && !allowsLocal {
-			_, _ = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='ceiling_exceeded', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restricted', error_reason='ceiling_exceeded', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+				return 0, err
+			}
 			continue
 		}
 
