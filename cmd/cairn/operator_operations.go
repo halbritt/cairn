@@ -199,6 +199,51 @@ func buildOperatorOperations() map[string]operatorOperation {
 		storeOperation("schedule-cancel", (*core.Store).CancelSchedule),
 		storeOperation("schedule-tick", (*core.Store).TickSchedules),
 
+		// Coordination waits maintenance and feature control.
+		decodedOperation("wait-feature-set", 0, func(ctx context.Context, store *core.Store, req core.WaitFeatureSetRequest) (core.WorkFeatureStatus, error) {
+			return store.SetCoordinationWaitsEnabled(ctx, req)
+		}),
+		decodedOperation("wait-timeout-sweep", 0, func(ctx context.Context, store *core.Store, req core.WaitTimeoutSweepRequest) (core.WaitTimeoutSweepResult, error) {
+			if req.Repo == "" {
+				return core.WaitTimeoutSweepResult{}, invalid("repo is required")
+			}
+			n, err := store.SweepWaitTimeouts(ctx, req.Repo)
+			return core.WaitTimeoutSweepResult{Repo: req.Repo, SweptTimeouts: n}, err
+		}),
+		decodedOperation("wait-outbox-drain", 0, func(ctx context.Context, store *core.Store, req core.WaitOutboxDrainRequest) (core.WaitOutboxDrainResult, error) {
+			if req.Repo == "" {
+				return core.WaitOutboxDrainResult{}, invalid("repo is required")
+			}
+			limit := req.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			n, err := store.DrainWaitOutbox(ctx, req.Repo, limit)
+			return core.WaitOutboxDrainResult{Repo: req.Repo, PublishedNotices: n}, err
+		}),
+		decodedOperation("wait-scheduler-tick", 0, func(ctx context.Context, store *core.Store, req core.WaitSchedulerTickRequest) (core.WaitSchedulerTickResult, error) {
+			if req.Repo == "" {
+				return core.WaitSchedulerTickResult{}, invalid("repo is required")
+			}
+			limit := req.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			swept, err := store.SweepWaitTimeouts(ctx, req.Repo)
+			if err != nil {
+				return core.WaitSchedulerTickResult{}, err
+			}
+			published, err := store.DrainWaitOutbox(ctx, req.Repo, limit)
+			if err != nil {
+				return core.WaitSchedulerTickResult{}, err
+			}
+			return core.WaitSchedulerTickResult{
+				Repo:             req.Repo,
+				SweptTimeouts:    swept,
+				PublishedNotices: published,
+			}, nil
+		}),
+
 		// Retention of diagnostic candidate detail.
 		storeOperation("candidate-retention", (*core.Store).ExpireCandidateDetail),
 		storeOperation("candidate-reclaim", (*core.Store).ReclaimCandidateStorage),

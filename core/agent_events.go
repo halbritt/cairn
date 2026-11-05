@@ -368,7 +368,7 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			delay = policy.DeferSeconds
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline,notice_policy,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14,$15,clock_timestamp())`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline, policy)
 	if err != nil {
 		return AgentEvent{}, err
 	}
@@ -399,7 +399,10 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if err != nil {
 		return event, err
 	}
-	return event, observeGroupResponse(ctx, tx, event)
+	if err = observeGroupResponse(ctx, tx, event); err != nil {
+		return event, err
+	}
+	return event, resolveWaitsOnEvent(ctx, tx, event)
 }
 
 func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {
@@ -607,7 +610,7 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, tx.Commit(ctx)
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+waitNotificationAdmissionOpen+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, tx.Commit(ctx)
 	}

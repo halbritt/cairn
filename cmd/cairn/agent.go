@@ -109,6 +109,15 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 			},
 		},
 		{
+			Name:        "wait",
+			Operation:   "wait-create",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return commandHelp(waitHelp), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				return waitCommand(ctx, args, input, client)
+			},
+		},
+		{
 			Name:        "clients",
 			Operation:   "clients",
 			AcceptsArgs: true,

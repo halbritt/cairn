@@ -86,6 +86,17 @@ func fenceRestore(ctx context.Context, tx pgx.Tx, reason string) (RestoreFence, 
 	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_schedule SET state='skipped',code='restore_fenced',finished_at=clock_timestamp() WHERE state='pending'`); err != nil {
 		return result, err
 	}
+	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait SET state='restore_fenced',resolved_at=clock_timestamp(),terminal_reason='restore_fenced' WHERE state='waiting'`); err != nil {
+		return result, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='restore_fenced',updated_at=clock_timestamp() WHERE state='pending'`); err != nil {
+		return result, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_wait_notification_fence(event_uuid,generation,fenced_at)
+SELECT reserved_notice_event_uuid,$1,clock_timestamp() FROM cairn.agent_wait WHERE generation<$1
+ON CONFLICT (event_uuid,generation) DO NOTHING`, result.Generation); err != nil {
+		return result, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO cairn.restore_fence(fence_id,generation,reason) VALUES($1,$2,$3)`, result.FenceID, result.Generation, reason)
 	return result, err
 }

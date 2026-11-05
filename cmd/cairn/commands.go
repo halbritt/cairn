@@ -26,6 +26,8 @@ Everyday commands:
   notice-flush --help (publisher rollback of a deferred routine notice)
   watch --help (read-only inbox arrivals with a saved cursor)
   response-group | response-groups (owned reply collections; use --help)
+  wait --help (durable coordination waits: create, get, list, cancel; use --help)
+  work --help (work features and coordination; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
@@ -144,6 +146,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if _, ok := eventCommandOperations[args[0]]; ok {
 		return eventCommand(ctx, args[0], args[1:], input, nil)
 	}
+	if args[0] == "wait" {
+		return waitCommand(ctx, args[1:], input, nil)
+	}
 	if args[0] == "machine" {
 		return machineCommand(ctx, args[1:])
 	}
@@ -180,6 +185,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	defer store.Close()
 	if args[0] == "schedule-serve" {
 		return serveSchedules(ctx, store, args[1:], os.Stderr)
+	}
+	if args[0] == "work" {
+		return workCommand(ctx, store, args[1:])
 	}
 	if args[0] == "run" {
 		return runTask(ctx, store, args[1:])
