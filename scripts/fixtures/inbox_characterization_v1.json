@@ -1,0 +1,2549 @@
+{
+  "baseline_commit": "db45c4474fa7911b5569f2f55ebf2bd19c9a81bb",
+  "identity_policy": "Synthetic request, agent, execution, attempt, event, delivery, lease, result and handle identities remain exact.",
+  "normalization": {
+    "$COORDINATION": "absolute Python oracle path",
+    "$FIXTURE": "per-test disposable root path",
+    "$PYTHON": "current Python interpreter path",
+    "$TIME": "recorded_at, issued_at, compact_issued_at timestamps only"
+  },
+  "oracle_sha256": "92716c54be54a9f2e0fbe4dbd5edc77aecb02d6f7da3422708828376e63b0116",
+  "schema": "cairn.inbox-characterization/1",
+  "traces": {
+    "compact": {
+      "api": [
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "event-renew"
+          ],
+          "input": "{\"delivery_id\": \"d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_id\": \"e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_seconds\": 90}",
+          "operation": "event-renew"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "history"
+          ],
+          "input": "{\"repo\": \"fixture\", \"record_id\": \"9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617\", \"version\": 1}",
+          "operation": "history"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "event-renew"
+          ],
+          "input": "{\"delivery_id\": \"d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_id\": \"e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_seconds\": 90}",
+          "operation": "event-renew"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "history"
+          ],
+          "input": "{\"repo\": \"fixture\", \"record_id\": \"9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617\", \"version\": 1}",
+          "operation": "history"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "event-renew"
+          ],
+          "input": "{\"delivery_id\": \"d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_id\": \"e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"lease_seconds\": 90}",
+          "operation": "event-renew"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "history"
+          ],
+          "input": "{\"repo\": \"fixture\", \"record_id\": \"9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617\", \"version\": 1}",
+          "operation": "history"
+        },
+        {
+          "argv": [
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "",
+          "operation": "ack"
+        },
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "session-inbox-advance"
+          ],
+          "input": "{\"request_id\": \"00000000-0000-0000-0000-000000000067\", \"session\": {\"agent_id\": \"a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11\", \"execution_id\": \"b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22\"}, \"attempt_id\": \"c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607\", \"version\": 1}",
+          "operation": "session-inbox-advance"
+        }
+      ],
+      "handle_entry": {
+        "binding": "fixture",
+        "context": "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+        "issued_at": "$TIME",
+        "native_session_id": "native-1",
+        "schema": "cairn.compact-inbox-handle/1",
+        "state": "$FIXTURE/state/session.json"
+      },
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "",
+          "kind": "ack",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": null,
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "kind": "notice",
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "outputs": [
+        {
+          "exit": 0,
+          "operation": [
+            "read"
+          ],
+          "output": {
+            "body": "Selected synthetic notice.",
+            "kind": "notice",
+            "ok": true,
+            "schema": "cairn.compact-inbox/1",
+            "sender": "agent/requester",
+            "source": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            }
+          }
+        },
+        {
+          "exit": 0,
+          "operation": [
+            "inspect"
+          ],
+          "output": {
+            "context": {
+              "acknowledgement": [
+                "$PYTHON",
+                "$COORDINATION",
+                "inbox",
+                "--context",
+                "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+                "ack"
+              ],
+              "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "batch_advance_request_id": "00000000-0000-0000-0000-000000000067",
+              "commands": {
+                "ack": [
+                  "$FIXTURE/cairn",
+                  "ack",
+                  "--socket",
+                  "$FIXTURE/api.sock",
+                  "--token-file",
+                  "$FIXTURE/token",
+                  "--agent-id",
+                  "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                  "--execution-id",
+                  "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                  "--request-id",
+                  "00000000-0000-0000-0000-000000000065",
+                  "--lease",
+                  "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+                  "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+                ],
+                "complete": [
+                  "$FIXTURE/cairn",
+                  "complete",
+                  "--socket",
+                  "$FIXTURE/api.sock",
+                  "--token-file",
+                  "$FIXTURE/token",
+                  "--agent-id",
+                  "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                  "--execution-id",
+                  "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                  "--request-id",
+                  "00000000-0000-0000-0000-000000000065",
+                  "--lease",
+                  "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+                  "--shareable",
+                  "--stdin",
+                  "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+                ]
+              },
+              "compact_fallback_control": "Cairn notice from agent/requester; exact source 9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617 version 1. Explicitly settle with cairn-inbox settle 0101010101010101 handled after processing; use failed or ignored only with a reason code. Reading or describing this message does not settle it. After confirmed settlement, run cairn-inbox advance 0101010101010101 to inspect the next already-waiting notice in this turn, up to three total. A request or urgent notice waits for the next turn. Settle each item separately. Source is 26 bytes; read its exact text with cairn-inbox read 0101010101010101 before settling.",
+              "compact_handle": "0101010101010101",
+              "compact_issued_at": "$TIME",
+              "completion": [
+                "$PYTHON",
+                "$COORDINATION",
+                "inbox",
+                "--context",
+                "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+                "complete"
+              ],
+              "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "event_id": "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "kind": "notice",
+              "lease_id": "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "native_turn_id": "native-turn-one",
+              "read": [
+                "$FIXTURE/cairn",
+                "agent",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "history"
+              ],
+              "read_input": {
+                "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+                "version": 1
+              },
+              "request_ids": {
+                "completion": "00000000-0000-0000-0000-000000000065",
+                "response": "00000000-0000-0000-0000-000000000066"
+              },
+              "schema": "cairn.session-inbox/1",
+              "sender": "agent/requester",
+              "source": {
+                "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+                "version": 1
+              },
+              "state_dir": "$FIXTURE/state"
+            },
+            "ok": true,
+            "schema": "cairn.compact-inbox/1"
+          }
+        },
+        {
+          "exit": 0,
+          "operation": [
+            "settle",
+            "handled"
+          ],
+          "output": {
+            "attempts": 1,
+            "handle": "0101010101010101",
+            "ok": true,
+            "schema": "cairn.compact-inbox/1",
+            "status": "handled"
+          }
+        },
+        {
+          "exit": 0,
+          "operation": [
+            "advance"
+          ],
+          "output": {
+            "next": null,
+            "ok": true,
+            "remainder": "",
+            "schema": "cairn.compact-inbox-batch/1"
+          }
+        }
+      ]
+    },
+    "drain": {
+      "api": [
+        {
+          "argv": [
+            "agent",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "event-next"
+          ],
+          "input": "{\"repo\": \"fixture\", \"lease_seconds\": 60}",
+          "operation": "event-next"
+        }
+      ],
+      "context": {
+        "acknowledgement": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "ack"
+        ],
+        "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+        "attempt_id": "drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "commands": {
+          "ack": [
+            "$FIXTURE/cairn",
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "complete": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "respond": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ]
+        },
+        "completion": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "complete"
+        ],
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "event_id": "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+        "kind": "request",
+        "lease_id": "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "read": [
+          "$FIXTURE/cairn",
+          "agent",
+          "--socket",
+          "$FIXTURE/api.sock",
+          "--token-file",
+          "$FIXTURE/token",
+          "history"
+        ],
+        "read_input": {
+          "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+          "version": 1
+        },
+        "request_ids": {
+          "completion": "00000000-0000-0000-0000-000000000065",
+          "response": "00000000-0000-0000-0000-000000000066"
+        },
+        "response": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "respond"
+        ],
+        "route": "drain",
+        "schema": "cairn.session-inbox/1",
+        "sender": "agent/requester",
+        "source": {
+          "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+          "version": 1
+        },
+        "state_dir": "$FIXTURE/state"
+      },
+      "exit": 0,
+      "mode": "0o600",
+      "output": {
+        "acknowledgement": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "ack"
+        ],
+        "completion": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "complete"
+        ],
+        "context": "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "event_id": "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "instructions": "Read the source with read and read_input. For a request, run completion with a concise selected result on stdin, then response with --version RESULT_VERSION RESULT_RECORD_UUID from its result. For a response or notice, run acknowledgement. Rerun the same command to retry an uncertain outcome. Run drain again for the next item.",
+        "kind": "request",
+        "lease_id": "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "read": [
+          "$FIXTURE/cairn",
+          "agent",
+          "--socket",
+          "$FIXTURE/api.sock",
+          "--token-file",
+          "$FIXTURE/token",
+          "history"
+        ],
+        "read_input": {
+          "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+          "version": 1
+        },
+        "renew": [
+          "$FIXTURE/cairn",
+          "renew",
+          "--socket",
+          "$FIXTURE/api.sock",
+          "--token-file",
+          "$FIXTURE/token",
+          "--agent-id",
+          "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "--execution-id",
+          "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+          "--lease",
+          "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "--lease-seconds",
+          "60",
+          "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+        ],
+        "response": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/drain-e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "respond"
+        ],
+        "schema": "cairn.inbox-drain/1",
+        "sender": "agent/requester"
+      }
+    },
+    "explicit_ack_grammar": {
+      "api": [
+        {
+          "argv": [
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "",
+          "operation": "ack"
+        }
+      ],
+      "exit": 0,
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "",
+          "kind": "ack",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": null,
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "kind": "request",
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "output": {
+        "data": {
+          "attempts": 1,
+          "state": "handled"
+        },
+        "ok": true,
+        "schema": "cairn.response/1",
+        "status": "OK"
+      }
+    },
+    "explicit_context_grammar": {
+      "api": [
+        {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        {
+          "argv": [
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "input": "",
+          "operation": "publish"
+        }
+      ],
+      "complete": {
+        "exit": 0,
+        "output": {
+          "data": {
+            "result": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            },
+            "state": "handled"
+          },
+          "ok": true,
+          "schema": "cairn.response/1",
+          "status": "OK"
+        }
+      },
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "kind": "request",
+        "response": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "code": "OK",
+          "input": "",
+          "kind": "respond",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000066",
+          "result": null,
+          "status": "committed"
+        },
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "premature": {
+        "exit": 2,
+        "status": "INVALID_REQUEST"
+      },
+      "respond": {
+        "exit": 0,
+        "output": {
+          "data": {
+            "event_id": "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "ref": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            }
+          },
+          "ok": true,
+          "schema": "cairn.response/1",
+          "status": "OK"
+        }
+      },
+      "wrong_version": {
+        "exit": 2,
+        "status": "INVALID_REQUEST"
+      }
+    },
+    "explicit_final_retries": [
+      {
+        "api_request": {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        "api_sends": 4,
+        "changed": {
+          "exit": 4,
+          "status": "IDEMPOTENCY_CONFLICT"
+        },
+        "initial": {
+          "data": {
+            "result": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            },
+            "state": "handled"
+          },
+          "ok": true,
+          "schema": "cairn.response/1",
+          "status": "OK"
+        },
+        "original": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "retries": [
+          {
+            "code": "OK",
+            "exit": 4,
+            "replay_code": "STALE_SESSION",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "STALE_SESSION"
+            },
+            "status": "committed"
+          },
+          {
+            "code": "OK",
+            "exit": 4,
+            "replay_code": "NOT_FOUND",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "NOT_FOUND"
+            },
+            "status": "committed"
+          },
+          {
+            "code": "OK",
+            "exit": 4,
+            "replay_code": "PAYLOAD_UNAVAILABLE",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "PAYLOAD_UNAVAILABLE"
+            },
+            "status": "committed"
+          }
+        ],
+        "watcher_pending": [
+          "reply_possible"
+        ]
+      },
+      {
+        "api_request": {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        "api_sends": 4,
+        "changed": {
+          "exit": 4,
+          "status": "IDEMPOTENCY_CONFLICT"
+        },
+        "initial": {
+          "ok": false,
+          "schema": "cairn.response/1",
+          "status": "HOLD_RELEASED"
+        },
+        "original": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "HOLD_RELEASED",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "status": "refused"
+        },
+        "retries": [
+          {
+            "code": "HOLD_RELEASED",
+            "exit": 4,
+            "replay_code": "STALE_SESSION",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "STALE_SESSION"
+            },
+            "status": "refused"
+          },
+          {
+            "code": "HOLD_RELEASED",
+            "exit": 4,
+            "replay_code": "NOT_FOUND",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "NOT_FOUND"
+            },
+            "status": "refused"
+          },
+          {
+            "code": "HOLD_RELEASED",
+            "exit": 4,
+            "replay_code": "PAYLOAD_UNAVAILABLE",
+            "reply": {
+              "ok": false,
+              "schema": "cairn.response/1",
+              "status": "PAYLOAD_UNAVAILABLE"
+            },
+            "status": "refused"
+          }
+        ],
+        "watcher_pending": []
+      }
+    ],
+    "finish_reply": {
+      "api": [
+        {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        {
+          "argv": [
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "input": "",
+          "operation": "publish"
+        }
+      ],
+      "before_sends": [
+        {
+          "directory_mode": "0o700",
+          "file_mode": "0o600",
+          "journal": {
+            "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "completion": {
+              "argv": [
+                "$FIXTURE/cairn",
+                "complete",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "--agent-id",
+                "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                "--execution-id",
+                "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                "--request-id",
+                "00000000-0000-0000-0000-000000000065",
+                "--lease",
+                "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+                "--shareable",
+                "--stdin",
+                "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+              ],
+              "input": "Selected result",
+              "kind": "complete",
+              "recorded_at": "$TIME",
+              "request_id": "00000000-0000-0000-0000-000000000065",
+              "status": "pending"
+            },
+            "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "finish_reply": {
+              "argv": [
+                "$FIXTURE/cairn",
+                "publish",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "--agent-id",
+                "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                "--execution-id",
+                "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                "--request-id",
+                "00000000-0000-0000-0000-000000000066",
+                "--to",
+                "agent/requester",
+                "--kind",
+                "response",
+                "--causation-id",
+                "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+              ],
+              "request_id": "00000000-0000-0000-0000-000000000066"
+            },
+            "kind": "request",
+            "schema": "cairn.inbox-intent/1",
+            "session": {
+              "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+            }
+          }
+        },
+        {
+          "directory_mode": "0o700",
+          "file_mode": "0o600",
+          "journal": {
+            "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "completion": {
+              "argv": [
+                "$FIXTURE/cairn",
+                "complete",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "--agent-id",
+                "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                "--execution-id",
+                "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                "--request-id",
+                "00000000-0000-0000-0000-000000000065",
+                "--lease",
+                "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+                "--shareable",
+                "--stdin",
+                "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+              ],
+              "code": "OK",
+              "input": "Selected result",
+              "kind": "complete",
+              "recorded_at": "$TIME",
+              "request_id": "00000000-0000-0000-0000-000000000065",
+              "result": {
+                "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+                "version": 1
+              },
+              "status": "committed"
+            },
+            "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "finish_reply": {
+              "argv": [
+                "$FIXTURE/cairn",
+                "publish",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "--agent-id",
+                "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                "--execution-id",
+                "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                "--request-id",
+                "00000000-0000-0000-0000-000000000066",
+                "--to",
+                "agent/requester",
+                "--kind",
+                "response",
+                "--causation-id",
+                "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+              ],
+              "request_id": "00000000-0000-0000-0000-000000000066"
+            },
+            "kind": "request",
+            "response": {
+              "argv": [
+                "$FIXTURE/cairn",
+                "publish",
+                "--socket",
+                "$FIXTURE/api.sock",
+                "--token-file",
+                "$FIXTURE/token",
+                "--agent-id",
+                "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+                "--execution-id",
+                "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+                "--request-id",
+                "00000000-0000-0000-0000-000000000066",
+                "--to",
+                "agent/requester",
+                "--kind",
+                "response",
+                "--causation-id",
+                "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+                "--version",
+                "1",
+                "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+              ],
+              "expected_ref": {
+                "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+                "version": 1
+              },
+              "input": "",
+              "kind": "respond",
+              "recorded_at": "$TIME",
+              "request_id": "00000000-0000-0000-0000-000000000066",
+              "status": "pending"
+            },
+            "schema": "cairn.inbox-intent/1",
+            "session": {
+              "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+            }
+          }
+        }
+      ],
+      "context": {
+        "acknowledgement": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "ack"
+        ],
+        "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "commands": {
+          "ack": [
+            "$FIXTURE/cairn",
+            "ack",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "complete": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "respond": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ]
+        },
+        "completion": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "complete"
+        ],
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "event_id": "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+        "finish_reply": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "finish-reply"
+        ],
+        "kind": "request",
+        "lease_id": "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "read": [
+          "$FIXTURE/cairn",
+          "agent",
+          "--socket",
+          "$FIXTURE/api.sock",
+          "--token-file",
+          "$FIXTURE/token",
+          "history"
+        ],
+        "read_input": {
+          "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+          "version": 1
+        },
+        "request_ids": {
+          "completion": "00000000-0000-0000-0000-000000000065",
+          "response": "00000000-0000-0000-0000-000000000066"
+        },
+        "response": [
+          "$PYTHON",
+          "$COORDINATION",
+          "inbox",
+          "--context",
+          "$FIXTURE/state/inbox/c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607.json",
+          "respond"
+        ],
+        "schema": "cairn.session-inbox/1",
+        "sender": "agent/requester",
+        "source": {
+          "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+          "version": 1
+        },
+        "state_dir": "$FIXTURE/state"
+      },
+      "exit": 0,
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "finish_reply": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "request_id": "00000000-0000-0000-0000-000000000066"
+        },
+        "kind": "request",
+        "response": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "code": "OK",
+          "expected_ref": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "input": "",
+          "kind": "respond",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000066",
+          "result": null,
+          "status": "committed"
+        },
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "output": {
+        "data": {
+          "completion_committed": true,
+          "reply_committed": true,
+          "reply_pending": false,
+          "reply_refused": false,
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "schema": "cairn.finish-reply/1"
+        },
+        "message": "",
+        "ok": true,
+        "schema": "cairn.response/1",
+        "status": "OK"
+      }
+    },
+    "inspection": [
+      {
+        "journal": "absent",
+        "settled": true
+      },
+      {
+        "journal": "corrupt",
+        "settled": false
+      },
+      {
+        "journal": "non_object",
+        "settled": false
+      },
+      {
+        "journal": "pending",
+        "settled": false
+      },
+      {
+        "journal": "committed",
+        "settled": true
+      },
+      {
+        "journal": "refused",
+        "settled": true
+      },
+      {
+        "journal": "unknown",
+        "settled": false
+      }
+    ],
+    "lock_contention": {
+      "api_sends": 1,
+      "explicit_exit": 7,
+      "explicit_status": "SESSION_BUSY",
+      "explicit_wait": 30.0,
+      "watcher_pending": null,
+      "watcher_wait": 0
+    },
+    "missing_result_recovery": [
+      {
+        "after": {
+          "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "completion": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "code": "OK",
+            "input": "Selected result",
+            "kind": "complete",
+            "recorded_at": "$TIME",
+            "replay_code": "OK",
+            "request_id": "00000000-0000-0000-0000-000000000065",
+            "result": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            },
+            "status": "committed"
+          },
+          "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "finish_reply": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "request_id": "00000000-0000-0000-0000-000000000066"
+          },
+          "kind": "request",
+          "response": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--version",
+              "1",
+              "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+            ],
+            "code": "OK",
+            "expected_ref": {
+              "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+              "version": 1
+            },
+            "input": "",
+            "kind": "respond",
+            "recorded_at": "$TIME",
+            "request_id": "00000000-0000-0000-0000-000000000066",
+            "result": null,
+            "status": "committed"
+          },
+          "schema": "cairn.inbox-intent/1",
+          "session": {
+            "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+          }
+        },
+        "api": [
+          {
+            "argv": [
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "input": "Selected result",
+            "operation": "complete"
+          },
+          {
+            "argv": [
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "input": "Selected result",
+            "operation": "complete"
+          },
+          {
+            "argv": [
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--version",
+              "1",
+              "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+            ],
+            "input": "",
+            "operation": "publish"
+          }
+        ],
+        "before": {
+          "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "completion": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "code": "OK",
+            "input": "Selected result",
+            "kind": "complete",
+            "recorded_at": "$TIME",
+            "request_id": "00000000-0000-0000-0000-000000000065",
+            "result": null,
+            "status": "committed"
+          },
+          "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "finish_reply": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "request_id": "00000000-0000-0000-0000-000000000066"
+          },
+          "kind": "request",
+          "schema": "cairn.inbox-intent/1",
+          "session": {
+            "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+          }
+        },
+        "exit": 7,
+        "output": {
+          "data": {
+            "completion_committed": true,
+            "reply_committed": false,
+            "reply_pending": true,
+            "reply_refused": false,
+            "result": null,
+            "schema": "cairn.finish-reply/1"
+          },
+          "message": "finish-reply is partial, refused, or uncertain; retry pending stages unchanged or reconcile a refusal",
+          "ok": false,
+          "schema": "cairn.response/1",
+          "status": "RESULT_UNCONFIRMED"
+        },
+        "recovery": "OK",
+        "settled_index": true,
+        "watcher_pending": []
+      },
+      {
+        "after": {
+          "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "completion": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "code": "OK",
+            "input": "Selected result",
+            "kind": "complete",
+            "recorded_at": "$TIME",
+            "replay_code": "API_CONNECTION_FAILED",
+            "request_id": "00000000-0000-0000-0000-000000000065",
+            "result": null,
+            "status": "committed"
+          },
+          "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "finish_reply": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "request_id": "00000000-0000-0000-0000-000000000066"
+          },
+          "kind": "request",
+          "schema": "cairn.inbox-intent/1",
+          "session": {
+            "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+          }
+        },
+        "api": [
+          {
+            "argv": [
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "input": "Selected result",
+            "operation": "complete"
+          },
+          {
+            "argv": [
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "input": "Selected result",
+            "operation": "complete"
+          }
+        ],
+        "before": {
+          "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "completion": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "complete",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000065",
+              "--lease",
+              "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+              "--shareable",
+              "--stdin",
+              "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "code": "OK",
+            "input": "Selected result",
+            "kind": "complete",
+            "recorded_at": "$TIME",
+            "request_id": "00000000-0000-0000-0000-000000000065",
+            "result": null,
+            "status": "committed"
+          },
+          "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+          "finish_reply": {
+            "argv": [
+              "$FIXTURE/cairn",
+              "publish",
+              "--socket",
+              "$FIXTURE/api.sock",
+              "--token-file",
+              "$FIXTURE/token",
+              "--agent-id",
+              "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+              "--execution-id",
+              "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+              "--request-id",
+              "00000000-0000-0000-0000-000000000066",
+              "--to",
+              "agent/requester",
+              "--kind",
+              "response",
+              "--causation-id",
+              "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+            ],
+            "request_id": "00000000-0000-0000-0000-000000000066"
+          },
+          "kind": "request",
+          "schema": "cairn.inbox-intent/1",
+          "session": {
+            "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+          }
+        },
+        "exit": 7,
+        "output": {
+          "data": {
+            "completion_committed": true,
+            "reply_committed": false,
+            "reply_pending": true,
+            "reply_refused": false,
+            "result": null,
+            "schema": "cairn.finish-reply/1"
+          },
+          "message": "finish-reply is partial, refused, or uncertain; retry pending stages unchanged or reconcile a refusal",
+          "ok": false,
+          "schema": "cairn.response/1",
+          "status": "RESULT_UNCONFIRMED"
+        },
+        "recovery": "API_CONNECTION_FAILED",
+        "settled_index": true,
+        "watcher_pending": [
+          "response"
+        ]
+      }
+    ],
+    "refusal_matrix": [
+      {
+        "api_sends": 1,
+        "code": "STALE_LEASE",
+        "exit": 4,
+        "outcome": "STALE_LEASE",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "STALE_SESSION",
+        "exit": 4,
+        "outcome": "STALE_SESSION",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "HOLD_RELEASED",
+        "exit": 4,
+        "outcome": "HOLD_RELEASED",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "REQUEST_CANCELLED",
+        "exit": 4,
+        "outcome": "REQUEST_CANCELLED",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "DEADLINE_EXCEEDED",
+        "exit": 4,
+        "outcome": "DEADLINE_EXCEEDED",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "IDEMPOTENCY_CONFLICT",
+        "exit": 4,
+        "outcome": "IDEMPOTENCY_CONFLICT",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "INVALID_REQUEST",
+        "exit": 4,
+        "outcome": "INVALID_REQUEST",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "NOT_FOUND",
+        "exit": 4,
+        "outcome": "NOT_FOUND",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "AUTHORITY_DENIED",
+        "exit": 4,
+        "outcome": "AUTHORITY_DENIED",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "PAYLOAD_UNAVAILABLE",
+        "exit": 4,
+        "outcome": "PAYLOAD_UNAVAILABLE",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "DESTINATION_PROHIBITED",
+        "exit": 4,
+        "outcome": "DESTINATION_PROHIBITED",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 1,
+        "code": "STALE_RESOLUTION",
+        "exit": 4,
+        "outcome": "STALE_RESOLUTION",
+        "status": "refused",
+        "watcher_pending": []
+      },
+      {
+        "api_sends": 2,
+        "code": "API_CONNECTION_FAILED",
+        "exit": 4,
+        "outcome": "API_CONNECTION_FAILED",
+        "status": "pending",
+        "watcher_pending": [
+          "completion"
+        ]
+      },
+      {
+        "api_sends": 2,
+        "code": "FUTURE_REFUSAL",
+        "exit": 4,
+        "outcome": "FUTURE_REFUSAL",
+        "status": "pending",
+        "watcher_pending": [
+          "completion"
+        ]
+      },
+      {
+        "api_sends": 2,
+        "code": "API_UNAVAILABLE",
+        "exit": 7,
+        "outcome": "non_json",
+        "status": "pending",
+        "watcher_pending": [
+          "completion"
+        ]
+      }
+    ],
+    "rejected_wake_discrepancy": {
+      "current_delivery_attempts": 0,
+      "current_delivery_state": "pending",
+      "current_wake_delivery": "55555555-5555-4555-8555-555555555555",
+      "earlier_attempt": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+      "earlier_completion": "committed",
+      "earlier_finish_reply": true,
+      "earlier_hold_released": true,
+      "earlier_journal_unchanged": true,
+      "earlier_recovery_before_late_reply": [
+        "reply_possible"
+      ],
+      "earlier_response_present": false,
+      "journal_index": [
+        "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+      ],
+      "operations_after_recovery": [
+        "complete",
+        "session-inbox-reconcile",
+        "event-inspect",
+        "session-inbox-ready",
+        "publish"
+      ],
+      "operations_before_recovery": [
+        "complete",
+        "session-inbox-reconcile",
+        "event-inspect",
+        "session-inbox-ready"
+      ],
+      "recovery_pending": [
+        "response"
+      ],
+      "recovery_status": "pending",
+      "settled_index": true,
+      "wake_reconciled": true,
+      "wake_retained": false
+    },
+    "reply_reference_recovery": {
+      "after": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "finish_reply": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "request_id": "00000000-0000-0000-0000-000000000066"
+        },
+        "kind": "request",
+        "response": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "code": "OK",
+          "expected_ref": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "input": "",
+          "kind": "respond",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000066",
+          "result": null,
+          "status": "committed"
+        },
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "api": [
+        {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        {
+          "argv": [
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "input": "",
+          "operation": "publish"
+        },
+        {
+          "argv": [
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "input": "",
+          "operation": "publish"
+        }
+      ],
+      "before": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "finish_reply": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "request_id": "00000000-0000-0000-0000-000000000066"
+        },
+        "kind": "request",
+        "response": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "publish",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000066",
+            "--to",
+            "agent/requester",
+            "--kind",
+            "response",
+            "--causation-id",
+            "f1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--version",
+            "1",
+            "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617"
+          ],
+          "code": "SCHEMA_MISMATCH",
+          "expected_ref": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "input": "",
+          "kind": "respond",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000066",
+          "status": "pending"
+        },
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "exit": 7,
+      "output": {
+        "data": {
+          "completion_committed": true,
+          "reply_committed": false,
+          "reply_pending": true,
+          "reply_refused": false,
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "schema": "cairn.finish-reply/1"
+        },
+        "message": "finish-reply is partial, refused, or uncertain; retry pending stages unchanged or reconcile a refusal",
+        "ok": false,
+        "schema": "cairn.response/1",
+        "status": "SCHEMA_MISMATCH"
+      },
+      "watcher_pending": []
+    },
+    "send_deadlines": {
+      "api": [
+        {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        },
+        {
+          "argv": [
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "input": "Selected result",
+          "operation": "complete"
+        }
+      ],
+      "explicit_exit": 4,
+      "explicit_status": "API_CONNECTION_FAILED",
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "OK",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "result": {
+            "record_id": "9a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617",
+            "version": 1
+          },
+          "status": "committed"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "kind": "request",
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "timeouts": [
+        30,
+        10
+      ],
+      "watcher_pending": [
+        "reply_possible"
+      ]
+    },
+    "timeout": {
+      "exit": 7,
+      "journal": {
+        "attempt_id": "c1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "completion": {
+          "argv": [
+            "$FIXTURE/cairn",
+            "complete",
+            "--socket",
+            "$FIXTURE/api.sock",
+            "--token-file",
+            "$FIXTURE/token",
+            "--agent-id",
+            "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+            "--execution-id",
+            "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22",
+            "--request-id",
+            "00000000-0000-0000-0000-000000000065",
+            "--lease",
+            "e1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+            "--shareable",
+            "--stdin",
+            "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607"
+          ],
+          "code": "API_UNAVAILABLE",
+          "input": "Selected result",
+          "kind": "complete",
+          "recorded_at": "$TIME",
+          "request_id": "00000000-0000-0000-0000-000000000065",
+          "status": "pending"
+        },
+        "delivery_id": "d1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607",
+        "kind": "request",
+        "schema": "cairn.inbox-intent/1",
+        "session": {
+          "agent_id": "a5d7b51e-6f47-4e5e-9a55-2b0d6b3f2a11",
+          "execution_id": "b8e0c3a2-0d34-4c93-8f43-1f7f3c2b9e22"
+        }
+      },
+      "output": {
+        "message": "API_CONNECTION_FAILED: the command is journaled; retry it unchanged or let the host replay it",
+        "ok": false,
+        "schema": "cairn.response/1",
+        "status": "API_CONNECTION_FAILED"
+      }
+    },
+    "watcher": {
+      "api": [],
+      "bindings": [
+        "claude.json",
+        "codex-3.json",
+        "codex-harm.json",
+        "codex.json"
+      ],
+      "busy_exit": 1,
+      "busy_stderr": "Cairn coordination: SESSION_BUSY: another lifecycle operation is active; session presence unavailable\n",
+      "exit": 0,
+      "lock": "$FIXTURE/bindings/.watch.lock",
+      "lock_mode": "0o600",
+      "output": null,
+      "released_exit": 0,
+      "single_config_error": "coordination.py: error: watch requires --config-dir",
+      "single_config_exit": 2
+    }
+  }
+}
