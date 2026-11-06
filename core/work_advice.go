@@ -614,12 +614,20 @@ func (s *Store) GetAdviceJobByRequestUUID(ctx context.Context, requestUUID uuid.
 	if errors.Is(err, pgx.ErrNoRows) {
 		var tTerminalStatus string
 		var tErrorCode *string
+		var tBindingID uuid.UUID
 		tErr := tx.QueryRow(ctx, `
-			SELECT terminal_status, error_code
+			SELECT terminal_status, error_code, binding_id
 			FROM cairn.work_advice_request_tombstone
 			WHERE request_uuid = $1
-		`, requestUUID).Scan(&tTerminalStatus, &tErrorCode)
+		`, requestUUID).Scan(&tTerminalStatus, &tErrorCode, &tBindingID)
 		if tErr == nil {
+			var collection string
+			if pErr := tx.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, tBindingID).Scan(&collection); pErr != nil {
+				return nil, pErr
+			}
+			if err := s.checkRepo(collection); err != nil {
+				return nil, err
+			}
 			if tTerminalStatus == "completed" || tTerminalStatus == "expired" {
 				return nil, failure("EXPIRED", "advice job was deleted by retention policy and proposal has expired")
 			}
@@ -723,6 +731,35 @@ func (s *Store) FinishAdviceJobWithProcessIdentity(ctx context.Context, jobUUID 
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (s *Store) verifyDerivedSourceEligibleTx(ctx context.Context, tx pgx.Tx, collection string, recID uuid.UUID) error {
+	rec, err := readRecord(ctx, tx, recID.String())
+	if errors.Is(err, pgx.ErrNoRows) || Code(err) == "NOT_FOUND" {
+		return failure("SOURCE_INELIGIBLE", fmt.Sprintf("derived source record %s not found", recID))
+	}
+	if err != nil {
+		return err
+	}
+	if rec.Lifecycle != "active" || rec.Scope.Repo != collection || rec.Sensitivity != "shareable" {
+		return failure("SOURCE_INELIGIBLE", fmt.Sprintf("derived source record %s lifecycle, repo, or sensitivity ineligible", recID))
+	}
+	_, reason, err := eligible(ctx, tx, rec, "context")
+	if err != nil {
+		return err
+	}
+	if reason != "" {
+		return failure("SOURCE_INELIGIBLE", fmt.Sprintf("derived source record %s is ineligible: %s", recID, reason))
+	}
+	var deletedVersionExists bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM cairn.record_version WHERE record_id = $1 AND payload_deleted_by IS NOT NULL)`, recID).Scan(&deletedVersionExists)
+	if err != nil {
+		return err
+	}
+	if deletedVersionExists {
+		return failure("SOURCE_INELIGIBLE", fmt.Sprintf("derived source record %s has deleted version", recID))
+	}
+	return nil
 }
 
 func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID, planeItemUUID uuid.UUID, collection string, manifest *WorkAdviceInputManifest, proposalUUID ...uuid.UUID) error {
@@ -1023,6 +1060,13 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 		bodyHex := fmt.Sprintf("%x", bodySum[:])
 		if bodyHex != sRef.BodySHA256 {
 			return failure("SOURCE_INELIGIBLE", fmt.Sprintf("source record %s body sha256 changed", sRef.RecordID))
+		}
+	}
+
+	// 4b. Re-verify derived source records
+	for _, recID := range manifest.DerivedSourceRecordIDs {
+		if err := s.verifyDerivedSourceEligibleTx(ctx, tx, collection, recID); err != nil {
+			return err
 		}
 	}
 
@@ -1498,24 +1542,29 @@ type WorkAdvicePolicy struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type WorkAdviceCapturedBlockerRev struct {
+	BlockerID uuid.UUID `json:"blocker_id"`
+	Revision  int64     `json:"revision"`
+}
+
 // WorkAdviceInputManifest records immutable provenance facts captured at advice launch.
 type WorkAdviceInputManifest struct {
-	RestoreGeneration            int64                    `json:"restore_generation"`
-	MetadataExclusionRevision    int64                    `json:"metadata_exclusion_revision"`
-	ConfigRevision               string                   `json:"config_revision,omitempty"`
-	PolicyRevision               int64                    `json:"policy_revision"`
-	CacheGeneration              int64                    `json:"cache_generation"`
-	LastRefreshedAt              time.Time                `json:"last_refreshed_at"`
-	AllowedFields                []string                 `json:"allowed_fields"`
-	Sources                      []WorkAdviceSourceDigest `json:"sources"`
-	CandidateRevisionIDs         []uuid.UUID              `json:"candidate_revision_ids"`
-	PreconditionProgressID       *uuid.UUID               `json:"precondition_progress_id,omitempty"`
-	PreconditionProgressRevision int64                    `json:"precondition_progress_revision,omitempty"`
-	PreconditionProgressPresent  bool                     `json:"precondition_progress_present"`
-	PreconditionProgressBody     string                   `json:"precondition_progress_body,omitempty"`
-	CapturedArtifactLinks        []WorkAdviceCapturedLink `json:"captured_artifact_links,omitempty"`
-	CapturedBlockers             []advice.ExistingBlocker `json:"captured_blockers,omitempty"`
-	Controller                   *advice.ProcessIdentity  `json:"controller,omitempty"`
+	RestoreGeneration            int64                          `json:"restore_generation"`
+	MetadataExclusionRevision    int64                          `json:"metadata_exclusion_revision"`
+	ConfigRevision               string                         `json:"config_revision,omitempty"`
+	PolicyRevision               int64                          `json:"policy_revision"`
+	CacheGeneration              int64                          `json:"cache_generation"`
+	LastRefreshedAt              time.Time                      `json:"last_refreshed_at"`
+	AllowedFields                []string                       `json:"allowed_fields"`
+	Sources                      []WorkAdviceSourceDigest       `json:"sources"`
+	DerivedSourceRecordIDs       []uuid.UUID                    `json:"derived_source_record_ids,omitempty"`
+	CandidateRevisionIDs         []uuid.UUID                    `json:"candidate_revision_ids"`
+	PreconditionProgressID       *uuid.UUID                     `json:"precondition_progress_id,omitempty"`
+	PreconditionProgressRevision int64                          `json:"precondition_progress_revision,omitempty"`
+	PreconditionProgressPresent  bool                           `json:"precondition_progress_present"`
+	CapturedArtifactLinks        []WorkAdviceCapturedLink       `json:"captured_artifact_links,omitempty"`
+	CapturedBlockerRevs          []WorkAdviceCapturedBlockerRev `json:"captured_blocker_revs,omitempty"`
+	Controller                   *advice.ProcessIdentity        `json:"controller,omitempty"`
 }
 
 func captureCurrentProcessIdentity() *advice.ProcessIdentity {
@@ -1812,9 +1861,11 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 
 	// 3. Fetch active blockers
 	var existingBlockers []advice.ExistingBlocker
+	var capturedBlockerRevs []WorkAdviceCapturedBlockerRev
+	var derivedSourceRecordIDs []uuid.UUID
 	if allowedMap["blockers"] {
 		rows, err := tx.Query(ctx, `
-			SELECT annotation_id, revision, body
+			SELECT annotation_id, revision, body, source_references
 			FROM cairn.work_annotation
 			WHERE binding_id = $1 AND plane_item_uuid = $2 AND kind = 'blocker' AND state = 'open'
 			ORDER BY created_at ASC
@@ -1827,15 +1878,101 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 		for rows.Next() {
 			var eb advice.ExistingBlocker
 			var annID uuid.UUID
-			if err := rows.Scan(&annID, &eb.Revision, &eb.Text); err != nil {
+			var rawSrcRefs []byte
+			if err := rows.Scan(&annID, &eb.Revision, &eb.Text, &rawSrcRefs); err != nil {
 				return nil, nil, err
 			}
 			eb.BlockerID = annID.String()
 			existingBlockers = append(existingBlockers, eb)
+			capturedBlockerRevs = append(capturedBlockerRevs, WorkAdviceCapturedBlockerRev{
+				BlockerID: annID,
+				Revision:  eb.Revision,
+			})
+			if len(rawSrcRefs) > 0 {
+				var blkSrcRefs []string
+				if err := json.Unmarshal(rawSrcRefs, &blkSrcRefs); err != nil {
+					return nil, nil, err
+				}
+				for _, ref := range blkSrcRefs {
+					u, pErr := uuid.Parse(ref)
+					if pErr != nil || u == uuid.Nil {
+						return nil, nil, failure("SOURCE_INELIGIBLE", fmt.Sprintf("malformed blocker source reference UUID %q", ref))
+					}
+					derivedSourceRecordIDs = append(derivedSourceRecordIDs, u)
+				}
+			}
 		}
 		if err := rows.Err(); err != nil {
 			return nil, nil, err
 		}
+	}
+
+	if len(capturedBlockerRevs) > 0 {
+		capturedBlkMap := make(map[uuid.UUID]int64, len(capturedBlockerRevs))
+		for _, cb := range capturedBlockerRevs {
+			capturedBlkMap[cb.BlockerID] = cb.Revision
+		}
+		bRows, bErr := tx.Query(ctx, `
+			SELECT output_revisions, source_record_ids
+			FROM cairn.work_advice_application_receipt
+			WHERE binding_id = $1 AND plane_item_uuid = $2 AND NOT undone
+		`, spec.BindingID, spec.PlaneItemUUID)
+		if bErr != nil {
+			return nil, nil, bErr
+		}
+		defer bRows.Close()
+
+		for bRows.Next() {
+			var rawOutRevs, rawSrcs []byte
+			if err := bRows.Scan(&rawOutRevs, &rawSrcs); err != nil {
+				return nil, nil, err
+			}
+			var outRevs map[string]map[string]any
+			if err := json.Unmarshal(rawOutRevs, &outRevs); err != nil {
+				return nil, nil, err
+			}
+			var sIDs []uuid.UUID
+			if err := json.Unmarshal(rawSrcs, &sIDs); err != nil {
+				return nil, nil, err
+			}
+
+			for _, entry := range outRevs {
+				if entry["type"] != "blocker_created" {
+					continue
+				}
+				annIDStr, _ := entry["annotation_id"].(string)
+				if annIDStr == "" {
+					continue
+				}
+				annID, pErr := uuid.Parse(annIDStr)
+				if pErr != nil {
+					continue
+				}
+				expRev, exists := capturedBlkMap[annID]
+				if !exists {
+					continue
+				}
+				var createdRev int64
+				switch v := entry["revision"].(type) {
+				case float64:
+					createdRev = int64(v)
+				case int64:
+					createdRev = v
+				case int:
+					createdRev = int64(v)
+				case json.Number:
+					n, _ := v.Int64()
+					createdRev = n
+				}
+				if createdRev > 0 && createdRev <= expRev {
+					derivedSourceRecordIDs = append(derivedSourceRecordIDs, sIDs...)
+				}
+			}
+		}
+		if err := bRows.Err(); err != nil {
+			return nil, nil, err
+		}
+		bRows.Close()
 	}
 
 	// 4. Candidate artifacts: scope to explicit/active revisions in exact collection with no purge fence
@@ -1848,17 +1985,21 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 			var ca advice.CandidateArtifact
 			var rCollection string
 			var artID uuid.UUID
+			var cairnRecID *uuid.UUID
 			err = tx.QueryRow(ctx, `
-				SELECT r.revision_id, r.collection, a.artifact_id, a.kind, COALESCE(a.report_locator, COALESCE(a.git_repo, '')) as locator
+				SELECT r.revision_id, r.collection, a.artifact_id, a.kind, COALESCE(a.report_locator, COALESCE(a.git_repo, '')) as locator, a.cairn_record_id
 				FROM cairn.work_artifact_revision r
 				JOIN cairn.work_artifact a ON a.artifact_id = r.artifact_id
 				WHERE r.revision_id = $1
-			`, revID).Scan(&ca.RevisionUUID, &rCollection, &artID, &ca.Kind, &ca.Locator)
+			`, revID).Scan(&ca.RevisionUUID, &rCollection, &artID, &ca.Kind, &ca.Locator, &cairnRecID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, nil, failure("SOURCE_INELIGIBLE", fmt.Sprintf("candidate artifact revision %s not found", revID))
 			}
 			if err != nil {
 				return nil, nil, err
+			}
+			if cairnRecID != nil {
+				derivedSourceRecordIDs = append(derivedSourceRecordIDs, *cairnRecID)
 			}
 			if rCollection != collection {
 				return nil, nil, failure("SOURCE_INELIGIBLE", fmt.Sprintf("candidate artifact revision %s belongs to collection %s, expected %s", revID, rCollection, collection))
@@ -1995,6 +2136,23 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 		}
 	}
 
+	if len(derivedSourceRecordIDs) > 0 {
+		seenSrc := make(map[uuid.UUID]bool)
+		var dedupSrc []uuid.UUID
+		for _, id := range derivedSourceRecordIDs {
+			if id != uuid.Nil && !seenSrc[id] {
+				seenSrc[id] = true
+				dedupSrc = append(dedupSrc, id)
+			}
+		}
+		derivedSourceRecordIDs = dedupSrc
+		for _, recID := range derivedSourceRecordIDs {
+			if err := s.verifyDerivedSourceEligibleTx(ctx, tx, collection, recID); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
 	manifest := &WorkAdviceInputManifest{
 		RestoreGeneration:           restoreGen,
 		MetadataExclusionRevision:   metadataExclRev,
@@ -2004,17 +2162,16 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 		LastRefreshedAt:             *lastRefreshedAt,
 		AllowedFields:               allowedFields,
 		Sources:                     sourceDigests,
+		DerivedSourceRecordIDs:      derivedSourceRecordIDs,
 		CandidateRevisionIDs:        spec.CandidateRevisionIDs,
 		PreconditionProgressPresent: progPresent,
-		PreconditionProgressBody:    progBody,
 		CapturedArtifactLinks:       capturedLinks,
-		CapturedBlockers:            existingBlockers,
+		CapturedBlockerRevs:         capturedBlockerRevs,
 		Controller:                  captureCurrentProcessIdentity(),
 	}
 	if progPresent {
 		manifest.PreconditionProgressID = &progAnnID
 		manifest.PreconditionProgressRevision = progRev
-		manifest.PreconditionProgressBody = progBody
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -2497,17 +2654,23 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 
 	// Idempotent retry check on request_uuid with canonical parameter verification
 	var existing WorkAdviceApplicationReceipt
+	var existingPropUUID *uuid.UUID
 	err = tx.QueryRow(ctx, `
-		SELECT receipt_uuid, request_uuid, proposal_uuid, applied_action_uuids, applied_by_channel,
+		SELECT receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
+		       applied_action_uuids, applied_by_channel,
 		       output_revisions, applied_at, undone, undone_at, undone_by_channel, compensating_revisions
 		FROM cairn.work_advice_application_receipt
 		WHERE request_uuid = $1
 	`, receipt.RequestUUID).Scan(
-		&existing.ReceiptUUID, &existing.RequestUUID, &existing.ProposalUUID, &existing.AppliedActionUUIDs,
+		&existing.ReceiptUUID, &existing.RequestUUID, &existingPropUUID, &existing.BindingID, &existing.PlaneItemUUID, &existing.SourceRecordIDs,
+		&existing.AppliedActionUUIDs,
 		&existing.AppliedByChannel, &existing.OutputRevisions, &existing.AppliedAt,
 		&existing.Undone, &existing.UndoneAt, &existing.UndoneByChannel, &existing.CompensatingRevisions,
 	)
 	if err == nil {
+		if existingPropUUID != nil {
+			existing.ProposalUUID = *existingPropUUID
+		}
 		var existingActionUUIDs []uuid.UUID
 		if err := json.Unmarshal(existing.AppliedActionUUIDs, &existingActionUUIDs); err != nil {
 			return nil, err
@@ -3133,6 +3296,18 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 	for _, s := range manifest.Sources {
 		srcRecIDs = append(srcRecIDs, s.RecordID)
 	}
+	srcRecIDs = append(srcRecIDs, manifest.DerivedSourceRecordIDs...)
+	if len(srcRecIDs) > 0 {
+		seenSrc := make(map[uuid.UUID]bool)
+		var dedupSrc []uuid.UUID
+		for _, id := range srcRecIDs {
+			if id != uuid.Nil && !seenSrc[id] {
+				seenSrc[id] = true
+				dedupSrc = append(dedupSrc, id)
+			}
+		}
+		srcRecIDs = dedupSrc
+	}
 	srcRecBytes, _ := json.Marshal(srcRecIDs)
 	receipt.BindingID = bindingID
 	receipt.PlaneItemUUID = planeItemUUID
@@ -3550,19 +3725,70 @@ func (s *Store) UndoAdviceApplication(ctx context.Context, requestUUID uuid.UUID
 	return tx.Commit(ctx)
 }
 
+// GetAnnotationHistorySnapshot retrieves historical body and state for a specific annotation revision.
+func (s *Store) GetAnnotationHistorySnapshot(ctx context.Context, annotationID uuid.UUID, revision int64) (body, state string, ok bool, err error) {
+	if err := s.requireOperator(); err != nil {
+		return "", "", false, err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer tx.Rollback(ctx)
+
+	var collection string
+	err = tx.QueryRow(ctx, `
+		SELECT p.collection
+		FROM cairn.work_annotation a
+		JOIN cairn.work_project p ON p.binding_id = a.binding_id
+		WHERE a.annotation_id = $1
+	`, annotationID).Scan(&collection)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	if err := s.checkRepo(collection); err != nil {
+		return "", "", false, err
+	}
+
+	err = tx.QueryRow(ctx, `
+		SELECT body, state
+		FROM cairn.work_annotation_history
+		WHERE annotation_id = $1 AND revision = $2
+	`, annotationID, revision).Scan(&body, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return body, state, true, nil
+}
+
 // GetAdviceReceipt fetches an application receipt by its request_uuid.
 func (s *Store) GetAdviceReceipt(ctx context.Context, requestUUID uuid.UUID) (*WorkAdviceApplicationReceipt, error) {
 	if err := s.requireOperator(); err != nil {
 		return nil, err
 	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	var r WorkAdviceApplicationReceipt
-	err := s.pool.QueryRow(ctx, `
-		SELECT receipt_uuid, request_uuid, proposal_uuid, applied_action_uuids, applied_by_channel,
+	var propUUID *uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
+		       applied_action_uuids, applied_by_channel,
 		       output_revisions, applied_at, undone, undone_at, undone_by_channel, compensating_revisions
 		FROM cairn.work_advice_application_receipt
 		WHERE request_uuid = $1
 	`, requestUUID).Scan(
-		&r.ReceiptUUID, &r.RequestUUID, &r.ProposalUUID, &r.AppliedActionUUIDs,
+		&r.ReceiptUUID, &r.RequestUUID, &propUUID, &r.BindingID, &r.PlaneItemUUID, &r.SourceRecordIDs,
+		&r.AppliedActionUUIDs,
 		&r.AppliedByChannel, &r.OutputRevisions, &r.AppliedAt,
 		&r.Undone, &r.UndoneAt, &r.UndoneByChannel, &r.CompensatingRevisions,
 	)
@@ -3570,6 +3796,16 @@ func (s *Store) GetAdviceReceipt(ctx context.Context, requestUUID uuid.UUID) (*W
 		return nil, failure("NOT_FOUND", "advice application receipt not found")
 	}
 	if err != nil {
+		return nil, err
+	}
+	if propUUID != nil {
+		r.ProposalUUID = *propUUID
+	}
+	var collection string
+	if err := tx.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, r.BindingID).Scan(&collection); err != nil {
+		return nil, err
+	}
+	if err := s.checkRepo(collection); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -3580,15 +3816,24 @@ func (s *Store) GetAdviceReceiptByUUID(ctx context.Context, id uuid.UUID) (*Work
 	if err := s.requireOperator(); err != nil {
 		return nil, err
 	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	var r WorkAdviceApplicationReceipt
-	err := s.pool.QueryRow(ctx, `
-		SELECT receipt_uuid, request_uuid, proposal_uuid, applied_action_uuids, applied_by_channel,
+	var propUUID *uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
+		       applied_action_uuids, applied_by_channel,
 		       output_revisions, applied_at, undone, undone_at, undone_by_channel, compensating_revisions
 		FROM cairn.work_advice_application_receipt
 		WHERE receipt_uuid = $1 OR request_uuid = $1
 		LIMIT 1
 	`, id).Scan(
-		&r.ReceiptUUID, &r.RequestUUID, &r.ProposalUUID, &r.AppliedActionUUIDs,
+		&r.ReceiptUUID, &r.RequestUUID, &propUUID, &r.BindingID, &r.PlaneItemUUID, &r.SourceRecordIDs,
+		&r.AppliedActionUUIDs,
 		&r.AppliedByChannel, &r.OutputRevisions, &r.AppliedAt,
 		&r.Undone, &r.UndoneAt, &r.UndoneByChannel, &r.CompensatingRevisions,
 	)
@@ -3596,6 +3841,16 @@ func (s *Store) GetAdviceReceiptByUUID(ctx context.Context, id uuid.UUID) (*Work
 		return nil, failure("NOT_FOUND", "advice application receipt not found")
 	}
 	if err != nil {
+		return nil, err
+	}
+	if propUUID != nil {
+		r.ProposalUUID = *propUUID
+	}
+	var collection string
+	if err := tx.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, r.BindingID).Scan(&collection); err != nil {
+		return nil, err
+	}
+	if err := s.checkRepo(collection); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -3606,8 +3861,41 @@ func (s *Store) ListAdviceApplications(ctx context.Context, proposalUUID uuid.UU
 	if err := s.requireOperator(); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT receipt_uuid, request_uuid, proposal_uuid, applied_action_uuids, applied_by_channel,
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var collection string
+	err = tx.QueryRow(ctx, `
+		SELECT p.collection
+		FROM cairn.work_advice_proposal prop
+		JOIN cairn.work_project p ON p.binding_id = prop.binding_id
+		WHERE prop.proposal_uuid = $1
+	`, proposalUUID).Scan(&collection)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `
+			SELECT p.collection
+			FROM cairn.work_advice_application_receipt r
+			JOIN cairn.work_project p ON p.binding_id = r.binding_id
+			WHERE r.proposal_uuid = $1
+			LIMIT 1
+		`, proposalUUID).Scan(&collection)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, failure("NOT_FOUND", "advice proposal not found")
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkRepo(collection); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
+		       applied_action_uuids, applied_by_channel,
 		       output_revisions, applied_at, undone, undone_at, undone_by_channel, compensating_revisions
 		FROM cairn.work_advice_application_receipt
 		WHERE proposal_uuid = $1
@@ -3621,12 +3909,17 @@ func (s *Store) ListAdviceApplications(ctx context.Context, proposalUUID uuid.UU
 	var receipts []*WorkAdviceApplicationReceipt
 	for rows.Next() {
 		var r WorkAdviceApplicationReceipt
+		var propUUID *uuid.UUID
 		if err := rows.Scan(
-			&r.ReceiptUUID, &r.RequestUUID, &r.ProposalUUID, &r.AppliedActionUUIDs,
+			&r.ReceiptUUID, &r.RequestUUID, &propUUID, &r.BindingID, &r.PlaneItemUUID, &r.SourceRecordIDs,
+			&r.AppliedActionUUIDs,
 			&r.AppliedByChannel, &r.OutputRevisions, &r.AppliedAt,
 			&r.Undone, &r.UndoneAt, &r.UndoneByChannel, &r.CompensatingRevisions,
 		); err != nil {
 			return nil, err
+		}
+		if propUUID != nil {
+			r.ProposalUUID = *propUUID
 		}
 		receipts = append(receipts, &r)
 	}
@@ -3666,10 +3959,13 @@ func scrubWorkAdviceForRecordTx(ctx context.Context, tx pgx.Tx, recordID string)
 	}
 	idStr := recUUID.String()
 
-	// 1. Freeze affected job_uuids via input_manifest source refs OR action target_payload citations
+	// 1. Freeze affected job_uuids via input_manifest source refs, derived source refs, OR action target_payload citations
 	jobRows, err := tx.Query(ctx, `
 		SELECT job_uuid FROM cairn.work_advice_job
 		WHERE jsonb_path_exists(input_manifest, '$.sources[*] ? (@.record_id == $id)', jsonb_build_object('id', $1::text))
+		UNION
+		SELECT job_uuid FROM cairn.work_advice_job
+		WHERE jsonb_path_exists(input_manifest, '$.derived_source_record_ids[*] ? (@ == $id)', jsonb_build_object('id', $1::text))
 		UNION
 		SELECT p.job_uuid FROM cairn.work_advice_proposal p
 		JOIN cairn.work_advice_action a ON a.proposal_uuid = p.proposal_uuid
@@ -3808,28 +4104,99 @@ func scrubWorkAdviceForRecordTx(ctx context.Context, tx pgx.Tx, recordID string)
 					continue
 				}
 
-				var rev1Body string
-				err := tx.QueryRow(ctx, `
-					SELECT body FROM cairn.work_annotation_history
-					WHERE annotation_id = $1 AND revision = 1
-				`, annotUUID).Scan(&rev1Body)
-				if err == nil && rev1Body != "" && rev1Body != "[forgotten]" {
-					_, _ = tx.Exec(ctx, `
-						UPDATE cairn.work_annotation
-						SET body = '[forgotten]'
-						WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
-					`, annotUUID, rev1Body)
-					_, _ = tx.Exec(ctx, `
-						UPDATE cairn.work_annotation_history
-						SET body = '[forgotten]'
-						WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
-					`, annotUUID, rev1Body)
-					_, _ = tx.Exec(ctx, `
-						UPDATE cairn.mutation_request
-						SET response = jsonb_set(response, '{body}', '"[forgotten]"'::jsonb)
-						WHERE response ? 'annotation_id' AND (response->>'annotation_id') = $1::text
-					`, annotUUID.String())
+				createdRev := int64(1)
+				switch v := entry["revision"].(type) {
+				case float64:
+					createdRev = int64(v)
+				case int64:
+					createdRev = v
+				case int:
+					createdRev = int64(v)
+				case json.Number:
+					n, _ := v.Int64()
+					createdRev = n
 				}
+
+				taintedMap := map[int64]bool{createdRev: true}
+				if typ == "blocker_created" {
+					allReceiptRows, aErr := tx.Query(ctx, `
+						SELECT output_revisions, undone, COALESCE(compensating_revisions, '{}'::jsonb)
+						FROM cairn.work_advice_application_receipt
+						WHERE jsonb_path_exists(output_revisions, '$.* ? (@.annotation_id == $id)', jsonb_build_object('id', $1::text))
+						ORDER BY applied_at ASC, receipt_uuid ASC
+					`, annotUUID.String())
+					if aErr == nil {
+						for allReceiptRows.Next() {
+							var rOut, rComp []byte
+							var rUndone bool
+							if err := allReceiptRows.Scan(&rOut, &rUndone, &rComp); err == nil {
+								var oMap map[string]map[string]any
+								_ = json.Unmarshal(rOut, &oMap)
+								for actID, oEntry := range oMap {
+									oTyp, _ := oEntry["type"].(string)
+									if oTyp == "blocker_resolved" {
+										var pRev, oRev int64
+										switch v := oEntry["prior_revision"].(type) {
+										case float64:
+											pRev = int64(v)
+										case int64:
+											pRev = v
+										}
+										switch v := oEntry["revision"].(type) {
+										case float64:
+											oRev = int64(v)
+										case int64:
+											oRev = v
+										}
+										if taintedMap[pRev] && oRev > 0 {
+											taintedMap[oRev] = true
+											if rUndone && len(rComp) > 0 {
+												var cMap map[string]map[string]any
+												_ = json.Unmarshal(rComp, &cMap)
+												if cEntry, ok := cMap[actID]; ok {
+													if cEntry["type"] == "blocker_reopened" {
+														var cRev int64
+														switch cv := cEntry["revision"].(type) {
+														case float64:
+															cRev = int64(cv)
+														case int64:
+															cRev = cv
+														}
+														if cRev > 0 {
+															taintedMap[cRev] = true
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+						allReceiptRows.Close()
+					}
+				}
+
+				var taintedList []int64
+				for r := range taintedMap {
+					taintedList = append(taintedList, r)
+				}
+
+				_, _ = tx.Exec(ctx, `
+					UPDATE cairn.work_annotation
+					SET body = '[forgotten]'
+					WHERE annotation_id = $1 AND revision = ANY($2)
+				`, annotUUID, taintedList)
+				_, _ = tx.Exec(ctx, `
+					UPDATE cairn.work_annotation_history
+					SET body = '[forgotten]'
+					WHERE annotation_id = $1 AND revision = ANY($2)
+				`, annotUUID, taintedList)
+				_, _ = tx.Exec(ctx, `
+					UPDATE cairn.mutation_request
+					SET response = jsonb_set(response, '{body}', '"[forgotten]"'::jsonb)
+					WHERE response ? 'annotation_id' AND (response->>'annotation_id') = $1::text
+				`, annotUUID.String())
 			} else if typ == "artifact_linked" {
 				linkIDStr, _ := entry["link_id"].(string)
 				linkUUID, pErr := uuid.Parse(linkIDStr)
@@ -3978,12 +4345,15 @@ func (s *Store) PurgeAdviceForWorkItemTx(ctx context.Context, tx pgx.Tx, binding
 
 // ReconciledAdviceJob describes an advice job reconciled on startup or manual sweep.
 type ReconciledAdviceJob struct {
-	JobUUID       uuid.UUID `json:"job_uuid"`
-	BindingID     uuid.UUID `json:"binding_id"`
-	PlaneItemUUID uuid.UUID `json:"plane_item_uuid"`
-	PreviousState string    `json:"previous_state"`
-	FinalState    string    `json:"final_state"`
-	ActionTaken   string    `json:"action_taken"`
+	JobUUID        uuid.UUID `json:"job_uuid"`
+	BindingID      uuid.UUID `json:"binding_id"`
+	PlaneItemUUID  uuid.UUID `json:"plane_item_uuid"`
+	PreviousState  string    `json:"previous_state"`
+	FinalState     string    `json:"final_state"`
+	FinalStatus    string    `json:"final_status,omitempty"`
+	FinalErrorCode string    `json:"final_error_code,omitempty"`
+	ActionTaken    string    `json:"action_taken"`
+	CleanupError   string    `json:"cleanup_error,omitempty"`
 }
 
 // ReconcileAdviceJobs reconciles running, pending, uncertain, or cleanup_unconfirmed advice jobs.
@@ -3998,8 +4368,15 @@ func (s *Store) ReconcileAdviceJobs(ctx context.Context) ([]ReconciledAdviceJob,
 	}
 	defer tx.Rollback(ctx)
 
+	var currentRestoreGen int64
+	var dbNow time.Time
+	err = tx.QueryRow(ctx, `SELECT generation, clock_timestamp() FROM cairn.retrieval_generation WHERE singleton = true FOR SHARE`).Scan(&currentRestoreGen, &dbNow)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := tx.Query(ctx, `
-		SELECT job_uuid, binding_id, plane_item_uuid, status, process_identity, started_at, deadline_seconds
+		SELECT job_uuid, binding_id, plane_item_uuid, status, process_identity, created_at, started_at, deadline_seconds, input_manifest, error_code
 		FROM cairn.work_advice_job
 		WHERE status IN ('running', 'pending', 'cleanup_unconfirmed', 'uncertain')
 		FOR UPDATE
@@ -4015,13 +4392,16 @@ func (s *Store) ReconcileAdviceJobs(ctx context.Context) ([]ReconciledAdviceJob,
 		planeItemUUID   uuid.UUID
 		status          string
 		processIdentity []byte
+		createdAt       time.Time
 		startedAt       *time.Time
 		deadlineSeconds int
+		inputManifest   []byte
+		errorCode       *string
 	}
 	var candidates []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.jobUUID, &c.bindingID, &c.planeItemUUID, &c.status, &c.processIdentity, &c.startedAt, &c.deadlineSeconds); err != nil {
+		if err := rows.Scan(&c.jobUUID, &c.bindingID, &c.planeItemUUID, &c.status, &c.processIdentity, &c.createdAt, &c.startedAt, &c.deadlineSeconds, &c.inputManifest, &c.errorCode); err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, c)
@@ -4035,35 +4415,128 @@ func (s *Store) ReconcileAdviceJobs(ctx context.Context) ([]ReconciledAdviceJob,
 	var results []ReconciledAdviceJob
 	for _, c := range candidates {
 		var ident advice.ProcessIdentity
-		_ = json.Unmarshal(c.processIdentity, &ident)
+		if len(c.processIdentity) > 0 {
+			_ = json.Unmarshal(c.processIdentity, &ident)
+		}
+		var manifest WorkAdviceInputManifest
+		hasManifest := false
+		if len(c.inputManifest) > 0 {
+			if mErr := json.Unmarshal(c.inputManifest, &manifest); mErr == nil {
+				hasManifest = true
+			}
+		}
 
-		recErr := advice.RecoverProcessGroup(ctx, ident)
-		finalStatus := "failed"
-		action := "reconciled_orphan_process"
-		if recErr != nil {
-			finalStatus = "cleanup_unconfirmed"
-			action = "retained_cleanup_unconfirmed"
-		} else if c.status == "uncertain" {
+		oldRestoreGen := hasManifest && manifest.RestoreGeneration != currentRestoreGen
+		refTime := c.createdAt
+		if c.startedAt != nil {
+			refTime = *c.startedAt
+		}
+		pastDeadline := c.deadlineSeconds > 0 && dbNow.After(refTime.Add(time.Duration(c.deadlineSeconds)*time.Second))
+		controllerDead := hasManifest && isControllerProvenDead(manifest.Controller)
+		hasChild := ident.PID > 0 || ident.PGID > 0 || ident.StartTicks > 0 || ident.BootID != ""
+
+		// Preserve healthy in-flight jobs
+		if (c.status == "pending" || c.status == "running") && !oldRestoreGen && !pastDeadline && !controllerDead {
+			continue
+		}
+
+		var finalStatus, finalErrorCode, action, cleanupErr string
+		if c.status == "uncertain" {
+			var recErr error
+			if hasChild {
+				recErr = advice.RecoverProcessGroup(ctx, ident)
+				if recErr != nil {
+					cleanupErr = recErr.Error()
+				}
+			}
 			finalStatus = "uncertain"
-			action = "reconciled_uncertain"
+			finalErrorCode = "JOB_STATE_UNCERTAIN"
+			if c.errorCode != nil && *c.errorCode != "" {
+				finalErrorCode = *c.errorCode
+			}
+			if hasChild && recErr != nil {
+				action = "retained_uncertain_cleanup_unconfirmed"
+			} else {
+				action = "reconciled_uncertain"
+			}
+		} else if c.status == "cleanup_unconfirmed" {
+			recErr := advice.RecoverProcessGroup(ctx, ident)
+			if recErr != nil {
+				cleanupErr = recErr.Error()
+				finalStatus = "cleanup_unconfirmed"
+				finalErrorCode = "CLEANUP_UNCONFIRMED"
+				action = "retained_cleanup_unconfirmed"
+			} else {
+				finalStatus = "failed"
+				finalErrorCode = "RECONCILED_AT_STARTUP"
+				if c.errorCode != nil && *c.errorCode != "" {
+					finalErrorCode = *c.errorCode
+				}
+				action = "reconciled_cleanup_confirmed"
+			}
+		} else if c.status == "pending" && !hasChild {
+			if oldRestoreGen {
+				finalStatus = "failed"
+				finalErrorCode = "RESTORE_FENCE_TRIGGERED"
+				action = "reconciled_restore_fenced_pending"
+			} else if pastDeadline {
+				finalStatus = "timed_out"
+				finalErrorCode = "TIMEOUT"
+				action = "reconciled_timed_out_pending"
+			} else {
+				finalStatus = "failed"
+				finalErrorCode = "RECONCILED_AT_STARTUP"
+				action = "reconciled_dead_controller_pending"
+			}
+		} else {
+			recErr := advice.RecoverProcessGroup(ctx, ident)
+			if recErr != nil {
+				finalStatus = "cleanup_unconfirmed"
+				finalErrorCode = "CLEANUP_UNCONFIRMED"
+				action = "retained_cleanup_unconfirmed"
+			} else if oldRestoreGen {
+				finalStatus = "failed"
+				finalErrorCode = "RESTORE_FENCE_TRIGGERED"
+				action = "reconciled_restore_fenced_running"
+			} else if pastDeadline {
+				finalStatus = "timed_out"
+				finalErrorCode = "MODEL_TIMEOUT"
+				action = "reconciled_timed_out_running"
+			} else {
+				finalStatus = "failed"
+				finalErrorCode = "RECONCILED_AT_STARTUP"
+				action = "reconciled_dead_controller_running"
+			}
 		}
 
 		_, err = tx.Exec(ctx, `
 			UPDATE cairn.work_advice_job
-			SET status = $2, finished_at = clock_timestamp(), error_code = COALESCE(error_code, 'RECONCILED_AT_STARTUP')
+			SET status = $2, finished_at = clock_timestamp(), error_code = $3
 			WHERE job_uuid = $1
-		`, c.jobUUID, finalStatus)
+		`, c.jobUUID, finalStatus, finalErrorCode)
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE cairn.work_advice_request_tombstone
+			SET terminal_status = $2, error_code = $3, updated_at = clock_timestamp()
+			WHERE job_uuid = $1
+		`, c.jobUUID, finalStatus, finalErrorCode)
 		if err != nil {
 			return nil, err
 		}
 
 		results = append(results, ReconciledAdviceJob{
-			JobUUID:       c.jobUUID,
-			BindingID:     c.bindingID,
-			PlaneItemUUID: c.planeItemUUID,
-			PreviousState: c.status,
-			FinalState:    finalStatus,
-			ActionTaken:   action,
+			JobUUID:        c.jobUUID,
+			BindingID:      c.bindingID,
+			PlaneItemUUID:  c.planeItemUUID,
+			PreviousState:  c.status,
+			FinalState:     finalStatus,
+			FinalStatus:    finalStatus,
+			FinalErrorCode: finalErrorCode,
+			ActionTaken:    action,
+			CleanupError:   cleanupErr,
 		})
 	}
 
@@ -4097,16 +4570,41 @@ func (s *Store) SweepExpiredAdvice(ctx context.Context) (int64, error) {
 	totalSwept += tag1.RowsAffected()
 
 	// 2. Mark pending jobs past deadline 'timed_out' ONLY when process_identity = '{}'::jsonb (unlaunched)
-	tag2, err := tx.Exec(ctx, `
+	rows2, err := tx.Query(ctx, `
 		UPDATE cairn.work_advice_job
 		SET status = 'timed_out', finished_at = clock_timestamp(), error_code = 'TIMEOUT'
 		WHERE status = 'pending' AND (process_identity IS NULL OR process_identity = '{}'::jsonb)
 		  AND created_at + (deadline_seconds || ' seconds')::interval < clock_timestamp()
+		RETURNING job_uuid
 	`)
 	if err != nil {
 		return 0, err
 	}
-	totalSwept += tag2.RowsAffected()
+	defer rows2.Close()
+	var sweptJobUUIDs []uuid.UUID
+	for rows2.Next() {
+		var jID uuid.UUID
+		if err := rows2.Scan(&jID); err != nil {
+			return 0, err
+		}
+		sweptJobUUIDs = append(sweptJobUUIDs, jID)
+	}
+	if err := rows2.Err(); err != nil {
+		return 0, err
+	}
+	rows2.Close()
+	totalSwept += int64(len(sweptJobUUIDs))
+
+	if len(sweptJobUUIDs) > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE cairn.work_advice_request_tombstone
+			SET terminal_status = 'timed_out', error_code = 'TIMEOUT', updated_at = clock_timestamp()
+			WHERE job_uuid = ANY($1)
+		`, sweptJobUUIDs)
+		if err != nil {
+			return 0, err
+		}
+	}
 
 	// 3. Clear 24h expired input snapshots
 	tag3, err := tx.Exec(ctx, `

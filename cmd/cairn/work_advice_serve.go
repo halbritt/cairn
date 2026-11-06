@@ -289,7 +289,7 @@ func buildReviewedManifest(ctx context.Context, store *core.Store, job *core.Wor
 	manifest := &ReviewedManifest{
 		PolicyRevision:     rawMan.PolicyRevision,
 		AllowedFields:      rawMan.AllowedFields,
-		LastRefreshedAt:    rawMan.LastRefreshedAt.UTC().Format(time.RFC3339),
+		LastRefreshedAt:    rawMan.LastRefreshedAt.UTC().Format(time.RFC3339Nano),
 		RestoreGeneration:  rawMan.RestoreGeneration,
 		Sources:            make([]ReviewedManifestSource, 0, len(rawMan.Sources)),
 		CandidateRevisions: make([]ReviewedCandidateRevision, 0, len(rawMan.CandidateRevisionIDs)),
@@ -301,9 +301,9 @@ func buildReviewedManifest(ctx context.Context, store *core.Store, job *core.Wor
 		}
 		obsAtStr := ""
 		if !s.ObservedAt.IsZero() {
-			obsAtStr = s.ObservedAt.UTC().Format(time.RFC3339)
+			obsAtStr = s.ObservedAt.UTC().Format(time.RFC3339Nano)
 		} else if job != nil && !job.CreatedAt.IsZero() {
-			obsAtStr = job.CreatedAt.UTC().Format(time.RFC3339)
+			obsAtStr = job.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
 		manifest.Sources = append(manifest.Sources, ReviewedManifestSource{
 			RecordID:   s.RecordID,
@@ -426,7 +426,7 @@ func buildReviewedCurrentness(ctx context.Context, store *core.Store, prop *core
 	}
 }
 
-func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAction, snapshot *advice.Snapshot, channelPrincipal string) []ReviewedAction {
+func buildReviewedActions(ctx context.Context, store *core.Store, job *core.WorkAdviceJob, actions []*core.WorkAdviceAction, snapshot *advice.Snapshot, channelPrincipal string) ([]ReviewedAction, error) {
 	reviewedActions := make([]ReviewedAction, 0, len(actions))
 	requester := "operator"
 	if job != nil && job.Caller != "" {
@@ -452,9 +452,9 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 	for _, s := range rawMan.Sources {
 		obsStr := ""
 		if !s.ObservedAt.IsZero() {
-			obsStr = s.ObservedAt.UTC().Format(time.RFC3339)
+			obsStr = s.ObservedAt.UTC().Format(time.RFC3339Nano)
 		} else if job != nil && !job.CreatedAt.IsZero() {
-			obsStr = job.CreatedAt.UTC().Format(time.RFC3339)
+			obsStr = job.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
 		sourceMap[s.RecordID] = sourceInfo{
 			RecordID:   s.RecordID,
@@ -479,7 +479,7 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 		}
 		obs := ""
 		if job != nil && !job.CreatedAt.IsZero() {
-			obs = job.CreatedAt.UTC().Format(time.RFC3339)
+			obs = job.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
 		return ActionSourceRef{
 			RecordID:   u,
@@ -492,6 +492,7 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 		var before any
 		var after any
 		srcRefs := make([]ActionSourceRef, 0)
+		payloadPurged := len(act.TargetPayload) == 0 || string(act.TargetPayload) == "{}"
 
 		switch act.ActionType {
 		case "annotate_progress":
@@ -499,20 +500,51 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				Text             string   `json:"text"`
 				SourceReferences []string `json:"source_references"`
 			}
-			_ = json.Unmarshal(act.TargetPayload, &p)
+			if !payloadPurged {
+				_ = json.Unmarshal(act.TargetPayload, &p)
+			}
+			unavailable := false
 			if rawMan.PreconditionProgressPresent && rawMan.PreconditionProgressID != nil {
-				before = map[string]any{
-					"annotation_id": rawMan.PreconditionProgressID.String(),
-					"revision":      rawMan.PreconditionProgressRevision,
-					"kind":          "progress",
-					"body":          rawMan.PreconditionProgressBody,
-					"state":         "active",
+				if store != nil {
+					b, st, ok, err := store.GetAnnotationHistorySnapshot(ctx, *rawMan.PreconditionProgressID, rawMan.PreconditionProgressRevision)
+					if err != nil {
+						return nil, err
+					}
+					if !ok {
+						unavailable = true
+						before = map[string]any{
+							"annotation_id": rawMan.PreconditionProgressID.String(),
+							"revision":      rawMan.PreconditionProgressRevision,
+							"kind":          "progress",
+							"state":         "unavailable",
+							"unavailable":   true,
+						}
+					} else {
+						before = map[string]any{
+							"annotation_id": rawMan.PreconditionProgressID.String(),
+							"revision":      rawMan.PreconditionProgressRevision,
+							"kind":          "progress",
+							"body":          b,
+							"state":         st,
+						}
+					}
+				} else {
+					unavailable = true
+					before = map[string]any{
+						"annotation_id": rawMan.PreconditionProgressID.String(),
+						"revision":      rawMan.PreconditionProgressRevision,
+						"kind":          "progress",
+						"state":         "unavailable",
+						"unavailable":   true,
+					}
 				}
 			}
-			after = map[string]any{
-				"kind":  "progress",
-				"body":  p.Text,
-				"state": "active",
+			if !payloadPurged && !unavailable {
+				after = map[string]any{
+					"kind":  "progress",
+					"body":  p.Text,
+					"state": "active",
+				}
 			}
 			for _, ref := range p.SourceReferences {
 				if sr, ok := lookupSourceRef(ref); ok {
@@ -527,46 +559,62 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				ExpectedRevision  int64    `json:"expected_revision"`
 				SourceReferences  []string `json:"source_references"`
 			}
-			_ = json.Unmarshal(act.TargetPayload, &b)
+			if !payloadPurged {
+				_ = json.Unmarshal(act.TargetPayload, &b)
+			}
 			if b.BlockerAction == "resolve" {
-				priorText := b.Text
-				for _, eb := range rawMan.CapturedBlockers {
-					if eb.BlockerID == b.ExistingBlockerID {
-						priorText = eb.Text
-						break
+				parsedID, pErr := uuid.Parse(b.ExistingBlockerID)
+				if pErr != nil || store == nil {
+					before = map[string]any{
+						"annotation_id": b.ExistingBlockerID,
+						"revision":      b.ExpectedRevision,
+						"kind":          "blocker",
+						"state":         "unavailable",
+						"unavailable":   true,
 					}
-				}
-				if priorText == b.Text && snapshot != nil {
-					for _, eb := range snapshot.ExistingBlockers {
-						if eb.BlockerID == b.ExistingBlockerID {
-							priorText = eb.Text
-							break
+				} else {
+					bText, st, ok, err := store.GetAnnotationHistorySnapshot(ctx, parsedID, b.ExpectedRevision)
+					if err != nil {
+						return nil, err
+					}
+					if !ok {
+						before = map[string]any{
+							"annotation_id": b.ExistingBlockerID,
+							"revision":      b.ExpectedRevision,
+							"kind":          "blocker",
+							"state":         "unavailable",
+							"unavailable":   true,
+						}
+					} else {
+						before = map[string]any{
+							"annotation_id": b.ExistingBlockerID,
+							"revision":      b.ExpectedRevision,
+							"kind":          "blocker",
+							"body":          bText,
+							"state":         st,
+						}
+						if !payloadPurged {
+							afterBody := b.Text
+							if afterBody == "" {
+								afterBody = bText
+							}
+							after = map[string]any{
+								"annotation_id": b.ExistingBlockerID,
+								"revision":      b.ExpectedRevision + 1,
+								"kind":          "blocker",
+								"body":          afterBody,
+								"state":         "resolved",
+							}
 						}
 					}
 				}
-				before = map[string]any{
-					"annotation_id": b.ExistingBlockerID,
-					"revision":      b.ExpectedRevision,
-					"kind":          "blocker",
-					"body":          priorText,
-					"state":         "open",
-				}
-				afterBody := b.Text
-				if afterBody == "" {
-					afterBody = priorText
-				}
-				after = map[string]any{
-					"annotation_id": b.ExistingBlockerID,
-					"revision":      b.ExpectedRevision + 1,
-					"kind":          "blocker",
-					"body":          afterBody,
-					"state":         "resolved",
-				}
 			} else {
-				after = map[string]any{
-					"kind":  "blocker",
-					"body":  b.Text,
-					"state": "open",
+				if !payloadPurged {
+					after = map[string]any{
+						"kind":  "blocker",
+						"body":  b.Text,
+						"state": "open",
+					}
 				}
 			}
 			for _, ref := range b.SourceReferences {
@@ -579,24 +627,26 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				ArtifactRevisionID string `json:"artifact_revision_id"`
 				Role               string `json:"role"`
 			}
-			_ = json.Unmarshal(act.TargetPayload, &l)
-			targetRevID, _ := uuid.Parse(l.ArtifactRevisionID)
-			for _, cl := range rawMan.CapturedArtifactLinks {
-				if cl.RevisionID == targetRevID && cl.Role == l.Role {
-					before = map[string]any{
-						"link_id":     cl.LinkID.String(),
-						"revision":    cl.Revision,
-						"revision_id": cl.RevisionID.String(),
-						"role":        cl.Role,
-						"state":       cl.State,
+			if !payloadPurged {
+				_ = json.Unmarshal(act.TargetPayload, &l)
+				targetRevID, _ := uuid.Parse(l.ArtifactRevisionID)
+				for _, cl := range rawMan.CapturedArtifactLinks {
+					if cl.RevisionID == targetRevID && cl.Role == l.Role {
+						before = map[string]any{
+							"link_id":     cl.LinkID.String(),
+							"revision":    cl.Revision,
+							"revision_id": cl.RevisionID.String(),
+							"role":        cl.Role,
+							"state":       cl.State,
+						}
+						break
 					}
-					break
 				}
-			}
-			after = map[string]any{
-				"revision_id": l.ArtifactRevisionID,
-				"role":        l.Role,
-				"state":       "active",
+				after = map[string]any{
+					"revision_id": l.ArtifactRevisionID,
+					"role":        l.Role,
+					"state":       "active",
+				}
 			}
 		}
 
@@ -614,7 +664,7 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 			},
 		})
 	}
-	return reviewedActions
+	return reviewedActions, nil
 }
 
 func buildReviewedApplications(ctx context.Context, store *core.Store, prop *core.WorkAdviceProposal, nowRFC string) []ReviewedApplication {
@@ -679,7 +729,10 @@ func buildAdviceReviewEnvelope(
 	manifest := buildReviewedManifest(ctx, store, job, nowRFC)
 	input := buildReviewedInput(job, now)
 	currentness := buildReviewedCurrentness(ctx, store, prop, job, input, manifest, now, nowRFC)
-	reviewedActions := buildReviewedActions(job, actions, input.Snapshot, store.Channel().Principal)
+	reviewedActions, err := buildReviewedActions(ctx, store, job, actions, input.Snapshot, store.Channel().Principal)
+	if err != nil {
+		return nil, err
+	}
 	reviewedApps := buildReviewedApplications(ctx, store, prop, nowRFC)
 
 	return &WorkAdviceShowEnvelope{

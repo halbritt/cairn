@@ -171,11 +171,14 @@ func countRequiredWorkFeatureState(ctx context.Context, q queryRower, featureNam
 		return 0, "", nil
 
 	case "work-advice/1":
-		var jobExists, propExists bool
+		var jobExists, propExists, actExists bool
 		if err := q.QueryRow(ctx, `SELECT to_regclass('cairn.work_advice_job') IS NOT NULL`).Scan(&jobExists); err != nil {
 			return 0, "", err
 		}
 		if err := q.QueryRow(ctx, `SELECT to_regclass('cairn.work_advice_proposal') IS NOT NULL`).Scan(&propExists); err != nil {
+			return 0, "", err
+		}
+		if err := q.QueryRow(ctx, `SELECT to_regclass('cairn.work_advice_action') IS NOT NULL`).Scan(&actExists); err != nil {
 			return 0, "", err
 		}
 		var count int
@@ -186,7 +189,21 @@ func countRequiredWorkFeatureState(ctx context.Context, q queryRower, featureNam
 			}
 			count += c
 		}
-		if propExists {
+		if propExists && actExists {
+			var c int
+			if err := q.QueryRow(ctx, `
+				SELECT count(*)
+				FROM cairn.work_advice_proposal p
+				WHERE p.status IN ('pending', 'partially_applied')
+				  AND EXISTS (
+				      SELECT 1 FROM cairn.work_advice_action a
+				      WHERE a.proposal_uuid = p.proposal_uuid AND a.status = 'pending'
+				  )
+			`).Scan(&c); err != nil {
+				return 0, "", err
+			}
+			count += c
+		} else if propExists {
 			var c int
 			if err := q.QueryRow(ctx, `SELECT count(*) FROM cairn.work_advice_proposal WHERE status IN ('pending', 'partially_applied')`).Scan(&c); err != nil {
 				return 0, "", err

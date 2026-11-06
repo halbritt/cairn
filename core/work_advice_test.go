@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1619,7 +1622,8 @@ func TestWorkAdviceProfileRegistration(t *testing.T) {
 }
 
 type slowAdviceProvider struct {
-	delay time.Duration
+	delay     time.Duration
+	invokedAt time.Time
 }
 
 func (s *slowAdviceProvider) Name() string { return "slow-provider" }
@@ -1636,6 +1640,7 @@ func (s *slowAdviceProvider) VerifyCapabilities(ctx context.Context) (*advice.Co
 	}, nil
 }
 func (s *slowAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *advice.Snapshot, deadline time.Duration, onLaunch func(advice.ProcessIdentity) error) (*advice.Proposal, *advice.ProcessResult, error) {
+	s.invokedAt = time.Now().UTC()
 	if onLaunch != nil {
 		_ = onLaunch(advice.ProcessIdentity{PID: 1000, PGID: 1000, StartTicks: 1000, BootID: "test-boot"})
 	}
@@ -1669,19 +1674,22 @@ func TestWorkAdvice_ProposalCaptureTimeExpiry(t *testing.T) {
 		RequestUUID:   uuid.New(),
 	}
 
-	before := time.Now().UTC()
+	start := time.Now().UTC()
 	prop, _, err := operatorStore.ExecuteAdviceJob(ctx, job, spec, slowProv)
 	if err != nil {
 		t.Fatalf("ExecuteAdviceJob failed: %v", err)
 	}
+	elapsed := time.Since(start)
+	if elapsed < 150*time.Millisecond {
+		t.Fatalf("expected execution to take at least 150ms, took %v", elapsed)
+	}
 
 	// Proposal expiry must be anchored to snapshot capture time (+1h), NOT completion (+1h)
-	expectedMaxExpiry := before.Add(1*time.Hour + 80*time.Millisecond)
-	if prop.ExpiresAt.After(expectedMaxExpiry) {
-		t.Fatalf("proposal.ExpiresAt (%v) was not anchored to snapshot capture (exceeds %v)", prop.ExpiresAt, expectedMaxExpiry)
+	if prop.ExpiresAt.After(slowProv.invokedAt.Add(1 * time.Hour)) {
+		t.Fatalf("proposal.ExpiresAt (%v) exceeds provider invocation time + 1h (%v)", prop.ExpiresAt, slowProv.invokedAt.Add(1*time.Hour))
 	}
-	if !prop.ExpiresAt.After(before.Add(59 * time.Minute)) {
-		t.Fatalf("proposal.ExpiresAt (%v) is unexpectedly before snapshot capture + 59m", prop.ExpiresAt)
+	if !prop.ExpiresAt.After(start.Add(59 * time.Minute)) {
+		t.Fatalf("proposal.ExpiresAt (%v) is unexpectedly before start + 59m", prop.ExpiresAt)
 	}
 }
 
@@ -2641,5 +2649,779 @@ func TestWorkAdvice_ApplyAndUndoAgainstRemovedLinkEdge(t *testing.T) {
 	`, linked.LinkID).Scan(&curState, &curRev, &remAt, &remBy)
 	if err != nil || curState != "removed" || remAt == nil || remBy == nil {
 		t.Fatalf("expected restored link to be 'removed' with non-null removed fields, got state=%s remAt=%v remBy=%v", curState, remAt, remBy)
+	}
+}
+
+type realHeldAdviceProvider struct {
+	gateFile string
+	readyCh  chan advice.ProcessIdentity
+}
+
+func (p *realHeldAdviceProvider) Name() string { return "real-held" }
+func (p *realHeldAdviceProvider) VerifyCapabilities(ctx context.Context) (*advice.CodexCapabilities, error) {
+	return &advice.CodexCapabilities{
+		Schema:         advice.CodexAdviceCapabilitiesSchema,
+		RequestSchema:  advice.CodexAdviceRequestSchema,
+		ResultSchema:   advice.CodexAdviceResultSchema,
+		Provider:       "openai",
+		AuthMethod:     "chatgpt_subscription",
+		OneRequest:     true,
+		UpstreamCommit: advice.RequiredCodexUpstreamCommit,
+		PatchSHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
+	}, nil
+}
+func (p *realHeldAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *advice.Snapshot, deadline time.Duration, onLaunch func(advice.ProcessIdentity) error) (*advice.Proposal, *advice.ProcessResult, error) {
+	script := fmt.Sprintf("#!/bin/bash\nwhile [ -f %q ]; do\n\tsleep 0.05\ndone\necho '{\"actions\":[{\"action_type\":\"annotate_progress\",\"text\":\"held progress\"}]}'\nexit 0\n", p.gateFile)
+	tmpDir := os.TempDir()
+	scriptFile := filepath.Join(tmpDir, "held-script-"+uuid.NewString()+".sh")
+	if err := os.WriteFile(scriptFile, []byte(script), 0755); err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(scriptFile)
+
+	res, err := advice.RunIsolatedProcess(ctx, "/bin/bash", []string{scriptFile}, nil, advice.BuildAllowlistedEnv(nil), tmpDir, func(id advice.ProcessIdentity) error {
+		if p.readyCh != nil {
+			p.readyCh <- id
+		}
+		if onLaunch != nil {
+			return onLaunch(id)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	prop, pErr := advice.ParseProposal(string(res.Stdout), snapshot)
+	return prop, res, pErr
+}
+
+func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	// (a) Healthy in-flight job: ReconcileAdviceJobs + SweepExpiredAdvice preserve running job and child process
+	gateFile := filepath.Join(os.TempDir(), "held-gate-"+uuid.NewString())
+	if err := os.WriteFile(gateFile, []byte("hold"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(gateFile)
+
+	readyCh := make(chan advice.ProcessIdentity, 1)
+	prov := &realHeldAdviceProvider{gateFile: gateFile, readyCh: readyCh}
+	job := &WorkAdviceJob{
+		BindingID:       bindingID,
+		PlaneItemUUID:   planeItemUUID,
+		RequestUUID:     uuid.New(),
+		DeadlineSeconds: 60,
+	}
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+
+	type execResult struct {
+		prop *WorkAdviceProposal
+		err  error
+	}
+	doneCh := make(chan execResult, 1)
+	go func() {
+		p, _, err := operatorStore.ExecuteAdviceJob(ctx, job, spec, prov)
+		doneCh <- execResult{prop: p, err: err}
+	}()
+
+	var childIdent advice.ProcessIdentity
+	select {
+	case childIdent = <-readyCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for child process launch")
+	}
+
+	// Verify child process group is running
+	if err := syscall.Kill(-childIdent.PGID, 0); err != nil {
+		t.Fatalf("child process group not alive: %v", err)
+	}
+
+	// Reconcile and sweep while healthy -> must NOT kill child or fail job
+	reconciled, err := operatorStore.ReconcileAdviceJobs(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileAdviceJobs error: %v", err)
+	}
+	if len(reconciled) > 0 {
+		t.Fatalf("expected 0 reconciled jobs, got %+v", reconciled)
+	}
+	swept, err := operatorStore.SweepExpiredAdvice(ctx)
+	if err != nil {
+		t.Fatalf("SweepExpiredAdvice error: %v", err)
+	}
+	if swept > 0 {
+		t.Fatalf("expected 0 swept jobs, got %d", swept)
+	}
+
+	// Child still alive
+	if err := syscall.Kill(-childIdent.PGID, 0); err != nil {
+		t.Fatalf("child process group died unexpectedly: %v", err)
+	}
+
+	// Release gate -> completes cleanly
+	_ = os.Remove(gateFile)
+	select {
+	case res := <-doneCh:
+		if res.err != nil {
+			t.Fatalf("ExecuteAdviceJob failed after releasing gate: %v", res.err)
+		}
+		if res.prop == nil || res.prop.Status != "pending" {
+			t.Fatalf("expected pending proposal, got %+v", res.prop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ExecuteAdviceJob completion")
+	}
+
+	// (b) Past-deadline job: ReconcileAdviceJobs kills child and transitions to timed_out/MODEL_TIMEOUT
+	gateFile2 := filepath.Join(os.TempDir(), "held-gate-"+uuid.NewString())
+	_ = os.WriteFile(gateFile2, []byte("hold"), 0644)
+	defer os.Remove(gateFile2)
+
+	readyCh2 := make(chan advice.ProcessIdentity, 1)
+	prov2 := &realHeldAdviceProvider{gateFile: gateFile2, readyCh: readyCh2}
+	job2 := &WorkAdviceJob{
+		BindingID:       bindingID,
+		PlaneItemUUID:   planeItemUUID,
+		RequestUUID:     uuid.New(),
+		DeadlineSeconds: 1, // short deadline
+	}
+	go func() {
+		_, _, _ = operatorStore.ExecuteAdviceJob(ctx, job2, spec, prov2)
+	}()
+
+	var childIdent2 advice.ProcessIdentity
+	select {
+	case childIdent2 = <-readyCh2:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for child 2 launch")
+	}
+
+	// Wait past deadline
+	time.Sleep(1200 * time.Millisecond)
+
+	reconciled2, err := operatorStore.ReconcileAdviceJobs(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileAdviceJobs error: %v", err)
+	}
+	foundTimedOut := false
+	for _, r := range reconciled2 {
+		if r.JobUUID == job2.JobUUID {
+			foundTimedOut = true
+			if r.FinalState != "timed_out" {
+				t.Fatalf("expected final state timed_out, got %s", r.FinalState)
+			}
+		}
+	}
+	if !foundTimedOut {
+		t.Fatal("expected past-deadline job to be reconciled")
+	}
+
+	// Child process group should be dead (ESRCH)
+	time.Sleep(100 * time.Millisecond)
+	if err := syscall.Kill(-childIdent2.PGID, 0); err == nil {
+		t.Fatalf("child process group %d is still alive, expected killed", childIdent2.PGID)
+	}
+}
+
+func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+
+	// 1. SweepExpiredAdvice TIMEOUT replay
+	reqID1 := uuid.New()
+	jobID1 := uuid.New()
+	_, err := operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_job (
+			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
+			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
+			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at
+		) VALUES (
+			$1, $2, $3, 'operator:test', 'default', 'test',
+			1, $4, '{}'::jsonb, 'digest', 'digest',
+			'pending', 10, '{}'::jsonb, clock_timestamp() - interval '20 seconds', clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour'
+		)
+	`, jobID1, bindingID, planeItemUUID, reqID1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_request_tombstone (
+			caller, request_uuid, job_uuid, binding_id, plane_item_uuid, request_digest, terminal_status
+		) VALUES (
+			'operator:test', $1, $2, $3, $4, 'digest', 'pending'
+		)
+	`, reqID1, jobID1, bindingID, planeItemUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	swept, err := operatorStore.SweepExpiredAdvice(ctx)
+	if err != nil || swept != 1 {
+		t.Fatalf("expected 1 swept job, got %d, err=%v", swept, err)
+	}
+	// Simulate 30d deletion of job
+	_, err = operatorStore.pool.Exec(ctx, `DELETE FROM cairn.work_advice_job WHERE job_uuid = $1`, jobID1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	countedProv := &countedAdviceProvider{}
+	replayJob1 := &WorkAdviceJob{BindingID: bindingID, PlaneItemUUID: planeItemUUID, RequestUUID: reqID1}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, replayJob1, spec, countedProv)
+	if err == nil || Code(err) != "TIMEOUT" {
+		t.Fatalf("expected TIMEOUT error on replay after 30d deletion, got %v", err)
+	}
+	if countedProv.callCount.Load() != 0 {
+		t.Fatalf("expected 0 provider calls on tombstone replay, got %d", countedProv.callCount.Load())
+	}
+
+	// 2. ReconcileAdviceJobs RESTORE_FENCE_TRIGGERED replay
+	reqID2 := uuid.New()
+	jobID2 := uuid.New()
+	oldManifest, _ := json.Marshal(WorkAdviceInputManifest{RestoreGeneration: 999999})
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_job (
+			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
+			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
+			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at
+		) VALUES (
+			$1, $2, $3, 'operator:test', 'default', 'test',
+			1, $4, $5, 'digest', 'digest',
+			'pending', 60, '{}'::jsonb, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour'
+		)
+	`, jobID2, bindingID, planeItemUUID, reqID2, oldManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_request_tombstone (
+			caller, request_uuid, job_uuid, binding_id, plane_item_uuid, request_digest, terminal_status
+		) VALUES (
+			'operator:test', $1, $2, $3, $4, 'digest', 'pending'
+		)
+	`, reqID2, jobID2, bindingID, planeItemUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, err := operatorStore.ReconcileAdviceJobs(ctx)
+	if err != nil || len(reconciled) != 1 {
+		t.Fatalf("expected 1 reconciled job, got %d, err=%v", len(reconciled), err)
+	}
+	// Simulate 30d deletion
+	_, _ = operatorStore.pool.Exec(ctx, `DELETE FROM cairn.work_advice_job WHERE job_uuid = $1`, jobID2)
+
+	replayJob2 := &WorkAdviceJob{BindingID: bindingID, PlaneItemUUID: planeItemUUID, RequestUUID: reqID2}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, replayJob2, spec, countedProv)
+	if err == nil || Code(err) != "RESTORE_FENCE_TRIGGERED" {
+		t.Fatalf("expected RESTORE_FENCE_TRIGGERED error on replay, got %v", err)
+	}
+	if countedProv.callCount.Load() != 0 {
+		t.Fatalf("expected 0 provider calls, got %d", countedProv.callCount.Load())
+	}
+}
+
+func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	prov := &countedAdviceProvider{
+		proposal: &advice.Proposal{
+			Summary: "test advice",
+			Actions: []advice.ProposedAction{
+				{
+					ActionType: advice.ActionAnnotateProgress,
+					Progress:   &advice.ProgressPayload{Text: "lower 79 progress"},
+				},
+			},
+		},
+	}
+	job := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   uuid.New(),
+	}
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+	prop, actions, err := operatorStore.ExecuteAdviceJob(ctx, job, spec, prov)
+	if err != nil {
+		t.Fatalf("ExecuteAdviceJob failed: %v", err)
+	}
+
+	receiptReq := &WorkAdviceApplicationReceipt{
+		RequestUUID:  uuid.New(),
+		ProposalUUID: prop.ProposalUUID,
+	}
+	receipt, err := operatorStore.ApplyAdviceProposal(ctx, receiptReq, prop.ReviewVersion, []uuid.UUID{actions[0].ActionUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+
+	// Disable work-advice/1
+	err = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{
+		FeatureName: "work-advice/1",
+		Status:      "disabled",
+	})
+	if err != nil {
+		t.Fatalf("SetWorkFeatureStatus disabled failed: %v", err)
+	}
+
+	// Open lower-79 Store without work-advice/1
+	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	lowerPolicy := CompatibilityPolicy{
+		MaxMigrationVersion:   79,
+		SupportedWorkFeatures: map[string]bool{"work-view/1": true, "work-artifacts/1": true},
+	}
+	lowerStore, err := OpenWithCompatibility(ctx, dsn, Channel{Principal: "operator:test", Operator: true}, lowerPolicy)
+	if err != nil {
+		t.Fatalf("OpenWithCompatibility failed: %v", err)
+	}
+	defer lowerStore.Close()
+
+	// Lower-79 maintenance Undo
+	err = lowerStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("lowerStore.UndoAdviceApplication failed: %v", err)
+	}
+
+	rcpt, err := lowerStore.GetAdviceReceipt(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("lowerStore.GetAdviceReceipt failed: %v", err)
+	}
+	if !rcpt.Undone {
+		t.Fatalf("expected receipt to be marked Undone")
+	}
+
+	// Exact-retry of UndoAdviceApplication
+	err = lowerStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("exact-retry UndoAdviceApplication failed: %v", err)
+	}
+
+	// Retiring work-advice/1 succeeds when 0-action proposal exists
+	// All actions undone -> proposal has 0 pending actions!
+	err = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{
+		FeatureName: "work-advice/1",
+		Status:      "retired",
+	})
+	if err != nil {
+		t.Fatalf("retiring work-advice/1 failed when proposal has 0 pending actions: %v", err)
+	}
+}
+
+func TestWorkAdvice_ReceiptHydrationAndRepoScoping(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	prov := &countedAdviceProvider{
+		proposal: &advice.Proposal{
+			Summary: "test advice",
+			Actions: []advice.ProposedAction{
+				{
+					ActionType: advice.ActionAnnotateProgress,
+					Progress:   &advice.ProgressPayload{Text: "scoped receipt progress"},
+				},
+			},
+		},
+	}
+	job := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   uuid.New(),
+	}
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+	prop, actions, err := operatorStore.ExecuteAdviceJob(ctx, job, spec, prov)
+	if err != nil {
+		t.Fatalf("ExecuteAdviceJob failed: %v", err)
+	}
+
+	receiptReq := &WorkAdviceApplicationReceipt{
+		RequestUUID:  uuid.New(),
+		ProposalUUID: prop.ProposalUUID,
+	}
+	receipt, err := operatorStore.ApplyAdviceProposal(ctx, receiptReq, prop.ReviewVersion, []uuid.UUID{actions[0].ActionUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+
+	// 1. Live receipt hydration
+	r1, err := operatorStore.GetAdviceReceipt(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("GetAdviceReceipt failed: %v", err)
+	}
+	if r1.BindingID != bindingID || r1.PlaneItemUUID != planeItemUUID || len(r1.SourceRecordIDs) == 0 {
+		t.Fatalf("GetAdviceReceipt did not hydrate fields: binding=%v item=%v srcs=%s", r1.BindingID, r1.PlaneItemUUID, string(r1.SourceRecordIDs))
+	}
+
+	r2, err := operatorStore.GetAdviceReceiptByUUID(ctx, receipt.ReceiptUUID)
+	if err != nil {
+		t.Fatalf("GetAdviceReceiptByUUID failed: %v", err)
+	}
+	if r2.BindingID != bindingID || r2.PlaneItemUUID != planeItemUUID || len(r2.SourceRecordIDs) == 0 {
+		t.Fatalf("GetAdviceReceiptByUUID did not hydrate fields: %+v", r2)
+	}
+
+	list, err := operatorStore.ListAdviceApplications(ctx, prop.ProposalUUID)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("ListAdviceApplications failed: %v len=%d", err, len(list))
+	}
+	if list[0].BindingID != bindingID || list[0].PlaneItemUUID != planeItemUUID {
+		t.Fatalf("ListAdviceApplications item did not hydrate fields: %+v", list[0])
+	}
+
+	// 2. >30d retained stub hydration where proposal_uuid IS NULL
+	_, err = operatorStore.pool.Exec(ctx, `DELETE FROM cairn.work_advice_proposal WHERE proposal_uuid = $1`, prop.ProposalUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify proposal_uuid was set to NULL on receipt via ON DELETE SET NULL
+	var nullProp *uuid.UUID
+	err = operatorStore.pool.QueryRow(ctx, `SELECT proposal_uuid FROM cairn.work_advice_application_receipt WHERE receipt_uuid = $1`, receipt.ReceiptUUID).Scan(&nullProp)
+	if err != nil || nullProp != nil {
+		t.Fatalf("expected proposal_uuid to be NULL on receipt, got %v, err=%v", nullProp, err)
+	}
+
+	stubR, err := operatorStore.GetAdviceReceipt(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("GetAdviceReceipt failed on >30d stub: %v", err)
+	}
+	if stubR.ProposalUUID != uuid.Nil || stubR.BindingID != bindingID || stubR.PlaneItemUUID != planeItemUUID {
+		t.Fatalf("unexpected stub receipt hydration: %+v", stubR)
+	}
+
+	stubR2, err := operatorStore.GetAdviceReceiptByUUID(ctx, receipt.ReceiptUUID)
+	if err != nil {
+		t.Fatalf("GetAdviceReceiptByUUID failed on >30d stub: %v", err)
+	}
+	if stubR2.BindingID != bindingID || stubR2.PlaneItemUUID != planeItemUUID {
+		t.Fatalf("unexpected stub receipt by UUID: %+v", stubR2)
+	}
+
+	// 3. Repo scoping: matching-Repo operator succeeds, cross-Repo operator fails
+	var collection string
+	_ = operatorStore.pool.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, bindingID).Scan(&collection)
+
+	matchingOpStore := testStore(t, Channel{Principal: "op:matching", Operator: true, Repo: collection})
+	if _, err := matchingOpStore.GetAdviceReceipt(ctx, receipt.RequestUUID); err != nil {
+		t.Fatalf("matching repo operator failed: %v", err)
+	}
+
+	crossOpStore := testStore(t, Channel{Principal: "op:other", Operator: true, Repo: "other-repo-" + uuid.NewString()[:8]})
+	if _, err := crossOpStore.GetAdviceReceipt(ctx, receipt.RequestUUID); err == nil {
+		t.Fatalf("expected cross-repo operator to be rejected with repo mismatch")
+	}
+}
+
+func TestWorkAdvice_AnnotationHistorySnapshotAuthAndScoping(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	agentStore := testStore(t, Channel{Principal: "agent:test", Operator: false})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	var collection string
+	_ = operatorStore.pool.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, bindingID).Scan(&collection)
+
+	annotID := uuid.New()
+	_, err := operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_annotation (annotation_id, revision, binding_id, plane_item_uuid, kind, body, state, author, created_at, updated_at)
+		VALUES ($1, 1, $2, $3, 'progress', 'first progress', 'active', 'operator:test', clock_timestamp(), clock_timestamp())
+	`, annotID, bindingID, planeItemUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_annotation_history (annotation_id, revision, body, state, author, created_at)
+		VALUES ($1, 1, 'first progress', 'active', 'operator:test', clock_timestamp())
+	`, annotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Non-operator refusal
+	_, _, _, err = agentStore.GetAnnotationHistorySnapshot(ctx, annotID, 1)
+	if err == nil {
+		t.Fatalf("expected non-operator refusal, got nil")
+	}
+
+	// 2. Wrong-repo operator refusal
+	wrongOpStore := testStore(t, Channel{Principal: "op:wrong", Operator: true, Repo: "other-repo-" + uuid.NewString()[:8]})
+	_, _, _, err = wrongOpStore.GetAnnotationHistorySnapshot(ctx, annotID, 1)
+	if err == nil {
+		t.Fatalf("expected wrong-repo operator refusal, got nil")
+	}
+
+	// 3. Matching-repo operator success
+	matchOpStore := testStore(t, Channel{Principal: "op:match", Operator: true, Repo: collection})
+	body, state, ok, err := matchOpStore.GetAnnotationHistorySnapshot(ctx, annotID, 1)
+	if err != nil || !ok {
+		t.Fatalf("expected success, got ok=%v, err=%v", ok, err)
+	}
+	if body != "first progress" || state != "active" {
+		t.Fatalf("unexpected snapshot: body=%q state=%q", body, state)
+	}
+}
+
+func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	cmd := exec.Command("sleep", "30")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start isolated child: %v", err)
+	}
+	childPID := cmd.Process.Pid
+	childPGID, err := syscall.Getpgid(childPID)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("Getpgid failed: %v", err)
+	}
+	defer func() {
+		_ = syscall.Kill(-childPGID, syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+
+	ident := advice.ProcessIdentity{
+		PID:        childPID,
+		PGID:       childPGID,
+		StartTicks: 1000,
+		BootID:     "boot-reconcile-uncertain",
+	}
+	identBytes, _ := json.Marshal(ident)
+	jobUUID := uuid.New()
+	reqUUID := uuid.New()
+
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_job (
+			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
+			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
+			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at, error_code
+		) VALUES (
+			$1, $2, $3, 'operator:test', 'default', 'test',
+			1, $4, '{}'::jsonb, 'digest', 'digest',
+			'uncertain', 60, $5, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
+		)
+	`, jobUUID, bindingID, planeItemUUID, reqUUID, identBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, err := operatorStore.ReconcileAdviceJobs(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileAdviceJobs failed: %v", err)
+	}
+	if len(reconciled) != 1 {
+		t.Fatalf("expected 1 reconciled job, got %d", len(reconciled))
+	}
+	if reconciled[0].FinalStatus != "uncertain" || reconciled[0].FinalErrorCode != "RECORD_FAILED" {
+		t.Fatalf("expected finalStatus=uncertain, finalErrorCode=RECORD_FAILED, got status=%s, errCode=%s", reconciled[0].FinalStatus, reconciled[0].FinalErrorCode)
+	}
+
+	probeErr := syscall.Kill(childPID, 0)
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for probeErr == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		probeErr = syscall.Kill(childPID, 0)
+	}
+	if !errors.Is(probeErr, syscall.ESRCH) {
+		t.Fatalf("expected child to be killed (ESRCH), got probeErr=%v", probeErr)
+	}
+
+	var dbStatus, dbErrCode string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT status, error_code FROM cairn.work_advice_job WHERE job_uuid = $1`, jobUUID).Scan(&dbStatus, &dbErrCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dbStatus != "uncertain" || dbErrCode != "RECORD_FAILED" {
+		t.Fatalf("DB job state: status=%s, error_code=%s (expected uncertain, RECORD_FAILED)", dbStatus, dbErrCode)
+	}
+
+	prov := &countedAdviceProvider{}
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+	newJob := &WorkAdviceJob{BindingID: bindingID, PlaneItemUUID: planeItemUUID, RequestUUID: uuid.New()}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, newJob, spec, prov)
+	if err == nil {
+		t.Fatalf("expected ExecuteAdviceJob to be blocked while uncertain job exists, got nil")
+	}
+	if prov.callCount.Load() != 0 {
+		t.Fatalf("provider was invoked while item in uncertain state: %d calls", prov.callCount.Load())
+	}
+
+	// 2. Unconfirmed cleanup on uncertain (e.g. foreign boot_id)
+	foreignJobUUID := uuid.New()
+	foreignIdent := advice.ProcessIdentity{
+		PID:        99999,
+		PGID:       99999,
+		StartTicks: 1000,
+		BootID:     "foreign-boot-id",
+	}
+	foreignIdentBytes, _ := json.Marshal(foreignIdent)
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_job (
+			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
+			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
+			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at, error_code
+		) VALUES (
+			$1, $2, $3, 'operator:test', 'default', 'test',
+			1, $4, '{}'::jsonb, 'digest', 'digest',
+			'uncertain', 60, $5, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
+		)
+	`, foreignJobUUID, bindingID, planeItemUUID, uuid.New(), foreignIdentBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled2, err := operatorStore.ReconcileAdviceJobs(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileAdviceJobs 2 failed: %v", err)
+	}
+	var foundForeign bool
+	for _, r := range reconciled2 {
+		if r.JobUUID == foreignJobUUID {
+			foundForeign = true
+			if r.FinalStatus != "uncertain" || r.FinalErrorCode != "RECORD_FAILED" {
+				t.Fatalf("expected uncertain/RECORD_FAILED, got: %s/%s", r.FinalStatus, r.FinalErrorCode)
+			}
+			if r.ActionTaken != "retained_uncertain_cleanup_unconfirmed" || r.CleanupError == "" {
+				t.Fatalf("expected retained_uncertain_cleanup_unconfirmed with CleanupError, got action=%s err=%s", r.ActionTaken, r.CleanupError)
+			}
+		}
+	}
+	if !foundForeign {
+		t.Fatalf("foreign job was not reconciled")
+	}
+}
+
+func TestWorkAdvice_DerivedSourceRecordIDs_EditedBlockerNotOverPurged(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	var collection string
+	_ = operatorStore.pool.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, bindingID).Scan(&collection)
+
+	source, err := operatorStore.Create(ctx, CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: Draft{
+			Kind:        "note",
+			Body:        "source for blocker test",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       Scope{Repo: collection, TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sUUID := uuid.MustParse(source.RecordID)
+
+	blockerID := uuid.New()
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_annotation (
+			annotation_id, revision, binding_id, plane_item_uuid, kind, body, state, author, created_at, updated_at
+		) VALUES (
+			$1, 1, $2, $3, 'blocker', 'blocker text', 'open', 'operator:test', clock_timestamp(), clock_timestamp()
+		)
+	`, blockerID, bindingID, planeItemUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outRevs := map[string]any{
+		uuid.NewString(): map[string]any{
+			"type":          "blocker_created",
+			"annotation_id": blockerID.String(),
+			"revision":      1,
+		},
+	}
+	outRevsBytes, _ := json.Marshal(outRevs)
+	srcIDsBytes, _ := json.Marshal([]uuid.UUID{sUUID})
+
+	receiptUUID := uuid.New()
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_advice_application_receipt (
+			receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
+			applied_action_uuids, applied_by_channel, output_revisions, applied_at, undone, compensating_revisions
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			'[]'::jsonb, 'operator:test', $7, clock_timestamp(), false, '{}'::jsonb
+		)
+	`, receiptUUID, uuid.New(), uuid.New(), bindingID, planeItemUUID, srcIDsBytes, outRevsBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
+	_, man1, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
+	if err != nil {
+		t.Fatalf("BuildWorkAdviceSnapshot rev 1 failed: %v", err)
+	}
+	foundS := false
+	for _, id := range man1.DerivedSourceRecordIDs {
+		if id == sUUID {
+			foundS = true
+			break
+		}
+	}
+	if !foundS {
+		t.Fatalf("expected sUUID in DerivedSourceRecordIDs for blocker rev 1")
+	}
+
+	_, err = operatorStore.pool.Exec(ctx, `
+		UPDATE cairn.work_annotation
+		SET revision = 2, body = 'manually edited blocker', updated_at = clock_timestamp()
+		WHERE annotation_id = $1
+	`, blockerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, man2, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
+	if err != nil {
+		t.Fatalf("BuildWorkAdviceSnapshot rev 2 failed: %v", err)
+	}
+	foundS2 := false
+	for _, id := range man2.DerivedSourceRecordIDs {
+		if id == sUUID {
+			foundS2 = true
+			break
+		}
+	}
+	if foundS2 {
+		t.Fatalf("edited blocker at revision 2 should NOT have derived source S from receipt matching revision 1")
 	}
 }

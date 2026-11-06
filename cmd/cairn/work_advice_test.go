@@ -16,6 +16,7 @@ import (
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/advice"
 	"github.com/halbritt/cairn/internal/plane"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func testWorkAdviceStore(t *testing.T, repo string) *core.Store {
@@ -617,10 +618,14 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 	if len(actProg.Review.SourceReferences) != 1 {
 		t.Fatalf("expected 1 source citation on progress, got %d", len(actProg.Review.SourceReferences))
 	}
+	expectedObs := src2.WrittenAt.UTC().Format(time.RFC3339Nano)
+	if len(show.Manifest.Sources) == 0 || show.Manifest.Sources[0].ObservedAt != expectedObs {
+		t.Fatalf("expected Manifest.Sources[0].ObservedAt %q, got %q", expectedObs, show.Manifest.Sources[0].ObservedAt)
+	}
 	srcCitation := actProg.Review.SourceReferences[0]
-	if srcCitation.Version != 2 || srcCitation.ObservedAt == "" || srcCitation.BodySHA256 == "" {
-		t.Fatalf("expected source citation to reflect v2 metadata, got version=%d obsAt=%q bodySha=%q",
-			srcCitation.Version, srcCitation.ObservedAt, srcCitation.BodySHA256)
+	if srcCitation.Version != 2 || srcCitation.ObservedAt != expectedObs || srcCitation.BodySHA256 == "" {
+		t.Fatalf("expected source citation to reflect v2 metadata, got version=%d obsAt=%q (expected %q) bodySha=%q",
+			srcCitation.Version, srcCitation.ObservedAt, expectedObs, srcCitation.BodySHA256)
 	}
 
 	actLink := show.Actions[1]
@@ -661,5 +666,114 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 	beforeProg2, ok := actProg2.Review.Before.(map[string]any)
 	if !ok || beforeProg2["body"] != "captured initial progress" || int64(beforeProg2["revision"].(float64)) != prog.Revision {
 		t.Fatalf("expected Before to remain unchanged at captured state, got %v", actProg2.Review.Before)
+	}
+}
+
+func TestWorkAdviceShow_UnavailableBeforeAndErrorPropagation(t *testing.T) {
+	repo := "repo-advice-show-unavail-" + uuid.NewString()[:8]
+	s := testWorkAdviceStore(t, repo)
+	ctx := context.Background()
+
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		if err := s.SetWorkFeatureStatus(ctx, core.SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	slug := "show-unavail-" + uuid.NewString()[:8]
+	bindingID, itemUUID := setupAdviceCLIWorkProjectAndItem(t, s, ctx, slug)
+
+	rawAdvice, err := json.Marshal(map[string]any{
+		"summary": "advice with missing history",
+		"actions": []any{
+			map[string]any{
+				"action_type": "annotate_progress",
+				"text":        "advised progress",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &showMockAdviceProvider{resultJSON: string(rawAdvice)}
+	job := &core.WorkAdviceJob{
+		BindingID:       bindingID,
+		PlaneItemUUID:   itemUUID,
+		RequestUUID:     uuid.New(),
+		ProfileName:     "mock-profile",
+		ModelRoute:      "mock",
+		TemplateVersion: 1,
+	}
+	prop, actions, err := s.GenerateWorkAdvice(ctx, job, core.AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: itemUUID,
+	}, provider)
+	if err != nil || prop == nil || len(actions) != 1 {
+		t.Fatalf("GenerateWorkAdvice failed: %v", err)
+	}
+
+	pool, err := pgxpool.New(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	nonExistentID := uuid.New()
+	manBytes, _ := json.Marshal(core.WorkAdviceInputManifest{
+		PreconditionProgressPresent:  true,
+		PreconditionProgressID:       &nonExistentID,
+		PreconditionProgressRevision: 99,
+	})
+	_, err = pool.Exec(ctx, `UPDATE cairn.work_advice_job SET input_manifest = $1 WHERE job_uuid = $2`, manBytes, job.JobUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	showURL := fmt.Sprintf("/api/work/advice/show?proposal=%s", prop.ProposalUUID)
+	req := httptest.NewRequest(http.MethodGet, showURL, nil)
+	rec := httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET show failed: %d: %s", rec.Code, rec.Body.String())
+	}
+	var show WorkAdviceShowEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &show); err != nil {
+		t.Fatalf("decode show failed: %v", err)
+	}
+	if len(show.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(show.Actions))
+	}
+	bMap, ok := show.Actions[0].Review.Before.(map[string]any)
+	if !ok || bMap["state"] != "unavailable" || bMap["unavailable"] != true {
+		t.Fatalf("expected unavailable before, got: %v", show.Actions[0].Review.Before)
+	}
+	if _, hasBody := bMap["body"]; hasBody {
+		t.Fatalf("expected no body in unavailable before, got: %v", bMap)
+	}
+	if show.Actions[0].Review.After != nil {
+		t.Fatalf("expected nil after when before is unavailable, got: %v", show.Actions[0].Review.After)
+	}
+
+	wrongRepoStore := testWorkAdviceStore(t, "wrong-repo-"+uuid.NewString()[:8])
+	reqWrong := httptest.NewRequest(http.MethodGet, showURL, nil)
+	recWrong := httptest.NewRecorder()
+	HandleWorkAdviceAPI(wrongRepoStore, wrongRepoStore.Channel().Repo, recWrong, reqWrong)
+	if recWrong.Code == http.StatusOK {
+		t.Fatalf("expected error on wrong repo, got 200 OK")
+	}
+
+	_, err = pool.Exec(ctx, `UPDATE cairn.work_advice_action SET target_payload = '{}'::jsonb WHERE action_uuid = $1`, actions[0].ActionUUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recPurged := httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, recPurged, req)
+	if recPurged.Code != http.StatusOK {
+		t.Fatalf("GET show purged failed: %d: %s", recPurged.Code, recPurged.Body.String())
+	}
+	var showPurged WorkAdviceShowEnvelope
+	_ = json.Unmarshal(recPurged.Body.Bytes(), &showPurged)
+	if showPurged.Actions[0].Review.After != nil {
+		t.Fatalf("expected nil after for purged payload, got: %v", showPurged.Actions[0].Review.After)
 	}
 }
