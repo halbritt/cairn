@@ -385,6 +385,12 @@ specified below, retaining the disabled-staging exception.
 snapshot, so the child cannot silently observe a different enabled decision.
 This digest binds the parent's observation, not authority or a new config
 selection. The parent's continued handler uses that same checked snapshot.
+The private argv also carries the same `--receipt PATH --receipt-sha256 SHA`
+from the authenticated launch vector. Go revalidates that independently pinned
+receipt metadata to obtain the binary/role/config descriptor tuple across exec;
+config/binding digests alone do not convey it. This code-selection metadata
+check does not open binding data before source admission or imply that a
+process-local Python context survived into Go.
 
 The child interprets those event bytes with the source-compatible lossless
 reader profile, not Go struct decoding or replacement-character normalization.
@@ -429,12 +435,13 @@ panic never accidentally returns the host-blocking exit 2.
 
 ### Child failures and the enclosing deadline
 
-Valid exit-1 error frames retain their exact source exception category through
+Valid source-error exit-1 frames retain their exact source exception category through
 the existing public handlers. Failures without a valid frame use this fixed
 mapping; the parent never forwards the child's numeric status as its own:
 
 | Child failure | Parent category |
 | --- | --- |
+| Child cannot revalidate the independently pinned receipt metadata | The declared new `CompatibilityPreflightError` frame below; fixed code-preflight exit 1, without ordinary source required/native promotion |
 | Spawn `ENOENT`, `EACCES` or another OS failure | Preserve the actual `OSError` subtype and errno (`FileNotFoundError`, `PermissionError`, etc.) |
 | Enclosing child timer expires, before launch or while waiting | `TimeoutError` / `ETIMEDOUT`, an `OSError`; explicitly convert `subprocess.TimeoutExpired` to it |
 | Signal death, panic/status 2, or another unexpected exit without a valid exit-1 frame | `subprocess.SubprocessError` |
@@ -631,6 +638,15 @@ Each ends in a newline. There is no required-context/native-prompt promotion,
 refusal-record/ledger/token/API effect or arbitrary error text on this path.
 This new-artifact failure is not claimed to match a legacy excluded callback
 that had no such artifact. `/2` keeps its original behavior.
+
+If receipt bytes or descriptor selection are replaced, missing or mixed between
+parent and child, the child returns exactly
+`{"error":{"class":"CompatibilityPreflightError","reason":"compatibility_receipt","errno":null}}`
+plus newline, exit 1 and empty stdout, within the 4096-byte private bound.
+This is the sole new code-selection class/site in the private vocabulary;
+the parent renders its selected role's preflight line and never performs the
+ordinary source refusal promotion or a refusal-record mutation. Other valid
+source-error frames and F-01/F-04 OS/transport classifications are unchanged.
 
 With valid executing code and the checked parent config/event, the Go child
 runs the source `inbox_recall` admission prefix once **before** opening/hash
