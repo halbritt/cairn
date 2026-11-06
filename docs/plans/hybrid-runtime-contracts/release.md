@@ -153,6 +153,11 @@ because a corresponding legacy test exists.
    and conversation continuity. A staged binary or version string alone is
    insufficient. Unsupported refresh remains an explicit release blocker for
    an installed client; do not replace its conversation to bypass it.
+   Process parentage alone does not identify a thread's active MCP connection.
+   Check connection identity separately from retained process accounting, and
+   verify the native refresh method's actual scope before using it. An
+   app-server-wide reload is not a thread-specific force-reconnect operation;
+   an accepted reload does not prove replacement or reaping.
 7. Reverse lifecycle rollout through the preserved immutable `/2` release only
    after the same drain, pin validation and supported client refresh. Compatible
    persistent state remains readable and writable by the selected executor;
