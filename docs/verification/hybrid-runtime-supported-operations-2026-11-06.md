@@ -130,7 +130,14 @@ It changed no assertion or expected outcome. No Go/Rust build was needed.
 | [Setup deadline](../../scripts/test_install_agent_coordination_timeout.py) | 1 | Termination of a synthetic app-server stalled during setup RPC. |
 | [Active-turn deadline](../../scripts/test_install_agent_coordination_active_turn.py) | 1 | Exact synthetic turn interruption, sandbox descendant cleanup and absence of false settlement. This uses a Node stand-in, not a real model. |
 
-Working entry points, from the repository root:
+Run these entry points from the repository root with PyYAML available to the
+Python interpreter; the [Hermes installer imports it](../../scripts/install-hermes-integration.py#L12).
+Installed closure needs a working Linux `bwrap` namespace sandbox. The
+[native Herdr preservation case](../../scripts/test_install_agent_coordination.py#L194)
+needs `herdr`, and the [active-turn deadline case](../../scripts/test_install_agent_coordination_active_turn.py#L35)
+also needs `/usr/bin/node`. Those fixture decorators skip cases when their
+tools are absent. The reported zero-skip discovery run had these prerequisites;
+a skipped case leaves its coverage unverified.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/test_installed_lifecycle_bundle.py -v
