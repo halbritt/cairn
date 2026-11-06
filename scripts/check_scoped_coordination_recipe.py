@@ -208,7 +208,7 @@ class Recipe:
         status = {f["feature_name"]: f["status"] for f in listed}
         require(all(status.get(f) == "active" for f in FEATURES), "selected work features are not active")
         # The recipe does not enable model advice; CAIRN-227's rollout decision is unchanged.
-        require(status.get("work-advice/1", "disabled") == "disabled", "recipe enabled work advice")
+        require(status.get("work-advice/1") == "disabled", "work advice is not present and disabled")
         self.report["work_features"] = status
         self.work("project", "add", "--slug", self.project, "--workspace", workspace,
                   "--project", project, "--request-id", uid())
@@ -429,6 +429,12 @@ class Recipe:
     def unrelated_and_plane(self):
         require(self.deliveries_to("bystander") == 0 and self.next("bystander") is None,
                 "unrelated participant received a delivery")
+        bystander = self.sessions["bystander"]
+        require(self.sql_count(
+            "SELECT count(*) FROM cairn.agent_organic_notice WHERE "
+            f"repo='{self.repo}' AND (recipient_inbox='{bystander['inbox']}' "
+            f"OR recipient_agent_id='{bystander['agent_id']}')") == 0,
+                "unrelated participant has a queued quiet notice")
         subs = self.agent("bystander", "event-subscriptions")["subscriptions"]
         require([(s["topic"], s["active"]) for s in subs] == [(self.unrelated_topic, True)],
                 "workflow changed the unrelated participant's subscription")

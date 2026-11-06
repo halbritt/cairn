@@ -30,9 +30,11 @@ grants a session any capability.
 - Every participant is a registered session with its own `agent/UUID` inbox. Use the agent
   and execution UUIDs supplied by your native integration. Do not register again to get
   around a stale session.
-- The coordinator session's base profile is in `CAIRN_TOKEN_FILE`. Shell variables such as
-  `COORD_AGENT`, `COORD_EXEC` and `COLLECTION` hold real values. Uppercase words in the
-  examples are placeholders.
+- Each participant uses its own base profile token: a session is bound to the profile that
+  registered it, so another profile cannot act for it. In the examples,
+  `COORD_TOKEN_FILE` is the coordinator's profile and `WORKER_TOKEN_FILE` is the profile of
+  the worker running the command. Shell variables such as `COORD_AGENT`, `COORD_EXEC` and
+  `COLLECTION` hold real values. Uppercase words in the examples are placeholders.
 - The operator has bound the Plane project with `cairn work project add` and enabled
   `work-view/1`, `work-artifacts/1` and `coordination-waits/1`. Waits need a running
   scheduler (`cairn schedule-serve`) or an operator sweep.
@@ -44,7 +46,7 @@ installation can be older, so check it first:
 
 ```sh
 cairn version
-cairn agent --token-file "$CAIRN_TOKEN_FILE" version
+cairn agent --token-file "$COORD_TOKEN_FILE" version
 cairn work features status
 ```
 
@@ -57,7 +59,7 @@ Pick a topic name unique to this round, for example `review.` followed by a new 
 fragment. Each worker subscribes its own session:
 
 ```sh
-cairn subscribe --token-file "$CAIRN_TOKEN_FILE" \
+cairn subscribe --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID \
   --repo "$COLLECTION" --request-id SUBSCRIBE_UUID --topic review.ROUND_ID
 ```
@@ -75,7 +77,7 @@ Save the assignment as an exact source under a dedicated task, such as
 shows the save-then-publish sequence. Then publish it to the topic with a response group:
 
 ```sh
-cairn publish --token-file "$CAIRN_TOKEN_FILE" \
+cairn publish --token-file "$COORD_TOKEN_FILE" \
   --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" --repo "$COLLECTION" \
   --request-id PUBLICATION_UUID --topic review.ROUND_ID --kind request \
   --response-deadline DEADLINE_RFC3339 --response-policy partial \
@@ -96,17 +98,20 @@ The deliveries should name exactly the subscribed workers.
 Register a durable wait on the group, then let the coordinator's turn end:
 
 ```sh
-cairn wait create --token-file "$CAIRN_TOKEN_FILE" \
+cairn wait create --token-file "$COORD_TOKEN_FILE" \
   --agent-id "$COORD_AGENT" --execution-id "$COORD_EXEC" \
   --repo "$COLLECTION" --request-id WAIT_UUID \
   --predicate response_group_closed --dependency EVENT_UUID \
   --deadline WAIT_DEADLINE_RFC3339
 ```
 
-When the group closes, at its deadline or once every member has replied, the scheduler
-satisfies the wait and publishes one notice to the coordinator's inbox. For a single
-direct request, use `--predicate request_response` instead. A satisfied wait records that
-replies were collected; it says nothing about whether the task succeeded.
+Choose a wait deadline later than the response deadline. The wait is satisfied by any
+closure of the group before the wait deadline: `collected` when every member replied, or
+`partial` or `incomplete` at the response deadline, including a closure with no replies at
+all. The scheduler then publishes one notice to the coordinator's inbox. Read the group
+state before using its results. If the wait deadline passes first, the wait ends with
+`terminal_reason: timeout` and still publishes its notice. For a single direct request, use `--predicate request_response` instead.
+A satisfied wait says nothing about whether the task succeeded.
 
 ## 4. Workers complete and reply
 
@@ -114,12 +119,12 @@ Each worker claims its delivery, reads the exact source version, and completes t
 with a short selected result:
 
 ```sh
-cairn inbox next --token-file "$CAIRN_TOKEN_FILE" \
+cairn inbox next --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID
 printf '%s\n' '{"record_id":"SOURCE_UUID","version":1}' | \
-  cairn agent --token-file "$CAIRN_TOKEN_FILE" \
+  cairn agent --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID history
-cairn complete --token-file "$CAIRN_TOKEN_FILE" \
+cairn complete --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID \
   --request-id COMPLETE_UUID --lease LEASE_UUID --stdin --shareable \
   --task coordination-result/EVENT_UUID DELIVERY_UUID < result.txt
@@ -130,7 +135,7 @@ citing the request event and its correlation UUID and pointing at the exact resu
 that completion returned:
 
 ```sh
-cairn publish --token-file "$CAIRN_TOKEN_FILE" \
+cairn publish --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID \
   --request-id REPLY_UUID --to "agent/$COORD_AGENT" --kind response \
   --causation-id EVENT_UUID --correlation-id CORRELATION_UUID \
@@ -193,7 +198,7 @@ should skip deferral. Neither option promises an immediate wake.
 At the end of the round, each worker unsubscribes its own session:
 
 ```sh
-cairn unsubscribe --token-file "$CAIRN_TOKEN_FILE" \
+cairn unsubscribe --token-file "$WORKER_TOKEN_FILE" \
   --agent-id WORKER_AGENT_UUID --execution-id WORKER_EXECUTION_UUID \
   --repo "$COLLECTION" --request-id UNSUBSCRIBE_UUID --topic review.ROUND_ID
 ```
@@ -214,11 +219,13 @@ withdraw the request.
 
 `scripts/check_scoped_coordination_recipe.py` runs this recipe end to end with real CLI
 and local API operations on a disposable database. Only Plane is a stand-in, and it
-answers reads only. The fixture uses one coordinator, three workers and one unrelated
-session. It checks that:
+answers reads only. The fixture registers five sessions, each with its own profile: one coordinator, three
+workers and one unrelated session. The third worker never replies; before teardown it
+leaves (stopped), then resumes to unsubscribe. It checks that:
 
 - the topic snapshot names exactly the three subscribed workers;
-- the unrelated session receives no deliveries and its own subscription is unchanged;
+- the unrelated session receives no deliveries or queued quiet notices, and its own
+  subscription is unchanged;
 - a direct request reaches only its recipient;
 - two of three replies leave the group `partial` at its deadline, with
   `reported_task_outcome: unknown`;
