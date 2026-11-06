@@ -1,6 +1,8 @@
 # Release installation and acceptance contract
 
-Revision: `release/1`, proposed for campaign X-01 on 2026-11-06. This is a
+Revision: `release/2`, proposed for campaign X-01 on 2026-11-06. Review packets
+and Plane items identify the exact candidate commit; root's shared index
+records the accepted revision and commit. This is a
 specification and source characterization, not evidence of an implemented or
 deployed hybrid runtime. Independent criteria review and the overall lead's
 X-01 closure are required before new code consumes this revision.
@@ -105,7 +107,14 @@ These observations describe source, not current installations:
 R-01 records the complete operation matrix from actual source and installed
 observations. Each row names harness, account selector, operation/event,
 configuration source, code/pin identity, supported or unsupported result,
-source fixture, installed observation and live-client observation. Unknown or
+source fixture, installed observation and live-client observation. Each live
+session also records whether hooks are cached, the supported hook/MCP refresh
+method and its actual scope, and evidence that the selected hook identity took
+effect. A current MCP connection does not prove that cached hooks refreshed.
+Inventory `/1`, two-file and `/2` selections separately; the existing
+`scripts/check_effective_recall_deployment.py` recognizes historical `/1`.
+An unreviewed live legacy selection blocks its migration; frozen trials retain
+their original executors and pins. Unknown or
 unobserved entries remain explicit. Agy memory and each harness's idle wake,
 cancellation and recovery are checked individually; neither a shared installer
 nor a successful MCP connection proves the whole row.
@@ -133,6 +142,12 @@ because a corresponding legacy test exists.
    never authenticate a Go executable. Continue through the selected legacy
    executor or require explicit drain and `/3` repin. Keep the previous
    immutable release for explicit rollback; no automatic pruning occurs.
+   Use versioned paths for `/3` bindings and their configuration snapshots;
+   never rewrite an old `/2` binding into `/3` under cached legacy callbacks.
+   An old entry given a `/3` descriptor, or a new binary presented only a `/2`
+   descriptor, fails closed before effects with the characterized streams and
+   exit status. Deliberate `/2` routing invokes the preserved legacy executor,
+   rather than treating its pin as binary authentication.
 3. Disabled staging permits preparing files without enabling callbacks.
    Activation follows successful contract validation and verified drain.
    An enabled binding, unsettled callback/attempt, conflicting installer,
@@ -158,11 +173,130 @@ because a corresponding legacy test exists.
    verify the native refresh method's actual scope before using it. An
    app-server-wide reload is not a thread-specific force-reconnect operation;
    an accepted reload does not prove replacement or reaping.
+   Keep every interpreter, entrypoint, configuration snapshot and context path
+   named by a live hook or issued completion/reply argv executable and compatible
+   until all its unsettled references finish and its session refresh is proved.
+   Existing `coordination.py` embeds `sys.executable` and its own absolute path
+   in issued argv. No reference may be silently redirected to an incompatible
+   descriptor. An explicitly unsupported cross-version invocation has a tested
+   fail-closed diagnostic; it is not a substitute for preserving supported
+   unchanged explicit retries. Missing refresh/reference evidence blocks removal.
 7. Reverse lifecycle rollout through the preserved immutable `/2` release only
    after the same drain, pin validation and supported client refresh. Compatible
    persistent state remains readable and writable by the selected executor;
    any discovered incompatible state requires an independently reviewed
    transition before dependent implementation.
+
+## Activation units, drain and coexistence
+
+The production transition unit is a host's presence watcher plus **every**
+binding served by its selected `--config-dir`, all associated memory bindings,
+callback entrypoints and account/repository/session selections. Any shared
+runtime root, ledger or native-session state expands the unit to include its
+other users. One release owner controls it. `/2` and `/3` may coexist across
+independent units; this contract does not permit two production watchers or
+executors concurrently owning the same unit. A mixed unit stays on its retained
+legacy selection until every member can transition safely. No Go watcher is
+assumed to serve `/2` sessions without an explicit separately tested contract.
+
+R-02 proves immutable staging, pins and activation controls using the implemented
+F-01/F-04 admission/state operations. It cannot certify Go recall/capture or a Go
+watcher that its dependencies do not yet provide. Complete watcher drain,
+switch, restart and rollback qualification belongs to **R-06**, after R-03,
+R-04, R-05 and S-05; its J-06 dependency includes J-05 and F-02/F-03. R-07 repeats
+that qualified procedure on actual units. This allocation preserves the plan's
+dependency edges and HC-05 gate; root must record it in X-01's reconciliation.
+
+A drain receipt names the unit, affected session/agent/execution IDs, source and
+pin identities, start/end observations and the held quiescence barrier. Every
+predicate below must be true, with no unknowns. Historical terminal fields need
+not be deleted; inspect their correspondence and status, not key absence.
+
+| Predicate and source | Required negative fixture / safe outcome |
+| --- | --- |
+| Disabled binding and no effective positive activation grant for an owning turn; inspect `inbox_binding.py` and `grant_ledger.py` decisions, not just the manifest Boolean. | REL-DRAIN-D1: disabled manifest with a retained positive ledger grant still blocks transition. |
+| Every native-session intent/attempt is terminal with matching authoritative close, completion/ack and requested reply facts; `native_session.py:ATTEMPT_KEYS` defines the retained fields. No active cancellation/custody hold remains. | REL-DRAIN-D2: retained active intent, attempt or mismatched close blocks; a correctly terminal retained record is not falsely classified as active. Stale process identity alone does not prove settlement. |
+| Owning sessions/watcher have completed their authorized journal settlement with the equivalent of `flush_inbox_intents(scope='all')`; no pending/running slot or live unresolved reply obligation remains. `reply_possible` is checked separately because the existing settled Boolean excludes it. | REL-DRAIN-D3: pending slot, lock owner, missing exact completion reference or unresolved `reply_possible` blocks. Recover the narrow `finish_reply` case through its existing owner; never replay arbitrary settled/refused or held/failed work. |
+| No active wake attempt and no live delivery lease/hold for affected sessions. Sources are authenticated `agent wake-attempts` with `active:true`, and the existing store-owned `cairn.agent_delivery`, `cairn.agent_wake_attempt` and session-inbox state, using reviewed read-only status inspection. | REL-DRAIN-D4: an active wake, nonterminal hold or live lease blocks even when no hook process exists. Missing visibility is unknown, never zero. |
+| Watcher and wake launchers for the unit are stopped/joined; no old lifecycle callback is running. Ordinary capture already admitted finishes against the retained immutable release. | REL-DRAIN-D5: a running callback, delayed child or restarting unit blocks; do not kill a conversation or fake retirement to make the predicate pass. |
+| A demonstrated quiescence barrier prevents new callback admissions, inbox claims and wakes throughout the check/stage/refresh/activate interval. It covers cached hooks, direct issued entrypoints and every unit member, not merely competing installers. | REL-DRAIN-D6: inject an admission/claim/wake between inspection and activation; it is prevented or invalidates the receipt and activation refuses. A quiet sleep or a new lock ignored by legacy code is insufficient. |
+| Selected configuration/pins and effective session hooks are read back under that barrier; rollback or failure leaves a complete old selection or disabled recoverable unit. | REL-DRAIN-D7: interrupt each durable boundary and race a configuration/reference change. No partial selection becomes active. |
+
+Journal flushing sends commands and is **not** a read-only inspection method.
+Sessions finish their own supplied contexts; the watcher uses only its existing
+authorized recovery path. The release inspector observes settled facts and
+never completes another agent's delivery or claims its inbox. Foundation and
+Coordination must provide a side-effect-free fact seam for any missing
+observable before dependent acceptance. Fixtures map status inspection to the
+actual schema and access checks; this specification invents no new CLI API.
+The orchestrating invocation must not itself retain an affected unresolved
+native attempt. Arrange a supported safe boundary/control invocation without
+re-registration, a replacement conversation or an exemption from the predicate.
+
+Compatibility qualification also runs real `/2` Python and `/3` Go processes
+against the same fixture lock paths, journal, native-session record and ledger.
+Exercise contention, timeout and crash at every persistence boundary; after
+each handoff the other executor reads the surviving state, including pending
+and `reply_possible` journals. Verify one mutation owner, preserved lock order
+and exact retry/reply references. This is a disposable compatibility test,
+not permission for an unqualified mixed production unit.
+
+Before R-02 implementation review, publish the install lock's path, unit scope,
+wait/refusal behavior and ordered durability map. The map includes staging and
+syncing immutable bytes/receipt, publishing the immutable path and directory,
+writing/syncing versioned configuration and pins, disabled selection publication,
+supported refresh/readback, final activation publication and its parent sync,
+and recovery-receipt persistence. Inject faults on both sides of every actual
+durable boundary. Only the final validated selection becomes active; a
+multi-file copy is not an atomic activation protocol.
+
+## Rollback, observation and retirement
+
+Before R-08 the rollback target is the retained `/2` executor and Python semantic
+worker, including their interpreter, websocket package, venv/native libraries,
+model/config assets and fixed launchers. R-08 may remove their **active**
+requirements only after an offline, hash-pinned restoration closure is retained
+and tested for each supported target architecture. A directory of Python source
+alone is insufficient. Post-R-08 rollback restores that declared closure from
+offline artifacts into a clean disposable home, restores the selected bindings
+and launchers, and executes lifecycle behavior plus the semantic reverse rebuild
+against a disposable database with the retired dependencies initially absent.
+No network download or assumed global package satisfies this fixture.
+
+The post-retirement target therefore remains the executable retained Python
+release, not an implicitly chosen older Go/Rust build. Changing that target
+requires a root decision and its own accepted rollback fixture. Keep all paths
+still needed by live issued argv/hooks until reference and session-refresh proof
+permits retirement. Unknown references or unavailable restoration artifacts
+block R-08; preserving them is preferable to an unsupported removal claim.
+
+An observation lane is host × harness × account/binding, plus one semantic lane
+per shared database/job queue. R-01 maps each lane to supported operation rows
+and expected identities. Each installed supported memory event and each
+supported request/reply/recovery path needs an observed cycle; include idle,
+busy, restart, refusal and cancellation only where supported. Unsupported rows
+have explicit refusal/no-op expectations and are never counted as successful
+supported operations. Each lane needs at least 24 continuous hours after its
+last relevant runtime change, and the semantic lane needs a full rebuild.
+
+A relevant change affects the lane's executed binary, active configuration,
+launcher, model or supervised service. Reset every affected lane, including
+dependent lanes when the semantic service changes. Rehearse destructive rollback
+in disposable homes/databases using the exact release artifacts. If a separately
+coordinated production rehearsal is performed, its rollback and roll-forward
+restart the affected observation window. R-09 must account for the final removal
+release's affected lanes; pre-removal observation cannot silently certify it.
+Record the minimum cycles, timestamps, unexplained anomalies and unobserved rows.
+
+R-07 also has a transition/backup ledger. Normal semantic derivations are
+regenerated from unchanged authoritative source by the tested S-05 reverse
+rebuild; this is not a database-schema rollback. Lifecycle state stays
+schema-compatible and its rollback snapshot is retained and exercised. Any
+additional authoritative data/schema or incompatible state transition requires
+a separate root decision, current backup/restore evidence and an exact-version
+restore rehearsal in a disposable environment before the transition. Never use
+an existing production database for tests or cleanup; missing evidence blocks
+the affected transition.
 
 ## Independent fixture and evidence matrix
 
@@ -176,22 +310,22 @@ Each successful case includes a concrete negative or interruption case.
 | REL-BASE | Every supported harness/operation and explicit unsupported case; source expectation separated from installed and live state. | `scripts/test_installed_lifecycle_bundle.py`; affected harness guides and read-only host discovery. Record exact source SHA and missing observations. |
 | REL-STREAM | Exact stdin bounds, stdout/stderr, exit status, required-context/prompt refusal and optional degradation. Preserve diagnostics and attribution. | Foundation and Coordination differential fixtures plus independent installed hooks. Declare normalization only for nondeterministic fields; never erase refusal, identity, ordering or state differences. |
 | REL-IDENTITY | Wrong owner/mode/hash, stale process identity, wrong account/home and another session's context refuse before effects. Store owns principal and observation channel. | `inbox_binding.py`; `IdleWakeupPreflight` and `CompactInboxInstaller` in `scripts/test_install_agent_coordination.py`; Foundation/Coordination process fixtures. |
-| REL-FRESH | Fresh installed entrypoints run offline in disposable homes without source checkout or retired runtime dependencies. Missing/changed selected files fail before state writes. | `test_memory_installations_are_complete_for_every_supported_harness`, `test_coordination_installations_run_outside_checkout_for_every_harness`, and `test_installed_memory_refuses_changed_or_missing_helpers_before_state_write`. Repeat against the Go artifact with required native adapters intact. |
+| REL-FRESH | Run at least one effectful installed event for every supported R-01 row, offline without checkout or retired dependencies, using a disposable API/store and real selected executables/host adapters. Assert the resulting write/retrieval/journal effect and exact streams/status, plus missing/changed-file negatives. | The cited legacy installed-bundle tests prove closure smoke behavior only: `--help`, hint/no-op memory and excluded coordination are not effectful acceptance. R-02 covers implemented F-01/F-04 paths; R-03/R-04/R-06 complete actual supported memory, hook/watch/inbox/recovery rows after their dependencies. Claude Stop is coordination, not memory capture; Agy has no current ordinary lifecycle memory hook. Do not invent support to fill the matrix. |
 | REL-PIN | Pin and execute the same immutable bytes; reject mixed installations, stale sidecars and unsafe ownership/modes. Check both account and repository-local selection. | Legacy binding/bundle validation; future Foundation `/3` admission and R-02 installed tests. Include a replacement race rather than checking only a hash before execution. |
-| REL-LEGACY | `/2` stays with its Python executor; mixed `/2` and `/3` clients can coexist without treating either receipt as the other's authentication. | Current `/2` validation plus explicit legacy-route and drain/repin fixtures under the reviewed `/3` contract. Frozen two-file and bundle trials stay unchanged. |
-| REL-DRAIN | Enabled/shared-account binding replacement refuses without mutation. Active callbacks/attempts block transition. Drain, restage, validate, repin and restart succeed after settlement. Concurrent installers and crashes preserve selection. | Legacy `test_explicit_memory_reinstall_preserves_config_and_refuses_enabled_binding`, `test_shared_coordination_reinstall_refuses_another_enabled_account`; new active-attempt, concurrency and interruption fixtures. |
+| REL-LEGACY | `/2` stays with Python; `/3` binds the Go binary. Test both incompatible cross-version directions fail closed, versioned binding/config paths, retained issued argv and cached hooks, and the declared activation-unit topology. | Legacy validation and new real-executor cross-read/contention/crash fixtures; no in-place `/2` to `/3` binding rewrite and no unqualified mixed production watcher. Frozen two-file and bundle trials stay unchanged. |
+| REL-DRAIN | Every predicate D1–D7 above has positive and negative evidence under a held quiescence barrier; stop, stage, repin, refresh, restart and reverse selection preserve the whole unit. | Legacy enabled/shared-account refusal tests are partial smoke coverage. R-02 proves available F-01/F-04 staging/activation controls. R-06 qualifies the full watcher/hook unit after J-05/F-02/F-03 and adapter dependencies; R-07 repeats it for production. |
 | REL-ROLLBACK | Reverse `/3` to retained `/2` with compatible state, pins and supported refresh. Before selecting the semantic rollback generation, stop and join every index writer sharing the database/job queue and prevent inactive definitions from restarting. | Custom-state/ledger preservation tests in `scripts/test_installed_lifecycle_bundle.py`; R-02 disposable homes and S-05 disposable-store switch/reverse-rebuild evidence. |
-| REL-PROCESS | Real `flock` contention, crash, pipes, cancellation, shutdown, process-tree cleanup, restart and state persistence. | `scripts/test_install_agent_coordination_timeout.py`, active-turn integration tests, `scripts/test_install_wake_service.py`, and Foundation/Coordination process tests. In-process mocks do not replace process-boundary assertions. |
+| REL-PROCESS | Real `flock` contention, cross-executor state reads, crash, pipes, supported cancellation, shutdown, process-tree cleanup, restart and state persistence. | `scripts/test_install_agent_coordination_timeout.py`, `scripts/test_install_agent_coordination_active_turn.py`, `scripts/test_install_wake_service.py`, and Foundation/Coordination process tests. Synthetic app-server cancellation does not establish public Store cancellation support. In-process mocks do not replace process assertions. |
 | REL-HERMES | Actual `MemoryProvider`, registration and hook objects preserve host returns, custody/cancel and shutdown while delegating policy/state. | `integrations/hermes/`, `scripts/check_hermes_lifecycle.py` and `scripts/check_hermes_coordination.py`. Preserve required Python and test the installed adapter with missing/refusing selected binary. |
 | REL-HOOKS | Required OpenCode plugin objects and each supported Claude/Codex/Agy hook retain their host contract and native trust requirements. | `integrations/opencode/`, `scripts/install-opencode-hooks.py`, `scripts/install-codex-hooks.py`, `scripts/install-claude-hooks.py`, `scripts/install-agent-coordination.py`; real native trust/refresh evidence separate from mocked installer fixtures. |
-| REL-LIVE | Installed source/artifact/config identities match actual running executables and active connections; old process and repository override are detected. | Read-only current inventory and dated prior deployment as a discovery checklist. Repeat before release, after rollout and against the final removal commit. |
-| REL-SEMANTIC | Inventory every index writer sharing the database/job queue, including other collections; stop and join all running writers and prevent inactive definitions from restarting before changing the selected generation. Restart with the fixed launcher only after exclusion, rebuild and disclose partial/fallback/backoff. Apply the same exclusion for reverse rebuild. | `semantic/index.go` has no collection predicate on queue seeding/claiming. S-05 must exercise competing writers configured for different collections in the same disposable database. Selected-model document versions/body hashes must cover all eligible active nonforgotten records; an empty queue or ready query is insufficient. |
-| REL-EQUIVALENCE | Replacement checks preserve reference assertions and fail for meaningful behavioral differences against both executors. Required model tests execute rather than skip. | R-05 mapping from old to new checks, exact fixture identities and before/after commands. Retain frozen trial/SDK surfaces. |
+| REL-LIVE | Verify actual executable and semantic worker image/closure, fixed launcher hashes, active connection identity, and effective hook identity for each live session. Detect cached old hooks, old issued argv, repository overrides and retained processes separately. | Caller-origin `implementation_id` in `docs/client-observations.md` is reported, not attested or per-session evidence. Pair it with a session-correlated native hook/host observation. Coordination requires an equivalent supported signal or an explicit blocking gap. Repeat before release, after rollout and on the final removal commit; process parentage and a current MCP connection do not prove hook refresh. |
+| REL-SEMANTIC | Inventory every index writer sharing the database/job queue, including other collections; stop/join all running writers and prevent inactive definitions from restarting before switch or reverse rebuild. Disclose partial coverage, fallback and backoff. | S-05 tests competing writers configured for different collections in one disposable database. Selected-model current version/body hashes and present, valid passage rows must cover every eligible active nonforgotten record. Check parent correspondence, ordinals, byte spans and vector validity against the accepted worker contract; document/queue counts alone are insufficient. |
+| REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
 | REL-DOCS | Every affected current-facing CLI/config/example and operational claim agrees with implemented source and checked invocation. | Architecture/status, CLI/lifecycle references, harness guides, semantic install/rebuild, testing, deployment and recovery. Apply docs-guard; proposed commands stay labelled proposed. |
-| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config hashes, derivation, schema, host/client matrix, checks, findings, limitations and rollback material. | R-06 candidate evidence, R-07 installed/live observations and R-09 final reconciliation. No credentials, raw sessions, generated binaries or operational memory committed. |
-| REL-OBSERVE | At least 24 continuous hours after the last relevant correction, full rebuild and representative supported memory/coordination/recovery cycles on every installed harness. | R-08 timestamped selected evidence: idle/busy, restart/cancel where supported, rollback rehearsal, anomalies, failures and stuck work. Reset the affected lane after a fix; time alone is insufficient. |
-| REL-RETIRE | Each removed module/dependency has no active configuration/process references; fresh install runs without it while required Hermes Python and rollback artifacts remain. | R-08 exact removal candidate, static inventory plus installed process/config evidence, retained trial/SDK identity and local checks. |
+| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. No credentials, raw sessions, generated binaries or operational memory committed. |
+| REL-OBSERVE | Each defined lane completes its minimum supported cycles and 24 continuous hours after its last relevant change; the shared-queue semantic lane completes a full rebuild. | Use the lane/reset/rehearsal rules above, disclose unobserved rows and failed/pending work, and reset after affected removal/runtime changes. Time alone is insufficient. |
+| REL-RETIRE | No active configuration, process, cached session hook or unsettled issued context needs a removed file/dependency. Every session has new hook-identity evidence; no retired identity is observed during the qualified window. | R-08 exact candidate, reference/session/process inventory, initially dependency-free offline rollback restore plus lifecycle execution and semantic reverse rebuild in disposable environments. Keep required Hermes Python, frozen trials/SDK and still-referenced compatible paths. Unknown identity/reference or missing rollback closure blocks removal. |
 | REL-FINAL | Recheck and redeploy the exact removal commit everywhere, including every long-lived client, then reconcile findings and clean pushed trunk. | R-09 final manifest and independent review. Pre-removal deployment evidence does not verify the removal release. |
 
 Tests use synthetic fixtures, disposable homes and disposable PostgreSQL.
