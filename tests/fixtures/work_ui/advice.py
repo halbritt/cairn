@@ -465,6 +465,20 @@ def advice_fixture():
                          "proposal rejection changed work annotations")
             base.require(self.advice("show", "--proposal", rejected["proposal"]["proposal_uuid"])["proposal"]["status"] == "rejected", "reject did not persist")
 
+        def retain_refusal_response(self, response, viewport, phase, expected_code):
+            # Keep the actual synthetic transport result before an assertion
+            # stops the case; a generic failure must not hide a wrong error code.
+            body = response.text()
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = None
+            self.report.setdefault("refusal_responses", []).append(dict(
+                viewport=viewport, phase=phase, expected_code=expected_code,
+                request_id=response.request.post_data_json.get("request_id"),
+                http_status=response.status, response_body=body,
+                actual_code=payload.get("code") if isinstance(payload, dict) else None))
+
         def refusal_cases(self, page, viewport="desktop"):
             from playwright.sync_api import expect
             self.open_item(page); self.settings(page); self.inputs(page, source=self.private_source)
@@ -472,6 +486,7 @@ def advice_fixture():
             with page.expect_response(lambda response: response.url.endswith("/api/work/advice/generate") and response.request.method == "POST") as pending:
                 page.locator("#advice-generate").click()
             response = pending.value
+            self.retain_refusal_response(response, viewport, "local_source", "SOURCE_INELIGIBLE")
             base.require(not response.ok and response.json().get("code") == "SOURCE_INELIGIBLE", "local source generation did not refuse for hosted eligibility")
             base.require(len(self.invocation_rows()) == before, "ineligible source reached provider subprocess")
             page.locator("#advice-selected-sources .advice-remove-input").click()
@@ -481,6 +496,7 @@ def advice_fixture():
                 with page.expect_response(lambda value: value.url.endswith("/api/work/advice/generate") and value.request.method == "POST") as pending:
                     page.locator("#advice-generate").click()
                 response = pending.value
+                self.retain_refusal_response(response, viewport, mode, code)
                 base.require(not response.ok and response.json().get("code") == code, "provider refusal did not retain its intended typed reason")
                 expect(page.locator("#advice-error")).to_contain_text(code)
                 base.require(len(self.invocation_rows()) == before + 1, "output refusal repaired, retried, or skipped the actual invocation")
