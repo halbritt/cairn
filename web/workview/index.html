@@ -11,6 +11,10 @@
     <header class="app-header">
       <div class="header-left">
         <h1>Cairn Work View</h1>
+        <nav class="view-navigation" aria-label="View">
+          <button id="board-view-btn" type="button" aria-current="page">Work board</button>
+          <button id="artifact-view-btn" type="button">Artifacts</button>
+        </nav>
         <select id="project-select" aria-label="Select project" disabled>
           <option value="">Loading projects…</option>
         </select>
@@ -21,6 +25,7 @@
       </div>
     </header>
 
+    <div id="work-board">
     <nav class="toolbar" aria-label="Work filters and pages">
       <label for="filter-state-group">State
         <select id="filter-state-group">
@@ -75,6 +80,38 @@
       <section class="board-column" data-group="cancelled" aria-labelledby="heading-cancelled">
         <h2 class="column-header" id="heading-cancelled">Cancelled <span class="count" id="count-cancelled">0</span></h2>
         <div class="card-list" id="col-cancelled"></div>
+      </section>
+    </main>
+    </div>
+    <main id="artifact-page" class="artifact-page" aria-labelledby="artifact-page-title" hidden>
+      <h2 id="artifact-page-title" tabindex="-1">Artifact revision</h2>
+      <p class="hint">Inspect an exact registered revision and the work that uses it. Register and link artifacts from a work item's details.</p>
+      <button id="artifact-return-item" type="button" hidden>Return to work item</button>
+      <form id="artifact-lookup-form" class="inline-form">
+        <label for="artifact-lookup-id">Artifact revision UUID
+          <input id="artifact-lookup-id" type="text" required spellcheck="false" autocomplete="off">
+        </label>
+        <button type="submit">Inspect revision</button>
+      </form>
+      <div id="artifact-error" class="alert alert-danger" role="alert" hidden></div>
+      <p id="artifact-notice" role="status" hidden></p>
+      <p id="artifact-page-admission" class="hint" role="status"></p>
+      <section id="artifact-revision-section" hidden aria-labelledby="artifact-revision-title">
+        <h3 id="artifact-revision-title">Exact revision</h3>
+        <div id="artifact-revision-details"></div>
+        <button id="artifact-purge-btn" type="button" class="maintenance-btn" disabled>Purge local artifact metadata</button>
+        <p class="hint">Purge removes local metadata for all revisions of this artifact. It does not delete the external deliverable.</p>
+      </section>
+      <section id="artifact-impact-section" hidden aria-labelledby="artifact-impact-title">
+        <h3 id="artifact-impact-title">Work using this revision</h3>
+        <p class="hint">Each row is one item and link role. These are recorded links and observations, not a task acceptance decision.</p>
+        <p id="artifact-impact-empty" hidden>No linked work items.</p>
+        <ul id="artifact-impacts" class="detail-list artifact-rows"></ul>
+        <div class="artifact-pages">
+          <button id="artifact-impact-first" type="button" disabled>First page</button>
+          <span id="artifact-impact-page" role="status"></span>
+          <button id="artifact-impact-next" type="button" disabled>Next page</button>
+        </div>
       </section>
     </main>
   </div>
@@ -137,6 +174,81 @@
         <button type="button" id="add-progress-btn">Add progress</button>
         <button type="button" id="add-blocker-btn">Add blocker</button>
       </div>
+      <section id="item-artifacts" aria-labelledby="item-artifacts-title">
+        <h3 id="item-artifacts-title">Artifacts</h3>
+        <p id="artifact-admission" class="hint" role="status">Checking artifact admission…</p>
+        <div id="item-artifact-error" class="alert alert-danger" role="alert" hidden></div>
+        <p id="item-artifact-notice" role="status" hidden></p>
+        <label class="checkbox-label" for="artifact-include-removed"><input id="artifact-include-removed" type="checkbox"> Include removed links</label>
+        <p id="item-artifacts-empty" hidden>No artifact links for this item.</p>
+        <ul id="modal-artifacts" class="detail-list artifact-rows"></ul>
+        <section id="artifact-history-section" hidden aria-labelledby="artifact-history-title">
+          <h4 id="artifact-history-title" tabindex="-1">Link history</h4>
+          <p id="artifact-history-summary" class="hint"></p>
+          <div id="artifact-history-error" class="alert alert-danger" role="alert" hidden></div>
+          <ul id="artifact-history" class="detail-list"></ul>
+          <div class="artifact-pages">
+            <button id="artifact-history-first" type="button" disabled>First page</button>
+            <span id="artifact-history-page" role="status"></span>
+            <button id="artifact-history-next" type="button" disabled>Next page</button>
+            <button id="artifact-history-close" type="button">Close history</button>
+          </div>
+        </section>
+        <form id="artifact-link-form" class="artifact-form">
+          <h4>Link a registered revision</h4>
+          <label for="artifact-link-revision">Exact artifact revision UUID
+            <input id="artifact-link-revision" name="revision_id" type="text" required spellcheck="false" autocomplete="off">
+          </label>
+          <button id="artifact-link-inspect" type="button">Inspect before linking</button>
+          <label for="artifact-link-role">Role
+            <select id="artifact-link-role" name="role"><option value="input">Input</option><option value="output">Output</option><option value="evidence">Evidence</option></select>
+          </label>
+          <label for="artifact-link-rationale">Reason for linking (optional)
+            <textarea id="artifact-link-rationale" name="rationale" rows="2"></textarea>
+          </label>
+          <button id="artifact-link-submit" type="submit" disabled>Link revision to this item</button>
+        </form>
+        <details id="artifact-register-details">
+          <summary>Register a new artifact revision</summary>
+          <form id="artifact-register-form" class="artifact-form">
+            <p class="hint">Registration saves selected metadata. No source content is fetched. Linking to this item is a separate action.</p>
+            <label for="artifact-kind">Kind
+              <select id="artifact-kind" name="kind"><option value="git">Git commit</option><option value="report">Report</option><option value="ci">CI run</option><option value="cairn_result">Cairn result</option></select>
+            </label>
+            <label for="artifact-display-name">Display name (optional)<input id="artifact-display-name" name="display_name" type="text"></label>
+            <label id="artifact-label-field" for="artifact-revision-label">Revision label <span id="artifact-label-hint">(optional)</span><input id="artifact-revision-label" name="revision_label" type="text"></label>
+            <fieldset data-artifact-kind="git">
+              <legend>Git identity</legend>
+              <label for="artifact-git-repo">Repository identity<input id="artifact-git-repo" name="git_repo" type="text" required spellcheck="false"></label>
+              <label for="artifact-git-commit">Full commit object ID<input id="artifact-git-commit" name="git_commit_oid" type="text" required spellcheck="false" pattern="[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"></label>
+              <label for="artifact-git-format">Object format<select id="artifact-git-format" name="git_object_format"><option value="">From full object ID</option><option value="sha1">SHA-1</option><option value="sha256">SHA-256</option></select></label>
+              <label for="artifact-git-branch">Branch hint (optional, not revision identity)<input id="artifact-git-branch" name="git_branch_hint" type="text"></label>
+            </fieldset>
+            <fieldset data-artifact-kind="report" disabled hidden>
+              <legend>Report identity</legend>
+              <label for="artifact-report-locator">HTTPS locator<input id="artifact-report-locator" name="report_locator" type="url" pattern="https://.*" required spellcheck="false"></label>
+              <label for="artifact-report-digest">Selected digest (optional)<input id="artifact-report-digest" name="report_digest" type="text" spellcheck="false"></label>
+              <label for="artifact-report-provenance">Provenance<select id="artifact-report-provenance" name="report_provenance"><option value="unverified">Unverified</option><option value="asserted">Operator asserted</option></select></label>
+              <p class="hint">A supplied digest is an assertion; this form does not verify report bytes.</p>
+            </fieldset>
+            <fieldset data-artifact-kind="ci" disabled hidden>
+              <legend>CI identity and selected observation</legend>
+              <label for="artifact-ci-provider">Provider<input id="artifact-ci-provider" name="ci_provider" type="text" required></label>
+              <label for="artifact-ci-repo">Repository identity<input id="artifact-ci-repo" name="ci_repo" type="text" required spellcheck="false"></label>
+              <label for="artifact-ci-run">Run ID<input id="artifact-ci-run" name="ci_run_id" type="text" required spellcheck="false"></label>
+              <label for="artifact-ci-attempt">Attempt<input id="artifact-ci-attempt" name="ci_attempt" type="number" min="1" step="1" required></label>
+              <label for="artifact-ci-status">Reported status (optional)<input id="artifact-ci-status" name="ci_status" type="text"></label>
+              <label for="artifact-ci-reported">Observation time (optional, RFC3339)<input id="artifact-ci-reported" name="ci_reported_at" type="text" placeholder="2026-11-05T12:00:00Z" spellcheck="false"></label>
+            </fieldset>
+            <fieldset data-artifact-kind="cairn_result" disabled hidden>
+              <legend>Exact retained result</legend>
+              <label for="artifact-result-id">Record UUID<input id="artifact-result-id" name="cairn_record_id" type="text" required spellcheck="false"></label>
+              <label for="artifact-result-version">Version<input id="artifact-result-version" name="cairn_version" type="number" min="1" step="1" required></label>
+            </fieldset>
+            <button id="artifact-register-submit" type="submit" disabled>Register revision</button>
+          </form>
+        </details>
+      </section>
     </section>
   </div>
 

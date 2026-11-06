@@ -157,6 +157,21 @@ func (s *Store) ReapplyRecovery(ctx context.Context, req RecoveryReapplyRequest)
 				return result, err
 			}
 		}
+		for _, pf := range req.Record.WorkArtifactPurgeFences {
+			if _, err = tx.Exec(ctx, `
+				INSERT INTO cairn.work_artifact_purge_fence (collection, artifact_id, canonical_key, purged_by, purged_at)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (collection, artifact_id) DO UPDATE
+				SET canonical_key = EXCLUDED.canonical_key, purged_by = EXCLUDED.purged_by, purged_at = EXCLUDED.purged_at
+			`, pf.Collection, pf.ArtifactID, pf.CanonicalKey, pf.PurgedBy, pf.PurgedAt); err != nil {
+				return result, err
+			}
+		}
+		if len(req.Record.WorkArtifactPurgeFences) > 0 {
+			if err = ReapplyExclusions(ctx, tx); err != nil {
+				return result, err
+			}
+		}
 		// New audit events grow the expectation set without a ceiling: an export
 		// larger than one record uses the streamed directory operator path,
 		// so an application is never rolled back for the size of what it retains.
