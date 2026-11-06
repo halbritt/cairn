@@ -11,7 +11,7 @@ import (
 	"github.com/halbritt/cairn/internal/plane"
 )
 
-const workHelp = `cairn work: shared work projection and coordination
+const workHelp = `cairn work: shared work projection and work coordination
 
 Subcommands:
   work project add --slug SLUG --workspace WS_UUID --project PROJ_UUID [--origin URL] [--instance NAME] [--request-id UUID] [--collection REPO]
@@ -27,10 +27,18 @@ Subcommands:
   work progress edit --project SLUG --item ITEM_UUID_OR_IDENT --annotation-id UUID --text TEXT --expected-revision N [--request-id UUID] [--collection REPO]
   work blocker add --project SLUG --item ITEM_UUID_OR_IDENT --text TEXT [--request-id UUID] [--collection REPO]
   work blocker resolve --project SLUG --item ITEM_UUID_OR_IDENT --annotation-id UUID --expected-revision N [--request-id UUID] [--collection REPO]
+  work artifact (register|show|link|unlink|list|impact|purge) [FLAGS] [--collection REPO]
   work metadata purge --project SLUG --pattern PATTERN [--field FIELD] [--exclude] [--request-id UUID] [--collection REPO]
   work metadata exclude --project SLUG --field FIELD --pattern PATTERN [--request-id UUID] [--collection REPO]
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
   work serve [--project SLUG] [--port PORT] [--collection REPO]
+
+Features: work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1
+`
+
+const workFeaturesHelp = `cairn work features: manage work coordination features (work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1)
+
+  work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
 `
 
 func hasWorkHelpArg(args []string) bool {
@@ -717,7 +725,7 @@ func isValidWorkFeatureName(name string) bool {
 
 func workFeaturesCommand(ctx context.Context, store *core.Store, args []string) (any, error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		return commandHelp("cairn work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]\n"), nil
+		return commandHelp(workFeaturesHelp), nil
 	}
 	sub := args[0]
 	f := flags("work features " + sub)

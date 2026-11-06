@@ -166,8 +166,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		}
 		return installOpenCode(args[1:], executable)
 	}
-	if args[0] == "work" && len(args) > 1 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
+	if args[0] == "work" && (len(args) == 1 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
 		return commandHelp(workHelp), nil
+	}
+	if args[0] == "work" && len(args) > 1 && args[1] == "features" && (len(args) == 2 || hasWorkHelpArg(args[2:])) {
+		return commandHelp(workFeaturesHelp), nil
+	}
+	if args[0] == "work" && len(args) > 1 && args[1] == "artifact" && (len(args) == 2 || hasWorkHelpArg(args[2:])) {
+		return commandHelp(workArtifactHelp), nil
 	}
 	if args[0] == "work" && len(args) > 2 && args[1] == "serve" && (args[2] == "--help" || args[2] == "-h" || args[2] == "help") {
 		return commandHelp("cairn work serve [--project SLUG] [--port PORT] [--collection REPO]\n"), nil
