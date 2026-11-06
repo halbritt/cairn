@@ -18,7 +18,7 @@ Use `--json` for machine-readable results, `--tier 1,3` to select checks, or
 | 1 | Relative Markdown links, target files, heading anchors, and explicit HTML anchors | Uses regular expressions and its own slug generator; does not fetch external links or fully parse Markdown |
 | 2 | Documented Cairn command names, known flags, and selected command contracts | Discovers flags from source but does not validate every command-specific flag combination or execute examples |
 | 3 | JSON parsing and shell grammar in recognized fenced blocks | Syntax validity does not establish valid API fields, available tools, or safe execution |
-| 4 | Required guide files, minimum content, and headings | Presence and length do not establish accuracy or usefulness |
+| 4 | Required guide files with at least three nonblank lines | Presence and length do not establish accuracy or usefulness |
 
 The source of these checks and the required-file list is
 [scripts/verify_docs.py](scripts/verify_docs.py). Discovery skips hidden
