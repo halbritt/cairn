@@ -22,7 +22,7 @@ Subcommands:
   work advice apply --proposal UUID --version N [--action UUID...] [--request-id UUID] [--collection REPO]
   work advice reject --proposal UUID --version N [--collection REPO]
   work advice undo (--receipt UUID | --request-id UUID) [--collection REPO]
-  work advice control (status|get|set) [--generation true|false] [--apply true|false]
+  work advice control (status|get|set) [--generation=true|false] [--apply=true|false]
   work advice profile (register|list|show) [FLAGS]
   work advice policy (get|show|set) [FLAGS]
   work advice reconcile [--collection REPO]
@@ -536,7 +536,7 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 
 	case "control":
 		if len(args) < 2 || hasWorkHelpArg(args[1:]) {
-			return commandHelp("cairn work advice control (status|get|set) [--generation true|false] [--apply true|false]\n"), nil
+			return commandHelp("cairn work advice control (status|get|set) [--generation=true|false] [--apply=true|false]\n"), nil
 		}
 		switch args[1] {
 		case "status", "get":
@@ -555,37 +555,30 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 				"updated_at":         ctrl.UpdatedAt.UTC().Format(time.RFC3339),
 			}, nil
 		case "set":
-			ctrl, err := store.GetAdviceControl(ctx)
-			if err != nil {
-				return nil, err
-			}
 			f := flags("work advice control set")
-			gen := f.Bool("generation", ctrl.GenerationEnabled, "enable or disable advice generation")
-			app := f.Bool("apply", ctrl.ApplyEnabled, "enable or disable advice apply")
+			gen := f.Bool("generation", false, "enable or disable advice generation (e.g. --generation=false)")
+			app := f.Bool("apply", false, "enable or disable advice apply (e.g. --apply=false)")
 			if err := f.Parse(args[2:]); err != nil {
 				return nil, invalid(err.Error())
 			}
-			var hasGen, hasApp bool
+			if f.NArg() > 0 {
+				return nil, invalid("unexpected arguments; boolean flags require --generation=false or --apply=false")
+			}
+			var genPtr, appPtr *bool
 			f.Visit(func(fl *flag.Flag) {
 				if fl.Name == "generation" {
-					hasGen = true
+					v := *gen
+					genPtr = &v
 				}
 				if fl.Name == "apply" {
-					hasApp = true
+					v := *app
+					appPtr = &v
 				}
 			})
-			if !hasGen && !hasApp {
+			if genPtr == nil && appPtr == nil {
 				return nil, invalid("at least one of --generation or --apply is required")
 			}
-			finalGen := ctrl.GenerationEnabled
-			if hasGen {
-				finalGen = *gen
-			}
-			finalApp := ctrl.ApplyEnabled
-			if hasApp {
-				finalApp = *app
-			}
-			updated, err := store.SetAdviceControl(ctx, finalGen, finalApp)
+			updated, err := store.PatchAdviceControl(ctx, genPtr, appPtr)
 			if err != nil {
 				return nil, err
 			}
