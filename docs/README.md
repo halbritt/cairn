@@ -31,7 +31,9 @@ where a client supports them.
 
 Read [deployment](operator/deployment.md), [configuration](operator/configuration.md),
 and [daemon setup](operator/daemon-deployment.md) to provision a store and client
-access. Use [maintenance](operator/maintenance.md) for upgrades and recovery.
+access. Use [maintenance](operator/maintenance.md) for upgrades and recovery, and the
+[event admission rollout](operator/event-admission-rollout.md) to upgrade, observe and
+enable bounded event admission.
 
 ## Develop Cairn
 

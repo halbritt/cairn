@@ -354,9 +354,18 @@ class RestoreController:
             prior_inputs = {row.get('owner_input_origin', {}).get('input_id')
                             for row in context['observations_for']('UserPromptSubmit')}
             self.resumed.submit('Initialize the recovered existing conversation.')
-            self.wait_native(lambda: context['saved']()['agent']['execution_id'] != self.old_session['execution_id'],
-                             'same-conversation new execution', terminal=self.resumed)
-            current = context['saved']()['agent']
+            # The hook rewrites its state while it re-registers the resumed
+            # conversation; an absent state is "not yet", not a failure.
+            def resumed_agent():
+                state = context['saved']()
+                agent = (state or {}).get('agent')
+                if agent and agent['execution_id'] != self.old_session['execution_id']:
+                    return agent
+                return None
+            self.wait_native(lambda: resumed_agent() is not None, 'same-conversation new execution', terminal=self.resumed)
+            self.assert_provider()
+            current = resumed_agent()
+            require(current is not None, 'resumed conversation registration was not retained')
             require(current['native_session_id'] == self.old_native_id and current['agent_id'] == self.old_session['agent_id']
                     and current['database_generation'] == restore['generation'], 'native resume bypassed original conversation identity')
             current_session = session(current)
