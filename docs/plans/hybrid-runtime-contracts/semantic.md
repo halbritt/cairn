@@ -1,7 +1,7 @@
 # Semantic worker contract
 
-Revision: `semantic/2`, proposed for X-01 acceptance after independent review
-of `semantic/1`. Characterization baseline:
+Revision: `semantic/3`, proposed for X-01 acceptance after independent reviews
+of `semantic/1` and `semantic/2`. Characterization baseline:
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` (2026-11-06).
 The semantic team owns this file. Overall owns the shared contract index;
 Release consumes the packaging, service-switch and rebuild requirements.
@@ -141,11 +141,13 @@ The rank reference performs these operations in order:
    with epsilon `1e-12`.
 2. Reconstruct the contiguous float32 matrix with the query first, then every
    chunk occurrence in source order, including cache hits and duplicate chunks.
-3. Apply NumPy 2.4.6's float32 row norm and division again, then its matrix-vector
-   multiplication on that matrix shape. A per-row dot, float64 accumulation,
+3. Apply NumPy 2.4.6's float32 row norm and division again. Multiply the
+   `(chunk occurrences, 384)` slice excluding the query row by the normalized
+   query row, using its matrix-vector call. A per-row dot, float64 accumulation,
    single normalization or multiplication over only unique chunks is a
    different reference path.
-4. Promote each float32 similarity to float64, clamp to `[-1, 1]`, multiply by
+4. Promote chunk similarities to float64 and take each note's maximum,
+   starting from `-1.0`. Clamp each note maximum to `[-1, 1]`, multiply by
    `1000000` in float64 and apply Python ties-to-even rounding.
 
 S-01 freezes the NumPy code/native-library hashes, loaded OpenBLAS/other math
@@ -164,6 +166,31 @@ Cross-CPU bit stability is not assumed. A new CPU/kernel class requires its
 own frozen reference and identity inputs before packaging acceptance. If
 strict parity cannot be achieved, stop the affected migration and obtain an
 explicit Overall decision; do not tune fixtures or relax the rule.
+
+The initial Rust runtime prerequisite is ORT **1.29.0**, matching the frozen
+reference build. The reference executes ORT statically inside
+`onnxruntime_pybind11_state.cpython-311-x86_64-linux-gnu.so`, SHA-256
+`a434baf53b7eba95c0c819eb67505099d9c8027e1fce4f3e25a0a368bc01045b`.
+It does not execute the wheel's separate C-API library. The initial native
+C-API candidate is `libonnxruntime.so.1.29.0`, SHA-256
+`8902e52a04bf6bf26f1613746811d6194f9c97ce7a6a7a28452b48522d3bd8d0`;
+that candidate is unqualified until the raw-output gate below passes. No
+crate-bundled/default/newer runtime is an implicit substitute. Another release
+or build is a recorded backend change under the stop rule, even if its
+reported version is also 1.29.0.
+
+Before accepting score comparisons, S-02/S-03 must demonstrate bit-identical
+raw `last_hidden_state[:,0]` output against the reference for every S-01 model
+input. Freeze the int64 input tensors, shapes, provider/session settings,
+model digest and per-input output bit patterns. The initial 19 ranking cases
+have 294 query/chunk occurrences, including duplicates; retain the unique
+inference mapping as well. Extend the gate to S-01's query/document cases.
+Use the actual loaded C-API/runtime, not fabricated raw vectors. A non-shipped
+model probe may observe the same inference module/build inputs used by the
+release worker. Preserve the observed 1.30.0-versus-1.29.0 drift as a negative
+control. Report per-vector angle/component diagnostics, but the pairwise
+`<=1e-6` requirement and exact scores/order remain binding in addition to this
+raw-output prerequisite; no per-vector pass alone establishes parity.
 
 S-03 also compares the indexed path on the same disposable PostgreSQL/pgvector
 instance, with fixed source records and sequential Python and Rust rebuilds.
@@ -211,6 +238,15 @@ unreadable or mismatched runtime/asset fails initialization rather than
 falling back to another loader-path copy. Identity remains stable throughout
 each selected worker lifetime and across the embed owner's lanes/restarts.
 
+Compute the CPU/kernel class as SHA-256 of canonical JSON containing the target
+architecture, endianness, pointer width, sorted effective process-visible ISA
+features/OS vector-state capabilities, and the loaded OpenBLAS core name and
+configuration when BLAS is used. Obtain enabled features through the platform's
+CPU/OS capability interfaces and actual library getters, not a marketing label.
+Retain the observed inputs with the class digest; feature-list ordering does
+not change it, but a changed capability/core does. An unknown capability or
+unobserved library core cannot silently become a shared default class.
+
 The package handoff is a versioned `cairn.semantic-worker-manifest/1` document
 with source/build identity, binary digest, rank/embed identities, the complete
 derivation inputs, asset/library provenance and digests, target/ABI/CPU
@@ -229,11 +265,18 @@ allocated through Overall, so ordinary Go checks continue without Cargo.
 
 The initial capture retains one maximum-document model gap: exactly 65536
 punctuation bytes reached the 90-second document budget without a reply.
-Tokenizer-only evidence for its 256 spans is not vector evidence. S-01 must
-record an explicit disposition of that case with Overall and independent
-review before claiming complete required-model coverage. Do not drop the
-case, relax the deadline, or substitute its source-only geometry for a model
-reply. Other successful maximum-document cases do not close this gap.
+Tokenizer-only evidence for its 256 spans is not vector evidence. Overall's
+selected disposition permits one separately labelled offline numerical-oracle
+experiment with the identical frozen source/assets/input and an external
+deadline of at most 180 seconds. This neither changes nor passes the 90-second
+production supervision requirement. Record runtime-versus-oracle commands,
+timings, environment/isolation differences, hashes and outcomes separately.
+If that bounded oracle also fails, retain the numerical gap without further
+deadline inflation. Independent review must agree this distinction before
+the case is counted as numerically covered. A faster Rust reply need not
+mimic Python's slowness, but needs both oracle numerical/span comparison and
+actual execution through the unchanged real supervisor. Never drop the case
+or substitute source-only geometry for a model reply.
 
 ### Required acceptance inventory
 
@@ -253,7 +296,7 @@ The tested inventory changes only with the owning item and independent review.
 | Phase / owner | Required inventory and expected positive counts |
 | --- | --- |
 | Reference / S-01 | Prepared-Python `PassageContractTest` 5, `SemanticStreamTest` 4, `SemanticCacheTest` 9 and `SemanticResumeTest` 5: 23 tests, no skips. Run the actual tokenizer test. Capture all three real Python worker modes. The 17 retrieval-quality queries plus long-tail and 64-short cases give 19 rank requests / 269 note scores; stream cold/warm repeats give 38 successful replies plus a separately counted idle-restore case. Every failure-family case has its own inventory ID and expected refusal tuple. |
-| Reference embeddings / S-01 | Nine named positive query cases: ASCII, CJK, emoji, combining marks, special tokens, exact-512 tokens, over-512 tokens, exact-4096 UTF-8 bytes and tokenizer-empty/nonblank. Six named positive documents: ASCII, CJK, mixed Unicode/combining, trailing decision, maximum Latin and maximum CJK. Exact projection/span/vector counts are frozen per input. The maximum-punctuation gap is a separate required unresolved/failure case, never a positive model pass. |
+| Reference embeddings / S-01 | Nine named positive query cases: ASCII, CJK, emoji, combining marks, special tokens, exact-512 tokens, over-512 tokens, exact-4096 UTF-8 bytes and tokenizer-empty/nonblank. Six named positive documents: ASCII, CJK, mixed Unicode/combining, trailing decision, maximum Latin and maximum CJK. Exact projection/span/vector counts are frozen per input. The maximum-punctuation production timeout is separately retained; numerical coverage requires the explicitly qualified offline oracle above. |
 | Rank / S-02 | Reference/candidate arithmetic fixtures, all 19 exact-score cases, all 38 stream replies and the idle/cache-restart case; real `Command` and `StreamCommand` supervisor runs, not only script doubles. Add those native-model process tests; no real-model rank/stream Go test currently exists. The 21 current non-DB/non-real-model semantic tests remain separately required process/unit coverage. |
 | Embed and index / S-03 | All nine query and six document comparisons; the two configured real tests `TestRealMaximumDocumentEmbeddingCompletes` and `TestRealProjectedLongQuery`; `TestRealPersistentPassageDiscovery` and the three remaining index/store tests with a disposable DSN. Add the sequential Python/Rust indexed-comparison matrix above, with all 17 workload queries and the nine query-boundary cases. |
 | Package / S-04 | For `N >= 1` supported CPU classes, all three modes run both as clean offline artifacts and through real Go supervision: `6*N` positive runs. Separately count live-staging rerun, wrong/missing library, wrong/missing asset, digest mismatch and shadow-system-library cases per class. Inventory must cover every managed host running a semantic service; an empty list cannot pass. |
@@ -426,6 +469,28 @@ evidence. Runtime builds exclude download features not needed for local assets;
 network-isolated acceptance uses a namespace with no external interfaces/routes.
 That test confinement does not claim production Go workers already have an
 OS-enforced network sandbox.
+
+Explicitly disable ORT telemetry in the Rust launcher before process/runtime
+initialization (`ORT_DISABLE_TELEMETRY=1`) and through the runtime's
+`DisableTelemetryEvents` facility as applicable. Acceptance must observe zero
+worker `connect()` attempts, including failed attempts, and no telemetry-store
+creation or writes with an initially empty disposable HOME/cache. Use syscall
+or equivalent egress/write observation scoped to the actual worker process
+tree; an interface-free namespace or absence of one sampled socket is not
+this proof. Negative controls establish that the observer detects a connect
+attempt and a store write. Go's own API/database traffic is outside that scope.
+
+S-01b separately records the unmodified Python reference's telemetry behavior:
+the observed `~/.cache/Microsoft/DeveloperTools/.onnxruntime/onnxruntime.db`
+store with `events`/`settings` tables, the OneCollector endpoint
+`https://mobile.events.data.microsoft.com/OneCollector/1.0/`, and the
+`ORT_DISABLE_TELEMETRY` switch in the pinned runtime. Current observations establish
+persistent store writes, not a verified upload. Inspect only selected metadata
+and disposable captures; do not copy the owner's event payloads/device IDs.
+Changing the reference or Python rollback launcher is a separately reviewed
+behavior repair and requires a recorded Release/Overall disposition. The Rust
+no-write/no-connect gate does not silently claim the legacy closure already
+satisfies it.
 
 The current installer stages `semantic/venv`, source workers and fixed
 `worker`, `worker-stream` and `worker-embeddings` launchers. Inventory the
