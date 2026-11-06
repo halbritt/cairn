@@ -119,10 +119,10 @@ artifact revision, with role input, output or evidence. Removing the link does
 not remove the deliverable.
 
 **Coordination Wait**:
-A durable subscription owned by an authenticated agent, with its creating
-execution recorded, to a supported predicate on an exact request or response
-group. Its terminal state and
-notification delivery do not establish acceptance of the underlying task.
+A durable subscription to a supported predicate on an exact request or response
+group. It belongs to an authenticated agent and records the creating execution.
+Its terminal state and notification delivery do not establish acceptance of the
+underlying task.
 
 **Wait Notification Outbox**:
 The durable reservation used to publish a wait's terminal notification after its
