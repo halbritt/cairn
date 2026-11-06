@@ -179,7 +179,7 @@ The complete source contract covers these writers:
 | Quiet explicit flush | `core/agent_organic_notices.go`: queued notice becomes pending delivery |
 | Routine notice flush | `core/agent_notice_flush.go`: releases existing availability; creates no delivery |
 | Wait resolution / timeout | `core/agent_waits.go`, `core/agent_wait_scheduler.go`: retained wait to outbox to event/delivery |
-| Stopped-session notification | `core/agent_stopped_backlog.go`: deduplicated direct event/delivery published by the trusted operator channel principal (charging that operator's producer/owner rate buckets); no retained pending outbox yet |
+| Stopped-session notification | `core/agent_stopped_backlog.go`: deduplicated direct event/delivery published by the trusted operator channel principal (charging that operator's producer/owner rate buckets and the collection rate buckets); no retained pending outbox yet |
 | Restore / reconciliation | `core/restore_fence.go` and restore rebuild paths: fence and reconcile existing obligations; never replay execution |
 
 Pool assignment scans at most 100 eligible publisher candidates per claim.

@@ -56,7 +56,7 @@ current store-owned operator channel, which must match the schedule creator.
 | --- | --- |
 | `pending` | Waiting for due time or pool admission. No event exists yet. |
 | `pending` / `POOL_FULL` or `POOL_PAUSED` | Last attempt could not enter the pool; later ticks may retry within grace. |
-| `pending` / `EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` | An enforced [admission policy](event-admission.md) refused the attempt for capacity; later ticks may retry within grace. A fanout larger than a configured burst cannot succeed until the policy or publication changes. |
+| `pending` / `EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` | An enforced [admission policy](event-admission.md) refused the attempt for capacity; later ticks may retry within grace. Demand exceeding configured policy maxima (`topic_recipients`, rate `burst`, or closure limits) cannot succeed until the policy, topic membership, or publication changes. |
 | `pending` / `CLOSURE_UNRECONCILED` | The current restore generation has no completed closure reconciliation. An operator completes `event-closure-reconcile` before grace expires; see [closure reservations](closure-reservations.md). |
 | `pending` / `RATE_UNRECONCILED` | A retained rate bucket's restore generation does not match the store's. The restore fence restamps every bucket, so this is an invariant failure needing operator investigation; waiting, policy edits and closure reconciliation do not repair retained bucket state, and no rate reconcile operation exists. |
 | `fired` | Event and deliveries or pool queue committed; `event_id` equals `occurrence_id`. |

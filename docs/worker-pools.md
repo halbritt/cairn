@@ -56,10 +56,13 @@ creates its first delivery, wake attempt and assignment in one transaction.
 The original event destination remains the pool. Reusing a publication or claim
 request UUID after a lost response returns the original committed result.
 `POOL_FULL` refuses admission without creating an event. Under an `enforce`
-[admission policy](event-admission.md), pool publication also charges collection
-capacity and producer rate and reserves [closure capacity](closure-reservations.md)
-for the eventual reply; an over-limit request refuses whole with a typed reason
-instead of queueing. When no slot is eligible, accepted work stays queued.
+[admission policy](event-admission.md), pool publication also charges one
+collection normal-capacity unit plus one publication and one delivery unit
+across producer, owner, and collection rate buckets, and reserves
+[closure capacity](closure-reservations.md) for the eventual reply; an
+over-limit request refuses whole with a typed admission or closure reason (or
+`CLOSURE_UNRECONCILED` / `RATE_UNRECONCILED` without typed details) instead of
+queueing. When no slot is eligible, accepted work stays queued.
 
 The pool gives the least recently served eligible publisher the next turn, then
 takes that publisher's oldest request. Between that candidate and existing slot
@@ -68,10 +71,13 @@ Claims respect configured launch spacing. A claim scans at most 100 eligible
 publisher candidates. Assignment transfers the queued request's existing
 collection charge and adds only the newly selected recipient's delivery charge,
 checked against both the recipient and the producer/recipient dimensions using
-the stored publisher, so accepted work is never charged twice. A publisher whose assignment the policy
-refuses rotates to the back while its request and reply reservation stay
-pending; a claim result with `attempt: null` means no currently admissible
-assignment, not an empty pool.
+the stored publisher, so accepted work is never charged twice. On a
+`producer_recipient_outstanding` refusal, that publisher rotates to the back and
+the scan continues to other publishers; on `recipient_outstanding` (this slot's
+inbox is full), that publisher rotates and the pool scan stops immediately. In
+both cases the request and reply reservation stay pending; a claim result with
+`attempt: null` means neither an existing slot delivery nor a currently
+admissible pool assignment could be claimed, not an empty pool.
 
 ## Availability and recovery
 

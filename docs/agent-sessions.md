@@ -97,7 +97,8 @@ replaced execution, expiry, restore or inaccessible recipient returns
 `STALE_RESOLUTION` with no event. Resolve again for a new intended publication.
 A shareable event cannot retain a local-only session resolution. Under an
 `enforce` [admission policy](event-admission.md), publication can also refuse
-with a typed capacity or rate reason. Follow its retry guidance; an unchanged
+with a typed capacity, rate, or closure reason (or `CLOSURE_UNRECONCILED` /
+`RATE_UNRECONCILED`). Follow its retry guidance; an unchanged
 retry keeps the same request UUID and resolution. A nonretryable refusal needs
 a workload or policy change. If a retry finds the resolution stale, resolve
 again for a new intended publication as described above.

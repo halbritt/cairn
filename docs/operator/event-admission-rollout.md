@@ -21,7 +21,9 @@ Closure reservations are recorded in every mode. Only `enforce` uses them to ref
 new obligations.
 
 Ack, complete, retry, renew, cancel, wait cancellation, closure reconciliation and
-recovery are never gated by admission. A refusal never manufactures success, drops a
+accepted-work recovery (`native-hold-release`, `stopped-inbox-expire`) are never gated
+by admission; explicit `event-reissue` publishes a new request under normal admission.
+A refusal never manufactures success, drops a
 recipient or splits a topic publication.
 
 ## 1. Upgrade the store

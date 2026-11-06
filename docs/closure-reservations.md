@@ -4,7 +4,8 @@ A closure reservation holds capacity for work that an accepted obligation still
 needs in order to finish: the reply a request delivery may receive, or the
 terminal notice a [coordination wait](operator/work-coordination.md#wait-for-an-exact-coordination-fact) owes its owner.
 Source support starts with migration 081. Handling, retry, renewal,
-cancellation and recovery are never gated by closure capacity. Closure limits
+cancellation and accepted-work recovery are never gated by closure capacity
+(explicit `event-reissue` creates a new request and reserves its own closure). Closure limits
 are enforced only under an `enforce` admission policy, which needs schema 084
 and a completed reconciliation; see
 [event pressure and admission policy](event-admission.md).
@@ -167,9 +168,11 @@ notice whose wait predates its reservation stays pending in the outbox with
 
 Stopped-delivery notices take no closure reservation; they are ordinary
 notices to the original publisher. Under enforcement each one passes ordinary
-admission before anything is inserted. A refusal rolls back the whole notice,
-including its source record, event, delivery and retry identity, and returns
-status `deferred_capacity` with the refused dimension. The delivery's
+admission before anything is inserted. A capacity, rate, or
+closure-reconciliation refusal rolls back the whole notice, including its source
+record, event, delivery and retry identity, and returns status
+`deferred_capacity` with `reason` set to the refused dimension (or
+`CLOSURE_UNRECONCILED`). The delivery's
 fingerprint is not marked as notified, so a later `coordination-review` retries
 with the same deterministic request UUID. The unresolved original delivery
 remains the durable record; a notice is not guaranteed to be delivered.

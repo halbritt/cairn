@@ -203,7 +203,9 @@ completion arguments rather than inferring policy from the assignment scope.
 ## Delivery, leases and completion
 
 Handling is never gated by admission capacity: `ack`, `complete`, `retry`,
-`renew`, cancellation and recovery remain available when fresh-work capacity or
+`renew`, cancellation and accepted-work recovery (`native-hold-release`,
+`stopped-inbox-expire`; explicit `event-reissue` publishes a new request under
+normal admission) remain available when fresh-work capacity or
 rate budgets are exhausted, and a validated reply that consumes its
 [closure reservation](closure-reservations.md) is never refused for capacity.
 

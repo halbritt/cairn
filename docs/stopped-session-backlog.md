@@ -141,16 +141,19 @@ the following invariants:
   original delivery, and never restarts or switches the stopped session.
 - **Ordinary admission, no reservation**: Each notice is published by the
   trusted operator channel principal, charging that principal's producer and
-  owner rate buckets, and takes no [closure reservation](closure-reservations.md).
-  Under an `enforce` [admission policy](event-admission.md) a capacity or
-  reconciliation refusal rolls back the whole notice—source record, event,
-  delivery and retry identity—and returns `status: "deferred_capacity"` with the
-  refused dimension. The delivery's fingerprint is not marked notified, so a
-  later `coordination-review` retries with the same deterministic request UUID.
-  If retaining the refusal counter itself fails, the deferral still succeeds
-  with a structured warning and the batch keeps its earlier results and
-  fingerprints. The unresolved original delivery remains the durable record; a
-  notice is not guaranteed to be delivered.
+  owner rate buckets plus the collection's rate buckets, and takes no
+  [closure reservation](closure-reservations.md). Under an `enforce`
+  [admission policy](event-admission.md), a capacity, rate, or
+  closure-reconciliation (`CLOSURE_UNRECONCILED`) refusal rolls back the whole
+  notice—source record, event, delivery and retry identity—and returns
+  `status: "deferred_capacity"` with `reason` set to the refused dimension (or
+  `"CLOSURE_UNRECONCILED"`; a `RATE_UNRECONCILED` generation-invariant mismatch
+  is not deferred and returns an error). The delivery's fingerprint is not
+  marked notified, so a later `coordination-review` retries with the same
+  deterministic request UUID. If retaining the refusal counter itself fails, the
+  deferral still succeeds with a structured warning and the batch keeps its
+  earlier results and fingerprints. The unresolved original delivery remains the
+  durable record; a notice is not guaranteed to be delivered.
 
 ## Explicit expiry
 
