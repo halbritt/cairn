@@ -37,7 +37,7 @@ The optional `attention` request object adds a bounded summary of aged pending
 session requests, with changed-condition suppression when given a local state
 file; when `attention.notify_publishers` is set, it may also send deduplicated
 operator notices for unresolved deliveries on stopped sessions. Under enforced
-[event admission](event-admission.md), capacity, rate, or reconciliation refusals
+[event admission](event-admission.md), capacity, rate, or closure-reconciliation refusals
 defer those notices cleanly (`status: "deferred_capacity"`, counted under
 `deferred`), leaving the original delivery untouched and recording no notified
 fingerprint for the deferred item so a later pass retries it; if refusal

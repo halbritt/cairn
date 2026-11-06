@@ -265,11 +265,12 @@ For a request, `completion` records a concise selected result and handling in on
 transaction. The supplied `response` argv preserves the native UUID, a stable
 publication request ID, recipient, causation and any existing correlation ID.
 Append `--version RESULT_VERSION RESULT_RECORD_UUID` using completion's result.
-Reply publication remains explicit. Because the supplied argv preserves the
-exact sender, recipient, causation and correlation, the published reply consumes
-the request's [closure reservation](closure-reservations.md) and is never
-refused for fresh-work capacity under an enforced
-[admission policy](event-admission.md).
+Reply publication remains explicit. The supplied argv preserves the sender,
+recipient, causation and correlation needed to consume the request's
+[closure reservation](closure-reservations.md). A reply that still qualifies
+for that reservation is exempt from fresh-work capacity under an enforced
+[admission policy](event-admission.md). A closed reservation or elapsed deadline
+makes the reply ordinary work; the supplied argv does not bypass those checks.
 For a response/notice, `acknowledgement` records handling without creating another
 request. Completion request UUIDs remain stable after an uncertain response.
 Handling is a report; neither zero exit nor acknowledgment proves task success.
