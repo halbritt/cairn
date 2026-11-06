@@ -386,7 +386,9 @@ No parent-held-lock handoff or duplicate Python activation is accepted.
 Success is exactly one compact `{"enabled":true}\n` or `{"enabled":false}\n`
 on stdout, empty stderr and exit 0. A private failure has empty stdout, exit 1
 and one JSON error frame of at most 4096 bytes on stderr: fixed `class`, fixed
-`reason` and optional numeric `errno`. The reviewed protocol enumerates those
+`reason` and numeric-or-null `errno`, with shape
+`{"error":{"class":CLASS,"reason":SOURCE_SITE,"errno":NUMBER_OR_NULL}}`
+and one terminating newline. The reviewed protocol enumerates those
 values and their source exception counterparts; no paths, events, credentials
 or free-form exception text cross this frame. The parent maps them through its
 existing entrypoint-specific public exception handling, preserving streams,
@@ -412,34 +414,43 @@ The concrete receipt fields agreed with Release are:
 | `schema` | Exactly `cairn.lifecycle-compatibility/1` |
 | `source_revision` | Source provenance; never authority or proof of executed bytes |
 | `snapshot_root` | Canonical absolute private persistent versioned directory |
-| `members` | Exact complete basename-to-`{sha256, bytes}` map, including aliases; lowercase 64-hex SHA-256 and exact raw byte count |
+| `members` | Exact complete basename-to-`{sha256, bytes}` map, including aliases; lowercase 64-hex SHA-256 and exact integer raw byte count, never Boolean |
 | `bootstrap`, `loader` | Checked member names: proposed `lifecycle_compatibility.py` and retained/adapted `lifecycle_bundle.py` |
 | `roles` | Exactly memory, coordination, inbox_recall and inbox_binding, selecting their corresponding `.py` members; memory also supplies the retained engine |
-| `aliases` | Public basename to canonical member name; alias bytes equal that member |
+| `aliases` | Public basename to `memory.py` or `coordination.py`; alias bytes equal that member |
 | `binary` | Exact absolute Go `path` and `sha256`, equal to `/3` |
 | `binding` | Exact absolute manifest `path`, `sha256` and schema `cairn.inbox-recall-binding/3` |
-| `memory_config`, `coordination_configs` | The `/3` config descriptors, with identical ordered coordinator membership; selected frontend path must be one of them |
+| `memory_config`, `coordination_configs` | The `/3` config descriptors, with identical ordered coordinator membership; memory selects its memory config, coordination one of its explicit configs |
 
 Retain the complete local closure, including all 17 current lifecycle members
 plus the new bootstrap and declared aliases; do not authenticate only edited
 files. Reject missing/extra members or roles, duplicate/noncanonical names,
-escaped aliases and unknown schemas. The new receipt is at most 1 MiB and each
+escaped aliases, duplicate receipt JSON object keys and unknown schemas. This
+new receipt parsing rule does not change legacy state duplicate-last behavior.
+The new receipt is at most 1 MiB and each
 member at most 2 MiB, matching the existing bundle's member limit. Hash exact
 bytes, not reserialized JSON. Descriptor agreement is always checked; opening
 and hashing final downstream configs follows the disabled-staging exception
 below. Unknown, missing, mixed, changed or incompatible enabled selections
 refuse before effects.
 
+The snapshot directory's final component is the lowercase SHA-256 of the
+member-name-to-SHA-256 map encoded as sorted-key ASCII compact JSON with
+`,`/`:` separators, as in the existing complete-bundle digest convention.
+It identifies the code closure and does not hash its own receipt.
+
 The receipt's exact SHA-256 and canonical path are pinned **outside the
 receipt**, in the owner-controlled hook launch configuration. The proposed
 trust entry is a fixed, independently reviewed stdlib-only verifier under an
 approved absolute Python interpreter in isolated mode (`-I -S`). The hook's
 actual argv contains its reviewed `-c` literal and independently recorded
-verifier digest, receipt path/digest, selected role/alias and config path.
-The verifier itself is not the receipt's bootstrap. It verifies the
-external receipt digest, checks bootstrap/loader bytes, then executes those
-checked byte snapshots. The checked loader validates the entire closure before
-executing any member and uses only its process-local checked source cache.
+receipt path/digest, selected role/alias and config path. Release separately
+records the verifier digest with that selection and reads back the installed
+argv, including its literal.
+The verifier itself is not the receipt's bootstrap. Using Foundation's bounded
+checked-source implementation, it verifies the external receipt digest and
+the complete closure before executing any member, including bootstrap/loader.
+The loader executes only this process-local checked source cache.
 Aliases must match their selected role's bytes. No unchecked adjacent import,
 self-described trust root, hash-then-reopen execution or user import path is
 accepted. Release agrees the precise immutable launch text/selection before
