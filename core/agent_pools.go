@@ -287,6 +287,9 @@ func assignPool(ctx context.Context, tx pgx.Tx, w WorkerSlot, c poolCandidate) (
 	if tag.RowsAffected() != 1 {
 		return "", failure("INTEGRITY_FAILURE", "pool request assignment changed after candidate selection")
 	}
+	if err = transferPoolClosureTx(ctx, tx, c.id, id, w.Consumer); err != nil {
+		return "", err
+	}
 	_, err = tx.Exec(ctx, `UPDATE cairn.agent_pool_publisher_service SET last_dispatch=nextval('cairn.agent_pool_dispatch_sequence') WHERE repo=$1 AND pool=$2 AND publisher=$3`, w.Repo, c.pool, c.publisher)
 	return id, err
 }

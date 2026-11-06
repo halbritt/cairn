@@ -104,6 +104,15 @@ ON CONFLICT (event_uuid,generation) DO NOTHING`, result.Generation); err != nil 
 	END $$;`); err != nil {
 		return result, err
 	}
+	// Fenced groups and waits end their closures. Direct request reservations
+	// remain: their deliveries survive the fence with released leases.
+	if present, err := closureTablesPresentTx(ctx, tx); err != nil {
+		return result, err
+	} else if present {
+		if _, err = releaseClosuresTx(ctx, tx, "", closureScope{All: true}); err != nil {
+			return result, err
+		}
+	}
 	if _, err = tx.Exec(ctx, `UPDATE cairn.work_item SET cache_generation=0, refresh_error='database restore fence: projection invalidated'`); err != nil {
 		return result, err
 	}

@@ -137,10 +137,16 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 
 		if destType == "pool" {
 			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, newEventID)
+			if err == nil {
+				err = reservePoolClosureTx(ctx, tx, newEventID)
+			}
 		} else {
 			// Direct and topic reissue deliver only to the failed consumer.
 			newDeliveryID := uuid.NewString()
 			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, newDeliveryID, newEventID, consumer)
+			if err == nil {
+				err = reserveRequestClosuresTx(ctx, tx, newEventID)
+			}
 		}
 		if err != nil {
 			return AgentEvent{}, err

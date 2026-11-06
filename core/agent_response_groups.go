@@ -253,10 +253,15 @@ func expireResponseGroups(ctx context.Context, tx pgx.Tx, repo, eventID string) 
 	}
 	rows.Close()
 
+	ids := make([]string, 0, len(expired))
 	for _, eg := range expired {
 		if err = resolveWaitsOnGroupClosure(ctx, tx, eg.id, "deadline", eg.deadline); err != nil {
 			return int64(len(expired)), err
 		}
+		ids = append(ids, eg.id)
+	}
+	if _, err = releaseClosuresTx(ctx, tx, repo, closureScope{EventIDs: ids}); err != nil {
+		return int64(len(expired)), err
 	}
 	return int64(len(expired)), nil
 }
@@ -295,6 +300,9 @@ FOR UPDATE`, groupEventID).Scan(&curState, &curCode, &partialPolicy, &curDeadlin
 			return "", "", time.Time{}, nil, err
 		}
 		if err = resolveWaitsOnGroupClosure(ctx, tx, groupEventID, newCode, curDeadline); err != nil {
+			return "", "", time.Time{}, nil, err
+		}
+		if _, err = releaseClosuresTx(ctx, tx, "", closureScope{EventIDs: []string{groupEventID}}); err != nil {
 			return "", "", time.Time{}, nil, err
 		}
 		curState = newState

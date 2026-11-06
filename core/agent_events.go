@@ -377,6 +377,12 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			return AgentEvent{}, err
 		}
 	}
+	// Resolve the exact reply closure before any insert so admission can
+	// exempt only that reply; it is consumed after the reply is inserted.
+	closure, err := matchReplyClosureTx(ctx, tx, req, s.channel.Principal)
+	if err != nil {
+		return AgentEvent{}, err
+	}
 	if id == "" {
 		id = uuid.NewString()
 	}
@@ -487,8 +493,23 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 			return AgentEvent{}, err
 		}
 	}
+	if req.Kind == "request" {
+		if req.Destination.Type == "pool" {
+			err = reservePoolClosureTx(ctx, tx, id)
+		} else {
+			err = reserveRequestClosuresTx(ctx, tx, id)
+		}
+		if err != nil {
+			return AgentEvent{}, err
+		}
+	}
 	event, err := s.readEvent(ctx, tx, id, dest)
 	if err != nil {
+		return event, err
+	}
+	// Consume before group observation: closing the group releases its
+	// unused reservations, and the matched one must already be delivered.
+	if err = consumeReplyClosureTx(ctx, tx, closure, id); err != nil {
 		return event, err
 	}
 	if err = observeGroupResponse(ctx, tx, event); err != nil {

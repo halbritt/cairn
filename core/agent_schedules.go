@@ -250,7 +250,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 					return out, e
 				}
 				switch refusal.Code {
-				case "POOL_FULL", "POOL_PAUSED":
+				case "POOL_FULL", "POOL_PAUSED", "CLOSURE_RESERVE_FULL", "CLOSURE_UNRECONCILED":
 					// Accepted schedule stays pending until capacity returns or grace expires.
 					// Rotate blocked work behind unchecked occurrences in bounded ticks.
 					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_schedule SET last_checked_at=clock_timestamp(),code=$2 WHERE occurrence_id=$1`, item.OccurrenceID, refusal.Code); err != nil {

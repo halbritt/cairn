@@ -463,6 +463,9 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 		if err != nil {
 			return AgentWait{}, err
 		}
+		if err = reserveWaitClosureTx(ctx, tx, repo, waitUUID, "agent/"+ownerAgentUUID); err != nil {
+			return AgentWait{}, err
+		}
 
 		outboxState := ""
 		if state != WaitStateWaiting {
@@ -875,6 +878,9 @@ ORDER BY w.created_at DESC LIMIT 1 FOR UPDATE OF w`, repo, req.WaitUUID, req.Dep
 
 		_, err = tx.Exec(ctx, `UPDATE cairn.agent_wait SET state='cancelled', resolved_at=$2, terminal_reason='cancelled' WHERE wait_uuid=$1`, w.WaitUUID, now)
 		if err != nil {
+			return AgentWait{}, err
+		}
+		if _, err = releaseClosuresTx(ctx, tx, repo, closureScope{WaitUUIDs: []string{w.WaitUUID}}); err != nil {
 			return AgentWait{}, err
 		}
 

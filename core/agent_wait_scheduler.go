@@ -432,6 +432,20 @@ FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, 
 			noticeSensitivity = "local"
 		}
 
+		// The notice needs its reserved closure; a wait accepted before
+		// reservations existed acquires one or stays pending, rotating behind
+		// other outbox items, instead of publishing past an enforced limit.
+		recipient := "agent/" + item.ownerAgentUUID
+		if err = ensureWaitClosureTx(ctx, tx, item.collection, item.waitUUID, recipient); err != nil {
+			if c := Code(err); c != "CLOSURE_RESERVE_FULL" && c != "CLOSURE_UNRECONCILED" {
+				return 0, err
+			}
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET error_reason='closure_capacity', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now); err != nil {
+				return 0, err
+			}
+			continue
+		}
+
 		// 5. Publish fixed-format notice event using dedicated task scope and real channel provenance
 		noticeBody := fmt.Sprintf("Wait %s resolved (%s: %s). Inspect wait for details.", item.waitUUID, item.waitState, item.terminalReason)
 
@@ -456,7 +470,6 @@ FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, 
 			}
 		}
 
-		recipient := "agent/" + item.ownerAgentUUID
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(
 			event_id, repo, kind, record_id, version, sensitivity, destination_type, destination_name, publisher, created_at)
 			VALUES($1, $2, 'notice', $3, 1, $4, 'agent', $5, $6, clock_timestamp())
@@ -474,12 +487,23 @@ FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, 
 			return 0, err
 		}
 
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='published', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
+		if err = consumeWaitClosureTx(ctx, tx, item.waitUUID, item.noticeEventUUID, recipient); err != nil {
+			return 0, err
+		}
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_wait_outbox SET state='published', error_reason='', updated_at=$2 WHERE wait_uuid=$1`, item.waitUUID, now)
 		if err != nil {
 			return 0, err
 		}
 		publishedCount++
 	}
 
+	// Restricted notices end their closure; published ones were consumed above.
+	waits := make([]string, 0, len(items))
+	for _, item := range items {
+		waits = append(waits, item.waitUUID)
+	}
+	if _, err = releaseClosuresTx(ctx, tx, repo, closureScope{WaitUUIDs: waits}); err != nil {
+		return 0, err
+	}
 	return publishedCount, tx.Commit(ctx)
 }

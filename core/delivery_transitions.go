@@ -130,7 +130,12 @@ func failDelivery(ctx context.Context, tx pgx.Tx, deliveryID, code string, contr
 		return tag.RowsAffected() == 1, err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$2,control_at=clock_timestamp(),control_by=COALESCE(NULLIF($3,''),current_setting('cairn.caller')),control_reason=$4 WHERE delivery_id=$1 AND state IN ('pending','leased')`, deliveryID, code, control.By, control.Reason)
-	return tag.RowsAffected() == 1, err
+	if err != nil || tag.RowsAffected() != 1 {
+		return false, err
+	}
+	// A recorded stop decision is an explicit terminal for the reply closure.
+	_, err = releaseClosuresTx(ctx, tx, "", closureScope{DeliveryIDs: []string{deliveryID}})
+	return true, err
 }
 
 // failPendingDeliveries fails only the still-pending deliveries among ids as a
@@ -138,7 +143,13 @@ func failDelivery(ctx context.Context, tx pgx.Tx, deliveryID, code string, contr
 // moved since review is detected rather than partially applied.
 func failPendingDeliveries(ctx context.Context, tx pgx.Tx, ids []string, code string, control stopControl) (int64, error) {
 	tag, err := tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$2,control_at=clock_timestamp(),control_by=COALESCE(NULLIF($3,''),current_setting('cairn.caller')),control_reason=$4 WHERE delivery_id=ANY($1::uuid[]) AND state='pending'`, ids, code, control.By, control.Reason)
-	return tag.RowsAffected(), err
+	if err != nil {
+		return 0, err
+	}
+	if _, err = releaseClosuresTx(ctx, tx, "", closureScope{DeliveryIDs: ids}); err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // settleDelivery records the consumer's disposition with an optional result

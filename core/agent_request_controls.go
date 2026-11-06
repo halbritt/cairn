@@ -154,6 +154,10 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 			if delivery == "" {
 				out := WorkCancellation{EventID: req.PoolEventID, Control: &WorkControl{}}
 				err = tx.QueryRow(ctx, `UPDATE cairn.agent_pool_request SET closed_at=clock_timestamp(),closed_code='operator_cancelled',closed_by=current_setting('cairn.caller'),closed_reason=$2 WHERE event_id=$1 RETURNING closed_at,closed_by,closed_code,closed_reason`, req.PoolEventID, req.Reason).Scan(&out.Control.At, &out.Control.By, &out.Control.Code, &out.Control.Reason)
+				if err != nil {
+					return out, err
+				}
+				_, err = releaseClosuresTx(ctx, tx, req.Repo, closureScope{EventIDs: []string{req.PoolEventID}})
 				return out, err
 			}
 		}
@@ -279,12 +283,34 @@ func (s *Store) SweepRequestControls(ctx context.Context, req RequestControlSwee
 	if out.ResponseGroups, err = expireResponseGroups(ctx, tx, repo, ""); err != nil {
 		return out, err
 	}
+	// Apply the release rule repository-wide: this is where a declared task
+	// deadline ends the reply closure of a request its consumer already settled.
+	if _, err = releaseClosuresTx(ctx, tx, repo, closureScope{All: true, Limit: closureSweepLimit}); err != nil {
+		return out, err
+	}
 	return out, tx.Commit(ctx)
 }
 
 func expirePoolRequests(ctx context.Context, tx pgx.Tx, repo string) (int64, error) {
-	tag, err := tx.Exec(ctx, `WITH due AS (SELECT q.event_id,CASE WHEN e.task_deadline<=clock_timestamp() THEN 'task_deadline' ELSE 'admission_expired' END AS code FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND q.delivery_id IS NULL AND q.closed_at IS NULL AND NOT (`+requestAdmissionOpen+`) ORDER BY e.position LIMIT 100 FOR UPDATE OF q SKIP LOCKED) UPDATE cairn.agent_pool_request q SET closed_at=clock_timestamp(),closed_code=due.code,closed_by=current_setting('cairn.caller'),closed_reason=due.code FROM due WHERE q.event_id=due.event_id`, repo)
-	return tag.RowsAffected(), err
+	rows, err := tx.Query(ctx, `WITH due AS (SELECT q.event_id,CASE WHEN e.task_deadline<=clock_timestamp() THEN 'task_deadline' ELSE 'admission_expired' END AS code FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND q.delivery_id IS NULL AND q.closed_at IS NULL AND NOT (`+requestAdmissionOpen+`) ORDER BY e.position LIMIT 100 FOR UPDATE OF q SKIP LOCKED) UPDATE cairn.agent_pool_request q SET closed_at=clock_timestamp(),closed_code=due.code,closed_by=current_setting('cairn.caller'),closed_reason=due.code FROM due WHERE q.event_id=due.event_id RETURNING q.event_id::text`, repo)
+	if err != nil {
+		return 0, err
+	}
+	var closed []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		closed = append(closed, id)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	_, err = releaseClosuresTx(ctx, tx, repo, closureScope{EventIDs: closed})
+	return int64(len(closed)), err
 }
 
 const requestAdmissionOpen = `(e.admission_expires_at IS NULL OR e.admission_expires_at>clock_timestamp()) AND (e.task_deadline IS NULL OR e.task_deadline>clock_timestamp())`
@@ -315,6 +341,13 @@ func expireRequestDeliveries(ctx context.Context, tx pgx.Tx, s *Store, repo, con
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	ids := make([]string, 0, len(list))
+	for _, e := range list {
+		ids = append(ids, e.delivery)
+	}
+	if _, err := releaseClosuresTx(ctx, tx, repo, closureScope{DeliveryIDs: ids}); err != nil {
 		return 0, err
 	}
 	// The sweep runs inside polling paths that carry no request id; the
