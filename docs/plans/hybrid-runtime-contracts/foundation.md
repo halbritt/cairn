@@ -159,7 +159,10 @@ transitions remain with Coordination.
 Keep the `ProcessRef` wire identity `pid`, `start`, `boot`, where `start` is the
 `/proc/<pid>/stat` start tick value and `boot` is the kernel boot ID. Ancillary
 state and parent metadata in Python records must not disappear during roundtrip.
-A numeric PID alone never certifies identity. Preserve the reference distinction
+A numeric PID alone never certifies identity. Existing Go `liveProcess` compares
+PID/start/boot, while Python `process_alive` also excludes `Z`/`X` states. Keep
+both observations in fixtures and preserve each consumer's policy until an
+explicitly reviewed change selects otherwise. Preserve the reference distinction
 between a process-owned endpoint and a same-user endpoint: the latter can have a
 peer PID different from the measured target process. Both require their actual
 credential/identity policy before any payload write. Tests cover the individual
