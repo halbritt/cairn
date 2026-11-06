@@ -207,6 +207,8 @@ def advice_fixture():
 
         def assert_captured_before(self, page, review, before):
             from playwright.sync_api import expect
+            labels = dict(annotation_id="Annotation", revision="Revision", kind="Kind", body="Text",
+                          state="State", link_id="Link", revision_id="Artifact revision", role="Role")
             for action in review["actions"]:
                 payload = action["target_payload"]
                 if action["action_type"] == "annotate_progress":
@@ -233,8 +235,9 @@ def advice_fixture():
                 if expected is None:
                     expect(rendered).to_contain_text("No existing target.")
                 else:
-                    for value in expected.values():
-                        expect(rendered).to_contain_text(str(value))
+                    actual_fields = rendered.locator("dl").evaluate("node => Object.fromEntries([...node.querySelectorAll('dt')].map(label => [label.textContent, label.nextElementSibling.textContent]))")
+                    base.require(all(actual_fields.get(labels[field]) == str(value) for field, value in expected.items()),
+                                 "rendered Before omitted or changed a typed captured target field")
 
         def assert_review_capture_unchanged(self, original, current):
             self.assert_review_provenance(current)
