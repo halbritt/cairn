@@ -176,11 +176,16 @@ class EventScalingRestoreCase:
         return self.agent("requester", "event-publish", payload, expected=expected)
 
     def producer_refilled(self, label):
-        """Whether both of a session's producer buckets now hold one whole token (DB time)."""
+        """Whether exactly the session's current-generation producer publication and
+        delivery buckets exist and each now holds one whole token (DB time).
+        A missing unit or a stale generation is never ready."""
         inbox = self.sessions[label]["inbox"]
-        ready = self.sql("SELECT COALESCE(bool_and(tokens_nano + extract(epoch FROM clock_timestamp()-refill_at)"
-                         f"*{PRODUCER_RATE['per_second']}*{NANO} >= {NANO}), true) FROM cairn.agent_event_rate_bucket "
-                         f"WHERE repo='{self.host.repo}' AND identity_kind='producer' AND identity='{inbox}'")
+        ready = self.sql("SELECT count(*) = 2 AND count(DISTINCT unit) = 2 AND COALESCE(bool_and(tokens_nano + "
+                         f"extract(epoch FROM clock_timestamp()-refill_at)*{PRODUCER_RATE['per_second']}*{NANO} >= {NANO}), false) "
+                         "FROM cairn.agent_event_rate_bucket "
+                         f"WHERE repo='{self.host.repo}' AND identity_kind='producer' AND identity='{inbox}' "
+                         "AND unit IN ('publication','delivery') "
+                         "AND restore_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton)")
         return ready.strip() == "t"
 
     def wait_producer_refill(self, label, timeout=15):
