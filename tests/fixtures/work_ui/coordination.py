@@ -213,9 +213,11 @@ def coordination_fixture(Base, uid, dump, require):
             page.locator("#modal-close").click()
             page.locator(f'.work-card[data-item-uuid="{self.item_id}"]').click()
             expect(page.locator(".coordination-wait")).to_have_count(25)
-            target = page.locator(".coordination-wait").first.get_attribute("data-wait-id")
+            visible = page.locator(".coordination-wait").evaluate_all("nodes => nodes.map(node => node.dataset.waitId)")
+            candidates = [wait_id for wait_id in visible if len(self.expected_associations[wait_id]) == 1]
+            require(candidates, "removal case requires a visible wait with one exact association")
+            target = candidates[0]
             association = self.association_rows[target]
-            require(len(self.expected_associations[target]) == 1, "removal case requires one exact association")
             self.work("unassociate", "--project", self.slug, "--item", self.item_id,
                 "--association-id", association["association_id"], "--expected-revision", str(association["revision"]))
             page.locator("#annotation-input").fill("Unsaved note survives association and restore changes")
