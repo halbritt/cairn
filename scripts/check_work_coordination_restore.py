@@ -30,10 +30,11 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def fixture_inputs():
+def fixture_inputs(extra_paths=()):
     paths = [*sorted((ROOT / 'scripts').glob('*.py')),
-             *sorted((ROOT / 'integrations/lifecycle').glob('*.py'))]
-    return {str(path.relative_to(ROOT)): digest(path) for path in paths}
+             *sorted((ROOT / 'integrations/lifecycle').glob('*.py')), *extra_paths]
+    return {(str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)): digest(path)
+            for path in paths}
 
 
 def native_inputs(manifest):
@@ -44,9 +45,10 @@ def native_inputs(manifest):
 
 
 class RestoreController:
-    def __init__(self, cluster, report, report_directory):
+    def __init__(self, cluster, report, report_directory, extension=None):
         self.cluster, self.report = cluster, report
         self.report_directory = report_directory
+        self.extension = extension
         self.mode = 'idle'
         self.held = threading.Event()
         self.release = threading.Event()
@@ -55,6 +57,10 @@ class RestoreController:
         self.tool = None
         self.action = 'read'
         self.sequence = 0
+
+    def on_phase(self, name):
+        if self.extension is not None:
+            self.extension.on_phase(name, self)
 
     def record(self, name, value):
         self.report[name] = value
@@ -123,7 +129,7 @@ class RestoreController:
         waits = ','.join("'" + row['wait_uuid'] + "'" for row in self.waits)
         events = ','.join("'" + event['event_id'] + "'" for event in (self.held_event, self.forgotten_event))
         attempt_id = self.old_attempt['attempt_id']
-        return json.loads(host.sql(f"""SELECT json_build_object(
+        snapshot = json.loads(host.sql(f"""SELECT json_build_object(
           'generation',(SELECT generation FROM cairn.retrieval_generation WHERE singleton),
           'waits',(SELECT json_agg(to_jsonb(w) ORDER BY wait_uuid) FROM cairn.agent_wait w WHERE wait_uuid IN ({waits})),
           'outboxes',(SELECT json_agg(to_jsonb(o) ORDER BY wait_uuid) FROM cairn.agent_wait_outbox o WHERE wait_uuid IN ({waits})),
@@ -131,6 +137,9 @@ class RestoreController:
           'native_attempt',(SELECT to_jsonb(a) FROM cairn.agent_session_attempt a WHERE attempt_id='{attempt_id}'),
           'native_delivery',(SELECT to_jsonb(d) FROM cairn.agent_delivery d JOIN cairn.agent_session_attempt a USING(delivery_id) WHERE attempt_id='{attempt_id}')
         )""", limit=100_000))
+        if self.extension is not None:
+            snapshot['extension'] = self.extension.snapshot(self)
+        return snapshot
 
     def prepare_waits(self):
         host = self.ctx['host']
@@ -167,6 +176,7 @@ class RestoreController:
         self.ctx = context
         host, terminal = context['host'], context['terminal']
         context['extension']['handler'] = self.response
+        scenario_failure = None
         try:
             self.prepare_waits()
             self.held_event = context['publish']('Eligible held notice survives source recovery.')
@@ -174,6 +184,7 @@ class RestoreController:
             self.forgotten_event = context['publish'](self.forgotten_body)
             require(host.sql('SELECT count(*) FROM cairn.agent_organic_notice WHERE state=\'queued\'') == '2',
                     'two genuine quiet publications not retained')
+            self.on_phase('notices_queued')
             self.mode = 'hold'
             terminal.submit('Hold the selected notice while the operator takes a restore checkpoint.')
             self.wait_native(self.held.is_set, 'genuine admitted organic hold')
@@ -217,6 +228,7 @@ class RestoreController:
             terminal.close()
             require(terminal.process.poll() is not None, 'original native launcher exit unobserved')
             self.report['old_native_exit_code'] = terminal.process.returncode
+            self.on_phase('backup_complete')
 
             # Forget an actual queued notice source after the backup. The held
             # notice source remains eligible, so deletion cannot hide its fence.
@@ -227,6 +239,7 @@ class RestoreController:
                 'preview_id': preview['preview_id']})
             host.operator('purge-deletion', args=(deletion['deletion_id'],))
             host.agent('sender', 'history', source, expected='PAYLOAD_UNAVAILABLE', forbidden=self.forgotten_body)
+            self.on_phase('source_forgotten')
             witness = host.home / 'post-backup-coordination-recovery.json'
             exported = host.operator('recovery-export', args=(witness,))
             require(self.forgotten_body not in witness.read_text(), 'recovery witness copied forgotten notice text')
@@ -249,6 +262,7 @@ class RestoreController:
             require(restore['generation'] > before['generation'], 'begin-restore did not fence old generation')
             host.start_server()
             host.agent('sender', 'history', self.held_event['ref'], expected='RESTORE_PAUSED')
+            self.on_phase('restore_paused')
             apply_args = ('--request-id', new_id(), '--expected-sha256', exported['sha256'], '--reason',
                           'Retain actual queued-notice source deletion after older restore', str(witness))
             applied = host.operator('recovery-reapply', args=apply_args)
@@ -288,6 +302,7 @@ class RestoreController:
             self.record('restore', {'session': restore, 'reapply': applied, 'rebuild_pages': pages,
                                             'verification': verified, 'resume': resumed})
             self.report['stages'].append('actual_old_restore_notice_source_witness_reapply_rebuild_verify_resume')
+            self.on_phase('restore_resumed')
 
             old_replay = host.agent('worker', 'session-organic-notice-claim', old_claim, expected='STALE_SESSION')
             require('restore' in old_replay['message'] or 'generation' in old_replay['message'],
@@ -383,19 +398,36 @@ class RestoreController:
                 self.wait_fixture.unchanged_outcome(event)
             self.report['new_generation_sessions'] = {'native': current_session, 'waiter': session(self.wait_fixture.sessions['bob'])}
             self.report['stages'].append('same_conversation_fresh_composer_and_wait_positive_controls')
+            self.on_phase('coordination_controls_complete')
+        except BaseException as error:
+            scenario_failure = error
+            raise
         finally:
             self.mode = 'idle'
             self.release.set()
+            cleanup_errors = []
             if self.resumed is not None:
-                self.resumed.close()
-                self.report['resumed_native_exit_code'] = self.resumed.process.returncode
-                diagnostic = context['native_root'] / 'resumed-terminal.txt'
-                diagnostic.write_bytes(self.resumed.output)
-                diagnostic.chmod(0o600)
-                self.report['resumed_terminal_diagnostic'] = str(diagnostic)
+                try:
+                    self.resumed.close()
+                    self.report['resumed_native_exit_code'] = self.resumed.process.returncode
+                    diagnostic = context['native_root'] / 'resumed-terminal.txt'
+                    diagnostic.write_bytes(self.resumed.output)
+                    diagnostic.chmod(0o600)
+                    self.report['resumed_terminal_diagnostic'] = str(diagnostic)
+                except BaseException as error:
+                    cleanup_errors.append({'owner': 'resumed_native', 'error': str(error)})
+            if self.extension is not None:
+                try:
+                    self.extension.close(self)
+                except BaseException as error:
+                    cleanup_errors.append({'owner': 'extension', 'error': str(error)})
+            if cleanup_errors:
+                self.report['scenario_cleanup_errors'] = cleanup_errors
+                if scenario_failure is None:
+                    raise RuntimeError('scenario cleanup was not confirmed: ' + json.dumps(cleanup_errors))
 
 
-def main():
+def main(*, extension_factory=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('binary', type=Path)
     parser.add_argument('--native-manifest', type=Path, required=True)
@@ -408,7 +440,9 @@ def main():
     require(not output.is_relative_to(ROOT), 'report directory must be outside the source checkout')
     require(not output.exists() or not any(output.iterdir()), 'report directory must be new or empty')
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    expected_fixtures, expected_native = fixture_inputs(), native_inputs(manifest)
+    extension = extension_factory() if extension_factory is not None else None
+    extra_paths = extension.input_files() if extension is not None else ()
+    expected_fixtures, expected_native = fixture_inputs(extra_paths), native_inputs(manifest)
     report = {'schema': 'cairn.work-coordination-physical-restore-proof/1', 'status': 'running', 'stages': [],
               'binary_sha256': digest(binary), 'fixture_sha256': digest(__file__),
               'fixture_inputs': expected_fixtures, 'native_inputs': expected_native,
@@ -417,13 +451,15 @@ def main():
     root = Path(tempfile.mkdtemp(prefix='cairn-physical-restore-'))
     cluster = OwnedCluster(root)
     report['disposable_root'] = str(root)
+    scenario_failure = None
     try:
         cluster = OwnedCluster.start(root)
         with DisposableHost.start(cluster, repo=str(root / 'collection'), binary=binary,
                                   database='cairn_physical_restore', roles=('sender', 'worker', 'alice', 'bob')) as host:
-            native.scenario(host, manifest, report, restore_case=RestoreController(cluster, report, output))
+            native.scenario(host, manifest, report, restore_case=RestoreController(cluster, report, output, extension))
         report['status'] = 'passed'
     except BaseException as error:
+        scenario_failure = error
         report.update(status='failed', error=str(error))
         raise
     finally:
@@ -435,9 +471,10 @@ def main():
                 report['cluster_stopped'] = cluster.stop()
         except Exception as error:
             report.update(status='failed', cleanup_error=str(error))
-            raise
+            if scenario_failure is None:
+                raise
         finally:
-            report['fixture_inputs_unchanged'] = fixture_inputs() == expected_fixtures
+            report['fixture_inputs_unchanged'] = fixture_inputs(extra_paths) == expected_fixtures
             report['native_inputs_unchanged'] = native_inputs(manifest) == expected_native
             report['binary_sha256_after'] = digest(binary)
             report['fixture_sha256_after'] = digest(__file__)
