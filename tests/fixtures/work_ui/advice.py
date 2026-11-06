@@ -31,6 +31,7 @@ def advice_fixture():
             self.report["model_usefulness_measured"] = False
             self.report["fixture_inputs"][".uipass-work-advice.yaml"] = hashlib.sha256((ROOT / ".uipass-work-advice.yaml").read_bytes()).hexdigest()
             self.case = {}
+            self.provider_runs = {}
 
         def item_count(self, name):
             return 2
@@ -40,8 +41,8 @@ def advice_fixture():
                 return self.host.command(["work", "advice", *args], expected=expected)
             return self.work("advice", *args, expected=expected)
 
-        def invocation_rows(self):
-            path = self.provider_home / "invocations.jsonl"
+        def invocation_rows(self, home=None):
+            path = (home or self.provider_home) / "invocations.jsonl"
             return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
         def mode(self, mode, **values):
@@ -59,6 +60,7 @@ def advice_fixture():
             shutil.copyfile(source, executable)
             executable.chmod(0o500)
             self.provider_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
+            self.provider_runs[name] = (self.provider_home, self.provider_sha)
             patch = hashlib.sha256(b"cairn-work-ui-synthetic-advice-provider-v1").hexdigest()
             self.mode("all")
             self.profile_name = "synthetic-ui-" + name
@@ -635,12 +637,22 @@ def advice_fixture():
                     self.check("UIPass " + name, lambda: self.uipass(name, storage))
                 self.check("advice preserves coordination " + name, lambda: base.require(self.coordination_state() == before,
                     "advice journey mutated sessions, inbox events or delivery state"))
-                rows = self.invocation_rows()
-                base.dump(self.output / (name + "-provider-invocations.json"), rows)
-                self.report.setdefault("provider_generation_counts", {})[name] = len(rows)
-                self.check("provider executable unchanged " + name, lambda: base.require(
-                    hashlib.sha256((self.provider_home / "synthetic-advice").read_bytes()).hexdigest() == self.provider_sha,
-                    "registered provider executable changed during browser proof"))
+
+        def close(self):
+            # Finalize evidence before cleanup even after an early journey/setup failure.
+            # A failed evidence check must not prevent owned-process/cluster cleanup.
+            try:
+                for name, (home, digest) in self.provider_runs.items():
+                    def retain_provider(name=name, home=home, digest=digest):
+                        rows = self.invocation_rows(home)
+                        base.dump(self.output / (name + "-provider-invocations.json"), rows)
+                        self.report.setdefault("provider_generation_counts", {})[name] = len(rows)
+                        base.require(hashlib.sha256((home / "synthetic-advice").read_bytes()).hexdigest() == digest,
+                                     "registered provider executable changed during browser proof")
+                    self.check("provider evidence retained and executable unchanged " + name,
+                               retain_provider, category="fixture")
+            finally:
+                super().close()
 
         def run(self):
             super().run()
