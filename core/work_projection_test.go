@@ -1086,13 +1086,9 @@ func TestRELEASE02_CompatibilityPolicyAndAdmission(t *testing.T) {
 		t.Fatalf("AddWorkProject failed: %v", err)
 	}
 
-	// 2. Lower-capability store that does not support work-view/1
-	lowPolicy := CompatibilityPolicy{
-		MaxMigrationVersion: 75,
-		SupportedWorkFeatures: map[string]bool{
-			"work-view/1": false,
-		},
-	}
+	// 2. Lower-capability store that retains current schema ceiling and omits only work-view/1 support
+	lowPolicy := DefaultCompatibilityPolicy()
+	lowPolicy.SupportedWorkFeatures["work-view/1"] = false
 
 	// Attempting to open Store against active work-view/1 state MUST fail with SCHEMA_MISMATCH
 	dsn := s.pool.Config().ConnString()
@@ -1127,6 +1123,18 @@ func TestRELEASE02_CompatibilityPolicyAndAdmission(t *testing.T) {
 		t.Fatalf("expected OpenWithCompatibility to succeed when work-view/1 is disabled, got %v", err)
 	}
 	lowStore.Close()
+
+	// Separate old-schema ceiling check: schema version above MaxMigrationVersion still refuses with SCHEMA_MISMATCH
+	if defaultMaxMigrationVersion() > 75 {
+		oldSchemaPolicy := DefaultCompatibilityPolicy()
+		oldSchemaPolicy.MaxMigrationVersion = 75
+		oldStore, err := OpenWithCompatibility(ctx, dsn, Channel{Principal: "operator:old-schema", Operator: true}, oldSchemaPolicy)
+		if err == nil {
+			oldStore.Close()
+			t.Fatal("expected OpenWithCompatibility to fail with SCHEMA_MISMATCH when schema exceeds MaxMigrationVersion 75")
+		}
+		requireCode(t, err, "SCHEMA_MISMATCH")
+	}
 
 	// 5. Test ListWorkFeatures enrichment: pending count and unsafe downgrade reason
 	// Reactivate project and feature

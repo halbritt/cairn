@@ -45,10 +45,17 @@ func signAttestation(t *testing.T, privKey ed25519.PrivateKey, payload OwnerInpu
 
 func setupOrganicFixture(t *testing.T, repo string) *organicFixture {
 	t.Helper()
+	return setupOrganicFixtureWithStores(t, repo, func(ch Channel) *Store {
+		return testStore(t, ch)
+	})
+}
+
+func setupOrganicFixtureWithStores(t *testing.T, repo string, openStore func(Channel) *Store) *organicFixture {
+	t.Helper()
 	ctx := context.Background()
-	op := testStore(t, Channel{Principal: "operator-" + repo, Operator: true})
-	pub := testStore(t, Channel{Principal: "publisher-" + repo, Repo: repo, Operator: true})
-	rec := testStore(t, Channel{Principal: "consumer-" + repo, Repo: repo})
+	op := openStore(Channel{Principal: "operator-" + repo, Operator: true})
+	pub := openStore(Channel{Principal: "publisher-" + repo, Repo: repo, Operator: true})
+	rec := openStore(Channel{Principal: "consumer-" + repo, Repo: repo})
 	dest := Destination{Name: "hosted", AllowLocal: false}
 
 	// 1. Enable work feature next-turn-notices/1
@@ -1899,14 +1906,11 @@ func TestOrganicNotices_SettledForgottenAttemptRefusesNotFoundAcrossAttempts(t *
 }
 
 func TestOrganicNotices_WorkFeatureRetirement(t *testing.T) {
+	_, openStore := waitTestDB(t)
 	repo := "repo-" + uuid.NewString()
-	f := setupOrganicFixture(t, repo)
+	f := setupOrganicFixtureWithStores(t, repo, openStore)
 	f.activateCapability(t)
 	ctx := context.Background()
-
-	// Clean any residual test notice state from preceding suite tests
-	_, _ = f.operator.pool.Exec(ctx, "DELETE FROM cairn.agent_organic_notice")
-	_, _ = f.operator.pool.Exec(ctx, "DELETE FROM cairn.agent_session_attempt WHERE admission_kind = 'organic'")
 
 	// 1. Negative test: feature in use with queued notice cannot be retired
 	ev := f.publishNotice(t, "A payload")

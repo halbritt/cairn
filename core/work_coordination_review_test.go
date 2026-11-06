@@ -233,13 +233,12 @@ func TestWorkCoordinationReviewWaitMembershipPrivacyAndRestore(t *testing.T) {
 }
 
 func TestWorkCoordinationReviewNoticeExecutionMembershipAndWithdrawal(t *testing.T) {
-	isolated, _ := waitTestDB(t)
+	_, openStore := waitTestDB(t)
 	// Reuse the existing genuine registration/signature fixture in this test's
 	// disposable database. No launch capability or reservation row is fabricated.
-	t.Setenv("CAIRN_TEST_DATABASE_URL", isolated.pool.Config().ConnString())
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	f := setupOrganicFixture(t, "repo:notice-view:"+uuid.NewString())
+	f := setupOrganicFixtureWithStores(t, "repo:notice-view:"+uuid.NewString(), openStore)
 	f.activateCapability(t)
 	p, itemA, itemB := coordinationReviewItems(t, f.operator, ctx, f.repo)
 	oldSession := f.sessionRef
