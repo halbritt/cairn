@@ -43,7 +43,7 @@ func TestEventPressureAPIViewAndNoOperatorPolicyRoute(t *testing.T) {
 		t.Fatalf("recipient fanout: %+v %v", page, err)
 	}
 	var preview core.EventAdmissionPreview
-	if err := session.Call(ctx, "event-admission-preview", core.EventAdmissionPreviewRequest{Destination: core.EventDestination{Type: "topic", Name: "empty"}}, &preview); err != nil || preview.EnforcementReady || preview.Mode != "disabled" {
+	if err := session.Call(ctx, "event-admission-preview", core.EventAdmissionPreviewRequest{Destination: core.EventDestination{Type: "topic", Name: "empty"}}, &preview); err != nil || preview.EnforcementReady != own.Policy.EnforcementReady || preview.Mode != "disabled" {
 		t.Fatalf("disabled preview: %+v %v", preview, err)
 	}
 	for _, name := range []string{"event-admission-policy", "event-admission-configure", "event-pressure-collection", "event-fanout-collection"} {

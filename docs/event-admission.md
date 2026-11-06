@@ -1,10 +1,11 @@
 # Event pressure and admission policy
 
 The event pressure interface reports retained queue state and offers a bounded,
-read-only admission preview. Source support starts with migration 080. Existing
-publication, handling, retry, renewal, cancellation and recovery behavior is
-unchanged. Enforcement is unavailable until closure reservations and every
-alternate delivery writer meet the admission contract.
+read-only admission preview. Observation support starts with migration 080.
+The complete enforcement contract requires migration 084 and a compatible binary.
+Policies start disabled; installation does not enable a production policy.
+Handling, retry, renewal, cancellation and accepted-work recovery remain available
+when fresh-work capacity or rate budgets are exhausted.
 
 This describes source capability. It does not establish that a running API,
 scheduler or native integration has been upgraded, or enable a deployed policy.
@@ -62,7 +63,12 @@ An absent policy has revision 0, disabled mode and no implicit numeric defaults.
 An operator sets a policy with `event-admission-configure`, an explicit collection,
 `expected_revision`, and a stable `request_id`. A committed retry with identical
 intent returns its original result. A different edit needs the current revision.
-Setting `mode: enforce` returns `FEATURE_UNAVAILABLE` in this slice.
+Setting `mode: enforce` requires the complete schema and binary capability, plus
+a completed closure reconciliation for the current restore generation. Partial
+writers cannot enable it; incomplete schema or binary support returns
+`FEATURE_UNAVAILABLE`. New ordinary publications and waits also check the
+reconciliation certificate after restore. Exact accepted closure and transfers
+of already charged pool or quiet work retain their drain paths.
 
 [The observation fixture](../fixtures/event-admission-observe.json) declares a
 synthetic coordinator and two workers, with two queued publications per worker.
@@ -73,17 +79,40 @@ boundaries in a disposable test; they are not measured production defaults.
 Use a new request UUID and the actual revision when adapting the fixture.
 
 All counts, rates and bursts must be positive finite integers at most one billion;
-topic fanout is at most 10,000. Rates have separate publication and delivery units
-for producer, validated profile owner and collection. These fields define the
-policy contract; persisted token-bucket evaluation is unavailable in this slice.
-A new session or correlation UUID is not a new profile owner.
+topic fanout is at most 10,000. Separate persisted buckets charge the
+publication/root count and actual delivery fanout for the effective producer,
+validated registration owner and collection. Tokens refill at the database clock. A zero-recipient topic still costs
+one publication unit. A new session or correlation UUID does not reset its
+profile owner's bucket. A fanout larger than a configured burst returns
+`retryable: false`; the policy or workload must change before retrying that intent.
+Other rate refusals return a bounded backoff hint, never promised acceptance.
+
+A first accepted wait costs one root unit and one future terminal-notice delivery
+unit, including a wait already satisfied at creation. Its UUID retry does not
+charge again. Wait outbox drain, validated replies and other accepted closure
+operations take no new debit. Quiet materialization and pool assignment transfer
+existing charges. A caller-selected response kind alone grants no exemption.
+
+A policy revision clamps retained tokens to the new burst and discards any
+uncredited refill before that policy's update time. It then refills from the later
+of the retained refill time and policy update time. Disable/re-enable and rapid
+policy edits do not grant a fresh burst. A backward database clock grants no
+refill until it catches up.
+
+A restore fence atomically sets existing bucket balances to zero and anchors
+refill at the fence's database time. Rejected work cannot roll that retained
+anchor forward and starve refill. A key absent from the restored backup receives
+its explicit first-use burst only after fresh closure reconciliation; existing
+owner and collection buckets still constrain session churn. This bounds
+initialization but does not reconstruct spending lost after a backup.
 
 A preview examines at most the topic bound plus one subscribers. Exact recipient
 counts are withheld from authenticated agent previews, including the publisher.
 A local operator preview can return the count or a labelled lower bound;
-`recipient_count_exact: false` marks a bounded snapshot that crossed the cap. It counts pending and
-leased deliveries and queued quiet notices for collection, recipient and
-producer/recipient forecasts. It never returns another recipient's identity or
+`recipient_count_exact: false` marks a bounded snapshot that crossed the cap.
+It counts pending and leased ordinary deliveries, queued quiet notices, and
+open unassigned pools for collection capacity. Recipient and producer/recipient
+forecasts use the already known recipient units. It never returns another recipient's identity or
 queue count. `would_refuse` is a list of dimensions, not admission, a reservation,
 a backoff promise or evidence that a subsequent publication will succeed.
 `unsupported` lists actual missing support. The destination-only request cannot
@@ -113,19 +142,26 @@ Do not sum every row: stopped deliveries overlap inbox counts, while future
 schedules and waits have different capacity units. Physical pending/leased counts include delivered closure traffic; do not add
 those deliveries to the normal charge again. The separate `closure` object
 reports reconciliation state and retained legacy gaps. Leased counts include
-expired leases until settlement or retry changes the row. Oldest age uses publication
-time, includes deferred work, and is clamped at zero. Existing delivery diagnosis
+expired leases until settlement or retry changes the row. Oldest age uses
+publication time, includes deferred work, and is clamped at zero. Existing delivery diagnosis
 explains deliberate deferral and holds.
 
 The 60-second publication count is an observed window for the effective
 producer, or the collection for operator inspection. The delivery fanout of
 those publications uses currently materialized delivery rows; it is not a
-materialization-rate measurement or a token-bucket balance. `rate_evaluation`
-therefore remains `unavailable`. No latency or efficiency improvement is claimed.
+materialization-rate measurement or a token-bucket balance.
+
+Observe mode never creates or debits rate buckets. A rate preview says
+`uninitialized` when the required real enforced balances do not exist; it does not
+infer a token-bucket decision from averages. With retained balances, the preview
+reads and refills them hypothetically without writing them. Pressure labels
+`retained_buckets` when its scope has real budget state; no private owner or
+collection balance is included in a session view. No latency or efficiency
+improvement is claimed.
 
 ## Writer inventory
 
-Every path below must participate before enforcement becomes available:
+The complete source contract covers these writers:
 
 | Writer | Current source path and reservoir |
 | --- | --- |
@@ -170,5 +206,8 @@ make test-integration
 make check
 ```
 
-These checks establish this observation slice's tested behavior. They do not
-establish full event-scaling acceptance, deployment readiness, or measured benefit.
+The rate fixtures also exercise concurrent owner budgets, fractional refill,
+policy revisions, clock rewind, overflow limits, committed UUID retries, rejected
+multi-bucket rollback, a new store connection, and a real restore fence with
+subsequent refill. The campaign verification records distinguish integrated
+correctness from deployment and measured benefit.

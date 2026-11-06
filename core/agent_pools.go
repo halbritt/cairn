@@ -255,7 +255,7 @@ func selectPoolCandidate(ctx context.Context, tx pgx.Tx, w WorkerSlot) (poolCand
 	if err != nil {
 		return poolCandidate{}, err
 	}
-	if policy.Policy.Mode == "enforce" && !eventAdmissionEnforcementReady() {
+	if policy.Policy.Mode == "enforce" && !policy.EnforcementReady {
 		return poolCandidate{}, failure("FEATURE_UNAVAILABLE", "event admission enforcement requires every delivery writer")
 	}
 	return selectPoolCandidateTx(ctx, tx, w, policy)

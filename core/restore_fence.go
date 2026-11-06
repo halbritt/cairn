@@ -65,6 +65,9 @@ func fenceRestore(ctx context.Context, tx pgx.Tx, reason string) (RestoreFence, 
 	if err != nil {
 		return result, err
 	}
+	if err = resetEventRatesAfterRestoreTx(ctx, tx, result.Generation); err != nil {
+		return result, err
+	}
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_receipt WHERE generation=$1`, result.Generation-1).Scan(&result.Receipts); err != nil {
 		return result, err
 	}

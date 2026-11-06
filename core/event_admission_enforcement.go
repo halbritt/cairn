@@ -21,6 +21,17 @@ type EventAdmissionRefusal struct {
 // No operator flag can enable an incomplete writer set.
 func eventAdmissionEnforcementReady() bool { return false }
 
+const eventAdmissionSchemaVersion = 84
+
+func eventAdmissionEnforcementReadyTx(ctx context.Context, tx pgx.Tx) (bool, error) {
+	if !eventAdmissionEnforcementReady() {
+		return false, nil
+	}
+	var version int
+	err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0) FROM public.cairn_migration`).Scan(&version)
+	return version >= eventAdmissionSchemaVersion, err
+}
+
 type eventAdmissionSnapshot struct {
 	Consumers []string
 	Policy    EventAdmissionPolicyState
@@ -62,7 +73,7 @@ func (s *Store) prepareEventAdmissionTx(ctx context.Context, tx pgx.Tx, req Publ
 	if policy.Policy.Mode != "enforce" {
 		return nil, nil
 	}
-	if !eventAdmissionEnforcementReady() {
+	if !policy.EnforcementReady {
 		return nil, failure("FEATURE_UNAVAILABLE", "event admission enforcement requires every delivery writer")
 	}
 
@@ -79,7 +90,25 @@ func (s *Store) prepareEventAdmissionTx(ctx context.Context, tx pgx.Tx, req Publ
 			return nil, failure("CLOSURE_UNRECONCILED", "new event admission waits for complete closure reconciliation in the current restore generation")
 		}
 	}
-	return s.checkEventAdmissionTx(ctx, tx, req, policy, closure)
+
+	snapshot, err := s.checkEventAdmissionTx(ctx, tx, req, policy, closure)
+	if err != nil {
+		return nil, err
+	}
+	if !snapshot.Closure {
+		identity, err := s.eventProducerIdentityTx(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		deliveries := int64(len(snapshot.Consumers))
+		if req.Destination.Type == "pool" {
+			deliveries = 1
+		}
+		if err = chargeEventRatesTx(ctx, tx, req.Repo, identity, policy, 1, deliveries); err != nil {
+			return nil, err
+		}
+	}
+	return snapshot, nil
 }
 
 // checkEventAdmissionTx owns the SQL evaluator independently of the readiness

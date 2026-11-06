@@ -449,6 +449,9 @@ ORDER BY position ASC LIMIT 1`, req.DependencyEventUUID, repo, origConsumer, dep
 			}
 		}
 
+		if err = s.chargeNewWaitRatesTx(ctx, tx, repo, agent); err != nil {
+			return AgentWait{}, err
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_wait(
 wait_uuid, collection, owner_principal, owner_agent_uuid, creation_execution_uuid,
 registration_destination, sensitivity_ceiling, profile_binding_id, predicate_version,
@@ -504,7 +507,7 @@ VALUES($1,$2,$3,'pending',$4)`, waitUUID, reservedNoticeEventUUID, reservedSourc
 		}, nil
 	}, guard)
 	if err != nil {
-		return AgentWait{}, err
+		return AgentWait{}, s.retainEventAdmissionRefusal(ctx, repo, err)
 	}
 
 	if out.ResponseRef != nil {

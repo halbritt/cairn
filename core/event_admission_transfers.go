@@ -17,7 +17,7 @@ func preparePoolDeliveryTransferTx(ctx context.Context, tx pgx.Tx, repo, eventID
 	if policy.Policy.Mode != "enforce" {
 		return nil
 	}
-	if !eventAdmissionEnforcementReady() {
+	if !policy.EnforcementReady {
 		return failure("FEATURE_UNAVAILABLE", "event admission enforcement requires every delivery writer")
 	}
 	return checkPoolDeliveryTransferTx(ctx, tx, repo, eventID, consumer, policy)

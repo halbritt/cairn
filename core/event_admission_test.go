@@ -42,7 +42,7 @@ func TestEventAdmissionPolicyRevisionAndObserveOnly(t *testing.T) {
 	_, err = a.SetEventAdmissionPolicy(ctx, req)
 	requireCode(t, err, "AUTHORITY_DENIED")
 	state, err := op.SetEventAdmissionPolicy(ctx, req)
-	if err != nil || state.Revision != 1 || state.EnforcementReady {
+	if err != nil || state.Revision != 1 || state.EnforcementReady != eventAdmissionEnforcementReady() {
 		t.Fatalf("set: %+v %v", state, err)
 	}
 	again, err := op.SetEventAdmissionPolicy(ctx, req)
@@ -59,7 +59,11 @@ func TestEventAdmissionPolicyRevisionAndObserveOnly(t *testing.T) {
 	changed.Policy.Mode = "enforce"
 	changed.ExpectedRevision = 1
 	_, err = op.SetEventAdmissionPolicy(ctx, changed)
-	requireCode(t, err, "FEATURE_UNAVAILABLE")
+	expectedCode := "FEATURE_UNAVAILABLE"
+	if eventAdmissionEnforcementReady() {
+		expectedCode = "CLOSURE_UNRECONCILED"
+	}
+	requireCode(t, err, expectedCode)
 	for i := 0; i < 3; i++ {
 		publishFixture(t, a, b, r, dest)
 	}

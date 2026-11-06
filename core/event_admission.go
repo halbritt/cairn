@@ -88,8 +88,13 @@ func (p EventAdmissionPolicy) validate() error {
 	return nil
 }
 func admissionPolicyTx(ctx context.Context, tx pgx.Tx, repo string) (EventAdmissionPolicyState, error) {
-	out := EventAdmissionPolicyState{Repo: repo, Policy: EventAdmissionPolicy{Version: 1, Mode: "disabled"}, EnforcementReady: eventAdmissionEnforcementReady()}
-	err := tx.QueryRow(ctx, `SELECT revision,policy,updated_by,updated_at FROM cairn.agent_event_admission_policy WHERE repo=$1`, repo).Scan(&out.Revision, &out.Policy, &out.UpdatedBy, &out.UpdatedAt)
+	out := EventAdmissionPolicyState{Repo: repo, Policy: EventAdmissionPolicy{Version: 1, Mode: "disabled"}}
+	ready, err := eventAdmissionEnforcementReadyTx(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	out.EnforcementReady = ready
+	err = tx.QueryRow(ctx, `SELECT revision,policy,updated_by,updated_at FROM cairn.agent_event_admission_policy WHERE repo=$1`, repo).Scan(&out.Revision, &out.Policy, &out.UpdatedBy, &out.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 	}
@@ -146,6 +151,9 @@ func (s *Store) SetEventAdmissionPolicy(ctx context.Context, req SetEventAdmissi
 		}
 
 		if req.Policy.Mode == "enforce" {
+			if !current.EnforcementReady {
+				return EventAdmissionPolicyState{}, failure("FEATURE_UNAVAILABLE", "event admission enforcement requires the complete schema and compatible writer binary")
+			}
 			generation, err := retrievalGeneration(ctx, tx)
 			if err != nil {
 				return EventAdmissionPolicyState{}, err
@@ -272,6 +280,27 @@ func (s *Store) eventPressure(ctx context.Context, req EventPressureQuery, dest 
 		out.Policy.UpdatedBy = ""
 		out.Policy.Policy.Workload = ""
 	}
+	rateTables, err := eventRateTablesPresentTx(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	if rateTables {
+		out.RateEvaluation = "uninitialized"
+		kind, key := "producer", s.channel.Principal
+		if collection {
+			kind = "collection"
+			key = ""
+		}
+		var retained bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_event_rate_bucket b WHERE b.repo=$1 AND b.identity_kind=$2 AND b.identity=$3 AND b.restore_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton))`, repo, kind, key).Scan(&retained)
+		if err != nil {
+			return out, err
+		}
+		if retained {
+			out.RateEvaluation = "retained_buckets"
+		}
+	}
+
 	if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&out.ComputedAt); err != nil {
 		return out, err
 	}
@@ -375,14 +404,12 @@ type EventAdmissionPreview struct {
 	WouldRefuse         []string         `json:"would_refuse"`
 	Unsupported         []string         `json:"unsupported"`
 	Unevaluated         []string         `json:"unevaluated"`
+	RateEvaluation      string           `json:"rate_evaluation"`
 	EnforcementReady    bool             `json:"enforcement_ready"`
 }
 
 func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPreviewRequest, dest Destination) (EventAdmissionPreview, error) {
-	out := EventAdmissionPreview{Schema: "cairn.event-admission-preview/1", Producer: s.pressureIdentity(), RecipientCountState: "unavailable", WouldRefuse: []string{}, Unsupported: []string{"rate_buckets"}, Unevaluated: []string{"source_authorization", "validated_closure_eligibility"}, EnforcementReady: eventAdmissionEnforcementReady()}
-	if !eventAdmissionEnforcementReady() {
-		out.Unsupported = append(out.Unsupported, "enforcement_not_ready")
-	}
+	out := EventAdmissionPreview{Schema: "cairn.event-admission-preview/1", Producer: s.pressureIdentity(), RecipientCountState: "unavailable", WouldRefuse: []string{}, Unsupported: []string{}, RateEvaluation: "unavailable", Unevaluated: []string{"source_authorization", "validated_closure_eligibility"}, EnforcementReady: eventAdmissionEnforcementReady()}
 	if err := validEventDestination(dest); err != nil {
 		return out, err
 	}
@@ -404,11 +431,23 @@ func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPre
 	}
 	out.Mode = policy.Policy.Mode
 	out.PolicyRevision = policy.Revision
+	out.EnforcementReady = policy.EnforcementReady
+	if !out.EnforcementReady {
+		out.Unsupported = append(out.Unsupported, "enforcement_not_ready")
+	}
 	if policy.Policy.Limits == nil || out.Mode == "disabled" {
-		out.Unsupported = append(out.Unsupported, "disabled_policy")
+		out.Unevaluated = append(out.Unevaluated, "disabled_policy")
+		out.RateEvaluation = "disabled"
 		return out, tx.Commit(ctx)
 	}
 	limits := policy.Policy.Limits
+	rateTables, err := eventRateTablesPresentTx(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	if !rateTables {
+		out.Unsupported = append(out.Unsupported, "rate_buckets")
+	}
 	// Only a bounded recipient snapshot is inspected. Stopped sessions stay in
 	// the snapshot; expiry of presence never silently unsubscribes a recipient.
 	recipients := []string{req.Destination.Name}
@@ -467,6 +506,22 @@ func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPre
 	}
 	if len(recipients) > 0 && pairMax+1 > limits.MaxProducerRecipientOutstanding {
 		out.WouldRefuse = append(out.WouldRefuse, "producer_recipient_outstanding")
+	}
+	if rateTables {
+		identity, err := s.eventProducerIdentityTx(ctx, tx)
+		if err != nil {
+			return out, err
+		}
+		dimensions, initialized, err := previewEventRatesTx(ctx, tx, repo, identity, policy, recipientCount)
+		if err != nil {
+			return out, err
+		}
+		out.WouldRefuse = append(out.WouldRefuse, dimensions...)
+		out.RateEvaluation = "retained_buckets"
+		if !initialized {
+			out.RateEvaluation = "uninitialized"
+			out.Unevaluated = append(out.Unevaluated, "retained_rate_state")
+		}
 	}
 	return out, tx.Commit(ctx)
 }
