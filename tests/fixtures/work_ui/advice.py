@@ -80,8 +80,14 @@ def advice_fixture():
             self.source = self.host.agent("sender", "revise", dict(request_id=str(uuid.uuid4()),
                 record_id=self.source["record_id"], expected_version=self.source["version"],
                 repo=self.collection, body=self.source_body))
-            base.require(self.source["version"] == 2 and self.source["body"] == self.source_body,
-                         "selected source was not actually revised to version two")
+            base.require(self.source["version"] == 2, "selected source was not actually revised to version two")
+            history = self.host.agent("sender", "history", dict(record_id=self.source["record_id"],
+                version=self.source["version"], repo=self.collection))
+            versions = history["versions"]
+            base.require(len(versions) == 1 and versions[0]["version"] == 2
+                and versions[0]["payload_available"] is True and versions[0]["body"] == self.source_body,
+                "exact retained version-two source body was not available")
+            self.source.update(body=versions[0]["body"], written_at=versions[0]["written_at"])
             self.private_source = self.host.agent("sender", "create", dict(request_id=str(uuid.uuid4()), draft=dict(
                 kind="note", body="PRIVATE_ADVICE_SOURCE_NEVER_SENT", claim_type="self", sensitivity="local",
                 scope=dict(repo=self.collection, task_id="*", run_id="*"))))
