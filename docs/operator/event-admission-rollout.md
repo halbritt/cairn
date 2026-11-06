@@ -27,8 +27,11 @@ recipient or splits a topic publication.
 ## 1. Upgrade the store
 
 Use one source revision for the CLI, API, scheduler, wake supervisors and native
-lifecycle hooks. Install migrations 080 through 084 together. Migration history records each file's position and digest, so a
-partial set cannot be completed later.
+lifecycle hooks. Install migrations 080 through 084 together. Migration history records
+each file's version by its position in `core/schema/` together with its digest. You can
+later append newer migrations unchanged, but never omit, reorder, edit or cherry-pick a
+file: a different file at a recorded position refuses with `SCHEMA_MISMATCH` (`migration
+checksum differs`), and a missing file cannot be inserted later.
 
 1. Back up the store and keep the recovery witness, as described in
    [maintenance](maintenance.md#upgrade-the-schema).
@@ -143,8 +146,15 @@ is the rollback. Do not remove migrations, delete reservations or purge history 
 
 ## Restore and generations
 
-A physical restore advances the restore generation. Open response groups and waits are
-fenced and their closures released with reason `restore_fenced`. Direct reply
+A physical `pg_restore` alone changes nothing about generations or admission. Follow the
+supported [restore procedure](maintenance.md#restore-into-isolation) and
+[restore admission](../restore-admission.md) in full: apply current migrations, run
+`begin-restore` (which fences and advances the restore generation) before any ordinary
+consumer connects, reapply newer recovery records, rebuild and `verify-restore`, then
+`resume-restore`. Reconciliation (below) is a further mandatory step before enforced
+admission accepts new obligations.
+
+`begin-restore` fences open response groups and waits and their closures released with reason `restore_fenced`. Direct reply
 obligations survive with their original generation, and their replies still close
 them. The new generation has no reconciliation, so closure counts are unavailable.
 Under enforce, new obligations refuse with `CLOSURE_UNRECONCILED` until an operator
@@ -173,8 +183,14 @@ Retirement means leaving admission disabled with nothing outstanding. Before
 declaring it retired:
 
 - set every collection to `disabled`;
-- check closure counts until no reservation is `reserved` and no consumed closure
-  still has an undelivered reply or notice (`outstanding` is zero);
+- let accepted work settle or end through its own contract, then check
+  `event-pressure-collection` until every reservoir is zero: pending and leased
+  deliveries, queued quiet notices, unassigned pool requests, pending schedule
+  occurrences, waiting waits and the pending wait outbox. Expire, cancel or flush
+  through the supported commands; never delete rows;
+- check `event-closures-collection` until counts are available, `reserved` is zero
+  and `outstanding` is zero, so no reserved closure or undelivered consumed reply or
+  notice remains;
 - keep the schema, the compatible readers and the maintenance commands.
 
 ## Limits of this runbook
