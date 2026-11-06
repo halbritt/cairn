@@ -277,6 +277,8 @@ It parses no event/handle, evaluates no tail string and selects no alternate
 program or Python pathname. Original tail arguments, stdin and streams reach
 `V` unchanged. The approved shell invocation must source neither `ENV` nor
 `BASH_ENV`; installed fixtures use sentinel scripts to prove neither runs.
+That qualification preserves admission's captured parent environment; it does
+not sanitize/unset startup variables for the Go child.
 An unqualified shell/target blocks publication, rather than assuming every
 shell has identical startup behavior.
 
@@ -291,9 +293,11 @@ trust anchor; `L` does not authenticate its own first instruction. Changes use
 controlled install/readback and a new immutable identity. Keep every referenced
 launcher with its receipt/argv until qualified retirement.
 
-All new public context command fields, cues, fallbacks, next cues and turn-end
-reminders use short `L` plus the original tail, never the multi-KB verifier
-literal. This changes presentation, not `V + ["--", *tail]` execution or command
+All newly issued Python-wrapper command fields and their cues, fallbacks, next
+cues and turn-end reminders use short `L` plus the original tail, never the
+multi-KB verifier literal. Direct context `read` through `cairn agent history`
+and inner store CLI argv remain unchanged. This changes presentation, not
+`V + ["--", *tail]` execution or command
 grammar. Each model-visible shell command is at most **512 UTF-8 bytes**;
 aggregate command/control prose in a cue/reminder is at most **2048 bytes**.
 The actual encoded whole response/recall must also fit every smaller source,
@@ -534,7 +538,9 @@ required precondition below, not an invented quiesce API.
 R-02 stages the exact same reviewed receipt/loader contract through the real
 installer, offline without a checkout, preserving unrelated selections. Its
 durability map includes syncing the complete immutable closure and receipt,
-publishing their versioned paths, publishing a disabled owner-controlled launch
+publishing their versioned paths, rendering `L` after receipt/`V`, syncing and
+publishing its immutable bytes/manifest and verifying byte/argv readback before
+publishing a disabled owner-controlled launch
 selection, supported refresh/readback, then final validated activation under
 the applicable barrier. Receipt publication alone is not atomic hook activation.
 Inject interruption/concurrent-install faults at each actual durable boundary.
@@ -763,7 +769,7 @@ Each successful case includes a concrete negative or interruption case.
 | REL-PROCESS | Real `flock` contention, cross-executor state reads, crash, pipes, supported cancellation, shutdown, process-tree cleanup, restart and state persistence. | `scripts/test_install_agent_coordination_timeout.py`, `scripts/test_install_agent_coordination_active_turn.py`, `scripts/test_install_wake_service.py`, and Foundation/Coordination process tests. Synthetic app-server cancellation does not establish public Store cancellation support. In-process mocks do not replace process assertions. |
 | REL-HERMES | Actual `MemoryProvider`, registration and hook objects preserve host returns, custody/cancel and shutdown while delegating policy/state. | `integrations/hermes/`, `scripts/check_hermes_lifecycle.py` and `scripts/check_hermes_coordination.py`. Preserve required Python and test the installed adapter with missing/refusing selected binary. |
 | REL-HOOKS | Required OpenCode plugin objects and each supported Claude/Codex/Agy hook retain their host contract and native trust requirements. | `integrations/opencode/`, `scripts/install-opencode-hooks.py`, `scripts/install-codex-hooks.py`, `scripts/install-claude-hooks.py`, `scripts/install-agent-coordination.py`; real native trust/refresh evidence separate from mocked installer fixtures. |
-| REL-LIVE | Verify actual executable and semantic worker image/closure, fixed launcher hashes, active connection identity, and effective hook identity for each live session. Detect cached old hooks, old issued argv, repository overrides and retained processes separately. | Caller-origin `implementation_id` in `docs/client-observations.md` is reported, not attested or per-session evidence. Pair it with a session-correlated native hook/host observation. Coordination requires an equivalent supported signal or an explicit blocking gap. Repeat before release, after rollout and on the final removal commit; process parentage and a current MCP connection do not prove hook refresh. |
+| REL-LIVE | Verify actual executable and semantic worker image/closure, fixed launcher hashes, selected L/V/verifier and approved-shell identity/readback, active connection identity, and effective hook/issued-command identity for each live session. Detect cached old hooks, old issued argv, repository overrides and retained processes separately. | Caller-origin `implementation_id` in `docs/client-observations.md` is reported, not attested or per-session evidence. Pair it with a session-correlated native hook/host observation; a manifest alone does not show which L that session executed. Coordination requires an equivalent supported signal or an explicit blocking gap. Repeat before release, after rollout and on the final removal commit; process parentage and a current MCP connection do not prove hook refresh. |
 | REL-SEMANTIC | Inventory every index writer sharing the database/job queue, including other collections; stop/join all running writers and prevent inactive definitions from restarting before switch or reverse rebuild. Disclose partial coverage, fallback and backoff. | S-05 tests competing writers configured for different collections in one disposable database. Selected-model current version/body hashes and present, valid passage rows must cover every eligible active nonforgotten record. Check parent correspondence, ordinals, byte spans and vector validity against the accepted worker contract; document/queue counts alone are insufficient. |
 | REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
