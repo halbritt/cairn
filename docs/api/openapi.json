@@ -28689,8 +28689,23 @@
       "source": "server.go"
     },
     {
+      "http_status": 409,
+      "code": "CANCELLED",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 410,
       "code": "CANDIDATE_DETAIL_EXPIRED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 503,
+      "code": "CLEANUP_UNCONFIRMED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "CONFIG_CONFLICT",
       "source": "serveJSON"
     },
     {
@@ -28701,6 +28716,16 @@
     {
       "http_status": 409,
       "code": "DELIVERY_ACTIVE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "EXCLUSION_CONFLICT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 410,
+      "code": "EXPIRED",
       "source": "serveJSON"
     },
     {
@@ -28730,7 +28755,22 @@
     },
     {
       "http_status": 409,
+      "code": "INFLIGHT_LIMIT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "INPUT_ID_REUSED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 413,
+      "code": "INPUT_TOO_LARGE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 500,
+      "code": "INVALID_PROCESS_IDENTITY",
       "source": "serveJSON"
     },
     {
@@ -28765,7 +28805,27 @@
     },
     {
       "http_status": 409,
+      "code": "INVALID_STATE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "ITEM_ABSENT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 503,
+      "code": "JOB_STATE_UNCERTAIN",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "MAINTENANCE_ACTIVE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 502,
+      "code": "MODEL_EXECUTION_FAILED",
       "source": "serveJSON"
     },
     {
@@ -28786,6 +28846,11 @@
     {
       "http_status": 409,
       "code": "PAYLOAD_UNAVAILABLE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "POLICY_CONFLICT",
       "source": "serveJSON"
     },
     {
@@ -28819,6 +28884,11 @@
       "source": "serveJSON"
     },
     {
+      "http_status": 502,
+      "code": "PROVIDER_ERROR",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 409,
       "code": "QUEUE_FULL",
       "source": "serveJSON"
@@ -28835,6 +28905,16 @@
     },
     {
       "http_status": 409,
+      "code": "RECONCILED_AT_STARTUP",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 500,
+      "code": "RECORD_FAILED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "REFRESH_IN_PROGRESS",
       "source": "serveJSON"
     },
@@ -28844,8 +28924,18 @@
       "source": "serveJSON"
     },
     {
+      "http_status": 403,
+      "code": "REFUSAL_EXCLUDED",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 500,
       "code": "REFUSAL_UNRECORDED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "RESTORE_FENCE_TRIGGERED",
       "source": "serveJSON"
     },
     {
@@ -28875,6 +28965,11 @@
     },
     {
       "http_status": 409,
+      "code": "STALE_OBSERVATION",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "STALE_PACKAGE",
       "source": "serveJSON"
     },
@@ -28896,6 +28991,11 @@
     {
       "http_status": 500,
       "code": "STORE_ERROR",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 504,
+      "code": "TIMEOUT",
       "source": "serveJSON"
     },
     {

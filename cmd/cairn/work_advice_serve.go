@@ -19,7 +19,12 @@ import (
 
 func writeWorkAdviceHTTPError(w http.ResponseWriter, err error) {
 	code := core.Code(err)
-	status := refusal.Classify(code).HTTPStatus
+	classification := refusal.Classify(code)
+	status := classification.HTTPStatus
+	message := err.Error()
+	if classification.HTTPMessage != "" {
+		message = classification.HTTPMessage
+	}
 	if status == 0 {
 		status = http.StatusInternalServerError
 	}
@@ -27,7 +32,7 @@ func writeWorkAdviceHTTPError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": err.Error(),
+		"error": message,
 		"code":  code,
 	})
 }
