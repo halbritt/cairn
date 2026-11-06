@@ -36,6 +36,8 @@ def advice_fixture():
             return 2
 
         def advice(self, *args, expected="OK"):
+            if args and args[0] in ("profile", "control", "reconcile"):
+                return self.host.command(["work", "advice", *args], expected=expected)
             return self.work("advice", *args, expected=expected)
 
         def invocation_rows(self):
