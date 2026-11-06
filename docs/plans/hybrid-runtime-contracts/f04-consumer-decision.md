@@ -77,6 +77,61 @@ legacy coexistence. R-02 need not land first: reviewed source staging fixtures
 can establish this consumer without changing production. Later R-02 acceptance
 must exercise the production installer against the same receipt contract.
 
+## Compatibility closure policy and caller slot
+
+The 2026-11-06 C1/C2/C3 refinement accepts the immutable selection and admission
+policy below. Exact Foundation/Release delta review remains required. C1 also
+includes the compact-command correction here; accepting the policy does not
+certify the earlier candidate's complete issued-command coverage.
+
+The trusted launch vector `V` contains the independently selected interpreter,
+verifier literal, receipt path/digest, role/alias and config. New issued Python
+commands use `V + ["--", *original_command_tail]`, with original stdin and
+command authority checks. Revalidate the selection in each new process; do not
+assume the hook's checked context survives. Direct `cairn agent history` remains
+direct. Hook deadlines do not replace inbox command/intent-lock deadlines.
+
+This includes existing `inbox compact read|inspect|settle|advance` operations.
+They are session-scoped issued commands, distinct from excluded offline/operator
+inspection such as `inspect-held-refusal`. The current `inbox_context` separately
+renders bare `cairn-inbox` cues, so changing only `inbox_handoff` and
+`inbox_cue_text` is insufficient. New compatibility compact cues must render
+`V + ["--", "inbox", "compact", OP, HANDLE, ...]`, including fallback and
+next-item cues. Bind the handle-resolved config/root/context to the checked
+selection before loading its derived config or performing existing effects.
+`CAIRN_INBOX_ROOT` is a lookup input, not authentication. Preserve owner, TTL,
+lease, causation, journal and native-turn checks. Existing `/2` bare launchers,
+handles and issued argv remain untouched and usable until qualified retirement.
+
+Foundation F-B3 receives the sequenced compatibility-only slot for the issued
+argv constructor in `inbox_handoff`, command rendering in `inbox_cue_text` and
+`inbox_context`, and the minimum checked-selection plumbing at compact config
+resolution. This extends its original event/config caller slot after F-01.
+It does not transfer command grammar, claim, journal, watcher or native-session
+transition ownership. Coordination acknowledges the exact delta and defers
+overlapping edits until this reviewed caller lands. Include real compact
+read/inspect/settle/advance, next-cue, mismatched-selection and legacy-handle
+process fixtures in the affected independent reviews.
+
+Immutable enabled selection A is not disabled merely by publishing disabled B.
+Supported per-session refresh and readback of B precede D1/D6. Cached A or
+unsupported/unknown refresh blocks production activation/transition. Refresh
+does not settle retained true activation grants or prove drain; ordinary
+owning-session settlement and retained old closures remain required.
+
+Authenticate the receipt and complete executing closure before execution;
+launch Go through its checked executable descriptor. With valid code, preserve
+source admission before any `/3` binding-data or target-pin read, using the
+captured parent environment, cwd, event and checked config. Excluded callbacks
+skip without binding access or activation mutation. Admitted work still performs
+the full binding/image/config checks before effects. Invalid executing code or
+receipt selection is an explicit new compatibility-preflight failure, including
+on excluded callbacks: empty stdout, exit 1 and the fixed role-specific
+`compatibility_preflight/CompatibilityPreflightError` diagnostic defined by
+Foundation. It causes no ledger, refusal-record, token or API effect. Do not
+reclassify ordinary source binding/state failures as preflight failures. `/2`
+behavior and the no-fallback rule remain unchanged.
+
 ## Item and milestone allocation
 
 - F-04 precedes F-02/F-03 and J-02, with no J-05 dependency. It accepts the
