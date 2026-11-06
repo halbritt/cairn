@@ -71,15 +71,19 @@ for each active subscriber at that transaction's position. Each is independent.
 When a collection has an `enforce`
 [admission policy](event-admission.md), publication also evaluates fanout,
 recipient, producer/recipient, collection and rate limits in the same
-transaction. An over-limit publication is refused whole with a typed reason
-(`EVENT_ADMISSION_REFUSED`, `CLOSURE_RESERVE_FULL`, `CLOSURE_UNRECONCILED` or
-`RATE_UNRECONCILED`) naming the dimension and policy revision; there is no
-partial delivery, implicit splitting or silent discard. A retry of a committed
-publication returns the original event without charging again; an uncommitted
-capacity refusal can be retried with the same request UUID and unchanged intent.
+transaction. An over-limit publication returns `EVENT_ADMISSION_REFUSED` or
+`CLOSURE_RESERVE_FULL` with the dimension, policy revision and retry guidance.
+Missing closure reconciliation or a rate-bucket generation mismatch instead
+returns `CLOSURE_UNRECONCILED` or `RATE_UNRECONCILED`, without typed admission
+details. Publication is refused whole: there is no partial delivery, implicit
+splitting or silent discard. A retry of a committed publication returns the
+original event without charging again. For an uncommitted refusal, follow the
+[recovery guidance](event-admission.md) before
+retrying the same request UUID and unchanged intent.
 A request or wait additionally reserves [closure capacity](closure-reservations.md)
 for its expected reply or terminal notice, so accepted work can finish at
-saturation. Disabled and observe policies never refuse.
+saturation. Disabled and observe policies do not refuse on admission limits;
+source, identity and destination checks still apply.
 
 Subscriptions are durable and their changes retain actor/time/history. New
 subscriptions receive future events only. Unsubscribe stops future fanout and

@@ -100,7 +100,9 @@ running turn. Fresh-worker launch requires a configured
 [wake supervisor](../agent-wakeups.md) or [pool](../worker-pools.md).
 
 A collection with an enforced [admission policy](../event-admission.md) can
-refuse a new publication with a typed capacity or rate reason. Retry an
-uncommitted refusal with the same request UUID and unchanged intent after the
-suggested backoff; handling, replies and other accepted-work closure are never
-gated by that capacity.
+refuse a new publication with a typed capacity or rate reason. Follow the
+reported retry guidance: an unchanged retry keeps the same request UUID, while
+a nonretryable refusal needs a workload or policy change. Handling and eligible
+replies or wait notices that consume their reserved closure capacity remain
+available when normal capacity is exhausted. A late or otherwise ineligible
+reply follows ordinary admission.

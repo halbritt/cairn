@@ -182,8 +182,9 @@ operations, with `--help` for examples:
 
 - `wake-claim`: `{request_id, repo?}`. Atomically claims the oldest eligible
   request and creates an attempt whose UUID is `request_id`. A retry of a
-  successful claim returns its current attempt; an empty poll has no durable
-  effect. It may find work on a later call with that UUID. Under an `enforce`
+  successful claim returns its current attempt. An empty poll creates no attempt
+  and may find work on a later call with that UUID, but can commit expiry,
+  publisher rotation and admission-refusal counters. Under an `enforce`
   [admission policy](event-admission.md), a pool claim returns `attempt: null`
   when no request is currently admissible for this slot; that is not proof of
   an empty pool. See [fresh-work pools](worker-pools.md) for the rotation and
