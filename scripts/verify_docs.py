@@ -275,7 +275,7 @@ def discover_cli_schema(repo_root):
         "rebuild-restore", "verify-restore", "resume-restore", "fence-restore",
         "invalidate-handles", "verify-checkpoint", "publish", "inbox", "ack",
         "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions",
-        "events", "event-status", "event-stats", "notice-flush", "response-group",
+        "events", "event-status", "event-stats", "notice-flush", "notice-pending", "response-group",
         "response-groups", "work-cancel", "request-control-sweep", "coordination-review",
         "event-reissue", "native-hold-release", "stopped-inbox-expire", "delivery-alerts",
         "session-successor-authorize", "session-successor-revoke", "event-schedule",
@@ -288,7 +288,7 @@ def discover_cli_schema(repo_root):
         "supersession", "authorize-scope", "scope-authorization", "policy-revise",
         "policy", "policy-revision", "instruction-policy", "runs", "grants",
         "run-status", "recover-run", "set-sections", "cite", "worker-pool-configure",
-        "candidate-retention", "candidate-reclaim", "work",
+        "candidate-retention", "candidate-reclaim", "work", "wait",
     ])
 
     subcommands = {
@@ -298,7 +298,8 @@ def discover_cli_schema(repo_root):
         "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients",
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
                   "retry", "renew", "wake-attempts"},
-        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "serve"},
+        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "features", "serve"},
+        "wait": {"create", "get", "list", "cancel"},
     }
 
     # Extract all flags from cmd/cairn/*.go

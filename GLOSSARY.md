@@ -96,8 +96,9 @@ Read-only cache and local view of an external tracker (such as Plane) project
 and work items, bound by external tuple.
 
 **Work Association**:
-Typed durable link between a work item and an internal Cairn artifact (agent
-session, execution, event, record version, or request).
+Typed durable link between a work item and a Cairn coordination target (agent
+session, execution, event, record version, or request). It does not infer a link
+from matching task or project labels.
 
 **Work Annotation**:
 Local operator-authored progress report or blocker note attached to a projected
@@ -106,3 +107,29 @@ work item without mutating the external issue tracker.
 **Metadata Exclusion**:
 Pattern-based redaction rule preventing sensitive external metadata from entering
 projection storage or resurrection across refreshes.
+
+**Work Artifact**:
+An explicitly registered deliverable identity with exact revisions: a Git commit,
+report, CI attempt or Cairn result version. Registration does not fetch, execute
+or verify the external content.
+
+**Work Artifact Link**:
+An attributed, revisioned relationship from a work item to one registered
+artifact revision, with role input, output or evidence. Removing the link does
+not remove the deliverable.
+
+**Coordination Wait**:
+A durable subscription owned by an authenticated agent, with its creating
+execution recorded, to a supported predicate on an exact request or response
+group. Its terminal state and
+notification delivery do not establish acceptance of the underlying task.
+
+**Wait Notification Outbox**:
+The durable reservation used to publish a wait's terminal notification after its
+state transition. Publication retries retain the original event/source identity.
+
+**Quiet Notice**:
+A routine notice queued for a recipient's next supported owner-input boundary.
+It does not wake that conversation. Admission requires a verified native
+observation; ordinary user-role messages and caller-selected origin fields do
+not establish one.
