@@ -610,7 +610,10 @@ def advice_fixture():
                     for viewport, size in (("desktop", dict(width=1440, height=1000)), ("phone", dict(width=390, height=844))):
                         with browser.new_context(viewport=size, storage_state=storage) as view:
                             ui = view.new_page(); ui.set_default_timeout(8000); ui.goto(self.url)
-                            self.check("actual advice operator journey " + viewport, lambda: self.workflow(ui, viewport), ui)
+                            if not self.check("actual advice operator journey " + viewport, lambda: self.workflow(ui, viewport), ui):
+                                self.report.setdefault("stopped_scenarios", []).append(dict(state=name, viewport=viewport,
+                                    reason="First workflow failure retained; remaining journeys and UIPass were not run."))
+                                return
                 elif name == "advice_refusals":
                     for viewport, size in (("desktop", dict(width=1440, height=1000)), ("phone", dict(width=390, height=844))):
                         with browser.new_context(viewport=size, storage_state=storage) as view:
