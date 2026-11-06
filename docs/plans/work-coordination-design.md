@@ -1,7 +1,9 @@
 # Work coordination design
 
-Status: proposed implementation contract, 2026-11-05. None of the interfaces
-marked **proposed** below is implemented by this document. Baseline:
+Status: implementation contract recorded on 2026-11-05. Terms marked
+**proposed** preserve the planning vocabulary; this document alone does not
+establish implementation acceptance. See [implementation status](../implementation-status.md)
+and the [operator guide](../operator/work-coordination.md) for current behavior. Baseline:
 `48ddbdcfb999e770f5147be3b3b6b71ccfd7fb8e`. The companion
 [implementation plan](work-coordination-implementation.md) defines delivery order,
 acceptance checks and rollback.

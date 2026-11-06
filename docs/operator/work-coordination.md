@@ -255,8 +255,10 @@ cairn work advice sweep
 cairn work features status
 ```
 
-Reconcile checks retained process identities before releasing uncertain jobs and
-also runs retention maintenance. Sweep performs retention maintenance without
+Reconcile preserves healthy jobs within their deadline and checks retained process
+identities before settling abandoned or expired execution. An unresolved result
+write stays uncertain even after its process has exited. Reconcile also runs
+retention maintenance. Sweep performs retention maintenance without
 launching a provider. Both commands remain available after generation is disabled.
 
 Input payload retention is bounded to 24 hours; unreviewed proposals expire after
@@ -310,3 +312,9 @@ scripted model endpoint. It restores an older backup containing waits and a real
 native notice hold, reapplies a later source deletion, and verifies both old
 admission refusal and fresh work in the resumed conversation. The report records
 the selected executable, native package, fixture inputs and cleanup outcome.
+
+For the combined advice, wait and native-notice restore, schema078-to079 upgrade,
+and advice maintenance under a lower-support build, use the
+[receipt-bound recovery fixtures](../../tests/fixtures/work_advice/README.md).
+They share private builds from an exact commit and retain separate scenario
+results and cleanup evidence.

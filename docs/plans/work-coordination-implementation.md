@@ -1,7 +1,9 @@
 # Work coordination implementation plan
 
-Status: ready for implementation, 2026-11-05; no feature code implemented
-by this plan. Baseline `48ddbdcfb999e770f5147be3b3b6b71ccfd7fb8e`.
+Status: implementation contract recorded on 2026-11-05. Planning baseline
+`48ddbdcfb999e770f5147be3b3b6b71ccfd7fb8e`. See
+[implementation status](../implementation-status.md) for delivered source and the
+[operator guide](../operator/work-coordination.md) for current commands.
 The [design](work-coordination-design.md) defines the selected contracts, domain
 terms, limits, interfaces and recovery rules. This plan implements all five
 features without an experiment or candidate-selection phase.
@@ -448,9 +450,10 @@ native delivery, PostgreSQL races or process cleanup. No TODO stub, unimplemente
 provider option, permissive fallback or permanently disabled advertised button is
 an accepted substitute.
 
-This planning change adds documentation only. Design review checked the current
-source seams and the installed subscription CLI's available controls; no model
-request, live service change, schema migration or feature implementation occurred.
-Documentation validation and `make check` are recorded with the planning commit.
-All feature tests described above are future acceptance checks, not results from
-this planning session.
+The original planning commit added documentation only. Its design review checked
+the source seams and the installed subscription CLI controls. It made no model
+request or live service change and implemented no feature. Documentation validation
+and `make check` are recorded with that commit. The checks above define acceptance;
+they are not execution results merely because they appear in this plan. Current
+source behavior and its limits are recorded in the linked implementation status
+and operator guide.
