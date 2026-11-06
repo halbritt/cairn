@@ -77,6 +77,9 @@ def advice_fixture():
                 scope=dict(repo=self.collection, task_id="*", run_id="*"))))
             self.revision = self.work("artifact", "register", "--kind", "report", "--url",
                 "https://reports.fixture.invalid/advice/" + name, "--revision", "exact-v1", "--display-name", "Synthetic selected report")
+            if name == "advice_workflow":
+                self.work("progress", "add", "--project", self.slug, "--item", self.item_id,
+                          "--text", "Operator baseline progress to restore through compensation")
             self.report.setdefault("synthetic_provider", {})[name] = self.case["provider"]
 
         def headers(self, page):
@@ -166,6 +169,100 @@ def advice_fixture():
             expect(page.locator(f'.advice-application[data-request-id="{receipt["request_uuid"]}"]')).to_be_visible()
             return receipt
 
+        def work_rows(self):
+            return dict(annotations={row["annotation_id"]: row for row in self.detail()["annotations"] or []},
+                links={row["link_id"]: row for row in self.work("artifact", "list", "--project", self.slug,
+                    "--item", self.item_id, "--include-removed")["artifacts"] or []})
+
+        def history_retains(self, kind, target, *revisions):
+            target = str(uuid.UUID(target))
+            unique = sorted(set(int(value) for value in revisions))
+            base.require(all(value > 0 for value in unique), "nonpositive retained revision")
+            table, key = ("work_annotation_history", "annotation_id") if kind == "annotation" else ("work_artifact_link_history", "link_id")
+            count = self.host.sql(f"SELECT count(*) FROM cairn.{table} WHERE {key}='{target}' AND revision IN ({','.join(map(str, unique))})")
+            base.require(int(count) == len(unique), "exact original/compensating history revisions were not retained")
+
+        def assert_application(self, review, receipt, kinds, before):
+            selected = {row["action_uuid"]: row for row in review["actions"] if row["action_type"] in kinds and row["status"] == "pending"}
+            base.require(set(receipt["applied_action_uuids"]) == set(selected)
+                and len(receipt["applied_action_uuids"]) == len(selected), "application receipt differs from the exact selected action UUID set")
+            base.require(set(receipt["output_revisions"]) == set(selected), "receipt output revisions differ from selected actions")
+            current = self.work_rows()
+            for action_id, action in selected.items():
+                output = receipt["output_revisions"][action_id]
+                payload = action["target_payload"]
+                if action["action_type"] == "link_artifact":
+                    row = current["links"].get(output["link_id"])
+                    base.require(row is not None and row["revision"] == output["revision"]
+                        and row["revision_id"] == output["revision_id"] == payload["artifact_revision_id"]
+                        and row["role"] == payload["role"] == "evidence" and row["state"] == "active"
+                        and row["author"] == receipt["applied_by_channel"] and row["rationale"] == action["rationale"],
+                        "accepted artifact effect differs from exact revision, role, rationale, attribution or receipt revision")
+                    prior = before["links"].get(row["link_id"])
+                    base.require(row["revision"] > (prior["revision"] if prior else 0), "artifact application did not create a new edge revision")
+                    self.history_retains("link", row["link_id"], row["revision"])
+                else:
+                    row = current["annotations"].get(output["annotation_id"])
+                    expected_kind = "progress" if action["action_type"] == "annotate_progress" else "blocker"
+                    base.require(row is not None and row["annotation_id"] not in before["annotations"]
+                        and row["revision"] == output["revision"] and row["kind"] == expected_kind
+                        and row["body"] == payload["text"] and row["state"] == ("active" if expected_kind == "progress" else "open")
+                        and row["author"] == receipt["applied_by_channel"]
+                        and sorted(row["source_references"] or []) == sorted(payload.get("source_references", [])),
+                        "accepted annotation differs from exact text, source attribution, state or receipt output revision")
+                    self.history_retains("annotation", row["annotation_id"], row["revision"])
+
+        def assert_compensation(self, original, compensated, before, before_undo):
+            base.require(compensated["request_uuid"] == original["request_uuid"]
+                and compensated["receipt_uuid"] == original["receipt_uuid"] and compensated["undone"] is True,
+                "compensation receipt does not identify the exact original application")
+            current = self.work_rows()
+            changed_annotations, changed_links = set(), set()
+            for action_id, output in original["output_revisions"].items():
+                compensation = compensated["compensating_revisions"][action_id]
+                if output["type"] in ("progress", "blocker_created"):
+                    target = output["annotation_id"]
+                    changed_annotations.add(target)
+                    row = current["annotations"].get(target)
+                    base.require(row is not None and compensation["annotation_id"] == target
+                        and row["revision"] == compensation["revision"] > output["revision"]
+                        and row["state"] == ("superseded" if output["type"] == "progress" else "resolved"),
+                        "Undo receipt left the exact created annotation active or omitted its new compensation revision")
+                    self.history_retains("annotation", target, output["revision"], compensation["revision"])
+                    prior = output.get("superseded_prior")
+                    if prior:
+                        old = before["annotations"][prior["annotation_id"]]
+                        restored = current["annotations"].get(old["annotation_id"])
+                        stamp = compensated["compensating_revisions"][action_id + "_restored_prior"]
+                        base.require(restored is not None and restored["revision"] == stamp["revision"] > prior["superseded_revision"]
+                            and stamp["annotation_id"] == old["annotation_id"]
+                            and all(restored[field] == old[field] for field in ("kind", "body", "state"))
+                            and sorted(restored["source_references"] or []) == sorted(old["source_references"] or []),
+                            "Undo did not restore the exact prior selected progress as a new revision")
+                        changed_annotations.add(old["annotation_id"])
+                        self.history_retains("annotation", old["annotation_id"], old["revision"], restored["revision"])
+                elif output["type"] == "artifact_linked":
+                    target = output["link_id"]
+                    changed_links.add(target)
+                    row = current["links"].get(target)
+                    old = before["links"].get(target)
+                    base.require(row is not None and compensation["link_id"] == target
+                        and row["revision"] == compensation["revision"] > output["revision"]
+                        and row["revision_id"] == output["revision_id"] and row["state"] == (old["state"] if old else "removed"),
+                        "Undo receipt left the exact new artifact edge active or failed to restore its prior state")
+                    if old:
+                        base.require(all(row[field] == old[field] for field in ("revision_id", "role", "rationale", "state")),
+                                     "Undo changed the prior artifact edge metadata")
+                    self.history_retains("link", target, output["revision"], compensation["revision"])
+                else:
+                    raise AssertionError("unexpected action type in create/subset compensation assertion")
+            for target, row in before_undo["annotations"].items():
+                if target not in changed_annotations:
+                    base.require(current["annotations"].get(target) == row, "Undo changed an unrelated prior annotation")
+            for target, row in before_undo["links"].items():
+                if target not in changed_links:
+                    base.require(current["links"].get(target) == row, "Undo changed an unrelated prior artifact edge")
+
         def undo_application(self, page, receipt):
             from playwright.sync_api import expect
             button = page.locator(f'.advice-application[data-request-id="{receipt["request_uuid"]}"] .advice-undo')
@@ -173,6 +270,7 @@ def advice_fixture():
             base.require(result["receipt"]["request_uuid"] == receipt["request_uuid"] and result["receipt"]["undone"] is True,
                          "Undo returned another application or no compensation")
             expect(page.locator(f'.advice-application[data-request-id="{receipt["request_uuid"]}"]')).to_contain_text("Application undone")
+            return result["receipt"]
 
         def screenshot(self, page, name):
             page.locator("#item-advice").scroll_into_view_if_needed()
@@ -195,22 +293,24 @@ def advice_fixture():
             self.inputs(page)
             review = self.generate(page)
             self.screenshot(page, "advice-review-" + viewport)
+            before_first = self.work_rows()
             self.select_actions(page, review, {"annotate_progress", "link_artifact"})
             first = self.apply_selected(page)
-            base.require(len(first["applied_action_uuids"]) == 2, "selected subset was not exactly two actions")
+            self.assert_application(review, first, {"annotate_progress", "link_artifact"}, before_first)
             updated = self.current_review(page)
             base.require([action["action_type"] for action in updated["actions"] if action["status"] == "pending"] == ["annotate_blocker"],
                          "unselected blocker did not remain pending")
-            detail = self.detail()
-            base.require(any(row["kind"] == "progress" and row["state"] == "active" for row in detail["annotations"]), "accepted progress missing from real work detail")
-            links = self.work("artifact", "list", "--project", self.slug, "--item", self.item_id)["artifacts"]
-            base.require(any(row["revision_id"] == self.revision["revision_id"] and row["state"] == "active" for row in links), "accepted exact artifact link missing")
+            before_second = self.work_rows()
             self.select_actions(page, updated, {"annotate_blocker"})
             second = self.apply_selected(page)
-            base.require(len(second["applied_action_uuids"]) == 1, "second subset did not apply the remaining blocker alone")
+            self.assert_application(updated, second, {"annotate_blocker"}, before_second)
             self.screenshot(page, "advice-applications-" + viewport)
-            self.undo_application(page, second)
-            self.undo_application(page, first)
+            before_second_undo = self.work_rows()
+            second_undo = self.undo_application(page, second)
+            self.assert_compensation(second, second_undo, before_second, before_second_undo)
+            before_first_undo = self.work_rows()
+            first_undo = self.undo_application(page, first)
+            self.assert_compensation(first, first_undo, before_first, before_first_undo)
             undone = self.current_review(page)
             base.require(len(undone["applications"]) == 2 and all(row["undone"] for row in undone["applications"]), "application history did not retain two separate compensations")
             blocker = self.work("blocker", "add", "--project", self.slug, "--item", self.item_id,
@@ -341,7 +441,8 @@ def advice_fixture():
                 reply = response.json()
                 altered.append(dict(request=route.request.post_data_json, receipt=reply["receipt"]))
                 changed = json.loads(json.dumps(reply))
-                changed["receipt"]["applied_action_uuids"] = [next(row["action_uuid"] for row in review["actions"] if row["action_type"] == "annotate_blocker")]
+                changed["receipt"]["applied_action_uuids"] = [row["action_uuid"] for row in review["actions"]
+                    if row["action_type"] in ("annotate_progress", "annotate_blocker")]
                 route.fulfill(response=response, json=changed)
             page.route(self.url + "/api/work/advice/apply", altered_receipt, times=1)
             page.locator("#advice-apply").click()
