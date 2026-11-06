@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ Subcommands:
   work advice apply --proposal UUID --version N [--action UUID...] [--request-id UUID] [--collection REPO]
   work advice reject --proposal UUID --version N [--collection REPO]
   work advice undo (--receipt UUID | --request-id UUID) [--collection REPO]
-  work advice control (status|get|set) [--generation true|false] [--apply true|false]
+  work advice control (status|get|set) [--generation=true|false] [--apply=true|false]
   work advice profile (register|list|show) [FLAGS]
   work advice policy (get|show|set) [FLAGS]
   work advice reconcile [--collection REPO]
@@ -55,7 +56,7 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 		rawItem := f.String("item", "", "item UUID or identifier")
 		profileName := f.String("profile", "", "registered advice profile name")
 		modelRoute := f.String("model", "", "override model name")
-		timeoutSec := f.Int("timeout", 90, "job deadline in seconds (30-300)")
+		timeoutSec := f.Int("timeout", 90, "job deadline in seconds (10-180)")
 		requestID := f.String("request-id", "", "idempotency request ID")
 		collection := f.String("collection", "", "collection name")
 
@@ -535,7 +536,7 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 
 	case "control":
 		if len(args) < 2 || hasWorkHelpArg(args[1:]) {
-			return commandHelp("cairn work advice control (status|get|set) [--generation true|false] [--apply true|false]\n"), nil
+			return commandHelp("cairn work advice control (status|get|set) [--generation=true|false] [--apply=true|false]\n"), nil
 		}
 		switch args[1] {
 		case "status", "get":
@@ -555,12 +556,29 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 			}, nil
 		case "set":
 			f := flags("work advice control set")
-			gen := f.Bool("generation", true, "enable or disable advice generation")
-			app := f.Bool("apply", true, "enable or disable advice apply")
+			gen := f.Bool("generation", false, "enable or disable advice generation (e.g. --generation=false)")
+			app := f.Bool("apply", false, "enable or disable advice apply (e.g. --apply=false)")
 			if err := f.Parse(args[2:]); err != nil {
 				return nil, invalid(err.Error())
 			}
-			updated, err := store.SetAdviceControl(ctx, *gen, *app)
+			if f.NArg() > 0 {
+				return nil, invalid("unexpected arguments; boolean flags require --generation=false or --apply=false")
+			}
+			var genPtr, appPtr *bool
+			f.Visit(func(fl *flag.Flag) {
+				if fl.Name == "generation" {
+					v := *gen
+					genPtr = &v
+				}
+				if fl.Name == "apply" {
+					v := *app
+					appPtr = &v
+				}
+			})
+			if genPtr == nil && appPtr == nil {
+				return nil, invalid("at least one of --generation or --apply is required")
+			}
+			updated, err := store.PatchAdviceControl(ctx, genPtr, appPtr)
 			if err != nil {
 				return nil, err
 			}

@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/internal/advice"
+	"github.com/halbritt/cairn/internal/plane"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -2000,3 +2002,644 @@ func TestWorkAdvice_ArtifactLinkRationalePersistenceAndScrubbing(t *testing.T) {
 	}
 }
 
+func TestWorkAdvice_ProvenanceScrub_ExistingLinkUnlinkAndForget(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	_, _ = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
+		VALUES ('work-artifacts/1', 'active', clock_timestamp())
+		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
+	`)
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	slug := "test-proj-" + bindingID.String()[:8]
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	// Create source record
+	source, err := operatorStore.Create(ctx, CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: Draft{
+			Kind:        "note",
+			Body:        "source text for existing link scrub test",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       Scope{Repo: "fixture:repo", TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artID := uuid.New()
+	revID := uuid.New()
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact (artifact_id, collection, kind, canonical_key, display_name)
+		VALUES ($1, 'fixture:repo', 'report', 'link-test-key-1', 'link-test-artifact-1')
+	`, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact_revision (
+			revision_id, artifact_id, collection, revision_label, created_by
+		) VALUES (
+			$1, $2, 'fixture:repo', 'v1', 'operator:test'
+		)
+	`, revID, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Initial operator link at revision 1
+	initialOpRationale := "initial operator link rationale"
+	link, err := operatorStore.LinkWorkArtifact(ctx, LinkWorkArtifactRequest{
+		ProjectSlug: slug,
+		ItemUUID:    planeItemUUID,
+		RevisionID:  revID,
+		Role:        "evidence",
+		Rationale:   initialOpRationale,
+	})
+	if err != nil {
+		t.Fatalf("LinkWorkArtifact failed: %v", err)
+	}
+	if link.Revision != 1 {
+		t.Fatalf("expected initial link revision 1, got %d", link.Revision)
+	}
+
+	// 2. Advice applies link at revision 2
+	spec := AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		SelectedSources: []SourceRefSpec{{
+			RecordID: uuid.MustParse(source.RecordID),
+			Version:  source.Version,
+		}},
+	}
+	_, manifest, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+
+	jobUUID := uuid.New()
+	job := &WorkAdviceJob{
+		JobUUID:             jobUUID,
+		BindingID:           bindingID,
+		PlaneItemUUID:       planeItemUUID,
+		RequestUUID:         uuid.New(),
+		Status:              "completed",
+		InputManifest:       manifestJSON,
+		InputManifestDigest: "test-manifest-digest",
+		InputPayloadDigest:  "test-payload-digest",
+		ExpiresAt:           time.Now().Add(1 * time.Hour),
+	}
+	if err := operatorStore.CreateAdviceJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	propUUID := uuid.New()
+	prop := &WorkAdviceProposal{
+		ProposalUUID:      propUUID,
+		JobUUID:           jobUUID,
+		BindingID:         bindingID,
+		PlaneItemUUID:     planeItemUUID,
+		ReviewVersion:     1,
+		Status:            "pending",
+		RawResult:         `{"actions":[]}`,
+		NormalizedPayload: json.RawMessage(`{"actions":[]}`),
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+	}
+	actUUID := uuid.New()
+	actPayload, _ := json.Marshal(advice.ArtifactPayload{
+		ArtifactRevisionID: revID.String(),
+		Role:               "evidence",
+	})
+	adviceRationale := "advice link rationale"
+	act := &WorkAdviceAction{
+		ActionUUID:    actUUID,
+		ProposalUUID:  propUUID,
+		ActionIndex:   0,
+		ActionType:    "link_artifact",
+		TargetPayload: actPayload,
+		Rationale:     adviceRationale,
+	}
+	if err := operatorStore.RecordAdviceProposal(ctx, prop, []*WorkAdviceAction{act}); err != nil {
+		t.Fatal(err)
+	}
+
+	receipt := &WorkAdviceApplicationReceipt{
+		RequestUUID:  uuid.New(),
+		ProposalUUID: propUUID,
+	}
+	appliedReceipt, err := operatorStore.ApplyAdviceProposal(ctx, receipt, 1, []uuid.UUID{actUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+	_ = appliedReceipt
+
+	// 3. Operator unlinks at revision 3 (copies advice rationale)
+	unlinkReqID := uuid.NewString()
+	unlinked, err := operatorStore.UnlinkWorkArtifact(ctx, UnlinkWorkArtifactRequest{
+		RequestID:        unlinkReqID,
+		ProjectSlug:      slug,
+		ItemUUID:         planeItemUUID,
+		LinkID:           link.LinkID,
+		ExpectedRevision: 2,
+	})
+	if err != nil {
+		t.Fatalf("UnlinkWorkArtifact failed: %v", err)
+	}
+	if unlinked.Revision != 3 {
+		t.Fatalf("expected unlinked revision 3, got %d", unlinked.Revision)
+	}
+
+	// 4. Forget source record
+	grant, err := operatorStore.Bootstrap(ctx, BootstrapRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test provenance scrub on Forget",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := operatorStore.PreviewDeletion(ctx, source.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := operatorStore.Forget(ctx, ForgetRequest{
+		RequestID:       uuid.NewString(),
+		RecordID:        source.RecordID,
+		ExpectedVersion: source.Version,
+		GrantID:         grant.ID,
+		PreviewID:       preview.PreviewID,
+	}); err != nil {
+		t.Fatalf("Forget failed: %v", err)
+	}
+
+	// 5. Assert:
+	// - Revision 1 (operator rationale) is PRESERVED!
+	var rev1Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 1`, link.LinkID).Scan(&rev1Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev1Rat != initialOpRationale {
+		t.Fatalf("expected rev 1 operator rationale %q to be preserved, got %q", initialOpRationale, rev1Rat)
+	}
+
+	// - Revision 2 (advice rationale) is SCRUBBED!
+	var rev2Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 2`, link.LinkID).Scan(&rev2Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev2Rat != "[purged due to source deletion]" {
+		t.Fatalf("expected rev 2 rationale to be scrubbed, got %q", rev2Rat)
+	}
+
+	// - Revision 3 (unlinked revision copying advice rationale) is SCRUBBED!
+	var rev3Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 3`, link.LinkID).Scan(&rev3Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev3Rat != "[purged due to source deletion]" {
+		t.Fatalf("expected rev 3 rationale to be scrubbed, got %q", rev3Rat)
+	}
+
+	// - Current link (at revision 3) is SCRUBBED!
+	var curLinkRat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link WHERE link_id = $1`, link.LinkID).Scan(&curLinkRat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if curLinkRat != "[purged due to source deletion]" {
+		t.Fatalf("expected current link rationale to be scrubbed, got %q", curLinkRat)
+	}
+
+	// - Cached mutation_request for unlink is SCRUBBED!
+	var mutResp []byte
+	err = operatorStore.pool.QueryRow(ctx, `SELECT response FROM cairn.mutation_request WHERE request_id = $1`, unlinkReqID).Scan(&mutResp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mutLink WorkArtifactLink
+	if err := json.Unmarshal(mutResp, &mutLink); err != nil {
+		t.Fatal(err)
+	}
+	if mutLink.Rationale != "[purged due to source deletion]" {
+		t.Fatalf("expected mutation_request cached unlink rationale to be scrubbed, got %q", mutLink.Rationale)
+	}
+}
+
+func TestWorkAdvice_ProvenanceScrub_NonExistentLinkReplacedByOperator(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	_, _ = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
+		VALUES ('work-artifacts/1', 'active', clock_timestamp())
+		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
+	`)
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	slug := "test-proj-" + bindingID.String()[:8]
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	source, err := operatorStore.Create(ctx, CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: Draft{
+			Kind:        "note",
+			Body:        "source text for non-existent link scrub test",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       Scope{Repo: "fixture:repo", TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artID := uuid.New()
+	revID := uuid.New()
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact (artifact_id, collection, kind, canonical_key, display_name)
+		VALUES ($1, 'fixture:repo', 'report', 'link-test-key-2', 'link-test-artifact-2')
+	`, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact_revision (
+			revision_id, artifact_id, collection, revision_label, created_by
+		) VALUES (
+			$1, $2, 'fixture:repo', 'v1', 'operator:test'
+		)
+	`, revID, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Advice applies link at revision 1 (!existed)
+	spec := AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		SelectedSources: []SourceRefSpec{{
+			RecordID: uuid.MustParse(source.RecordID),
+			Version:  source.Version,
+		}},
+	}
+	_, manifest, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+
+	jobUUID := uuid.New()
+	job := &WorkAdviceJob{
+		JobUUID:             jobUUID,
+		BindingID:           bindingID,
+		PlaneItemUUID:       planeItemUUID,
+		RequestUUID:         uuid.New(),
+		Status:              "completed",
+		InputManifest:       manifestJSON,
+		InputManifestDigest: "test-manifest-digest",
+		InputPayloadDigest:  "test-payload-digest",
+		ExpiresAt:           time.Now().Add(1 * time.Hour),
+	}
+	if err := operatorStore.CreateAdviceJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	propUUID := uuid.New()
+	prop := &WorkAdviceProposal{
+		ProposalUUID:      propUUID,
+		JobUUID:           jobUUID,
+		BindingID:         bindingID,
+		PlaneItemUUID:     planeItemUUID,
+		ReviewVersion:     1,
+		Status:            "pending",
+		RawResult:         `{"actions":[]}`,
+		NormalizedPayload: json.RawMessage(`{"actions":[]}`),
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+	}
+	actUUID := uuid.New()
+	actPayload, _ := json.Marshal(advice.ArtifactPayload{
+		ArtifactRevisionID: revID.String(),
+		Role:               "evidence",
+	})
+	adviceRationale := "advice link rationale !existed"
+	act := &WorkAdviceAction{
+		ActionUUID:    actUUID,
+		ProposalUUID:  propUUID,
+		ActionIndex:   0,
+		ActionType:    "link_artifact",
+		TargetPayload: actPayload,
+		Rationale:     adviceRationale,
+	}
+	if err := operatorStore.RecordAdviceProposal(ctx, prop, []*WorkAdviceAction{act}); err != nil {
+		t.Fatal(err)
+	}
+
+	receipt := &WorkAdviceApplicationReceipt{
+		RequestUUID:  uuid.New(),
+		ProposalUUID: propUUID,
+	}
+	appliedReceipt, err := operatorStore.ApplyAdviceProposal(ctx, receipt, 1, []uuid.UUID{actUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+	_ = appliedReceipt
+
+	var linkID uuid.UUID
+	err = operatorStore.pool.QueryRow(ctx, `SELECT link_id FROM cairn.work_artifact_link WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = $3`, bindingID, planeItemUUID, revID).Scan(&linkID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Operator unlinks at revision 2
+	_, err = operatorStore.UnlinkWorkArtifact(ctx, UnlinkWorkArtifactRequest{
+		ProjectSlug:      slug,
+		ItemUUID:         planeItemUUID,
+		LinkID:           linkID,
+		ExpectedRevision: 1,
+	})
+	if err != nil {
+		t.Fatalf("UnlinkWorkArtifact failed: %v", err)
+	}
+
+	// 3. Operator replaces link at revision 3 with independent rationale
+	opReplacementRationale := "operator replacement rationale"
+	replacedLink, err := operatorStore.LinkWorkArtifact(ctx, LinkWorkArtifactRequest{
+		ProjectSlug: slug,
+		ItemUUID:    planeItemUUID,
+		RevisionID:  revID,
+		Role:        "evidence",
+		Rationale:   opReplacementRationale,
+	})
+	if err != nil {
+		t.Fatalf("LinkWorkArtifact failed: %v", err)
+	}
+	if replacedLink.Revision != 3 {
+		t.Fatalf("expected replaced link revision 3, got %d", replacedLink.Revision)
+	}
+
+	// 4. Forget source record
+	grant, err := operatorStore.Bootstrap(ctx, BootstrapRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test provenance replacement scrub on Forget",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := operatorStore.PreviewDeletion(ctx, source.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := operatorStore.Forget(ctx, ForgetRequest{
+		RequestID:       uuid.NewString(),
+		RecordID:        source.RecordID,
+		ExpectedVersion: source.Version,
+		GrantID:         grant.ID,
+		PreviewID:       preview.PreviewID,
+	}); err != nil {
+		t.Fatalf("Forget failed: %v", err)
+	}
+
+	// 5. Assert:
+	// - Revision 1 (advice) is SCRUBBED!
+	var rev1Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 1`, linkID).Scan(&rev1Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev1Rat != "[purged due to source deletion]" {
+		t.Fatalf("expected rev 1 to be scrubbed, got %q", rev1Rat)
+	}
+
+	// - Revision 2 (removed rev copying advice) is SCRUBBED!
+	var rev2Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 2`, linkID).Scan(&rev2Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev2Rat != "[purged due to source deletion]" {
+		t.Fatalf("expected rev 2 to be scrubbed, got %q", rev2Rat)
+	}
+
+	// - Revision 3 (operator replacement) is PRESERVED!
+	var rev3Rat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link_history WHERE link_id = $1 AND revision = 3`, linkID).Scan(&rev3Rat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev3Rat != opReplacementRationale {
+		t.Fatalf("expected rev 3 operator rationale %q to be preserved, got %q", opReplacementRationale, rev3Rat)
+	}
+
+	// - Current link (revision 3) is PRESERVED!
+	var curLinkRat string
+	err = operatorStore.pool.QueryRow(ctx, `SELECT rationale FROM cairn.work_artifact_link WHERE link_id = $1`, linkID).Scan(&curLinkRat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if curLinkRat != opReplacementRationale {
+		t.Fatalf("expected current link rationale %q to be preserved, got %q", opReplacementRationale, curLinkRat)
+	}
+}
+
+func TestWorkAdvice_ConcurrentPatchAdviceControlDisjointDisables(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	boolPtr := func(b bool) *bool { return &b }
+
+	for i := 0; i < 15; i++ {
+		// Reset to true, true
+		_, err := operatorStore.SetAdviceControl(ctx, true, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var wg sync.WaitGroup
+		ready := make(chan struct{})
+		errCh := make(chan error, 2)
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-ready
+			_, err := operatorStore.PatchAdviceControl(ctx, boolPtr(false), nil)
+			if err != nil {
+				errCh <- err
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			<-ready
+			_, err := operatorStore.PatchAdviceControl(ctx, nil, boolPtr(false))
+			if err != nil {
+				errCh <- err
+			}
+		}()
+
+		close(ready)
+		wg.Wait()
+		close(errCh)
+
+		for err := range errCh {
+			t.Fatalf("concurrent PatchAdviceControl error on iter %d: %v", i, err)
+		}
+
+		ctrl, err := operatorStore.GetAdviceControl(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ctrl.GenerationEnabled || ctrl.ApplyEnabled {
+			t.Fatalf("iter %d: expected both false after concurrent disjoint disables, got gen=%v apply=%v",
+				i, ctrl.GenerationEnabled, ctrl.ApplyEnabled)
+		}
+	}
+}
+
+func TestWorkAdvice_ApplyAndUndoAgainstRemovedLinkEdge(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+
+	collection := "fixture:advice-removed-edge:" + uuid.NewString()
+	p, err := operatorStore.AddWorkProject(ctx, AddWorkProjectRequest{
+		RequestID:      uuid.NewString(),
+		Collection:     collection,
+		LocalSlug:      "removed-edge",
+		PlaneInstance:  "work",
+		PlaneOrigin:    "https://plane.example.com",
+		WorkspaceUUID:  uuid.New(),
+		ProjectUUID:    uuid.New(),
+		ConfigRevision: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := uuid.New()
+	ref, err := operatorStore.PrepareRefresh(ctx, collection, p.LocalSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.CommitRefreshSnapshot(ctx, ref, []plane.NormalizedItem{
+		{PlaneItemUUID: item, Identifier: "EDGE-1", Title: "Edge Test"},
+	}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rev, err := operatorStore.RegisterWorkArtifact(ctx, RegisterWorkArtifactRequest{
+		RequestID:     uuid.NewString(),
+		Collection:    collection,
+		Kind:          "report",
+		ReportLocator: "https://reports.example.com/" + uuid.NewString(),
+		RevisionLabel: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	linked, err := operatorStore.LinkWorkArtifact(ctx, LinkWorkArtifactRequest{
+		RequestID:   uuid.NewString(),
+		Collection:  collection,
+		ProjectSlug: p.LocalSlug,
+		ItemUUID:    item,
+		RevisionID:  rev.RevisionID,
+		Role:        "evidence",
+		Rationale:   "initial link",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unlinked, err := operatorStore.UnlinkWorkArtifact(ctx, UnlinkWorkArtifactRequest{
+		RequestID:        uuid.NewString(),
+		Collection:       collection,
+		ProjectSlug:      p.LocalSlug,
+		ItemUUID:         item,
+		LinkID:           linked.LinkID,
+		ExpectedRevision: linked.Revision,
+	})
+	if err != nil || unlinked.State != "removed" {
+		t.Fatalf("unlink failed: %v", err)
+	}
+
+	_ = operatorStore.SetWorkAdvicePolicy(ctx, p.BindingID, []string{"artifacts", "sources"})
+
+	rawAdvice, _ := json.Marshal(map[string]any{
+		"actions": []any{
+			map[string]any{
+				"action_type":          advice.ActionLinkArtifact,
+				"artifact_revision_id": rev.RevisionID.String(),
+				"role":                 "evidence",
+				"rationale":            "advice reactivation",
+			},
+		},
+	})
+	provider := &workflowParsedAdviceProvider{result: string(rawAdvice)}
+	job := &WorkAdviceJob{
+		BindingID:       p.BindingID,
+		PlaneItemUUID:   item,
+		RequestUUID:     uuid.New(),
+		ProfileName:     advice.RouteCodexSubscription,
+		ModelRoute:      "mock",
+		TemplateVersion: 1,
+	}
+	prop, actions, err := operatorStore.GenerateWorkAdvice(ctx, job, AdviceInputSpec{
+		BindingID:            p.BindingID,
+		PlaneItemUUID:        item,
+		CandidateRevisionIDs: []uuid.UUID{rev.RevisionID},
+	}, provider)
+	if err != nil || prop == nil || len(actions) != 1 {
+		t.Fatalf("GenerateWorkAdvice failed: %v", err)
+	}
+
+	receipt, err := operatorStore.ApplyAdviceProposal(ctx, &WorkAdviceApplicationReceipt{
+		RequestUUID:  uuid.New(),
+		ProposalUUID: prop.ProposalUUID,
+	}, prop.ReviewVersion, []uuid.UUID{actions[0].ActionUUID})
+	if err != nil || receipt == nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+
+	var curState string
+	var curRev int64
+	var remAt *time.Time
+	var remBy *string
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT state, revision, removed_at, removed_by
+		FROM cairn.work_artifact_link
+		WHERE link_id = $1
+	`, linked.LinkID).Scan(&curState, &curRev, &remAt, &remBy)
+	if err != nil || curState != "active" || remAt != nil || remBy != nil {
+		t.Fatalf("expected link active with null removed fields, got state=%s remAt=%v remBy=%v", curState, remAt, remBy)
+	}
+
+	err = operatorStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
+	if err != nil {
+		t.Fatalf("UndoAdviceApplication failed: %v", err)
+	}
+
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT state, revision, removed_at, removed_by
+		FROM cairn.work_artifact_link
+		WHERE link_id = $1
+	`, linked.LinkID).Scan(&curState, &curRev, &remAt, &remBy)
+	if err != nil || curState != "removed" || remAt == nil || remBy == nil {
+		t.Fatalf("expected restored link to be 'removed' with non-null removed fields, got state=%s remAt=%v remBy=%v", curState, remAt, remBy)
+	}
+}

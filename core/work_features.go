@@ -362,4 +362,3 @@ func (s *Store) checkWorkArtifactFeatureTx(ctx context.Context, tx pgx.Tx) error
 func (s *Store) checkWorkAdviceFeatureTx(ctx context.Context, tx pgx.Tx) error {
 	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-advice/1")
 }
-

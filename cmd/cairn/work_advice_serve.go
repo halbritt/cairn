@@ -243,7 +243,7 @@ func computeAvailability(st string, ctrl *core.WorkAdviceControl, prop *core.Wor
 	if !appAllowed && st == "active" && !appEnabled {
 		reasonCodes = append(reasonCodes, "APPLY_DISABLED")
 	}
-	rejectAllowed := (st == "active") && (prop != nil && (prop.Status == "pending" || prop.Status == "partially_applied"))
+	rejectAllowed := (prop != nil && (prop.Status == "pending" || prop.Status == "partially_applied"))
 	if reasonCodes == nil {
 		reasonCodes = make([]string, 0)
 	}
@@ -299,11 +299,17 @@ func buildReviewedManifest(ctx context.Context, store *core.Store, job *core.Wor
 		if store != nil {
 			eligible = store.CheckSourceEligibleLive(ctx, s.RecordID, s.Version)
 		}
+		obsAtStr := ""
+		if !s.ObservedAt.IsZero() {
+			obsAtStr = s.ObservedAt.UTC().Format(time.RFC3339)
+		} else if job != nil && !job.CreatedAt.IsZero() {
+			obsAtStr = job.CreatedAt.UTC().Format(time.RFC3339)
+		}
 		manifest.Sources = append(manifest.Sources, ReviewedManifestSource{
 			RecordID:   s.RecordID,
 			Version:    s.Version,
 			BodySHA256: s.BodySHA256,
-			ObservedAt: nowRFC,
+			ObservedAt: obsAtStr,
 			Eligible:   eligible,
 		})
 	}
@@ -431,6 +437,57 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 		acceptingActor = "operator"
 	}
 
+	var rawMan core.WorkAdviceInputManifest
+	if job != nil && len(job.InputManifest) > 0 {
+		_ = json.Unmarshal(job.InputManifest, &rawMan)
+	}
+
+	type sourceInfo struct {
+		RecordID   uuid.UUID
+		Version    int
+		BodySHA256 string
+		ObservedAt string
+	}
+	sourceMap := make(map[uuid.UUID]sourceInfo)
+	for _, s := range rawMan.Sources {
+		obsStr := ""
+		if !s.ObservedAt.IsZero() {
+			obsStr = s.ObservedAt.UTC().Format(time.RFC3339)
+		} else if job != nil && !job.CreatedAt.IsZero() {
+			obsStr = job.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		sourceMap[s.RecordID] = sourceInfo{
+			RecordID:   s.RecordID,
+			Version:    s.Version,
+			BodySHA256: s.BodySHA256,
+			ObservedAt: obsStr,
+		}
+	}
+
+	lookupSourceRef := func(ref string) (ActionSourceRef, bool) {
+		u, err := uuid.Parse(ref)
+		if err != nil {
+			return ActionSourceRef{}, false
+		}
+		if info, ok := sourceMap[u]; ok {
+			return ActionSourceRef{
+				RecordID:   info.RecordID,
+				Version:    info.Version,
+				BodySHA256: info.BodySHA256,
+				ObservedAt: info.ObservedAt,
+			}, true
+		}
+		obs := ""
+		if job != nil && !job.CreatedAt.IsZero() {
+			obs = job.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		return ActionSourceRef{
+			RecordID:   u,
+			Version:    1,
+			ObservedAt: obs,
+		}, true
+	}
+
 	for _, act := range actions {
 		var before any
 		var after any
@@ -443,14 +500,23 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				SourceReferences []string `json:"source_references"`
 			}
 			_ = json.Unmarshal(act.TargetPayload, &p)
+			if rawMan.PreconditionProgressPresent && rawMan.PreconditionProgressID != nil {
+				before = map[string]any{
+					"annotation_id": rawMan.PreconditionProgressID.String(),
+					"revision":      rawMan.PreconditionProgressRevision,
+					"kind":          "progress",
+					"body":          rawMan.PreconditionProgressBody,
+					"state":         "active",
+				}
+			}
 			after = map[string]any{
 				"kind":  "progress",
 				"body":  p.Text,
 				"state": "active",
 			}
 			for _, ref := range p.SourceReferences {
-				if u, err := uuid.Parse(ref); err == nil {
-					srcRefs = append(srcRefs, ActionSourceRef{RecordID: u, Version: 1})
+				if sr, ok := lookupSourceRef(ref); ok {
+					srcRefs = append(srcRefs, sr)
 				}
 			}
 		case "annotate_blocker":
@@ -464,7 +530,13 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 			_ = json.Unmarshal(act.TargetPayload, &b)
 			if b.BlockerAction == "resolve" {
 				priorText := b.Text
-				if snapshot != nil {
+				for _, eb := range rawMan.CapturedBlockers {
+					if eb.BlockerID == b.ExistingBlockerID {
+						priorText = eb.Text
+						break
+					}
+				}
+				if priorText == b.Text && snapshot != nil {
 					for _, eb := range snapshot.ExistingBlockers {
 						if eb.BlockerID == b.ExistingBlockerID {
 							priorText = eb.Text
@@ -498,8 +570,8 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				}
 			}
 			for _, ref := range b.SourceReferences {
-				if u, err := uuid.Parse(ref); err == nil {
-					srcRefs = append(srcRefs, ActionSourceRef{RecordID: u, Version: 1})
+				if sr, ok := lookupSourceRef(ref); ok {
+					srcRefs = append(srcRefs, sr)
 				}
 			}
 		case "link_artifact":
@@ -508,6 +580,19 @@ func buildReviewedActions(job *core.WorkAdviceJob, actions []*core.WorkAdviceAct
 				Role               string `json:"role"`
 			}
 			_ = json.Unmarshal(act.TargetPayload, &l)
+			targetRevID, _ := uuid.Parse(l.ArtifactRevisionID)
+			for _, cl := range rawMan.CapturedArtifactLinks {
+				if cl.RevisionID == targetRevID && cl.Role == l.Role {
+					before = map[string]any{
+						"link_id":     cl.LinkID.String(),
+						"revision":    cl.Revision,
+						"revision_id": cl.RevisionID.String(),
+						"role":        cl.Role,
+						"state":       cl.State,
+					}
+					break
+				}
+			}
 			after = map[string]any{
 				"revision_id": l.ArtifactRevisionID,
 				"role":        l.Role,
@@ -649,20 +734,11 @@ func HandleWorkAdviceAPI(store *core.Store, collection string, w http.ResponseWr
 			writeWorkAdviceHTTPError(w, err)
 			return
 		}
-		ctrl, err := store.GetAdviceControl(ctx)
-		if err != nil {
-			writeWorkAdviceHTTPError(w, err)
+		if body.GenerationEnabled == nil && body.ApplyEnabled == nil {
+			writeWorkAdviceHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "at least one of generation_enabled or apply_enabled is required"})
 			return
 		}
-		gen := ctrl.GenerationEnabled
-		app := ctrl.ApplyEnabled
-		if body.GenerationEnabled != nil {
-			gen = *body.GenerationEnabled
-		}
-		if body.ApplyEnabled != nil {
-			app = *body.ApplyEnabled
-		}
-		updated, err := store.SetAdviceControl(ctx, gen, app)
+		updated, err := store.PatchAdviceControl(ctx, body.GenerationEnabled, body.ApplyEnabled)
 		if err != nil {
 			writeWorkAdviceHTTPError(w, err)
 			return
