@@ -1531,7 +1531,7 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 	}
 	annotRows.Close()
 
-	links, lErr := s.listWorkArtifactLinksTx(ctx, tx, collection, bindingID, itemUUID, "", false)
+	links, lErr := s.listWorkArtifactLinksTx(ctx, tx, collection, bindingID, it.PlaneItemUUID, "", false)
 	if lErr != nil {
 		return WorkItemDetail{}, lErr
 	}
