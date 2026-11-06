@@ -1000,7 +1000,7 @@ func (s *Store) ValidateArtifactLinkTx(ctx context.Context, tx pgx.Tx, collectio
 	// 1. Verify project exists and is active (ART-ADMISSION)
 	var bindingID uuid.UUID
 	var projStatus string
-	err := tx.QueryRow(ctx, `SELECT binding_id, status FROM cairn.work_project WHERE collection = $1 AND local_slug = $2`, collection, req.ProjectSlug).Scan(&bindingID, &projStatus)
+	err := tx.QueryRow(ctx, `SELECT binding_id, status FROM cairn.work_project WHERE collection = $1 AND local_slug = $2 FOR SHARE`, collection, req.ProjectSlug).Scan(&bindingID, &projStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, uuid.Nil, uuid.Nil, failure("NOT_FOUND", fmt.Sprintf("work project %q not found in collection %q", req.ProjectSlug, collection))
 	}
@@ -1349,6 +1349,81 @@ func (s *Store) UnlinkWorkArtifact(ctx context.Context, req UnlinkWorkArtifactRe
 	if req.RequestID == "" {
 		req.RequestID = uuid.NewString()
 	}
+
+	guard := func(tx pgx.Tx) error {
+		var rawResp []byte
+		var prevDigest []byte
+		err := tx.QueryRow(ctx, `
+			SELECT request_digest, response
+			FROM cairn.mutation_request
+			WHERE caller = $1 AND operation = $2 AND request_id = $3
+		`, s.channel.Principal, "work-artifact-unlink", req.RequestID).Scan(&prevDigest, &rawResp)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		canonical, err := json.Marshal(req)
+		if err != nil {
+			return err
+		}
+		expectedDigest := sha256.Sum256(canonical)
+		if !bytes.Equal(prevDigest, expectedDigest[:]) {
+			return nil
+		}
+		if len(rawResp) == 0 {
+			return nil
+		}
+
+		var cachedLink WorkArtifactLink
+		if err := json.Unmarshal(rawResp, &cachedLink); err != nil {
+			return nil
+		}
+
+		var fenced bool
+		err = tx.QueryRow(ctx, `
+			SELECT true FROM cairn.work_artifact_purge_fence
+			WHERE collection = $1 AND artifact_id = $2
+		`, cachedLink.Collection, cachedLink.ArtifactID).Scan(&fenced)
+		if err == nil && fenced {
+			return failure("PAYLOAD_UNAVAILABLE", fmt.Sprintf("artifact %s has been purged", cachedLink.ArtifactID))
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+
+		var kind string
+		var cairnRecID *uuid.UUID
+		var cairnVer *int
+		err = tx.QueryRow(ctx, `
+			SELECT a.kind, a.cairn_record_id, r.cairn_version
+			FROM cairn.work_artifact a
+			JOIN cairn.work_artifact_revision r ON r.artifact_id = a.artifact_id
+			WHERE r.revision_id = $1
+		`, cachedLink.RevisionID).Scan(&kind, &cairnRecID, &cairnVer)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		if kind == "cairn_result" && cairnRecID != nil && cairnVer != nil {
+			eligible, reason, err := checkCairnResultEligibilityTx(ctx, tx, cachedLink.Collection, *cairnRecID, *cairnVer, false)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(reason, "repository outside") {
+				return failure("AUTHORITY_DENIED", fmt.Sprintf("cairn record %s version %d is outside collection %q", cairnRecID, *cairnVer, cachedLink.Collection))
+			}
+			if !eligible && cachedLink.Rationale != "" {
+				return failure("PAYLOAD_UNAVAILABLE", fmt.Sprintf("cairn record %s version %d: %s", cairnRecID, *cairnVer, reason))
+			}
+		}
+		return nil
+	}
+
 	return mutate(ctx, s, "work-artifact-unlink", req.RequestID, req, func(tx pgx.Tx) (WorkArtifactLink, error) {
 		if err := s.checkWorkReadableTx(ctx, tx); err != nil {
 			return WorkArtifactLink{}, err
@@ -1416,6 +1491,44 @@ func (s *Store) UnlinkWorkArtifact(ctx context.Context, req UnlinkWorkArtifactRe
 			return WorkArtifactLink{}, err
 		}
 
+		// Check if source is purged or unavailable to mask rationale (Repair 2 / ART-PRIVACY)
+		var fenced bool
+		err = tx.QueryRow(ctx, `
+			SELECT true FROM cairn.work_artifact_purge_fence
+			WHERE collection = $1 AND artifact_id = $2
+		`, removed.Collection, removed.ArtifactID).Scan(&fenced)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return WorkArtifactLink{}, err
+		}
+
+		shouldMaskRationale := fenced
+		var kind string
+		var cairnRecID *uuid.UUID
+		var cairnVer *int
+		err = tx.QueryRow(ctx, `
+			SELECT a.kind, a.cairn_record_id, r.cairn_version
+			FROM cairn.work_artifact a
+			JOIN cairn.work_artifact_revision r ON r.artifact_id = a.artifact_id
+			WHERE r.revision_id = $1
+		`, removed.RevisionID).Scan(&kind, &cairnRecID, &cairnVer)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return WorkArtifactLink{}, err
+		}
+
+		if kind == "cairn_result" && cairnRecID != nil && cairnVer != nil {
+			eligible, _, err := checkCairnResultEligibilityTx(ctx, tx, removed.Collection, *cairnRecID, *cairnVer, false)
+			if err != nil {
+				return WorkArtifactLink{}, err
+			}
+			if !eligible {
+				shouldMaskRationale = true
+			}
+		}
+
+		if shouldMaskRationale {
+			removed.Rationale = ""
+		}
+
 		// Record history
 		_, err = tx.Exec(ctx, `
 			INSERT INTO cairn.work_artifact_link_history (link_id, revision, state, role, rationale, author, created_at)
@@ -1426,7 +1539,7 @@ func (s *Store) UnlinkWorkArtifact(ctx context.Context, req UnlinkWorkArtifactRe
 		}
 
 		return removed, nil
-	})
+	}, guard)
 }
 
 // listWorkArtifactLinksTx lists artifact links for an item within an existing transaction.
@@ -1443,11 +1556,12 @@ func (s *Store) listWorkArtifactLinksTx(ctx context.Context, tx pgx.Tx, collecti
 		       COALESCE(a.git_repo, ''), COALESCE(a.report_locator, ''),
 		       COALESCE(a.ci_provider, ''), COALESCE(a.ci_repo, ''), COALESCE(a.ci_run_id, ''),
 		       a.cairn_record_id, a.created_at, a.updated_at,
-		       i.identifier, i.title
+		       i.identifier, i.title, p.auth_rejected
 		FROM cairn.work_artifact_link l
 		JOIN cairn.work_artifact_revision r ON r.revision_id = l.revision_id
 		JOIN cairn.work_artifact a ON a.artifact_id = l.artifact_id
 		JOIN cairn.work_item i ON i.binding_id = l.binding_id AND i.plane_item_uuid = l.plane_item_uuid
+		JOIN cairn.work_project p ON p.binding_id = l.binding_id
 		WHERE l.binding_id = $1 AND l.plane_item_uuid = $2
 	`
 	args := []any{bindingID, planeItemUUID}
@@ -1480,6 +1594,7 @@ func (s *Store) listWorkArtifactLinksTx(ctx context.Context, tx pgx.Tx, collecti
 		var ciStat *string
 		var ciRepAt *time.Time
 		var cairnVer *int
+		var authRejected bool
 
 		if err := rows.Scan(
 			&l.LinkID, &l.Revision, &l.Collection, &l.BindingID, &l.PlaneItemUUID, &l.ArtifactID, &l.RevisionID,
@@ -1489,10 +1604,15 @@ func (s *Store) listWorkArtifactLinksTx(ctx context.Context, tx pgx.Tx, collecti
 			&ciAtt, &ciStat, &ciRepAt, &cairnVer, &metaRaw, &rev.CreatedBy, &rev.CreatedAt,
 			&a.ArtifactID, &a.Collection, &a.Kind, &a.CanonicalKey, &a.DisplayName,
 			&a.GitRepo, &a.ReportLocator, &a.CIProvider, &a.CIRepo, &a.CIRunID, &a.CairnRecordID, &a.CreatedAt, &a.UpdatedAt,
-			&l.ItemIdentifier, &l.ItemTitle,
+			&l.ItemIdentifier, &l.ItemTitle, &authRejected,
 		); err != nil {
 			rows.Close()
 			return nil, err
+		}
+
+		if authRejected {
+			l.ItemTitle = "[hidden: auth rejected]"
+			l.ItemIdentifier = "[hidden]"
 		}
 
 		if gitCommitOID != nil {
@@ -1761,7 +1881,7 @@ func (s *Store) ReverseImpact(ctx context.Context, req ReverseImpactRequest) (Re
 		SELECT l.link_id, l.role, l.state, l.asserted_at, l.author,
 		       p.binding_id, p.local_slug,
 		       i.plane_item_uuid, i.identifier, i.title, COALESCE(i.state_name, ''), COALESCE(i.state_group, ''),
-		       i.updated_at_source, COALESCE(i.source_url, '')
+		       i.updated_at_source, COALESCE(i.source_url, ''), p.auth_rejected
 		FROM cairn.work_artifact_link l
 		JOIN cairn.work_project p USING(binding_id)
 		JOIN cairn.work_item i ON i.binding_id = l.binding_id AND i.plane_item_uuid = l.plane_item_uuid
@@ -1777,14 +1897,23 @@ func (s *Store) ReverseImpact(ctx context.Context, req ReverseImpactRequest) (Re
 	var items []WorkImpactItem
 	for rows.Next() {
 		var it WorkImpactItem
+		var authRejected bool
 		if err := rows.Scan(
 			&it.LinkID, &it.Role, &it.LinkState, &it.LinkAssertedAt, &it.LinkAuthor,
 			&it.BindingID, &it.ProjectSlug,
 			&it.PlaneItemUUID, &it.ItemIdentifier, &it.ItemTitle, &it.StateName, &it.StateGroup,
-			&it.UpdatedAtSource, &it.SourceURL,
+			&it.UpdatedAtSource, &it.SourceURL, &authRejected,
 		); err != nil {
 			rows.Close()
 			return out, err
+		}
+		if authRejected {
+			it.ItemTitle = "[hidden: auth rejected]"
+			it.ItemIdentifier = "[hidden]"
+			it.StateName = ""
+			it.StateGroup = ""
+			it.UpdatedAtSource = nil
+			it.SourceURL = ""
 		}
 		it.LinkedSessions = []string{}
 		it.OpenBlockers = []string{}

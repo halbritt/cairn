@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 func setupTestWorkProjectAndItems(t *testing.T, s *Store, ctx context.Context, slug string, count int) (uuid.UUID, []uuid.UUID) {
@@ -996,22 +994,13 @@ func TestART_Privacy_SensitivityChangeAndMasking(t *testing.T) {
 	}
 
 	// Forget the memory record and purge deletion effects
-	var rootGrantID string
-	err = s.pool.QueryRow(ctx, `SELECT grant_id::text FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&rootGrantID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		root, bErr := s.Bootstrap(ctx, BootstrapRequest{"82bf5bce-dc6c-4d03-a49f-1677bdcc9a32", "Install synthetic test operator root"})
-		if bErr != nil {
-			t.Fatalf("Bootstrap failed: %v", bErr)
-		}
-		rootGrantID = root.ID
-	} else if err != nil {
-		t.Fatalf("Query root grant failed: %v", err)
-	}
-	prev, err := s.PreviewDeletion(ctx, created.RecordID)
+	op, root := testOperator(t)
+	rootGrantID := root.ID
+	prev, err := op.PreviewDeletion(ctx, created.RecordID)
 	if err != nil {
 		t.Fatalf("PreviewDeletion failed: %v", err)
 	}
-	del, err := s.Forget(ctx, ForgetRequest{
+	del, err := op.Forget(ctx, ForgetRequest{
 		RequestID:       uuid.NewString(),
 		RecordID:        created.RecordID,
 		ExpectedVersion: created.Version,
@@ -1021,7 +1010,7 @@ func TestART_Privacy_SensitivityChangeAndMasking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Forget failed: %v", err)
 	}
-	_, err = s.PurgeDeletion(ctx, del.DeletionID)
+	_, err = op.PurgeDeletion(ctx, del.DeletionID)
 	if err != nil {
 		t.Fatalf("PurgeDeletion failed: %v", err)
 	}
