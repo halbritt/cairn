@@ -134,3 +134,11 @@ surfaces:
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '.coordination-wait summary >> nth=0'}
+  coordination_transitions:
+    states:
+      after_restore_fence:
+        route: /
+        ready: '.coordination-wait'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.coordination-wait summary >> nth=0'}

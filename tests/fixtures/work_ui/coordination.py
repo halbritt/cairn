@@ -13,15 +13,17 @@ from datetime import datetime, timedelta, timezone
 
 def coordination_fixture(Base, uid, dump, require):
     class CoordinationFixture(Base):
-        states = ("coordination_waits", "coordination_empty", "coordination_disabled")
+        states = ("coordination_waits", "coordination_empty", "coordination_disabled", "coordination_transitions")
 
         def __init__(self, args):
             super().__init__(args)
             self.report["coordination_scope"] = {
                 "implemented_fixture_cases": ["real waits and exact associations", "wait pagination",
-                    "unsupported recipient", "empty membership", "disabled retained reads"],
+                    "unsupported recipient", "empty membership", "disabled retained reads",
+                    "delayed real reply after item switch", "association removal reread",
+                    "restore-fenced cursor refusal/reload", "30-second real read preserving a draft"],
                 "pending_fixture_cases": ["native supported quiet-notice lifecycle and notice pagination",
-                    "restore/privacy transitions", "delayed item switch/refusal", "30-second live observation"],
+                    "privacy transitions and complete native restore behavior"],
                 "whole_coordination_acceptance": False,
             }
 
@@ -48,6 +50,7 @@ def coordination_fixture(Base, uid, dump, require):
                 "--target-type", "session", "--target-id", self.owner["agent_id"] + ":" + self.owner["execution_id"])
             self.expected_waits, self.unrelated_waits = set(), set()
             self.expected_associations = {}
+            self.association_rows = {}
             # A shared source body remains private; every dependency has its own event UUID.
             source = self.host.agent("worker", "create", dict(request_id=str(uuid.uuid4()), draft=dict(
                 kind="note", body="COORDINATION_SOURCE_BODY_MUST_NOT_RENDER", claim_type="self", sensitivity="local",
@@ -71,6 +74,7 @@ def coordination_fixture(Base, uid, dump, require):
                     "--target-type", "response_group" if index == 0 else "event", "--target-id", event["event_id"])
                 self.expected_waits.add(wait["wait_uuid"])
                 self.expected_associations[wait["wait_uuid"]] = {(association["association_id"], association["revision"])}
+                self.association_rows[wait["wait_uuid"]] = association
                 if index == 0:
                     second = self.work("associate", "--project", self.slug, "--item", self.item_id,
                         "--target-type", "event", "--target-id", event["event_id"])
@@ -161,12 +165,99 @@ def coordination_fixture(Base, uid, dump, require):
             page.screenshot(path=str(self.output / (name + "-" + viewport + ".png")), full_page=True)
             require(self.coordination_state() == before, "coordination GET/view mutated waits, outboxes, notices or sessions")
 
+        def browser_transitions(self, page):
+            from playwright.sync_api import expect
+            from urllib.parse import parse_qs, urlparse
+            page.set_default_timeout(7000)
+            with page.expect_response(lambda response: "/api/work/item/coordination?" in response.url) as initial:
+                page.locator(f'.work-card[data-item-uuid="{self.item_id}"]').click()
+            require(initial.value.ok, "initial real coordination read refused")
+            expect(page.locator(".coordination-wait")).to_have_count(25)
+            page.locator("#annotation-input").fill("Unsaved note survives current coordination reads")
+            before = self.coordination_state()
+            started = time.monotonic()
+            # Wait for the page's real 30-second timer, with the server clock unchanged.
+            automatic = page.wait_for_event("response",
+                predicate=lambda response: "/api/work/item/coordination?" in response.url, timeout=38000)
+            elapsed = time.monotonic() - started
+            require(automatic.ok and 25 <= elapsed <= 38, "coordination observation was not the bounded real timer read")
+            require(automatic.json()["plane_item_uuid"] == self.item_id
+                and datetime.fromisoformat(automatic.json()["observed_at"].replace("Z", "+00:00"))
+                    > datetime.fromisoformat(initial.value.json()["observed_at"].replace("Z", "+00:00")),
+                "automatic read did not return a newer server observation of the exact item")
+            expect(page.locator("#annotation-input")).to_have_value("Unsaved note survives current coordination reads")
+            require(self.coordination_state() == before, "automatic coordination read changed retained state")
+            self.report["coordination_timer_seconds"] = elapsed
+
+            delivered = []
+            pattern = "**/api/work/item/coordination?*"
+            def reply_after_item_switch(route):
+                page.unroute(pattern, reply_after_item_switch)
+                require(parse_qs(urlparse(route.request.url).query)["item"] == [self.item_id], "delayed read selected the wrong item")
+                response = route.fetch()
+                require(response.ok and response.json()["plane_item_uuid"] == self.item_id, "delayed source was not a genuine successful item read")
+                page.locator("#modal-close").click()
+                page.locator(f'.work-card[data-item-uuid="{self.guard_item_id}"]').click()
+                expect(page.locator("#coordination-waits-empty")).to_be_visible()
+                delivered.append(response.json()["plane_item_uuid"])
+                route.fulfill(response=response)
+            page.route(pattern, reply_after_item_switch)
+            page.locator("#coordination-reload").click()
+            expect(page.locator("#modal-meta")).to_contain_text(self.guard_item_id)
+            expect(page.locator("#coordination-waits-empty")).to_be_visible()
+            expect(page.locator(".coordination-wait")).to_have_count(0)
+            expect(page.locator(".coordination-recipient")).to_have_count(0)
+            require(delivered == [self.item_id], "late real response was not exercised")
+            require(self.coordination_state() == before, "item-switch reads changed retained state")
+
+            page.locator("#modal-close").click()
+            page.locator(f'.work-card[data-item-uuid="{self.item_id}"]').click()
+            expect(page.locator(".coordination-wait")).to_have_count(25)
+            target = page.locator(".coordination-wait").first.get_attribute("data-wait-id")
+            association = self.association_rows[target]
+            require(len(self.expected_associations[target]) == 1, "removal case requires one exact association")
+            self.work("unassociate", "--project", self.slug, "--item", self.item_id,
+                "--association-id", association["association_id"], "--expected-revision", str(association["revision"]))
+            page.locator("#annotation-input").fill("Unsaved note survives association and restore changes")
+            with page.expect_response(lambda response: "/api/work/item/coordination?" in response.url) as reread:
+                page.locator("#coordination-reload").click()
+            require(reread.value.ok, "association removal reread refused")
+            expect(page.locator(f'.coordination-wait[data-wait-id="{target}"]')).to_have_count(0)
+            expect(page.locator(".coordination-wait")).to_have_count(25)
+            expect(page.locator("#annotation-input")).to_have_value("Unsaved note survives association and restore changes")
+            require(self.host.sql("SELECT count(*) FROM cairn.agent_wait") == "29", "removing an association deleted its wait")
+            expect(page.locator("#coordination-waits-more")).to_be_enabled()
+            self.host.operator("fence-restore", dict(request_id=str(uuid.uuid4()), reason="Disposable work-view cursor fence proof"))
+            before = self.coordination_state()
+            with page.expect_response(lambda response: "/api/work/item/coordination?" in response.url) as stale:
+                page.locator("#coordination-waits-more").click()
+            require(not stale.value.ok and stale.value.json().get("code") == "STALE_CURSOR", "old real continuation did not refuse after restore fencing")
+            expect(page.locator("#coordination-error")).to_contain_text("Could not read linked coordination")
+            expect(page.locator(".coordination-wait")).to_have_count(0)
+            expect(page.locator(".coordination-notice")).to_have_count(0)
+            expect(page.locator(".coordination-recipient")).to_have_count(0)
+            expect(page.locator("#annotation-input")).to_have_value("Unsaved note survives association and restore changes")
+            page.locator("#item-coordination-title").scroll_into_view_if_needed()
+            page.screenshot(path=str(self.output / "coordination-stale-cursor.png"), full_page=True)
+            with page.expect_response(lambda response: "/api/work/item/coordination?" in response.url) as recovered:
+                page.locator("#coordination-reload").click()
+            require(recovered.value.ok and recovered.value.json()["restore_generation"] > 0, "first-page reload did not read the new restore generation")
+            expect(page.locator(".coordination-wait")).to_have_count(25)
+            expect(page.locator("#coordination-waits-page")).to_have_text("Page 1")
+            expect(page.locator("#coordination-notices-page")).to_have_text("Page 1")
+            expect(page.locator("#annotation-input")).to_have_value("Unsaved note survives association and restore changes")
+            require(self.coordination_state() == before, "refusal or recovery read changed fenced coordination state")
+
         def run_state(self, browser, name):
             self.seed(name)
             self.start_web()
             with browser.new_context(viewport=dict(width=1440, height=1000)) as context:
                 page = self.login(context)
                 storage = context.storage_state()
+                if name == "coordination_transitions":
+                    self.check("real coordination read transitions", lambda: self.browser_transitions(page), page)
+                    self.check("UIPass " + name, lambda: self.uipass(name, storage))
+                    return
                 for viewport, size in (("desktop", dict(width=1440, height=1000)), ("phone", dict(width=390, height=844))):
                     with browser.new_context(viewport=size, storage_state=storage) as view:
                         current = view.new_page()

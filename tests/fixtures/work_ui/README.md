@@ -113,13 +113,18 @@ The isolated `--scope coordination` fixture is a static draft awaiting a coheren
 WC01/WC03/WC04 backend. It creates real registered owners, request and response-group
 dependencies, waits, cancellation and exact work associations through existing
 CLI/API operations. Its current cases check wait membership/provenance/pagination,
-an unsupported recipient, empty membership and disabled retained reads. Missing
+an unsupported recipient, empty membership and disabled retained reads. The
+transition case waits for a real 30-second GET, forwards an actual delayed reply
+after opening another item, removes an exact association, and uses the operator
+restore fence to make a retained cursor refuse before reloading the first page.
+It checks that these reads preserve an unsaved note and do not mutate coordination
+state. The fence case does not perform a database backup/restore. Missing
 schema or the selected operator endpoint fails; no successful Cairn reply is
 substituted. It compares complete retained coordination rows around browser reads.
 
 This scope does not yet establish complete coordination acceptance. Its report
-lists pending native supported-notice lifecycle/pagination, restore/privacy,
-delayed-reply/refusal and timed-read cases. Supported quiet-notice setup must reuse
+lists pending native supported-notice lifecycle/pagination, privacy and complete
+native restore behavior. Supported quiet-notice setup must reuse
 the verified native fixture's physically activated launch/session binding; no
 direct SQL binding or queue insertion is permitted. The native fixture callback
 and backend composition are pending. Do not report this draft as runtime-tested
