@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"testing"
 	"time"
@@ -357,7 +356,9 @@ func (f *eventScalingScenario) assertOwnerRateBound(rateResults <-chan scalingRo
 	}
 	// One initial token plus elapsed refill is an upper bound, independent
 	// of scheduling and how many session or correlation UUIDs were created.
-	allowance := 1 + int(math.Ceil(rateDuration.Seconds()))
+	// The measured window contains every publication, so only whole elapsed
+	// refill tokens can fund an additional root.
+	allowance := 1 + int(rateDuration/time.Second)
 	if rateAccepted == 0 || rateAccepted > allowance || rateRefused == 0 {
 		f.t.Fatalf("owner rate reset through fresh roots/sessions: accepted=%d refused=%d elapsed=%s allowance=%d", rateAccepted, rateRefused, rateDuration, allowance)
 	}
