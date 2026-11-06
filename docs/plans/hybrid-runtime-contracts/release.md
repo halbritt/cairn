@@ -117,6 +117,12 @@ R-01 also supplies the nonempty managed semantic-service architecture/ABI/CPU
 inventory consumed by S-04. Separate positive managed targets from client-only
 platform observations and inspection gaps; incomplete effective CPU/kernel or
 loaded-library observations cannot become a shared default qualification class.
+Record the new invalid-code preflight consequence separately: exit 1 has no
+native-prompt veto, so reserved wake text may reach the model without required
+context. The wake's report-and-stop instruction is the remaining guard on that
+path. Root accepted this specification policy; it is not an observed installed
+result or permission to claim native refusal. R-01 keeps that expected row and
+its missing live observation explicit.
 An unreviewed live legacy selection blocks its migration; frozen trials retain
 their original executors and pins. Unknown or
 unobserved entries remain explicit. Agy memory and each harness's idle wake,
@@ -213,7 +219,9 @@ surface; they are outside receipt hashes and do not publish a new selection.
 No `/2` descriptor, frozen trial or cached legacy callback is edited in place.
 
 This temporary launch covers Codex/Claude memory and coordination **hooks** and
-their issued inbox commands. The retained watch, recovery and inspection modes
+their issued inbox commands, including compact operations below. The retained
+watch, recovery and offline/operator inspection modes, such as
+`inspect-held-refusal`,
 remain on their explicit retained `/2` route until J-05/R-06 qualifies their
 replacement. They are not silently redirected from an unsupported compatibility
 invocation. `codex_queue.py:_open` lazily imports `websocket` for those retained
@@ -244,13 +252,28 @@ route and its source stdin. Wrap an actual Python read/helper with `V`; invent
 no Python read verb. No shell evaluation, file-path reopening or implicit legacy
 dispatch implements this handoff.
 
+Root's `8f7357b`/`88b77474` closure also covers `inbox_context` compact, fallback
+and next-item cues. New compatibility cues use
+`V + ["--", "inbox", "compact", OP, HANDLE, ...]` for **read, inspect, settle and
+advance**, instead of the bare global `cairn-inbox` launcher. Compact inspect
+renews a lease; it is an issued-session operation, not the excluded offline
+operator inspection. Before loading a handle-derived config or performing an
+existing effect, bind the resolved root/config/context to `V`'s selected
+configuration. `CAIRN_INBOX_ROOT` is a lookup input, not authority to select
+another profile. Preserve TTL, owner/lease, causation, journal and native-turn
+rules and the original command stdin/deadlines. Old `/2` bare launchers,
+handles and issued argv stay untouched and usable.
+
 The new staged compatibility members and aliases refuse direct-path execution
 before loading any adjacent loader, manifest or local implementation module.
 Foundation supplies this entry guard and the checked context; Release installs
 those exact bytes. This rule leaves the separate immutable `/2` copies and
-already-issued `/2` commands executable. F-04's narrow caller slot must include
-the trusted argv-prefix plumbing at these two emission sites, sequenced with
-Coordination before code; it transfers no journal or native-session policy.
+already-issued `/2` commands executable. Root's F-B3 slot includes
+`inbox_handoff` wrapper construction, `inbox_cue_text` drain rendering,
+`inbox_context` compact/fallback/next-cue rendering and the minimum
+checked-selection plumbing at `compact_inbox_command` config resolution.
+Sequence that slot with Coordination before code. It transfers no grammar,
+claim, journal, native-session or watcher transition policy.
 
 ### Checked execution, admission and disabled staging
 
@@ -295,6 +318,8 @@ and complete Foundation's pinned/running Go-image checks before state effects.
 Issued inbox modes have no hook-admission bypass: authenticate their selected
 code, binding and config context before their existing command authority checks
 and effects. They do not repeat the hook's activation operation.
+The prefix's skip/false result still returns to the retained frontend's
+ordinary policy; it is not a whole-hook skip.
 
 The explicit compatibility loader supplies the checked bundle and invocation
 context to every retained role. In that context, `InboxBinding.load_bridge`,
@@ -405,6 +430,9 @@ actual R-01 installed row: memory recall 13 seconds and listed capture 150;
 Claude/Codex coordination 2 for `SessionEnd`/`Interrupt`/`PostToolUse`, otherwise
 its listed 15-second events. Do not invent support or enlarge host deadlines.
 Measure verifier/hash/startup/activation overhead against those exact budgets.
+This is the hook deadline only. V-launched issued inbox/compact commands keep
+their existing command and intent-lock deadlines, need no hook-timeout row and
+perform no activation. Do not impose the hook timer on them.
 
 The child decodes raw event/config data with Foundation's lossless isolated-
 interpreter source profile, not Go's default JSON coercions. Preserve case-
@@ -424,6 +452,11 @@ no duplicate Python activation mutation and real retained-handler continuation;
 an activation-only command or successful no-op wrapper is insufficient.
 Run newly issued completion/ack/response commands as fresh real processes after
 hook activation, preserving context/causation/stdin and checked continuation.
+Run compact read/inspect/settle/advance and the resulting next-item cue through
+the same checked launch. A mismatched resolved config/root/context must refuse
+before effects; keep a legacy `/2` handle/launcher success case. Cover inspect's
+lease renewal without reclassifying it as effect-free inspection. These are
+F-04 source-staged and R-02 actual-installer process fixtures.
 Include a tampered helper/alias and direct-member execution negative so an issued
 command cannot bypass the independent launch. Include config replacement between
 parent and child, changes before downstream
