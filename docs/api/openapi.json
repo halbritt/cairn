@@ -26411,6 +26411,11 @@
     },
     {
       "http_status": 409,
+      "code": "CONFLICT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "DELIVERY_ACTIVE",
       "source": "serveJSON"
     },
@@ -26497,6 +26502,11 @@
     {
       "http_status": 409,
       "code": "POOL_PAUSED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "PROJECT_DISABLED",
       "source": "serveJSON"
     },
     {
@@ -26662,6 +26672,7 @@
     "CHECKPOINT_MISMATCH",
     "CLEANUP_UNCONFIRMED",
     "CLIENT_SETUP_FAILED",
+    "CONFLICT",
     "CUSTODY_CONFLICT",
     "DEADLINE_EXCEEDED",
     "DELIVERY_ACTIVE",
@@ -26688,6 +26699,7 @@
     "POLICY_UNENFORCEABLE",
     "POOL_FULL",
     "POOL_PAUSED",
+    "PROJECT_DISABLED",
     "PROTOCOL_UNSUPPORTED",
     "PURGE_UNRECORDED",
     "RECOVERY_UNINITIALIZED",

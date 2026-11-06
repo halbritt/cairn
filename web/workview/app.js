@@ -13,6 +13,8 @@
   let previousFocus = null;
   let writing = false;
   let refreshTimer = null;
+  let presenceTimer = null;
+  let projectRefreshBlocked = true;
   let currentProjectStatus = "";
   let artifactStatus = "";
   let artifactItemKey = "";
@@ -66,6 +68,7 @@
   function closeDetail() {
     const item = currentItemUUID;
     detailRequest++;
+    clearTimeout(presenceTimer);
     artifactListRequest++;
     artifactHistoryRequest++;
     currentItemUUID = "";
@@ -124,6 +127,7 @@
     if (!currentProject) return;
     clearTimeout(refreshTimer);
     currentProjectStatus = "";
+    updateWorkControls();
     updateArtifactControls();
     const sequence = ++boardRequest;
     const query = new URLSearchParams({ project: currentProject, limit: pageSize, offset: (currentPage - 1) * pageSize });
@@ -139,7 +143,12 @@
       if (!preserveError) message("view-error");
       renderBoard(data);
     } catch (error) {
-      if (sequence === boardRequest) message("view-error", "Could not load work items: " + error.message);
+      if (sequence !== boardRequest) return;
+      message("view-error", "Could not load work items: " + error.message);
+      const freshness = byID("staleness-indicator");
+      const last = freshness.dataset.project === currentProject ? freshness.dataset.lastSuccessfulRefresh : "";
+      freshness.className = "badge stale";
+      freshness.textContent = "Freshness unknown; last read failed" + (last ? "; last successful refresh " + dateLabel(last) : "");
     }
   }
 
@@ -153,6 +162,8 @@
     const failed = project.last_refresh_error || items.some(item => item.refresh_error);
     const stale = project.is_stale || items.some(item => item.is_stale);
     const last = project.last_successful_refresh_at;
+    freshness.dataset.project = currentProject;
+    freshness.dataset.lastSuccessfulRefresh = last || "";
     freshness.className = "badge";
     if (project.auth_rejected) {
       freshness.textContent = "Plane access restricted";
@@ -172,11 +183,13 @@
     const inFlightExpires = Date.parse(project.refresh_inflight_expires_at);
     const now = Date.now();
     const limited = nextAllowed > now;
-    byID("refresh-btn").disabled = Boolean(project.refresh_in_flight || limited);
+    projectRefreshBlocked = Boolean(project.refresh_in_flight || limited);
+    updateWorkControls();
     message("refresh-availability", project.refresh_in_flight
       ? "A refresh is running. This view shows the last saved snapshot."
       : limited ? "Refresh available after " + dateLabel(project.next_refresh_allowed_at) + "." : "");
-    const staleAt = last ? Date.parse(last) + 120000 : NaN;
+    const staleAt = last && !stale && !failed && !project.auth_rejected
+      ? Math.max(now + 1000, Date.parse(last) + 120000) : NaN;
     const deadlines = [nextAllowed, project.refresh_in_flight ? inFlightExpires : NaN, staleAt].filter(value => value > now);
     if (deadlines.length) refreshTimer = setTimeout(loadBoard, Math.max(1000, Math.min(60000, Math.min(...deadlines) - now + 100)));
     const filtered = byID("filter-state-group").value || byID("filter-blocker-only").checked;
@@ -214,6 +227,33 @@
     }
   }
 
+  function updateWorkControls() {
+    const admitted = currentProjectStatus === "active";
+    byID("refresh-btn").disabled = writing || !admitted || projectRefreshBlocked;
+    const label = admitted ? "" : currentProjectStatus
+      ? `Project ${currentProjectStatus}. Refresh, new associations and annotation changes are disabled. Retained details and association removal remain available.`
+      : "Project admission has not been checked. Refresh and new work changes are unavailable.";
+    message("project-admission", label);
+    message("detail-admission", label);
+    for (const node of document.querySelectorAll("#add-assoc-btn, #add-progress-btn, #add-blocker-btn, .edit-progress-btn, .save-progress-btn, .resolve-blocker-btn")) {
+      node.disabled = writing || !admitted || node.dataset.guardInvalid === "true";
+    }
+  }
+
+  function updatePresenceLabels() {
+    clearTimeout(presenceTimer);
+    const now = Date.now(), deadlines = [];
+    for (const node of document.querySelectorAll(".session-presence-status")) {
+      const expiry = Date.parse(node.dataset.expiresAt);
+      node.textContent = node.dataset.historical === "true" ? "Historical execution"
+        : node.dataset.online !== "true" ? "Offline or expired at last read"
+        : !Number.isFinite(expiry) ? "Presence expiry unavailable"
+        : expiry <= now ? "Last observed presence expired" : "Online at last read";
+      if (node.dataset.online === "true" && expiry > now) deadlines.push(expiry);
+    }
+    if (deadlines.length) presenceTimer = setTimeout(updatePresenceLabels, Math.max(100, Math.min(60000, Math.min(...deadlines) - now + 100)));
+  }
+
   function renderLinkedState(detail) {
     byID("sessions-section").hidden = !(detail.sessions || []).length;
     byID("modal-sessions").replaceChildren();
@@ -222,12 +262,13 @@
       row.className = "session-item";
       row.dataset.agentId = session.agent_id;
       row.dataset.executionId = session.execution_id;
-      const status = session.is_historical ? "Historical execution" : session.online ? "Online" : "Offline or expired";
-      row.innerHTML = `<strong>${escapeHTML(status)}</strong>
+      row.innerHTML = `<strong class="session-presence-status" data-historical="${session.is_historical === true}" data-online="${session.online === true}" data-expires-at="${escapeHTML(session.expires_at || "")}"></strong>
         <div>${escapeHTML(session.task_summary || "No selected summary")}</div>
+        <span class="hint">Read at ${escapeHTML(dateLabel(new Date().toISOString()))}. Presence expiry: <time class="session-expiry" datetime="${escapeHTML(session.expires_at || "")}">${escapeHTML(dateLabel(session.expires_at))}</time>.</span>
         <span class="hint">${escapeHTML(session.agent_id)}:${escapeHTML(session.execution_id)}</span>`;
       byID("modal-sessions").append(row);
     }
+    updatePresenceLabels();
     byID("requests-section").hidden = !(detail.requests || []).length;
     byID("modal-requests").replaceChildren();
     for (const request of detail.requests || []) {
@@ -301,6 +342,14 @@
       const detail = await apiFetch("/api/work/item?" + new URLSearchParams({ project, item: itemUUID }));
       if (sequence !== detailRequest || project !== currentProject) return;
       const newlyOpened = byID("detail-modal").hidden;
+      const drafts = new Map();
+      if (!newlyOpened && currentItemUUID === itemUUID) {
+        for (const input of document.querySelectorAll(".edit-progress-input:not([hidden])")) {
+          const row = input.closest(".annot-item");
+          drafts.set(row.dataset.annotationId, { value: input.value, revision: input.dataset.expectedRevision,
+            focused: document.activeElement === input, start: input.selectionStart, end: input.selectionEnd });
+        }
+      }
       if (newlyOpened) previousFocus = document.activeElement;
       currentItemUUID = itemUUID;
       const itemKey = JSON.stringify([project, itemUUID]);
@@ -317,7 +366,8 @@
       byID("modal-title").textContent = detail.item.title;
       byID("modal-meta").innerHTML = `<div><strong>Identifier:</strong> ${escapeHTML(detail.item.identifier)}</div>
         <div><strong>UUID:</strong> ${escapeHTML(detail.item.plane_item_uuid)}</div>
-        <div><strong>Plane state:</strong> ${escapeHTML(detail.item.state_name || detail.item.state_group || "Unavailable")}</div>`;
+        <div><strong>Plane state:</strong> ${escapeHTML(detail.item.state_name || detail.item.state_group || "Unavailable")}</div>
+        <div class="item-assignees"><strong>Plane assignees:</strong> ${escapeHTML((detail.item.assignee_names || []).join(", ") || "None returned")}</div>`;
       if (detail.item.source_url) {
         const url = new URL(detail.item.source_url);
         if (url.protocol === "https:" || url.protocol === "http:") {
@@ -368,15 +418,28 @@
           const edit = actions.querySelector(".edit-progress-btn");
           const input = actions.querySelector("input");
           const save = actions.querySelector(".save-progress-btn");
-          input.value = annotation.body;
-          edit.disabled = !guarded;
+          const draft = drafts.get(annotation.annotation_id);
+          input.value = draft ? draft.value : annotation.body;
+          input.dataset.expectedRevision = draft ? draft.revision : String(annotation.revision);
+          edit.dataset.guardInvalid = String(!guarded);
+          save.dataset.guardInvalid = String(!guarded || Boolean(draft && draft.revision !== String(annotation.revision)));
+          if (draft) {
+            edit.hidden = true;
+            input.hidden = save.hidden = false;
+            if (save.dataset.guardInvalid === "true") {
+              const warning = document.createElement("p");
+              warning.className = "hint";
+              warning.textContent = "This progress note changed. Your draft is preserved; inspect the current note before starting a new edit.";
+              actions.append(warning);
+            }
+          }
           edit.addEventListener("click", () => {
             edit.hidden = true;
             input.hidden = save.hidden = false;
             input.focus();
           });
           save.addEventListener("click", () => {
-            if (input.value.trim()) mutate("progress/edit", { annotation_id: annotation.annotation_id, text: input.value.trim(), expected_revision: annotation.revision });
+            if (input.value.trim()) mutate("progress/edit", { annotation_id: annotation.annotation_id, text: input.value.trim(), expected_revision: Number(input.dataset.expectedRevision) }, () => { input.hidden = true; });
           });
           row.append(actions);
         } else if (annotation.kind === "blocker" && annotation.state === "open") {
@@ -384,15 +447,36 @@
           button.type = "button";
           button.className = "resolve-blocker-btn";
           button.textContent = "Resolve blocker";
-          button.disabled = !guarded;
+          button.dataset.guardInvalid = String(!guarded);
           button.addEventListener("click", () => mutate("blocker/resolve", { annotation_id: annotation.annotation_id, expected_revision: annotation.revision }));
           row.append(button);
         }
         annotationList.append(row);
       }
+      for (const [id, draft] of drafts) {
+        if ([...annotationList.querySelectorAll(".edit-progress-input")].some(input => input.closest(".annot-item").dataset.annotationId === id)) continue;
+        const row = [...annotationList.children].find(node => node.dataset.annotationId === id) || document.createElement("li");
+        row.className = "annot-item";
+        row.dataset.annotationId = id;
+        const label = document.createElement("label");
+        label.textContent = "The selected note is no longer editable. Your draft is preserved for copying.";
+        const input = document.createElement("input");
+        input.className = "edit-progress-input";
+        input.dataset.expectedRevision = draft.revision;
+        input.value = draft.value;
+        input.readOnly = true;
+        label.append(input);
+        row.append(label);
+        if (!row.isConnected) annotationList.append(row);
+      }
+      updateWorkControls();
       byID("detail-modal").hidden = false;
       syncModalState();
       if (newlyOpened) byID("modal-close").focus();
+      for (const input of document.querySelectorAll(".edit-progress-input:not([hidden])")) {
+        const draft = drafts.get(input.closest(".annot-item").dataset.annotationId);
+        if (draft?.focused) { input.focus(); input.setSelectionRange(draft.start, draft.end); }
+      }
       await loadItemArtifacts();
     } catch (error) {
       message(byID("detail-modal").hidden ? "view-error" : "detail-error", "Could not load item: " + error.message);
@@ -427,6 +511,7 @@
     } finally {
       restoreControls();
       writing = false;
+      updateWorkControls();
     }
   }
 

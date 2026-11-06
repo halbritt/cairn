@@ -603,6 +603,9 @@ func workCommand(ctx context.Context, store *core.Store, args []string, input io
 			return nil, invalid(fmt.Sprintf("unknown work blocker subcommand %q", args[1]))
 		}
 
+	case "artifact":
+		return workArtifactCommand(ctx, store, args[1:])
+
 	case "metadata":
 		if len(args) < 2 {
 			return nil, invalid("work metadata requires purge or exclude")

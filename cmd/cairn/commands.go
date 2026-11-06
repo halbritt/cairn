@@ -58,7 +58,7 @@ Everyday commands:
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST | proposal PROPOSAL_UUID | evidence EVIDENCE_UUID | refusal REFUSAL_UUID
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--task TASK] [--run RUN] [--limit N] [--offset N] [--days N] REPO | run-report [--policy-rev REVISION_UUID|local-loop/1] [--task TASK] [--run RUN] [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
-  work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work metadata | work serve
+  work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work artifact | work metadata | work features | work serve
 
 JSON commands (read one request from stdin):
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)

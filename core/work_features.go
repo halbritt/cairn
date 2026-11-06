@@ -336,3 +336,7 @@ func (s *Store) checkWorkReadableTx(ctx context.Context, tx pgx.Tx) error {
 func (s *Store) checkWorkFeatureTx(ctx context.Context, tx pgx.Tx) error {
 	return s.checkWorkAdmissionTx(ctx, tx)
 }
+
+func (s *Store) checkWorkArtifactFeatureTx(ctx context.Context, tx pgx.Tx) error {
+	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-artifacts/1")
+}

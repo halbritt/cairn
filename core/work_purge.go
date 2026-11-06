@@ -253,9 +253,13 @@ func ReapplyExclusions(ctx context.Context, tx pgx.Tx) error {
 	var exclusions []exRec
 	for rows.Next() {
 		var e exRec
-		if err := rows.Scan(&e.bindingID, &e.fieldName, &e.pattern); err == nil {
-			exclusions = append(exclusions, e)
+		if err := rows.Scan(&e.bindingID, &e.fieldName, &e.pattern); err != nil {
+			return err
 		}
+		exclusions = append(exclusions, e)
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	rows.Close()
 
@@ -264,6 +268,34 @@ func ReapplyExclusions(ctx context.Context, tx pgx.Tx) error {
 			return err
 		}
 	}
+
+	// Reapply work artifact purge fences across restores
+	_, err = tx.Exec(ctx, `
+		DELETE FROM cairn.work_artifact a
+		USING cairn.work_artifact_purge_fence f
+		WHERE a.collection = f.collection AND (a.artifact_id = f.artifact_id OR a.canonical_key = f.canonical_key)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE cairn.mutation_request m
+		SET response = NULL, ordinary_deleted = true
+		FROM cairn.work_artifact_purge_fence f
+		WHERE m.operation IN ('work-artifact-register', 'work-artifact-link', 'work-artifact-unlink')
+		  AND m.response IS NOT NULL
+		  AND (
+		    jsonb_path_exists(m.response, '$.**.artifact_id ? (@ == $id)', jsonb_build_object('id', f.artifact_id::text))
+		    OR (
+		      m.response->>'collection' = f.collection
+		      AND jsonb_path_exists(m.response, '$.**.canonical_key ? (@ == $key)', jsonb_build_object('key', f.canonical_key))
+		    )
+		  )
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
