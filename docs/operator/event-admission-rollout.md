@@ -102,10 +102,19 @@ Pressure and fanout show outstanding work, queue ages, per-event recipient count
 the publications and delivery fanout of the last 60 seconds. Preview reports which
 count-based dimensions would refuse a publication right now.
 
-Observe mode keeps no shadow rate accounting. It never debits token buckets, never
-refuses and creates no state that a later enforce run would inherit. The 60-second
-counts are observed rates, not bucket balances, so the rate forecast stays
-`unavailable` in observe. Do not infer an exact rate refusal from these averages.
+Observe mode keeps no shadow rate accounting. It never creates or debits token buckets,
+never refuses and creates no state that a later enforce run would inherit. The
+60-second counts are observed rates, not bucket balances; do not infer a rate refusal
+from them. `rate_evaluation` reports what real rate state exists:
+
+| Value | Meaning |
+| --- | --- |
+| `uninitialized` | No current-generation bucket exists for the identity, so rate dimensions are not forecast (preview lists `retained_rate_state` under `unevaluated`). |
+| `retained_buckets` | Real balances exist, for example from an earlier enforced period; they are read without debiting, and preview may list rate dimensions in `would_refuse`. |
+| `disabled` | Preview with a disabled policy runs no forecast. |
+| `unavailable` | The rate tables are absent from this store. |
+
+A collection that has only ever been observed is `uninitialized`.
 
 Size limits from three sources: the workload you declare in the policy, the counts you
 observe here, and disposable test runs with enforcement on. Record why each value was
@@ -184,10 +193,12 @@ declaring it retired:
 
 - set every collection to `disabled`;
 - let accepted work settle or end through its own contract, then check
-  `event-pressure-collection` until every reservoir is zero: pending and leased
-  deliveries, queued quiet notices, unassigned pool requests, pending schedule
-  occurrences, waiting waits and the pending wait outbox. Expire, cancel or flush
-  through the supported commands; never delete rows;
+  `event-pressure-collection` until every collection reservoir is zero:
+  `pending_deliveries`, `leased_deliveries` (which include native holds and expired
+  leases), `queued_organic_notices`, `unassigned_pool_requests`, `pending_schedules`,
+  `waiting_terminal_notices` (waiting waits) and `pending_wait_outbox`. These are
+  collection totals, not paged recipient rows. Expire, cancel or flush through the
+  supported commands; never delete rows;
 - check `event-closures-collection` until counts are available, `reserved` is zero
   and `outstanding` is zero, so no reserved closure or undelivered consumed reply or
   notice remains;

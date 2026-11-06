@@ -18,6 +18,7 @@ policy restore behavior; the wrapper reports it as an incomplete subset.
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import time
 import uuid
 
 from disposable_host import require
@@ -173,6 +174,21 @@ class EventScalingRestoreCase:
                                          "deadline": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()}
         self.last_request = payload
         return self.agent("requester", "event-publish", payload, expected=expected)
+
+    def producer_refilled(self, label):
+        """Whether both of a session's producer buckets now hold one whole token (DB time)."""
+        inbox = self.sessions[label]["inbox"]
+        ready = self.sql("SELECT COALESCE(bool_and(tokens_nano + extract(epoch FROM clock_timestamp()-refill_at)"
+                         f"*{PRODUCER_RATE['per_second']}*{NANO} >= {NANO}), true) FROM cairn.agent_event_rate_bucket "
+                         f"WHERE repo='{self.host.repo}' AND identity_kind='producer' AND identity='{inbox}'")
+        return ready.strip() == "t"
+
+    def wait_producer_refill(self, label, timeout=15):
+        # Buckets refill only with elapsed database time; wait for it, bounded.
+        deadline = time.monotonic() + timeout
+        while not self.producer_refilled(label):
+            require(time.monotonic() < deadline, label + " producer bucket did not refill with database time")
+            time.sleep(0.2)
 
     def claim(self, label, event):
         delivery = self.agent(label, "event-next")["delivery"]
@@ -340,7 +356,28 @@ class EventScalingRestoreCase:
         require(counts["available"] is True and counts["restore_generation"] == generation,
                 "reconciled closure counts are unavailable")
         accepted_body = "New obligation after reconciliation."
-        accepted = self.request(accepted_body)
+        rate_refusal = None
+        if self.mode == "enforce":
+            # The fence left the requester's producer buckets empty with a fence-time
+            # anchor. Until one token of database time has passed, the publication
+            # is refused on a producer rate dimension without any side effect, and
+            # the same request UUID is admitted after the refill.
+            before_events, before_buckets = self.event_count(), self.buckets()
+            envelope = self.request(accepted_body, expected=None)
+            if envelope["ok"]:
+                accepted = envelope["data"]
+            else:
+                rate_refusal = envelope.get("admission")
+                require(envelope["status"] == "EVENT_ADMISSION_REFUSED" and rate_refusal
+                        and rate_refusal["dimension"] in ("producer_publications", "producer_deliveries"),
+                        "first post-restore publication refused for a reason other than producer rate: "
+                        + json.dumps({k: envelope.get(k) for k in ("status", "admission")}))
+                require(self.event_count() == before_events and self.buckets() == before_buckets,
+                        "rate-refused publication left an event or changed a bucket")
+                self.wait_producer_refill("requester")
+                accepted = self.agent("requester", "event-publish", self.last_request)
+        else:
+            accepted = self.request(accepted_body)
         require(self.closure(accepted["event_id"])[0]["restore_generation"] == generation,
                 "new obligation did not reserve under the current generation")
         self.settle("responder", self.claim("responder", accepted))
@@ -371,7 +408,8 @@ class EventScalingRestoreCase:
             first = self.bucket("producer", self.sessions["latecomer"]["inbox"], "publication")
             require(first["generation"] == generation and first["tokens_nano"] == (PRODUCER_RATE["burst"] - 1) * NANO,
                     "absent producer key did not receive exactly the bounded initial burst")
-            rate_state = {"requester_tokens_nano": producer["tokens_nano"], "latecomer_tokens_nano": first["tokens_nano"]}
+            rate_state = {"requester_tokens_nano": producer["tokens_nano"], "latecomer_tokens_nano": first["tokens_nano"],
+                          "first_post_restore_refusal": rate_refusal}
         else:
             require(self.buckets() == [], "observe mode created or debited a rate bucket after restore")
         self.record("restored_state", {
@@ -386,6 +424,8 @@ class EventScalingRestoreCase:
         accepted = self.events["after_reconcile"]
         result = ref(self.source("responder", "Reply to the post-reconciliation obligation."))
         reply = self.reply(accepted, result)
+        if self.mode == "enforce":
+            self.wait_producer_refill("requester")
         fresh = self.request("Fresh grouped round in the new generation.", grouped=True)
         group_result = ref(self.settle("responder", self.claim("responder", fresh),
                                        result="Fresh grouped result.")["result"])
