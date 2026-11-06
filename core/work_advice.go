@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,22 +20,22 @@ import (
 
 // WorkAdviceJob records an advice generation execution attempt.
 type WorkAdviceJob struct {
-	JobUUID             uuid.UUID       `json:"job_uuid"`
-	BindingID           uuid.UUID       `json:"binding_id"`
-	PlaneItemUUID       uuid.UUID       `json:"plane_item_uuid"`
-	Caller              string          `json:"caller"`
-	ProfileName         string          `json:"profile_name"`
-	ModelRoute          string          `json:"model_route"`
-	TemplateVersion     int             `json:"template_version"`
-	RequestUUID         uuid.UUID       `json:"request_uuid"`
-	InputManifest       json.RawMessage `json:"input_manifest,omitempty"`
-	InputManifestDigest string          `json:"input_manifest_digest"`
-	InputPayloadDigest  string          `json:"input_payload_digest"`
-	Status              string          `json:"status"` // pending, running, completed, failed, timed_out, expired, cleanup_unconfirmed, uncertain
-	DeadlineSeconds     int             `json:"deadline_seconds"`
-	StartedAt           time.Time       `json:"started_at"`
-	FinishedAt          *time.Time      `json:"finished_at,omitempty"`
-	ErrorCode           string          `json:"error_code,omitempty"`
+	JobUUID                uuid.UUID       `json:"job_uuid"`
+	BindingID              uuid.UUID       `json:"binding_id"`
+	PlaneItemUUID          uuid.UUID       `json:"plane_item_uuid"`
+	Caller                 string          `json:"caller"`
+	ProfileName            string          `json:"profile_name"`
+	ModelRoute             string          `json:"model_route"`
+	TemplateVersion        int             `json:"template_version"`
+	RequestUUID            uuid.UUID       `json:"request_uuid"`
+	InputManifest          json.RawMessage `json:"input_manifest,omitempty"`
+	InputManifestDigest    string          `json:"input_manifest_digest"`
+	InputPayloadDigest     string          `json:"input_payload_digest"`
+	Status                 string          `json:"status"` // pending, running, completed, failed, timed_out, expired, cleanup_unconfirmed, uncertain
+	DeadlineSeconds        int             `json:"deadline_seconds"`
+	StartedAt              time.Time       `json:"started_at"`
+	FinishedAt             *time.Time      `json:"finished_at,omitempty"`
+	ErrorCode              string          `json:"error_code,omitempty"`
 	ProcessIdentity        json.RawMessage `json:"process_identity,omitempty"`
 	ExpiresAt              time.Time       `json:"expires_at"`
 	InputSnapshot          json.RawMessage `json:"input_snapshot,omitempty"`
@@ -183,10 +185,13 @@ func (s *Store) GetAdviceControl(ctx context.Context) (*WorkAdviceControl, error
 	return &ctrl, nil
 }
 
-// SetAdviceControl updates the generation and apply control status.
-func (s *Store) SetAdviceControl(ctx context.Context, genEnabled, applyEnabled bool) (*WorkAdviceControl, error) {
+// PatchAdviceControl atomically updates the generation and/or apply control status.
+func (s *Store) PatchAdviceControl(ctx context.Context, genEnabled, applyEnabled *bool) (*WorkAdviceControl, error) {
 	if err := s.requireOperator(); err != nil {
 		return nil, err
+	}
+	if genEnabled == nil && applyEnabled == nil {
+		return nil, failure("INVALID_REQUEST", "at least one control field is required")
 	}
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -197,10 +202,10 @@ func (s *Store) SetAdviceControl(ctx context.Context, genEnabled, applyEnabled b
 	var ctrl WorkAdviceControl
 	err = tx.QueryRow(ctx, `
 		INSERT INTO cairn.work_advice_control (singleton, generation_enabled, apply_enabled, updated_at)
-		VALUES (true, $1, $2, clock_timestamp())
+		VALUES (true, COALESCE($1::boolean, true), COALESCE($2::boolean, true), clock_timestamp())
 		ON CONFLICT (singleton) DO UPDATE
-		SET generation_enabled = EXCLUDED.generation_enabled,
-		    apply_enabled = EXCLUDED.apply_enabled,
+		SET generation_enabled = COALESCE($1::boolean, cairn.work_advice_control.generation_enabled),
+		    apply_enabled = COALESCE($2::boolean, cairn.work_advice_control.apply_enabled),
 		    updated_at = clock_timestamp()
 		RETURNING generation_enabled, apply_enabled, updated_at
 	`, genEnabled, applyEnabled).Scan(&ctrl.GenerationEnabled, &ctrl.ApplyEnabled, &ctrl.UpdatedAt)
@@ -213,6 +218,10 @@ func (s *Store) SetAdviceControl(ctx context.Context, genEnabled, applyEnabled b
 	return &ctrl, nil
 }
 
+// SetAdviceControl updates the generation and apply control status.
+func (s *Store) SetAdviceControl(ctx context.Context, genEnabled, applyEnabled bool) (*WorkAdviceControl, error) {
+	return s.PatchAdviceControl(ctx, &genEnabled, &applyEnabled)
+}
 
 // CreateAdviceJob registers a new advice generation attempt in PostgreSQL, enforcing launch intent uniqueness.
 func (s *Store) CreateAdviceJob(ctx context.Context, job *WorkAdviceJob) error {
@@ -704,11 +713,14 @@ func (s *Store) FinishAdviceJobWithProcessIdentity(ctx context.Context, jobUUID 
 	if tag.RowsAffected() == 0 {
 		return failure("NOT_FOUND", "advice job not found")
 	}
-	_, _ = tx.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 		UPDATE cairn.work_advice_request_tombstone
 		SET terminal_status = $2, error_code = $3, updated_at = clock_timestamp()
 		WHERE job_uuid = $1
 	`, jobUUID, status, errorCode)
+	if err != nil {
+		return err
+	}
 
 	return tx.Commit(ctx)
 }
@@ -717,7 +729,6 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 	if manifest == nil {
 		return failure("INVALID_REQUEST", "missing input manifest for revalidation")
 	}
-
 
 	// 1. Re-verify restore generation
 	var currentRestoreGen int64
@@ -770,6 +781,24 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 	var expectedID *uuid.UUID = manifest.PreconditionProgressID
 	expectedRev := manifest.PreconditionProgressRevision
 
+	type expLink struct {
+		linkID   uuid.UUID
+		revision int64
+		state    string
+	}
+	type linkKey struct {
+		revID uuid.UUID
+		role  string
+	}
+	expectedLinks := make(map[linkKey]expLink)
+	for _, cl := range manifest.CapturedArtifactLinks {
+		expectedLinks[linkKey{revID: cl.RevisionID, role: cl.Role}] = expLink{
+			linkID:   cl.LinkID,
+			revision: cl.Revision,
+			state:    cl.State,
+		}
+	}
+
 	if len(proposalUUID) > 0 && proposalUUID[0] != uuid.Nil {
 		receiptRows, err := tx.Query(ctx, `
 			SELECT output_revisions, undone, compensating_revisions
@@ -794,7 +823,8 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 					_ = json.Unmarshal(outRaw, &outMap)
 				}
 				for _, info := range outMap {
-					if t, _ := info["type"].(string); t == "progress" {
+					t, _ := info["type"].(string)
+					if t == "progress" {
 						if aIDStr, ok := info["annotation_id"].(string); ok {
 							if aID, err := uuid.Parse(aIDStr); err == nil {
 								if rFloat, ok := info["revision"].(float64); ok {
@@ -802,6 +832,19 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 									expectedID = &aID
 									expectedRev = int64(rFloat)
 								}
+							}
+						}
+					} else if t == "artifact_linked" {
+						linkIDStr, _ := info["link_id"].(string)
+						linkID, _ := uuid.Parse(linkIDStr)
+						revIDStr, _ := info["revision_id"].(string)
+						revID, _ := uuid.Parse(revIDStr)
+						role, _ := info["role"].(string)
+						if rFloat, ok := info["revision"].(float64); ok && revID != uuid.Nil && role != "" {
+							expectedLinks[linkKey{revID: revID, role: role}] = expLink{
+								linkID:   linkID,
+								revision: int64(rFloat),
+								state:    "active",
 							}
 						}
 					}
@@ -813,7 +856,8 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 				}
 				hasRestored := false
 				for _, compInfo := range compMap {
-					if t, _ := compInfo["type"].(string); t == "progress_restored" {
+					t, _ := compInfo["type"].(string)
+					if t == "progress_restored" {
 						if aIDStr, ok := compInfo["annotation_id"].(string); ok {
 							if aID, err := uuid.Parse(aIDStr); err == nil {
 								if rFloat, ok := compInfo["revision"].(float64); ok {
@@ -821,6 +865,20 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 									expectedID = &aID
 									expectedRev = int64(rFloat)
 									hasRestored = true
+								}
+							}
+						}
+					} else if t == "artifact_restored" {
+						linkIDStr, _ := compInfo["link_id"].(string)
+						linkID, _ := uuid.Parse(linkIDStr)
+						rFloat, _ := compInfo["revision"].(float64)
+						restState, _ := compInfo["restored_state"].(string)
+						if linkID != uuid.Nil {
+							for k, el := range expectedLinks {
+								if el.linkID == linkID {
+									el.revision = int64(rFloat)
+									el.state = restState
+									expectedLinks[k] = el
 								}
 							}
 						}
@@ -858,6 +916,54 @@ func (s *Store) verifyAdviceManifestTx(ctx context.Context, tx pgx.Tx, bindingID
 		}
 	} else {
 		return err
+	}
+
+	// Re-verify candidate artifact links
+	if len(manifest.CandidateRevisionIDs) > 0 {
+		cRows, err := tx.Query(ctx, `
+			SELECT link_id, revision, revision_id, role, state
+			FROM cairn.work_artifact_link
+			WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = ANY($3)
+			FOR SHARE
+		`, bindingID, planeItemUUID, manifest.CandidateRevisionIDs)
+		if err != nil {
+			return err
+		}
+		defer cRows.Close()
+
+		liveLinks := make(map[linkKey]expLink)
+		for cRows.Next() {
+			var lID, rID uuid.UUID
+			var rev int64
+			var role, st string
+			if err := cRows.Scan(&lID, &rev, &rID, &role, &st); err != nil {
+				return err
+			}
+			liveLinks[linkKey{revID: rID, role: role}] = expLink{
+				linkID:   lID,
+				revision: rev,
+				state:    st,
+			}
+		}
+		cRows.Close()
+		if err := cRows.Err(); err != nil {
+			return err
+		}
+
+		for k, exp := range expectedLinks {
+			live, ok := liveLinks[k]
+			if !ok {
+				return failure("STALE_OBSERVATION", fmt.Sprintf("candidate artifact link for revision %s role %s was removed after advice generation", k.revID, k.role))
+			}
+			if live.linkID != exp.linkID || live.revision != exp.revision || live.state != exp.state {
+				return failure("STALE_OBSERVATION", fmt.Sprintf("candidate artifact link for revision %s role %s modified after advice generation", k.revID, k.role))
+			}
+		}
+		for k := range liveLinks {
+			if _, ok := expectedLinks[k]; !ok {
+				return failure("STALE_OBSERVATION", fmt.Sprintf("candidate artifact link for revision %s role %s was added after advice generation", k.revID, k.role))
+			}
+		}
 	}
 
 	// 3. Re-verify work item state, cache generation, and refresh observation
@@ -1150,11 +1256,14 @@ func (s *Store) RecordAdviceProposalWithJobCompletion(ctx context.Context, propo
 		return failure("INVALID_STATE", fmt.Sprintf("job %s was not in running state during completion", proposal.JobUUID))
 	}
 
-	_, _ = tx.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 		UPDATE cairn.work_advice_request_tombstone
 		SET terminal_status = 'completed', error_code = NULL, updated_at = clock_timestamp()
 		WHERE job_uuid = $1
 	`, proposal.JobUUID)
+	if err != nil {
+		return err
+	}
 
 	return tx.Commit(ctx)
 }
@@ -1369,6 +1478,16 @@ type WorkAdviceSourceDigest struct {
 	RecordID   uuid.UUID `json:"record_id"`
 	Version    int       `json:"version"`
 	BodySHA256 string    `json:"body_sha256"`
+	ObservedAt time.Time `json:"observed_at"`
+}
+
+// WorkAdviceCapturedLink records captured existing artifact link state for candidate revisions.
+type WorkAdviceCapturedLink struct {
+	LinkID     uuid.UUID `json:"link_id"`
+	Revision   int64     `json:"revision"`
+	RevisionID uuid.UUID `json:"revision_id"`
+	Role       string    `json:"role"`
+	State      string    `json:"state"`
 }
 
 // WorkAdvicePolicy records policy configuration for a project.
@@ -1393,6 +1512,83 @@ type WorkAdviceInputManifest struct {
 	PreconditionProgressID       *uuid.UUID               `json:"precondition_progress_id,omitempty"`
 	PreconditionProgressRevision int64                    `json:"precondition_progress_revision,omitempty"`
 	PreconditionProgressPresent  bool                     `json:"precondition_progress_present"`
+	PreconditionProgressBody     string                   `json:"precondition_progress_body,omitempty"`
+	CapturedArtifactLinks        []WorkAdviceCapturedLink `json:"captured_artifact_links,omitempty"`
+	CapturedBlockers             []advice.ExistingBlocker `json:"captured_blockers,omitempty"`
+	Controller                   *advice.ProcessIdentity  `json:"controller,omitempty"`
+}
+
+func captureCurrentProcessIdentity() *advice.ProcessIdentity {
+	pid := os.Getpid()
+	bootData, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return nil
+	}
+	bootID := strings.TrimSpace(string(bootData))
+	statData, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return nil
+	}
+	text := string(statData)
+	open := strings.IndexByte(text, '(')
+	close := strings.LastIndexByte(text, ')')
+	if open < 1 || close <= open {
+		return nil
+	}
+	fields := strings.Fields(text[close+1:])
+	if len(fields) < 20 {
+		return nil
+	}
+	ticks, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return nil
+	}
+	group, _ := strconv.Atoi(fields[2])
+	return &advice.ProcessIdentity{
+		PID:        pid,
+		PGID:       group,
+		StartTicks: ticks,
+		BootID:     bootID,
+	}
+}
+
+func isControllerProvenDead(ctrl *advice.ProcessIdentity) bool {
+	if ctrl == nil || ctrl.PID <= 0 || ctrl.BootID == "" {
+		return false
+	}
+	bootData, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(string(bootData)) != ctrl.BootID {
+		return true
+	}
+	statData, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", ctrl.PID))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		return false
+	}
+	text := string(statData)
+	open := strings.IndexByte(text, '(')
+	close := strings.LastIndexByte(text, ')')
+	if open < 1 || close <= open {
+		return false
+	}
+	fields := strings.Fields(text[close+1:])
+	if len(fields) < 20 {
+		return false
+	}
+	ticks, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return false
+	}
+	state := fields[0]
+	if ticks != ctrl.StartTicks || state == "Z" || state == "X" {
+		return true
+	}
+	return false
 }
 
 // SetWorkAdvicePolicy configures the allowed advice field policy for a work project.
@@ -1732,6 +1928,7 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 				RecordID:   sRef.RecordID,
 				Version:    sRef.Version,
 				BodySHA256: bodyHex,
+				ObservedAt: rec.WrittenAt,
 			})
 			sourceRefs = append(sourceRefs, advice.SnapshotSource{
 				ID:         sRef.RecordID.String(),
@@ -1761,17 +1958,41 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 
 	var progAnnID uuid.UUID
 	var progRev int64
+	var progBody string
 	var progPresent bool
 	err = tx.QueryRow(ctx, `
-		SELECT annotation_id, revision
+		SELECT annotation_id, revision, body
 		FROM cairn.work_annotation
 		WHERE binding_id = $1 AND plane_item_uuid = $2 AND kind = 'progress' AND state = 'active'
 		LIMIT 1
-	`, spec.BindingID, spec.PlaneItemUUID).Scan(&progAnnID, &progRev)
+	`, spec.BindingID, spec.PlaneItemUUID).Scan(&progAnnID, &progRev, &progBody)
 	if err == nil {
 		progPresent = true
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, err
+	}
+
+	var capturedLinks []WorkAdviceCapturedLink
+	if len(spec.CandidateRevisionIDs) > 0 {
+		cRows, qErr := tx.Query(ctx, `
+			SELECT link_id, revision, revision_id, role, state
+			FROM cairn.work_artifact_link
+			WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = ANY($3)
+		`, spec.BindingID, spec.PlaneItemUUID, spec.CandidateRevisionIDs)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
+		defer cRows.Close()
+		for cRows.Next() {
+			var cl WorkAdviceCapturedLink
+			if err := cRows.Scan(&cl.LinkID, &cl.Revision, &cl.RevisionID, &cl.Role, &cl.State); err != nil {
+				return nil, nil, err
+			}
+			capturedLinks = append(capturedLinks, cl)
+		}
+		if err := cRows.Err(); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	manifest := &WorkAdviceInputManifest{
@@ -1785,10 +2006,15 @@ func (s *Store) BuildWorkAdviceSnapshot(ctx context.Context, spec AdviceInputSpe
 		Sources:                     sourceDigests,
 		CandidateRevisionIDs:        spec.CandidateRevisionIDs,
 		PreconditionProgressPresent: progPresent,
+		PreconditionProgressBody:    progBody,
+		CapturedArtifactLinks:       capturedLinks,
+		CapturedBlockers:            existingBlockers,
+		Controller:                  captureCurrentProcessIdentity(),
 	}
 	if progPresent {
 		manifest.PreconditionProgressID = &progAnnID
 		manifest.PreconditionProgressRevision = progRev
+		manifest.PreconditionProgressBody = progBody
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -2804,7 +3030,7 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 				}
 				_, err = tx.Exec(ctx, `
 					UPDATE cairn.work_artifact_link
-					SET state = 'active', revision = $2, rationale = $3, author = $4, updated_at = clock_timestamp()
+					SET state = 'active', revision = $2, rationale = $3, author = $4, asserted_at = clock_timestamp(), removed_at = NULL, removed_by = NULL
 					WHERE link_id = $1
 				`, linkID, newRev, act.Rationale, s.channel.Principal)
 				if err != nil {
@@ -2849,6 +3075,7 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 				"link_id":     linkID.String(),
 				"revision_id": revUUID.String(),
 				"revision":    newRev,
+				"role":        role,
 				"prior_link":  priorLinkInfo,
 			}
 		}
@@ -3214,11 +3441,19 @@ func (s *Store) UndoAdviceApplication(ctx context.Context, requestUUID uuid.UUID
 			if existed {
 				priorState, _ := priorLink["prior_state"].(string)
 				priorRat, _ := priorLink["prior_rationale"].(string)
-				_, err = tx.Exec(ctx, `
-					UPDATE cairn.work_artifact_link
-					SET state = $2, revision = $3, rationale = $4, author = $5, updated_at = clock_timestamp()
-					WHERE link_id = $1
-				`, linkID, priorState, newRev, priorRat, s.channel.Principal)
+				if priorState == "removed" {
+					_, err = tx.Exec(ctx, `
+						UPDATE cairn.work_artifact_link
+						SET state = $2, revision = $3, rationale = $4, author = $5, removed_at = clock_timestamp(), removed_by = $5
+						WHERE link_id = $1
+					`, linkID, priorState, newRev, priorRat, s.channel.Principal)
+				} else {
+					_, err = tx.Exec(ctx, `
+						UPDATE cairn.work_artifact_link
+						SET state = $2, revision = $3, rationale = $4, author = $5, asserted_at = clock_timestamp(), removed_at = NULL, removed_by = NULL
+						WHERE link_id = $1
+					`, linkID, priorState, newRev, priorRat, s.channel.Principal)
+				}
 				if err != nil {
 					return err
 				}
@@ -3455,171 +3690,233 @@ func scrubWorkAdviceForRecordTx(ctx context.Context, tx pgx.Tx, recordID string)
 	}
 	jobRows.Close()
 
-	if len(jobUUIDs) == 0 {
-		_, _ = tx.Exec(ctx, `
-			UPDATE cairn.work_annotation
-			SET body = '[forgotten]'
-			WHERE jsonb_path_exists(source_references, '$[*] ? (@ == $id)', jsonb_build_object('id', $1::text))
-		`, idStr)
-		_, _ = tx.Exec(ctx, `
-			UPDATE cairn.work_annotation_history
-			SET body = '[forgotten]'
-			WHERE jsonb_path_exists(source_references, '$[*] ? (@ == $id)', jsonb_build_object('id', $1::text))
-		`, idStr)
-		return nil
-	}
-
-	// 2. Freeze affected proposal_uuids for these jobs
-	propRows, err := tx.Query(ctx, `
-		SELECT proposal_uuid FROM cairn.work_advice_proposal
-		WHERE job_uuid = ANY($1)
-	`, jobUUIDs)
-	if err != nil {
-		return err
-	}
-	defer propRows.Close()
-
 	var proposalUUIDs []uuid.UUID
-	for propRows.Next() {
-		var id uuid.UUID
-		if err := propRows.Scan(&id); err != nil {
-			return err
-		}
-		proposalUUIDs = append(proposalUUIDs, id)
-	}
-	propRows.Close()
-
-	// 3. Scrub input_snapshot on exact job_uuids, retaining structural dependency facts in input_manifest
-	_, err = tx.Exec(ctx, `
-		UPDATE cairn.work_advice_job
-		SET input_snapshot = NULL,
-		    input_unavailable_reason = 'PURGED'
-		WHERE job_uuid = ANY($1)
-	`, jobUUIDs)
-	if err != nil {
-		return err
-	}
-
-	if len(proposalUUIDs) > 0 {
-		// 4. Scrub derived proposal payloads by exact proposal_uuid PKs
-		_, err = tx.Exec(ctx, `
-			UPDATE cairn.work_advice_proposal
-			SET raw_result = '',
-			    normalized_payload = '{}'::jsonb
-			WHERE proposal_uuid = ANY($1)
-		`, proposalUUIDs)
+	if len(jobUUIDs) > 0 {
+		// 2. Freeze affected proposal_uuids for these jobs
+		propRows, err := tx.Query(ctx, `
+			SELECT proposal_uuid FROM cairn.work_advice_proposal
+			WHERE job_uuid = ANY($1)
+		`, jobUUIDs)
 		if err != nil {
 			return err
 		}
+		defer propRows.Close()
 
-		// 5. Scrub action target payloads and rationale by exact proposal_uuid PKs
-		_, err = tx.Exec(ctx, `
-			UPDATE cairn.work_advice_action
-			SET target_payload = '{}'::jsonb,
-			    rationale = ''
-			WHERE proposal_uuid = ANY($1)
-		`, proposalUUIDs)
-		if err != nil {
-			return err
-		}
-
-		receiptRows, err := tx.Query(ctx, `
-			SELECT output_revisions
-			FROM cairn.work_advice_application_receipt
-			WHERE proposal_uuid = ANY($1)
-			   OR jsonb_path_exists(source_record_ids, '$[*] ? (@ == $id)', jsonb_build_object('id', $2::text))
-		`, proposalUUIDs, idStr)
-		if err != nil {
-			return err
-		}
-		defer receiptRows.Close()
-
-		var allOutputRevs []json.RawMessage
-		for receiptRows.Next() {
-			var outRaw json.RawMessage
-			if err := receiptRows.Scan(&outRaw); err != nil {
+		for propRows.Next() {
+			var id uuid.UUID
+			if err := propRows.Scan(&id); err != nil {
 				return err
 			}
-			if len(outRaw) > 0 {
-				allOutputRevs = append(allOutputRevs, outRaw)
+			proposalUUIDs = append(proposalUUIDs, id)
+		}
+		propRows.Close()
+
+		// 3. Scrub input_snapshot on exact job_uuids, retaining structural dependency facts in input_manifest
+		_, err = tx.Exec(ctx, `
+			UPDATE cairn.work_advice_job
+			SET input_snapshot = NULL,
+			    input_unavailable_reason = 'PURGED',
+			    input_manifest = CASE
+			        WHEN input_manifest ? 'precondition_progress_body'
+			        THEN jsonb_set(input_manifest, '{precondition_progress_body}', '"[forgotten]"'::jsonb)
+			        ELSE input_manifest
+			    END
+			WHERE job_uuid = ANY($1)
+		`, jobUUIDs)
+		if err != nil {
+			return err
+		}
+
+		if len(proposalUUIDs) > 0 {
+			// 4. Scrub derived proposal payloads by exact proposal_uuid PKs
+			_, err = tx.Exec(ctx, `
+				UPDATE cairn.work_advice_proposal
+				SET raw_result = '',
+				    normalized_payload = '{}'::jsonb
+				WHERE proposal_uuid = ANY($1)
+			`, proposalUUIDs)
+			if err != nil {
+				return err
+			}
+
+			// 5. Scrub action target payloads and rationale by exact proposal_uuid PKs
+			_, err = tx.Exec(ctx, `
+				UPDATE cairn.work_advice_action
+				SET target_payload = '{}'::jsonb,
+				    rationale = ''
+				WHERE proposal_uuid = ANY($1)
+			`, proposalUUIDs)
+			if err != nil {
+				return err
 			}
 		}
-		receiptRows.Close()
+	}
 
-		for _, outRaw := range allOutputRevs {
-			var revMap map[string]map[string]any
-			if err := json.Unmarshal(outRaw, &revMap); err != nil {
-				continue
-			}
-			for _, entry := range revMap {
-				typ, _ := entry["type"].(string)
-				if typ == "progress" || typ == "blocker_created" {
-					annotIDStr, _ := entry["annotation_id"].(string)
-					annotUUID, pErr := uuid.Parse(annotIDStr)
-					if pErr != nil || annotUUID == uuid.Nil {
+	// 6. Query all receipts referencing this record or affected proposals (OUTSIDE job/proposal guards)
+	type receiptData struct {
+		outputRevs json.RawMessage
+		undone     bool
+		compRevs   json.RawMessage
+	}
+	var receiptWhere string
+	var receiptArgs []any
+	if len(proposalUUIDs) > 0 {
+		receiptWhere = `WHERE proposal_uuid = ANY($1) OR jsonb_path_exists(source_record_ids, '$[*] ? (@ == $id)', jsonb_build_object('id', $2::text))`
+		receiptArgs = []any{proposalUUIDs, idStr}
+	} else {
+		receiptWhere = `WHERE jsonb_path_exists(source_record_ids, '$[*] ? (@ == $id)', jsonb_build_object('id', $1::text))`
+		receiptArgs = []any{idStr}
+	}
+
+	receiptRows, err := tx.Query(ctx, `
+		SELECT output_revisions, undone, COALESCE(compensating_revisions, '{}'::jsonb)
+		FROM cairn.work_advice_application_receipt
+		`+receiptWhere, receiptArgs...)
+	if err != nil {
+		return err
+	}
+	defer receiptRows.Close()
+
+	var allReceipts []receiptData
+	for receiptRows.Next() {
+		var rd receiptData
+		if err := receiptRows.Scan(&rd.outputRevs, &rd.undone, &rd.compRevs); err != nil {
+			return err
+		}
+		if len(rd.outputRevs) > 0 {
+			allReceipts = append(allReceipts, rd)
+		}
+	}
+	receiptRows.Close()
+
+	for _, rd := range allReceipts {
+		var revMap map[string]map[string]any
+		if err := json.Unmarshal(rd.outputRevs, &revMap); err != nil {
+			continue
+		}
+		var compMap map[string]any
+		if len(rd.compRevs) > 0 {
+			_ = json.Unmarshal(rd.compRevs, &compMap)
+		}
+
+		for actUUIDStr, entry := range revMap {
+			typ, _ := entry["type"].(string)
+			if typ == "progress" || typ == "blocker_created" {
+				annotIDStr, _ := entry["annotation_id"].(string)
+				annotUUID, pErr := uuid.Parse(annotIDStr)
+				if pErr != nil || annotUUID == uuid.Nil {
+					continue
+				}
+
+				var rev1Body string
+				err := tx.QueryRow(ctx, `
+					SELECT body FROM cairn.work_annotation_history
+					WHERE annotation_id = $1 AND revision = 1
+				`, annotUUID).Scan(&rev1Body)
+				if err == nil && rev1Body != "" && rev1Body != "[forgotten]" {
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.work_annotation
+						SET body = '[forgotten]'
+						WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
+					`, annotUUID, rev1Body)
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.work_annotation_history
+						SET body = '[forgotten]'
+						WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
+					`, annotUUID, rev1Body)
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.mutation_request
+						SET response = jsonb_set(response, '{body}', '"[forgotten]"'::jsonb)
+						WHERE response ? 'annotation_id' AND (response->>'annotation_id') = $1::text
+					`, annotUUID.String())
+				}
+			} else if typ == "artifact_linked" {
+				linkIDStr, _ := entry["link_id"].(string)
+				linkUUID, pErr := uuid.Parse(linkIDStr)
+				if pErr != nil || linkUUID == uuid.Nil {
+					continue
+				}
+				var recRev int64
+				switch v := entry["revision"].(type) {
+				case float64:
+					recRev = int64(v)
+				case int64:
+					recRev = v
+				case int:
+					recRev = int64(v)
+				}
+
+				var compRestoredRev int64
+				if rd.undone && compMap != nil {
+					if actComp, ok := compMap[actUUIDStr].(map[string]any); ok {
+						if actComp["type"] == "artifact_restored" {
+							switch v := actComp["revision"].(type) {
+							case float64:
+								compRestoredRev = int64(v)
+							case int64:
+								compRestoredRev = v
+							case int:
+								compRestoredRev = int64(v)
+							}
+						}
+					}
+				}
+
+				histRows, err := tx.Query(ctx, `
+					SELECT revision, state
+					FROM cairn.work_artifact_link_history
+					WHERE link_id = $1 AND revision >= $2
+					ORDER BY revision ASC
+				`, linkUUID, recRev)
+				if err != nil {
+					continue
+				}
+
+				var taintedRevs []int64
+				tainted := false
+				for histRows.Next() {
+					var rev int64
+					var st string
+					if err := histRows.Scan(&rev, &st); err != nil {
+						break
+					}
+					if rev == recRev {
+						taintedRevs = append(taintedRevs, rev)
+						tainted = true
 						continue
 					}
+					if compRestoredRev > 0 && rev == compRestoredRev {
+						tainted = false
+						break
+					} else if st == "removed" && tainted {
+						taintedRevs = append(taintedRevs, rev)
+					} else if st == "active" {
+						tainted = false
+						break
+					}
+				}
+				histRows.Close()
 
-					var rev1Body string
-					err := tx.QueryRow(ctx, `
-						SELECT body FROM cairn.work_annotation_history
-						WHERE annotation_id = $1 AND revision = 1
-					`, annotUUID).Scan(&rev1Body)
-					if err == nil && rev1Body != "" && rev1Body != "[forgotten]" {
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_annotation
-							SET body = '[forgotten]'
-							WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
-						`, annotUUID, rev1Body)
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_annotation_history
-							SET body = '[forgotten]'
-							WHERE annotation_id = $1 AND (revision = 1 OR body = $2)
-						`, annotUUID, rev1Body)
-					}
-				} else if typ == "artifact_linked" {
-					linkIDStr, _ := entry["link_id"].(string)
-					linkUUID, pErr := uuid.Parse(linkIDStr)
-					if pErr != nil || linkUUID == uuid.Nil {
-						continue
-					}
-					var recRev int64
-					switch v := entry["revision"].(type) {
-					case float64:
-						recRev = int64(v)
-					case int64:
-						recRev = v
-					case int:
-						recRev = int64(v)
-					}
+				if len(taintedRevs) > 0 {
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.work_artifact_link_history
+						SET rationale = '[purged due to source deletion]'
+						WHERE link_id = $1 AND revision = ANY($2)
+					`, linkUUID, taintedRevs)
 
-					priorMap, _ := entry["prior_link"].(map[string]any)
-					existed, _ := priorMap["existed"].(bool)
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.work_artifact_link
+						SET rationale = '[purged due to source deletion]'
+						WHERE link_id = $1 AND revision = ANY($2)
+					`, linkUUID, taintedRevs)
 
-					if !existed {
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_artifact_link
-							SET rationale = '[purged due to source deletion]'
-							WHERE link_id = $1
-						`, linkUUID)
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_artifact_link_history
-							SET rationale = '[purged due to source deletion]'
-							WHERE link_id = $1
-						`, linkUUID)
-					} else {
-						priorRationale, _ := priorMap["prior_rationale"].(string)
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_artifact_link_history
-							SET rationale = '[purged due to source deletion]'
-							WHERE link_id = $1 AND revision = $2
-						`, linkUUID, recRev)
-						_, _ = tx.Exec(ctx, `
-							UPDATE cairn.work_artifact_link
-							SET rationale = $3
-							WHERE link_id = $1 AND revision = $2
-						`, linkUUID, recRev, priorRationale)
-					}
+					_, _ = tx.Exec(ctx, `
+						UPDATE cairn.mutation_request
+						SET response = jsonb_set(response, '{rationale}', '"[purged due to source deletion]"'::jsonb)
+						WHERE jsonb_typeof(response) = 'object'
+						  AND (response->>'link_id') = $1::text
+						  AND CASE WHEN jsonb_typeof(response->'revision') = 'number' THEN (response->>'revision')::bigint = ANY($2) ELSE false END
+					`, linkUUID.String(), taintedRevs)
 				}
 			}
 		}
@@ -3639,7 +3936,6 @@ func scrubWorkAdviceForRecordTx(ctx context.Context, tx pgx.Tx, recordID string)
 
 	return nil
 }
-
 
 // PurgeAdviceForWorkItemTx transactionally deletes all advice records for a given work item.
 func (s *Store) PurgeAdviceForWorkItemTx(ctx context.Context, tx pgx.Tx, bindingID uuid.UUID, planeItemUUID uuid.UUID) error {
@@ -4141,7 +4437,55 @@ func (s *Store) VerifyAdviceCurrentness(ctx context.Context, proposalUUID uuid.U
 	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
 		return err
 	}
-	return s.verifyAdviceManifestTx(ctx, tx, bindingID, planeItemUUID, collection, &manifest, proposalUUID)
+	if err := s.verifyAdviceManifestTx(ctx, tx, bindingID, planeItemUUID, collection, &manifest, proposalUUID); err != nil {
+		return err
+	}
+
+	actionRows, err := tx.Query(ctx, `
+		SELECT target_payload
+		FROM cairn.work_advice_action
+		WHERE proposal_uuid = $1 AND action_type = 'annotate_blocker' AND status = 'pending'
+	`, proposalUUID)
+	if err != nil {
+		return err
+	}
+	defer actionRows.Close()
+
+	for actionRows.Next() {
+		var payloadBytes []byte
+		if err := actionRows.Scan(&payloadBytes); err != nil {
+			return err
+		}
+		var b struct {
+			BlockerAction     string `json:"blocker_action"`
+			ExistingBlockerID string `json:"existing_blocker_id"`
+			ExpectedRevision  int64  `json:"expected_revision"`
+		}
+		if err := json.Unmarshal(payloadBytes, &b); err == nil && b.BlockerAction == "resolve" {
+			bID, err := uuid.Parse(b.ExistingBlockerID)
+			if err != nil {
+				continue
+			}
+			var curRev int64
+			var curState string
+			err = tx.QueryRow(ctx, `
+				SELECT revision, state
+				FROM cairn.work_annotation
+				WHERE annotation_id = $1
+				FOR SHARE
+			`, bID).Scan(&curRev, &curState)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return failure("STALE_OBSERVATION", fmt.Sprintf("blocker %s was removed after advice generation", b.ExistingBlockerID))
+			}
+			if err != nil {
+				return err
+			}
+			if curRev != b.ExpectedRevision || curState != "open" {
+				return failure("STALE_OBSERVATION", fmt.Sprintf("blocker %s modified or resolved after advice generation", b.ExistingBlockerID))
+			}
+		}
+	}
+	return actionRows.Err()
 }
 
 // CheckReceiptUndoable checks whether the output entities of an application receipt can still be undone without conflict.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/advice"
 	"github.com/halbritt/cairn/internal/plane"
 )
 
@@ -465,3 +466,200 @@ func TestWorkAdviceControl_FlagPreservation(t *testing.T) {
 	}
 }
 
+type showMockAdviceProvider struct {
+	resultJSON string
+}
+
+func (p *showMockAdviceProvider) Name() string { return "mock" }
+func (p *showMockAdviceProvider) VerifyCapabilities(ctx context.Context) (*advice.CodexCapabilities, error) {
+	return &advice.CodexCapabilities{}, nil
+}
+func (p *showMockAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *advice.Snapshot, deadline time.Duration, onLaunch func(advice.ProcessIdentity) error) (*advice.Proposal, *advice.ProcessResult, error) {
+	prop, err := advice.ParseProposal(p.resultJSON, snapshot)
+	if err != nil {
+		return nil, nil, err
+	}
+	return prop, &advice.ProcessResult{ExitCode: 0}, nil
+}
+
+func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) {
+	repo := "repo-advice-show-" + uuid.NewString()[:8]
+	s := testWorkAdviceStore(t, repo)
+	ctx := context.Background()
+
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		if err := s.SetWorkFeatureStatus(ctx, core.SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	slug := "show-" + uuid.NewString()[:8]
+	bindingID, itemUUID := setupAdviceCLIWorkProjectAndItem(t, s, ctx, slug)
+
+	noteDraft := core.Draft{
+		Kind:        "note",
+		Body:        "Initial source version 1",
+		Sensitivity: "shareable",
+		Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
+	}
+	src, err := s.Create(ctx, core.CreateRequest{Draft: noteDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteDraft2 := core.Draft{
+		Kind:        "note",
+		Body:        "Updated source version 2 with specific guidance",
+		Sensitivity: "shareable",
+		Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
+	}
+	src2, err := s.Edit(ctx, core.EditRequest{
+		RecordID:        src.RecordID,
+		Draft:           noteDraft2,
+		ExpectedVersion: src.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rev, err := s.RegisterWorkArtifact(ctx, core.RegisterWorkArtifactRequest{
+		RequestID:     uuid.NewString(),
+		Collection:    repo,
+		Kind:          "report",
+		ReportLocator: "https://reports.example.com/" + uuid.NewString(),
+		RevisionLabel: "v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	linked, err := s.LinkWorkArtifact(ctx, core.LinkWorkArtifactRequest{
+		RequestID:   uuid.NewString(),
+		Collection:  repo,
+		ProjectSlug: slug,
+		ItemUUID:    itemUUID,
+		RevisionID:  rev.RevisionID,
+		Role:        "evidence",
+		Rationale:   "captured initial link",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prog, err := s.AddProgressAnnotation(ctx, core.AddProgressAnnotationRequest{
+		RequestID:   uuid.NewString(),
+		Collection:  repo,
+		ProjectSlug: slug,
+		ItemUUID:    itemUUID,
+		Body:        "captured initial progress",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawAdvice, _ := json.Marshal(map[string]any{
+		"actions": []any{
+			map[string]any{
+				"action_type":       "annotate_progress",
+				"text":              "advised new progress",
+				"source_references": []string{src2.RecordID},
+			},
+			map[string]any{
+				"action_type":          "link_artifact",
+				"artifact_revision_id": rev.RevisionID.String(),
+				"role":                 "evidence",
+				"rationale":            "advised link update",
+			},
+		},
+	})
+	provider := &showMockAdviceProvider{resultJSON: string(rawAdvice)}
+	job := &core.WorkAdviceJob{
+		BindingID:       bindingID,
+		PlaneItemUUID:   itemUUID,
+		RequestUUID:     uuid.New(),
+		ProfileName:     "mock-profile",
+		ModelRoute:      "mock",
+		TemplateVersion: 1,
+	}
+	prop, actions, err := s.GenerateWorkAdvice(ctx, job, core.AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: itemUUID,
+		SelectedSources: []core.SourceRefSpec{
+			{RecordID: uuid.MustParse(src2.RecordID), Version: src2.Version},
+		},
+		CandidateRevisionIDs: []uuid.UUID{rev.RevisionID},
+	}, provider)
+	if err != nil || prop == nil || len(actions) != 2 {
+		t.Fatalf("GenerateWorkAdvice failed: %v", err)
+	}
+
+	url := fmt.Sprintf("/api/work/advice?binding_id=%s&item_uuid=%s", bindingID, itemUUID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET advice failed with code %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var show WorkAdviceShowEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &show); err != nil {
+		t.Fatalf("failed to decode show envelope: %v", err)
+	}
+
+	if show.Currentness.State != "current" {
+		t.Fatalf("expected currentness state 'current', got %q", show.Currentness.State)
+	}
+
+	actProg := show.Actions[0]
+	beforeProg, ok := actProg.Review.Before.(map[string]any)
+	if !ok || beforeProg["body"] != "captured initial progress" || int64(beforeProg["revision"].(float64)) != prog.Revision {
+		t.Fatalf("unexpected before for progress: %v", actProg.Review.Before)
+	}
+	if len(actProg.Review.SourceReferences) != 1 {
+		t.Fatalf("expected 1 source citation on progress, got %d", len(actProg.Review.SourceReferences))
+	}
+	srcCitation := actProg.Review.SourceReferences[0]
+	if srcCitation.Version != 2 || srcCitation.ObservedAt == "" || srcCitation.BodySHA256 == "" {
+		t.Fatalf("expected source citation to reflect v2 metadata, got version=%d obsAt=%q bodySha=%q",
+			srcCitation.Version, srcCitation.ObservedAt, srcCitation.BodySHA256)
+	}
+
+	actLink := show.Actions[1]
+	beforeLink, ok := actLink.Review.Before.(map[string]any)
+	if !ok || beforeLink["link_id"] != linked.LinkID.String() || int64(beforeLink["revision"].(float64)) != linked.Revision {
+		t.Fatalf("unexpected before for artifact link: %v", actLink.Review.Before)
+	}
+
+	_, err = s.EditProgressAnnotation(ctx, core.EditProgressAnnotationRequest{
+		RequestID:        uuid.NewString(),
+		Collection:       repo,
+		ProjectSlug:      slug,
+		ItemUUID:         itemUUID,
+		ExpectedRevision: prog.Revision,
+		Body:             "manual independent progress edit",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, url, nil)
+	rec2 := httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("GET advice failed with code %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	var show2 WorkAdviceShowEnvelope
+	if err := json.Unmarshal(rec2.Body.Bytes(), &show2); err != nil {
+		t.Fatalf("failed to decode show envelope: %v", err)
+	}
+
+	if show2.Currentness.State != "stale" {
+		t.Fatalf("expected currentness state 'stale' after manual progress edit, got %q", show2.Currentness.State)
+	}
+
+	actProg2 := show2.Actions[0]
+	beforeProg2, ok := actProg2.Review.Before.(map[string]any)
+	if !ok || beforeProg2["body"] != "captured initial progress" || int64(beforeProg2["revision"].(float64)) != prog.Revision {
+		t.Fatalf("expected Before to remain unchanged at captured state, got %v", actProg2.Review.Before)
+	}
+}
