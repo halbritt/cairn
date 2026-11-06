@@ -1,15 +1,20 @@
 # J-01 inbox journal characterization
 
-CAIRN-332 and CAIRN-276, `coordination/v1`, 2026-11-06. This is a
+CAIRN-332 and CAIRN-276, `coordination/v5` at
+`a6ff2a9125ef56d37e2c2d15e5dd5237f7523ad4`, 2026-11-06. This is a
 characterization of the existing Python runtime for the CAIRN-301 migration.
 It adds synthetic tests and fixtures; it does not repair the runtime, accept a
 Go replacement, or establish installed behavior. Independent J-R1 and J-R2
 reviews and the campaign integration gate remain required.
 
-The oracle is `integrations/lifecycle/coordination.py` at baseline
-`db45c4474fa7911b5569f2f55ebf2bd19c9a81bb`. The fixture records its SHA-256.
-The assigned contract was read from the Coordination lead's commit
-`36b106f52c9ed88938def61e90fb9d6ad7bf6020`,
+The Python oracle snapshot is `integrations/lifecycle/coordination.py` at
+`a6ff2a9125ef56d37e2c2d15e5dd5237f7523ad4`. Its exact last-changing source commit
+is `256eb6df5a267e9e016fb62cc0b1dc45ff080ca2`, and its SHA-256 is
+`92716c54be54a9f2e0fbe4dbd5edc77aecb02d6f7da3422708828376e63b0116`.
+The original capture used `db45c4474fa7911b5569f2f55ebf2bd19c9a81bb`; the oracle
+bytes are identical. All 15 original golden traces remain unchanged and were
+rerun after rebasing onto the landed `coordination/v5` contract at
+`a6ff2a9125ef56d37e2c2d15e5dd5237f7523ad4`,
 `docs/plans/hybrid-runtime-contracts/coordination.md`.
 
 ## Preservation surface
@@ -106,14 +111,55 @@ Proposed domain wording distinguishes **observed slot state** (`pending`,
 intent whose response is not yet materialized). A single settled boolean cannot
 express both facts. No glossary or production schema changes are included.
 
-## Contract mismatch: single-binding watcher
+## Watcher compatibility limit
 
-The assigned `coordination/v1` document describes `watch --config <path>` as
-supported alongside `--config-dir`. At this baseline, the parser accepts
+The earlier `coordination/v1` document described `watch --config <path>` as
+supported alongside `--config-dir`; landed v5 corrects that description.
+At this baseline, the parser accepts
 `--config`, but the watcher branch requires `--config-dir`; the single-binding
 invocation exits 2 with `watch requires --config-dir`. The directory watcher
 works. The golden fixture preserves both observations. The lead was notified
 before dependent edits; this slice does not add single-binding support.
+
+## coordination/v5 J-F1/J-F2 extension
+
+The v5 traces retain the existing oracle's distinct policies:
+
+| Trace | Observed boundary |
+| --- | --- |
+| `v5_explicit_respond` | `--version 01` refuses with `INVALID_REQUEST`/2; a missing result `version` or truthy non-dict result returns `INVALID_HOST`/7 before sending. The explicit response slot has no `expected_ref` and accepts an otherwise successful publication with a mismatched ref/event ID. |
+| `v5_finish_reply_stale_replay` | A replay can return `STALE_SESSION`/4 while both original slots remain committed; their status/code remain separate from `replay_code`. |
+| `v5_materialized_identity_conflict` | A conflict raised inside `journal_finish_reply` exits 7, distinct from the inline immutable-slot conflict's exit 4. |
+| `v5_compact_launcher` | The real installer stages a bare `cairn-inbox` launcher in a disposable home; its `CAIRN_INBOX_ROOT` selects the staged complete runtime and binding. |
+| `v5_compact_stale_settle`, `v5_compact_confirmation`, `v5_compact_inner_exits` | Missing/corrupt/non-object settle journals re-raise `STALE_LEASE`/7. An unconfirmed inner success returns `CONFIRMATION_MISMATCH`/7; inner failures retain exits 1, 2, 3, 4 and 7. |
+| `v5_passthrough_streams`, `v5_input_limits` | Single-slot stdout/stderr/exit pass through even for non-JSON exit 0 or `ok: true` with nonzero exit. Inbox input permits 1 MiB decoded characters; raw hook input is bounded in bytes. |
+| `v5_agent_only_seeding` | Seeding adopts matching agent IDs across execution IDs, including final notice/response journals and the ownerless argv fallback. Flush subsequently prunes final entries without sending. |
+| `v5_reader_policies` | The five direct readers distinguish missing files, malformed JSON, directory-read errors, non-object JSON, falsy/truthy non-dict completion, malformed session/slot, absent attempt ID, and extension keys (`ClaimOnly == false`). Compact settlement and the legacy unindexed reconciliation path exercise the other two raw readers. |
+| `v5_hook_watch_corruption`, `v5_activation_refusal` | Missing `attempt_id` causes ordinary hook exit 1 and a per-session watcher diagnostic; inside `record_activation_refusal`, its `KeyError` is caught and preserves `NATIVE_PROMPT_REFUSED`/2. Non-dict session/ownerless slot raises escaping `AttributeError`; an indexed non-object journal terminates the shared watcher and ordinary hook with exit 1. |
+| `v5_flush_scopes`, `v5_settlement_taxonomy` | Both flush scopes replay historical pending journals; only `all` gates on their uncertainty. Classified failures, an unsettled non-exception return and escaping `AttributeError` retain their distinct strict/non-strict settlement and persistence outcomes. |
+| `v5_prepare_idle_persistent_ref` | Three actual `watch_inbox` cycles re-send a committed completion whose exact result remains absent. `prepare_idle_wake` reaches reconciliation through its retained receipt, inspection reports settled, and the wake marker clears while the old response remains unmaterialized. |
+| `v5_recall_wake_stdout` | A real admitted recall hook preserves compact UTF-8 stdout, key order, raw U+2028/U+2029, `<>&`, and source text containing `1.25`; no synthetic numeric field is added to the hook result. |
+
+There is one direct `settled_journal_index` call inside
+`reconcile_rejected_wake`. The two entry paths tested here are
+`record_activation_refusal` and `prepare_idle_wake`, the latter after its normal
+watcher flush. Persistent missing-ref recovery leaves completion committed and
+response absent through every observed cycle; the test establishes three
+repetitions, and the source loop supplies the unbounded-retry inference.
+
+The activation fixture verifies the receipt's actual SHA-256 and live positive
+process identity before recording selected facts. Escaping tracebacks are
+represented by their presence and final exception line; diagnostic lines and
+stdout are retained exactly, with only the declared temporary paths normalized.
+
+**J-R1 O-2 remains a required follow-up:** `v5_activation_refusal` and
+`v5_recall_wake_stdout` must be rerun unchanged after F-04 F-B3's reviewed
+original-event/checked-config-snapshot plumbing lands. This candidate verifies
+the pre-F-04 oracle at `a6ff2a9`; it does not claim that later verification.
+The SHA-256 of those two normalized trace values serialized with Python
+`json.dumps(sort_keys=True, separators=(',', ':'), ensure_ascii=True)` is
+`9734b259db4ed52eaeee03be4793ae63af37e5a254f7a1874ac3690198d6c32f`,
+also retained in the fixture's `post_f04_requirement` metadata.
 
 ## Validation and limits
 
@@ -129,10 +175,11 @@ python3 -B -m unittest discover -s scripts -p test_installed_lifecycle_bundle.py
 make check
 ```
 
-The local run passed 15 characterization, 53 recovery, 8 drain, 10 NativeSession,
-15 wake-refusal and 7 installed-bundle tests: 108 tests, with none skipped.
+The local run passed 32 characterization, 53 recovery, 8 drain, 10 NativeSession,
+15 wake-refusal and 7 installed-bundle tests: 125 tests, with none skipped.
 `make check` passed. The interpreter was Python 3.14.4. After extending the earlier
-hold-release trace, the 15 characterization tests passed again.
+hold-release trace and adding the v5 cases, the complete characterization suite
+was rerun against the frozen goldens.
 
 The characterization suite is discovered by the existing `make test` Python
 discovery pattern. It uses real subprocesses and filesystem locks, a virtual
@@ -149,8 +196,8 @@ and Plane comments; the items stay In Progress until review and integration.
 
 Repository instructions and the assigned characterization contract govern the
 scope. Pincite's validated release `6deb1af41d41075b28577bcf2126c9db90d0e7c0`
-supplied packet `pkt-b71f92561d98d539`, SHA-256
-`b71f92561d98d53902af559e75d301a15b3b883e69cacba9d57085e406f27719`
+supplied the v5 evidence packet `pkt-fe672f1b5694d746`, SHA-256
+`fe672f1b5694d74639e18cffc6eff7b24558412472f10b3402495bb90a98766e`
 (corpus `corpus-2026-07-12-84d6cdfc0e9f`, doctrine
 `doctrine-2694f0450e78ff1e`, retriever `retriever-8b654e47fcb1be28`). Its
 `implementation-risk-driven-tests`, `universal-preserve-behavior-by-default`, and
@@ -159,12 +206,14 @@ observable baseline separate from the proposed repair. Authority extends to
 tests and selected documentation; production edits and landing before both
 reviews remain excluded.
 
-Eight broader evidence obligations remain nonmaterial to this bounded result:
+Thirteen broader evidence obligations remain nonmaterial to this bounded result:
 desired accepted behavior and incident history are not asserted by an oracle
-capture; an inventory of every mutation path and every project contract is not
-claimed; measured operational cost/risk, intervention cost, a general latent-risk
-assessment, and the leave-code-alone decision procedure are outside a slice that
-does not change production code. They remain open for the corresponding repair
+capture; an inventory of every project contract is not claimed; the six
+automated-transformation tool-trust obligations do not apply to a manually edited
+test-only slice with byte-identical production sources; measured operational
+cost/risk, intervention cost, a general latent-risk assessment, and the
+leave-code-alone decision procedure are outside this slice.
+They remain open for the corresponding repair
 or replacement decision. The alternatives here are to preserve and report the
 observed behavior or to repair it in a separately authorized slice; the latter
 is deferred to J-03 and its reviewers.

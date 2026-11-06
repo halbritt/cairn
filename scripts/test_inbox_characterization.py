@@ -1,6 +1,7 @@
 """J-01: synthetic Python oracle traces, including known compatibility defects."""
 import contextlib
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -12,6 +13,7 @@ from unittest.mock import patch
 import uuid
 
 import test_inbox_recovery as fixture
+import test_installed_lifecycle_bundle as installed_fixture
 import test_wake_refusal as wake_fixture
 
 
@@ -41,6 +43,7 @@ class InboxCharacterization(unittest.TestCase):
     def setUp(self):
         fixture.InboxRecovery.setUp(self)
         self.state.update(inbox_completion=REQUEST_IDS['completion'], inbox_response=REQUEST_IDS['response'])
+        self.extra_roots = []
         self.maxDiff = None
 
     def normalize(self, trace):
@@ -50,6 +53,8 @@ class InboxCharacterization(unittest.TestCase):
         if isinstance(trace, (list, tuple)):
             return [self.normalize(value) for value in trace]
         if isinstance(trace, str):
+            for root, replacement in self.extra_roots:
+                trace = trace.replace(str(root), replacement)
             return trace.replace(str(fixture.SCRIPT), '$COORDINATION').replace(
                 str(self.root), '$FIXTURE').replace(sys.executable, '$PYTHON')
         return trace
@@ -317,10 +322,11 @@ class InboxCharacterization(unittest.TestCase):
         self.assertEqual(len(self.log()), 1)
         self.golden('inspection', traces)
 
-    def rejected_wake_with_released_request(self):
+    def rejected_wake_with_released_request(self, completion_reply=fixture.HANDLED):
         wake = wake_fixture.WakeRefusalTests()
         wake.setUp()
         self.addCleanup(wake.doCleanups)
+        self.extra_roots.append((wake.root, '$WAKE_FIXTURE'))
         wc = wake_fixture.coord
         wake.cc['cairn'] = str(self.cairn)
         wake.mc['cairn'] = str(self.cairn)
@@ -338,7 +344,7 @@ class InboxCharacterization(unittest.TestCase):
         target, context = coord.inbox_handoff(wake.cc, session, delivery, fixture.ATTEMPT, REQUEST_IDS)
         coord.write_state(target, context)
         journal_path = coord.intent_path(wake.cc['state_dir'], fixture.ATTEMPT)
-        self.replies({'complete': [fixture.HANDLED],
+        self.replies({'complete': [completion_reply],
                       'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
         completed, _, _ = invoke(context['completion'][2:], 'Selected result')
         self.assertEqual(completed, 0)
@@ -401,6 +407,397 @@ class InboxCharacterization(unittest.TestCase):
             journal_index=after['inbox_journals'], operations_before_recovery=operations_before_recovery,
             recovery_pending=sorted(pending), recovery_status=json.loads(journal_path.read_text())['response']['status'],
             operations_after_recovery=[entry['operation'] for entry in self.log()]))
+
+    def test_v5_explicit_respond_preserves_legacy_shape_and_string_version_checks(self):
+        context = self.context()
+        self.replies({'complete': [fixture.HANDLED], 'publish': [dict(
+            fixture.REPLIED, data=dict(event_id='not-a-uuid', ref=dict(fixture.RESULT, version=9)))]})
+        self.run_context(context['completion'], 'Selected result')
+        target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+        committed = self.journal()
+        cases = [('leading_zero', fixture.RESULT, '01'),
+                 ('missing_version', dict(record_id=fixture.RESULT['record_id']), '1'),
+                 ('non_dict_result', ['result'], '1'), ('explicit_legacy_shape', fixture.RESULT, '1')]
+        traces = []
+        for name, result, version in cases:
+            coord.write_state(target, dict(committed, completion=dict(committed['completion'], result=result)))
+            before = len(self.log())
+            run = self.run_context([*context['response'], '--version', version, fixture.RESULT['record_id']])
+            traces.append(dict(case=name, exit=run.returncode, output=json.loads(run.stdout),
+                               api_sends=len(self.log()) - before, response=self.journal().get('response')))
+        self.golden('v5_explicit_respond', traces)
+
+    def test_v5_finish_reply_reports_stale_replay_even_with_both_slots_committed(self):
+        context = self.context()
+        self.replies({'complete': [fixture.HANDLED], 'publish': [fixture.REPLIED,
+                                                               dict(ok=False, status='STALE_SESSION')]})
+        first = self.run_context(context['finish_reply'], 'Selected result')
+        replay = self.run_context(context['finish_reply'], 'Selected result')
+        self.golden('v5_finish_reply_stale_replay', dict(first=json.loads(first.stdout), exit=replay.returncode,
+                    output=json.loads(replay.stdout), journal=self.journal(), api=self.log()))
+
+    def compact_run(self, context, *arguments, launcher=None):
+        env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root), CLAUDE_SESSION_ID='native-1')
+        if launcher:
+            env['PATH'] = str(launcher.parent) + os.pathsep + env.get('PATH', '')
+            command = ['cairn-inbox', *arguments, context['compact_handle']]
+        else:
+            command = [sys.executable, str(fixture.SCRIPT), 'inbox', 'compact',
+                       arguments[0], context['compact_handle'], *arguments[1:]]
+        return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+
+    def test_v5_bare_compact_launcher_selects_its_installed_root(self):
+        with patch.object(coord.os, 'urandom', return_value=b'\x02' * 8):
+            context, _ = self.compact_context('notice', 'Launcher source.')
+        installer = installed_fixture.coordination
+        installer.bundle.stage_runtime(fixture.ROOT / 'integrations/lifecycle', self.root)
+        home = self.root / 'account'
+        launcher = home / '.local/bin/cairn-inbox'
+        with patch.dict(os.environ, PATH=str(launcher.parent) + os.pathsep + os.environ.get('PATH', '')):
+            installer.install_compact_inbox_launcher(self.root, home)
+        run = self.compact_run(context, 'read', launcher=launcher)
+        self.golden('v5_compact_launcher', dict(exit=run.returncode, output=json.loads(run.stdout),
+                    script=launcher.read_text(), mode=oct(launcher.stat().st_mode & 0o777), api=self.log()))
+
+    def test_v5_compact_settle_reraises_stale_lease_for_unusable_journals(self):
+        with patch.object(coord.os, 'urandom', return_value=b'\x03' * 8):
+            context, _ = self.compact_context('notice', 'Retained exact source.')
+        target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+        traces = []
+        for name, body in [('missing', None), ('corrupt', '{'), ('non_object', '[]')]:
+            target.unlink(missing_ok=True)
+            if body is not None:
+                target.parent.mkdir(exist_ok=True)
+                target.write_text(body)
+            (self.root / 'log.jsonl').unlink(missing_ok=True)
+            self.replies({'event-renew': [dict(ok=False, status='STALE_LEASE')]})
+            run = self.compact_run(context, 'settle', 'handled')
+            traces.append(dict(case=name, exit=run.returncode, output=json.loads(run.stdout),
+                               operations=[entry['operation'] for entry in self.log()]))
+        self.golden('v5_compact_stale_settle', traces)
+
+    def test_v5_compact_unconfirmed_ack_reports_confirmation_mismatch(self):
+        with patch.object(coord.os, 'urandom', return_value=b'\x04' * 8):
+            context, _ = self.compact_context('notice', 'Selected source.')
+        replies = json.loads((self.root / 'replies.json').read_text())
+        replies['ack'] = [dict(ok=True, status='OK', data=dict(state='failed', attempts=1))]
+        self.replies(replies)
+        run = self.compact_run(context, 'settle', 'handled')
+        self.golden('v5_compact_confirmation', dict(exit=run.returncode, output=json.loads(run.stdout),
+                                                  journal=self.journal(), api=self.log()))
+
+    def test_v5_agent_only_seeding_adopts_and_then_prunes_final_other_execution_journals(self):
+        directory = Path(self.config['state_dir']) / 'intents'
+        directory.mkdir()
+        for index, kind in enumerate(('notice', 'response')):
+            target = directory / (str(index) + '.json')
+            coord.write_state(target, dict(schema='cairn.inbox-intent/1', attempt_id=str(index), kind=kind,
+                session=dict(agent_id=fixture.AGENT, execution_id=str(uuid.UUID(int=999))),
+                completion=dict(kind='ack', status='committed')))
+        coord.write_state(directory / '2.json', dict(attempt_id='2', kind='notice',
+            completion=dict(kind='ack', status='committed', argv=[fixture.AGENT])))
+        state = dict(agent=self.state['agent'])
+        seeded = list(coord.session_journals(self.config, state))
+        flushed = coord.flush_inbox_intents(self.config, state, 'all')
+        self.golden('v5_agent_only_seeding', dict(seeded=seeded, settled=flushed,
+                    remaining=state['inbox_journals'], api=self.log()))
+
+    def test_v5_raw_readers_pin_missing_corrupt_subfield_and_extension_policies(self):
+        target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+        target.parent.mkdir()
+        base = dict(schema='cairn.inbox-intent/1', attempt_id=fixture.ATTEMPT,
+                    session=dict(agent_id=fixture.AGENT, execution_id=fixture.EXECUTION))
+        cases = [('missing', None), ('corrupt', '{'), ('non_object', '[]'), ('directory', '__directory__')]
+        cases += [('completion_' + name, json.dumps(dict(base, completion=value))) for name, value in (
+            ('null', None), ('false', False), ('zero', 0), ('empty_list', []), ('empty_string', ''),
+            ('string', 'bad'), ('list', [1]), ('pending', dict(status='pending')),
+            ('committed', dict(status='committed')), ('refused', dict(status='refused')))]
+        cases += [('extension', json.dumps(dict(base, extension=True))),
+                  ('non_dict_session', json.dumps(dict(base, session=['bad']))),
+                  ('ownerless_non_dict_slot', json.dumps(dict(attempt_id=fixture.ATTEMPT, completion=['bad']))),
+                  ('missing_attempt_id', json.dumps(dict(session=base['session'])))]
+        traces = []
+        for name, body in cases:
+            target.unlink(missing_ok=True)
+            if body == '__directory__':
+                target.mkdir()
+            elif body is not None:
+                target.write_text(body)
+            row = dict(case=name)
+            readers = dict(committed=lambda: coord.journal_committed(self.config, self.state),
+                completion_state=lambda: coord.journal_completion_state(self.config, self.state['inbox_attempt']),
+                claim_only=lambda: coord.attempt_commands_absent(self.config, self.state['inbox_attempt']),
+                settled=lambda: coord.settled_journal_index(self.config, dict(inbox_journals=[fixture.ATTEMPT])),
+                seeded=lambda: coord.session_journals(self.config, dict(agent=self.state['agent'])))
+            for reader, observe in readers.items():
+                try:
+                    row[reader] = observe()
+                except (AttributeError, KeyError, ValueError, TypeError, OSError) as exc:
+                    row[reader] = dict(raises=type(exc).__name__)
+            traces.append(row)
+            if target.is_dir():
+                target.rmdir()
+        self.assertEqual(self.log(), [])
+        self.golden('v5_reader_policies', traces)
+
+    def hook_state(self):
+        self.path = coord.state_path(self.config, 'native-1')
+        self.state.update(schema='cairn.native-session/1', workspace=str(self.root),
+                          process=coord.process_reference(os.getpid()))
+        self.state['agent'].update(context_revision=1, metadata=dict(harness='claude', model='', project='fixture',
+            workspace=str(self.root), state='idle', delivery_mode='existing-session'))
+        coord.write_state(self.path, self.state)
+        config_path = self.root / 'hook.json'
+        coord.write_state(config_path, self.config)
+        return config_path
+
+    def test_v5_corrupt_seed_and_indexed_non_object_escape_normal_hook_and_watcher(self):
+        config_path = self.hook_state()
+        directory = Path(self.config['state_dir']) / 'intents'
+        directory.mkdir()
+        target = directory / (fixture.ATTEMPT + '.json')
+        self.replies({'agent-heartbeat': [dict(ok=True, status='OK', data=self.state['agent'])]})
+        event = dict(session_id='native-1', cwd=str(self.root), hook_event_name='Stop', host_pid=os.getpid())
+        traces = []
+        for name, journal, indexed in [('missing_attempt_id', dict(session=dict(agent_id=fixture.AGENT)), False),
+                                       ('indexed_non_object', [], True)]:
+            for mode in ('hook', 'watch'):
+                state = dict(self.state)
+                if indexed:
+                    state['inbox_journals'] = [fixture.ATTEMPT]
+                coord.write_state(self.path, state)
+                coord.write_state(target, journal)
+                (self.root / 'log.jsonl').unlink(missing_ok=True)
+                if mode == 'hook':
+                    command = [sys.executable, str(fixture.SCRIPT), 'hook', '--config', str(config_path)]
+                else:
+                    bindings = self.root / 'watch-bindings'
+                    bindings.mkdir(exist_ok=True)
+                    coord.write_state(bindings / 'fixture.json', self.config)
+                    command = [sys.executable, str(fixture.SCRIPT), 'watch', '--config-dir', str(bindings), '--once']
+                run = subprocess.run(command, input=json.dumps(event), capture_output=True, text=True, timeout=30)
+                traces.append(dict(case=name, mode=mode, exit=run.returncode, stdout=run.stdout,
+                    error=run.stderr.splitlines()[-1], traceback=run.stderr.startswith('Traceback'),
+                    operations=[entry['operation'] for entry in self.log()]))
+        self.golden('v5_hook_watch_corruption', traces)
+
+    def activation_fixture(self):
+        wake = wake_fixture.WakeRefusalTests()
+        wake.setUp()
+        self.addCleanup(wake.doCleanups)
+        self.extra_roots.append((wake.root, '$WAKE_FIXTURE'))
+        wc = wake_fixture.coord
+        owner = wc.process_reference(os.getpid())
+        wake.state['process'] = wake.state['idle_wake']['parent'] = owner
+        wake.event['host_pid'] = owner['pid']
+        wake.cc['cairn'] = wake.mc['cairn'] = str(self.cairn)
+        wake.freeze()
+        return wake
+
+    def test_v5_activation_refusal_records_receipt_and_classifies_seed_exceptions(self):
+        traces = []
+        for name, journal in [('empty', None), ('missing_attempt_id', 'missing_id'),
+                              ('non_dict_session', dict(attempt_id=fixture.ATTEMPT, session=['bad'])),
+                              ('ownerless_non_dict_slot', dict(attempt_id=fixture.ATTEMPT, completion=['bad']))]:
+            wake = self.activation_fixture()
+            if journal == 'missing_id':
+                journal = dict(session=dict(agent_id=wake.state['agent']['agent_id']))
+            if journal is not None:
+                coord.write_state(coord.intent_path(wake.cc['state_dir'], fixture.ATTEMPT), journal)
+            manifest = json.loads(wake.binding.read_text())
+            manifest['enabled'] = 'malformed activation state'
+            coord.write_state(wake.binding, manifest)
+            (self.root / 'log.jsonl').unlink(missing_ok=True)
+            self.replies({'event-inspect': [dict(ok=True, status='OK', data=dict(event={}, deliveries=[]))]})
+            run = subprocess.run([sys.executable, str(fixture.SCRIPT), 'hook', '--config',
+                                  str(wake.root / 'coordination.json')], input=json.dumps(wake.event),
+                                 capture_output=True, text=True, timeout=30)
+            state = json.loads(wake.path.read_text())
+            receipt = json.loads((wake.path.parent / 'wake-refusals' / (state['wake_rejection'] + '.json')).read_text())
+            digest = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            self.assertEqual(digest, state['wake_rejection'])
+            self.assertEqual(receipt['process'], {k: wake.state['process'][k] for k in ('pid', 'start', 'boot')})
+            traces.append(dict(case=name, exit=run.returncode, stdout=run.stdout,
+                diagnostics=[line for line in run.stderr.splitlines() if line.startswith('Cairn coordination')],
+                error=run.stderr.splitlines()[-1], traceback='Traceback' in run.stderr,
+                receipt=dict(schema=receipt['schema'], phase=receipt['phase'], error_class=receipt['error_class'],
+                             native_prompt_id=receipt['native_prompt_id'], process_matches_owner=True,
+                             wake_delivery=receipt['wake']['delivery_id']),
+                operations=[entry['operation'] for entry in self.log()]))
+        self.golden('v5_activation_refusal', traces)
+
+    def test_v5_watcher_reconciles_while_missing_result_replays_every_cycle(self):
+        omitted = dict(ok=True, status='OK', data=dict(state='handled'))
+        wake, context, _ = self.rejected_wake_with_released_request(completion_reply=omitted)
+        wc = wake_fixture.coord
+        self.replies({'complete': [omitted]})
+        code, _, _ = invoke([*context['completion'][2:-1], 'finish-reply'], 'Selected result')
+        self.assertEqual(code, 7)
+        wake.cc['idle_wakeup'] = str(self.root / 'unused-herdr')
+        wake.freeze()
+        event_id = wake.state['idle_wake']['event_id']
+        delivery = wake.state['idle_wake']['delivery_id']
+        inspected = dict(event=dict(event_id=event_id, repo=wake.cc['repo']), deliveries=[dict(
+            delivery_id=delivery, consumer=wake.state['agent']['inbox'], state='pending', attempts=0)])
+        uncertain = dict(inspected, deliveries=[dict(inspected['deliveries'][0], attempts=1)])
+        self.replies({'complete': [omitted],
+            'event-inspect': [dict(ok=True, status='OK', data=uncertain), dict(ok=True, status='OK', data=inspected)],
+            'session-inbox-ready': [dict(ok=True, status='OK', data=dict(delivery_id=delivery, event_id=event_id)),
+                                    dict(ok=True, status='OK', data=dict(delivery_id=None))]})
+        wc.record_activation_refusal(wake.cc, wake.event, BlockingIOError('synthetic activation veto'))
+        wake.state = json.loads(wake.path.read_text())
+        self.assertIn('idle_wake', wake.state)
+        cycles = []
+        for _ in range(3):
+            with wc.session_lock(wake.path):
+                wc.watch_inbox(wake.cc, wake.state, wake.path)
+                prepared = wc.prepare_idle_wake(wake.cc, wake.state, wake.path)
+            journal = json.loads(coord.intent_path(wake.cc['state_dir'], fixture.ATTEMPT).read_text())
+            cycles.append(dict(prepared=prepared, result=journal['completion'].get('result'),
+                               response_present='response' in journal, completion_status=journal['completion']['status'],
+                               settled_index=wc.settled_journal_index(wake.cc, wake.state),
+                               wake_reconciled='wake_reconciled' in wake.state, wake_retained='idle_wake' in wake.state))
+        self.golden('v5_prepare_idle_persistent_ref', dict(cycles=cycles,
+                    operations=[entry['operation'] for entry in self.log()]))
+
+    def test_v5_native_settlement_distinguishes_classified_unsettled_and_escaping_failures(self):
+        traces = []
+        for name, body in [('transport_pending', 'pending'), ('corrupt', '{'), ('non_object', '[]')]:
+            for strict in (False, True):
+                context = self.context()
+                target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+                if body == 'pending':
+                    self.replies({'complete': [fixture.LOST]})
+                    self.run_context(context['completion'], 'Selected result')
+                else:
+                    target.parent.mkdir(exist_ok=True)
+                    target.write_text(body)
+                state = json.loads(json.dumps(self.state))
+                error = None
+                with contextlib.redirect_stderr(io.StringIO()):
+                    try:
+                        coord.native_session(self.config, state, self.path).settle('evidence', dict(settlement='pending'), strict=strict)
+                    except AttributeError as exc:
+                        error = type(exc).__name__
+                persisted = json.loads(self.path.read_text())
+                traces.append(dict(case=name, strict=strict, raises=error,
+                    settlement=state['evidence']['settlement'], persisted_settlement=persisted['evidence']['settlement'],
+                    ended=persisted.get('inbox_turn_ended'), delivered=persisted['delivered_since_idle']))
+                target.unlink()
+        self.golden('v5_settlement_taxonomy', traces)
+
+    def test_v5_admitted_recall_wake_preserves_compact_utf8_stdout(self):
+        wake = wake_fixture.claude_fixture.ClaudeInboxRecallTests()
+        wake.setUp()
+        self.addCleanup(wake.doCleanups)
+        self.extra_roots.append((wake.root, '$WAKE_FIXTURE'))
+        wake.cc['cairn'] = wake.mc['cairn'] = str(self.cairn)
+        source = fixture.FAKE.replace("argv[-1] if argv[0] == 'agent'",
+            "argv[9] if argv[0] == 'agent' and argv[5] == '--agent-id' else argv[5] if argv[0] == 'agent'")
+        self.cairn.write_text(source.replace("queue = replies.get(operation)",
+                                             "assert operation in replies, operation\nqueue = replies.get(operation)"))
+        wake.process = coord.process_reference(os.getpid())
+        wake.state['process'] = wake.process
+        wake.event['host_pid'] = os.getpid()
+        body = 'Golden source: \u2028\u2029 <>& 1.25 日本語.'
+        version = wake.fixture['history']['versions'][0]
+        version.update(body=body, body_bytes=len(body.encode()), body_sha256=hashlib.sha256(body.encode()).hexdigest())
+        wake.freeze()
+        self.replies({
+            'agent-heartbeat': [dict(ok=True, status='OK', data=wake.state['agent'])],
+            'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')],
+            'event-renew': [dict(ok=True, status='OK', data=wake.delivery)],
+            'history': [dict(ok=True, status='OK', data=wake.fixture['history'])],
+            'search': [dict(ok=True, status='OK', data=wake.fixture['search'])],
+            'pull': [dict(ok=True, status='OK', data=wake.fixture['pull'])]})
+        run = subprocess.run([sys.executable, str(fixture.SCRIPT), 'hook', '--config',
+                              str(wake.root / 'coordination.json')], input=json.dumps(wake.event),
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('\u2028\u2029', run.stdout)
+        self.assertIn('<>&', run.stdout)
+        self.assertEqual(run.stdout, json.dumps(json.loads(run.stdout), ensure_ascii=False, separators=(',', ':')) + '\n')
+        self.golden('v5_recall_wake_stdout', dict(exit=run.returncode, stdout=run.stdout, stderr=run.stderr,
+                    operations=[entry['operation'] for entry in self.log()]))
+
+    def test_v5_finish_reply_materialized_identity_conflict_uses_exit_seven(self):
+        context = self.context()
+        self.replies({'complete': [fixture.HANDLED], 'publish': [fixture.REPLIED]})
+        self.run_context(context['finish_reply'], 'Selected result')
+        journal = self.journal()
+        journal['response']['expected_ref']['version'] = 2
+        coord.write_state(coord.intent_path(self.config['state_dir'], fixture.ATTEMPT), journal)
+        run = self.run_context(context['finish_reply'], 'Selected result')
+        self.golden('v5_materialized_identity_conflict', dict(exit=run.returncode, output=json.loads(run.stdout),
+                                                            api_sends=len(self.log())))
+
+    def scripted_exit_cli(self):
+        source = fixture.FAKE.replace("if reply.get('hang'):",
+            "if 'raw_stdout' in reply:\n    sys.stdout.write(reply['raw_stdout'])\n"
+            "    sys.stderr.write(reply.get('stderr', ''))\n    sys.exit(reply['exit'])\nif reply.get('hang'):")
+        source = source.replace("sys.exit(0 if reply['ok'] else 4)",
+                                "sys.stderr.write(reply.get('stderr', ''))\nsys.exit(reply.get('exit', 0 if reply['ok'] else 4))")
+        source = source.replace("print(json.dumps(dict(schema='cairn.response/1', **reply)))",
+            "print(json.dumps(dict(schema='cairn.response/1', **{k: v for k, v in reply.items() if k not in ('exit', 'stderr')})))")
+        self.cairn.write_text(source)
+
+    def test_v5_single_slot_preserves_inner_streams_and_nonstandard_exit_status(self):
+        context = self.context()
+        self.scripted_exit_cli()
+        traces = []
+        for name, reply in [('non_json_zero', dict(raw_stdout='not JSON\n', stderr='CLI diagnostic\n', exit=0)),
+                            ('ok_nonzero', dict(ok=True, status='OK', data={}, stderr='CLI diagnostic\n', exit=3))]:
+            self.reset_journal()
+            self.replies({'complete': [reply]})
+            run = self.run_context(context['completion'], 'Selected result')
+            traces.append(dict(case=name, exit=run.returncode, stdout=run.stdout, stderr=run.stderr,
+                               status=self.journal()['completion']['status'], code=self.journal()['completion']['code']))
+        self.golden('v5_passthrough_streams', traces)
+
+    def test_v5_compact_settle_preserves_each_inner_failure_exit(self):
+        with patch.object(coord.os, 'urandom', return_value=b'\x05' * 8):
+            context, _ = self.compact_context('notice', 'Selected source.')
+        self.scripted_exit_cli()
+        original = json.loads((self.root / 'replies.json').read_text())
+        traces = []
+        for code in (1, 2, 3, 4, 7):
+            self.reset_journal()
+            self.replies(dict(original, ack=[dict(ok=False, status='FUTURE_REFUSAL', exit=code)]))
+            run = self.compact_run(context, 'settle', 'handled')
+            traces.append(dict(inner_exit=code, exit=run.returncode, output=json.loads(run.stdout),
+                               status=self.journal()['completion']['status']))
+        self.golden('v5_compact_inner_exits', traces)
+
+    def test_v5_inbox_character_limit_differs_from_raw_hook_byte_limit(self):
+        context = self.context()
+        self.replies({'complete': [fixture.HANDLED]})
+        body = 'é' * (1024 * 1024)
+        accepted = self.run_context(context['completion'], body)
+        self.assertEqual(self.log()[0]['input'], body)
+        oversized = self.run_context(context['completion'], body + 'é')
+        config = self.root / 'hook.json'
+        coord.write_state(config, self.config)
+        hook = subprocess.run([sys.executable, str(fixture.SCRIPT), 'hook', '--config', str(config)],
+                              input=body, capture_output=True, text=True, timeout=30)
+        self.golden('v5_input_limits', dict(characters=len(body), bytes=len(body.encode()),
+                    accepted_exit=accepted.returncode, oversized_exit=oversized.returncode,
+                    oversized_status=json.loads(oversized.stdout)['status'], api_sends=len(self.log()),
+                    hook_exit=hook.returncode, hook_stdout=hook.stdout, hook_stderr=hook.stderr))
+
+    def test_v5_flush_attempt_and_all_replay_the_same_historical_pending_journal(self):
+        context = self.context()
+        self.replies({'complete': [fixture.LOST]})
+        self.run_context(context['completion'], 'Selected result')
+        active = str(uuid.UUID(int=202))
+        self.state['inbox_attempt'] = dict(attempt_id=active)
+        self.state['inbox_journals'] = [fixture.ATTEMPT, active]
+        outcomes = []
+        with contextlib.redirect_stderr(io.StringIO()):
+            for scope in ('attempt', 'all'):
+                settled = coord.flush_inbox_intents(self.config, self.state, scope)
+                outcomes.append(dict(scope=scope, settled=settled, journal_index=list(self.state['inbox_journals'])))
+        self.assertTrue(all(entry == self.log()[0] for entry in self.log()))
+        self.golden('v5_flush_scopes', dict(outcomes=outcomes, api_sends=len(self.log()), request=self.log()[0]))
 
 
 if __name__ == '__main__':
