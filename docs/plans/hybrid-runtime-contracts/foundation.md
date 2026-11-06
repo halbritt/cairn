@@ -1,4 +1,4 @@
-# Foundation contracts: foundation/v1
+# Foundation contracts: foundation/v2
 
 Status: acceptance criteria for the authorized hybrid runtime campaign, prepared
 against `d3c255a4bb75438e93527eaa1d83da780fd11eea` on 2026-11-06.
@@ -99,8 +99,43 @@ model input. A payload principal, model label or session ID is not authenticatio
 The store continues to own principal, identity and observation-channel attribution.
 
 Release owns immutable installation, drain, restage, repin, restart and rollback.
+Its production cutover unit includes the watcher and all config-dir bindings and
+shared state users; mixed-language fixtures do not authorize concurrent mixed
+production executors. `/3` configurations use versioned paths instead of
+rewriting `/2` files under cached hooks. R-02 qualifies available F-01/F-04
+staging controls; complete hook/watcher drain and rollback qualification waits
+for R-06 and its coordination/memory prerequisites.
 F-01 validates a callable path; it does not silently replace any live installation.
 Legacy dispatch keeps the original event bytes, streams, signals and exit code.
+
+### Binary `/3` validation policy
+
+These are new `/3` rules; `/2` retains its existing Python validation rules.
+The manifest and configuration pins retain their current UID/mode checks.
+The binary must be a regular file owned by the invoking real UID, executable,
+and not group/other writable; set-ID/sticky file bits are refused. A root-owned source executable must be copied into
+user-owned staging before it can be a `/3` pin in a non-root invocation.
+The normative rule is binary owner UID equals the invoking real UID. Symlinks in the binary path are refused. Its containing snapshot
+directory must be owned by that UID and mode `0700`.
+
+Inspect path components without following symlinks. Ancestors must be owned by
+root or the invoking UID and not group/other writable. A root-owned sticky
+system temporary ancestor is allowed above the private snapshot directory for
+disposable fixtures; the private directory and everything below it remain
+owner-controlled. Other writable ancestors, including group-writable ones,
+refuse. This policy is specific to binary staging and does not silently change
+legacy state-lock policy.
+
+Open the pinned file without following a symlink and separately open
+`/proc/self/exe`. Require both SHA-256 digests to equal the manifest digest and
+require the same device/inode identity. Verify descriptor metadata did not
+change while hashing. An identical copy at a different inode is refused;
+hard-link aliases of the same validated inode are allowed. Missing/deleted
+pins, a replaced-after-start path, a deleted running image, a changed file or
+any digest/identity mismatch refuses before token/API/state effects. Fixtures
+cover each case, including a root-owned pin, symlink, writable parent,
+run-from-another-copy and successful immutable staging. Release consumes these
+rules in R-02; any policy change requires consumer review before merge.
 
 ## Shared state-file contract
 
@@ -147,18 +182,93 @@ candidate. This current-helper repair can proceed before X-01 once its own
 criteria are accepted; helper extraction remains gated on X-01 and the integrated
 repair. Characterization and repair evidence stay separate.
 
+### Legacy state equivalence and serialization
+
+Roundtrip acceptance compares the values accepted by each original reader,
+including exact scalar types, rather than requiring one universal byte layout.
+The legacy native-session writer uses non-ASCII JSON and a trailing newline;
+compact grant saves use non-ASCII compact JSON; activation's local writer uses
+ASCII escaping. Whitespace, separators, object-key order, trailing newline and
+equivalent Unicode/HTML escapes are declared file-serialization differences.
+They are not normalizations of hook streams, request IDs, string contents,
+accounting, transition order or persisted references.
+
+Compare JSON objects with case-sensitive keys; preserve unknown/extension fields
+except the exact replacements/pruning performed by the original operation.
+Preserve arbitrary-size integers exactly (including values above `2^53`),
+distinguish integer/float/bool values, and preserve floating values including
+signed zero. Existing Python duplicate keys use the last value; case-variant
+keys remain distinct. Legacy `NaN`, `Infinity` and `-Infinity` must retain their
+source reader/writer behavior: invalid counter fields still refuse, while
+accepted opaque values roundtrip with their non-finite class preserved. Go's
+standard JSON/float64/struct decoding is insufficient evidence of this contract;
+use a source-compatible lossless representation for accepted legacy values.
+No strict-parser change or silent replacement character is authorized by this
+port. A narrower accepted domain requires a separate explicit compatibility
+decision before F-04 can be accepted.
+
+Required cross-language fixtures include each writer profile, unknown nested
+values, large integers, floats/signed zero, bool versus int, duplicate/case keys,
+non-finite values, non-ASCII text, `<>&`, U+2028 and escaped surrogate cases.
+The reference writer's own encoding failures remain failures in its profile.
+Initialization/sentinel ordering is per consumer: marker-first general saves
+and activation differ from the bridge's pristine-ledger-first bootstrap. Keep
+those partial states and failure order; atomicity is per replaced file, not an
+invented transaction across marker, inbox ledger and Codex budget.
+
+### Mixed-language lock coexistence
+
+Use the same existing inode and pathname in both directions during `/2`/`/3`
+coexistence. Ledger locks use `<session>.lock`; native state uses
+`sha256(binding + NUL + native_id).json` with suffix replaced by `.lock`.
+Native-session locking is immediate/nonblocking and preserves `SESSION_BUSY`;
+ledger waiting is capped at 1.5 seconds and its supplied deadline. The ledger
+primitive makes its initial nonblocking attempt before testing a contended
+wait deadline, as Python does. Existing generic Go callers keep their original
+blocking/nonblocking and `Path + ".lock"` behavior.
+
+Existing Python-created `0644`/`0664` locks must not be chmodded, replaced or
+rejected merely because the generic Go journal helper defaults to private-file
+checks. Legacy lifecycle lock opens retain Python's symlink-following behavior
+and lock the resolved inode; their original directory/file checks still apply
+where the source caller performed them. Existing Go journal `O_NOFOLLOW` and
+private-file checks remain unchanged. Newly created Go state/lock files use the
+required private modes. A uniform hardening policy needs a separate decision,
+not an undocumented side effect of extraction.
+
+Fixtures run a Python process and Go process on the same lock, in both holder/
+waiter directions, assert identical inode identity, contention outcome, wait cap,
+deadline boundary and later successful update, and kill only test-owned holders.
+Include `0644`, `0664`, symlinked locks and the private-file Go journal profile.
+Preserve each caller's exact busy/refusal text; statefile extraction must retain
+current send-journal strings while lifecycle callers use their own mapped text.
+
 ## Shared process and peer contract
 
 The existing sources are
 [`internal/claudechannel`](../../../internal/claudechannel/claudechannel.go) and
 [`unix_peer_transport.py`](../../../integrations/lifecycle/unix_peer_transport.py).
-The proposed `internal/procpeer` owns Linux identity measurement and verified
-socket transport. Harness-specific JSON-RPC, wake/cancel meaning and journal
-transitions remain with Coordination.
+The proposed `internal/procpeer` owns shared Linux measurement and framing.
+F-01 extracts only operations with real first consumers: `claudechannel` uses
+identity measurement, its existing liveness policy, bounded server framing and
+deadlines; current CLI consumers exercise state-file extraction. Client
+connect/credential verification currently exists in Python, not the Go bridge.
+It lands in the same shared package only with J-04's first real Go client
+consumer, in a Foundation-owned shared-file slot coordinated with J-B2. F-01
+must not pre-land unused client APIs. Harness JSON-RPC, wake/cancel meaning and
+journal transitions remain with Coordination.
 
 Keep the `ProcessRef` wire identity `pid`, `start`, `boot`, where `start` is the
 `/proc/<pid>/stat` start tick value and `boot` is the kernel boot ID. Ancillary
 state and parent metadata in Python records must not disappear during roundtrip.
+The existing Go bridge server checks parent references, `getppid` and liveness;
+it does not currently call `SO_PEERCRED`. Adding server-side peer credentials
+would be a separate hardening decision. Python process-owned verification
+requires matching peer PID/start/boot and checks UID only when `expected_uid`
+was explicitly supplied; the current Claude client supplies none. Same-user
+mode requires its selected/effective UID while allowing a different peer PID.
+Preserve these individual policies and their refusal messages.
+
 A numeric PID alone never certifies identity. Existing Go `liveProcess` compares
 PID/start/boot, while Python `process_alive` also excludes `Z`/`X` states. Keep
 both observations in fixtures and preserve each consumer's policy until an
@@ -168,9 +278,9 @@ peer PID different from the measured target process. Both require their actual
 credential/identity policy before any payload write. Tests cover the individual
 harness ownership mode, not an assumed universal peer-PID equality rule.
 
-The consumer-facing operations measure a reference, check liveness/ancestry,
-connect and validate a peer, and read/write bounded frames under one enclosing
-deadline. Preserve each consumer's error classification and message. New Go
+The consumer-facing operations, as their first consumers land, measure a
+reference, check liveness/ancestry, connect/validate a client peer and read/write
+bounded frames under the consumer's deadline. Preserve each consumer's error classification and message. New Go
 export names are fixed in F-01 and reviewed with the first consumers; the wire
 identity and behavioral obligations in this revision are already binding.
 
@@ -199,6 +309,11 @@ port the Coordination journal or independently select retries, claims or custody
 `<session>.memory-budget.json` and the corresponding `.initialized` paths.
 `open_session` obtains its location and lock from the host. The fixture inventory
 must include those host-supplied lock and persistence consumers before the port.
+The current native host uses `sha256(binding + NUL + native_id).json` and the
+sibling `.lock`, with immediate `SESSION_BUSY`. `open_session` itself does not
+validate schema/type or impose file size, mode or symlink rules; keep its caller
+checks and operation-specific failure category rather than inheriting new generic
+Go defaults.
 Preserve unknown/extension fields when updating only a portion of a record.
 
 Both Python-to-Go and Go-to-Python state roundtrips are required. Preserve the
@@ -251,6 +366,28 @@ policy. It sends no command and does not stand in for reply completion.
 `TurnEndDiagnostic` retains the existing bounded diagnostic/state update and
 never completes or acknowledges a delivery.
 
+The Go error result has a source-level taxonomy. Within the existing
+`Flush`/`end_turn` try region only, settlement catches the counterparts of the configured coordination refusal, `OSError`, `ValueError`,
+`KeyError` and `TypeError`; represent these as classified settlement errors.
+Unexpected errors corresponding to an escaping `AttributeError` or other
+unhandled source error propagate without marking pending or making the second
+settlement save. Errors before or after that try region also retain their source
+phase and escaping behavior, even if their class is caught inside the region. A non-object journal is one explicit escaping-error fixture.
+Malformed JSON and unreadable journal files retain their respective caught
+value/I/O classification. Do not collapse every Go error into a caught error.
+
+Deadline/transport uncertainty that `send_intent` classifies as a pending slot
+returns `(false, nil)` from `Flush`, retaining that slot's diagnostic. A context
+deadline must not become a new caught exception solely because Go represents it
+as an error. Check both `strict` values: nonexception unsettled `strict=false`
+preserves the prior diagnostic, including an initial `pending` value; caught
+errors mark `turn_ended_pending` for either value; escaping errors leave only the
+first evidence save. External cancellation follows J-05's separate cancellation
+contract. Fixtures cover every source exception class, non-object journals,
+malformed/unreadable journals, API timeout, context deadline and both strict
+settings. Flush/turn-end stderr remains owned by the journal/session caller and
+is compared, not discarded by the adapter.
+
 Failure-order fixtures must exercise the current `NativeSession.settle`,
 `end_turn` and `retire` boundaries: persist ended-turn evidence before flush;
 flush before reconciliation; mark settlement pending after exceptions and,
@@ -276,11 +413,26 @@ persisted state, including these control signals:
 
 | Trigger | Required result |
 | --- | --- |
-| Required-context refusal on `UserPromptSubmit` | Existing refusal diagnostic on stderr; exit 2 |
-| Required-context refusal on Codex `SessionStart` | Existing `continue: false` / `stopReason` JSON on stdout; exit 0 |
-| Optional recall unavailable or timed out without a required gate | Bounded degraded diagnostics; exit 0 |
+| Successful empty/degraded recall, including a handled optional-body failure or labelled lexical fallback | Existing success payload/diagnostics; exit 0 |
+| Search timeout, missing socket or another caught optional failure escaping to `_main` | Empty stdout where the fixture specifies it, existing fixed phase/class diagnostic plus the existing lifecycle failure line on stderr; exit 1 |
+| Required-context refusal on `UserPromptSubmit` | Existing fixed phase/class diagnostic and refusal line on stderr; exit 2 |
+| Required-context refusal on Codex `SessionStart` | Existing diagnostic on stderr and exact `continue: false` / `stopReason` JSON on stdout; exit 0 |
+| Required-context refusal on Claude `SessionStart` | Characterized ordinary caught-error output on stderr; exit 1, without the Codex stop envelope |
 | Unsupported operation or invalid admission | Existing per-entrypoint behavior; no new successful capability |
 | Capture selection/save failure | Existing failure evidence and retryability; no false saved status or advanced capture marker |
+| Unexpected unhandled failure/panic at a supported Go hook boundary | Redacted fixed unexpected-error diagnostic, empty stdout and exit 1; never accidentally exit 2 |
+
+Caught-error fixtures preserve both stderr lines, phase and fixed error-class
+labels as actually emitted, including classification before any required-context
+conversion. The current Python unexpected-error result is traceback plus exit 1.
+For that case alone the declared cross-runtime diagnostic difference replaces
+the interpreter traceback with exactly
+`Cairn lifecycle diagnostic: phase=<current fixed phase> error_class=UnexpectedError`
+followed by a newline. There are no payloads, paths or stack dumps. Every supported hook entrypoint
+must recover an unexpected Go panic to this exit-1 result. Intentional required
+refusal still exits 2. Fixtures cover unexpected failures on prompt, start,
+stop and tool boundaries so an unrecovered Go panic cannot acquire host-blocking
+meaning. This does not normalize any caught refusal or ordinary diagnostic.
 
 For each harness enumerate the actual supported operations from its current
 entrypoints and tests. Listing Claude, Codex, Agy, OpenCode and Hermes does not
@@ -318,6 +470,22 @@ A source discrepancy is retained as a discrepancy before any repair is selected.
 | F-S: session/ledger | `test_native_session.py`, `test_grant_ledger.py`, production host consumers | Schema/session/turn mismatch, sentinel anti-reset, concurrent writers, deadline contention, folding/accounting boundaries, failed write/sync/rename and killed writers |
 | F-R: recall | `scripts/test_claude_lifecycle.py`, `scripts/test_codex_lifecycle.py`, relevant installed and adapter tests | Required and optional responses, direct API attribution/diagnostics, source and budget integrity, bounded failures/deadlines, supported harness cells |
 | F-C: capture | The same memory tests and `scripts/test_hermes_lifecycle.py` | Dialogue exclusions, duplicate/CAS identity, failed save/retry, concurrent/appended/truncated transcripts, compact/stop and shutdown boundaries |
+
+The finite additional oracle inventory is the following existing script modules:
+`test_hook_error_diagnostics`, `test_recall_error_diagnostics`,
+`test_claude_inbox_recall`, `test_inbox_recall_bridge`, `test_claude_channel`,
+`test_codex_queue`, `test_hermes_queue`, `test_opencode_queue`,
+`test_capture_concurrency`, `test_capture_observation`, `test_codex_turn_budget`,
+`test_inbox_ledger_compaction`, `test_recall_task_grant`, `test_startup_recall`,
+`test_hook_invocation_trace`, `test_recall_failure_observation`,
+`test_selector_process_observation`, `test_recall_observation` and
+`test_inbox_recall_observation`. Frozen `test_trial_*` modules are not edited.
+The per-module baseline command is
+`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p '<module>.py'`;
+record its actual `Ran`, skip and exit results before its behavior is ported.
+Existing Foundation baseline captures cover subsets, not an assertion that this
+entire inventory already passed. Add Go/differential counterparts to the relevant
+item without deleting these independent reference assertions prematurely.
 
 Run existing focused suites before the port and retain their exact outcomes.
 New state/store implementation also requires `make check` and
