@@ -214,6 +214,14 @@ def artifact_fixture(base, uid, dump, require):
                     else revision["artifact"].get("cairn_record_id"))
                 require(identity, "registered exact kind identity is missing")
                 expect(details).to_contain_text(identity)
+                if kind != "ci":
+                    expect(details.locator("dt").filter(has_text="CI attempt")).to_have_count(0)
+                if kind != "report":
+                    expect(details.locator("dt").filter(has_text="Recorded report provenance")).to_have_count(0)
+                if kind == "ci":
+                    expect(details.locator("dt").filter(has_text="CI attempt")).to_have_count(1)
+                if kind == "report":
+                    expect(details.locator("dt").filter(has_text="Recorded report provenance")).to_have_count(1)
                 if kind == "cairn_result":
                     expect(details.locator("a")).to_have_count(0)
                 else:

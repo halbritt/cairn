@@ -764,15 +764,19 @@
     appendArtifactField(list, "Registered at", dateLabel(revision.created_at));
     container.append(heading, list);
     if (!revision.unavailable) {
+      const kindFields = {
+        git: [["Repository", artifact.git_repo], ["Full commit object ID", revision.git_commit_oid],
+          ["Object format", revision.git_object_format], ["Branch hint (not identity)", revision.git_branch_hint]],
+        report: [["Report locator", artifact.report_locator], ["Selected digest", revision.report_digest],
+          ["Recorded report provenance", revision.report_provenance]],
+        ci: [["Repository", artifact.ci_repo], ["CI provider", artifact.ci_provider],
+          ["CI run ID", artifact.ci_run_id], ["CI attempt", revision.ci_attempt], ["Reported CI status", revision.ci_status],
+          ["CI observation time", revision.ci_reported_at ? dateLabel(revision.ci_reported_at) : ""]],
+        cairn_result: [["Cairn record UUID", artifact.cairn_record_id], ["Exact record version", revision.cairn_version]]
+      }[artifact.kind] || [];
       for (const [label, value] of [
         ["Display name", artifact.display_name], ["Revision label", revision.revision_label],
-        ["Repository", artifact.git_repo || artifact.ci_repo], ["Full commit object ID", revision.git_commit_oid],
-        ["Object format", revision.git_object_format], ["Branch hint (not identity)", revision.git_branch_hint],
-        ["Report locator", artifact.report_locator], ["Selected digest", revision.report_digest],
-        ["Recorded report provenance", revision.report_provenance], ["CI provider", artifact.ci_provider],
-        ["CI run ID", artifact.ci_run_id], ["CI attempt", revision.ci_attempt], ["Reported CI status", revision.ci_status],
-        ["CI observation time", revision.ci_reported_at ? dateLabel(revision.ci_reported_at) : ""],
-        ["Cairn record UUID", artifact.cairn_record_id], ["Exact record version", revision.cairn_version]
+        ...kindFields
       ]) appendArtifactField(list, label, value);
       if (artifact.kind === "report" || artifact.kind === "ci") {
         const note = document.createElement("p");
@@ -781,7 +785,7 @@
           : "CI status is a selected observation. It does not mean Cairn executed or accepted the run.";
         container.append(note);
       }
-      const locator = artifact.kind === "report" ? artifact.report_locator : artifact.git_repo || artifact.ci_repo;
+      const locator = { report: artifact.report_locator, git: artifact.git_repo, ci: artifact.ci_repo }[artifact.kind];
       if (locator) {
         try {
           const url = new URL(locator);
