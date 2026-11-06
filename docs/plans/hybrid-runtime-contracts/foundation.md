@@ -17,14 +17,15 @@ synthetic fixture preparation and existing baseline tests may proceed now.
 | Plan key | Plane item | Deliverable | Builder | Required predecessors |
 | --- | --- | --- | --- | --- |
 | F-01C | CAIRN-314 | Existing admission, binding, peer and state-file characterization | F-B1 | None for read-only characterization |
+| F-01R | CAIRN-331 | Propagate current helper write/sync failures before extraction | F-B1 | F-01C; independent repair criteria review (can precede X-01) |
 | F-04C | CAIRN-315 | Existing session and grant-ledger characterization | F-B3 | None for read-only characterization |
-| F-01 | CAIRN-316 | Callable admission/binding path and shared primitives with exercised consumers | F-B1 | X-01 / CAIRN-302; accepted F-01C fixtures |
+| F-01 | CAIRN-316 | Callable admission/binding path and shared primitives with exercised consumers | F-B1 | X-01 / CAIRN-302; accepted F-01C fixtures; integrated F-01R |
 | F-04 | CAIRN-317 | Compatible session and ledger operations through a lifecycle consumer | F-B3 | F-01; accepted F-04C fixtures |
 | F-02 | CAIRN-318 | Direct local API recall | F-B2 | F-01 and F-04 |
 | F-03 | CAIRN-319 | Direct local API capture | F-B3 after F-04 | F-01 and F-04 |
 | HC-03 | CAIRN-320 | Reviewed, integrated foundation and supported hook matrix | Foundation lead | F-01 through F-04 |
 
-All seven items have CAIRN-301 as their native parent, verified by readback.
+All eight items have CAIRN-301 as their native parent, verified by readback.
 Native blocking relations remain unverified: the installed Plane CLI exposes no
 relation command and discovery found no callable legacy relation tool. The
 predecessors above and the item bodies are mandatory regardless of tracker
@@ -133,14 +134,18 @@ unknown-field, duplicate-key or Unicode rejection. A new uniform rejection is a
 behavior change if the reference accepted the input. Resolve such differences
 explicitly rather than rewriting the oracle.
 
-There is a source-level discrepancy requiring a separate repair decision:
+Root selected a separate correctness repair, F-01R / CAIRN-331, for this
+source-level discrepancy:
 `LockedStateFile.writeAtomic` declares a new `err` inside the `tmp.Write` `if`
 block, while later checks use the outer `err`. Write/sync failures can therefore
 be lost by that control flow. This is a static finding, not an executed fault
-injection result. F-01C must characterize the path and the independent reviewer
-must assess it; any correction is a separately classified repair with a failing
-regression, followed by re-review. Compatibility work must not silently preserve
-or silently fix this discrepancy.
+injection result. F-01C characterizes the path; F-R1 reviews repair criteria
+before meaningful injected-I/O regression tests and the narrow correction. The
+original failure must propagate and the prior durable state must remain unchanged;
+rename must not publish the failed write. Review binds the exact repaired
+candidate. This current-helper repair can proceed before X-01 once its own
+criteria are accepted; helper extraction remains gated on X-01 and the integrated
+repair. Characterization and repair evidence stay separate.
 
 ## Shared process and peer contract
 
@@ -225,11 +230,18 @@ It may seed/prune `inbox_journals` as the current `session_journals` /
 `flush_inbox_intents` path does. The enclosing session transition persists those
 changes at its existing boundaries. It must not drop other state fields.
 
-`Flush("attempt")` is false while the active attempt has an uncertain/running
+Both flush scopes replay **all** conversation-owned journals, including
+reconciled attempts. Scope changes the returned settlement gate, not which
+journals are visited. `Flush("attempt")` is false while the active attempt has an uncertain/running
 command; `Flush("all")` is false while any owned journal does. An unused journal
 or a committed request still awaiting a possible reply does not alone make a
 flush uncertain. Preserve completion-before-response execution and the exact
-reply reference. A refusal is a journal fact, not permission to send a new
+reply reference. Retain the existing `finish_reply` recovery exception: when
+`finish_reply` exists, response is absent, completion is committed and
+`finish_reply_ref` has no usable result, the journal owner retries that exact
+completion to recover its result before materializing the response. This does
+not permit arbitrary settled/refused replay; ordinary automatic replay remains
+pending-only. A refusal is a journal fact, not permission to send a new
 command. `Committed` reads only whether the active completion/ack slot committed:
 missing state is false; malformed/unreadable state preserves the current error
 policy. It sends no command and does not stand in for reply completion.
@@ -238,8 +250,9 @@ never completes or acknowledges a delivery.
 
 Failure-order fixtures must exercise the current `NativeSession.settle`,
 `end_turn` and `retire` boundaries: persist ended-turn evidence before flush;
-flush before reconciliation; mark settlement pending on an uncertain/error path;
-persist logical ending before API work; refuse retirement while an all-journal
+flush before reconciliation; mark settlement pending after exceptions and,
+for nonexception uncertainty, only when `strict` is true. A non-strict
+unsettled call preserves the prior diagnostic. Persist logical ending before API work; refuse retirement while an all-journal
 flush is uncertain; leave/reconcile before marking retired. F-04 supplies the
 storage/API seam and an exercised storage consumer without waiting for J-05.
 Coordination later owns the full orchestration. Scripted adapters are test-only;
@@ -321,9 +334,10 @@ separate Release/campaign claims.
 1. F-B1 has the root-assigned first CLI registration slot; the proposed
    `session.JournalBoundary` needs Coordination agreement and both independent
    reviews. Foundation owns no Makefile edit in this wave.
-2. Review the state-file write/sync error discrepancy before choosing a separate
-   repair or changing the preservation baseline. Parser/mode/symlink differences
-   discovered by characterization follow the same explicit decision path.
+2. F-01R / CAIRN-331 is selected; its criteria/regressions and exact corrected
+   candidate still need independent review. Parser/mode/symlink and process-state
+   differences discovered by characterization require their own explicit decision
+   before changing the preservation baseline.
 3. Coordination must confirm process-owned versus same-user peer requirements
    for each wake adapter and the host lock paths needed by native-session state.
    This determines consumers of one shared implementation, not parallel helpers.
