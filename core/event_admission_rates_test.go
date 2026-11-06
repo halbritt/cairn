@@ -300,3 +300,45 @@ func TestEventRatesRequireCompleteDatabaseSchemaBeforeEnforcement(t *testing.T) 
 	_, err = s.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "topic", Name: "empty"}}, Destination{Name: "local", AllowLocal: true})
 	requireCode(t, err, "FEATURE_UNAVAILABLE")
 }
+
+func TestEventRatesImmediateTerminalWaitChargesOnceAndDrainIsExempt(t *testing.T) {
+	ctx := context.Background()
+	op, openStore := waitTestDB(t)
+	_, _, agentA, agentB, sessionA, sessionB, dest := waitFixture(t, openStore)
+	repo := agentA.Repo
+	if _, err := op.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	request := publishTestRequest(t, ctx, sessionA, repo, agentB.AgentID, "", dest)
+	publishTestResponse(t, ctx, sessionB, repo, agentA.AgentID, request.EventID, "", "response", dest)
+	enablePublicEnforcePolicy(t, op, repo, func(limits *EventAdmissionLimits) {
+		limits.MaxCollectionOutstanding = 100
+		limits.MaxRecipientOutstanding = 100
+		limits.MaxProducerRecipientOutstanding = 100
+		limits.MaxClosureReserved = 100
+		limits.MaxRecipientClosureReserved = 100
+		limits.OwnerPublications = EventAdmissionRate{1, 1}
+		limits.OwnerDeliveries = EventAdmissionRate{1, 1}
+	})
+	req := CreateWaitRequest{RequestID: uuid.NewString(), Collection: repo, PredicateKind: WaitPredicateRequestResponse, DependencyEventUUID: request.EventID, Deadline: time.Now().Add(time.Hour)}
+	wait, err := sessionA.CreateWait(ctx, req, dest)
+	if err != nil || wait.State != WaitStateSatisfied || wait.OutboxState != OutboxStatePending {
+		t.Fatalf("immediate terminal wait: %+v %v", wait, err)
+	}
+	repeated, err := sessionA.CreateWait(ctx, req, dest)
+	if err != nil || repeated.WaitUUID != wait.WaitUUID {
+		t.Fatalf("committed wait retry charged again: %+v %v", repeated, err)
+	}
+	var publication, delivery int64
+	err = op.pool.QueryRow(ctx, `SELECT max(tokens_nano) FILTER(WHERE unit='publication'),max(tokens_nano) FILTER(WHERE unit='delivery') FROM cairn.agent_event_rate_bucket WHERE repo=$1 AND identity_kind='owner' AND identity=$2`, repo, agentA.ProfileOwner).Scan(&publication, &delivery)
+	if err != nil || publication != 0 || delivery != 0 {
+		t.Fatalf("new wait did not charge root plus future notice exactly once: %d %d %v", publication, delivery, err)
+	}
+	if drained, err := op.DrainWaitOutbox(ctx, repo, 10); err != nil || drained != 1 {
+		t.Fatalf("empty producer budget blocked accepted terminal notice: %d %v", drained, err)
+	}
+	err = op.pool.QueryRow(ctx, `SELECT max(tokens_nano) FILTER(WHERE unit='publication'),max(tokens_nano) FILTER(WHERE unit='delivery') FROM cairn.agent_event_rate_bucket WHERE repo=$1 AND identity_kind='owner' AND identity=$2`, repo, agentA.ProfileOwner).Scan(&publication, &delivery)
+	if err != nil || publication != 0 || delivery != 0 {
+		t.Fatalf("wait drain debited or reset owner budgets: %d %d %v", publication, delivery, err)
+	}
+}
