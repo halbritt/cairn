@@ -231,8 +231,9 @@ func TestWorkItemCoordination_ExactMembershipDeduplicationAndPagination(t *testi
 }
 
 func TestWorkItemCoordination_QuietNoticesExecutionIsolationAndPrivacy(t *testing.T) {
+	_, openStore := waitTestDB(t)
 	repo := "repo:coord-notices:" + uuid.NewString()
-	f := setupOrganicFixture(t, repo)
+	f := setupOrganicFixtureWithStores(t, repo, openStore)
 	ctx := context.Background()
 	proj, itemA, _ := setupCoordWorkItems(t, f.operator, repo, "coord-notices")
 	f.activateCapability(t)

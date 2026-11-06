@@ -50,6 +50,26 @@ stalled or failed work. Cancellation has host-specific gates described in
 [request controls](request-controls.md); it is not universally available for
 arbitrary running agent tasks.
 
+The [work view](operator/work-coordination.md) projects an explicitly bound Plane
+project and combines it with local annotations, exact artifact revisions and
+selected coordination associations. It does not update Plane's issue state or
+infer task acceptance from presence or message handling. Artifact registration,
+link history and reverse impact remain subject to current scope and source
+visibility.
+
+Durable waits support the request-response and response-group-closure predicates,
+with a terminal notification outbox. Quiet notices can wait for a verified owner
+input without waking a conversation. Quiet admission currently requires the
+[carried Codex native package](native-owner-origin.md); other harnesses and
+unpatched Codex remain unsupported for this delivery mode. Neither a source
+checkout nor a successful probe installs that package in a running session.
+
+Versioned feature controls distinguish admission, retained maintenance and
+retirement. Use the [operator runbook](operator/work-coordination.md) for the
+combined migration boundary and settlement requirements before changing binary
+support. A physical restore also requires the normal recovery witness and
+admission procedure.
+
 ## Operations and developer interfaces
 
 The store provides forward migrations, backup checkpoints, explicit restore

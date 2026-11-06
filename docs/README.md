@@ -14,6 +14,8 @@ or the [quickstart](quickstart.md) to try it with a local PostgreSQL store.
   a handoff for unfinished work.
 - [Coordinate agents](guides/session-coordination.md): discover sessions and
   exchange requests and results.
+- [Operate work coordination](operator/work-coordination.md): inspect Plane work,
+  link exact deliverables, wait for responses and manage quiet notices.
 
 ## Connect your client
 
@@ -36,7 +38,7 @@ access. Use [maintenance](operator/maintenance.md) for upgrades and recovery.
 [documentation](developer/documentation.md) describe how to make and validate a
 change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
-Proposed work: [work coordination design](plans/work-coordination-design.md) and
+Design and acceptance plan: [work coordination design](plans/work-coordination-design.md) and
 [implementation sequence](plans/work-coordination-implementation.md).
 
 ## Reference
