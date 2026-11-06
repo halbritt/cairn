@@ -37,10 +37,14 @@ checksum differs`), and a missing file cannot be inserted later.
    [maintenance](maintenance.md#upgrade-the-schema).
 2. Stop consumers, the scheduler, wake supervisors and dispatch. Leave the old API
    running only until in-flight requests finish.
-3. Run `cairn migrate` with the new executable. Migration 080 first locks the
-   `cairn.restore_admission` row, and 084 takes it again. That lock waits for
-   transactions that already passed the old binary's compatibility check, so the new
-   schema commits only after they finish.
+3. Run `cairn migrate` with the new executable. Migrations 080 and 084 each begin by
+   updating the `cairn.restore_admission` row in place. That update waits for
+   transactions that were already admitted against that row, and it invalidates the
+   snapshot of any old-binary transaction that started before the migration
+   committed. Such an in-flight old call can therefore end with a retryable
+   serialization failure (SQLSTATE `40001`) or with `SCHEMA_MISMATCH`, while every
+   fresh old call refuses at its schema ceiling (below). The codes differ by when the
+   call started; none of them commits old-binary work against the new schema.
 4. Restart the API, then the scheduler, supervisors and consumers.
 
 An older binary cannot keep running against the upgraded store. Its schema ceiling is
