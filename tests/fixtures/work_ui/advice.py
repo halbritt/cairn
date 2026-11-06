@@ -191,6 +191,8 @@ def advice_fixture():
             for action_id, action in selected.items():
                 output = receipt["output_revisions"][action_id]
                 payload = action["target_payload"]
+                expected_type = {"annotate_progress": "progress", "annotate_blocker": "blocker_created", "link_artifact": "artifact_linked"}[action["action_type"]]
+                base.require(output.get("type") == expected_type, "receipt output type differs from the selected action's compensation obligation")
                 if action["action_type"] == "link_artifact":
                     row = current["links"].get(output["link_id"])
                     base.require(row is not None and row["revision"] == output["revision"]
