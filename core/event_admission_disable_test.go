@@ -246,7 +246,10 @@ func TestEventAdmissionDisableAndReenableWithOutstandingWork(t *testing.T) {
 	if !before.refillAt.Before(*configured.UpdatedAt) {
 		t.Fatalf("fixture did not separate the disabled interval: refill=%s update=%s", before.refillAt, configured.UpdatedAt)
 	}
-	if after.tokens >= capacity-eventTokenScale {
+	// A reset would leave a full burst less one token whatever the elapsed
+	// time. That is distinguishable only while normal refill from the
+	// re-enable time cannot have saturated the bucket by itself.
+	if before.tokens+credited < capacity && after.tokens >= capacity-eventTokenScale {
 		t.Fatalf("re-enable refilled the spent burst: %+v", after)
 	}
 }
