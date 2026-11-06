@@ -3313,7 +3313,7 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 	receipt.PlaneItemUUID = planeItemUUID
 	receipt.SourceRecordIDs = srcRecBytes
 
-	_, err = tx.Exec(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO cairn.work_advice_application_receipt (
 			receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
 			applied_action_uuids, applied_by_channel, output_revisions, applied_at, undone,
@@ -3322,10 +3322,10 @@ func (s *Store) ApplyAdviceProposal(ctx context.Context, receipt *WorkAdviceAppl
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, clock_timestamp(), false,
 			$10
-		)
+		) RETURNING applied_at
 	`, receipt.ReceiptUUID, receipt.RequestUUID, receipt.ProposalUUID, receipt.BindingID, receipt.PlaneItemUUID, receipt.SourceRecordIDs,
 		receipt.AppliedActionUUIDs, receipt.AppliedByChannel, receipt.OutputRevisions,
-		receipt.CompensatingRevisions)
+		receipt.CompensatingRevisions).Scan(&receipt.AppliedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -4117,86 +4117,34 @@ func scrubWorkAdviceForRecordTx(ctx context.Context, tx pgx.Tx, recordID string)
 					createdRev = n
 				}
 
-				taintedMap := map[int64]bool{createdRev: true}
-				if typ == "blocker_created" {
-					allReceiptRows, aErr := tx.Query(ctx, `
-						SELECT output_revisions, undone, COALESCE(compensating_revisions, '{}'::jsonb)
-						FROM cairn.work_advice_application_receipt
-						WHERE jsonb_path_exists(output_revisions, '$.* ? (@.annotation_id == $id)', jsonb_build_object('id', $1::text))
-						ORDER BY applied_at ASC, receipt_uuid ASC
-					`, annotUUID.String())
-					if aErr == nil {
-						for allReceiptRows.Next() {
-							var rOut, rComp []byte
-							var rUndone bool
-							if err := allReceiptRows.Scan(&rOut, &rUndone, &rComp); err == nil {
-								var oMap map[string]map[string]any
-								_ = json.Unmarshal(rOut, &oMap)
-								for actID, oEntry := range oMap {
-									oTyp, _ := oEntry["type"].(string)
-									if oTyp == "blocker_resolved" {
-										var pRev, oRev int64
-										switch v := oEntry["prior_revision"].(type) {
-										case float64:
-											pRev = int64(v)
-										case int64:
-											pRev = v
-										}
-										switch v := oEntry["revision"].(type) {
-										case float64:
-											oRev = int64(v)
-										case int64:
-											oRev = v
-										}
-										if taintedMap[pRev] && oRev > 0 {
-											taintedMap[oRev] = true
-											if rUndone && len(rComp) > 0 {
-												var cMap map[string]map[string]any
-												_ = json.Unmarshal(rComp, &cMap)
-												if cEntry, ok := cMap[actID]; ok {
-													if cEntry["type"] == "blocker_reopened" {
-														var cRev int64
-														switch cv := cEntry["revision"].(type) {
-														case float64:
-															cRev = int64(cv)
-														case int64:
-															cRev = cv
-														}
-														if cRev > 0 {
-															taintedMap[cRev] = true
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-						allReceiptRows.Close()
+				// State-only transitions (supersession, resolution and Undo) can
+				// copy the created body into later revisions. Match those exact
+				// bytes while preserving independently edited progress text.
+				var createdBody string
+				err := tx.QueryRow(ctx, `
+					SELECT body FROM cairn.work_annotation_history
+					WHERE annotation_id = $1 AND revision = $2
+				`, annotUUID, createdRev).Scan(&createdBody)
+				if errors.Is(err, pgx.ErrNoRows) {
+					continue // The annotation history has already been removed.
+				}
+				if err != nil {
+					return err
+				}
+				for _, query := range []string{
+					`UPDATE cairn.work_annotation SET body = '[forgotten]'
+					 WHERE annotation_id = $1 AND (revision = $2 OR body = $3)`,
+					`UPDATE cairn.work_annotation_history SET body = '[forgotten]'
+					 WHERE annotation_id = $1 AND (revision = $2 OR body = $3)`,
+					`UPDATE cairn.mutation_request
+					 SET response = jsonb_set(response, '{body}', '"[forgotten]"'::jsonb)
+					 WHERE response->>'annotation_id' = ($1::uuid)::text
+					   AND (response->>'revision' = ($2::bigint)::text OR response->>'body' = $3)`,
+				} {
+					if _, err := tx.Exec(ctx, query, annotUUID, createdRev, createdBody); err != nil {
+						return err
 					}
 				}
-
-				var taintedList []int64
-				for r := range taintedMap {
-					taintedList = append(taintedList, r)
-				}
-
-				_, _ = tx.Exec(ctx, `
-					UPDATE cairn.work_annotation
-					SET body = '[forgotten]'
-					WHERE annotation_id = $1 AND revision = ANY($2)
-				`, annotUUID, taintedList)
-				_, _ = tx.Exec(ctx, `
-					UPDATE cairn.work_annotation_history
-					SET body = '[forgotten]'
-					WHERE annotation_id = $1 AND revision = ANY($2)
-				`, annotUUID, taintedList)
-				_, _ = tx.Exec(ctx, `
-					UPDATE cairn.mutation_request
-					SET response = jsonb_set(response, '{body}', '"[forgotten]"'::jsonb)
-					WHERE response ? 'annotation_id' AND (response->>'annotation_id') = $1::text
-				`, annotUUID.String())
 			} else if typ == "artifact_linked" {
 				linkIDStr, _ := entry["link_id"].(string)
 				linkUUID, pErr := uuid.Parse(linkIDStr)
@@ -4949,11 +4897,20 @@ func (s *Store) VerifyAdviceCurrentness(ctx context.Context, proposalUUID uuid.U
 	}
 	defer actionRows.Close()
 
+	var payloads [][]byte
 	for actionRows.Next() {
 		var payloadBytes []byte
 		if err := actionRows.Scan(&payloadBytes); err != nil {
 			return err
 		}
+		payloads = append(payloads, payloadBytes)
+	}
+	if err := actionRows.Err(); err != nil {
+		return err
+	}
+	actionRows.Close()
+
+	for _, payloadBytes := range payloads {
 		var b struct {
 			BlockerAction     string `json:"blocker_action"`
 			ExistingBlockerID string `json:"existing_blocker_id"`
@@ -4983,7 +4940,7 @@ func (s *Store) VerifyAdviceCurrentness(ctx context.Context, proposalUUID uuid.U
 			}
 		}
 	}
-	return actionRows.Err()
+	return nil
 }
 
 // CheckReceiptUndoable checks whether the output entities of an application receipt can still be undone without conflict.
