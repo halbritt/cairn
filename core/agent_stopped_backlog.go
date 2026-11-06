@@ -253,6 +253,32 @@ func (s *Store) commitStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, re
 	if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 		return out, err
 	}
+	if _, err := s.prepareEventAdmissionTx(ctx, tx, PublishEventRequest{
+		Repo:        req.Repo,
+		Kind:        "notice",
+		Destination: EventDestination{Type: "agent", Name: publisher},
+	}, nil); err != nil {
+		var refusal *Error
+		if errors.As(err, &refusal) && (refusal.Admission != nil || refusal.Code == "EVENT_ADMISSION_REFUSED" || refusal.Code == "CLOSURE_UNRECONCILED") {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				return out, rbErr
+			}
+			if retained := s.retainEventAdmissionRefusal(ctx, req.Repo, err); retained != err {
+				return out, &Error{
+					Code:    "REFUSAL_UNRECORDED",
+					Message: "stopped-delivery notice deferred; admission refusal diagnostic could not commit",
+					Cause:   retained,
+				}
+			}
+			out.Status = "deferred_capacity"
+			out.Reason = refusal.Code
+			if refusal.Admission != nil && refusal.Admission.Dimension != "" {
+				out.Reason = refusal.Admission.Dimension
+			}
+			return out, nil
+		}
+		return out, err
+	}
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {
 		return out, err

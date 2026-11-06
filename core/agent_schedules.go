@@ -224,6 +224,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 	if err = rows.Err(); err != nil {
 		return out, err
 	}
+	var retainedRefusals []error
 	for _, item := range due {
 		var missed bool
 		if err = tx.QueryRow(ctx, `SELECT clock_timestamp()>$1::timestamptz+make_interval(secs=>$2)`, item.NotBefore, item.GraceSeconds).Scan(&missed); err != nil {
@@ -249,15 +250,27 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 				if !errors.As(e, &refusal) {
 					return out, e
 				}
-				switch refusal.Code {
-				case "POOL_FULL", "POOL_PAUSED", "CLOSURE_RESERVE_FULL", "CLOSURE_UNRECONCILED":
+				if refusal.Admission != nil {
+					retainedRefusals = append(retainedRefusals, e)
+				}
+				switch {
+				case refusal.Admission != nil,
+					refusal.Code == "POOL_FULL",
+					refusal.Code == "POOL_PAUSED",
+					refusal.Code == "CLOSURE_RESERVE_FULL",
+					refusal.Code == "CLOSURE_UNRECONCILED",
+					refusal.Code == "EVENT_ADMISSION_REFUSED":
 					// Accepted schedule stays pending until capacity returns or grace expires.
 					// Rotate blocked work behind unchecked occurrences in bounded ticks.
 					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_schedule SET last_checked_at=clock_timestamp(),code=$2 WHERE occurrence_id=$1`, item.OccurrenceID, refusal.Code); err != nil {
 						return out, err
 					}
 					continue
-				case "NOT_FOUND", "DESTINATION_PROHIBITED", "GROUP_EXPIRED", "GROUP_EMPTY", "GROUP_LIMIT":
+				case refusal.Code == "NOT_FOUND",
+					refusal.Code == "DESTINATION_PROHIBITED",
+					refusal.Code == "GROUP_EXPIRED",
+					refusal.Code == "GROUP_EMPTY",
+					refusal.Code == "GROUP_LIMIT":
 					code = refusal.Code
 				default:
 					return out, e
@@ -270,5 +283,21 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 		}
 		out.Occurrences = append(out.Occurrences, saved)
 	}
-	return out, tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return out, err
+	}
+	var telemetryErrs []error
+	for _, re := range retainedRefusals {
+		if retained := s.retainEventAdmissionRefusal(ctx, req.Repo, re); retained != re {
+			telemetryErrs = append(telemetryErrs, retained)
+		}
+	}
+	if len(telemetryErrs) > 0 {
+		return out, &Error{
+			Code:    "REFUSAL_UNRECORDED",
+			Message: "schedule tick committed; admission refusal diagnostic could not commit",
+			Cause:   errors.Join(telemetryErrs...),
+		}
+	}
+	return out, nil
 }

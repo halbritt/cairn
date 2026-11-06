@@ -511,6 +511,8 @@ func NotifyStoppedPublishers(ctx context.Context, store *Store, repo string, del
 			batch.Suppressed++
 			cur.NotifiedFingerprint, cur.NotificationEventID = sig, out.NotificationEventID
 			current.Deliveries[d.DeliveryID] = cur
+		case "deferred_capacity":
+			batch.Deferred++
 		case "recipient_unavailable":
 			batch.Unavailable++
 		default:
