@@ -649,6 +649,10 @@ func HandleWorkAdviceAPI(store *core.Store, collection string, w http.ResponseWr
 			writeWorkAdviceHTTPError(w, err)
 			return
 		}
+		if body.GenerationEnabled == nil && body.ApplyEnabled == nil {
+			writeWorkAdviceHTTPError(w, &core.Error{Code: "INVALID_REQUEST", Message: "at least one of generation_enabled or apply_enabled is required"})
+			return
+		}
 		ctrl, err := store.GetAdviceControl(ctx)
 		if err != nil {
 			writeWorkAdviceHTTPError(w, err)

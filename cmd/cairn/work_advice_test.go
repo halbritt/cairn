@@ -393,3 +393,75 @@ func TestWorkAdviceHTTP_APIEndpoints(t *testing.T) {
 		t.Fatalf("advice reconcile HTTP status %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestWorkAdviceControl_FlagPreservation(t *testing.T) {
+	repo := "repo-advice-ctrl-" + uuid.NewString()[:8]
+	s := testWorkAdviceStore(t, repo)
+	ctx := context.Background()
+	enableWorkAdviceFeatureCLI(t, s, ctx)
+
+	// Set both to false directly
+	_, err := s.SetAdviceControl(ctx, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. CLI: Set only generation to true
+	out, err := run(ctx, []string{"work", "advice", "control", "set", "--generation=true"}, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("work advice control set --generation failed: %v", err)
+	}
+	res, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any output, got %T", out)
+	}
+	if res["generation_enabled"] != true {
+		t.Fatalf("expected generation_enabled=true, got %v", res["generation_enabled"])
+	}
+	if res["apply_enabled"] != false {
+		t.Fatalf("expected apply_enabled to remain false, got %v", res["apply_enabled"])
+	}
+
+	// Verify store state directly
+	ctrl, err := s.GetAdviceControl(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ctrl.GenerationEnabled || ctrl.ApplyEnabled {
+		t.Fatalf("expected generation=true and apply=false, got gen=%v apply=%v", ctrl.GenerationEnabled, ctrl.ApplyEnabled)
+	}
+
+	// 2. CLI: Neither flag provided should fail
+	_, err = run(ctx, []string{"work", "advice", "control", "set"}, strings.NewReader(""))
+	if err == nil {
+		t.Fatalf("expected failure when neither flag is supplied")
+	}
+
+	// 3. HTTP: POST /api/work/advice/control with both nil should fail
+	emptyBody := map[string]any{}
+	eb, _ := json.Marshal(emptyBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/work/advice/control", bytes.NewReader(eb))
+	rec := httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty control body, got %d", rec.Code)
+	}
+
+	// 4. HTTP: POST with only apply_enabled: true should preserve generation_enabled: true
+	applyOnlyBody := map[string]any{"apply_enabled": true}
+	ab, _ := json.Marshal(applyOnlyBody)
+	req = httptest.NewRequest(http.MethodPost, "/api/work/advice/control", bytes.NewReader(ab))
+	rec = httptest.NewRecorder()
+	HandleWorkAdviceAPI(s, repo, rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for apply-only control body, got %d: %s", rec.Code, rec.Body.String())
+	}
+	ctrl, err = s.GetAdviceControl(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ctrl.GenerationEnabled || !ctrl.ApplyEnabled {
+		t.Fatalf("expected both true, got gen=%v apply=%v", ctrl.GenerationEnabled, ctrl.ApplyEnabled)
+	}
+}
+

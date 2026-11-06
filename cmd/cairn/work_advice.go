@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 		rawItem := f.String("item", "", "item UUID or identifier")
 		profileName := f.String("profile", "", "registered advice profile name")
 		modelRoute := f.String("model", "", "override model name")
-		timeoutSec := f.Int("timeout", 90, "job deadline in seconds (30-300)")
+		timeoutSec := f.Int("timeout", 90, "job deadline in seconds (10-180)")
 		requestID := f.String("request-id", "", "idempotency request ID")
 		collection := f.String("collection", "", "collection name")
 
@@ -554,13 +555,37 @@ func workAdviceCommand(ctx context.Context, store *core.Store, args []string) (a
 				"updated_at":         ctrl.UpdatedAt.UTC().Format(time.RFC3339),
 			}, nil
 		case "set":
+			ctrl, err := store.GetAdviceControl(ctx)
+			if err != nil {
+				return nil, err
+			}
 			f := flags("work advice control set")
-			gen := f.Bool("generation", true, "enable or disable advice generation")
-			app := f.Bool("apply", true, "enable or disable advice apply")
+			gen := f.Bool("generation", ctrl.GenerationEnabled, "enable or disable advice generation")
+			app := f.Bool("apply", ctrl.ApplyEnabled, "enable or disable advice apply")
 			if err := f.Parse(args[2:]); err != nil {
 				return nil, invalid(err.Error())
 			}
-			updated, err := store.SetAdviceControl(ctx, *gen, *app)
+			var hasGen, hasApp bool
+			f.Visit(func(fl *flag.Flag) {
+				if fl.Name == "generation" {
+					hasGen = true
+				}
+				if fl.Name == "apply" {
+					hasApp = true
+				}
+			})
+			if !hasGen && !hasApp {
+				return nil, invalid("at least one of --generation or --apply is required")
+			}
+			finalGen := ctrl.GenerationEnabled
+			if hasGen {
+				finalGen = *gen
+			}
+			finalApp := ctrl.ApplyEnabled
+			if hasApp {
+				finalApp = *app
+			}
+			updated, err := store.SetAdviceControl(ctx, finalGen, finalApp)
 			if err != nil {
 				return nil, err
 			}
