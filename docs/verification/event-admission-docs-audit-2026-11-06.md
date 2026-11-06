@@ -45,9 +45,9 @@ it does not prove the claims in those files.
 
 ## Validation
 
-- `python3 -B scripts/verify_docs.py --json`: passed all four tiers across 453
-  Markdown files, including 2,427 internal links, 538 CLI invocations, 372 code
-  blocks and all 29 required documents. The 68 JSON and 288 shell blocks passed
+- `python3 -B scripts/verify_docs.py --json`: passed all four tiers after trunk
+  integration across 454 Markdown files, including 2,435 internal links, 548 CLI
+  invocations, 377 code blocks and all 29 required documents. The 68 JSON and 293 shell blocks passed
   their syntax checks; other fenced languages are counted but not executed.
 - `make check`: passed Go vet, generated API contract drift checks, Go formatting
   and the SHA-256 checks for all four pinned design sources.
