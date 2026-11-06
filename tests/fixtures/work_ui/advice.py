@@ -189,14 +189,19 @@ def advice_fixture():
             manifest_sources = review["manifest"]["sources"]
             base.require(len(manifest_sources) == 1, "manifest does not identify the exact selected source set")
             captured = manifest_sources[0]
+            self.report.setdefault("source_provenance_observations", []).append(dict(
+                request_uuid=review["job"]["request_uuid"], manifest_source=captured,
+                retained_source=dict(record_id=self.source["record_id"], version=self.source["version"],
+                    body_sha256=expected_digest, observed_at=self.source["written_at"])))
             def timestamp(value):
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
                 base.require(parsed.utcoffset() is not None, "source observation lacks a timezone")
                 return parsed
             base.require(captured["record_id"] == source["id"] and captured["version"] == source["version"]
-                and captured["body_sha256"] == expected_digest
-                and timestamp(captured["observed_at"]) == timestamp(self.source["written_at"]),
-                "manifest source identity, digest or observation time differs from the actual retained source")
+                and captured["body_sha256"] == expected_digest,
+                "manifest source identity or digest differs from the actual retained source")
+            base.require(timestamp(captured["observed_at"]) == timestamp(self.source["written_at"]),
+                f'manifest source observation differs from retained WrittenAt: {captured["observed_at"]!r} != {self.source["written_at"]!r}')
             if "observed_at" in source:
                 base.require(timestamp(source["observed_at"]) == timestamp(captured["observed_at"]),
                              "canonical source observation differs from the immutable manifest")
