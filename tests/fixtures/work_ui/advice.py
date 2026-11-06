@@ -6,6 +6,7 @@ No Cairn response, Store operation, authentication or feature gate is mocked.
 The selected provider executable is synthetic; no model/network request occurs.
 """
 import argparse
+from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -74,14 +75,19 @@ def advice_fixture():
                 claims="synthetic process boundary only", profile=self.profile_name)}
             self.source_body = "SELECTED_ADVICE_SOURCE_" + name + ' <img src=x onerror="window.sourceInjected=true">'
             self.source = self.host.agent("sender", "create", dict(request_id=str(uuid.uuid4()), draft=dict(
-                kind="note", body=self.source_body, claim_type="self", sensitivity="shareable",
+                kind="note", body="SUPERSEDED_ADVICE_SOURCE_" + name, claim_type="self", sensitivity="shareable",
                 scope=dict(repo=self.collection, task_id="*", run_id="*"))))
+            self.source = self.host.agent("sender", "revise", dict(request_id=str(uuid.uuid4()),
+                record_id=self.source["record_id"], expected_version=self.source["version"],
+                repo=self.collection, body=self.source_body))
+            base.require(self.source["version"] == 2 and self.source["body"] == self.source_body,
+                         "selected source was not actually revised to version two")
             self.private_source = self.host.agent("sender", "create", dict(request_id=str(uuid.uuid4()), draft=dict(
                 kind="note", body="PRIVATE_ADVICE_SOURCE_NEVER_SENT", claim_type="self", sensitivity="local",
                 scope=dict(repo=self.collection, task_id="*", run_id="*"))))
             self.revision = self.work("artifact", "register", "--kind", "report", "--url",
                 "https://reports.fixture.invalid/advice/" + name, "--revision", "exact-v1", "--display-name", "Synthetic selected report")
-            if name == "advice_workflow":
+            if name in ("advice_workflow", "advice_currentness"):
                 self.work("progress", "add", "--project", self.slug, "--item", self.item_id,
                           "--text", "Operator baseline progress to restore through compensation")
             self.report.setdefault("synthetic_provider", {})[name] = self.case["provider"]
@@ -165,6 +171,77 @@ def advice_fixture():
                 checkbox = page.locator(f'.advice-action[data-action-id="{action["action_uuid"]}"] .advice-action-select')
                 if action["status"] == "pending":
                     checkbox.set_checked(action["action_type"] in kinds)
+
+        def assert_review_provenance(self, review):
+            sources = review["input"]["snapshot"]["source_references"]
+            base.require(len(sources) == 1, "review did not retain the one explicitly selected source")
+            source = sources[0]
+            expected_digest = hashlib.sha256(self.source_body.encode()).hexdigest()
+            base.require(source["id"] == self.source["record_id"] and source["version"] == 2
+                and source["body"] == self.source_body and source["body_sha256"] == expected_digest,
+                "canonical input did not retain exact selected version-two source bytes")
+            manifest_sources = review["manifest"]["sources"]
+            base.require(len(manifest_sources) == 1, "manifest does not identify the exact selected source set")
+            captured = manifest_sources[0]
+            def timestamp(value):
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                base.require(parsed.utcoffset() is not None, "source observation lacks a timezone")
+                return parsed
+            base.require(captured["record_id"] == source["id"] and captured["version"] == source["version"]
+                and captured["body_sha256"] == expected_digest
+                and timestamp(captured["observed_at"]) == timestamp(self.source["written_at"]),
+                "manifest source identity, digest or observation time differs from the actual retained source")
+            if "observed_at" in source:
+                base.require(timestamp(source["observed_at"]) == timestamp(captured["observed_at"]),
+                             "canonical source observation differs from the immutable manifest")
+            for action in review["actions"]:
+                selected = action["target_payload"].get("source_references", [])
+                citations = action["review"]["source_references"]
+                base.require([row["record_id"] for row in citations] == selected,
+                             "review citations differ from the proposed action's exact source set")
+                for cited in citations:
+                    base.require(cited["record_id"] == source["id"] and cited["version"] == source["version"]
+                        and cited["body_sha256"] == source["body_sha256"]
+                        and timestamp(cited["observed_at"]) == timestamp(captured["observed_at"]),
+                        "action citation invents a source version, digest or read-time observation")
+
+        def assert_captured_before(self, page, review, before):
+            from playwright.sync_api import expect
+            for action in review["actions"]:
+                payload = action["target_payload"]
+                if action["action_type"] == "annotate_progress":
+                    matches = [row for row in before["annotations"].values()
+                               if row["kind"] == "progress" and row["state"] == "active"]
+                    fields = ("annotation_id", "revision", "kind", "body", "state")
+                elif action["action_type"] == "annotate_blocker":
+                    matches = [row for row in before["annotations"].values()
+                               if row["annotation_id"] == payload.get("existing_blocker_id")]
+                    fields = ("annotation_id", "revision", "kind", "body", "state")
+                elif action["action_type"] == "link_artifact":
+                    matches = [row for row in before["links"].values()
+                               if row["revision_id"] == payload["artifact_revision_id"] and row["role"] == payload["role"]]
+                    fields = ("link_id", "revision", "revision_id", "role", "state")
+                else:
+                    raise AssertionError("unknown action in captured-Before proof")
+                base.require(len(matches) <= 1, "baseline target selection is ambiguous")
+                expected = {field: matches[0][field] for field in fields} if matches else None
+                captured = action["review"]["before"]
+                base.require(captured is None if expected is None else isinstance(captured, dict)
+                    and all(captured.get(field) == value for field, value in expected.items()),
+                    "Before preview differs from the exact pre-generation target, including retained removed edges")
+                rendered = page.locator(f'.advice-action[data-action-id="{action["action_uuid"]}"] .advice-diff > div').first
+                if expected is None:
+                    expect(rendered).to_contain_text("No existing target.")
+                else:
+                    for value in expected.values():
+                        expect(rendered).to_contain_text(str(value))
+
+        def assert_review_capture_unchanged(self, original, current):
+            self.assert_review_provenance(current)
+            base.require(current["manifest"]["sources"] == original["manifest"]["sources"]
+                and {row["action_uuid"]: row["review"]["before"] for row in current["actions"]}
+                    == {row["action_uuid"]: row["review"]["before"] for row in original["actions"]},
+                "later review reconstructed captured source provenance or Before from current state")
 
         def apply_selected(self, page):
             from playwright.sync_api import expect
@@ -300,8 +377,8 @@ def advice_fixture():
             expect(page.locator(f'.advice-application[data-request-id="{receipt["request_uuid"]}"]')).to_contain_text("Application undone")
             return result["receipt"]
 
-        def screenshot(self, page, name):
-            page.locator("#item-advice").scroll_into_view_if_needed()
+        def screenshot(self, page, name, selector="#item-advice"):
+            page.locator(selector).scroll_into_view_if_needed()
             page.screenshot(path=str(self.output / (name + ".png")), full_page=True)
 
         def workflow(self, page, viewport):
@@ -319,20 +396,29 @@ def advice_fixture():
                 base.require(len(self.invocation_rows()) == before, "missing field policy launched the synthetic provider")
             self.settings(page)
             self.inputs(page)
-            review = self.generate(page)
-            self.screenshot(page, "advice-review-" + viewport)
             before_first = self.work_rows()
+            old_edges = [row for row in before_first["links"].values()
+                         if row["revision_id"] == self.revision["revision_id"] and row["role"] == "evidence"]
+            base.require((not old_edges) if viewport == "desktop" else len(old_edges) == 1 and old_edges[0]["state"] == "removed",
+                         "workflow did not exercise the intended new desktop edge and retained removed phone edge")
+            review = self.generate(page)
+            self.assert_review_provenance(review)
+            self.assert_captured_before(page, review, before_first)
+            base.require(self.work_rows() == before_first, "generation changed its captured work baseline")
+            self.screenshot(page, "advice-review-" + viewport, "#advice-review-meta")
+            self.screenshot(page, "advice-before-" + viewport, ".advice-action:first-child .advice-diff")
             self.select_actions(page, review, {"annotate_progress", "link_artifact"})
             first = self.apply_selected(page)
             self.assert_application(review, first, {"annotate_progress", "link_artifact"}, before_first)
             updated = self.current_review(page)
+            self.assert_review_capture_unchanged(review, updated)
             base.require([action["action_type"] for action in updated["actions"] if action["status"] == "pending"] == ["annotate_blocker"],
                          "unselected blocker did not remain pending")
             before_second = self.work_rows()
             self.select_actions(page, updated, {"annotate_blocker"})
             second = self.apply_selected(page)
             self.assert_application(updated, second, {"annotate_blocker"}, before_second)
-            self.screenshot(page, "advice-applications-" + viewport)
+            self.screenshot(page, "advice-applications-" + viewport, ".advice-application:first-child")
             before_second_undo = self.work_rows()
             second_undo = self.undo_application(page, second)
             self.assert_compensation(second, second_undo, before_second, before_second_undo)
@@ -345,7 +431,10 @@ def advice_fixture():
                                 "--text", "Existing operator blocker for guarded reopening")
             page.locator("#advice-reload").click()
             expect(page.locator("#advice-reload")).to_be_enabled()
+            before_resolution = self.work_rows()
             resolution = self.generate(page, "resolve", blocker_id=blocker["annotation_id"])
+            self.assert_review_provenance(resolution)
+            self.assert_captured_before(page, resolution, before_resolution)
             self.select_actions(page, resolution, {"annotate_blocker"})
             resolved = self.apply_selected(page)
             base.require(next(row for row in self.detail()["annotations"] if row["annotation_id"] == blocker["annotation_id"])["state"] == "resolved",
@@ -399,13 +488,19 @@ def advice_fixture():
         def currentness_case(self, page):
             from playwright.sync_api import expect
             self.open_item(page); self.settings(page); self.inputs(page)
+            baseline = self.work_rows()
             review = self.generate(page)
+            self.assert_review_provenance(review)
+            self.assert_captured_before(page, review, baseline)
             self.work("progress", "add", "--project", self.slug, "--item", self.item_id, "--text", "Intervening selected progress")
             page.locator("#advice-source-record").fill("UNSAVED SOURCE DRAFT")
             page.locator("#advice-reload").click()
             expect(page.locator("#advice-currentness")).to_contain_text("stale")
             expect(page.locator("#advice-apply")).to_be_disabled()
             expect(page.locator("#advice-source-record")).to_have_value("UNSAVED SOURCE DRAFT")
+            stale = self.current_review(page)
+            self.assert_review_capture_unchanged(review, stale)
+            self.assert_captured_before(page, stale, baseline)
             before = len(self.invocation_rows())
             self.forget_source()
             page.locator("#advice-reload").click()
