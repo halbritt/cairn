@@ -51,7 +51,8 @@ changes to their existing Go helper consumers. F-B3 owns session/ledger
 packages, the F-04 compatibility caller and its narrowly scoped
 event/configuration plumbing in `inbox_binding.py`, `memory.py` and
 `coordination.py`, including the authenticated issued-command constructor,
-then capture. The caller edits require a sequenced
+compact/fallback/next-cue rendering and minimum checked-selection plumbing in
+compact config resolution, then capture. The caller edits require a sequenced
 shared-file slot agreed with Coordination; they do not transfer native-session
 or journal policy ownership. F-B2 owns recall. The overall lead assigned F-B1
 the initial `lifecycle` registration in `cmd/cairn/main.go` and
@@ -541,10 +542,11 @@ The receipt's exact SHA-256 and canonical path are pinned **outside the
 receipt**, in the owner-controlled hook launch configuration. The proposed
 trust entry is a fixed, independently reviewed stdlib-only verifier under an
 approved absolute Python interpreter in isolated mode (`-I -S`). The hook's
-actual argv contains its reviewed `-c` literal and independently recorded
-receipt path/digest, selected role/alias and config path. Release separately
-records the verifier digest with that selection and reads back the installed
-argv, including its literal.
+selected vector contains its reviewed `-c` literal, receipt path/digest,
+role/alias, config path and trusted timeout. It is executed through the short
+external launcher below; the literal is not pasted into agent-facing commands.
+Release records the verifier/vector digest and reads back the launcher bytes
+and their exact expansion to that vector.
 The verifier itself is not the receipt's bootstrap. Foundation's bounded
 checking code is part of that reviewed literal, not imported from an unchecked
 file. It verifies the external receipt digest and
@@ -663,6 +665,8 @@ its original order. Source binding/state errors use the ordinary F-04 error
 frame and public handling; they are not relabelled as code-preflight errors.
 The new parent-config-digest consistency guard remains an explicit IPC boundary,
 not a substitute environment/body admission rule.
+This is an activation-prefix result, not a whole-hook skip: the retained
+frontend continues under its own ordinary policy, including independent memory.
 
 Enabled continuation may read the same immutable binding against the same
 expected digest to populate its checked context after the child returns. It
@@ -693,7 +697,8 @@ to hook mode; issued inbox commands retain their existing command/intent-lock
 deadlines and never re-enter hook activation.
 
 Every new Python completion/ack/respond/finish-reply/advance/drain wrapper and
-cue emitted by this compatibility caller uses that same authenticated vector.
+cue emitted by this compatibility caller reaches that same authenticated vector
+through the compact trusted launcher `L` below; it never prints the full vector.
 Do not emit `[sys.executable, __file__, ...]` or another direct snapshot-member
 invocation. The current `context.read` is direct `cairn agent history`, so it
 keeps that existing CLI command rather than inventing a Python `read` mode;
@@ -708,11 +713,78 @@ checked bytes. A config/event/environment flag is not the authenticated
 process-local loader context. Existing immutable `/2` members and already-issued
 `/2` argv remain executable and are not rewritten.
 
-F-04 process fixtures execute a real issued completion/ack and a request response
-through `V` after hook activation. Include malformed role/config/tail, closure/
-alias replacement and direct-member execution with an adjacent-loader sentinel;
-all negatives refuse before that unchecked code or command effect. Preserve
-the same journal request/result references; do not duplicate journal policy.
+F-04 process fixtures execute every emitted wrapper kind (complete, ack,
+respond, finish-reply, advance and drain), not merely one representative call.
+Include malformed role/config/tail, closure/alias replacement and direct-member
+execution with an adjacent-loader sentinel; negatives refuse before unchecked
+code or command effects. Preserve the same journal request/result references;
+do not duplicate journal policy.
+
+### Compact launcher, commands and presentation
+
+Release installs a short, immutable launcher `L` for each exact `V`/configuration
+selection. It is an explicit external trusted anchor, like the owner-controlled
+hook configuration; it is not an unchecked receipt payload member. Foundation
+supplies the fixed renderer/validation contract, and Release owns staging,
+publication, readback and retention. It is a minimal approved-shell script
+containing only `exec <shlex.join(V)> -- "$@"`. It parses no event/handle,
+evaluates no tail string and selects no alternate interpreter, program or
+Python pathname. The original argv tail and stdin/streams reach `V` unchanged.
+
+Generate `L` after finalizing the receipt and `V`; its canonical path is
+`<persistent-private-launch-root>/<sha256-of-L-bytes>/inbox`. Its directory is
+owned by the invoking real UID and mode `0700`, the launcher mode `0500`, with
+the new `/3` safe-ancestor/no-symlink policy. The Release selection/manifest
+records the exact path, raw byte count/SHA-256, vector/verifier digest, approved
+shell/Python closure and actual byte/argv readback. The receipt does not hash
+`L`, which embeds the receipt digest, so this does not introduce a hash cycle.
+The shell, `L` and hook selection are the explicit external trust root; do not
+claim that `L` authenticates its own first instruction. Anchor changes require
+controlled install/readback and a new immutable identity. Retain all still-used
+launchers alongside receipts and issued argv until qualified retirement.
+
+All public context command fields, cues, fallbacks, next cues and turn-end
+reminders use `L` plus their original tail, never the multi-KB `-c` literal.
+Machine execution still reaches exactly `V + ["--", *tail]`. Compact commands
+use `L inbox compact read|inspect|settle|advance HANDLE` with their existing
+disposition/code arguments. These are existing issued-session operations;
+compact `inspect` renews a lease. They are distinct from excluded offline
+inspection such as `inspect-held-refusal`.
+
+In compact resolution, bind lookup root, derived binding/config and context to
+`L`/`V`'s selected configuration **before loading the derived config** or any
+existing effect. `CAIRN_INBOX_ROOT` is lookup, not authority. Preserve original
+handle grammar, TTL, native owner/process/caller, lease, causation, journal,
+turn and command/deadline policies. Root's sequenced F-B3 slot includes only
+`inbox_handoff` construction, `inbox_cue_text` drain rendering, `inbox_context`
+compact/fallback/next-cue rendering and this minimum checked-selection plumbing;
+Coordination retains grammar/claim/journal/native/watcher transition ownership.
+Old `/2` bare launchers, handles and issued argv remain unchanged and usable.
+
+Each model-visible shell command is at most 512 UTF-8 bytes; aggregate command
+and control prose in a cue/reminder is at most 2048 bytes. The actual encoded
+whole response and recall must additionally fit every smaller configured/source/
+harness budget, including Codex's 12000-byte `additionalContextLimit`. Reject
+installation choices that cannot meet these bounds. Never truncate required
+control/source text, silently fall back or report delivery/settlement without
+its bytes; retain the source non-delivery/refusal and pending evidence.
+
+Fixtures run the **exact emitted shell-joined text** through a shell as an agent
+does, with spaces, quotes, non-ASCII paths and long legal arguments. Assert the
+byte-exact authenticated vector/tail, original stdin and source effect for each
+wrapper and each compact read/inspect/settle/advance operation, including lease
+renewal. Cover ordinary, source-unavailable, next-cue and turn-end reminders
+alongside maximum legal recall and encoded framing. Include wrong root/config/
+context refusal before derived load/effects, helper/alias/selection tamper and
+direct-member refusal. Verify launcher hashes/readback before publication;
+programmatic argv-only smoke cannot establish presentation acceptance.
+
+Retained Python API calls through `config['cairn']` keep their existing `/2`
+provisioned path/owner trust level; config pinning does not falsely authenticate
+that API CLI's executable hash. The `/3` binary/running-image policy applies to
+the selected Go lifecycle executable. Release inventories/verifies the retained
+API-client selection through its existing installed checks; Store authority
+and attribution do not change.
 
 Compatibility enabled/descriptor changes publish a new immutable binding,
 receipt and launch selection. There is no in-place disable. Publishing disabled
