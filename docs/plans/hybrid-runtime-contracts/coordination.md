@@ -1,10 +1,10 @@
-# Coordination contracts: coordination/v5
+# Coordination contracts: coordination/v6
 
 Status: acceptance criteria and source characterization for the authorized hybrid
 runtime consolidation campaign (`CAIRN-301`), prepared against baseline commit
-`db45c4474fa7911b5569f2f55ebf2bd19c9a81bb` (`shared/1`, consumer ownership updated at `4b912bb2`) and reconciled with
-`foundation/v3` (`9aeb649d`, plus [`f04-consumer-decision.md`](f04-consumer-decision.md) `32ca633`)
-and `release/2` (`aa0c26f` / `891acd75`) on 2026-11-06. These
+`db45c4474fa7911b5569f2f55ebf2bd19c9a81bb` (`shared/1`, consumer ownership updated at `4b912bb2`, `8f7357b1`/`88b77474`, and `cca6fb78`) and reconciled with
+`foundation/v4` ([`foundation.md`](foundation.md) `8b768649`, [`f04-consumer-decision.md`](f04-consumer-decision.md) `32ca633` + `cca6fb78`)
+and `release/2` ([`release.md`](release.md) `aa0c26f` / `891acd75`, plus `C1`–`C3` compatibility receipt closure) on 2026-11-06. These
 contracts specify behavior to characterize, implement, and verify. They do **not**
 claim that `internal/lifecycle/journal`, `internal/lifecycle/wake`,
 `internal/lifecycle/transcript`, `internal/lifecycle/coordination`, or the
@@ -17,14 +17,18 @@ The [implementation plan](../hybrid-runtime-implementation.md) and shared
 - Foundation `F-B1` (`F-01` / `CAIRN-316`) owns initial lifecycle command
   registration in `cmd/cairn/main.go` and `cmd/cairn/commands.go`; Semantic `S-B2`
   owns initial lifecycle targets in `Makefile`. Per [`f04-consumer-decision.md`](f04-consumer-decision.md)
-  (`32ca633`) and overall ownership `4a6d3110` v1, after `F-01` hands over the
-  binding/CLI boundary, **`F-B3` (`F-04`) owns `integrations/lifecycle/inbox_binding.py`
-  plus ONLY the narrow original-event and checked-config-snapshot plumbing in
-  `integrations/lifecycle/memory.py` and `integrations/lifecycle/coordination.py`**
-  (retaining Coordination/`recall_dispatch.py`'s owned fixed error-family mappings
-  with zero journal/claim/watcher transition changes); **Coordination defers
+  (`32ca633`, `cca6fb78`) and overall ownership `4a6d3110` v1 + `8a4baa32` v1, after `F-01` hands over the
+  binding/CLI boundary, **`F-B3` (`F-04`) receives the sequenced compatibility-only
+  slot for `integrations/lifecycle/inbox_binding.py`, original-event and
+  checked-config-snapshot activation plumbing in `integrations/lifecycle/memory.py`
+  and `integrations/lifecycle/coordination.py`, `inbox_handoff` wrapper construction,
+  `inbox_cue_text` drain rendering, `inbox_context` compact/fallback/next-cue
+  rendering, and the minimum checked-selection guard at `compact_inbox_command`
+  config resolution** (retaining Coordination/`recall_dispatch.py`'s owned fixed
+  error-family mappings and transferring **zero** command grammar, claim, journal,
+  native-session, or watcher/recovery transition ownership); **Coordination defers
   overlapping Python frontend and `J-05` rewrites until `F-04`'s reviewed caller
-  change lands**. Coordination owns this contract (`coordination/v4`) and separate
+  change lands**. Coordination owns this contract (`coordination/v6`) and separate
   `internal/lifecycle/{journal,wake,transcript,coordination}` packages, wiring CLI
   subcommands in a serialized shared-file slot after `F-01`.
 - New Go implementation consuming shared contracts (`J-02` through `J-06`) waits
@@ -81,6 +85,20 @@ multi-binding watcher entrypoint:
      plus `\n` (`line 4485`). Activation failure emits `phase=activation` diagnostic,
      calls `record_activation_refusal`, and exits `2` (`NATIVE_PROMPT_REFUSED`) so
      Claude erases only the joined channel message (`lines 4471-4479, 4503-4505`).
+     Under the `F-04` compatibility caller (`C3`, [`f04-consumer-decision.md`](f04-consumer-decision.md)
+     `8f7357b1`/`88b77474`, [`foundation.md`](foundation.md) `8b768649`), code/receipt
+     trust precedes binding-data reads: missing, unsafe, or tampered receipt, Python
+     executing closure, or Go executable produces the declared new compatibility-preflight
+     failure even on excluded callbacks—empty `stdout`, exit `1`, and fixed single-line
+     `stderr` `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n`,
+     with **no** `NATIVE_PROMPT_REFUSED` exit-`2` promotion and **no** ledger,
+     refusal-record, token, or API effect (`/2` unchanged). With valid executing code,
+     Go runs source `inbox_recall` admission once using the parent's captured
+     environment, `cwd`, checked config, and raw event **before** opening or hashing
+     any `/3` binding or target config pin; an excluded callback returns only an
+     activation-prefix skip/`false` so the retained coordination frontend continues
+     under its ordinary policy (never a whole-hook skip), whereas admitted callbacks
+     run full `F-01` `/3` binding/image/config checks before state effects.
    - `cairn lifecycle coordination watch --config-dir <dir> [--once]`:
      `watch` accepts **only** `--config-dir` (omitting `--config-dir` exits `2` via
      `parser.error("watch requires --config-dir")`; `lines 4487-4488`, matching live
@@ -90,7 +108,7 @@ multi-binding watcher entrypoint:
      `claude-two`, `codex-one`, `agy-one`, etc.), runs `watch_once` per binding
      (any malformed binding or unhandled exception aborts the loop with exit `1` for
      service restart; `lines 4492-4510`), and waits up to `WATCH_INTERVAL`.
-2. **Explicit Journaled Inbox Commands, Drain, and Compact `cairn-inbox` Launcher:**
+2. **Explicit Journaled Inbox Commands, Drain, Compact Operations, and `C1` Authenticated Launch Closure:**
    - `inbox --context <context.json> {complete|ack|respond|finish-reply} [--disposition {handled|ignored|failed}] [--code {unsupported_kind|source_unavailable|processing_failed}] [--version V RECORD_UUID]`:
      reads up to `1048576` **decoded UTF-8 characters** on `stdin` (`> 1 MiB` chars
      -> `INVALID_REQUEST` exit `2`, `lines 2062-2064`). `--disposition` and `--code`
@@ -107,40 +125,112 @@ multi-binding watcher entrypoint:
      / `inbox_attempt` (`NATIVE_ACTIVE`) before contacting the store, claims at most
      one item, writes owner-only `drain-<lease_uuid>.json` (`attempt_id = "drain-<lease_uuid>"`,
      `route = "drain"`, and **no** `finish_reply` or `renew` field; `lines 4336-4339`)
-     before printing `cairn.inbox-drain/1` (which carries the `renew` argv at
-     `lines 4344-4345`), or prints `delivery_id: null` (`lines 4299-4353`). Drain
+     before printing `cairn.inbox-drain/1` (which carries the direct `cairn renew` argv
+     at `lines 4344-4345`), or prints `delivery_id: null` (`lines 4299-4353`). Drain
      journals are not added to `inbox_journals` (watcher, `settled_journal_index`,
      and leave gating ignore them, except legacy seeding of a state lacking
-     `inbox_journals` adopts matching `agent_id` files). Issued drain cues embed the
-     interpreter, module path, and `HOOK_CONFIG_PATH` (`lines 2955-2964`).
+     `inbox_journals` adopts matching `agent_id` files). Legacy `/2` drain cues embed
+     the interpreter, module path, and `HOOK_CONFIG_PATH` (`lines 2955-2964`);
+     compatibility drain cues (`inbox_cue_text`) replace `[sys.executable, __file__]`
+     with the authenticated compatibility launch while keeping `HOOK_CONFIG_PATH` equal
+     to `V`'s selected `--config` and leaving the direct `cairn inbox next` hint unchanged.
    - `inbox compact {read|inspect|settle|advance} <16-hex-handle> [handled|failed|ignored] [--code {unsupported_kind|source_unavailable|processing_failed}]`
-     **and bare `PATH` launcher `cairn-inbox`:**
-     issued compact prompts (`lines 2848-2864`) instruct live agents to run bare
-     `cairn-inbox read|settle|advance <handle>`, resolved via `PATH` (`~/.local/bin/cairn-inbox`
-     or staged `<account>/bin/cairn-inbox` -> `exec env CAIRN_INBOX_ROOT=<root> <python> <root>/coordination.py inbox compact "$@"`,
-     `install-agent-coordination.py:37-48`). Resolves `CAIRN_INBOX_ROOT` (default
-     `~/.local/share/cairn/coordination`), globs `<root>/state/*/compact/<h>.json`
-     plus `<root>/state/compact/<h>.json` (`!= 1` match -> `NOT_FOUND`, `lines 2153-2159`),
-     validates owner-only `<h>.json` (`cairn.compact-inbox-handle/1`: `{schema, binding, context, state, native_session_id, issued_at}`,
+     **and `/2` bare `PATH` launcher `cairn-inbox` vs `C1` compatibility closure:**
+     all four `inbox compact {read|inspect|settle|advance}` operations are **session-issued
+     live-attempt operations**, distinct from excluded offline/operator inspection in
+     Section 3 (`inspect-held-refusal`); specifically, compact `inspect` (`lines 2142, 2249-2282`)
+     calls `event-renew` (`lease_seconds=90`) and renews a live delivery lease rather than
+     performing effect-free operator inspection. Legacy `/2` prompts (`lines 2848-2864`)
+     instruct live agents to run bare `cairn-inbox read|settle|advance <handle>`, resolved
+     via `PATH` (`~/.local/bin/cairn-inbox` or staged `<account>/bin/cairn-inbox` ->
+     `exec env CAIRN_INBOX_ROOT=<root> <python> <root>/coordination.py inbox compact "$@"`,
+     `install-agent-coordination.py:37-48`, `stage_token_efficiency_canary.py:230-233`).
+     Under legacy `/2` (no compatibility `V` context), resolves `CAIRN_INBOX_ROOT`
+     (default `~/.local/share/cairn/coordination`); **under `C1`'s minimum
+     checked-selection guard in `compact_inbox_command` (`F-B3` slot, [`f04-consumer-decision.md`](f04-consumer-decision.md)
+     `cca6fb78`, [`foundation.md`](foundation.md) `8b768649`), because `L` contains only
+     `exec <shlex.join(V)> -- "$@"` with no exported `CAIRN_INBOX_ROOT`, `compact_inbox_command`
+     derives the authoritative lookup `root` from the grandparent of `V`'s selected
+     `--config` (`Path(selected_config).resolve().parent.parent`, requiring
+     `<root>/bindings/<binding>.json == Path(selected_config).resolve()`) when
+     `CAIRN_INBOX_ROOT` is unset, and when `CAIRN_INBOX_ROOT` is set requires it to
+     resolve to that exact same `root` (`INVALID_HOST` exit `7` otherwise), binding
+     lookup `root`, `config_path`, and `entry['context']`/`entry['state']` to `V`'s
+     selected configuration BEFORE `load_config(config_path)` (`line 2179`) or any
+     state/context read, `session_lock`, lease renewal, or journal effect, and consuming
+     `V`'s already-checked config snapshot bytes (or re-verifying its pinned digest on
+     load) so a post-validation config swap refuses before effects (`CAIRN_INBOX_ROOT` is
+     an optional lookup input only, never authority to select another profile/config).**
+     Globs `<root>/state/*/compact/<h>.json` plus `<root>/state/compact/<h>.json`
+     (`!= 1` match -> `NOT_FOUND`, `lines 2153-2159`), validates owner-only `<h>.json`
+     (`cairn.compact-inbox-handle/1`: `{schema, binding, context, state, native_session_id, issued_at}`,
      TTL `3600s`, max `128`; contains **no** executable path) and owner-only
-     `<root>/bindings/<binding>.json` (`lines 2161-2179`). Issued only for `notice`
-     and `response` (`lines 2215, 2824`). Verifies live `owner_process` (`STALE_SESSION`),
-     `caller_descends_from(owner_process)` + `CODEX_THREAD_ID` / `CLAUDE_SESSION_ID`
-     (`NOT_THIS_SESSION`, `lines 2204-2208`), and immutable delivery fields
-     (`INVALID_HOST`, `lines 2211-2216`). `advance` (`lines 2217-2248`) skips lease
-     renew and source check, requires `notice_batch_version == 1` (`UNSUPPORTED_CONTROL`),
-     acquires `session_lock` (`SESSION_BUSY`), and prints `cairn.compact-inbox-batch/1`.
-     `read`/`inspect`/`settle` renew lease (`STALE_LEASE`) and verify whole-version
-     source (`NOT_FOUND`, `PAYLOAD_UNAVAILABLE`, or local `SOURCE_UNAVAILABLE` at
-     `lines 1839-1854`, bypassed only for `settle <h> failed --code source_unavailable`);
-     `settle` runs `ack --disposition ...` (`lines 2283-2288`), prints
-     `cairn.compact-inbox/1`, and raises `CONFIRMATION_MISMATCH` (`exit 7`) if inner
-     exit `0` lacks committed `ack` (`lines 2293-2302`).
-3. **Offline Recovery & Inspection Subcommands (`J-06`):**
+     `<root>/bindings/<binding>.json` (`lines 2161-2179`). Issued only for `notice` and `response` (`lines 2215, 2824`).
+     Verifies live `owner_process` (`STALE_SESSION`), `caller_descends_from(owner_process)` +
+     `CODEX_THREAD_ID` / `CLAUDE_SESSION_ID` (`NOT_THIS_SESSION`, `lines 2204-2208`), and
+     immutable delivery fields (`INVALID_HOST`, `lines 2211-2216`). `advance` (`lines 2217-2248`)
+     skips lease renew and source check, requires `notice_batch_version == 1`
+     (`UNSUPPORTED_CONTROL`), acquires `session_lock` (`SESSION_BUSY`), and prints
+     `cairn.compact-inbox-batch/1` (whose `next` cue calls `inbox_context` at `lines 2242-2246`
+     and therefore renders the same authenticated compatibility cues). `read`/`inspect`/`settle`
+     renew lease (`STALE_LEASE`) and verify whole-version source (`NOT_FOUND`,
+     `PAYLOAD_UNAVAILABLE`, or local `SOURCE_UNAVAILABLE` at `lines 1839-1854`, bypassed
+     only for `settle <h> failed --code source_unavailable`); `settle` runs
+     `ack --disposition ...` (`lines 2283-2288`), prints `cairn.compact-inbox/1`, and
+     raises `CONFIRMATION_MISMATCH` (`exit 7`) if inner exit `0` lacks committed `ack`
+     (`lines 2293-2302`).
+   - **`C1` Authenticated Launch Vector `V`, Short Launcher `L`, Coexistence, and Deadlines (`F-04` `F-B3` caller slot):**
+     Machine execution of every newly issued compatibility Python command (`inbox_handoff`
+     wrappers `completion`/`acknowledgement`/`response` plus derived `finish_reply`,
+     non-compact turn-end reminders, and `drain` context/output; `inbox_cue_text` `drain`
+     cue; and `inbox_context` compact, `> 4096`-byte fallback, `source_unavailable`
+     fallback reused by `unacknowledged_turn_end_reminder` at `lines 2602-2610`, and
+     `advance` `next`-item cues for `inbox compact read|inspect|settle|advance <handle>`)
+     executes `V + ["--", *original_command_tail]`, where `V` fixes the approved absolute
+     Python interpreter, `-I -S -c` trusted stdlib-only verifier literal,
+     `--receipt PATH --receipt-sha256 SHA`, `--role coordination`, `--entrypoint ALIAS`,
+     and `--config ABS` (plus the hook timeout selection, which applies **only** to `hook`
+     mode). Per [`foundation.md`](foundation.md) (`foundation/v4` `8b768649`) and
+     [`f04-consumer-decision.md`](f04-consumer-decision.md) (`cca6fb78`),
+     agent-visible context command fields, cues, fallbacks, next cues, and reminders
+     render `[L, *original_command_tail]` through the short immutable `0500` external
+     launcher `L` (`<persistent-private-launch-root>/<sha256-of-L-bytes>/inbox`, using an
+     approved noninteractive shell qualified against `ENV`/`BASH_ENV` startup injection
+     and containing only `exec <shlex.join(V)> -- "$@"`) so each shell command is
+     `<= 512` UTF-8 bytes and aggregate cue/reminder control prose is `<= 2048` bytes
+     within `4096`-byte compact inline bounds and harness `additionalContextLimit` caps
+     (e.g. Codex `12000` bytes), never printing the multi-KB `-c` literal or
+     `[sys.executable, __file__, ...]`. **`L` (`exec`-only, no subshell reparenting) and
+     `V` (in-process verifier dispatch, no reparenting or environment scrubbing) MUST
+     preserve both the caller's `/proc` process ancestry (`caller_descends_from(owner_process)`
+     at `line 2204`) and the caller's environment including `CODEX_THREAD_ID` and
+     `CLAUDE_SESSION_ID` (`lines 2206-2208`, fail-open when unset and required to
+     distinguish sibling Codex threads sharing one `codex app-server` owner tree).**
+     Direct `context.read` (`cairn agent ... history`, `lines 2679-2680`), `drain` `renew`
+     (`cairn renew ...`, `lines 4344-4345`), and inner `commands.{complete,ack,respond}`
+     Store CLI argv remain **unchanged** (no invented Python `read` verb). Fresh issued
+     processes revalidate their pinned receipt/closure/binding/config selection before
+     running existing command authority checks (failing preflight with fixed
+     `CompatibilityPreflightError` exit `1` and zero journal/lock/lease/API effects below;
+     `inbox --context <path>` at `lines 2027-2065` is outside `F-B3`'s caller slot and
+     keeps `/2` owner-only `0600` + `cairn.session-inbox/1` parity after `V` revalidation
+     without silent `context.state_dir` hardening), reject any tail
+     `--config != selected --config`, refuse direct snapshot-member/alias path execution
+     before any adjacent loader or local import, perform **no** hook activation re-entry
+     or hook-admission bypass, and impose **no** hook timeout on `inbox`/`drain`/`compact`
+     modes (preserving existing `30s` CLI, `10s` `INTENT_LOCK_TIMEOUT`, `4s` API `call()`,
+     and `90s`/`900s` lease deadlines). Existing immutable `/2` copies, bare `PATH`
+     `cairn-inbox` launchers, `cairn.compact-inbox-handle/1` handles, and already-issued
+     `/2` argv remain untouched and executable until qualified retirement (`R-08`).
+3. **Offline Recovery & Inspection Subcommands (`J-06`, excluded from `V`/`L`):**
    - `recover-refused-wake`, `recover-native-refused-wake`,
      `recover-codex-refused-wake`, `recover-codex-ended-turn`,
      `recover-daemon-start-claim`, `check-codex-native-health`,
      `reconcile-codex-queue-wake`, and `inspect-held-refusal` (`lines 4376-4459`).
+     Together with `watch --config-dir`, these modes are **not** admitted through `V`/`L`
+     (`codex_queue.py:_open` lazily imports `websocket`, unavailable under `-I -S`) and
+     remain on their explicit retained `/2` route until `J-05`/`J-06`/`R-06` qualify
+     their Go replacement.
 
 ### Exit-code, stream, and serialization parity rules
 
@@ -156,6 +246,7 @@ multi-binding watcher entrypoint:
 | `inbox` subprocess `OSError` / `TimeoutExpired` (`2130-2133`) | JSON `API_CONNECTION_FAILED` | empty | `7` |
 | `inbox` / `drain` / `compact`: `OSError\|ValueError\|KeyError\|TypeError` (e.g. invalid UUID or missing `result["version"]` on `respond`, `2051, 2109, 4371-4374`) | JSON `INVALID_HOST` | empty | `7` |
 | `compact settle` (`2293-2305`): confirmed `ack` / inner nonzero (`1\|2\|3\|4\|7`) / unconfirmed inner `0` (`CONFIRMATION_MISMATCH` printed directly at `2300-2302`) | `cairn.compact-inbox/1` JSON | empty | `0` / inner (`1\|2\|3\|4\|7`, fallback `7`) / `7` |
+| `hook` (`C3`) **or** fresh `L`/`V`-launched `inbox` / `drain` / `compact` (`C1`) compatibility preflight failure before role dispatch: missing/unsafe/tampered receipt, Python closure, or Go executable, or invalid `--role`/`--entrypoint`/tail `--config` (even on excluded callbacks; `/2` unchanged; **zero** journal write-before-send, lock, state, refusal-record, lease, token, or API effect) | empty | `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n` | `1` |
 | `hook`: normal / `NATIVE_PROMPT_REFUSED` (`4503-4505`) / any other error (`4506-4510`, or unhandled traceback on escaping `AttributeError` in `record_activation_refusal`) | JSON + `\n` / empty / empty | optional diag / rejection line / unavailable line (or traceback on escaping `AttributeError`) | `0` / `2` / `1` |
 | `watch --config-dir`: `.watch.lock` `SESSION_BUSY` or malformed binding / unhandled error (`4492-4510`, or escaping `AttributeError` in `watch_once`) | empty | unavailable line / traceback | `1` |
 
@@ -313,9 +404,9 @@ Reference source: [`coordination.py`](../../../integrations/lifecycle/coordinati
 
 ## Native-session journal adapter (`session.JournalBoundary` / `journal.SessionJournalAdapter`)
 
-Agreed with Foundation ([`foundation.md`](foundation.md) `foundation/v3` `9aeb649d`
+Agreed with Foundation ([`foundation.md`](foundation.md) `foundation/v4` `8b768649`
 `## Native-session journal adapter`, [`f04-consumer-decision.md`](f04-consumer-decision.md)
-`32ca633`, `shared/1` `README.md:72-77, 104-105`, events `deb6c59a`, `e7977c58`, `14f74fd1`). Foundation (`internal/lifecycle/session`)
+`32ca633` + `cca6fb78`, `shared/1` `README.md:72-81, 109-110`, events `deb6c59a`, `e7977c58`, `14f74fd1`). Foundation (`internal/lifecycle/session`)
 owns `session.JournalBoundary` and imports no `journal` package (`F-04` independent
 of `J-05`); `J-03` (`CAIRN-334`) delivers pure `Recover()` + `Inspect()` in
 `internal/lifecycle/journal` with zero `session` import or dead adapter, and
@@ -352,7 +443,7 @@ type JournalBoundary interface {
   writes `cairn.unacknowledged-turn-end/1` (skipping when `wake_refusal_diagnostic.attempt_id`
   matches, emitting caller-owned `stderr` once per `attempt_id`) and never settles
   deliveries.
-- **Classified-vs-escaping failure & persistence order (`native_session.py:376-485`, `foundation/v3` `## Native-session journal adapter`):**
+- **Classified-vs-escaping failure & persistence order (`native_session.py:376-485`, `foundation/v4` `## Native-session journal adapter`):**
   `settle` persists ended-turn evidence (`inbox_turn_ended = true`,
   `delivered_since_idle = false`, clearing matching `active_prompt`) **before**
   `Flush("attempt")`, and runs `Flush` **before** `end_turn`/`release`. Within the
@@ -395,7 +486,7 @@ Reference source: [`native_session.py`](../../../integrations/lifecycle/native_s
 
 1. **Coordination Lifecycle 5-Family BSD `flock(2)` Inventory, Coexistence & Hierarchy:**
    Go MUST use `syscall.Flock` (BSD `flock(2)`, never `fcntl`/OFD locks) and adopt
-   [`foundation.md`](foundation.md) (`foundation/v3` `9aeb649d`, `### Mixed-language lock coexistence`)
+   [`foundation.md`](foundation.md) (`foundation/v4` `8b768649`, `### Mixed-language lock coexistence`)
    by reference
    (same inode and pathname in both directions; **never** `chmod`, replace, or reject
    existing `0644`/`0664` Python locks; legacy lifecycle `.lock` opens follow
@@ -500,10 +591,10 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
 [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 261-300, 1031-1190, 3084-3099`), and
 [`claudechannel.go`](../../../internal/claudechannel/claudechannel.go).
 
-1. **Per-Mode `SO_PEERCRED` & Per-Harness Endpoint Matrix (`foundation/v3` `9aeb649d`, `## Shared process and peer contract`):**
+1. **Per-Mode `SO_PEERCRED` & Per-Harness Endpoint Matrix (`foundation/v4` `8b768649`, `## Shared process and peer contract`):**
    Transports consume `internal/procpeer` (`F-01` extracts bridge/measurement
    primitives; client `procpeer` connect lands in `J-04`'s coordinated shared-file
-   slot per `foundation/v3` `## Shared process and peer contract`) before writing
+   slot per `foundation/v4` `## Shared process and peer contract`) before writing
    any request bytes, preserving `unix_peer_transport.py:114-136` (`process` mode
    checks **exact** `peer_pid == target.pid` + `(start, boot)` with no UID check
    unless `expected_uid` is passed; `uid` mode checks `peer_uid == os.geteuid()` and
@@ -653,7 +744,7 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
 
 | Fixture family | Reference source & tests | Required positive, negative, and crash cases |
 | --- | --- | --- |
-| `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `cairn-inbox` launcher + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, `renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real `30s`/`10s` deadline tests |
+| `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes, `C3`/`C1` `CompatibilityPreflightError` exit `1` with zero journal/lock/lease/refusal-record/API effects across `hook`, `inbox --context`, `inbox drain`, and `inbox compact` vs `NATIVE_PROMPT_REFUSED` exit `2`, plus joined Claude channel wake preflight exit `1` leaving no claim, pending delivery, and explicit wake custody state); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `/2` bare `cairn-inbox` launcher + `C1` `L`/`V` shell-executed compact `read\|inspect\|settle\|advance` (including non-default root with `CAIRN_INBOX_ROOT` unset succeeding via `V`'s `--config` grandparent, mismatched `CAIRN_INBOX_ROOT` / wrong-config / post-validation config-swap refusing before `load_config`/effects, out-of-tree caller and in-tree mismatched `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID` refusing with `NOT_THIS_SESSION` exit `7` before effects, `inspect` lease renewal, and `advance` `next`-cue rendering) + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, direct `cairn renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real `30s`/`10s` inbox deadlines (no hook timeout imposed on `inbox` modes) |
 | `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3183-3198, 3722-3827`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
 | `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
 | `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4088-4511` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
@@ -671,48 +762,71 @@ Required local validation before any Coordination slice is marked `Done`:
 
 ## Cross-team handoffs and reconciled `X-01` agreements (`CAIRN-302`)
 
-1. **Shared CLI, `Makefile` & Paired/Sequenced Slots (`Overall` / `agent-1249`, `shared/1` [`README.md`](README.md), [`f04-consumer-decision.md`](f04-consumer-decision.md) `32ca633`, ownership `4a6d3110` v1):**
+1. **Shared CLI, `Makefile` & Paired/Sequenced Slots (`Overall` / `agent-1249`, `shared/1` [`README.md`](README.md), [`f04-consumer-decision.md`](f04-consumer-decision.md) `32ca633` + `cca6fb78`, ownership `4a6d3110` v1 + `8a4baa32` v1):**
    - `F-B1` (`F-01`) owns initial lifecycle command registration in `cmd/cairn/main.go`
      and `cmd/cairn/commands.go`; `S-B2` owns initial lifecycle `Makefile` targets.
-   - **`F-04` (`F-B3`) activation caller slot:** after `F-01` hands over the
-     binding/CLI boundary, `F-B3` owns `integrations/lifecycle/inbox_binding.py` plus
-     only the required original-event and checked-config-snapshot plumbing in
-     `memory.py` and `coordination.py` (`cairn lifecycle binding activation --entrypoint memory|coordination --config <abs>`,
-     child Go alone acquiring activation lock, enabled hooks continuing through the
-     independently pinned compatibility receipt closure, preserving frozen fixtures
-     and public behavior). Coordination explicitly acknowledges this narrow delta and
-     defers overlapping Python frontend / `J-05` rewrites until it lands.
+   - **`F-04` (`F-B3`) compatibility-only caller & issued-command closure slot (`C1`–`C3`):**
+     after `F-01` hands over the binding/CLI boundary, `F-B3` owns
+     `integrations/lifecycle/inbox_binding.py`, original-event + checked-config-snapshot
+     activation plumbing in `memory.py` and `coordination.py`
+     (`cairn lifecycle binding activation --entrypoint memory|coordination --config <abs> --config-sha256 ... --binding-sha256 ... --receipt ... --receipt-sha256 ...`,
+     child Go alone acquiring activation lock, `C3` code-trust preflight before source
+     admission and `/3` binding-data reads, activation-prefix skip continuing ordinary
+     retained frontend policy, and enabled hooks continuing through the independently
+     pinned compatibility receipt closure), **`inbox_handoff` wrapper construction**
+     (preserving unchanged direct `context.read` `cairn agent ... history`, `drain`
+     `cairn renew`, and inner `commands.{complete,ack,respond}` Store CLI argv;
+     `inbox --context` stays outside `F-B3`'s slot with `/2` owner-only parity after `V`
+     revalidation), **`inbox_cue_text` drain rendering**, **`inbox_context`
+     compact/fallback/next-cue rendering** (`L inbox compact read|inspect|settle|advance`,
+     with `L` `exec`-only under an `ENV`/`BASH_ENV`-qualified shell and `V` preserving
+     caller `/proc` ancestry + `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID`, compact `inspect`
+     qualified as a session-issued lease-renewing operation distinct from `J-06` offline
+     inspection, no hook timeout imposed on `inbox` modes, and fresh `L`/`V` preflight
+     failures exiting `1` with fixed `CompatibilityPreflightError` and zero effects), and
+     **the minimum checked-selection guard at `compact_inbox_command` config resolution**
+     (deriving lookup `root` from `V`'s selected `--config` grandparent when
+     `CAIRN_INBOX_ROOT` is unset, requiring `CAIRN_INBOX_ROOT` when set to resolve to
+     that same `root`, binding `root`/`config_path`/context to `V`'s selected `--config`
+     before `load_config` or effects, and consuming checked config bytes). Coordination
+     explicitly agrees to this exact consumer boundary, retains sole ownership of
+     command grammar, claim, journal, native-session, and watcher/recovery transitions,
+     and defers overlapping Python frontend / `J-05` rewrites until `F-04`'s reviewed
+     caller lands.
    - **`J-04` paired `procpeer`/wake-consumer slot:** `F-B1` owns the
      `internal/procpeer` client connect addition and `J-B2` owns its first actual
      wake-transport consumer (`internal/lifecycle/wake`) in separate non-overlapping
      files, naming exact files and one combined candidate/test boundary before coding,
      reviewed independently by **`F-R1` and `J-R2`** (plus `J-R1` on Coordination
      CLI/refusal rules), and integrated together (no unused helper-only `main` commit).
-2. **Foundation `F-01` & `F-04` agreements (`agent-1267`, [`foundation.md`](foundation.md) `foundation/v3` `9aeb649d`, notice `89e8c1d6` v1):**
+2. **Foundation `F-01` & `F-04` agreements (`agent-1267`, [`foundation.md`](foundation.md) `foundation/v4` `8b768649`, sources `89e8c1d6` v1 + `5d50aa56` v1):**
    Coordination sent explicit Cairn agreements (`deb6c59a`, `e7977c58`, `14f74fd1`,
-   plus final `F-04`/`J-04`/`J-05` slot confirmation) covering: `F-04` real
-   activation/shared-state caller preceding `F-02`/`F-03` and `J-02` (no `J-05`
+   `9639d71b` v1, plus this `coordination/v6` consumer-boundary closure) covering: `F-04`
+   real activation/shared-state caller preceding `F-02`/`F-03` and `J-02` (no `J-05`
    dependency); `J-05` delivering native-session orchestration together with the
    compiled `session.JournalBoundary` and `journal.SessionJournalAdapter` (`HC-04`
    accepting transition policy, `J-05` defining external `ctx` cancellation before
    any cancellable `Flush` caller runs, and Coordination/`recall_dispatch.py`
    retaining owned fixed error-family mappings); per-mode `process` vs Codex
-   `--remote unix://` `uid` peer checks; and the 5 coordination lifecycle
-   `syscall.Flock` paths (`0644`/`0664` and symlink lock preservation per
-   `foundation/v3` `### Mixed-language lock coexistence`).
-   `foundation.md` (`## Open decisions and handoff`, items 1 & 3) still marks
-   `JournalBoundary` and peer/lock confirmation open pending Foundation's mirrored
-   closure at `X-01`.
-3. **Release `/2`–`/3` coexistence & drain seam (`agent-1270`, `release/2` `aa0c26f` [`release.md`](release.md)):**
-   Notified via Cairn (`3ea3e78e`): (a) already-issued `cairn.session-inbox/1` and
-   drain cues embed absolute executable paths, **and** live `cairn.compact-inbox-handle/1`
-   handles (`TTL 3600s`, storing no executable path) resolve through bare `PATH`
-   launcher `cairn-inbox` (`CAIRN_INBOX_ROOT` `<root>/state/*/compact/<h>.json` +
-   `<root>/bindings/<binding>.json`)—both must stay compatible across `/2` and `/3`
-   until drained/expired; (b) `J-03` `Inspect()` (`JournalStatus`) supplies the
-   side-effect-free read-only fact seam (`PendingReplay`, `ReplyPossible`,
-   `UnmaterializedFinishReply`, `HasUsableFinishReplyRef`, `ReadErr`, `ParseErr`,
-   `NonObject`) for Release `D1`–`D7` drain verification without invoking `Flush`.
+   `--remote unix://` `uid` peer checks; the 5 coordination lifecycle `syscall.Flock`
+   paths (`0644`/`0664` and symlink lock preservation per `foundation/v4`
+   `### Mixed-language lock coexistence`); and `C1`–`C3` compatibility launch (`V` /
+   short immutable launcher `L` expanding byte-for-byte to `V + ["--", *tail]`, subject
+   to Foundation `F-R1` + Release `R-R1` staging/readback agreement on `L`).
+3. **Release `/2`–`/3` coexistence, immutable `C2` refresh & drain seam (`agent-1270`, `release/2` `aa0c26f` [`release.md`](release.md)):**
+   Notified via Cairn (`3ea3e78e` + `6f480aa6` v1): (a) existing immutable `/2` copies,
+   already-issued `/2` `cairn.session-inbox/1` / drain argv, bare `PATH` `cairn-inbox`
+   launchers, and `cairn.compact-inbox-handle/1` handles (`TTL 3600s`) remain untouched
+   and usable alongside `V`/`L`-launched compatibility cues until qualified retirement
+   (`R-08`); (b) under `C2`, compatibility binding/receipt/`L` selections are immutable
+   (no in-place disable; publishing disabled `B` does not disable cached `A`; supported
+   per-session refresh/readback of `B` precedes `D1`/`D6`, and retained per-turn `true`
+   activation grants still require ordinary owning-session settlement); and (c) `J-03`
+   `Inspect()` (`JournalStatus`) supplies the side-effect-free read-only fact seam
+   (`PendingReplay`, `ReplyPossible`, `UnmaterializedFinishReply`,
+   `HasUsableFinishReplyRef`, `ReadErr`, `ParseErr`, `NonObject`) for Release `D1`–`D7`
+   drain verification without invoking `Flush`. `X-01` (`CAIRN-302`) remains open and
+   all dependent runtime implementation remains gated.
 4. **Discrepancy disposition (`J-01` -> `J-03`/`J-05`/`J-06`):** `J-01` characterizes
    unmodified Python (`settled_journal_index` across both call sites + persistent
    `None` ref, `watch --config-dir`, `agent_id`-only seeding, indexed non-object
