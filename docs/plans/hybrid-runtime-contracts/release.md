@@ -185,7 +185,7 @@ the member-name-to-SHA-256 map serialized as sorted-key, ASCII JSON with compact
 This directory identity does not hash the receipt that names the directory.
 
 The owner-controlled, versioned host hook configuration independently fixes
-the approved absolute interpreter and the actual launch argv: `-I -S -c`
+the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute
 path and expected SHA-256, the entrypoint role and the frontend config absolute
 path. Release records the verifier literal's SHA-256 with that launch selection
@@ -242,7 +242,8 @@ otherwise retain their source grammar and meaning. Hook entry uses the same
 authenticated selection and its applicable original arguments.
 
 Every newly issued Python inbox completion, ack, response, `finish-reply`,
-advance/drain helper and cue uses `V` plus its original command tail. A fresh
+advance/drain helper and cue reaches `V` plus its original command tail through
+the short launcher `L` below. A fresh
 process receives the checked snapshot/invocation context again; it cannot rely
 on the hook process's module cache. `coordination.py:inbox_handoff` and
 `inbox_cue_text` must use that checked launch vector instead of constructing
@@ -253,9 +254,11 @@ no Python read verb. No shell evaluation, file-path reopening or implicit legacy
 dispatch implements this handoff.
 
 Root's `8f7357b`/`88b77474` closure also covers `inbox_context` compact, fallback
-and next-item cues. New compatibility cues use
-`V + ["--", "inbox", "compact", OP, HANDLE, ...]` for **read, inspect, settle and
-advance**, instead of the bare global `cairn-inbox` launcher. Compact inspect
+and next-item cues. New compatibility cues show
+`L inbox compact read|inspect|settle|advance HANDLE` with existing disposition/
+code arguments; machine execution reaches
+`V + ["--", "inbox", "compact", OP, HANDLE, ...]` instead of the bare global
+`cairn-inbox` launcher. Compact inspect
 renews a lease; it is an issued-session operation, not the excluded offline
 operator inspection. Before loading a handle-derived config or performing an
 existing effect, bind the resolved root/config/context to `V`'s selected
@@ -263,6 +266,61 @@ configuration. `CAIRN_INBOX_ROOT` is a lookup input, not authority to select
 another profile. Preserve TTL, owner/lease, causation, journal and native-turn
 rules and the original command stdin/deadlines. Old `/2` bare launchers,
 handles and issued argv stay untouched and usable.
+
+### Short launcher and presentation bounds
+
+Foundation's accepted `foundation/v4` at `8b768649` supplies the fixed renderer
+and validation contract for `L`; Release stages, publishes, reads back and
+retains it. For each exact `V`/configuration selection, `L` is a minimal approved
+noninteractive shell script containing only `exec <shlex.join(V)> -- "$@"`.
+It parses no event/handle, evaluates no tail string and selects no alternate
+program or Python pathname. Original tail arguments, stdin and streams reach
+`V` unchanged. The approved shell invocation must source neither `ENV` nor
+`BASH_ENV`; installed fixtures use sentinel scripts to prove neither runs.
+An unqualified shell/target blocks publication, rather than assuming every
+shell has identical startup behavior.
+
+Generate `L` after finalizing receipt bytes and `V`. Stage it at canonical
+`<persistent-private-launch-root>/<sha256-of-L-bytes>/inbox`, owned by the
+invoking real UID, directory mode `0700`, launcher mode `0500`, with `/3`'s safe
+ancestors/no-symlink policy. The Release selection/manifest records path, raw
+byte count/SHA-256, vector/verifier digest, approved shell and Python closure,
+and actual byte/argv readback. The receipt does not hash `L`, which embeds the
+receipt digest. The shell, `L` and owner hook selection are an explicit external
+trust anchor; `L` does not authenticate its own first instruction. Changes use
+controlled install/readback and a new immutable identity. Keep every referenced
+launcher with its receipt/argv until qualified retirement.
+
+All new public context command fields, cues, fallbacks, next cues and turn-end
+reminders use short `L` plus the original tail, never the multi-KB verifier
+literal. This changes presentation, not `V + ["--", *tail]` execution or command
+grammar. Each model-visible shell command is at most **512 UTF-8 bytes**;
+aggregate command/control prose in a cue/reminder is at most **2048 bytes**.
+The actual encoded whole response/recall must also fit every smaller source,
+configuration and harness budget, including Codex's 12000-byte
+`additionalContextLimit`. Refuse installation choices that cannot meet them.
+Never truncate required control/source text, silently fall back or report
+delivery/settlement without the required bytes; retain source refusal/non-
+delivery and pending evidence.
+
+F-04/R-02 fixtures execute the **exact emitted shell-joined text** through the
+approved noninteractive shell, not just programmatic argv. Include spaces,
+quotes, non-ASCII paths and long legal arguments; assert byte-exact `V`/tail,
+stdin and source effect for every complete/ack/respond/finish-reply/advance/
+drain wrapper and compact read/inspect/settle/advance, including lease renewal.
+Cover source-unavailable/fallback, next-cue and turn-end reminders alongside
+maximum legal recall and encoded framing. Check wrong root/config/context
+before derived load/effects, helper/alias/selection tamper and direct-member
+refusal, and an existing `/2` bare `cairn-inbox` compact-handle success.
+Verify launcher hashes/bytes/argv before publication and the no-startup-script
+sentinels; argv-only smoke does not establish these presentation claims.
+
+Retained Python API calls through `config['cairn']` keep their existing `/2`
+provisioned path/owner trust level. A config pin does not hash-authenticate that
+API CLI. The `/3` binary/running-image policy applies to the selected Go
+lifecycle executable; Release inventories/verifies the retained API-client
+selection through existing installed checks. Store authority/attribution stays
+store-owned.
 
 The new staged compatibility members and aliases refuse direct-path execution
 before loading any adjacent loader, manifest or local implementation module.
@@ -710,7 +768,7 @@ Each successful case includes a concrete negative or interruption case.
 | REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
 | REL-DOCS | Every affected current-facing CLI/config/example and operational claim agrees with implemented source and checked invocation. | Architecture/status, CLI/lifecycle references, harness guides, semantic install/rebuild, testing, deployment and recovery. Apply docs-guard; proposed commands stay labelled proposed. |
-| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. No credentials, raw sessions, generated binaries or operational memory committed. |
+| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, compatibility L/V/verifier identity and approved shell/Python trust closure/readback, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. No credentials, raw sessions, generated binaries or operational memory committed. |
 | REL-OBSERVE | Each defined lane completes its minimum supported cycles and 24 continuous hours after its last relevant change; the shared-queue semantic lane completes a full rebuild. | Use the lane/reset/rehearsal rules above, disclose unobserved rows and failed/pending work, and reset after affected removal/runtime changes. Time alone is insufficient. |
 | REL-RETIRE | No active configuration, process, cached session hook or unsettled issued context needs a removed file/dependency. Every session has new hook-identity evidence; no retired identity is observed during the qualified window. | R-08 exact candidate, reference/session/process inventory, initially dependency-free offline rollback restore plus lifecycle execution and semantic reverse rebuild in disposable environments. Keep required Hermes Python, frozen trials/SDK and still-referenced compatible paths. Unknown identity/reference or missing rollback closure blocks removal. |
 | REL-FINAL | Recheck and redeploy the exact removal commit everywhere, including every long-lived client, then reconcile findings and clean pushed trunk. | R-09 final manifest and independent review. Pre-removal deployment evidence does not verify the removal release. |
