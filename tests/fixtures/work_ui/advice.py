@@ -211,6 +211,22 @@ def advice_fixture():
                         and sorted(row["source_references"] or []) == sorted(payload.get("source_references", [])),
                         "accepted annotation differs from exact text, source attribution, state or receipt output revision")
                     self.history_retains("annotation", row["annotation_id"], row["revision"])
+                    if expected_kind == "progress":
+                        priors = [value for value in before["annotations"].values()
+                                  if value["kind"] == "progress" and value["state"] == "active"]
+                        base.require(len(priors) == 1, "workflow did not capture its one actual baseline selected progress")
+                        prior = priors[0]
+                        stamp = output.get("superseded_prior")
+                        superseded = current["annotations"].get(prior["annotation_id"])
+                        base.require(isinstance(stamp, dict) and stamp.get("annotation_id") == prior["annotation_id"]
+                            and stamp.get("prior_revision") == prior["revision"]
+                            and superseded is not None and superseded["state"] == "superseded"
+                            and superseded["revision"] == stamp.get("superseded_revision")
+                            and superseded["revision"] > prior["revision"]
+                            and superseded["body"] == prior["body"]
+                            and sorted(superseded["source_references"] or []) == sorted(prior["source_references"] or []),
+                            "progress application omitted or misidentified its actual superseded baseline")
+                        self.history_retains("annotation", prior["annotation_id"], prior["revision"], superseded["revision"])
 
         def assert_compensation(self, original, compensated, before, before_undo):
             base.require(compensated["request_uuid"] == original["request_uuid"]
@@ -229,9 +245,15 @@ def advice_fixture():
                         and row["state"] == ("superseded" if output["type"] == "progress" else "resolved"),
                         "Undo receipt left the exact created annotation active or omitted its new compensation revision")
                     self.history_retains("annotation", target, output["revision"], compensation["revision"])
-                    prior = output.get("superseded_prior")
-                    if prior:
-                        old = before["annotations"][prior["annotation_id"]]
+                    if output["type"] == "progress":
+                        priors = [value for value in before["annotations"].values()
+                                  if value["kind"] == "progress" and value["state"] == "active"]
+                        base.require(len(priors) == 1, "Undo lost the captured baseline selected progress")
+                        old = priors[0]
+                        prior = output.get("superseded_prior")
+                        base.require(isinstance(prior, dict) and prior.get("annotation_id") == old["annotation_id"]
+                            and prior.get("prior_revision") == old["revision"],
+                            "Undo receipt omitted the actual baseline progress restoration obligation")
                         restored = current["annotations"].get(old["annotation_id"])
                         stamp = compensated["compensating_revisions"][action_id + "_restored_prior"]
                         base.require(restored is not None and restored["revision"] == stamp["revision"] > prior["superseded_revision"]
