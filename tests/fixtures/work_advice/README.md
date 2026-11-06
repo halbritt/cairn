@@ -15,13 +15,22 @@ It receives selected synthetic source text, has no network client, and holds a
 real process family only in the explicit `hold_family` mode. The case registers
 the copied executable's exact hash through the operator CLI.
 
-## Build the exact candidates
+## Build the exact schema-079 candidates
 
-From a clean committed checkout, run:
+The lower-support compatibility and 078-to-079 upgrade checks below are pinned
+to the historical advice release. Select a full commit whose source contains
+exactly migrations 001–079; do not pass current main with migrations 080–084.
+The builder accepts a full SHA without enforcing that migration count, but the
+compatibility runner requires the exact 001–079 ledger, and the upgrade runner
+requires exact 001–078 and 001–079 sources. A successful build alone does not
+establish that a candidate is in scope.
+
+From a checkout containing the build helper and the selected historical commit,
+run:
 
 ```sh
 python3 -B scripts/build_work_advice_compatibility.py \
-  --repo /path/to/cairn-checkout --candidate FULL_COMMIT_SHA \
+  --repo /path/to/cairn-checkout --candidate FULL_SCHEMA_079_COMMIT_SHA \
   --output /path/to/new-build-directory
 ```
 
@@ -96,3 +105,15 @@ lower-support compatibility, restore and upgrade checks. Capture and fixture
 identities are rechecked after each scenario. Reports are operational evidence
 and remain outside the repository. A prepared fixture or parsed source is not
 an executed acceptance result.
+
+## Current event admission validation
+
+The schema-079 compatibility results do not establish the current event-admission
+writer contract or permit an older binary to use a schema-084 store. For
+migrations 080–084, follow the
+[event admission rollout](../../../docs/operator/event-admission-rollout.md)
+and its `scripts/check_event_scaling_restore.py` fixture. That fixture takes an
+explicit candidate binary and pinned native manifest; its default enforce mode
+checks admission across a physical restore. Observe mode is a partial development
+check and exits 3. Keep its source, binary and native-package receipts separate
+from the historical advice compatibility receipts above.

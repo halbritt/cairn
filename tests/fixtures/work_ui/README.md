@@ -198,3 +198,20 @@ Repeat `--state` to select a bounded scenario. The report lists exclusions and
 the provider invocation count. Inspect the actual images and UIPass findings
 before claiming visual acceptance. No completed browser evidence is implied by
 this prepared fixture.
+
+## Event admission scope
+
+The browser scopes above exercise work-view behavior in the selected candidate;
+they do not enable an event-admission policy or prove saturation, protected reply
+capacity, rate accounting or the schema-084 writer upgrade barrier. A candidate
+with migrations 080–084 still starts each collection with admission disabled.
+Use the [event admission test map](../../../docs/developer/testing.md#event-admission-coverage)
+and [rollout validation](../../../docs/operator/event-admission-rollout.md#verification)
+for those contracts. The latter uses `scripts/check_event_scaling_restore.py`
+with an explicit candidate binary and native manifest; no browser screenshot
+substitutes for that physical restore check.
+
+The separate [advice compatibility builder](../work_advice/README.md#build-the-exact-schema-079-candidates)
+uses the same source-capture format but its lower-support and upgrade checks are
+pinned to schema 079. Do not feed current main to that historical proof merely
+because a work-UI capture of it is valid.
