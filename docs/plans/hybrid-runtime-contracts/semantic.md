@@ -57,7 +57,7 @@ dependent replacement until separately resolved.
 | --- | --- | --- |
 | Worker selection | One absolute executable path, no configured argv. Fixed launchers select rank, stream, embed and a pinned local model directory. | [command.go](../../../semantic/command.go), [installer](../../../scripts/install-semantic.sh) |
 | One-shot rank | One JSON request, 1–64 notes, query nonblank and at most 4096 UTF-8 bytes, total bodies at most 1 MiB, exact body hashes. Python's stdin cap is 8 MiB; Go caps stdout at 65536 bytes. | [semantic_rank.py](../../../scripts/semantic_rank.py), [command.go](../../../semantic/command.go) |
-| Stream rank | Newline-delimited `id`/`request`, optional `cache` only when advertised. IDs contain 1–64 Python characters. Go sends at most 8 MiB before newline. Ordinary reply including newline is at most 65536 bytes; cache is separately at most 600 KiB. Matching IDs and stable model/algorithm are required. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
+| Stream rank | Newline-delimited `id`/`request`, optional `cache` only when advertised. IDs contain 1–64 Python characters. Go sends at most 8 MiB before newline. Ordinary reply including newline is at most 65536 bytes; cache is separately at most 600 KiB. Matching IDs and a stable model/algorithm within each child are required; a fresh child after idle release is not pinned to the prior child's identity. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
 | Stream cache | `cairn.passage-vectors/1`, at most 128 passage hashes and raw 384-component little-endian float32 base64 vectors. Only a fresh worker may restore. Format/envelope bounds are checked before model identity; an otherwise bounded envelope from another model is ignored before vector decoding. Malformed same-model state refuses. Cache survives idle release only in the Go owner's memory; failure or close discards it. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
 | Embed request | Exactly `id`, `operation`, `text`; ID length 1–128 Python characters. A complete JSON line is at most 512 KiB. `identity` requires empty text, `query` at most 4096 UTF-8 bytes, and nonblank `document` at most 65536 UTF-8 bytes. Unknown keys and operations refuse. | [embedding_worker.py](../../../scripts/embedding_worker.py) |
 | Embed reply | Complete line at most 4 MiB, matching ID, `identity`, and operation-specific projection/vector/passages. Identity is stable across query/document lanes and worker restarts. Go rejects unknown reply fields and trailing JSON. | [embedding_command.go](../../../semantic/embedding_command.go), [command.go](../../../semantic/command.go) |
@@ -68,8 +68,10 @@ dependent replacement until separately resolved.
 The oracle must record boundary inclusivity, newline handling, Unicode ID
 length, duplicate/unknown JSON keys, truncated JSON, EOF and extra output.
 Do not replace characterized permissiveness with an undocumented Rust rule.
-Serialization whitespace and object-key order may differ; IDs, metadata,
-source hashes, spans, score values, ordering and failure dispositions may not.
+Serialization whitespace and object-key order may differ. Python and Rust
+derivation identities intentionally differ and each is checked against its
+own frozen manifest. Other IDs/metadata, source hashes, spans, score values,
+ordering and failure dispositions remain the preservation surface.
 Rank/stream results retain `bge-max-chunk/1` and return score entries in note
 input order. Embed retains `bge-original-passages/1`, dimensions 384, and
 query-projection method `original-prefix/1`.
@@ -84,22 +86,29 @@ resource measurements outside the repository. Retain synthetic fixture inputs,
 capture/comparison code and selected manifests in source; never replace the
 reference implementation while measuring the candidate.
 
-The baseline uses `fastembed==0.8.0`, CPUExecutionProvider, two inference
-threads and batch size 1 for `BAAI/bge-small-en-v1.5`. Rank and embed queries
+The baseline uses `fastembed==0.8.0`, CPUExecutionProvider, ORT intra-op and
+inter-op settings of 2, and batch size 1 for `BAAI/bge-small-en-v1.5`.
+These settings do not cap the whole process at two threads. Rank and embed queries
 prepend the exact string `"Represent this sentence for searching relevant passages: "`,
 including its trailing ASCII space. The scorer hashes `model_optimized.onnx`,
 `config.json`, `tokenizer.json`, `special_tokens_map.json`, and
 `tokenizer_config.json`, plus package versions and scoring constants.
-Embedding identity additionally hashes both worker source files. Inspect the
-prepared tokenizer's special-token configuration and the installed FastEmbed
-pooling/normalization path before implementing their Rust equivalents.
+Embedding identity additionally hashes both worker source files. The captured
+reference environment uses Python 3.11.15, ORT 1.29.0, NumPy 2.4.6 and
+tokenizers 0.23.2. Its installed FastEmbed postprocessor selects the first/CLS
+token and applies L2 normalization with epsilon `1e-12`; the ranker then
+normalizes its float32 query/passage matrix again before the dot product.
+Preserve the prepared tokenizer's special tokens and WordPiece decoding,
+including cleanup, rather than substituting mean pooling or another text
+representation. S-01 retains the exact package/native-source hashes with its
+reference manifest.
 
 | Fixture family | Required assertion | Source |
 | --- | --- | --- |
 | Rank chunks | Token-decode chunks use window 384 and stride 320. The cap is 128 chunk occurrences across the entire request, including duplicates/cache hits; unique inference reuse does not enlarge it. | [semantic_rank.py](../../../scripts/semantic_rank.py), [cache tests](../../../scripts/test_semantic_cache.py) |
 | Query treatment | Rank refuses a prefixed query above 512 tokens. Embed instead preserves an original-text prefix, re-tokenizes it and retreats at most eight times. Prefix bytes/hash and original/embedded token counts must match exactly. | [semantic_rank.py](../../../scripts/semantic_rank.py), [embedding_worker.py](../../../scripts/embedding_worker.py), [embedding tests](../../../scripts/test_embedding_worker.py) |
 | Document spans | Original text uses window 128, stride 96, adaptive stride `max(96, (tokens + 255) // 256)` and window `max(128, stride + 32)`. Emit the final smaller window, 1–256 passages, each re-encoded within 512 tokens. UTF-8 offsets/lengths must identify exactly the original substring. Rank's decoded text is a different representation. | [embedding_worker.py](../../../scripts/embedding_worker.py) |
-| Unicode coverage | Exercise ASCII, CJK, emoji, combining marks, whitespace-only and token-empty text, token-dense maximum bodies, and a short trailing decision. Compare every span and query projection; verify token coverage without claiming tokenizer-skipped whitespace is a token. | [embedding_worker.py](../../../scripts/embedding_worker.py), [embedding tests](../../../scripts/test_embedding_worker.py) |
+| Unicode coverage | Exercise ASCII, CJK, emoji, combining marks, whitespace-only and token-empty text, token-dense maximum bodies, and a short trailing decision. Compare every span and query projection; verify tokenizer-offset coverage without inflating spans to cover ignored bytes. For example, a trailing combining acute can lie outside every token offset. Nonblank tokenizer-empty queries can accept prefix-only inference while documents refuse. | [embedding_worker.py](../../../scripts/embedding_worker.py), [embedding tests](../../../scripts/test_embedding_worker.py) |
 | Continuous values | For every reference/candidate embedding pair, `1 - cosine(reference, candidate) <= 1e-6`; separately compare query/passage cosine differences at `<= 1e-6`. Record finite/nonzero checks and normalization. Do not substitute this tolerance for exact rank-score parity. | [proposal](../hybrid-runtime-consolidation.md), [implementation corrections](../hybrid-runtime-implementation.md) |
 | Discrete values | Preserve exact clamped, scaled integer scores and ranking assertions on `core/testdata/retrieval-quality.json`, repeated requests, shared passages and long-tail cases. Test positive/negative half-integer scaling with Python's ties-to-even rounding. An off-by-one score fails even when vector tolerance passes. | [semantic_rank.py](../../../scripts/semantic_rank.py), [existing comparator](../../../scripts/compare_semantic_workers.py) |
 | Go validation | 384 finite, nonzero components; valid source spans and bounded passage count. Go currently has no `[0.99, 1.01]` norm rejection rule. Verify the worker's normalization separately. | [index.go](../../../semantic/index.go) |
@@ -108,9 +117,14 @@ The Python rounding requirement applies to rank and streaming-rank output.
 The stored index computes scores with Go's existing `math.Round` after
 PostgreSQL cosine distance; preserve and test that path separately rather than
 silently changing its half-integer behavior to match Python.
+Worker-order parity compares against the frozen Python worker; existing
+compiler-level ranking assertions remain separate. Characterize reference
+workload relevance misses without changing their scores or inventing a new
+worker-only top-rank requirement to obtain acceptance.
 
 Rust derivation identity must change when any consumed model/config asset,
-backend/tokenizer version, vector-affecting build feature, preprocessing,
+backend/tokenizer version, native-runtime library digest/build identity,
+vector-affecting build feature, preprocessing,
 prefix, truncation, passage slicing, inference, pooling, normalization or
 implementation source changes. Include a versioned derivation tag and a
 deterministic digest of the relevant source and locked build inputs. Include
@@ -118,11 +132,22 @@ all effective vector-affecting settings. Exclude timestamps and checkout
 paths. The worker must not claim Python's derivation identity.
 
 S-01 must provide a comparison path that executes a native candidate directly;
-the current comparator always prefixes candidates with Python. Acceptance
-runs the actual Python and Rust models for rank, stream and embed. Missing
+the current comparator always prefixes candidates with Python, covers only
+rank, and records mismatches without making them a failing exit status. The
+new acceptance entry point must fail for a mismatch while keeping the existing
+exploratory behavior separately characterized. Acceptance runs the actual
+Python and Rust models for rank, stream and embed. Missing
 assets, launchers or required model tests fail the acceptance run; skips do
 not count as parity. Cargo build/test/acceptance commands are dedicated targets
 allocated through Overall, so ordinary Go checks continue without Cargo.
+
+The initial capture retains one maximum-document model gap: exactly 65536
+punctuation bytes reached the 90-second document budget without a reply.
+Tokenizer-only evidence for its 256 spans is not vector evidence. S-01 must
+record an explicit disposition of that case with Overall and independent
+review before claiming complete required-model coverage. Do not drop the
+case, relax the deadline, or substitute its source-only geometry for a model
+reply. Other successful maximum-document cases do not close this gap.
 
 ## Required failure evidence
 
