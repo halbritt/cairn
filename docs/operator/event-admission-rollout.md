@@ -35,24 +35,31 @@ checksum differs`), and a missing file cannot be inserted later.
 
 1. Back up the store and keep the recovery witness, as described in
    [maintenance](maintenance.md#upgrade-the-schema).
-2. Stop consumers, the scheduler, wake supervisors and dispatch. Leave the old API
-   running only until in-flight requests finish.
+2. Stop consumers, the scheduler, wake supervisors and dispatch. Let the old API finish
+   its in-flight requests, then stop it too. No old process may hold a connection
+   while you migrate.
 3. Run `cairn migrate` with the new executable. Migrations 080 and 084 each begin by
    updating the `cairn.restore_admission` row in place. That update waits for
    transactions that were already admitted against that row, and it invalidates the
-   snapshot of any old-binary transaction that started before the migration
-   committed. Such an in-flight old call can therefore end with a retryable
-   serialization failure (SQLSTATE `40001`) or with `SCHEMA_MISMATCH`, while every
-   fresh old call refuses at its schema ceiling (below). The codes differ by when the
-   call started; none of them commits old-binary work against the new schema.
+   snapshot of any old-binary transaction that started through the store's admission
+   check before the migration committed. Such an in-flight call can end with a
+   retryable serialization failure (SQLSTATE `40001`) or with `SCHEMA_MISMATCH`, and
+   the codes differ by when the call started.
+
+   This barrier covers transactions that pass through that admission check. It is not
+   a connection fence. An old process that already holds an open connection pool can
+   still run the few operations that use the pool directly, such as quiet-notice
+   expiry and work-feature or advice-control reads. That is why step 2 is mandatory:
+   stop every old process before migrating, and restart only upgraded binaries.
 4. Restart the API, then the scheduler, supervisors and consumers.
 
-An older binary cannot keep running against the upgraded store. Its schema ceiling is
-the number of migrations it embeds; a build without 080 has a ceiling of 79. Any fresh
-command or API connection it opens, including `cairn migrate` and operator commands
-such as `coordination-review`, refuses when it opens the store, with exit code 4 and
-`SCHEMA_MISMATCH` (`database schema version 84 exceeds supported version 79`).
-Upgrade every process; a mixed fleet fails closed.
+An older binary started after the upgrade cannot use the store. Its schema ceiling is
+the number of migrations it embeds; a build without 080 has a ceiling of 79. When it
+opens the store, any command or API process, including `cairn migrate` and operator
+commands such as `coordination-review`, refuses with exit code 4 and `SCHEMA_MISMATCH`
+(`database schema version 84 exceeds supported version 79`). That check runs when a
+process opens the store, not on every later call, so it does not stop a process that
+was already running. Stop and upgrade every process.
 
 Check what is actually running before you continue:
 
