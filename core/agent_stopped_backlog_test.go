@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -224,5 +225,154 @@ func TestStoppedSessionAgent463ThirtyFiveNoticesFixture(t *testing.T) {
 	var parsed stoppedDeliveryNoticePayload
 	if err := json.Unmarshal([]byte(*rec.Versions[0].Body), &parsed); err != nil || parsed.RetainedWake == nil || parsed.RetainedWake.Transport != "codex-queue" || parsed.RetainedWake.Status != "refused" {
 		t.Fatalf("parsed notice payload: %+v %v", parsed, err)
+	}
+}
+
+func waitForAdvisoryLockPIDs(t *testing.T, ctx context.Context, s *Store, key string, want int, earlyDone <-chan struct{}) []int {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		rows, err := s.pool.Query(waitCtx, `SELECT pid FROM pg_locks
+			WHERE locktype='advisory' AND NOT granted
+			  AND classid=((hashtextextended($1,0)>>32)&4294967295)::oid
+			  AND objid=(hashtextextended($1,0)&4294967295)::oid`, key)
+		if err != nil {
+			t.Fatalf("query pg_locks(%s): %v", key, err)
+		}
+		var pids []int
+		for rows.Next() {
+			var pid int
+			if err = rows.Scan(&pid); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			pids = append(pids, pid)
+		}
+		rows.Close()
+		if len(pids) >= want {
+			return pids
+		}
+		select {
+		case <-earlyDone:
+			t.Fatalf("contender exited before reaching advisory lock %s", key)
+		case <-waitCtx.Done():
+			t.Fatalf("timed out waiting for %d advisory waiters on %s (got %d)", want, key, len(pids))
+		case <-time.After(2 * time.Millisecond):
+		}
+	}
+}
+
+func TestStoppedNotificationCancelLockOrderAndReadCommittedRace(t *testing.T) {
+	ctx := context.Background()
+	f := newHealthFixture(t)
+	repo := f.source.Scope.Repo
+	op := testStore(t, Channel{Principal: "stopped-race-op-1-" + repo, Operator: true})
+	opCancel := testStore(t, Channel{Principal: "stopped-race-op-2-" + repo, Operator: true})
+
+	_, stoppedDel1 := f.publish("request", f.agent.Inbox)
+	_, stoppedDel2 := f.publish("request", f.agent.Inbox)
+	if _, err := f.receiver.LeaveAgent(ctx, f.ref, f.dest); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Hold collection lock + FOR UPDATE OF d; start NotifyStoppedDeliveryPublisher.
+	// Prove it waits on collection lock BEFORE touching agent_delivery, and under
+	// ReadCommitted observes cancellation committed before lock release.
+	holdTx, err := op.begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holdTx.Rollback(ctx)
+	if err = lock(ctx, holdTx, "agent-events:"+repo); err != nil {
+		t.Fatal(err)
+	}
+	var lockedID string
+	if err = holdTx.QueryRow(ctx, `SELECT delivery_id::text FROM cairn.agent_delivery WHERE delivery_id=$1 FOR UPDATE`, stoppedDel1).Scan(&lockedID); err != nil {
+		t.Fatal(err)
+	}
+
+	req1 := StoppedDeliveryNotificationRequest{
+		RequestID: uuid.NewString(), Repo: repo, DeliveryID: stoppedDel1,
+		RecipientAgentID: f.agent.AgentID, RecipientExecution: f.agent.ExecutionID,
+		Stage: "waiting", Fingerprint: "waiting|never_launched|not_admitted||",
+	}
+	type notifyOut struct {
+		res StoppedDeliveryNotificationResult
+		err error
+	}
+	done1 := make(chan notifyOut, 1)
+	early1 := make(chan struct{})
+	go func() {
+		defer close(early1)
+		r, e := op.NotifyStoppedDeliveryPublisher(ctx, req1)
+		done1 <- notifyOut{r, e}
+	}()
+	pids := waitForAdvisoryLockPIDs(t, ctx, op, "agent-events:"+repo, 1, early1)
+	var holdsDeliveryLock bool
+	if err = op.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND relation='cairn.agent_delivery'::regclass)`, pids[0]).Scan(&holdsDeliveryLock); err != nil {
+		t.Fatal(err)
+	}
+	if holdsDeliveryLock {
+		t.Fatalf("NotifyStoppedDeliveryPublisher locked agent_delivery before acquiring collection lock")
+	}
+	if _, err = failDelivery(ctx, holdTx, stoppedDel1, "operator_cancelled", &stopControl{Reason: "cancelled while notify queued"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = holdTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	out1 := <-done1
+	if out1.err != nil || out1.res.Status != "skipped" || out1.res.Reason != "delivery_resolved" {
+		t.Fatalf("expected ReadCommitted notify to see post-lock cancellation (skipped/delivery_resolved), got %+v %v", out1.res, out1.err)
+	}
+
+	// 2. Queue NotifyStoppedDeliveryPublisher and CancelWork concurrently behind collection lock;
+	// release together and prove zero deadlock and consistent outcomes.
+	gateTx, err := op.begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gateTx.Rollback(ctx)
+	if err = lock(ctx, gateTx, "agent-events:"+repo); err != nil {
+		t.Fatal(err)
+	}
+	doneNotify2 := make(chan notifyOut, 1)
+	doneCancel2 := make(chan error, 1)
+	early2 := make(chan struct{}, 2)
+	go func() {
+		r, e := op.NotifyStoppedDeliveryPublisher(ctx, StoppedDeliveryNotificationRequest{
+			RequestID: uuid.NewString(), Repo: repo, DeliveryID: stoppedDel2,
+			RecipientAgentID: f.agent.AgentID, RecipientExecution: f.agent.ExecutionID,
+			Stage: "waiting", Fingerprint: "waiting|never_launched|not_admitted||",
+		})
+		early2 <- struct{}{}
+		doneNotify2 <- notifyOut{r, e}
+	}()
+	go func() {
+		_, e := opCancel.CancelWork(ctx, CancelWorkRequest{
+			RequestID: uuid.NewString(), Repo: repo, DeliveryID: stoppedDel2, Reason: "concurrent cancel vs notify",
+		})
+		early2 <- struct{}{}
+		doneCancel2 <- e
+	}()
+	pids2 := waitForAdvisoryLockPIDs(t, ctx, op, "agent-events:"+repo, 2, early2)
+	for _, pid := range pids2 {
+		if err = op.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND relation='cairn.agent_delivery'::regclass)`, pid).Scan(&holdsDeliveryLock); err != nil {
+			t.Fatal(err)
+		}
+		if holdsDeliveryLock {
+			t.Fatalf("contender pid %d locked agent_delivery before collection lock", pid)
+		}
+	}
+	if err = gateTx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if cancelErr := <-doneCancel2; cancelErr != nil {
+		t.Fatalf("concurrent CancelWork failed: %v", cancelErr)
+	}
+	out2 := <-doneNotify2
+	if out2.err != nil || (out2.res.Status != "sent" && (out2.res.Status != "skipped" || out2.res.Reason != "delivery_resolved")) {
+		t.Fatalf("concurrent NotifyStoppedDeliveryPublisher failed: %+v %v", out2.res, out2.err)
 	}
 }

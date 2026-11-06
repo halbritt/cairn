@@ -89,12 +89,18 @@ func (s *Store) NotifyStoppedDeliveryPublisher(ctx context.Context, req StoppedD
 		return out, err
 	}
 	digest := sha256.Sum256(canonical)
-	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
+	// Mutating writer uses ReadCommitted and acquires request -> collection -> delivery
+	// locks so concurrent CancelWork/SweepRequestControls never deadlock on FOR SHARE OF d
+	// and post-lock admission observes publications committed while waiting on the lock.
+	tx, err := s.begin(ctx)
 	if err != nil {
 		return out, err
 	}
 	defer tx.Rollback(context.Background())
 	if err = lock(ctx, tx, "request:"+s.channel.Principal+":stopped-delivery-notify:"+req.RequestID); err != nil {
+		return out, err
+	}
+	if err = lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 		return out, err
 	}
 	var previousDigest, response []byte
@@ -248,9 +254,6 @@ func (s *Store) publishStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, r
 
 func (s *Store) commitStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, req StoppedDeliveryNotificationRequest, out StoppedDeliveryNotificationResult, digest []byte, publisher, eventID, correlationID, sensitivity string, payload stoppedDeliveryNoticePayload) (StoppedDeliveryNotificationResult, error) {
 	if _, err := retrievalGeneration(ctx, tx); err != nil {
-		return out, err
-	}
-	if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 		return out, err
 	}
 	if _, err := s.prepareEventAdmissionTx(ctx, tx, PublishEventRequest{

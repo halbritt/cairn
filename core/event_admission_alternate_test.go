@@ -695,3 +695,104 @@ func TestEventAdmissionEvaluator_ScheduleStoppedAndOrganicAccounting(t *testing.
 		t.Fatalf("FenceRestore left queued organic notice or pending schedule blocking admission: %v", err)
 	}
 }
+
+func TestAlternateAdmission_StoppedNoticeBlockedRaceDefersOnConcurrentPublish(t *testing.T) {
+	ctx := context.Background()
+	f := newHealthFixture(t)
+	repo := f.source.Scope.Repo
+	op := testStore(t, Channel{Principal: "stopped-blocked-race-op-" + repo, Operator: true})
+
+	_, stoppedDelID := f.publish("notice", f.agent.Inbox)
+	if _, err := f.receiver.LeaveAgent(ctx, f.ref, f.dest); err != nil {
+		t.Fatal(err)
+	}
+
+	peer := testStore(t, Channel{Principal: "peer-race-" + repo, Repo: repo})
+	peerDraft := projectNote(repo)
+	peerDraft.Sensitivity = "shareable"
+	peerNote, err := peer.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: peerDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enablePublicEnforcePolicy(t, op, repo, func(l *EventAdmissionLimits) {
+		l.MaxRecipientOutstanding = 1
+		l.MaxProducerRecipientOutstanding = 2
+		l.MaxCollectionOutstanding = 8
+		l.MaxClosureReserved = 4
+		l.MaxRecipientClosureReserved = 4
+	})
+
+	var recordsBefore, versionsBefore, eventsBefore int
+	if err = op.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cairn.memory_record),
+		(SELECT count(*) FROM cairn.record_version WHERE repo=$1),
+		(SELECT count(*) FROM cairn.agent_event WHERE repo=$1)`, repo,
+	).Scan(&recordsBefore, &versionsBefore, &eventsBefore); err != nil {
+		t.Fatal(err)
+	}
+
+	// peer holds collection lock while NotifyStoppedDeliveryPublisher begins its transaction
+	// and blocks waiting on agent-events:<repo>. Competing ordinary publish commits first
+	// (filling f.sender to MaxRecipientOutstanding=1); under ReadCommitted, the unblocked
+	// notification must see the new delivery and defer with zero committed source/event/receipt.
+	holdTx, err := peer.begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holdTx.Rollback(ctx)
+	if err = lock(ctx, holdTx, "agent-events:"+repo); err != nil {
+		t.Fatal(err)
+	}
+
+	notifyReq := StoppedDeliveryNotificationRequest{
+		RequestID: uuid.NewString(), Repo: repo, DeliveryID: stoppedDelID,
+		RecipientAgentID: f.agent.AgentID, RecipientExecution: f.agent.ExecutionID,
+		Stage: "waiting", Fingerprint: "waiting|never_launched|not_admitted||",
+	}
+	type notifyOut struct {
+		res StoppedDeliveryNotificationResult
+		err error
+	}
+	done := make(chan notifyOut, 1)
+	early := make(chan struct{})
+	go func() {
+		defer close(early)
+		r, e := op.NotifyStoppedDeliveryPublisher(ctx, notifyReq)
+		done <- notifyOut{r, e}
+	}()
+	_ = waitForAdvisoryLockPIDs(t, ctx, op, "agent-events:"+repo, 1, early)
+
+	if _, err = peer.publishEventTx(ctx, holdTx, PublishEventRequest{
+		Repo:        repo,
+		Kind:        "notice",
+		Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
+		Destination: EventDestination{Type: "agent", Name: f.sender.channel.Principal},
+	}, f.dest, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = holdTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	out := <-done
+	if out.err != nil || out.res.Status != "deferred_capacity" || out.res.Reason != "recipient_outstanding" {
+		t.Fatalf("expected ReadCommitted blocked notify to capacity-defer (recipient_outstanding), got %+v %v", out.res, out.err)
+	}
+
+	var senderPending, recordsAfter, versionsAfter, eventsAfter, mutCount int
+	if err = op.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND d.state IN ('pending','leased')),
+		(SELECT count(*) FROM cairn.memory_record),
+		(SELECT count(*) FROM cairn.record_version WHERE repo=$1),
+		(SELECT count(*) FROM cairn.agent_event WHERE repo=$1),
+		(SELECT count(*) FROM cairn.mutation_request WHERE request_id=$3)`,
+		repo, f.sender.channel.Principal, notifyReq.RequestID,
+	).Scan(&senderPending, &recordsAfter, &versionsAfter, &eventsAfter, &mutCount); err != nil {
+		t.Fatal(err)
+	}
+	if senderPending != 1 || recordsAfter != recordsBefore || versionsAfter != versionsBefore+0 || eventsAfter != eventsBefore+1 || mutCount != 0 {
+		t.Fatalf("blocked notify overshot cap or leaked rows: senderPending=%d records=%d->%d versions=%d->%d events=%d->%d mut=%d",
+			senderPending, recordsBefore, recordsAfter, versionsBefore, versionsAfter, eventsBefore, eventsAfter, mutCount)
+	}
+}
