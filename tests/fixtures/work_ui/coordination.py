@@ -199,26 +199,34 @@ def coordination_fixture(Base, uid, dump, require):
                     delayed["outcome"] = "failed"
                     delayed["failure"] = request.failure
             def reply_after_item_switch(route):
-                page.unroute(pattern, reply_after_item_switch)
+                if delayed["request"] is not None:
+                    route.continue_()
+                    return
                 delayed["request"] = route.request
+                delayed["route"] = route
                 require(parse_qs(urlparse(route.request.url).query)["item"] == [self.item_id], "delayed read selected the wrong item")
                 response = route.fetch()
                 require(response.ok and response.json()["plane_item_uuid"] == self.item_id, "delayed source was not a genuine successful item read")
-                page.locator("#modal-close").click()
-                page.locator(f'.work-card[data-item-uuid="{self.guard_item_id}"]').click()
-                expect(page.locator("#coordination-waits-empty")).to_be_visible()
+                delayed["response"] = response
                 delayed["response_item"] = response.json()["plane_item_uuid"]
-                try:
-                    route.fulfill(response=response)
-                except Error as error:
-                    # closeDetail may have validly aborted this exact request.
-                    # Accept that only with its actual requestfailed event below.
-                    delayed["fulfill_error"] = str(error)
             page.on("requestfinished", request_finished)
             page.on("requestfailed", request_failed)
             page.route(pattern, reply_after_item_switch)
             try:
                 page.locator("#coordination-reload").click()
+                deadline = time.monotonic() + 5
+                while "response" not in delayed and time.monotonic() < deadline:
+                    page.wait_for_timeout(25)
+                require(delayed.get("response_item") == self.item_id, "late real response was not obtained")
+                page.locator("#modal-close").click()
+                page.locator(f'.work-card[data-item-uuid="{self.guard_item_id}"]').click()
+                expect(page.locator("#coordination-waits-empty")).to_be_visible()
+                try:
+                    delayed["route"].fulfill(response=delayed["response"])
+                except Error as error:
+                    # closeDetail may have validly aborted this exact request.
+                    # Accept that only with its actual requestfailed event below.
+                    delayed["fulfill_error"] = str(error)
                 deadline = time.monotonic() + 5
                 while delayed["outcome"] is None and time.monotonic() < deadline:
                     page.wait_for_timeout(25)
@@ -226,13 +234,14 @@ def coordination_fixture(Base, uid, dump, require):
                 require(delayed["outcome"] == "finished" and delayed["fulfill_error"] is None
                     or delayed["outcome"] == "failed" and delayed.get("failure") == "net::ERR_ABORTED",
                     "delayed request neither completed nor reported its intentional abort: " +
-                    json.dumps({key: value for key, value in delayed.items() if key != "request"}))
+                    json.dumps({key: value for key, value in delayed.items() if key not in ("request", "route", "response")}))
                 page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
                 expect(page.locator("#modal-meta")).to_contain_text(self.guard_item_id)
                 expect(page.locator("#coordination-waits-empty")).to_be_visible()
                 expect(page.locator(".coordination-wait")).to_have_count(0)
                 expect(page.locator(".coordination-recipient")).to_have_count(0)
-                self.report["delayed_coordination_read"] = {key: value for key, value in delayed.items() if key != "request"}
+                self.report["delayed_coordination_read"] = {key: value for key, value in delayed.items()
+                    if key not in ("request", "route", "response")}
             finally:
                 page.unroute(pattern, reply_after_item_switch)
                 page.remove_listener("requestfinished", request_finished)
@@ -358,15 +367,19 @@ def make_native_queued_case(Base, fixture, browser, uid, dump, require):
             source = host.agent("sender", "create", dict(request_id=str(uuid.uuid4()), draft=dict(kind="note",
                 body="NATIVE_PANEL_SOURCE_NEVER_RENDERED", scope=dict(repo=host.repo, task_id="*", run_id="*"),
                 claim_type="self", sensitivity="shareable")))
+            sentinel_events = set()
             for _ in range(22):
                 require(time.monotonic() - started < 20, "native panel setup exhausted its bounded callback time")
-                host.agent("sender", "event-publish", dict(request_id=str(uuid.uuid4()), repo=host.repo, kind="notice",
+                event = host.agent("sender", "event-publish", dict(request_id=str(uuid.uuid4()), repo=host.repo, kind="notice",
                     ref={key: source[key] for key in ("record_id", "version")},
                     destination=dict(type="agent", name=selected["recipient_inbox"]), notice_delivery="next_organic_turn",
                     notice_expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()))
+                sentinel_events.add(event["event_id"])
             pending = host.agent("sender", "event-notice-pending", dict(repo=host.repo, agent_id=session["agent_id"], limit=100))
             expected = {n["notice_id"] for n in pending["notices"]}
+            sentinel_notices = {n["notice_id"] for n in pending["notices"] if n["event_id"] in sentinel_events}
             require(len(expected) == 26 and pending["count"] == 26, "native publication did not retain 26 exact queued notices")
+            require(len(sentinel_notices) == 22, "native sentinel notice identities did not match their exact publications")
             require(host.sql("SELECT count(*) FROM cairn.agent_delivery") == "0", "quiet setup created ordinary delivery")
             before = host.sql("SELECT jsonb_agg(to_jsonb(n) ORDER BY notice_id) FROM cairn.agent_organic_notice n")
             view.start_web()
@@ -385,6 +398,10 @@ def make_native_queued_case(Base, fixture, browser, uid, dump, require):
                         expect(page.locator(".coordination-recipient")).to_contain_text("Quiet-notice support: supported")
                         expect(page.locator(".coordination-notice")).to_have_count(25)
                         first = set(page.locator(".coordination-notice").evaluate_all("nodes => nodes.map(node => node.dataset.noticeId)"))
+                        visible_sentinel = sorted(first & sentinel_notices)
+                        require(visible_sentinel, "first native page lacks the exact sentinel-source notices")
+                        page.locator(f'.coordination-notice[data-notice-id="{visible_sentinel[0]}"] summary').click()
+                        require("NATIVE_PANEL_SOURCE_NEVER_RENDERED" not in page.content(), "expanded first-page notice rendered its source body")
                         page.locator("#annotation-input").fill("Unsaved native panel note " + viewport)
                         page.locator("#coordination-notices-more").click()
                         expect(page.locator("#coordination-notices-page")).to_have_text("Page 2")

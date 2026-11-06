@@ -114,7 +114,7 @@ surfaces:
     states:
       linked_waits:
         route: /
-        ready: '.coordination-wait'
+        ready: '.coordination-wait >> nth=0'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '.coordination-wait summary >> nth=0'}
@@ -130,7 +130,7 @@ surfaces:
     states:
       retained_waits:
         route: /
-        ready: '.coordination-wait'
+        ready: '.coordination-wait >> nth=0'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '.coordination-wait summary >> nth=0'}
@@ -138,7 +138,7 @@ surfaces:
     states:
       after_restore_fence:
         route: /
-        ready: '.coordination-wait'
+        ready: '.coordination-wait >> nth=0'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '.coordination-wait summary >> nth=0'}
