@@ -26,6 +26,9 @@ func TestWorkServerCoordinationEndpointContract(t *testing.T) {
 		t.Fatalf("Open store: %v", err)
 	}
 	defer store.Close()
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate store: %v", err)
+	}
 
 	proj, err := store.AddWorkProject(ctx, core.AddWorkProjectRequest{
 		RequestID: uuid.NewString(), Collection: collection, LocalSlug: "http-coord",
