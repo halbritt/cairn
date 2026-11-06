@@ -36,7 +36,7 @@ Serialize shared CLI, Makefile and release wiring changes by naming an owner. Ma
 
 - Go retains the operational store/API; Rust remains an isolated process.
 - Foundation owns shared state-file and peer primitives; Coordination owns one journal transition algorithm.
-- Retain existing semantic storage. Permit only one indexing model generation per collection during cutover. The selected path is service restart plus rebuild and accurate availability reporting, with a tested reverse rebuild for rollback.
+- Retain existing semantic storage. Permit only one indexing model generation across every writer sharing the database's semantic queue during cutover; the queue is not collection-scoped. The selected path is service restart plus rebuild and accurate availability reporting, with a tested reverse rebuild for rollback.
 - Semantic command configuration currently accepts one executable path, not an executable-plus-arguments string. Require reviewed fixed launchers or a separately specified configuration change.
 - Numerical/ranking parity, identity checks, persistence and recovery requirements cannot be weakened to close a ticket.
 - Backend, state-schema or authority changes receive a recorded decision and appropriate tests before dependent work. Escalate only if the choice exceeds the owner's granted scope.

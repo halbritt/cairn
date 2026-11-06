@@ -34,7 +34,7 @@ CAIRN-276 is the characterization gate. CAIRN-277/278 currently describe extract
 
 ## Preserve and prove
 
-Characterize explicit retries through the authenticated API separately from pending-only watcher recovery. Capture write-before-send ordering, immutable intent, request/argv/stdin identity, exact result/reply references, refused-slot finality, legacy missing-kind behavior, lock paths and different timeout policies. Record the settled_journal_index / finish_reply discrepancy explicitly before translating it.
+Characterize explicit retries through the authenticated API separately from ordinary pending-slot watcher replay and the existing committed-completion exact-result recovery exception. Capture write-before-send ordering, immutable intent, request/argv/stdin identity, exact result/reply references, refused-slot finality, legacy missing-kind behavior, lock paths and different timeout policies. Record the settled_journal_index / finish_reply discrepancy explicitly before translating it.
 
 Inventory the full existing inbox command family, including journaled completion/reply, acknowledgement, drain and compact operations. Preserve commands already issued to active sessions throughout coexistence. The installed watcher uses --config-dir to discover multiple bindings; the proposal's shortened --config sketch must not narrow that behavior. Publish the complete grammar and compatibility fixtures before implementing it.
 
@@ -42,7 +42,7 @@ Give journal execution, recovery and inspection one owner. Inspection reports na
 
 Use Foundation's peer/state primitives. Preserve SO_PEERCRED and process-start/boot identity, ancestry restrictions, bounded framing and private runtime sockets. Codex WebSocket work must preserve its actual handshake, framing, busy/refusal and cancellation semantics. Supported Claude, OpenCode and Hermes transports receive their own fixtures.
 
-Test watcher restart, delayed/lost responses, lock contention, corrupt state, cancellation, stale processes and other-session isolation through real process boundaries. Automatic watcher recovery sends pending slots only and does not replay refused work. Preserve ordinary explicit retries through the authenticated API for unchanged intents, including locally committed or refused slots. Do not use live held/refused deliveries as test material or adopt another session's deliveries. Native transcript recovery must preserve strict bounded parsing and byte/encoding behavior.
+Test watcher restart, delayed/lost responses, lock contention, corrupt state, cancellation, stale processes and other-session isolation through real process boundaries. Ordinary automatic watcher replay sends pending slots and does not replay refused work. Preserve the existing `finish_reply` recovery exception: when completion committed but its exact result reference is missing and no response exists, retry the same completion to recover the reference before creating the reply. Preserve ordinary explicit retries through the authenticated API for unchanged intents, including locally committed or refused slots. Do not use live held/refused deliveries as test material or adopt another session's deliveries. Native transcript recovery must preserve strict bounded parsing and byte/encoding behavior.
 
 ## Sequence and handoff
 
