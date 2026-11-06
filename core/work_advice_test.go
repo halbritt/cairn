@@ -2990,13 +2990,17 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 	}
 }
 
-func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
+func TestWorkAdvice_DisabledUnsupportedFeatureUndoAndRetirement(t *testing.T) {
 	ctx := context.Background()
 	operatorStore := restoreTestStore(t)
 	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
-		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+		if err := operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
+	if _, err := operatorStore.SetAdviceControl(ctx, true, true); err != nil {
+		t.Fatal(err)
+	}
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -3008,7 +3012,7 @@ func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
 			Actions: []advice.ProposedAction{
 				{
 					ActionType: advice.ActionAnnotateProgress,
-					Progress:   &advice.ProgressPayload{Text: "lower 79 progress"},
+					Progress:   &advice.ProgressPayload{Text: "disabled advice maintenance progress"},
 				},
 			},
 		},
@@ -3042,7 +3046,7 @@ func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
 		t.Fatalf("SetWorkFeatureStatus disabled failed: %v", err)
 	}
 
-	// Open lower-79 Store without work-advice/1 against the same isolated database
+	// An actual schema-79 policy cannot open the upgraded isolated database.
 	connCfg := operatorStore.pool.Config().ConnConfig
 	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s sslmode=disable", connCfg.Host, connCfg.Port, connCfg.Database, connCfg.User)
 	if connCfg.Password != "" {
@@ -3052,28 +3056,38 @@ func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
 		MaxMigrationVersion:   79,
 		SupportedWorkFeatures: map[string]bool{"work-view/1": true, "work-artifacts/1": true},
 	}
-	lowerStore, err := OpenWithCompatibility(ctx, dsn, Channel{Principal: "operator:test", Operator: true}, lowerPolicy)
+	oldStore, err := OpenWithCompatibility(ctx, dsn, Channel{Principal: "operator:test", Operator: true}, lowerPolicy)
+	if oldStore != nil {
+		oldStore.Close()
+	}
+	requireCode(t, err, "SCHEMA_MISMATCH")
+
+	// Schema compatibility and optional feature support are separate. A writer
+	// that supports the current schema but lacks advice generation may still
+	// undo accepted effects after advice admission has been disabled.
+	maintenancePolicy := lowerPolicy
+	maintenancePolicy.MaxMigrationVersion = defaultMaxMigrationVersion()
+	maintenanceStore, err := OpenWithCompatibility(ctx, dsn, Channel{Principal: "operator:test", Operator: true}, maintenancePolicy)
 	if err != nil {
 		t.Fatalf("OpenWithCompatibility failed: %v", err)
 	}
-	defer lowerStore.Close()
+	defer maintenanceStore.Close()
 
-	// Lower-79 maintenance Undo
-	err = lowerStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
+	err = maintenanceStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
 	if err != nil {
-		t.Fatalf("lowerStore.UndoAdviceApplication failed: %v", err)
+		t.Fatalf("maintenanceStore.UndoAdviceApplication failed: %v", err)
 	}
 
-	rcpt, err := lowerStore.GetAdviceReceipt(ctx, receipt.RequestUUID)
+	rcpt, err := maintenanceStore.GetAdviceReceipt(ctx, receipt.RequestUUID)
 	if err != nil {
-		t.Fatalf("lowerStore.GetAdviceReceipt failed: %v", err)
+		t.Fatalf("maintenanceStore.GetAdviceReceipt failed: %v", err)
 	}
 	if !rcpt.Undone {
 		t.Fatalf("expected receipt to be marked Undone")
 	}
 
 	// Exact-retry of UndoAdviceApplication
-	err = lowerStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
+	err = maintenanceStore.UndoAdviceApplication(ctx, receipt.RequestUUID)
 	if err != nil {
 		t.Fatalf("exact-retry UndoAdviceApplication failed: %v", err)
 	}
