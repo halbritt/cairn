@@ -78,6 +78,7 @@
     detailRequest++;
     clearTimeout(presenceTimer);
     clearCoordination();
+    adviceView.close();
     artifactListRequest++;
     artifactHistoryRequest++;
     currentItemUUID = "";
@@ -98,7 +99,9 @@
     const body = await response.json();
     if (!response.ok) {
       if (response.status === 401) unauthorized();
-      throw new Error(body.message || body.error || `Request failed (${response.status})`);
+      const error = new Error(body.message || body.error || `Request failed (${response.status})`);
+      error.code = body.code || "";
+      throw error;
     }
     return body;
   }
@@ -247,6 +250,7 @@
     for (const node of document.querySelectorAll("#add-assoc-btn, #add-progress-btn, #add-blocker-btn, .edit-progress-btn, .save-progress-btn, .resolve-blocker-btn")) {
       node.disabled = writing || !admitted || node.dataset.guardInvalid === "true";
     }
+    adviceView.updateControls();
   }
 
   function updatePresenceLabels() {
@@ -348,6 +352,7 @@
     const project = currentProject;
     const sequence = ++detailRequest;
     clearCoordination("Reading current linked coordination…");
+    adviceView.suspend();
     try {
       const detail = await apiFetch("/api/work/item?" + new URLSearchParams({ project, item: itemUUID }));
       if (sequence !== detailRequest || project !== currentProject) return;
@@ -490,6 +495,7 @@
       coordinationIdentity = { collection: detail.collection, binding: detail.item.binding_id,
         item: detail.item.plane_item_uuid, project };
       loadCoordination();
+      adviceView.open(detail, project);
       await loadItemArtifacts();
     } catch (error) {
       message(byID("detail-modal").hidden ? "view-error" : "detail-error", "Could not load item: " + error.message);
@@ -729,7 +735,7 @@
       const visibleTarget = !byID("login-modal").hidden ? "login-error" : !byID("detail-modal").hidden ? "detail-error"
         : !byID("artifact-page").hidden ? "artifact-error" : "view-error";
       message(byID(errorTarget).parentElement.closest("[hidden]") ? visibleTarget : errorTarget,
-        "Change not confirmed: " + error.message + ". Inspect the current state before retrying.");
+        "Change not confirmed: " + (error.code ? error.code + ": " : "") + error.message + ". Inspect the current state before retrying.");
     } finally {
       restoreControls();
       writing = false;
@@ -1135,6 +1141,553 @@
     await loadBoard();
     await showDetail(item);
   }
+
+  // Advice owns only its panel state. Server-built review data is never joined
+  // with another item's live rows or treated as permission to mutate.
+  const adviceView = (() => {
+    let context = null, epoch = 0, read = 0, timer = null, bundle = null, availability = null;
+    let profiles = [], control = null, policy = null, selectedProposal = "", selectedVersion = "", profileSelection = "";
+    let sources = [], candidates = [], selectedActions = new Set(), policyDirty = false, controlDirty = false;
+    let lastRequest = null, loading = false;
+    const drafts = new Map();
+    const actionNames = { annotate_progress: "Add selected progress", annotate_blocker: "Change a blocker", link_artifact: "Link an artifact revision" };
+    const inputFields = ["advice-profile", "advice-source-record", "advice-source-version", "advice-candidate-revision"];
+    const keyFor = ctx => JSON.stringify([ctx.collection, ctx.binding_id, ctx.plane_item_uuid]);
+    const isHere = (ctx, token) => context === ctx && epoch === token && currentProject === ctx.project
+      && currentItemUUID === ctx.plane_item_uuid && !byID("detail-modal").hidden;
+    const sameContext = value => value && context && value.collection === context.collection
+      && value.binding_id === context.binding_id && value.plane_item_uuid === context.plane_item_uuid;
+    const errorText = error => `${error.code ? error.code + ": " : ""}${error.message}`;
+
+    function addText(parent, tag, text, className = "") {
+      const node = document.createElement(tag);
+      node.textContent = String(text ?? "");
+      if (className) node.className = className;
+      parent.append(node);
+      return node;
+    }
+
+    function pair(parent, label, value) {
+      addText(parent, "dt", label);
+      addText(parent, "dd", value === null || value === undefined || value === "" ? "Unavailable" : value);
+    }
+
+    function stash() {
+      if (!context) return;
+      drafts.set(keyFor(context), { fields: { ...Object.fromEntries(inputFields.map(id => [id, byID(id).value])), "advice-profile": profileSelection },
+        sources: sources.map(source => ({ ...source })), candidates: [...candidates], selectedProposal,
+        lastRequest, policyDirty, controlDirty,
+        policyFields: [...document.querySelectorAll("#advice-policy-fields input:checked")].map(node => node.value),
+        generation: byID("advice-generation-enabled").checked, apply: byID("advice-apply-enabled").checked });
+      if (lastRequest) {
+        try { sessionStorage.setItem("cairn-advice-request:" + keyFor(context), JSON.stringify(lastRequest)); }
+        catch { message("advice-notice", "Browser request recovery storage is unavailable. Copy the displayed generation request UUID before leaving this page."); }
+      }
+    }
+
+    function clearReview(text = "No current proposal review.") {
+      bundle = null;
+      byID("advice-review").hidden = true;
+      for (const id of ["advice-review-meta", "advice-manifest-meta", "advice-manifest-sources", "advice-manifest-candidates", "advice-actions", "advice-applications"]) byID(id).replaceChildren();
+      byID("advice-currentness").textContent = text;
+      updateControls();
+    }
+
+    function suspend() {
+      stash();
+      epoch++;
+      read++;
+      clearTimeout(timer);
+      availability = null;
+      loading = true;
+      clearReview("Reading current advice…");
+    }
+
+    function close() {
+      suspend();
+      context = null;
+      loading = false;
+    }
+
+    function restoreDraft() {
+      const draft = drafts.get(keyFor(context));
+      sources = draft?.sources || [];
+      candidates = draft?.candidates || [];
+      selectedProposal = draft?.selectedProposal || "";
+      lastRequest = draft?.lastRequest || null;
+      if (!lastRequest) {
+        try {
+          const saved = JSON.parse(sessionStorage.getItem("cairn-advice-request:" + keyFor(context)) || "null");
+          if (saved && validUUID(saved.requestID) && typeof saved.key === "string") lastRequest = saved;
+        } catch { message("advice-error", "Saved generation request recovery could not be read."); }
+      }
+      policyDirty = draft?.policyDirty || false;
+      controlDirty = draft?.controlDirty || false;
+      selectedActions = new Set();
+      selectedVersion = "";
+      profileSelection = draft?.fields["advice-profile"] || "";
+      for (const id of inputFields) byID(id).value = draft?.fields[id] || (id === "advice-source-version" ? "1" : "");
+      for (const node of document.querySelectorAll("#advice-policy-fields input")) node.checked = draft?.policyFields?.includes(node.value) || false;
+      byID("advice-generation-enabled").checked = draft?.generation || false;
+      byID("advice-apply-enabled").checked = draft?.apply || false;
+      renderInputs();
+      renderRequest();
+      message("advice-notice");
+      message("advice-error");
+    }
+
+    function open(detail, project) {
+      const next = { collection: detail.collection, binding_id: detail.item.binding_id,
+        plane_item_uuid: detail.item.plane_item_uuid, project };
+      if (!next.collection || !validUUID(next.binding_id) || !validUUID(next.plane_item_uuid)) {
+        close();
+        message("advice-error", "The work item did not supply an exact advice context.");
+        return;
+      }
+      const changed = !context || keyFor(context) !== keyFor(next);
+      context = next;
+      if (changed) restoreDraft();
+      load();
+    }
+
+    function renderRequest() {
+      byID("advice-request-recovery").hidden = !lastRequest;
+      byID("advice-request-id").value = lastRequest?.requestID || "";
+    }
+
+    function renderInputs() {
+      byID("advice-selected-sources").replaceChildren();
+      byID("advice-selected-candidates").replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement("li");
+        addText(row, "span", `${source.record_id} · version ${source.version}`);
+        row.append(actionButton("Remove source", "advice-remove-input", () => {
+          sources = sources.filter(value => value !== source); renderInputs(); stash();
+        }));
+        byID("advice-selected-sources").append(row);
+      }
+      for (const revision of candidates) {
+        const row = document.createElement("li");
+        addText(row, "span", `Exact revision ${revision}`);
+        row.append(actionButton("Remove candidate", "advice-remove-input", () => {
+          candidates = candidates.filter(value => value !== revision); renderInputs(); stash();
+        }));
+        byID("advice-selected-candidates").append(row);
+      }
+      byID("advice-input-summary").textContent = `${sources.length}/32 explicit source versions; ${candidates.length}/20 candidate revisions. Generation uses only the saved field policy. Deadline: 90 seconds.`;
+      updateControls();
+    }
+
+    function profileInfo() {
+      const profile = profiles.find(value => value.name === byID("advice-profile").value);
+      byID("advice-profile-info").textContent = profile
+        ? `${profile.route} · ${profile.model} · registered ${dateLabel(profile.created_at)} · executable digest ${profile.binary_sha256}`
+        : profiles.length ? "Select the registered subscription profile to use." : "No registered profile. Register a verified native profile with cairn work advice profile register, then reload.";
+      updateControls();
+    }
+
+    function updateControls() {
+      const ready = Boolean(context && availability && !loading && !writing);
+      const profile = profiles.find(value => value.name === byID("advice-profile").value);
+      byID("advice-generate").disabled = !ready || availability?.generation_allowed !== true || !profile || !policy || policyDirty || controlDirty;
+      byID("advice-save-policy").disabled = !ready || availability?.policy_edit_allowed !== true || !policyDirty;
+      byID("advice-save-control").disabled = !ready || !control || !controlDirty;
+      if (control?.feature_status === "retired") byID("advice-save-control").disabled = true;
+      byID("advice-inspect-request").disabled = !context || writing || loading || !lastRequest;
+      byID("advice-reconcile").disabled = !ready || !["uncertain", "cleanup_unconfirmed", "running", "pending"].includes(bundle?.job?.status);
+      byID("advice-reload").disabled = !context || writing || loading;
+      byID("advice-proposal-select").disabled = writing || loading;
+      const current = bundle?.currentness?.state === "current" && bundle?.reviewComplete === true
+        && bundle?.proposal && Date.parse(bundle.proposal.expires_at) > Date.now();
+      const selectable = ready && current && bundle?.availability?.apply_allowed === true;
+      for (const node of document.querySelectorAll(".advice-action-select")) {
+        node.disabled = !selectable || node.dataset.pending !== "true" || node.dataset.reviewable !== "true";
+      }
+      byID("advice-apply").disabled = !selectable || ![...document.querySelectorAll(".advice-action-select:checked")].some(node => !node.disabled);
+      byID("advice-reject").disabled = !ready || !bundle?.proposal || bundle?.availability?.reject_allowed !== true;
+      for (const node of document.querySelectorAll(".advice-undo")) node.disabled = !ready || node.dataset.allowed !== "true";
+      for (const node of document.querySelectorAll("#advice-add-source, #advice-add-candidate, .advice-remove-input")) node.disabled = writing || loading;
+    }
+
+    async function load() {
+      if (!context) return;
+      const ctx = context, token = epoch, sequence = ++read;
+      clearTimeout(timer);
+      loading = true;
+      availability = null;
+      clearReview("Reading current advice…");
+      message("advice-error");
+      byID("advice-status").textContent = "Reading advice availability…";
+      try {
+        const [controls, savedPolicy, registered, listing] = await Promise.all([
+          apiFetch("/api/work/advice/control"),
+          apiFetch("/api/work/advice/policy?" + new URLSearchParams({ project: ctx.project })).catch(error => {
+            if (error.code === "POLICY_UNENFORCEABLE") return { refusal: error };
+            throw error;
+          }),
+          apiFetch("/api/work/advice/profile/list"),
+          apiFetch("/api/work/advice/list?" + new URLSearchParams({ project: ctx.project, item: ctx.plane_item_uuid }))
+        ]);
+        if (!isHere(ctx, token) || sequence !== read) return;
+        if (!sameContext(listing.context) || (!savedPolicy.refusal && (savedPolicy.binding_id !== ctx.binding_id || !Array.isArray(savedPolicy.allowed_fields)))
+          || !Array.isArray(listing.proposals) || !Array.isArray(registered.profiles)
+          || !listing.availability || typeof controls.generation_enabled !== "boolean" || typeof controls.apply_enabled !== "boolean") {
+          throw new Error("Advice settings or item identity did not match the selected work item.");
+        }
+        control = controls; policy = savedPolicy.refusal ? null : savedPolicy; profiles = registered.profiles; availability = listing.availability;
+        byID("advice-status").textContent = `Advice feature: ${controls.feature_status}. Generation ${availability.generation_allowed ? "available" : "unavailable"}; apply ${availability.apply_allowed ? "available" : "unavailable"}. ${availability.reason_codes?.join(", ") || ""}`;
+        if (!controlDirty) {
+          byID("advice-generation-enabled").checked = controls.generation_enabled;
+          byID("advice-apply-enabled").checked = controls.apply_enabled;
+        }
+        if (!policyDirty) for (const node of document.querySelectorAll("#advice-policy-fields input")) node.checked = policy?.allowed_fields.includes(node.value) || false;
+        byID("advice-policy-status").textContent = policy
+          ? `Saved policy revision ${policy.policy_revision}: ${policy.allowed_fields.join(", ") || "No work fields permitted"}.${policyDirty ? " Unsaved choices remain below." : ""}`
+          : `No usable saved policy: ${errorText(savedPolicy.refusal)}. Choose fields and explicitly save the policy before generation.`;
+        byID("advice-profile").replaceChildren(new Option("Select a profile", ""), ...profiles.map(profile => new Option(`${profile.name} · ${profile.model}`, profile.name)));
+        if (profiles.some(profile => profile.name === profileSelection)) byID("advice-profile").value = profileSelection;
+        profileInfo();
+        const proposals = listing.proposals;
+        if (proposals.some(prop => prop.binding_id !== ctx.binding_id || prop.plane_item_uuid !== ctx.plane_item_uuid || !validUUID(prop.proposal_uuid))) {
+          throw new Error("A proposal did not belong to this exact work item.");
+        }
+        byID("advice-proposal-select").replaceChildren(new Option(proposals.length ? "Select a retained proposal" : "No retained proposals", ""),
+          ...proposals.map(prop => new Option(`${dateLabel(prop.created_at)} · ${prop.status} · ${prop.proposal_uuid}`, prop.proposal_uuid)));
+        selectedProposal = proposals.some(prop => prop.proposal_uuid === selectedProposal) ? selectedProposal : proposals[0]?.proposal_uuid || "";
+        byID("advice-proposal-select").value = selectedProposal;
+        byID("advice-empty").hidden = proposals.length !== 0;
+        loading = false;
+        updateControls();
+        if (selectedProposal) await readReview({ proposal: selectedProposal });
+      } catch (error) {
+        if (!isHere(ctx, token) || sequence !== read) return;
+        availability = null; clearReview();
+        byID("advice-status").textContent = "Advice availability is unknown. Retained review could not be read.";
+        message("advice-error", errorText(error));
+      } finally {
+        if (isHere(ctx, token) && sequence === read) { loading = false; updateControls(); }
+      }
+    }
+
+    function renderState(parent, value) {
+      if (value === null) { addText(parent, "p", "No existing target."); return; }
+      const labels = { annotation_id: "Annotation", revision: "Revision", kind: "Kind", body: "Text", state: "State",
+        link_id: "Link", revision_id: "Artifact revision", role: "Role" };
+      const list = document.createElement("dl"); list.className = "artifact-identity";
+      for (const [field, label] of Object.entries(labels)) if (Object.hasOwn(value, field)) pair(list, label, typeof value[field] === "boolean" ? (value[field] ? "Yes" : "No") : value[field]);
+      parent.append(list);
+    }
+
+    function reviewable(action) {
+      const effect = action.review, payload = action.target_payload, after = effect?.after;
+      if (!effect || !after || !payload || !effect.attribution?.requester || !effect.attribution?.accepting_actor
+        || effect.attribution.model_assisted !== true) return false;
+      if (action.action_type === "annotate_progress") return after.kind === "progress" && after.state === "active" && typeof after.body === "string" && after.body === payload.text;
+      if (action.action_type === "annotate_blocker") {
+        if (after.kind !== "blocker" || typeof after.body !== "string") return false;
+        if (payload.blocker_action === "create") return after.body === payload.text && after.state === "open" && effect.before === null;
+        return payload.blocker_action === "resolve" && after.state === "resolved" && effect.before?.state === "open"
+          && effect.before.annotation_id === payload.existing_blocker_id && effect.before.revision === payload.expected_revision;
+      }
+      return action.action_type === "link_artifact" && validUUID(after.revision_id) && after.state === "active"
+        && after.revision_id === payload.artifact_revision_id && after.role === payload.role;
+    }
+
+    function renderManifest(data) {
+      const meta = byID("advice-manifest-meta"), manifest = data.manifest;
+      if (manifest) {
+        pair(meta, "Saved field policy", `Revision ${manifest.policy_revision}: ${(manifest.allowed_fields || []).join(", ")}`);
+        pair(meta, "Plane observed", dateLabel(manifest.last_refreshed_at));
+        pair(meta, "Restore generation", manifest.restore_generation);
+        pair(meta, "Manifest digest", data.job.input_manifest_digest);
+        pair(meta, "Input digest", data.job.input_payload_digest);
+      } else pair(meta, "Manifest", "Unavailable");
+      const input = data.input, snapshot = input?.payload_available === true ? input.snapshot : null;
+      pair(meta, "Exact retained input", snapshot ? `Available until ${dateLabel(input.expires_at)}` : `Unavailable${input?.reason_code ? ": " + input.reason_code : ""}`);
+      if (snapshot) {
+        pair(meta, "Item identifier sent", snapshot.identifier);
+        pair(meta, "Item title sent", snapshot.title);
+        pair(meta, "Plane state sent", snapshot.current_state);
+        for (const blocker of snapshot.existing_blockers || []) pair(meta, `Blocker ${blocker.blocker_id} · revision ${blocker.revision}`, blocker.text);
+      }
+      for (const source of manifest?.sources || []) {
+        const row = document.createElement("li"); row.className = "advice-source";
+        addText(row, "strong", `${source.record_id} · version ${source.version}`);
+        addText(row, "p", `Observed ${dateLabel(source.observed_at)} · digest ${source.body_sha256}`);
+        const retained = snapshot?.source_references?.find(value => value.id === source.record_id && value.version === source.version && value.body_sha256 === source.body_sha256);
+        if (retained && source.eligible === true) {
+          addText(row, "p", retained.title || "Selected source text");
+          addText(row, "div", retained.body, "advice-text");
+        } else addText(row, "p", "Source text unavailable. It was not reconstructed from a current record.");
+        byID("advice-manifest-sources").append(row);
+      }
+      for (const revision of manifest?.candidate_revisions || []) {
+        const row = document.createElement("li");
+        addText(row, "strong", `Candidate ${revision.revision_id}`);
+        addText(row, "p", revision.payload_available === true ? `${revision.kind} · ${revision.display_name}` : "Candidate metadata unavailable.");
+        byID("advice-manifest-candidates").append(row);
+      }
+    }
+
+    function renderReview(data) {
+      if (!sameContext(data.context) || !data.job || data.job.binding_id !== context.binding_id
+        || data.job.plane_item_uuid !== context.plane_item_uuid || !Array.isArray(data.actions)
+        || !Array.isArray(data.applications) || !data.currentness || !data.availability) throw new Error("Advice review did not match this exact work item.");
+      const prop = data.proposal;
+      if (prop && (prop.binding_id !== context.binding_id || prop.plane_item_uuid !== context.plane_item_uuid || !validUUID(prop.proposal_uuid))) throw new Error("Proposal identity did not match this work item.");
+      if (data.input?.payload_available && (!data.input.snapshot || data.input.snapshot.binding_id !== context.binding_id
+        || data.input.snapshot.plane_item_uuid !== context.plane_item_uuid)) throw new Error("Retained input identity did not match this work item.");
+      bundle = data;
+      data.reviewComplete = Boolean(data.input?.payload_available === true && data.manifest && data.job.route
+        && data.job.model && data.job.profile_name && data.job.profile_configuration_digest
+        && data.actions.every(reviewable) && (data.manifest.sources || []).every(source => source.eligible === true
+          && data.input.snapshot.source_references?.some(value => value.id === source.record_id && value.version === source.version
+            && value.body_sha256 === source.body_sha256 && typeof value.body === "string")));
+      const versionKey = prop ? `${prop.proposal_uuid}:${prop.review_version}` : "";
+      if (versionKey !== selectedVersion) { selectedActions.clear(); selectedVersion = versionKey; }
+      byID("advice-review").hidden = false;
+      const reasons = (data.currentness.reasons || []).map(reason => `${reason.code}: ${reason.message}`).join("; ");
+      byID("advice-currentness").textContent = `Currentness: ${data.currentness.state} · checked ${dateLabel(data.currentness.checked_at)}${reasons ? ". " + reasons : ""}`;
+      if (!data.reviewComplete && prop && data.actions.length) byID("advice-currentness").textContent += ". Exact input or effect review is unavailable; acceptance is disabled.";
+      const meta = byID("advice-review-meta");
+      pair(meta, "Proposal", prop?.proposal_uuid);
+      pair(meta, "Review", prop ? `${prop.status} · version ${prop.review_version} · expires ${dateLabel(prop.expires_at)}` : "No proposal was produced.");
+      pair(meta, "Generation request", data.job.request_uuid);
+      pair(meta, "Requested by", data.job.caller);
+      pair(meta, "Profile / subscription route", `${data.job.profile_name} · ${data.job.route} · ${data.job.model}`);
+      pair(meta, "Profile configuration digest", data.job.profile_configuration_digest);
+      pair(meta, "Input captured", dateLabel(data.job.captured_at));
+      byID("advice-job-status").textContent = `Generation ${data.job.status}${data.job.error_code ? ": " + data.job.error_code : ""}.`;
+      renderManifest(data);
+      byID("advice-no-suggestions").hidden = !prop || data.job.status !== "completed" || data.actions.length !== 0;
+      for (const action of data.actions) {
+        if (!validUUID(action.action_uuid) || action.proposal_uuid !== prop?.proposal_uuid) throw new Error("Action identity did not match the reviewed proposal.");
+        const row = document.createElement("li"); row.className = "advice-action"; row.dataset.actionId = action.action_uuid;
+        const label = document.createElement("label"); label.className = "checkbox-label";
+        const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.className = "advice-action-select";
+        checkbox.dataset.actionId = action.action_uuid; checkbox.dataset.pending = String(action.status === "pending");
+        checkbox.dataset.reviewable = String(reviewable(action));
+        checkbox.checked = selectedActions.has(action.action_uuid);
+        checkbox.addEventListener("change", () => { checkbox.checked ? selectedActions.add(action.action_uuid) : selectedActions.delete(action.action_uuid); updateControls(); });
+        label.append(checkbox); addText(label, "strong", `${actionNames[action.action_type] || "Unknown action: " + action.action_type} · ${action.status}`); row.append(label);
+        if (action.review) {
+          const preview = document.createElement("div"); preview.className = "advice-diff";
+          for (const side of ["before", "after"]) {
+            const part = document.createElement("div"); addText(part, "strong", side === "before" ? "Before, at capture" : "After acceptance");
+            if (side === "after" && !action.review.after) addText(part, "p", "Preview unavailable."); else renderState(part, action.review[side]);
+            preview.append(part);
+          }
+          row.append(preview);
+          const attribution = action.review.attribution;
+          addText(row, "p", attribution ? `Requested by ${attribution.requester}; ${attribution.model_assisted ? "model-assisted" : "assistance unknown"}; accepting actor ${attribution.accepting_actor}.` : "Attribution unavailable.");
+          for (const source of action.review.source_references || []) addText(row, "p", `Cites ${source.record_id} · version ${source.version} · observed ${dateLabel(source.observed_at)}`);
+        } else addText(row, "p", "Exact effect preview unavailable; this action cannot be selected.");
+        addText(row, "p", action.rationale || "No rationale supplied.", "advice-text");
+        byID("advice-actions").append(row);
+      }
+      byID("advice-applications-empty").hidden = data.applications.length > 0;
+      for (const receipt of data.applications) {
+        if (!validUUID(receipt.receipt_uuid) || !validUUID(receipt.request_uuid) || receipt.proposal_uuid !== prop?.proposal_uuid) throw new Error("Application identity did not match this proposal.");
+        const row = document.createElement("li"); row.className = "advice-application"; row.dataset.requestId = receipt.request_uuid;
+        addText(row, "strong", receipt.undone ? "Application undone" : "Applied changes");
+        const details = document.createElement("dl"); details.className = "artifact-identity";
+        pair(details, "Receipt", receipt.receipt_uuid); pair(details, "Apply request", receipt.request_uuid);
+        pair(details, "Applied by / time", `${receipt.applied_by_channel} · ${dateLabel(receipt.applied_at)}`);
+        pair(details, "Action IDs", (receipt.applied_action_uuids || []).join(", "));
+        if (receipt.undone) pair(details, "Undone by / time", `${receipt.undone_by_channel} · ${dateLabel(receipt.undone_at)}`);
+        for (const [action, revisions] of Object.entries(receipt.undone ? receipt.compensating_revisions || {} : receipt.output_revisions || {})) {
+          const structural = Object.entries(revisions).filter(([field]) => ["type", "annotation_id", "link_id", "revision_id", "revision", "restored_state"].includes(field));
+          pair(details, `Recorded revisions for ${action}`, structural.map(([field, value]) => `${field}: ${value}`).join(" · "));
+        }
+        row.append(details);
+        addText(row, "p", receipt.undo?.allowed ? "Undo is currently eligible; the server will recheck exact output revisions." : `Undo unavailable: ${receipt.undo?.reason_code || "eligibility unknown"}.`);
+        const button = actionButton("Undo this application", "advice-undo", () => undo(receipt));
+        button.dataset.allowed = String(receipt.undo?.allowed === true && !receipt.undone); row.append(button);
+        byID("advice-applications").append(row);
+      }
+      updateControls();
+    }
+
+    async function readReview(query) {
+      if (!context) return;
+      const ctx = context, token = epoch, sequence = ++read;
+      clearTimeout(timer);
+      loading = true;
+      clearReview("Reading the current proposal…");
+      try {
+        const data = await apiFetch("/api/work/advice/show?" + new URLSearchParams(query));
+        if (!isHere(ctx, token) || sequence !== read) return;
+        if (query.proposal && data.proposal?.proposal_uuid !== query.proposal) throw new Error("The returned proposal differs from the requested proposal.");
+        if (query.request_id && data.job?.request_uuid !== query.request_id) throw new Error("The returned generation differs from the requested generation.");
+        renderReview(data);
+        if (query.request_id && lastRequest?.requestID === query.request_id
+          && ["completed", "failed", "timed_out", "expired"].includes(data.job.status)) {
+          // Inspection has resolved the earlier uncertainty. Another explicit
+          // Generate action may start a new request; inspection never does so.
+          lastRequest.unconfirmed = false;
+          pendingWrites.delete(lastRequest.key);
+          stash();
+        }
+        if (data.proposal) { selectedProposal = data.proposal.proposal_uuid; byID("advice-proposal-select").value = selectedProposal; }
+      } catch (error) {
+        if (!isHere(ctx, token) || sequence !== read) return;
+        clearReview();
+        message("advice-error", "Current review unavailable: " + errorText(error));
+      } finally {
+        if (isHere(ctx, token) && sequence === read) {
+          loading = false; updateControls();
+          scheduleReview(query);
+        }
+      }
+    }
+
+    function scheduleReview(query) {
+      clearTimeout(timer);
+      const ctx = context, token = epoch;
+      if (!ctx) return;
+      timer = setTimeout(() => {
+        if (!isHere(ctx, token)) return;
+        if (document.hidden || writing) scheduleReview(query);
+        else readReview(query);
+      }, 30000);
+    }
+
+    async function perform(path, payload, success, validate = () => {}) {
+      if (!context || writing) return false;
+      const ctx = context, token = epoch;
+      const key = JSON.stringify([path, payload]);
+      if (!pendingWrites.has(key)) pendingWrites.set(key, crypto.randomUUID());
+      const requestID = pendingWrites.get(key);
+      let confirmed = false;
+      await write(path, payload, async result => {
+        // Invalid receipts keep the original write's retry identity. Only a
+        // confirmed mutation may turn a later read failure into a read error.
+        validate(result, requestID);
+        confirmed = true;
+        if (!isHere(ctx, token)) return;
+        try { await success(result); }
+        catch (error) { message("advice-error", "Change confirmed, but the current review could not be loaded: " + errorText(error)); }
+      }, "advice-error");
+      if (isHere(ctx, token)) updateControls();
+      return confirmed;
+    }
+
+    async function generate(event) {
+      event.preventDefault();
+      if (byID("advice-generate").disabled || !context) return;
+      const payload = { project: context.project, item: context.plane_item_uuid, profile: byID("advice-profile").value,
+        timeout: 90, candidate_revision_ids: [...candidates], sources: sources.map(source => ({ ...source })) };
+      const path = "/api/work/advice/generate", key = JSON.stringify([path, payload]);
+      if (!pendingWrites.has(key)) pendingWrites.set(key, lastRequest?.unconfirmed && lastRequest.key === key ? lastRequest.requestID : crypto.randomUUID());
+      lastRequest = { key, requestID: pendingWrites.get(key), unconfirmed: true }; renderRequest(); stash();
+      message("advice-notice", "Generating one bounded request through the selected subscription profile…");
+      const ctx = context, token = epoch, requestID = lastRequest.requestID;
+      const confirmed = await perform(path, payload, async result => {
+        lastRequest.unconfirmed = false; stash();
+        selectedProposal = result.proposal.proposal_uuid;
+        message("advice-notice", "Generation completed. Review the retained input and exact proposed effects before choosing actions.");
+        await load();
+      }, (result, requestID) => {
+        if (result.job?.request_uuid !== requestID || !validUUID(result.proposal?.proposal_uuid)
+          || result.proposal.binding_id !== ctx.binding_id || result.proposal.plane_item_uuid !== ctx.plane_item_uuid) {
+          throw new Error("Generation reply did not identify the exact submitted request and work item.");
+        }
+      });
+      if (!confirmed && isHere(ctx, token) && lastRequest?.requestID === requestID) {
+        message("advice-notice", "Generation was not confirmed. Inspect this request before retrying; unchanged input reuses its request UUID.");
+      }
+    }
+
+    async function apply() {
+      if (byID("advice-apply").disabled || !bundle?.proposal) return;
+      const prop = bundle.proposal;
+      const actions = [...document.querySelectorAll(".advice-action-select:checked")].filter(node => !node.disabled).map(node => node.dataset.actionId);
+      await perform("/api/work/advice/apply", { proposal_uuid: prop.proposal_uuid, version: prop.review_version, actions }, async result => {
+        message("advice-notice", `Selected actions applied. Receipt ${result.receipt.receipt_uuid}; apply request ${result.receipt.request_uuid}.`);
+        await showDetail(context.plane_item_uuid);
+      }, (result, requestID) => {
+        const receipt = result.receipt, actual = receipt?.applied_action_uuids;
+        if (!validUUID(receipt?.receipt_uuid) || receipt.request_uuid !== requestID || receipt.proposal_uuid !== prop.proposal_uuid
+          || !Array.isArray(actual) || actual.length !== actions.length || [...actual].sort().join(",") !== [...actions].sort().join(",")) {
+          throw new Error("Application reply did not confirm the exact request, proposal and selected action set.");
+        }
+      });
+    }
+
+    async function reject() {
+      if (byID("advice-reject").disabled || !bundle?.proposal) return;
+      const prop = bundle.proposal;
+      await perform("/api/work/advice/reject", { proposal_uuid: prop.proposal_uuid, version: prop.review_version }, async () => {
+        message("advice-notice", "Remaining proposal rejected. Existing applications are retained."); await load();
+      }, result => {
+        if (result.ok !== true) throw new Error("Rejection was not confirmed.");
+      });
+    }
+
+    async function undo(receipt) {
+      if (receipt.undo?.allowed !== true || receipt.undone || writing) return;
+      await perform("/api/work/advice/undo", { request_uuid: receipt.request_uuid }, async result => {
+        message("advice-notice", "This application was compensated. Its original effects and compensation remain in history.");
+        await showDetail(context.plane_item_uuid);
+      }, result => {
+        if (result.receipt?.receipt_uuid !== receipt.receipt_uuid || result.receipt.request_uuid !== receipt.request_uuid
+          || result.receipt.proposal_uuid !== receipt.proposal_uuid || result.receipt.undone !== true) {
+          throw new Error("Undo reply did not confirm the exact selected application.");
+        }
+      });
+    }
+
+    byID("advice-generate-form").addEventListener("submit", generate);
+    byID("advice-reload").addEventListener("click", load);
+    byID("advice-apply").addEventListener("click", apply);
+    byID("advice-reject").addEventListener("click", reject);
+    byID("advice-inspect-request").addEventListener("click", () => { if (lastRequest) readReview({ request_id: lastRequest.requestID }); });
+    byID("advice-reconcile").addEventListener("click", () => perform("/api/work/advice/reconcile", {}, async () => {
+      message("advice-notice", "Advice job reconciliation completed without another generation request.");
+      if (lastRequest) await readReview({ request_id: lastRequest.requestID }); else await load();
+    }));
+    byID("advice-profile").addEventListener("change", () => { profileSelection = byID("advice-profile").value; profileInfo(); stash(); });
+    byID("advice-proposal-select").addEventListener("change", () => {
+      selectedProposal = byID("advice-proposal-select").value;
+      selectedActions.clear(); selectedVersion = ""; stash();
+      if (selectedProposal) readReview({ proposal: selectedProposal }); else { read++; clearTimeout(timer); clearReview(); }
+    });
+    byID("advice-add-source").addEventListener("click", () => {
+      const record_id = byID("advice-source-record").value.trim(), version = Number(byID("advice-source-version").value);
+      if (!validUUID(record_id) || !Number.isSafeInteger(version) || version < 1) { message("advice-error", "Enter an exact record UUID and a positive version."); return; }
+      if (sources.length >= 32) { message("advice-error", "At most 32 source versions may be selected."); return; }
+      if (!sources.some(source => source.record_id === record_id && source.version === version)) sources.push({ record_id, version });
+      byID("advice-source-record").value = ""; message("advice-error"); renderInputs(); stash();
+    });
+    byID("advice-add-candidate").addEventListener("click", async () => {
+      const revisionID = byID("advice-candidate-revision").value.trim(), ctx = context, token = epoch;
+      if (!validUUID(revisionID) || candidates.length >= 20) { message("advice-error", "Enter an exact revision UUID; at most 20 candidates may be selected."); return; }
+      try {
+        const revision = await apiFetch("/api/work/artifact/show?" + new URLSearchParams({ revision: revisionID }));
+        if (!isHere(ctx, token)) return;
+        if (revision.revision_id !== revisionID || revision.unavailable) throw new Error("The registered artifact revision is unavailable.");
+        if (!candidates.includes(revisionID)) {
+          if (candidates.length >= 20) throw new Error("At most 20 candidate revisions may be selected.");
+          candidates.push(revisionID);
+        }
+        if (byID("advice-candidate-revision").value.trim() === revisionID) byID("advice-candidate-revision").value = "";
+        message("advice-error"); renderInputs(); stash();
+      } catch (error) { if (isHere(ctx, token)) message("advice-error", errorText(error)); }
+    });
+    byID("advice-policy-fields").addEventListener("change", () => { policyDirty = true; stash(); updateControls(); });
+    for (const id of ["advice-generation-enabled", "advice-apply-enabled"]) byID(id).addEventListener("change", () => { controlDirty = true; stash(); updateControls(); });
+    byID("advice-save-policy").addEventListener("click", () => perform("/api/work/advice/policy", {
+      project: context.project, fields: [...document.querySelectorAll("#advice-policy-fields input:checked")].map(node => node.value)
+    }, async () => { policyDirty = false; message("advice-notice", "Sharing policy saved. Review the effective policy before generation."); await load(); }));
+    byID("advice-save-control").addEventListener("click", () => perform("/api/work/advice/control", {
+      generation_enabled: byID("advice-generation-enabled").checked, apply_enabled: byID("advice-apply-enabled").checked
+    }, async () => { controlDirty = false; message("advice-notice", "Advice controls saved."); await load(); }));
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) clearTimeout(timer);
+      else if (context && !writing) selectedProposal ? readReview({ proposal: selectedProposal }) : load();
+    });
+    return { open, close, suspend, updateControls };
+  })();
 
   function loadRoute() {
     const query = new URLSearchParams(location.search);
