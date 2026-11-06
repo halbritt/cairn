@@ -26,7 +26,7 @@ You own F-01–F-04 and HC-03. Direct F-B1 (shared primitives, binding and admis
 
 Start from integrations/lifecycle/, cmd/cairn/locked_state_file.go, internal/claudechannel/, localapi/, and existing installed-lifecycle tests. Proposed internal/statefile, internal/procpeer and internal/lifecycle packages are destinations, not claims that the code already exists.
 
-Create concrete Plane items for the F plan keys. F-01 must deliver a callable admission/binding path and exercised shared primitives. F-04 preserves native-session and grant-ledger persistence through a real consumer and lands before F-02/F-03. Those items replace recall/capture subprocess hops with direct localapi.Client calls. F-B2 can capture fixtures while F-B3 completes F-04. Sequence shared-file edits. F-04's state primitives do not wait for J-05, which later integrates coordination turn/custody policy.
+Create concrete Plane items for the F plan keys. F-01 must deliver a callable admission/binding path and exercised shared primitives. F-04 delivers shared-state/binding-activation support through the actual frontends and independently pinned compatibility caller described in docs/plans/hybrid-runtime-contracts/f04-consumer-decision.md. It lands before F-02/F-03; remaining grant operations land with those direct-localapi memory consumers. F-B2 can capture fixtures while F-B3 completes F-04. Sequence shared-file edits. J-05 delivers native orchestration and the compiled journal adapter with its actual consumer; F-04 does not depend on it. HC-03 includes complete memory grant behavior, while HC-04 accepts native-session transition policy.
 
 ## Preserve and prove
 

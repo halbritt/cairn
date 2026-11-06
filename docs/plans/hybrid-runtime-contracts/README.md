@@ -69,12 +69,15 @@ runtime work.
    executable. Preserve the legacy executor or explicitly drain and repin a
    reviewed `/3` descriptor. Retain immutable rollback artifacts and compatible
    state. New state versions require their own decision, tests and review.
-4. **Foundation state support precedes memory consumers.** F-04 precedes F-02
-   and F-03. Its compatible native-session/ledger support must not wait for
-   J-05 custody integration. The journal adapter must expose the flush and
-   committed facts currently consumed by `native_session.py` without moving
-   transition policy into Foundation. The two domain contracts must agree on
-   the exact adapter and failure order before X-01 closes.
+4. **Foundation state support precedes memory consumers.** The
+   [F-04 consumer decision](f04-consumer-decision.md) selects real binding
+   activation through an independently pinned compatibility caller. F-04
+   precedes F-02/F-03 and J-02 without waiting for J-05. Remaining grant
+   operations land with their memory consumers; J-05 delivers native
+   orchestration and its compiled journal adapter together. HC-03 includes
+   full memory grant behavior; HC-04 accepts native-session transition policy.
+   Domain contracts must agree on the exact adapter, failure order and
+   compatibility receipt before dependent implementation.
 5. **Explicit retries differ from automatic recovery.** Preserve ordinary
    unchanged explicit commands that retry through the authenticated API,
    including locally committed/refused slots. Ordinary watcher replay sends
@@ -118,6 +121,21 @@ runtime work.
 
 ## Acceptance record
 
-Pending domain review and reconciliation. X-01 / CAIRN-302 remains open.
+Release setup criteria `release/2` were independently accepted at candidate
+`58a83eb91d1693b06a7c44c5d725bb3c318ea9a2` and landed as
+`aa0c26fa1a8ab8faeb93c183c112f21dcbfa7ab9` with an identical contract blob.
+R-02 qualifies available F-01/F-04 staging, pins and state controls. R-06
+qualifies complete watcher/config-dir/shared-user transitions after native
+lifecycle prerequisites; the original release dependency edges remain.
+Unresolved delivery-free `reply_possible` drain disposition and admission/writer
+visibility are explicit gates before dependent settlement/barrier code review
+or R-06 qualification, not claims of completed implementation. Default
+post-retirement rollback retains an executable, offline pinned `/2` Python and
+Python semantic closure; retirement removes active requirements, not that
+rollback material.
+
+Semantic S-04 also requires R-01's nonempty supported host/CPU inventory.
+Other domain reviews and the F-04 decision's delta agreements remain pending.
+X-01 / CAIRN-302 remains open.
 No runtime implementation, production switch, burn-in or retirement has been
 accepted by this record.
