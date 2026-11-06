@@ -22,6 +22,7 @@ surfaces:
         ready: '#advice-no-suggestions:not([hidden])'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-no-suggestions'}
   advice_currentness:
     states:
       retained_after_forgetting:
