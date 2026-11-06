@@ -77,7 +77,8 @@ Versioned feature controls distinguish admission, retained maintenance and
 retirement. Use the [operator runbook](operator/work-coordination.md) for the
 combined migration boundary and settlement requirements before changing binary
 support. A physical restore also requires the normal recovery witness and
-admission procedure.
+admission procedure. The [five-feature acceptance record](verification/work-coordination-acceptance-2026-11-05.md)
+identifies the tested revisions, local checks and remaining deployment limits.
 
 ## Operations and developer interfaces
 
