@@ -34,7 +34,7 @@ func (s *Store) ListWorkFeatures(ctx context.Context) ([]WorkFeature, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var features []WorkFeature
+	features := make([]WorkFeature, 0)
 	for rows.Next() {
 		var f WorkFeature
 		if err := rows.Scan(&f.FeatureName, &f.Status, &f.RetiredAt, &f.UpdatedAt); err != nil {
@@ -224,7 +224,11 @@ func (s *Store) SetWorkFeatureStatus(ctx context.Context, req SetWorkFeatureStat
 		return err
 	}
 	if req.FeatureName == "" {
-		req.FeatureName = "work-view/1"
+		return failure("INVALID_REQUEST", "feature_name is required")
+	}
+	policy := s.effectivePolicy()
+	if !policy.SupportedWorkFeatures[req.FeatureName] {
+		return failure("INVALID_REQUEST", fmt.Sprintf("unsupported work feature %q", req.FeatureName))
 	}
 	if req.Status != "active" && req.Status != "disabled" && req.Status != "retired" {
 		return failure("INVALID_REQUEST", fmt.Sprintf("invalid feature status %q: must be active, disabled, or retired", req.Status))
@@ -232,13 +236,40 @@ func (s *Store) SetWorkFeatureStatus(ctx context.Context, req SetWorkFeatureStat
 	if req.RequestID == "" {
 		req.RequestID = uuid.NewString()
 	}
-	_, err := privileged(ctx, s, "work-feature-set", req.RequestID, req, func(tx pgx.Tx) (any, error) {
-		current, err := s.getWorkFeatureStatusTx(ctx, tx, req.FeatureName)
-		if err != nil {
+	_, err := mutate(ctx, s, "work-feature-set", req.RequestID, req, func(tx pgx.Tx) (any, error) {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('work-feature:' || $1, 0))`, req.FeatureName); err != nil {
+			return nil, err
+		}
+		var current string
+		err := tx.QueryRow(ctx, `SELECT status FROM cairn.work_feature WHERE feature_name = $1 FOR UPDATE`, req.FeatureName).Scan(&current)
+		if errors.Is(err, pgx.ErrNoRows) {
+			current = "disabled"
+		} else if err != nil {
 			return nil, err
 		}
 		if current == "retired" && req.Status != "retired" {
 			return nil, failure("FEATURE_RETIRED", fmt.Sprintf("feature %q is already retired and cannot be reactivated", req.FeatureName))
+		}
+		if req.Status == "retired" {
+			if req.FeatureName == "work-artifacts/1" {
+				if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended('work-feature:work-advice/1', 0))`); err != nil {
+					return nil, err
+				}
+				adviceStatus, err := s.getWorkFeatureStatusForShareTx(ctx, tx, "work-advice/1")
+				if err != nil {
+					return nil, err
+				}
+				if adviceStatus == "active" {
+					return nil, failure("INVALID_REQUEST", "cannot retire work-artifacts/1 while work-advice/1 is active: retire dependent advice first")
+				}
+			}
+			count, reason, err := countRequiredWorkFeatureState(ctx, tx, req.FeatureName)
+			if err != nil {
+				return nil, err
+			}
+			if count > 0 {
+				return nil, failure("INVALID_REQUEST", fmt.Sprintf("cannot retire feature %q: %s", req.FeatureName, reason))
+			}
 		}
 		var retiredAt *time.Time
 		if req.Status == "retired" {
@@ -256,57 +287,32 @@ func (s *Store) SetWorkFeatureStatus(ctx context.Context, req SetWorkFeatureStat
 	return err
 }
 
-func (s *Store) checkWorkAdmissionTx(ctx context.Context, tx pgx.Tx) error {
-	if err := s.checkWorkSchemaFloorTx(ctx, tx); err != nil {
-		return err
+func (s *Store) getWorkFeatureStatusForShareTx(ctx context.Context, tx pgx.Tx, featureName string) (string, error) {
+	if featureName == "" {
+		featureName = "work-view/1"
 	}
-	status, err := s.getWorkFeatureStatusTx(ctx, tx, "work-view/1")
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM cairn.work_feature WHERE feature_name = $1 FOR SHARE`, featureName).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "disabled", nil
+	}
 	if err != nil {
-		return err
+		return "", err
 	}
-	if status == "retired" {
-		return failure("FEATURE_RETIRED", "work-view/1 feature is retired")
-	}
-	if status != "active" {
-		return failure("FEATURE_DISABLED", "work-view/1 feature is disabled")
-	}
-	return nil
-}
-
-func (s *Store) checkWorkReadableTx(ctx context.Context, tx pgx.Tx) error {
-	return s.checkWorkSchemaFloorTx(ctx, tx)
-}
-
-func (s *Store) checkWorkFeatureTx(ctx context.Context, tx pgx.Tx) error {
-	return s.checkWorkAdmissionTx(ctx, tx)
-}
-
-func (s *Store) checkWorkArtifactFeatureTx(ctx context.Context, tx pgx.Tx) error {
-	if err := s.checkWorkSchemaFloorTx(ctx, tx); err != nil {
-		return err
-	}
-	status, err := s.getWorkFeatureStatusTx(ctx, tx, "work-artifacts/1")
-	if err != nil {
-		return err
-	}
-	if status == "retired" {
-		return failure("FEATURE_RETIRED", "work-artifacts/1 feature is retired")
-	}
-	if status != "active" {
-		return failure("FEATURE_DISABLED", "work-artifacts/1 feature is disabled")
-	}
-	return nil
+	return status, nil
 }
 
 func (s *Store) lockAndCheckFeatureAdmissionTx(ctx context.Context, tx pgx.Tx, featureName string) error {
 	if err := s.checkWorkSchemaFloorTx(ctx, tx); err != nil {
 		return err
 	}
-	var status string
-	err := tx.QueryRow(ctx, `SELECT status FROM cairn.work_feature WHERE feature_name = $1 FOR SHARE`, featureName).Scan(&status)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return failure("FEATURE_DISABLED", fmt.Sprintf("%s feature is disabled", featureName))
+	if featureName == "" {
+		featureName = "work-view/1"
 	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended('work-feature:' || $1, 0))`, featureName); err != nil {
+		return err
+	}
+	status, err := s.getWorkFeatureStatusForShareTx(ctx, tx, featureName)
 	if err != nil {
 		return err
 	}
@@ -319,22 +325,22 @@ func (s *Store) lockAndCheckFeatureAdmissionTx(ctx context.Context, tx pgx.Tx, f
 	return nil
 }
 
-func (s *Store) checkWorkSchemaFloorTx(ctx context.Context, tx pgx.Tx) error {
-	var tableExists bool
-	err := tx.QueryRow(ctx, `SELECT to_regclass('public.cairn_migration') IS NOT NULL`).Scan(&tableExists)
-	if err != nil {
-		return err
-	}
-	if !tableExists {
-		return failure("SCHEMA_MISMATCH", "database schema version 0 is below required floor 75")
-	}
-	var maxVersion int
-	err = tx.QueryRow(ctx, `SELECT COALESCE(max(version), 0) FROM public.cairn_migration`).Scan(&maxVersion)
-	if err != nil {
-		return err
-	}
-	if maxVersion < 75 {
-		return failure("SCHEMA_MISMATCH", fmt.Sprintf("database schema version %d is below required floor 75", maxVersion))
-	}
-	return nil
+func (s *Store) checkWorkAdmissionTx(ctx context.Context, tx pgx.Tx) error {
+	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-view/1")
+}
+
+func (s *Store) checkWorkReadableTx(ctx context.Context, tx pgx.Tx) error {
+	return s.checkWorkSchemaFloorTx(ctx, tx)
+}
+
+func (s *Store) checkWorkFeatureTx(ctx context.Context, tx pgx.Tx) error {
+	return s.checkWorkAdmissionTx(ctx, tx)
+}
+
+func (s *Store) checkWorkArtifactFeatureTx(ctx context.Context, tx pgx.Tx) error {
+	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-artifacts/1")
+}
+
+func (s *Store) checkWorkAdviceFeatureTx(ctx context.Context, tx pgx.Tx) error {
+	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-advice/1")
 }

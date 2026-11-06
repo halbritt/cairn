@@ -112,6 +112,66 @@ func (s *Store) ReapplyRecovery(ctx context.Context, req RecoveryReapplyRequest)
 				return result, err
 			}
 		}
+		for _, we := range req.Record.WorkExclusions {
+			var projectExists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.work_project WHERE binding_id=$1)`, we.BindingID).Scan(&projectExists); err != nil {
+				return result, err
+			}
+			if !projectExists {
+				continue
+			}
+			fieldName := we.FieldName
+			if fieldName == "" {
+				fieldName = "all"
+			}
+			var exists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.work_metadata_exclusion WHERE binding_id=$1 AND pattern=$2 AND field_name=$3)`, we.BindingID, we.Pattern, fieldName).Scan(&exists); err != nil {
+				return result, err
+			}
+			if !exists {
+				if _, err = tx.Exec(ctx, `INSERT INTO cairn.work_metadata_exclusion (binding_id, field_name, pattern, revision) VALUES ($1, $2, $3, $4)`, we.BindingID, fieldName, we.Pattern, we.Revision); err != nil {
+					return result, err
+				}
+				if _, err = tx.Exec(ctx, `UPDATE cairn.work_project SET metadata_exclusion_revision = metadata_exclusion_revision + 1 WHERE binding_id=$1`, we.BindingID); err != nil {
+					return result, err
+				}
+			}
+		}
+		if len(req.Record.WorkExclusions) > 0 {
+			if err = ReapplyExclusions(ctx, tx); err != nil {
+				return result, err
+			}
+		}
+		for _, wp := range req.Record.WorkPurges {
+			var projectExists bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.work_project WHERE binding_id=$1)`, wp.BindingID).Scan(&projectExists); err != nil {
+				return result, err
+			}
+			if !projectExists {
+				continue
+			}
+			if err = PurgeBindingMetadata(ctx, tx, wp.BindingID, wp.FieldName, wp.Pattern); err != nil {
+				return result, err
+			}
+			if _, err = tx.Exec(ctx, `UPDATE cairn.work_project SET metadata_exclusion_revision = metadata_exclusion_revision + 1 WHERE binding_id=$1`, wp.BindingID); err != nil {
+				return result, err
+			}
+		}
+		for _, pf := range req.Record.WorkArtifactPurgeFences {
+			if _, err = tx.Exec(ctx, `
+				INSERT INTO cairn.work_artifact_purge_fence (collection, artifact_id, canonical_key, purged_by, purged_at)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (collection, artifact_id) DO UPDATE
+				SET canonical_key = EXCLUDED.canonical_key, purged_by = EXCLUDED.purged_by, purged_at = EXCLUDED.purged_at
+			`, pf.Collection, pf.ArtifactID, pf.CanonicalKey, pf.PurgedBy, pf.PurgedAt); err != nil {
+				return result, err
+			}
+		}
+		if len(req.Record.WorkArtifactPurgeFences) > 0 {
+			if err = ReapplyExclusions(ctx, tx); err != nil {
+				return result, err
+			}
+		}
 		// New audit events grow the expectation set without a ceiling: an export
 		// larger than one record uses the streamed directory operator path,
 		// so an application is never rolled back for the size of what it retains.

@@ -94,12 +94,7 @@ type AdviceInputSpec struct {
 	CandidateRevisionIDs []uuid.UUID     `json:"candidate_revision_ids,omitempty"`
 }
 
-func (s *Store) requireOperator() error {
-	if !s.channel.Operator {
-		return failure("AUTHORITY_DENIED", "work advice requires operator channel")
-	}
-	return nil
-}
+
 
 // checkAdviceFeatureTx verifies that work-advice/1 is active in the current transaction.
 func (s *Store) checkAdviceFeatureTx(ctx context.Context, tx pgx.Tx) error {

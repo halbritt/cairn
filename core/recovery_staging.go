@@ -66,6 +66,42 @@ func stageKnownRecovery(ctx context.Context, tx pgx.Tx) (*recoveryStage, error) 
 	if err != nil {
 		return nil, err
 	}
+	var hasWorkExcl bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='cairn' AND table_name='work_metadata_exclusion')`).Scan(&hasWorkExcl); err != nil {
+		return nil, err
+	}
+	if hasWorkExcl {
+		if _, err = tx.Exec(ctx, `INSERT INTO pg_temp.cairn_recovery_expected
+			SELECT 'work_exclusion', binding_id::text || ':' || field_name || ':' || pattern,
+			       jsonb_build_object('binding_id', binding_id, 'field_name', field_name, 'pattern', pattern, 'revision', revision)
+			FROM cairn.work_metadata_exclusion`); err != nil {
+			return nil, err
+		}
+	}
+	var hasWorkPurge bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='cairn' AND table_name='work_metadata_purge')`).Scan(&hasWorkPurge); err != nil {
+		return nil, err
+	}
+	if hasWorkPurge {
+		if _, err = tx.Exec(ctx, `INSERT INTO pg_temp.cairn_recovery_expected
+			SELECT 'work_purge', binding_id::text || ':' || field_name || ':' || pattern,
+			       jsonb_build_object('binding_id', binding_id, 'field_name', field_name, 'pattern', pattern, 'revision', revision)
+			FROM cairn.work_metadata_purge`); err != nil {
+			return nil, err
+		}
+	}
+	var hasArtifactFence bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='cairn' AND table_name='work_artifact_purge_fence')`).Scan(&hasArtifactFence); err != nil {
+		return nil, err
+	}
+	if hasArtifactFence {
+		if _, err = tx.Exec(ctx, `INSERT INTO pg_temp.cairn_recovery_expected
+			SELECT 'work_artifact_purge_fence', collection || ':' || artifact_id::text,
+			       jsonb_build_object('collection', collection, 'artifact_id', artifact_id, 'canonical_key', canonical_key, 'purged_by', purged_by, 'purged_at', purged_at)
+			FROM cairn.work_artifact_purge_fence`); err != nil {
+			return nil, err
+		}
+	}
 	after := "00000000-0000-0000-0000-000000000000"
 	for {
 		var id string
@@ -108,6 +144,9 @@ func (s *recoveryStage) add(ctx context.Context, record RecoveryRecord) error {
 		{"audit", "x->>'event_id'", record.Audit, len(record.Audit)},
 		{"withdrawal", "x->>'event_id'", record.Withdrawals, len(record.Withdrawals)},
 		{"context", "(x->>'record_id')||':'||(x->>'receipt_id')", record.Contexts, len(record.Contexts)},
+		{"work_exclusion", "(x->>'binding_id')||':'||(x->>'field_name')||':'||(x->>'pattern')", record.WorkExclusions, len(record.WorkExclusions)},
+		{"work_purge", "(x->>'binding_id')||':'||(x->>'field_name')||':'||(x->>'pattern')", record.WorkPurges, len(record.WorkPurges)},
+		{"work_artifact_purge_fence", "(x->>'collection')||':'||(x->>'artifact_id')", record.WorkArtifactPurgeFences, len(record.WorkArtifactPurgeFences)},
 	}
 	if record.Segment != nil {
 		body := struct {
@@ -239,7 +278,7 @@ func (s *recoveryStage) inspect(ctx context.Context, visit func(RecoveryGap) err
 		}
 		after = gaps[len(gaps)-1].EventID
 	}
-	for _, kind := range []string{"withdrawal", "context"} {
+	for _, kind := range []string{"withdrawal", "context", "work_exclusion", "work_purge", "work_artifact_purge_fence"} {
 		after = ""
 		for {
 			bodies, keys, err := s.page(ctx, kind, after, recoveryPageSize)
@@ -271,7 +310,7 @@ func (s *recoveryStage) inspect(ctx context.Context, visit func(RecoveryGap) err
 						return err
 					}
 					gap = RecoveryGap{Kind: w.Kind, SubjectID: w.SubjectID, EventID: w.EventID, Reason: reason}
-				} else {
+				} else if kind == "context" {
 					var c RecoveryContext
 					if err = json.Unmarshal(body, &c); err != nil {
 						return err
@@ -282,6 +321,61 @@ func (s *recoveryStage) inspect(ctx context.Context, visit func(RecoveryGap) err
 					}
 					if !found {
 						gap = RecoveryGap{Kind: "managed_context", SubjectID: c.ReceiptID, Reason: "CONTEXT_CUSTODY_MISSING"}
+					}
+				} else if kind == "work_exclusion" || kind == "work_purge" {
+					var we RecoveryWorkExclusion
+					if err = json.Unmarshal(body, &we); err != nil {
+						return err
+					}
+					patternParam := "%" + we.Pattern + "%"
+					var unredacted bool
+					err := s.tx.QueryRow(ctx, `SELECT EXISTS(
+						SELECT 1 FROM cairn.work_item WHERE binding_id = $1 AND title ILIKE $2
+						UNION ALL
+						SELECT 1 FROM cairn.work_annotation WHERE binding_id = $1 AND body ILIKE $2
+						UNION ALL
+						SELECT 1 FROM cairn.work_annotation_history h JOIN cairn.work_annotation a ON h.annotation_id = a.annotation_id WHERE a.binding_id = $1 AND h.body ILIKE $2
+						UNION ALL
+						SELECT 1 FROM cairn.work_association WHERE binding_id = $1 AND rationale ILIKE $2
+						UNION ALL
+						SELECT 1 FROM cairn.work_association_history h JOIN cairn.work_association a ON h.association_id = a.association_id WHERE a.binding_id = $1 AND h.rationale ILIKE $2
+						UNION ALL
+						SELECT 1 FROM cairn.mutation_request WHERE operation LIKE 'work-%' AND response IS NOT NULL AND response->>'binding_id' = $1::text
+						  AND (response->>'body' ILIKE $2 OR response->>'text' ILIKE $2 OR response->>'rationale' ILIKE $2 OR response->'item'->>'title' ILIKE $2)
+					)`, we.BindingID, patternParam).Scan(&unredacted)
+					if err != nil {
+						return err
+					}
+					if unredacted {
+						gap = RecoveryGap{Kind: kind, SubjectID: we.BindingID.String(), Reason: "METADATA_EXCLUSION_MISSING"}
+					}
+				} else if kind == "work_artifact_purge_fence" {
+					var pf RecoveryWorkArtifactPurgeFence
+					if err = json.Unmarshal(body, &pf); err != nil {
+						return err
+					}
+					var missing bool
+					err := s.tx.QueryRow(ctx, `SELECT (
+						NOT EXISTS(SELECT 1 FROM cairn.work_artifact_purge_fence WHERE collection = $1 AND artifact_id = $2)
+						OR EXISTS(SELECT 1 FROM cairn.work_artifact WHERE collection = $1 AND (artifact_id = $2 OR canonical_key = $3))
+						OR EXISTS(
+							SELECT 1 FROM cairn.mutation_request m
+							WHERE m.operation IN ('work-artifact-register','work-artifact-link','work-artifact-unlink')
+							  AND m.response IS NOT NULL
+							  AND (
+								jsonb_path_exists(m.response, '$.**.artifact_id ? (@ == $id)', jsonb_build_object('id', $2::text))
+								OR (
+								  m.response->>'collection' = $1
+								  AND jsonb_path_exists(m.response, '$.**.canonical_key ? (@ == $key)', jsonb_build_object('key', $3))
+								)
+							  )
+						)
+					)`, pf.Collection, pf.ArtifactID, pf.CanonicalKey).Scan(&missing)
+					if err != nil {
+						return err
+					}
+					if missing {
+						gap = RecoveryGap{Kind: kind, SubjectID: pf.ArtifactID.String(), Reason: "ARTIFACT_PURGE_FENCE_MISSING"}
 					}
 				}
 				if gap.Reason != "" {

@@ -135,3 +135,27 @@ presentation. Neither option grants access or changes note authority.
 Check each command's help before applying it to an operational store. Configuration
 and recovery commands have different input and authority requirements from
 ordinary memory commands.
+
+## Work projection and coordination
+
+Use `cairn work` for shared work view projection from external issue trackers
+(such as Plane), linking internal sessions and records, and adding local progress
+or blocker annotations without mutating external trackers.
+
+```sh
+cairn work project add --slug SLUG --workspace WS_UUID --project PROJ_UUID
+cairn work project list
+cairn work refresh --project SLUG
+cairn work list --project SLUG
+cairn work show --project SLUG --item ITEM_UUID
+cairn work associate --project SLUG --item ITEM_UUID --target-type execution --target-id AGENT/EXEC
+cairn work progress add --project SLUG --item ITEM_UUID --text "Progress update"
+cairn work blocker add --project SLUG --item ITEM_UUID --text "Blocker description"
+cairn work blocker resolve --project SLUG --annotation-id ANNOTATION_UUID
+cairn work metadata purge --project SLUG --pattern "sensitive text"
+cairn work serve --project SLUG
+```
+
+`work serve` launches a protected local loopback server binding `127.0.0.1` with
+a single-use terminal launch token exchanged for an HttpOnly SameSite=Strict session
+cookie, Host/Origin verification, and CSRF protection.

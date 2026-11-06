@@ -88,3 +88,21 @@ A fixture's private database, owner-only home with agent identities, and local
 API, created inside a disposable cluster and torn down with it. The host owns
 the cluster precondition, the envelope contract and process cleanup; a fixture
 keeps only its scenario and assertions.
+
+## Work Coordination
+
+**Work Projection**:
+Read-only cache and local view of an external tracker (such as Plane) project
+and work items, bound by external tuple.
+
+**Work Association**:
+Typed durable link between a work item and an internal Cairn artifact (agent
+session, execution, event, record version, or request).
+
+**Work Annotation**:
+Local operator-authored progress report or blocker note attached to a projected
+work item without mutating the external issue tracker.
+
+**Metadata Exclusion**:
+Pattern-based redaction rule preventing sensitive external metadata from entering
+projection storage or resurrection across refreshes.

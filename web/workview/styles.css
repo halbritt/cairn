@@ -1,0 +1,113 @@
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f5f7; color: #172b4d; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.3rem; }
+h2 { font-size: 1.2rem; }
+h3 { margin: 1.25rem 0 .5rem; font-size: 1rem; }
+button, input, select, textarea { font: inherit; max-width: 100%; }
+button, input, select, textarea { border: 1px solid #8993a4; border-radius: 4px; padding: .45rem .65rem; background: white; color: inherit; }
+button { cursor: pointer; min-height: 40px; }
+button:hover:not(:disabled) { background: #e9f2ff; }
+button:disabled { cursor: default; color: #626f86; background: #f1f2f4; }
+:focus-visible { outline: 3px solid #0052cc; outline-offset: 2px; }
+label { display: flex; flex-direction: column; gap: .25rem; font-size: .9rem; }
+a { color: #0052cc; }
+.app-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.5rem; background: white; border-bottom: 1px solid #dfe1e6; }
+.header-left, .header-right { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; min-width: 0; }
+.header-left { flex: 1 1 32rem; }
+.header-left select { min-width: 0; max-width: 26rem; }
+.header-right { flex: 0 1 auto; }
+.badge { display: inline-block; padding: .25rem .5rem; font-size: .8rem; border-radius: 4px; background: #ebecf0; color: #42526e; overflow-wrap: anywhere; }
+.badge.stale { background: #ffebe6; color: #a52a0c; }
+.badge.fresh { background: #e3fcef; color: #006644; }
+.alert { padding: .75rem 1rem; overflow-wrap: anywhere; }
+.alert-danger { background: #ffebe6; color: #a52a0c; border: 1px solid #ffbdad; border-radius: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: .75rem 1.5rem; background: #fafbfc; border-bottom: 1px solid #dfe1e6; }
+.toolbar > label { flex-direction: row; align-items: center; gap: .5rem; }
+.checkbox-label input { width: 1.2rem; height: 1.2rem; margin: 0; }
+.pagination-controls { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+#page-info { white-space: nowrap; font-size: .9rem; }
+.board-summary { padding: .75rem 1.5rem 0; color: #42526e; }
+.empty-state { margin: 1rem 1.5rem; padding: 1.25rem; background: white; border: 1px solid #dfe1e6; border-radius: 6px; }
+.board-container { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; padding: 1rem 1.5rem 1.5rem; align-items: start; }
+.board-column { min-width: 0; background: #ebecf0; border-radius: 6px; padding: .75rem; }
+.column-header { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .75rem; font-size: .9rem; }
+.card-list { display: flex; flex-direction: column; gap: .6rem; max-height: calc(100vh - 290px); overflow-y: auto; padding: 3px; }
+.work-card { background: white; border-radius: 4px; padding: .75rem; box-shadow: 0 1px 2px #091e6640; cursor: pointer; overflow-wrap: anywhere; }
+.card-id { font-size: .8rem; color: #42526e; font-weight: 600; margin-bottom: .25rem; }
+.card-title { font-size: .9rem; margin-bottom: .5rem; }
+.card-footer { display: flex; gap: .5rem; flex-wrap: wrap; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: 1rem; background: #091e668a; }
+.modal-content { width: 44rem; max-width: 100%; max-height: 92vh; max-height: 92dvh; overflow-y: auto; background: white; border-radius: 8px; padding: 1.5rem; overflow-wrap: anywhere; }
+.modal-header { display: flex; gap: .75rem; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
+.close-btn { flex: 0 0 auto; font-size: 1.4rem; line-height: 1; min-width: 40px; }
+.meta-section { font-size: .9rem; }
+.detail-list { padding-left: 1.25rem; margin: .5rem 0; }
+.detail-list > li { margin: .65rem 0; }
+.detail-list .hint { display: block; }
+.hint { color: #42526e; font-size: .85rem; }
+.assoc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .75rem; padding: .85rem; border: 1px solid #dfe1e6; border-radius: 6px; }
+.assoc-actions .hint { grid-column: 1 / -1; }
+.assoc-actions button { align-self: end; }
+textarea { width: 100%; resize: vertical; }
+.modal-actions, .annotation-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.edit-progress-input { flex: 1 1 15rem; min-width: 0; }
+.remove-assoc-btn, .edit-progress-btn, .save-progress-btn, .resolve-blocker-btn { margin-top: .35rem; }
+.login-content { width: 27rem; }
+.login-content p { margin: .75rem 0 1rem; }
+#login-form { display: grid; gap: .65rem; }
+#login-form button { background: #0052cc; color: white; font-weight: 600; }
+#login-error { margin-top: 1rem; }
+.view-navigation { display: flex; gap: .35rem; }
+.view-navigation [aria-current="page"] { border-color: #0052cc; background: #e9f2ff; font-weight: 600; }
+.artifact-page { max-width: 65rem; margin: 0 auto; padding: 1.5rem; overflow-wrap: anywhere; }
+.artifact-page > p, .artifact-page > .alert, .artifact-page > button { margin: .75rem 0; }
+.inline-form { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin: 1rem 0; }
+.inline-form label { flex: 1 1 24rem; min-width: 0; }
+.artifact-rows { list-style: none; padding: 0; }
+.artifact-rows > li { padding: .85rem; background: white; border: 1px solid #dfe1e6; border-radius: 6px; overflow-wrap: anywhere; }
+.artifact-form { display: grid; gap: .75rem; padding: 1rem; margin: 1rem 0; border: 1px solid #dfe1e6; border-radius: 6px; }
+.artifact-form h4 { margin: 0; }
+.artifact-form button { justify-self: start; }
+.artifact-form fieldset { min-width: 0; display: grid; gap: .75rem; border: 1px solid #dfe1e6; padding: .75rem; }
+.artifact-form legend { font-size: .9rem; padding: 0 .25rem; }
+.artifact-pages { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .75rem 0; }
+.artifact-identity { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(0, 3fr); gap: .5rem 1rem; margin: 1rem 0; }
+.artifact-identity dt { font-weight: 600; }
+.artifact-identity dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-page pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.maintenance-btn { margin-top: 1rem; border-color: #a52a0c; color: #a52a0c; }
+#item-artifacts { border-top: 1px solid #dfe1e6; margin-top: 1.5rem; }
+#item-artifacts .checkbox-label { flex-direction: row; align-items: center; gap: .5rem; margin: .75rem 0; }
+#item-artifact-notice, #artifact-notice { padding: .75rem; border: 1px solid #b3d4ff; background: #e9f2ff; border-radius: 4px; }
+#artifact-history-section { padding: .85rem; background: #f4f5f7; border: 1px solid #8993a4; border-radius: 6px; }
+#artifact-history-title { margin: 0 0 .5rem; }
+summary { cursor: pointer; padding: .5rem 0; }
+@media (max-width: 850px) {
+  .board-container { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board-column[data-empty="true"] { display: none; }
+  .card-list { max-height: 25rem; }
+}
+@media (max-width: 540px) {
+  .app-header, .toolbar { padding: .85rem 1rem; }
+  .header-left { flex-basis: 100%; flex-direction: column; align-items: stretch; }
+  .header-left select { max-width: 100%; width: 100%; }
+  .header-right { width: 100%; flex-wrap: nowrap; justify-content: space-between; }
+  .header-right .badge { flex: 1; min-width: 0; }
+  button, select, input { min-height: 44px; }
+  .checkbox-label input { min-height: 0; }
+  .pagination-controls { margin-left: 0; width: 100%; justify-content: space-between; }
+  .board-container { grid-template-columns: minmax(0, 1fr); padding: 1rem; }
+  .board-summary { padding: .75rem 1rem 0; }
+  .empty-state { margin: 1rem; }
+  .modal-backdrop { padding: .6rem; }
+  .modal-content { padding: 1rem; max-height: 96vh; max-height: 96dvh; }
+  .assoc-actions { grid-template-columns: minmax(0, 1fr); }
+  .assoc-actions button { justify-self: start; }
+  .artifact-page { padding: 1rem; }
+  .artifact-identity { grid-template-columns: minmax(0, 1fr); gap: .25rem; }
+  .artifact-identity dd { margin-bottom: .65rem; }
+  .artifact-form { padding: .75rem; }
+  .artifact-pages > span { flex: 1; }
+}
