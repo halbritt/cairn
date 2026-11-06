@@ -353,7 +353,8 @@ func TestAlternateAdmission_ReissueRollbackAndSameUUIDRetry(t *testing.T) {
 	if err != nil || replay.EventID != reissued.EventID {
 		t.Fatalf("committed ReissueEvent replay mismatch: %+v %v", replay, err)
 	}
-	resProbe := closureForRequest(t, op, reissued.EventID)
+	opScoped := testStore(t, Channel{Principal: op.channel.Principal, Repo: repo})
+	resProbe := closureForRequest(t, opScoped, reissued.EventID)
 	if resProbe.state != "reserved" || resProbe.recipient != op.channel.Principal || resProbe.sender != consumer.channel.Principal {
 		t.Fatalf("reissued request closure obligation mismatch: %+v", resProbe)
 	}
@@ -504,6 +505,14 @@ func TestAlternateAdmission_QueuedQuietNoticeTransfersOnClaimAdvanceFlushAndRest
 	}, f.dest); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = f.recipient.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+		RequestID: uuid.NewString(),
+		Session:   f.sessionRef,
+		AttemptID: adv2.Attempt.ID,
+		Reason:    "delivery_completed",
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
 
 	// FlushNotice on n3 transfers queued -> pending agent_delivery without double-charging.
 	flushed, err := f.publisher.FlushNotice(ctx, NoticeFlushRequest{
@@ -513,11 +522,18 @@ func TestAlternateAdmission_QueuedQuietNoticeTransfersOnClaimAdvanceFlushAndRest
 	if err != nil || flushed.Released != 1 {
 		t.Fatalf("FlushNotice failed reserve-to-delivery transfer: %+v %v", flushed, err)
 	}
-	d3 := nextFixture(t, f.consumerStore(t), f.dest)
-	if _, err = f.consumerStore(t).CompleteEvent(ctx, CompleteEventRequest{
+	cStore := f.consumerStore(t)
+	next3, err := cStore.NextEvent(ctx, NextEventRequest{
+		Repo:  repo,
+		Agent: "agent/" + f.sessionRef.AgentID,
+	}, f.dest)
+	if err != nil || next3.Delivery == nil || next3.Delivery.Event.EventID != n3.EventID {
+		t.Fatalf("NextEvent after FlushNotice failed: %+v %v", next3, err)
+	}
+	if _, err = cStore.CompleteEvent(ctx, CompleteEventRequest{
 		RequestID:   uuid.NewString(),
-		DeliveryID:  d3.DeliveryID,
-		LeaseID:     d3.LeaseID,
+		DeliveryID:  next3.Delivery.DeliveryID,
+		LeaseID:     next3.Delivery.LeaseID,
 		Disposition: "handled",
 	}, f.dest); err != nil {
 		t.Fatal(err)
