@@ -15,6 +15,8 @@ import (
 )
 
 const eventHelp = `Cairn agent events (authenticated API; no operator database access)
+Usage: cairn agent OPERATION [flags]
+Help does not read stdin or connect to the API.
 
 Common flags: --profile NAME | --token-file FILE, --socket PATH, --repo COLLECTION
 --profile selects ~/.local/share/cairn/event-profiles/NAME.token (or CAIRN_HOME).
@@ -43,6 +45,9 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   events [--after POSITION] [--topic TOPIC] [--limit N]
   event-status [--after-delivery UUID] [--limit N] EVENT_UUID
   event-stats
+  event-fanout [--after POSITION] [--limit N] (own publications only)
+  event-pressure [--after-recipient PRINCIPAL] [--limit N] (own inbox only)
+  event-admission-preview (--to PRINCIPAL | --topic TOPIC) (observe-only forecast)
   response-group [--after POSITION] [--limit N] EVENT_UUID
   response-groups [--state open|collected|partial|incomplete] [--after POSITION] [--limit N]
 
@@ -57,7 +62,7 @@ Ignored/failed dispositions require unsupported_kind, source_unavailable or proc
 
 func isEventCommand(command string) bool {
 	switch command {
-	case "publish", "notice-flush", "notice-pending", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
+	case "event-fanout", "event-pressure", "event-admission-preview", "publish", "notice-flush", "notice-pending", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
 		return true
 	}
 	return false
@@ -106,6 +111,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	disposition := f.String("disposition", "handled", "reported terminal state")
 	code := f.String("code", "", "terminal failure code")
 	after := f.Int64("after", 0, "exclusive event position")
+	afterRecipient := f.String("after-recipient", "", "exclusive recipient principal cursor")
 	afterDelivery := f.String("after-delivery", "", "exclusive delivery UUID")
 	limit := f.Int("limit", 0, "maximum page size")
 	stdin := f.Bool("stdin", false, "read selected result from stdin")
@@ -127,6 +133,12 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	}
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
+	case "event-fanout":
+		allowed += "repo after limit "
+	case "event-pressure":
+		allowed += "repo after-recipient limit "
+	case "event-admission-preview":
+		allowed += "repo to topic "
 	case "publish":
 		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds notice-delivery notice-expires-at "
 	case "notice-flush":
@@ -207,6 +219,22 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		}
 	}
 	switch command {
+	case "event-fanout":
+		operation = "event-fanout"
+		req = core.EventFanoutQuery{Repo: *repo, After: *after, Limit: *limit}
+	case "event-pressure":
+		operation = "event-pressure"
+		req = core.EventPressureQuery{Repo: *repo, After: *afterRecipient, Limit: *limit}
+	case "event-admission-preview":
+		if (*to == "") == (*topic == "") {
+			return nil, invalid("select exactly one of --to or --topic")
+		}
+		destination := core.EventDestination{Type: "agent", Name: *to}
+		if *topic != "" {
+			destination = core.EventDestination{Type: "topic", Name: *topic}
+		}
+		operation = "event-admission-preview"
+		req = core.EventAdmissionPreviewRequest{Repo: *repo, Destination: destination}
 	case "notice-flush":
 		operation = "event-notice-flush"
 		req = core.NoticeFlushRequest{RequestID: *request, EventID: strings.TrimPrefix(f.Arg(0), "cairn:")}

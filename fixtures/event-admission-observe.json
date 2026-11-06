@@ -1,0 +1,42 @@
+{
+  "request_id": "a990ab10-fd39-42c2-b727-94b0f75569d3",
+  "repo": "fixture:event-pressure",
+  "expected_revision": 0,
+  "policy": {
+    "version": 1,
+    "mode": "observe",
+    "workload": "synthetic: coordinator and two workers; two queued publications per worker",
+    "limits": {
+      "max_topic_recipients": 2,
+      "max_recipient_outstanding": 2,
+      "max_producer_recipient_outstanding": 2,
+      "max_collection_outstanding": 4,
+      "max_closure_reserved": 4,
+      "max_recipient_closure_reserved": 2,
+      "producer_publications": {
+        "per_second": 2,
+        "burst": 4
+      },
+      "producer_deliveries": {
+        "per_second": 2,
+        "burst": 4
+      },
+      "owner_publications": {
+        "per_second": 2,
+        "burst": 4
+      },
+      "owner_deliveries": {
+        "per_second": 2,
+        "burst": 4
+      },
+      "collection_publications": {
+        "per_second": 2,
+        "burst": 4
+      },
+      "collection_deliveries": {
+        "per_second": 2,
+        "burst": 4
+      }
+    }
+  }
+}

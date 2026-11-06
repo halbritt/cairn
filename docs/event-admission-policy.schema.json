@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cairn.harm.org/schemas/event-admission-policy/1",
+  "title": "Cairn event admission policy version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "mode"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "mode": {
+      "enum": [
+        "disabled",
+        "observe",
+        "enforce"
+      ]
+    },
+    "workload": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "Declared workload, at most 2000 UTF-8 bytes; required when limits are present."
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_topic_recipients",
+        "max_recipient_outstanding",
+        "max_producer_recipient_outstanding",
+        "max_collection_outstanding",
+        "max_closure_reserved",
+        "max_recipient_closure_reserved",
+        "producer_publications",
+        "producer_deliveries",
+        "owner_publications",
+        "owner_deliveries",
+        "collection_publications",
+        "collection_deliveries"
+      ],
+      "properties": {
+        "max_topic_recipients": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "max_recipient_outstanding": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "max_producer_recipient_outstanding": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "max_collection_outstanding": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "max_closure_reserved": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "max_recipient_closure_reserved": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "producer_publications": {
+          "$ref": "#/$defs/rate"
+        },
+        "producer_deliveries": {
+          "$ref": "#/$defs/rate"
+        },
+        "owner_publications": {
+          "$ref": "#/$defs/rate"
+        },
+        "owner_deliveries": {
+          "$ref": "#/$defs/rate"
+        },
+        "collection_publications": {
+          "$ref": "#/$defs/rate"
+        },
+        "collection_deliveries": {
+          "$ref": "#/$defs/rate"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "observe",
+              "enforce"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "limits"
+        ],
+        "properties": {
+          "workload": {
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "limits"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "per_second",
+        "burst"
+      ],
+      "properties": {
+        "per_second": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        }
+      }
+    }
+  }
+}

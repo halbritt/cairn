@@ -184,6 +184,10 @@ func buildOperatorOperations() map[string]operatorOperation {
 		destinationOperation("expand", (*core.Store).Expand),
 
 		// Operator recovery, coordination and scheduling.
+		storeOperation("event-admission-policy", (*core.Store).EventAdmissionPolicy),
+		storeOperation("event-admission-configure", (*core.Store).SetEventAdmissionPolicy),
+		storeOperation("event-pressure-collection", (*core.Store).CollectionEventPressure),
+		storeOperation("event-fanout-collection", (*core.Store).CollectionEventFanout),
 		storeOperation("worker-pool-configure", (*core.Store).ConfigureWorkerPool),
 		readerOperation("coordination-review", coordinationReview),
 		readerOperation("delivery-alerts", deliveryAlerts),

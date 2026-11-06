@@ -21,6 +21,7 @@ Help needs no credentials, connection, home directory or stdin.
 Everyday operations:
   publish, notice-flush, inbox, ack, complete, retry, renew: durable agent events (use --help)
   subscribe, unsubscribe, subscriptions, events, event-status, event-stats
+  event-pressure, event-fanout, event-admission-preview: observe event load (--help)
   remember     Save a selected note using text, --stdin or a JSON draft
   send         Journal selected assignment source and explicit publication (--help)
   search       Find relevant notes using a query or --browse
