@@ -7,16 +7,20 @@ and keeps ordinary consumers fenced until explicit admission.
 
 ## Upgrade the schema
 
-Back up the store and stop consumers, scheduling, and dispatch before a planned
-migration. Build the matching Cairn executable, configure its intended database,
-and run:
+Back up the store and stop every running API, scheduler, wake supervisor,
+dispatch, and consumer process before a planned migration. Build the matching
+Cairn executable, configure its intended database, and run:
 
 ```sh
 cairn migrate
 ```
 
 Migrations live in `core/schema/`. They use a migration lock and transactional
-application. A failure must be investigated before restarting dependent services;
+application. Schema ceiling checks run when a process opens the store, and the
+`cairn.restore_admission` tuple-update barrier in migrations 080 and 084 covers
+only transactions that enter `restore_admission`, not already-open processes
+running direct-pool helpers; see [event admission rollout](event-admission-rollout.md#1-upgrade-the-store).
+A failure must be investigated before restarting dependent services;
 do not remove migration checks or alter recorded checksums to force acceptance.
 Validate changes locally using disposable databases, as described in
 [developer testing](../developer/testing.md).
@@ -55,8 +59,14 @@ its request formats. The sequence is:
 4. Rebuild required projections, reconcile deletion effects, and run
    `verify-restore` with the external checkpoint, recovery expectations, and
    retained compiler fixtures.
-5. Resolve failures, then call `resume-restore` for explicit admission. Restart
-   consumers only after that operation succeeds.
+5. Resolve failures, then call `resume-restore` for explicit admission. If any
+   collection uses enforced event admission, complete `event-closure-reconcile`
+   for the new restore generation before expecting new non-closure publications
+   or waits to be admitted; `begin-restore` zeroes existing rate buckets at
+   fence time and leaves the new generation unreconciled (see
+   [event admission rollout](event-admission-rollout.md#restore-and-generations)).
+   Restart consumers only after resume (and any required reconciliation)
+   succeeds.
 
 Do not skip verification between reapplication and resume. A successful
 verification is a snapshot; it does not itself authorize serving. An old backup

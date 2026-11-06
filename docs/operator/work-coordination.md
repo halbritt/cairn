@@ -120,10 +120,18 @@ cairn wait list --token-file "$CAIRN_TOKEN_FILE" \
   --agent-id AGENT_UUID --execution-id EXECUTION_UUID --repo COLLECTION
 ```
 
-The agent can finish its turn after registering. The configured scheduler settles
-waits and drains their durable notification outbox; `schedule-serve --repo COLLECTION --once`
-performs one operator sweep. Keep scheduler operation available while accepted
-waits or outbox work remain, even when new wait creation is disabled.
+The agent can finish its turn after registering. Each accepted wait records a
+`wait_notice` [closure reservation](../closure-reservations.md) so its terminal
+notification is not blocked by ordinary queue limits. Under enforced
+[event admission](event-admission-rollout.md), `wait create` requires
+current-generation closure reconciliation (`CLOSURE_UNRECONCILED`), available
+closure reserve (`CLOSURE_RESERVE_FULL`), and one publication plus one delivery
+rate unit (`EVENT_ADMISSION_REFUSED`). The configured scheduler settles waits and
+drains their durable notification outbox; `schedule-serve --repo COLLECTION --once`
+performs one operator sweep (continuing to wait timeouts and outbox drain even if
+due-schedule refusal telemetry logs a diagnostic warning). Keep scheduler
+operation available while accepted waits or outbox work remain, even when new
+wait creation is disabled.
 
 Inspect a wait with `wait get --wait UUID`, or cancel it with
 `wait cancel --request-id UUID --wait UUID`, retaining the same profile/session
@@ -156,11 +164,15 @@ batch; an API-created user message or an automatic queue turn is not that signal
 The native integration reads and acknowledges each admitted exact source through
 the normal lifecycle. Late notices remain queued for a later qualifying input.
 
-Use `notice-pending` to inspect retained queue state. The original publisher can
-use `notice-flush --request-id UUID EVENT_UUID` to release a still-deferred notice
-to ordinary delivery. Supply the same connection and sender/session flags as
-publication. Expiry is a recorded outcome, not an acknowledgement. Disabling quiet
-admission does not turn the remaining queue into a wake request.
+Use `notice-pending` to inspect retained queue state. Under
+[event admission](../event-admission.md), a `queued` quiet notice occupies one
+normal outstanding unit against collection, recipient, and producer-recipient
+limits from publication; admitting it on owner input or releasing it with
+`notice-flush --request-id UUID EVENT_UUID` moves that existing obligation into
+ordinary inbox delivery without a second admission check or rate charge. Supply
+the same connection and sender/session flags as publication when calling
+`notice-flush`. Expiry is a recorded outcome, not an acknowledgement. Disabling
+quiet admission does not turn the remaining queue into a wake request.
 
 ## Review model suggestions
 

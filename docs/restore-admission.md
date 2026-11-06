@@ -36,10 +36,15 @@ new UUID for another restore. An unrelated begin request during a pause returns
 
 ## What the pause enforces
 
-Normal core transactions hold a shared admission lock through commit. Beginning
-and resuming take that lock exclusively before request or authority locks.
-Ordinary reads, writes, fresh compilation and cached mutation responses return
-`RESTORE_PAUSED` while paused, including calls through an operator store.
+Normal core transactions that enter `cairn.restore_admission` hold a shared
+admission lock through commit. Beginning and resuming take that lock exclusively
+before request or authority locks. Ordinary reads, writes, fresh compilation and
+cached mutation responses passing through `restore_admission` return
+`RESTORE_PAUSED` while paused, including calls through an operator store. The few
+direct-pool helpers that bypass `beginLevel` (such as quiet-notice expiry,
+work-feature or advice-control status reads, and capture-observation reads)
+do not touch `cairn.restore_admission`, which is why stopping external processes
+before `begin-restore` remains mandatory.
 Existing and newly opened API clients see HTTP 503 with that error. There are no
 agent endpoints for beginning, verifying, rebuilding or resuming a restore.
 
@@ -208,6 +213,14 @@ and verification metadata, and the admission row changes atomically. Failure
 leaves the store paused. Retry identical intent after a lost response; a stale
 session or changed request intent refuses. Inspect `restore-status` for current
 state rather than treating a historical resume response as current status.
+
+Because `begin-restore` advances the restore generation, zeroes existing
+`agent_event_rate_bucket` rows at fence time, and leaves closure counts
+`unreconciled` in the new generation, any collection with `enforce` event
+admission refuses new non-closure publications and new waits with
+`CLOSURE_UNRECONCILED` after `resume-restore` until `event-closure-reconcile`
+completes for that generation; see
+[event admission rollout](operator/event-admission-rollout.md#restore-and-generations).
 
 The external isolation and freshness requirements remain operational boundaries.
 These checks cover the named retained structures and supplied fixtures; they do

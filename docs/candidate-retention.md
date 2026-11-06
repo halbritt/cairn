@@ -110,7 +110,7 @@ interruption. `status` is always available.
 | `plan` (`window_days` required) | Records the cutoff and the expiring receipts; creates schema `cairn_candidate_reclaim` | Brief |
 | `copy` | Marks expiring receipts, one per transaction; scans for rows that outlive them; copies every receipt left unmarked, one per transaction | None on live tables |
 | `build` | Builds the primary key and index, then adds and validates foreign keys | Brief on `retrieval_receipt` and `record_version` when adding foreign keys |
-| `swap` | Catches up, drains ordinary transactions through the restore admission row, copies at most four newly arrived receipts, renames the relations | All database work waits while the drain is held |
+| `swap` | Catches up, drains transactions participating in `cairn.restore_admission`, copies at most four newly arrived receipts, renames the relations | Transactions entering `restore_admission` or touching `retrieval_candidate` wait while the drain is held |
 | `verify` | Compares every receipt's row count, and byte digests of a random sample, with the old relation | None; scans both relations |
 | `finish` (`confirm_drop_old: true`) | Drops the old relation and working schema. **Irreversible** | Brief |
 | `abort` | Before the swap only: clears the markers `copy` set and drops the working schema | Brief, on the referenced tables |
@@ -127,13 +127,18 @@ needs room for the retained rows, their indexes, sort space and WAL until `finis
 index.
 
 The swap writes the admission row without changing it, as `begin-restore` does, so a
-repeatable-read transaction already waiting there fails with a serialization error.
-Its snapshot predates the swap, and it could otherwise read an incomplete list from
-the new relation. Compiles retry this automatically; other reads return a store error
-for that one call. Waiting for the drain does not delay ordinary work, and
-`lock_timeout_ms` (default 3000) bounds that wait per attempt. Holding it does delay
-ordinary work, so each statement under it has a fixed three-second limit, and a client
-that stalls is disconnected by the server. After three attempts that held the drain
+repeatable-read or serializable transaction already waiting there fails with a
+serialization error (`40001`). Its snapshot predates the swap, and it could otherwise
+read an incomplete list from the new relation. Compiles and retrying privileged writes
+retry this automatically; non-retrying repeatable-read calls return a store error for
+that one call. Only transactions that enter `cairn.restore_admission` (or touch
+`cairn.retrieval_candidate` during the rename) wait on the swap; the few direct-pool
+helpers that bypass `restore_admission` (such as quiet-notice expiry and work-feature or
+advice-control status reads) do not touch `retrieval_candidate` and do not wait on the
+admission row. Waiting for the drain does not delay ordinary work, and
+`lock_timeout_ms` (default 3000) bounds that wait per attempt. Holding it delays
+participating transactions, so each statement under it has a fixed three-second limit,
+and a client that stalls is disconnected by the server. After three attempts that held the drain
 and failed, the phase stops with `stopped_by: swap_lock_unavailable` and nothing
 changed. Repeat it when whatever holds the table has finished. The hold does not grow
 with the number of expiring receipts. Statements elsewhere that need strong locks

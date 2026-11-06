@@ -26,9 +26,23 @@ reported state; unavailable scoring can produce a labelled lexical fallback.
 
 ## Scheduled publication
 
-`cairn schedule-serve --repo COLLECTION` runs the operator's one-shot schedule
-processor. It publishes due events and performs the bounded request-control
-sweep. It is not a pool worker and does not execute an assignment itself.
+`cairn schedule-serve --repo COLLECTION` runs the operator's schedule and wait
+processor (`--once` runs a single pass and exits). Each bounded tick runs five
+steps in order: request-control expiry (`SweepRequestControls`), quiet-notice
+expiry (`SweepNoticeExpiries`), due one-shot schedule publication (`TickSchedules`,
+up to 100 rows), wait deadline settlement (`SweepWaitTimeouts`), and durable
+wait-notice publication (`DrainWaitOutbox`, up to 50 rows). It is not a pool
+worker and does not execute an assignment itself.
+
+Under enforced [event admission](event-admission-rollout.md), a due schedule
+refused for capacity, rates, or missing closure reconciliation stays `pending`
+with an updated `last_checked_at` so later due schedules, wait timeouts, and
+wait-outbox drains still make progress in the same tick. If post-commit refusal
+telemetry retention (`cairn.agent_event_admission_refusal`) fails after a
+refusal, `schedule-serve` logs `schedule refusal_diagnostics_unrecorded=N
+warning="..."` (`schedule-tick` returns `unrecorded_refusal_diagnostics` and
+`diagnostic_warning`) and continues the tick; transaction failures on real sweep
+or publication work still exit non-zero.
 
 Create schedules through `event-schedule` with an exact source version, due time,
 and grace period. Follow [event scheduling](../event-scheduling.md) for request

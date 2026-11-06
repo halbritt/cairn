@@ -35,8 +35,19 @@ These are current observations; filtering a later scan can produce different
 results. Reissue rechecks the selected delivery and its holds atomically.
 The optional `attention` request object adds a bounded summary of aged pending
 session requests, with changed-condition suppression when given a local state
-file. See [delivery health](delivery-health.md) for the invocation, coverage and
-freshness rules. This is presentation only; it performs no recovery action.
+file; when `attention.notify_publishers` is set, it may also send deduplicated
+operator notices for unresolved deliveries on stopped sessions. Under enforced
+[event admission](event-admission.md), capacity, rate, or reconciliation refusals
+defer those notices cleanly (`status: "deferred_capacity"`, counted under
+`deferred`), leaving the original delivery untouched and recording no notified
+fingerprint for the deferred item so a later pass retries it; if refusal
+diagnostic retention fails after rollback, `attention.publisher_notifications`
+reports `unrecorded_refusal_diagnostics` and `diagnostic_warning` without
+aborting the batch or discarding `NotifiedFingerprint` entries for notices
+already `sent` or `duplicate_suppressed`. See [delivery health](delivery-health.md) for the
+invocation, coverage and freshness rules. Without `notify_publishers`,
+`attention` performs no store delivery or recovery mutation (though a configured
+`state_file` still updates its local suppression cache).
 The latest native attempt includes its turn stop state, cancellation request and
 confirmation timestamps, and the count of captured tools not yet reported
 terminal. These are selected host observations, not proof that external effects
@@ -90,8 +101,16 @@ successor; review `reissued_as` to find an existing successor.
 The new event retains the exact source version, identifies the operator as its
 publisher, links the old event as causation, and uses the new request UUID as its
 correlation. The original publisher, failed delivery, attempts and results remain
-intact. The source must still be available. Privacy and pool admission checks
-still apply.
+intact. The source must still be available. Privacy, pool admission,
+[event admission](event-admission.md), and
+[closure reservation](closure-reservations.md) checks apply: under `enforce`,
+reissue requires current-generation closure reconciliation
+(`CLOSURE_UNRECONCILED`), normal queue capacity and operator rate budget
+(`EVENT_ADMISSION_REFUSED`), and available closure reserve
+(`CLOSURE_RESERVE_FULL`), rolling back atomically on refusal so the same
+`request_id` can be retried once capacity drains when `admission.retryable` is
+`true` (when `admission.retryable` is `false`, change the policy or workload
+instead).
 
 A direct or topic request is sent only to the failed consumer. A topic retry does
 not contact subscribers who already handled the first request. An assigned pool
@@ -128,9 +147,11 @@ own attempt. Offline presence does **not** prove that the host or its agent
 stopped. The work may have run and may still be running, which is why
 `accept_uncertain_effects` is required.
 
-Release closes the attempt with reason `operator_released`, `released_by` and
-`release_reason`. A delivery still pending or leased becomes `failed` with code
-`operator_released` and the operator's control fields. A delivery already
+Release is never gated by event admission. It closes the attempt with reason
+`operator_released`, `released_by` and `release_reason`. A delivery still
+pending or leased becomes `failed` with code `operator_released` and the
+operator's control fields, releasing any reserved reply closure for that
+delivery with `release_reason: "operator_released"`. A delivery already
 completed keeps its state and result; release then only closes the hold. It
 takes the same attempt lock as host reconciliation, and the delivery row lock
 that completion uses, so a completion and a release racing each other cannot
@@ -195,7 +216,9 @@ window reports `stopped_recently`, and an unknown or foreign UUID reports
 `not_found`. Their deliveries are left alone. Delivery rows are locked before
 holds are read, so a hold recorded meanwhile is retained. Selected pending
 deliveries become `failed` with code `consumer_retired` and the operator's
-control time, identity and reason. Reuse the exact request UUID and JSON after
+control time, identity and reason; expiry is never gated by event admission, and
+failing a pending request delivery releases its reserved reply closure with
+`release_reason: "stopped_expired"`. Reuse the exact request UUID and JSON after
 a lost response.
 
 The publisher sees the failure and its code through `event-status`. Nothing is

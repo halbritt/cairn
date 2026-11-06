@@ -10,6 +10,20 @@ they become `skipped` with code `restore_fenced`. A pending row in a backup may
 have fired after that backup. Its retained occurrence ID and publication metadata
 remain available for review; restarting the scheduler does not replay it.
 
+In the same transaction, `fence-restore` also releases leased `agent_delivery`
+rows back to `pending`; marks open [response groups](response-groups.md)
+`incomplete` (`code = 'restore_fenced'`), waiting `agent_wait` and pending
+`agent_wait_outbox` rows `restore_fenced` (recording
+`agent_wait_notification_fence`), and queued quiet notices `restore_fenced`;
+releases the [closure reservations](closure-reservations.md) of fenced groups and
+waits while keeping surviving direct `request_reply` reservations (leaving the
+new generation unreconciled until `event-closure-reconcile`); resets every
+existing `agent_event_rate_bucket` row to zero tokens anchored at the fence's
+database time in the new generation; and invalidates the `work_item` projection
+cache (`cache_generation = 0`). See
+[event admission rollout](operator/event-admission-rollout.md#restore-and-generations)
+for post-restore closure reconciliation and rate behavior.
+
 Use [restore sessions](restore-admission.md) for the complete implemented
 reconciliation workflow. `begin-restore` includes a fresh fence and blocks
 ordinary transactions until explicit verified resume. The standalone command

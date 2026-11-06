@@ -155,12 +155,17 @@ cairn claude-config --socket ~/.local/share/cairn/api.sock \
 
 Remote profiles use the hosted destination: local-only notes are not returned
 to them. The central API also refuses operations outside the remote allowlist:
-operator commands, worker and wake operations, managed-context registration,
-remote process wrapping, cancellation capture, exclusive turns, and use/outcome
-recording (`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that
-record uses and outcomes therefore get `AUTHORITY_DENIED` on a joining machine.
-Memory search, notes, the directory, native inbox delivery, completion and
-replies work.
+operator commands (including collection-wide event-admission and closure
+views/configuration), `wait-*` operations, quiet-notice native turn claim/advance,
+worker and wake operations, managed-context registration, remote process
+wrapping, cancellation capture, exclusive turns, and use/outcome recording
+(`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that record uses
+and outcomes therefore get `AUTHORITY_DENIED` on a joining machine. Memory
+search, notes, the directory, native inbox delivery, completion, replies,
+self-scoped pressure/fanout/admission-preview (`event-pressure`, `event-fanout`,
+`event-admission-preview`), inbox closure inspection and explicit reply closing
+(`closures`, `close-replies`), and quiet-notice queue inspection/flush
+(`notice-pending`, `notice-flush`) work.
 
 The harness must permit calls to the local Unix socket. A sandbox that blocks
 socket creation can prevent in-turn CLI access even when MCP and hooks run
@@ -224,6 +229,9 @@ store newer than its supported migration set.
 | `UPSTREAM_UNAVAILABLE` | The relay could not connect or complete TLS; nothing was sent | Retry when the central API is reachable |
 | `UPSTREAM_UNCERTAIN` | The call may have been sent; its outcome is unknown | Retry only with the same request ID and arguments, or inspect state (`event-status`, `history`) |
 | `AUTHORITY_DENIED` | Token revoked, rotated away, or operation outside the remote allowlist | Check `cairn machine status`; enroll a rotated file |
+| `EVENT_ADMISSION_REFUSED`, `CLOSURE_RESERVE_FULL` | Enforced event-admission or closure limit refused publication (HTTP 429) | When `admission.retryable` is `true`, read backoff guidance from JSON `admission.retry_after_seconds` and retry the same `request_id` and intent (if `false`, change the workload or central policy); `cairn relay` forwards `Content-Type`, HTTP status, and response body bytes, not the central server's `Retry-After` HTTP header |
+| `CLOSURE_UNRECONCILED` | Current restore generation awaits operator closure reconciliation on the central host (HTTP 409) | Wait for central `event-closure-reconcile` to complete, then retry the same `request_id` and intent |
+| `RATE_UNRECONCILED` | Retained rate bucket `restore_generation` does not match the store's current generation (HTTP 409) | Report to the central operator for investigation; neither waiting, policy edits, nor `event-closure-reconcile` repairs a rate-bucket generation mismatch (no rate-reconcile RPC exists) |
 | `STALE_SESSION`, `STALE_LEASE` | Same meanings as on the central host | See [native inbox](native-inbox.md) and [agent sessions](agent-sessions.md) |
 
 Transport reconnection never replays work. A disconnected machine's presence

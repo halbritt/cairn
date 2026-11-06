@@ -39,12 +39,15 @@ checksum differs`), and a missing file cannot be inserted later.
    its in-flight requests, then stop it too. No old process may hold a connection
    while you migrate.
 3. Run `cairn migrate` with the new executable. Migrations 080 and 084 each begin by
-   updating the `cairn.restore_admission` row in place. That update waits for
-   transactions that were already admitted against that row, and it invalidates the
-   snapshot of any old-binary transaction that started through the store's admission
-   check before the migration committed. Such an in-flight call can end with a
-   retryable serialization failure (SQLSTATE `40001`) or with `SCHEMA_MISMATCH`, and
-   the codes differ by when the call started.
+   updating the `cairn.restore_admission` row in place (`SET paused = paused WHERE
+   singleton`). Its conflicting row-level tuple lock waits for already-admitted
+   `FOR SHARE` transactions to finish, and its new tuple version causes waiting
+   repeatable-read or serializable snapshots that started through `restore_admission`
+   before the migration committed to abort with SQLSTATE `40001` — surfacing
+   `SCHEMA_MISMATCH` (exit code 4) on paths that retry serialization failures (such as
+   `Bootstrap`) and `STORE_ERROR` (exit code 7) on non-retrying repeatable-read paths
+   (such as `coordination-review`), rather than committing against a pre-migration
+   snapshot.
 
    This barrier covers transactions that pass through that admission check. It is not
    a connection fence. An old process that already holds an open connection pool can
@@ -114,19 +117,24 @@ Pressure and fanout show outstanding work, queue ages, per-event recipient count
 the publications and delivery fanout of the last 60 seconds. Preview reports which
 count-based dimensions would refuse a publication right now.
 
-Observe mode keeps no shadow rate accounting. It never creates or debits token buckets,
-never refuses and creates no state that a later enforce run would inherit. The
-60-second counts are observed rates, not bucket balances; do not infer a rate refusal
-from them. `rate_evaluation` reports what real rate state exists:
+Observe mode keeps no shadow rate accounting. It never creates or debits token buckets
+and never refuses on admission limits, so no rate-bucket balances are created in observe
+mode for a later enforce run to inherit. Accepted work and closure reservations are still
+recorded in every mode, so outstanding deliveries, queued quiet notices, unassigned pool
+requests, and open closures created during observe mode count normally once enforcement is
+enabled. The 60-second counts are observed rates, not bucket balances; do not infer a rate
+refusal from them. `rate_evaluation` reports what real rate state exists, with distinct
+rules for pressure and preview:
 
-| Value | Meaning |
-| --- | --- |
-| `uninitialized` | No current-generation bucket exists for the identity, so rate dimensions are not forecast (preview lists `retained_rate_state` under `unevaluated`). |
-| `retained_buckets` | Real balances exist, for example from an earlier enforced period; they are read without debiting, and preview may list rate dimensions in `would_refuse`. |
-| `disabled` | Preview with a disabled policy runs no forecast. |
-| `unavailable` | The rate tables are absent from this store. |
+| Value | In `event-pressure` / `event-pressure-collection` | In `event-admission-preview` / `event-admission-preview-collection` |
+| --- | --- | --- |
+| `retained_buckets` | At least one current-generation bucket row exists for the caller's `producer` identity (inbox scope) or the `collection` identity (`""`, collection scope), regardless of policy mode. | Policy is `observe` or `enforce` and **every** non-zero-cost charge (`publication`, plus `delivery` when recipient count > 0) across `producer`, `owner`, and `collection` has a current-generation bucket row; those balances are refilled in memory without debiting and checked for `would_refuse`. |
+| `uninitialized` | Rate tables exist, and no current-generation bucket row exists for that caller `producer` or `collection` identity. | Policy is `observe` or `enforce` and at least one non-zero-cost `producer`, `owner`, or `collection` unit bucket is missing or from an older restore generation. Preview adds `retained_rate_state` to `unevaluated`, while still checking `Cost > Burst` and any current-generation buckets that do exist. |
+| `disabled` | Not emitted by pressure views (pressure still reports `retained_buckets` or `uninitialized` from stored rows). | Policy is `disabled` (or has no limits); preview adds `disabled_policy` to `unevaluated` and runs no forecast. |
+| `unavailable` | Rate tables are absent from this store. | Rate tables are absent from this store (`rate_buckets` is added to `unsupported`). |
 
-A collection that has only ever been observed is `uninitialized`.
+A collection that has never run in `enforce` mode has no rate bucket rows and reports
+`uninitialized` on both pressure and active-policy preview.
 
 Size limits from three sources: the workload you declare in the policy, the counts you
 observe here, and disposable test runs with enforcement on. Record why each value was
@@ -145,24 +153,50 @@ explicit authorization for a named collection:
 2. Raise that collection's policy from observe to enforce at its current revision.
 3. Watch `event-admission-refusals`, pressure and closure counts. A refused publisher
    receives `EVENT_ADMISSION_REFUSED` (or `CLOSURE_RESERVE_FULL` for closure capacity)
-   with a dimension, the policy revision and a retry hint. The hint is backoff
-   guidance, not a promise of admission.
+   with `admission.dimension`, `admission.policy_revision`, `admission.retryable`, and
+   `admission.retry_after_seconds` (always present in JSON, including `0` on
+   non-retryable refusals; positive values provide backoff guidance and emit the HTTP
+   `Retry-After` header on the central API, not a promise of admission).
 4. Widen to other collections only with separate authorization.
 
-Enforcement uses persistent token buckets (migration 083). The first enforced run
-starts from real balances, not from anything observe mode measured. A later policy
+Enforcement uses persistent token buckets (migration 083) across `producer`, `owner`,
+and `collection` identities for both `publication` and `delivery` units. New wait
+registrations (`wait create`) also require current-generation closure reconciliation
+(`CLOSURE_UNRECONCILED`), reserve a `wait_notice` closure (`CLOSURE_RESERVE_FULL`), and
+charge one publication and one delivery rate unit under `enforce`. The first enforced
+run starts from real balances, not from anything observe mode measured. A later policy
 revision changes limits; it does not reset balances.
 
-A refusal is not lost work. The publisher retries the same request UUID with
-unchanged intent; a committed publication returns its original result without a
-second charge.
+Refusal diagnostics in `cairn.agent_event_admission_refusal` are bounded telemetry
+retained outside the rolled-back refusal transaction. If recording a refusal diagnostic
+fails during background sweeps (`schedule-serve` / `schedule-tick`) or operator
+stopped-delivery publisher notifications (`coordination-review` with
+`attention.notify_publishers`), accepted schedule/wait work still advances and
+`NotifiedFingerprint` state for notices already `sent` or `duplicate_suppressed` in the
+batch is preserved (while the deferred stopped-delivery notice itself leaves the original
+delivery untouched and records no notified fingerprint, so a later pass retries it). The
+response surfaces `unrecorded_refusal_diagnostics` (or `refusal_diagnostic_unrecorded`)
+and `diagnostic_warning` (`schedule-serve` logs
+`schedule refusal_diagnostics_unrecorded=N warning="..."` to stderr).
+
+A refusal rolls back without partial side effects. When `admission.retryable` is `true`,
+the publisher retries the same request UUID with unchanged intent after capacity drains
+or backoff elapses (`topic_recipients` requires topic membership or policy to change
+first); a committed publication returns its original result without a second charge. When
+`admission.retryable` is `false` — because rate demand exceeds the configured `burst` or
+requested closures exceed `max_closure_reserved` / `max_recipient_closure_reserved` —
+retrying unchanged intent under the same policy cannot succeed; change the workload or
+policy instead.
 
 ## 5. Disable
 
 Set `mode: disabled` at the current revision to stop refusing new work. Accepted
 deliveries, replies, wait notices, closure reconciliation and the maintenance
-commands keep working, and reservations keep being recorded. Bucket balances are kept;
-re-enabling enforcement resumes from them instead of granting a fresh burst. Disabling
+commands keep working, and reservations keep being recorded. Bucket rows are kept;
+when a later policy edit re-enables enforcement at a new revision, refill anchors at
+`max(refill_at, policy.updated_at)`, so disabling and re-enabling neither grants a
+fresh burst nor credits token refill across the disabled interval (and never repairs a
+`restore_generation` mismatch). Disabling
 is the rollback. Do not remove migrations, delete reservations or purge history to roll back.
 
 ## Restore and generations
@@ -173,14 +207,16 @@ supported [restore procedure](maintenance.md#restore-into-isolation) and
 `begin-restore` (which fences and advances the restore generation) before any ordinary
 consumer connects, reapply newer recovery records, rebuild and `verify-restore`, then
 `resume-restore`. Reconciliation (below) is a further mandatory step before enforced
-admission accepts new obligations.
+admission accepts new non-closure work.
 
-`begin-restore` fences open response groups and waits and their closures released with reason `restore_fenced`. Direct reply
+`begin-restore` fences open response groups, pending schedules, waiting waits, pending
+wait-outbox entries, and queued quiet notices with `restore_fenced`, and releases the
+closures of fenced groups and waits with reason `restore_fenced`. Direct reply
 obligations survive with their original generation, and their replies still close
 them. The new generation has no reconciliation, so closure counts are unavailable.
-Under enforce, new obligations refuse with `CLOSURE_UNRECONCILED` until an operator
-completes a reconciliation for that generation. Run step 2 after every resumed
-restore.
+Under enforce, new non-closure publications and new waits refuse with
+`CLOSURE_UNRECONCILED` until an operator completes a reconciliation for that
+generation. Run step 2 after every resumed restore.
 
 Rate buckets must not refill on restore. The restore fence itself empties every existing bucket and sets its refill
 time to the fence's database time in the new generation, in the same transaction. A
@@ -207,9 +243,12 @@ declaring it retired:
 - let accepted work settle or end through its own contract, then check
   `event-pressure-collection` until every collection reservoir is zero:
   `pending_deliveries`, `leased_deliveries` (which include native holds and expired
-  leases), `queued_organic_notices`, `unassigned_pool_requests`, `pending_schedules`,
-  `waiting_terminal_notices` (waiting waits) and `pending_wait_outbox`. These are
-  collection totals, not paged recipient rows. Expire, cancel or flush through the
+  leases), `stopped_deliveries` (unresolved deliveries on stopped sessions, also counted
+  in `pending_deliveries`/`leased_deliveries`), `queued_organic_notices`,
+  `unassigned_pool_requests`, `pending_schedules`, `waiting_terminal_notices` (waiting
+  waits), `pending_wait_outbox`, and (when `closure_state` is `available`)
+  `normal_outstanding`, `closure_reserved`, and `closure_delivered_outstanding`. These
+  are collection totals, not paged recipient rows. Expire, cancel or flush through the
   supported commands; never delete rows;
 - check `event-closures-collection` until counts are available, `reserved` is zero
   and `outstanding` is zero, so no reserved closure or undelivered consumed reply or
