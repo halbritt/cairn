@@ -236,6 +236,14 @@ func TestEventAdmissionValidatedClosureUsesProtectedCapacity(t *testing.T) {
 	reply.CausationID = ""
 	_, err = testAdmittedPublish(ctx, b, reply, state, dest)
 	requireAdmissionDimension(t, err, "collection_outstanding")
+	op := testStore(t, Channel{Principal: "operator:closure-pressure", Operator: true})
+	if _, err = op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: source.Scope.Repo}); err != nil {
+		t.Fatal(err)
+	}
+	pressure, err := op.CollectionEventPressure(ctx, EventPressureQuery{Repo: source.Scope.Repo})
+	if err != nil || !pressure.Closure.Available || pressure.Reservoirs.ClosureState != "available" || pressure.Reservoirs.ClosureReserved == nil || *pressure.Reservoirs.ClosureReserved != 0 || pressure.Reservoirs.ClosureDeliveredOutstanding == nil || *pressure.Reservoirs.ClosureDeliveredOutstanding != 1 || pressure.Reservoirs.NormalOutstanding == nil || *pressure.Reservoirs.NormalOutstanding != 1 || pressure.Reservoirs.PendingDeliveries != 2 {
+		t.Fatalf("normal and protected charges: %+v %v", pressure, err)
+	}
 }
 
 func TestEventAdmissionSubscriptionRaceKeepsAtomicSnapshot(t *testing.T) {

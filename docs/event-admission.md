@@ -52,6 +52,8 @@ printf '%s\n' '{"repo":"COLLECTION","destination":{"type":"topic","name":"exact-
 
 These commands require the operator channel and have no agent API route.
 Operational event bodies and memory text are omitted from diagnostics.
+The operator-only `event-admission-refusals` command reports bounded counters by
+dimension, including refusals whose publication transaction rolled back.
 
 ## Select an observation policy
 
@@ -84,7 +86,10 @@ leased deliveries and queued quiet notices for collection, recipient and
 producer/recipient forecasts. It never returns another recipient's identity or
 queue count. `would_refuse` is a list of dimensions, not admission, a reservation,
 a backoff promise or evidence that a subsequent publication will succeed.
-`unsupported` lists the unfinished closure, rate and alternate-writer checks.
+`unsupported` lists actual missing support. The destination-only request cannot
+evaluate source authorization or validated closure eligibility; `unevaluated`
+names those limits. Capacity forecasts use ordinary charges and do not grant a
+closure exemption.
 The preview does not authenticate a source record or replace publication's
 source, destination or forgetting checks. Disabled mode does not run forecasts.
 
@@ -101,11 +106,14 @@ Pressure reports keep these reservoirs separate:
 | Waiting terminal notices | Waiting durable predicates that retain a future terminal-notice obligation |
 | Pending wait outbox | Resolved waits whose notification has not been published |
 | Stopped deliveries | Outstanding deliveries in the inspected inbox or collection addressed to explicitly stopped sessions, for any event kind; a subset, not an additional delivery charge |
-| Closure reserved | `null` with `closure_state: unsupported` until a reservation store exists |
+| Closure reserved / delivered outstanding | Actual protected charges after complete reconciliation in the current generation; null with a labelled unavailable reason before that certificate |
+| Normal outstanding | Source-visible pending/leased deliveries excluding consumed closure deliveries, plus queued quiet notices and open unassigned pools; null until closure reconciliation is complete |
 
 Do not sum every row: stopped deliveries overlap inbox counts, while future
-schedules and waits have different capacity units. Leased counts include expired
-leases until settlement or retry changes the row. Oldest age uses publication
+schedules and waits have different capacity units. Physical pending/leased counts include delivered closure traffic; do not add
+those deliveries to the normal charge again. The separate `closure` object
+reports reconciliation state and retained legacy gaps. Leased counts include
+expired leases until settlement or retry changes the row. Oldest age uses publication
 time, includes deferred work, and is clamped at zero. Existing delivery diagnosis
 explains deliberate deferral and holds.
 
@@ -131,6 +139,17 @@ Every path below must participate before enforcement becomes available:
 | Wait resolution / timeout | `core/agent_waits.go`, `core/agent_wait_scheduler.go`: retained wait to outbox to event/delivery |
 | Stopped-session notification | `core/agent_stopped_backlog.go`: deduplicated direct event/delivery; no retained pending outbox yet |
 | Restore / reconciliation | `core/restore_fence.go` and restore rebuild paths: fence and reconcile existing obligations; never replay execution |
+
+Pool assignment scans at most 100 eligible publisher candidates per claim.
+A declined publisher rotates while its request and reply reservation remain
+pending. A wake result with `attempt: null` means no currently admissible
+assignment; it does not certify an empty pool or completion. Keep the existing
+polling interval. Assignment transfers the collection charge from the queued
+pool request and adds only its newly selected recipient charge.
+
+Quiet initial admission, continuation and explicit flush transfer their already
+charged known recipient unit. They do not run a fresh capacity gate, so accepted
+quiet work can drain after limits are lowered.
 
 Existing pool, organic-notice, schedule and wait limits remain effective.
 The observation policy does not weaken them or add a gate to closure operations.

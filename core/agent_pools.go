@@ -251,6 +251,18 @@ type poolCandidate struct {
 }
 
 func selectPoolCandidate(ctx context.Context, tx pgx.Tx, w WorkerSlot) (poolCandidate, error) {
+	policy, err := admissionPolicyTx(ctx, tx, w.Repo)
+	if err != nil {
+		return poolCandidate{}, err
+	}
+	if policy.Policy.Mode == "enforce" && !eventAdmissionEnforcementReady() {
+		return poolCandidate{}, failure("FEATURE_UNAVAILABLE", "event admission enforcement requires every delivery writer")
+	}
+	return selectPoolCandidateTx(ctx, tx, w, policy)
+}
+
+func selectPoolCandidateTx(ctx context.Context, tx pgx.Tx, w WorkerSlot, policy EventAdmissionPolicyState) (poolCandidate, error) {
+
 	// Lock memberships in stable order: publication/configuration takes only one.
 	pools := slices.Clone(w.Spec.Pools)
 	slices.Sort(pools)
@@ -268,14 +280,45 @@ func selectPoolCandidate(ctx context.Context, tx pgx.Tx, w WorkerSlot) (poolCand
 			enabled = append(enabled, name)
 		}
 	}
-	var c poolCandidate
-	err := tx.QueryRow(ctx, `SELECT e.event_id::text,e.destination_name,e.publisher,e.position FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) JOIN cairn.agent_pool_publisher_service f ON f.repo=e.repo AND f.pool=e.destination_name AND f.publisher=e.publisher WHERE q.delivery_id IS NULL AND q.closed_at IS NULL AND `+requestAdmissionOpen+` AND e.repo=$1 AND e.destination_name=ANY($2::text[]) AND e.pool_requirements->>'workspace'=$3 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$4) AND COALESCE(e.pool_requirements->>'model','') IN ('',$5) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT (cap=ANY(COALESCE($6::text[],ARRAY[]::text[])))) ORDER BY f.last_dispatch,e.position LIMIT 1 FOR UPDATE OF q`, w.Repo, enabled, w.Spec.Workspace, w.Spec.Harness, w.Spec.Model, w.Spec.Capabilities).Scan(&c.id, &c.pool, &c.publisher, &c.position)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return c, nil
+	// Refused publishers rotate without losing accepted requests or their
+	// reply reserve. A bounded scan may serve another publisher this turn.
+	excluded := []string{}
+	for i := 0; i < 100; i++ {
+		var c poolCandidate
+		err := tx.QueryRow(ctx, `SELECT e.event_id::text,e.destination_name,e.publisher,e.position FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) JOIN cairn.agent_pool_publisher_service f ON f.repo=e.repo AND f.pool=e.destination_name AND f.publisher=e.publisher WHERE q.delivery_id IS NULL AND q.closed_at IS NULL AND `+requestAdmissionOpen+` AND e.repo=$1 AND e.destination_name=ANY($2::text[]) AND e.pool_requirements->>'workspace'=$3 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$4) AND COALESCE(e.pool_requirements->>'model','') IN ('',$5) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT (cap=ANY(COALESCE($6::text[],ARRAY[]::text[])))) AND NOT(e.publisher=ANY($7::text[])) ORDER BY f.last_dispatch,e.position LIMIT 1 FOR UPDATE OF q`, w.Repo, enabled, w.Spec.Workspace, w.Spec.Harness, w.Spec.Model, w.Spec.Capabilities, excluded).Scan(&c.id, &c.pool, &c.publisher, &c.position)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c, nil
+		}
+		if err != nil {
+			return poolCandidate{}, err
+		}
+		if policy.Policy.Mode == "enforce" {
+			err = checkPoolDeliveryTransferTx(ctx, tx, w.Repo, c.id, w.Consumer, policy)
+		}
+		if err == nil {
+			return c, nil
+		}
+		var refusal *Error
+		if !errors.As(err, &refusal) || refusal.Admission == nil {
+			return poolCandidate{}, err
+		}
+		if err = retainEventAdmissionRefusalTx(ctx, tx, w.Repo, refusal.Admission); err != nil {
+			return poolCandidate{}, err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_pool_publisher_service SET last_dispatch=nextval('cairn.agent_pool_dispatch_sequence') WHERE repo=$1 AND pool=$2 AND publisher=$3`, w.Repo, c.pool, c.publisher); err != nil {
+			return poolCandidate{}, err
+		}
+		excluded = append(excluded, c.publisher)
+		if refusal.Admission.Dimension == "recipient_outstanding" {
+			return poolCandidate{}, nil
+		}
 	}
-	return c, err
+	return poolCandidate{}, nil
 }
 func assignPool(ctx context.Context, tx pgx.Tx, w WorkerSlot, c poolCandidate) (string, error) {
+	if err := preparePoolDeliveryTransferTx(ctx, tx, w.Repo, c.id, w.Consumer); err != nil {
+		return "", err
+	}
 	id := uuid.NewString()
 	if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, id, c.id, w.Consumer); err != nil {
 		return "", err

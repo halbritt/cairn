@@ -160,8 +160,15 @@ func (s *Store) checkEventAdmissionTx(ctx context.Context, tx pgx.Tx, req Publis
 	if len(out.Consumers) == 0 {
 		return out, nil
 	}
+	if err = checkEventRecipientCapacityTx(ctx, tx, req.Repo, identity.Principal, out.Consumers, limits, policy.Revision); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func checkEventRecipientCapacityTx(ctx context.Context, tx pgx.Tx, repo, publisher string, consumers []string, limits *EventAdmissionLimits, revision int64) error {
 	var recipientFull, pairFull bool
-	err = tx.QueryRow(ctx, `SELECT COALESCE(bool_or(total.n >= $4),false),COALESCE(bool_or(pair.n >= $5),false)
+	err := tx.QueryRow(ctx, `SELECT COALESCE(bool_or(total.n >= $4),false),COALESCE(bool_or(pair.n >= $5),false)
  FROM unnest($2::text[]) target(consumer)
  CROSS JOIN LATERAL (
  SELECT count(*) n FROM (
@@ -178,17 +185,17 @@ func (s *Store) checkEventAdmissionTx(ctx context.Context, tx pgx.Tx, req Publis
  UNION ALL SELECT 1 FROM cairn.agent_organic_notice n WHERE n.repo=$1 AND n.recipient_inbox=target.consumer AND n.publisher_principal=$3 AND n.state='queued'
  ) normal LIMIT $5
  ) bounded
- ) pair`, req.Repo, out.Consumers, identity.Principal, limits.MaxRecipientOutstanding, limits.MaxProducerRecipientOutstanding).Scan(&recipientFull, &pairFull)
+ ) pair`, repo, consumers, publisher, limits.MaxRecipientOutstanding, limits.MaxProducerRecipientOutstanding).Scan(&recipientFull, &pairFull)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if recipientFull {
-		return nil, admissionRefusal("recipient_outstanding", policy.Revision)
+		return admissionRefusal("recipient_outstanding", revision)
 	}
 	if pairFull {
-		return nil, admissionRefusal("producer_recipient_outstanding", policy.Revision)
+		return admissionRefusal("producer_recipient_outstanding", revision)
 	}
-	return out, nil
+	return nil
 }
 
 // One row per collection/dimension bounds refusal retention independently of
@@ -203,8 +210,7 @@ func (s *Store) retainEventAdmissionRefusal(ctx context.Context, repo string, er
 	tx, recordErr := s.begin(diagnosticCtx)
 	if recordErr == nil {
 		defer tx.Rollback(diagnosticCtx)
-		_, recordErr = tx.Exec(diagnosticCtx, `INSERT INTO cairn.agent_event_admission_refusal(repo,dimension,policy_revision,retry_after_seconds) VALUES($1,$2,$3,$4)
- ON CONFLICT(repo,dimension) DO UPDATE SET refusal_count=CASE WHEN cairn.agent_event_admission_refusal.refusal_count<9223372036854775807 THEN cairn.agent_event_admission_refusal.refusal_count+1 ELSE cairn.agent_event_admission_refusal.refusal_count END,policy_revision=EXCLUDED.policy_revision,retry_after_seconds=EXCLUDED.retry_after_seconds,last_at=clock_timestamp()`, repo, refusal.Admission.Dimension, refusal.Admission.PolicyRevision, refusal.Admission.RetryAfterSeconds)
+		recordErr = retainEventAdmissionRefusalTx(diagnosticCtx, tx, repo, refusal.Admission)
 		if recordErr == nil {
 			recordErr = tx.Commit(diagnosticCtx)
 		}
@@ -212,6 +218,12 @@ func (s *Store) retainEventAdmissionRefusal(ctx context.Context, repo string, er
 	if recordErr != nil {
 		return &Error{Code: refusal.Code, Message: refusal.Message + "; refusal diagnostic could not be retained", Admission: refusal.Admission, Cause: errors.Join(err, recordErr)}
 	}
+	return err
+}
+
+func retainEventAdmissionRefusalTx(ctx context.Context, tx pgx.Tx, repo string, details *EventAdmissionRefusal) error {
+	_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_event_admission_refusal(repo,dimension,policy_revision,retry_after_seconds) VALUES($1,$2,$3,$4)
+ ON CONFLICT(repo,dimension) DO UPDATE SET refusal_count=CASE WHEN cairn.agent_event_admission_refusal.refusal_count<9223372036854775807 THEN cairn.agent_event_admission_refusal.refusal_count+1 ELSE cairn.agent_event_admission_refusal.refusal_count END,policy_revision=EXCLUDED.policy_revision,retry_after_seconds=EXCLUDED.retry_after_seconds,last_at=clock_timestamp()`, repo, details.Dimension, details.PolicyRevision, details.RetryAfterSeconds)
 	return err
 }
 

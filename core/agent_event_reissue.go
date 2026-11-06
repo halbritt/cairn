@@ -43,7 +43,7 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		return AgentEvent{}, failure("INVALID_REQUEST", "prior effects may exist; reissue requires accept_uncertain_effects=true")
 	}
 
-	return mutate(ctx, s, "event-reissue", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
+	out, err := mutate(ctx, s, "event-reissue", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
 		if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 			return AgentEvent{}, err
 		}
@@ -128,6 +128,14 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		}
 
 		newEventID := uuid.NewString()
+		admissionReq := PublishEventRequest{Repo: req.Repo, Kind: "request", Ref: RecordVersionRef{RecordID: recordID, Version: version}, Destination: EventDestination{Type: destType, Name: destName}, Pool: poolReqs, CausationID: eventID, CorrelationID: req.RequestID}
+		// Reissuing a topic event addresses only its failed snapshotted consumer.
+		if destType != "pool" {
+			admissionReq.Destination = EventDestination{Type: "agent", Name: consumer}
+		}
+		if _, err = s.prepareEventAdmissionTx(ctx, tx, admissionReq, nil); err != nil {
+			return AgentEvent{}, err
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,publisher,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,'request',$4,$5,$6,$7,$8,$9::uuid,$10::uuid,NULL,$11)`,
 			newEventID, req.Repo, s.channel.Principal, recordID, version, currentSensitivity, destType, destName, eventID, req.RequestID, poolReqs,
 		)
@@ -165,4 +173,8 @@ func (s *Store) ReissueEvent(ctx context.Context, req ReissueEventRequest) (Agen
 		}
 		return s.readEvent(ctx, tx, newEventID, Destination{Name: "local", AllowLocal: true})
 	})
+	if err != nil {
+		return out, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
+	}
+	return out, nil
 }

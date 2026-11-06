@@ -70,7 +70,7 @@ func TestEventAdmissionPolicyRevisionAndObserveOnly(t *testing.T) {
 	// Preview cannot reserve capacity, and observe mode does not refuse writes.
 	publishFixture(t, a, b, r, dest)
 	own, err := b.EventPressure(ctx, EventPressureQuery{}, dest)
-	if err != nil || own.Reservoirs.PendingDeliveries != 4 || own.Scope != "inbox" || own.Reservoirs.ClosureReserved != nil || own.Reservoirs.ClosureState != "unsupported" || own.Policy.Policy.Workload != "" || own.Policy.UpdatedBy != "" {
+	if err != nil || own.Reservoirs.PendingDeliveries != 4 || own.Scope != "inbox" || own.Reservoirs.ClosureReserved != nil || own.Reservoirs.ClosureState != "unreconciled" || own.Policy.Policy.Workload != "" || own.Policy.UpdatedBy != "" {
 		t.Fatalf("own: %+v %v", own, err)
 	}
 	// Duplicate policy editors have one winner under the collection lock.
@@ -298,7 +298,7 @@ func TestEventPressureDisposableMixedWorkload(t *testing.T) {
 		t.Fatalf("mixed own view: %+v %v", own, err)
 	}
 	preview, err := f.publisher.PreviewEventAdmission(ctx, EventAdmissionPreviewRequest{Repo: repo, Destination: base.Destination}, f.dest)
-	if err != nil || !reflect.DeepEqual(preview.WouldRefuse, []string{"recipient_outstanding", "producer_recipient_outstanding"}) {
+	if err != nil || !reflect.DeepEqual(preview.WouldRefuse, []string{"collection_outstanding", "recipient_outstanding", "producer_recipient_outstanding"}) {
 		t.Fatalf("queued organic accounting: %+v %v", preview, err)
 	}
 	fanout, err := f.publisher.EventFanout(ctx, EventFanoutQuery{Repo: repo, Limit: 2}, f.dest)

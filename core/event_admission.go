@@ -190,16 +190,18 @@ type EventPressureQuery struct {
 	Limit int    `json:"limit,omitempty"`
 }
 type EventPressureReservoirs struct {
-	PendingDeliveries      int64  `json:"pending_deliveries"`
-	LeasedDeliveries       int64  `json:"leased_deliveries"`
-	QueuedOrganicNotices   int64  `json:"queued_organic_notices"`
-	UnassignedPoolRequests int64  `json:"unassigned_pool_requests"`
-	PendingSchedules       int64  `json:"pending_schedules"`
-	WaitingTerminalNotices int64  `json:"waiting_terminal_notices"`
-	PendingWaitOutbox      int64  `json:"pending_wait_outbox"`
-	StoppedDeliveries      int64  `json:"stopped_deliveries"`
-	ClosureReserved        *int64 `json:"closure_reserved"`
-	ClosureState           string `json:"closure_state"`
+	PendingDeliveries           int64  `json:"pending_deliveries"`
+	LeasedDeliveries            int64  `json:"leased_deliveries"`
+	QueuedOrganicNotices        int64  `json:"queued_organic_notices"`
+	UnassignedPoolRequests      int64  `json:"unassigned_pool_requests"`
+	PendingSchedules            int64  `json:"pending_schedules"`
+	WaitingTerminalNotices      int64  `json:"waiting_terminal_notices"`
+	PendingWaitOutbox           int64  `json:"pending_wait_outbox"`
+	StoppedDeliveries           int64  `json:"stopped_deliveries"`
+	ClosureReserved             *int64 `json:"closure_reserved"`
+	ClosureDeliveredOutstanding *int64 `json:"closure_delivered_outstanding"`
+	NormalOutstanding           *int64 `json:"normal_outstanding"`
+	ClosureState                string `json:"closure_state"`
 }
 type EventPressureRecipient struct {
 	Identity            PressureIdentity `json:"identity"`
@@ -216,6 +218,7 @@ type EventPressure struct {
 	ComputedAt               time.Time                 `json:"computed_at"`
 	Policy                   EventAdmissionPolicyState `json:"policy"`
 	Reservoirs               EventPressureReservoirs   `json:"reservoirs"`
+	Closure                  ClosureCounts             `json:"closure"`
 	PublishedLastMinute      int64                     `json:"published_last_minute"`
 	DeliveriesLastMinute     int64                     `json:"delivery_fanout_last_minute_publications"`
 	RateWindowSeconds        int                       `json:"rate_window_seconds"`
@@ -290,6 +293,29 @@ func (s *Store) eventPressure(ctx context.Context, req EventPressureQuery, dest 
 	if err != nil {
 		return out, err
 	}
+	closureRecipient := ""
+	if !collection {
+		closureRecipient = principal
+	}
+	out.Closure, err = closureCountsTx(ctx, tx, repo, closureRecipient, dest.AllowLocal)
+	if err != nil {
+		return out, err
+	}
+	out.Reservoirs.ClosureState = out.Closure.Reason
+	if out.Closure.Available {
+		out.Reservoirs.ClosureState = "available"
+		out.Reservoirs.ClosureReserved = out.Closure.Reserved
+		out.Reservoirs.ClosureDeliveredOutstanding = out.Closure.DeliveredOutstanding
+		var normal int64
+		err = tx.QueryRow(ctx, `SELECT
+   (SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state IN ('pending','leased') AND ($2 OR d.consumer=$3) AND (e.sensitivity='shareable' OR $4) AND NOT EXISTS(SELECT 1 FROM cairn.agent_closure_reservation r WHERE r.consumed_delivery_id=d.delivery_id AND r.state='delivered')) +
+   (SELECT count(*) FROM cairn.agent_organic_notice n JOIN cairn.agent_event e USING(event_id) WHERE n.repo=$1 AND n.state='queued' AND ($2 OR n.recipient_inbox=$3) AND (e.sensitivity='shareable' OR $4)) +
+   (SELECT count(*) FROM cairn.agent_pool_request p JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND p.delivery_id IS NULL AND p.closed_at IS NULL AND ($2 OR e.publisher=$3) AND (e.sensitivity='shareable' OR $4))`, repo, collection, principal, dest.AllowLocal).Scan(&normal)
+		if err != nil {
+			return out, err
+		}
+		out.Reservoirs.NormalOutstanding = &normal
+	}
 	rows, err := tx.Query(ctx, `WITH consumers AS (
  SELECT d.consumer FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state IN ('pending','leased') AND (e.sensitivity='shareable' OR $4)
  UNION SELECT consumer FROM cairn.agent_subscription WHERE repo=$1 AND active
@@ -348,11 +374,15 @@ type EventAdmissionPreview struct {
 	RecipientCountState string           `json:"recipient_count_state"`
 	WouldRefuse         []string         `json:"would_refuse"`
 	Unsupported         []string         `json:"unsupported"`
+	Unevaluated         []string         `json:"unevaluated"`
 	EnforcementReady    bool             `json:"enforcement_ready"`
 }
 
 func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPreviewRequest, dest Destination) (EventAdmissionPreview, error) {
-	out := EventAdmissionPreview{Schema: "cairn.event-admission-preview/1", Producer: s.pressureIdentity(), RecipientCountState: "unavailable", WouldRefuse: []string{}, Unsupported: []string{"closure_reservations", "rate_buckets", "alternate_writer_parity"}}
+	out := EventAdmissionPreview{Schema: "cairn.event-admission-preview/1", Producer: s.pressureIdentity(), RecipientCountState: "unavailable", WouldRefuse: []string{}, Unsupported: []string{"rate_buckets"}, Unevaluated: []string{"source_authorization", "validated_closure_eligibility"}, EnforcementReady: eventAdmissionEnforcementReady()}
+	if !eventAdmissionEnforcementReady() {
+		out.Unsupported = append(out.Unsupported, "enforcement_not_ready")
+	}
 	if err := validEventDestination(dest); err != nil {
 		return out, err
 	}
@@ -420,15 +450,16 @@ func (s *Store) PreviewEventAdmission(ctx context.Context, req EventAdmissionPre
 	// different recipient's queue or infer hidden principals from a refusal.
 	var collection, recipientMax, pairMax int64
 	err = tx.QueryRow(ctx, `WITH outstanding AS (
- SELECT d.consumer,e.publisher FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state IN ('pending','leased')
+ SELECT d.consumer,e.publisher FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state IN ('pending','leased') AND NOT EXISTS(SELECT 1 FROM cairn.agent_closure_reservation r WHERE r.consumed_delivery_id=d.delivery_id AND r.state='delivered')
  UNION ALL SELECT n.recipient_inbox,n.publisher_principal FROM cairn.agent_organic_notice n WHERE n.repo=$1 AND n.state='queued'
+ UNION ALL SELECT NULL::text,e.publisher FROM cairn.agent_pool_request p JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND p.delivery_id IS NULL AND p.closed_at IS NULL
  ) SELECT (SELECT count(*) FROM outstanding),
  COALESCE((SELECT max(n) FROM (SELECT count(*) n FROM outstanding WHERE consumer=ANY($2::text[]) GROUP BY consumer) q),0),
  COALESCE((SELECT max(n) FROM (SELECT count(*) n FROM outstanding WHERE consumer=ANY($2::text[]) AND publisher=$3 GROUP BY consumer) q),0)`, repo, recipients, s.channel.Principal).Scan(&collection, &recipientMax, &pairMax)
 	if err != nil {
 		return out, err
 	}
-	if collection+recipientCount > limits.MaxCollectionOutstanding {
+	if recipientCount > 0 && collection+recipientCount > limits.MaxCollectionOutstanding {
 		out.WouldRefuse = append(out.WouldRefuse, "collection_outstanding")
 	}
 	if len(recipients) > 0 && recipientMax+1 > limits.MaxRecipientOutstanding {
