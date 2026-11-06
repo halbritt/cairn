@@ -9,6 +9,10 @@ observations.
 Decision receipts under `docs/plans` follow the same rule; see
 [reading plans and decision receipts](../plans/README.md).
 
+The [event admission documentation audit](event-admission-docs-audit-2026-11-06.md)
+records the source checks, documentation corrections and validation limits for
+the schema 080–084 additions.
+
 ## Evidence locations
 
 Many records name `/tmp` logs, local home-directory paths or SHA-256 digests.
