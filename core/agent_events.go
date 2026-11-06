@@ -383,6 +383,10 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if err != nil {
 		return AgentEvent{}, err
 	}
+	admission, err := s.prepareEventAdmissionTx(ctx, tx, req, closure)
+	if err != nil {
+		return AgentEvent{}, err
+	}
 	if id == "" {
 		id = uuid.NewString()
 	}
@@ -478,6 +482,12 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 		}
 	} else if req.Destination.Type == "pool" {
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, id)
+	} else if admission != nil {
+		if delay > 0 {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT gen_random_uuid(),$1,target.consumer,e.created_at+make_interval(secs=>$3) FROM unnest($2::text[]) target(consumer) JOIN cairn.agent_event e ON e.event_id=$1`, id, admission.Consumers, delay)
+		} else {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM unnest($2::text[]) target(consumer)`, id, admission.Consumers)
+		}
 	} else {
 		if delay > 0 {
 			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer,available_at) SELECT gen_random_uuid(),$1,s.consumer,e.created_at+make_interval(secs=>$4) FROM cairn.agent_subscription s JOIN cairn.agent_event e ON e.event_id=$1 WHERE s.repo=$2 AND s.topic=$3 AND s.active`, id, req.Repo, req.Destination.Name, delay)
@@ -523,7 +533,7 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 	if req, err = s.normalizePublication(req, dest); err != nil {
 		return AgentEvent{}, err
 	}
-	return mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
+	out, err := mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
 		return s.publishEventTx(ctx, tx, req, dest, "")
 	}, func(tx pgx.Tx) error {
 		// Cached publication responses must not bypass a profile's current destination.
@@ -542,6 +552,10 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 		}
 		return nil
 	})
+	if err != nil {
+		return out, s.retainEventAdmissionRefusal(ctx, req.Repo, err)
+	}
+	return out, nil
 }
 
 func (s *Store) SetSubscription(ctx context.Context, req SubscriptionRequest) (AgentSubscription, error) {

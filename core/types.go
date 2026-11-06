@@ -11,6 +11,7 @@ import (
 )
 
 type Error struct {
+	Admission *EventAdmissionRefusal
 	RefusalID string
 	Code      string
 	Message   string

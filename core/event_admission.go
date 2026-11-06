@@ -88,7 +88,7 @@ func (p EventAdmissionPolicy) validate() error {
 	return nil
 }
 func admissionPolicyTx(ctx context.Context, tx pgx.Tx, repo string) (EventAdmissionPolicyState, error) {
-	out := EventAdmissionPolicyState{Repo: repo, Policy: EventAdmissionPolicy{Version: 1, Mode: "disabled"}}
+	out := EventAdmissionPolicyState{Repo: repo, Policy: EventAdmissionPolicy{Version: 1, Mode: "disabled"}, EnforcementReady: eventAdmissionEnforcementReady()}
 	err := tx.QueryRow(ctx, `SELECT revision,policy,updated_by,updated_at FROM cairn.agent_event_admission_policy WHERE repo=$1`, repo).Scan(&out.Revision, &out.Policy, &out.UpdatedBy, &out.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
@@ -130,7 +130,7 @@ func (s *Store) SetEventAdmissionPolicy(ctx context.Context, req SetEventAdmissi
 		return EventAdmissionPolicyState{}, failure("INVALID_REQUEST", "expected_revision must be nonnegative")
 	}
 	// This is a binary capability gate, not an operator-selectable bypass.
-	if req.Policy.Mode == "enforce" {
+	if req.Policy.Mode == "enforce" && !eventAdmissionEnforcementReady() {
 		return EventAdmissionPolicyState{}, failure("FEATURE_UNAVAILABLE", "event admission enforcement requires closure reservations and every delivery writer")
 	}
 	return mutate(ctx, s, "event-admission-policy", req.RequestID, req, func(tx pgx.Tx) (EventAdmissionPolicyState, error) {
@@ -143,6 +143,20 @@ func (s *Store) SetEventAdmissionPolicy(ctx context.Context, req SetEventAdmissi
 		}
 		if current.Revision != req.ExpectedRevision {
 			return current, failure("VERSION_CONFLICT", "admission policy revision changed")
+		}
+
+		if req.Policy.Mode == "enforce" {
+			generation, err := retrievalGeneration(ctx, tx)
+			if err != nil {
+				return EventAdmissionPolicyState{}, err
+			}
+			reconciled, err := closureReconciledTx(ctx, tx, repo, generation)
+			if err != nil {
+				return EventAdmissionPolicyState{}, err
+			}
+			if !reconciled {
+				return EventAdmissionPolicyState{}, failure("CLOSURE_UNRECONCILED", "complete closure reconciliation for the current restore generation before enabling admission")
+			}
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event_admission_policy(repo,revision,policy) VALUES($1,$2,$3) ON CONFLICT(repo) DO UPDATE SET revision=EXCLUDED.revision,policy=EXCLUDED.policy,updated_by=current_setting('cairn.caller'),updated_at=clock_timestamp()`, repo, current.Revision+1, req.Policy)
 		if err != nil {
@@ -265,7 +279,7 @@ func (s *Store) eventPressure(ctx context.Context, req EventPressureQuery, dest 
  (SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state='pending' AND ($2 OR d.consumer=$3) AND (e.sensitivity='shareable' OR $4)),
  (SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.state='leased' AND ($2 OR d.consumer=$3) AND (e.sensitivity='shareable' OR $4)),
  (SELECT count(*) FROM cairn.agent_organic_notice n JOIN cairn.agent_event e USING(event_id) WHERE n.repo=$1 AND n.state='queued' AND ($2 OR n.recipient_inbox=$3) AND (e.sensitivity='shareable' OR $4)),
- (SELECT count(*) FROM cairn.agent_pool_request p JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND p.delivery_id IS NULL AND ($2 OR e.publisher=$3) AND (e.sensitivity='shareable' OR $4)),
+ (SELECT count(*) FROM cairn.agent_pool_request p JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND p.delivery_id IS NULL AND p.closed_at IS NULL AND ($2 OR e.publisher=$3) AND (e.sensitivity='shareable' OR $4)),
  (SELECT count(*) FROM cairn.agent_schedule WHERE repo=$1 AND state='pending' AND ($2 OR scheduled_by=$3)),
  (SELECT count(*) FROM cairn.agent_wait WHERE collection=$1 AND state='waiting' AND ($2 OR owner_principal=$3) AND (sensitivity_ceiling='shareable' OR $4)),
  (SELECT count(*) FROM cairn.agent_wait_outbox o JOIN cairn.agent_wait w USING(wait_uuid) WHERE w.collection=$1 AND o.state='pending' AND ($2 OR w.owner_principal=$3) AND (w.sensitivity_ceiling='shareable' OR $4)),
@@ -486,8 +500,8 @@ func (s *Store) eventFanout(ctx context.Context, req EventFanoutQuery, dest Dest
  (SELECT count(*) FROM cairn.agent_organic_notice n WHERE n.event_id=e.event_id AND n.state='queued'),
  (SELECT count(*) FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.state='pending'),
  (SELECT count(*) FROM cairn.agent_delivery d WHERE d.event_id=e.event_id AND d.state='leased'),
- CASE WHEN e.destination_type='pool' AND EXISTS(SELECT 1 FROM cairn.agent_pool_request p WHERE p.event_id=e.event_id AND p.delivery_id IS NULL) THEN 'awaiting_assignment' ELSE 'snapshotted' END,
- CASE WHEN e.destination_type='pool' AND EXISTS(SELECT 1 FROM cairn.agent_pool_request p WHERE p.event_id=e.event_id AND p.delivery_id IS NULL) THEN NULL ELSE
+ CASE WHEN e.destination_type='pool' AND EXISTS(SELECT 1 FROM cairn.agent_pool_request p WHERE p.event_id=e.event_id AND p.delivery_id IS NULL AND p.closed_at IS NULL) THEN 'awaiting_assignment' ELSE 'snapshotted' END,
+ CASE WHEN e.destination_type='pool' AND EXISTS(SELECT 1 FROM cairn.agent_pool_request p WHERE p.event_id=e.event_id AND p.delivery_id IS NULL AND p.closed_at IS NULL) THEN NULL ELSE
  (SELECT count(*) FROM cairn.agent_delivery d WHERE d.event_id=e.event_id) +
  (SELECT count(*) FROM cairn.agent_organic_notice n WHERE n.event_id=e.event_id AND NOT EXISTS(SELECT 1 FROM cairn.agent_delivery d WHERE d.delivery_id=n.reserved_delivery_id)) END
  FROM cairn.agent_event e WHERE e.repo=$1 AND ($2 OR e.publisher=$3) AND (e.sensitivity='shareable' OR $4) AND e.position>$5 ORDER BY e.position LIMIT $6`, repo, collection, s.channel.Principal, dest.AllowLocal, req.After, limit+1)

@@ -47,6 +47,7 @@ Operators can inspect the whole collection through JSON commands:
 printf '%s\n' '{"repo":"COLLECTION","limit":50}' | cairn event-pressure-collection
 printf '%s\n' '{"repo":"COLLECTION","after":0,"limit":50}' | cairn event-fanout-collection
 printf '%s\n' '{"repo":"COLLECTION"}' | cairn event-admission-policy
+printf '%s\n' '{"repo":"COLLECTION","destination":{"type":"topic","name":"exact-topic"}}' | cairn event-admission-preview-collection
 ```
 
 These commands require the operator channel and have no agent API route.

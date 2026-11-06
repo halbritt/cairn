@@ -276,7 +276,7 @@ func TestEventPressureDisposableMixedWorkload(t *testing.T) {
 	if _, err := f.operator.ConfigureWorkerPool(ctx, WorkerPoolConfigRequest{RequestID: uuid.NewString(), Repo: repo, Name: "pressure", Enabled: true, MaxPending: 4, MaxPendingPerPublisher: 4}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := f.publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "request", Ref: source, Destination: EventDestination{Type: "pool", Name: "pressure"}, Pool: &PoolRequirements{Workspace: "/fixture"}}, f.dest)
+	poolEvent, err := f.publisher.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Repo: repo, Kind: "request", Ref: source, Destination: EventDestination{Type: "pool", Name: "pressure"}, Pool: &PoolRequirements{Workspace: "/fixture"}}, f.dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,6 +310,17 @@ func TestEventPressureDisposableMixedWorkload(t *testing.T) {
 		t.Fatalf("fanout tail: %+v %v", rest, err)
 	}
 
+	if _, err = f.operator.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: repo, PoolEventID: poolEvent.EventID, Reason: "disposable pressure fixture done"}); err != nil {
+		t.Fatal(err)
+	}
+	all, err = f.operator.CollectionEventPressure(ctx, EventPressureQuery{Repo: repo})
+	if err != nil || all.Reservoirs.UnassignedPoolRequests != 0 {
+		t.Fatalf("closed pool counted as pending: %+v %v", all, err)
+	}
+	rest, err = f.publisher.EventFanout(ctx, EventFanoutQuery{Repo: repo, After: fanout.NextAfter, Limit: 2}, f.dest)
+	if err != nil || rest.Events[0].RecipientSnapshotState == "awaiting_assignment" {
+		t.Fatalf("closed pool awaiting assignment: %+v %v", rest, err)
+	}
 	if _, err = f.operator.SetCoordinationWaitsEnabled(ctx, WaitFeatureSetRequest{RequestID: uuid.NewString(), Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
