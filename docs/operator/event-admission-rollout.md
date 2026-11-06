@@ -44,10 +44,11 @@ checksum differs`), and a missing file cannot be inserted later.
 4. Restart the API, then the scheduler, supervisors and consumers.
 
 An older binary cannot keep running against the upgraded store. Its schema ceiling is
-the number of migrations it embeds; a build without 080 has a ceiling of 79. Every
-transaction it starts refuses with `SCHEMA_MISMATCH` (`database schema version N
-exceeds supported version 79`), and `cairn migrate` with it refuses with `database is
-newer than this binary`. Upgrade every process; a mixed fleet fails closed.
+the number of migrations it embeds; a build without 080 has a ceiling of 79. Any fresh
+command or API connection it opens, including `cairn migrate` and operator commands
+such as `coordination-review`, refuses when it opens the store, with exit code 4 and
+`SCHEMA_MISMATCH` (`database schema version 84 exceeds supported version 79`).
+Upgrade every process; a mixed fleet fails closed.
 
 Check what is actually running before you continue:
 
