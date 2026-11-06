@@ -3,9 +3,11 @@
 A closure reservation holds capacity for work that an accepted obligation still
 needs in order to finish: the reply a request delivery may receive, or the
 terminal notice a [coordination wait](operator/work-coordination.md#wait-for-an-exact-coordination-fact) owes its owner.
-Source support starts with migration 081. Publication, handling, retry,
-renewal, cancellation and recovery behave as before. Admission enforcement is
-unavailable; see [event pressure and admission policy](event-admission.md).
+Source support starts with migration 081. Handling, retry, renewal,
+cancellation and recovery are never gated by closure capacity. Closure limits
+are enforced only under an `enforce` admission policy, which needs schema 084
+and a completed reconciliation; see
+[event pressure and admission policy](event-admission.md).
 
 This describes source capability. It does not establish that a running API,
 scheduler or native integration has been upgraded. Check the installed CLI and
@@ -127,9 +129,10 @@ lock. Each step changes at most `limit` rows (default 500, at most 5000):
 3. adopt replies and wait notices that were published without consuming their
    reservation, by exact identity.
 
-A result with `more: true` recorded nothing; run another batch with a new
-request UUID. Completion is recorded only by a batch in which every step stayed
-under its limit. Requests that a consumer settled before migration 081 without
+Each batch commits its own work, so a result with `more: true` has already
+released, reserved and adopted the rows it reports. It does not record
+completion. Run another batch with a new request UUID; completion is recorded
+only by a batch in which every step stayed under its limit. Requests that a consumer settled before migration 081 without
 a reply are counted in `legacy_unreserved`, not reserved, because their
 publisher's intent is unknown; a late reply to one is ordinary work. A restore
 fence starts a new generation, so reconciliation must be completed again.
@@ -144,11 +147,13 @@ rows, never refuse, and keep no shadow counters or rate balances.
 
 Policy limits `max_closure_reserved` (collection) and
 `max_recipient_closure_reserved` (per recipient) apply only when a policy is in
-`enforce` mode, which the operator command cannot yet select. Under enforcement
-a new obligation is refused atomically with:
+`enforce` mode. `event-admission-configure` accepts `enforce` only on schema 084
+with a completed reconciliation for the current restore generation, and refuses
+otherwise with `FEATURE_UNAVAILABLE` or `CLOSURE_UNRECONCILED`. Under
+enforcement a new obligation is refused atomically with:
 
 - `CLOSURE_UNRECONCILED` when no completed reconciliation exists for the current
-  restore generation;
+  restore generation, for example after a restore fence;
 - `CLOSURE_RESERVE_FULL` when the collection or the recipient's closure
   capacity is full. The message names the dimension (`closure_collection` or
   `closure_recipient`) and the policy revision.
@@ -158,9 +163,14 @@ refused this way stays pending until its existing grace period ends. A wait
 notice whose wait predates its reservation stays pending in the outbox with
 `error_reason: closure_capacity` instead of publishing past the limit.
 
-Stopped-delivery notices take no closure reservation. Their handling under
-ordinary admission, including refusal without a committed notice, is not
-implemented yet; until then they are published as before.
+Stopped-delivery notices take no closure reservation; they are ordinary
+notices to the original publisher. Under enforcement each one passes ordinary
+admission before anything is inserted. A refusal rolls back the whole notice,
+including its source record, event, delivery and retry identity, and returns
+status `deferred_capacity` with the refused dimension. The delivery's
+fingerprint is not marked as notified, so a later `coordination-review` retries
+with the same deterministic request UUID. The unresolved original delivery
+remains the durable record; a notice is not guaranteed to be delivered.
 
 ## Disposable verification
 
