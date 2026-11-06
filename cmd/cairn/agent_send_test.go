@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,6 +39,27 @@ func sendAPIRefusal(w http.ResponseWriter, code string) {
 	w.WriteHeader(http.StatusForbidden)
 	_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": false,
 		"status": code, "message": "selected fixture refusal"})
+}
+
+func TestAgentSendLockedStateFileInitialSaveFailureStopsBeforeAPI(t *testing.T) {
+	for _, fault := range []string{"write", "sync"} {
+		t.Run(fault, func(t *testing.T) {
+			var calls atomic.Int32
+			args, journal := sendArgs(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				sendAPIRefusal(w, "AUTHORITY_DENIED")
+			})
+			f := injectLockedStateFault(t, journal, fault)
+			_, err := run(context.Background(), args, strings.NewReader("selected synthetic assignment"))
+			if !errors.Is(err, f.sentinel(fault)) {
+				t.Errorf("send lost initial journal-save failure: %v", err)
+			}
+			if got := calls.Load(); got != 0 {
+				t.Errorf("send made %d API calls after initial journal-save failure", got)
+			}
+			f.assertNoPublication(t, nil, nil)
+		})
+	}
 }
 
 func TestAgentSendRetryUsesOneSourceAndOnePublication(t *testing.T) {

@@ -15,6 +15,8 @@ import (
 // adjacent .lock file under syscall.Flock(LOCK_EX). Updates are written to a
 // sibling temporary file, chmodded 0600, synced, renamed over the target path,
 // and followed by a parent-directory sync.
+// Temporary I/O errors stop publication. A directory-sync error is returned
+// after the new state has already been published.
 type LockedStateFile[T any] struct {
 	Path               string
 	TempPattern        string
@@ -30,6 +32,14 @@ type LockedStateFile[T any] struct {
 	SizeLimitError     string
 	ParseErrorPrefix   string
 }
+
+// These I/O call sites are replaced only by serial tests and must stay unexported.
+var (
+	lockedStateWrite  = (*os.File).Write
+	lockedStateSync   = (*os.File).Sync
+	lockedStateClose  = (*os.File).Close
+	lockedStateRename = os.Rename
+)
 
 func (s LockedStateFile[T]) defaultState() T {
 	if s.Default != nil {
@@ -212,16 +222,16 @@ func (s LockedStateFile[T]) writeAtomic(value T) error {
 		tmp.Close()
 		return err
 	}
-	if _, err := tmp.Write(raw); err == nil {
-		err = tmp.Sync()
+	if _, err = lockedStateWrite(tmp, raw); err == nil {
+		err = lockedStateSync(tmp)
 	}
-	if closeErr := tmp.Close(); err == nil {
+	if closeErr := lockedStateClose(tmp); err == nil {
 		err = closeErr
 	}
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp.Name(), s.Path); err != nil {
+	if err := lockedStateRename(tmp.Name(), s.Path); err != nil {
 		return err
 	}
 	parent, err := os.Open(dir)
@@ -229,5 +239,5 @@ func (s LockedStateFile[T]) writeAtomic(value T) error {
 		return err
 	}
 	defer parent.Close()
-	return parent.Sync()
+	return lockedStateSync(parent)
 }
