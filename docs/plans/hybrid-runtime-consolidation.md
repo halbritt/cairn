@@ -11,6 +11,10 @@ current embedding worker contract. This document specifies a staged runtime
 consolidation; it does not claim that the Go lifecycle subcommands or the Rust
 semantic worker are implemented yet.
 
+The [organization, implementation sequence, and lead prompts](hybrid-runtime-implementation.md)
+provide the execution plan, including current-source corrections to the semantic
+cutover and command compatibility assumptions below.
+
 ## Summary and decision
 
 Cairn currently splits live host runtime behavior across a single statically

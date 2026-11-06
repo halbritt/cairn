@@ -26,6 +26,10 @@ moving live Python lifecycle and coordination logic into the single Go `cairn`
 binary while replacing the Python FastEmbed/ONNX semantic subprocesses with a
 standalone Rust worker behind the existing JSON-line boundary.
 
+The [organization and implementation plan](hybrid-runtime-implementation.md)
+assigns four delivery teams, defines the full migration and verification
+sequence, and includes launch prompts for leads, builders, and reviewers.
+
 ## Later changes to specific receipts
 
 These notes were added on 2026-09-25. They do not change the recorded

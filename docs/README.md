@@ -44,7 +44,8 @@ change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
 Design and acceptance plans: [work coordination design](plans/work-coordination-design.md),
 [work coordination implementation sequence](plans/work-coordination-implementation.md), and
-[hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md).
+[hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md), with its
+[organization, implementation plan, and lead prompts](plans/hybrid-runtime-implementation.md).
 
 ## Reference
 
