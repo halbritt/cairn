@@ -188,3 +188,17 @@ admission. Inspect the actual retained state and use the
 replacement requests, registrations or conversations to bypass an uncertain
 outcome. A UI reload after a restore fence is not proof that the physical restore
 and deletion reapplication were completed.
+
+Validate a selected candidate with the physical restore fixture:
+
+```sh
+python3 -B scripts/check_work_coordination_restore.py /path/to/cairn \
+  --native-manifest /path/to/native-package/manifest.json \
+  --report-directory /path/to/new-private-report-directory
+```
+
+The fixture creates its own disposable PostgreSQL cluster and uses a local
+scripted model endpoint. It restores an older backup containing waits and a real
+native notice hold, reapplies a later source deletion, and verifies both old
+admission refusal and fresh work in the resumed conversation. The report records
+the selected executable, native package, fixture inputs and cleanup outcome.
