@@ -56,14 +56,21 @@ current store-owned operator channel, which must match the schedule creator.
 | --- | --- |
 | `pending` | Waiting for due time or pool admission. No event exists yet. |
 | `pending` / `POOL_FULL` or `POOL_PAUSED` | Last attempt could not enter the pool; later ticks may retry within grace. |
+| `pending` / `EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` | An enforced [admission policy](event-admission.md) refused the attempt for capacity; later ticks may retry within grace. A fanout larger than a configured burst cannot succeed until the policy or publication changes. |
+| `pending` / `CLOSURE_UNRECONCILED` | The current restore generation has no completed closure reconciliation. An operator completes `event-closure-reconcile` before grace expires; see [closure reservations](closure-reservations.md). |
+| `pending` / `RATE_UNRECONCILED` | A retained rate bucket's restore generation does not match the store's. The restore fence restamps every bucket, so this is an invariant failure needing operator investigation; waiting, policy edits and closure reconciliation do not repair retained bucket state, and no rate reconcile operation exists. |
 | `fired` | Event and deliveries or pool queue committed; `event_id` equals `occurrence_id`. |
 | `skipped` / `misfire` | Database time exceeded due time plus grace. No catch-up event. |
 | `skipped` / `NOT_FOUND`, `DESTINATION_PROHIBITED`, `GROUP_EXPIRED`, `GROUP_EMPTY` or `GROUP_LIMIT` | Current source, causal parent, destination or response-group snapshot could not be used. |
 | `skipped` / `restore_fenced` | Restore may have lost later execution history; review before creating new intent. |
 | `cancelled` / `operator_cancelled` | Cancellation committed before firing. |
 
-Pool-blocked occurrences rotate behind unchecked due work, preserving accepted
-schedules without starving unrelated due publications. Unexpected database errors
+Pool-blocked and admission-refused occurrences rotate behind unchecked due work,
+preserving accepted schedules without starving unrelated due publications. Each
+refused attempt rolls back only its own publication; other due occurrences in
+the same tick still fire. Refusal counters are retained after the tick commits;
+when that diagnostic write itself fails, the tick result carries a warning and
+the scheduler keeps draining accepted work. Unexpected database errors
 roll back the entire bounded tick and propagate. The service retries after exit;
 it does not classify infrastructure failure as a skipped occurrence.
 

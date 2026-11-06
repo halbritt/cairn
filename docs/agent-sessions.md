@@ -95,7 +95,10 @@ revision. Publication locks the selected session, checks those fields and curren
 presence, and creates the event/delivery in one transaction. A changed context,
 replaced execution, expiry, restore or inaccessible recipient returns
 `STALE_RESOLUTION` with no event. Resolve again for a new intended publication.
-A shareable event cannot retain a local-only session resolution.
+A shareable event cannot retain a local-only session resolution. Under an
+`enforce` [admission policy](event-admission.md), publication can also refuse
+with a typed capacity or rate reason; retry an uncommitted refusal with the same
+request UUID and unchanged intent rather than re-resolving.
 
 Retain the original resolution and publication request UUID when the response is
 uncertain. An exact retry returns the committed event and original recipient,

@@ -68,6 +68,19 @@ timestamps are not pagination cursors.
 
 Direct publication creates one recipient delivery. Topic publication creates one
 for each active subscriber at that transaction's position. Each is independent.
+When a collection has an `enforce`
+[admission policy](event-admission.md), publication also evaluates fanout,
+recipient, producer/recipient, collection and rate limits in the same
+transaction. An over-limit publication is refused whole with a typed reason
+(`EVENT_ADMISSION_REFUSED`, `CLOSURE_RESERVE_FULL`, `CLOSURE_UNRECONCILED` or
+`RATE_UNRECONCILED`) naming the dimension and policy revision; there is no
+partial delivery, implicit splitting or silent discard. A retry of a committed
+publication returns the original event without charging again; an uncommitted
+capacity refusal can be retried with the same request UUID and unchanged intent.
+A request or wait additionally reserves [closure capacity](closure-reservations.md)
+for its expected reply or terminal notice, so accepted work can finish at
+saturation. Disabled and observe policies never refuse.
+
 Subscriptions are durable and their changes retain actor/time/history. New
 subscriptions receive future events only. Unsubscribe stops future fanout and
 preserves already-addressed work. Resubscribe does not replay old events.
@@ -185,6 +198,11 @@ completion arguments rather than inferring policy from the assignment scope.
 
 ## Delivery, leases and completion
 
+Handling is never gated by admission capacity: `ack`, `complete`, `retry`,
+`renew`, cancellation and recovery remain available when fresh-work capacity or
+rate budgets are exhausted, and a validated reply that consumes its
+[closure reservation](closure-reservations.md) is never refused for capacity.
+
 `inbox next` atomically claims one pending or expired delivery. It returns the
 event, delivery UUID, a fresh lease UUID, lease deadline and attempt count. The
 default lease is five minutes; callers can choose 1–3600 seconds and renew it.
@@ -261,6 +279,9 @@ Counters expose committed publications, recipient deliveries, handled/ignored/
 failed totals, pending and leased backlog, expired leases, redelivery attempts,
 and oldest outstanding delivery age within the caller's visible scope. Publish
 errors are returned directly; there is no pending broker-publication queue.
+`event-pressure`, `event-fanout` and `event-admission-preview` report queue
+reservoirs, your own publications' fanout and a read-only admission forecast;
+see [event pressure and admission policy](event-admission.md).
 
 ## Agent interface
 

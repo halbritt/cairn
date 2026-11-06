@@ -55,13 +55,23 @@ Publication records a queued request with no delivery. An eligible slot's claim
 creates its first delivery, wake attempt and assignment in one transaction.
 The original event destination remains the pool. Reusing a publication or claim
 request UUID after a lost response returns the original committed result.
-`POOL_FULL` refuses admission without creating an event. No eligible slot leaves
-accepted work queued.
+`POOL_FULL` refuses admission without creating an event. Under an `enforce`
+[admission policy](event-admission.md), pool publication also charges collection
+capacity and producer rate and reserves [closure capacity](closure-reservations.md)
+for the eventual reply; an over-limit request refuses whole with a typed reason
+instead of queueing. When no slot is eligible, accepted work stays queued.
 
 The pool gives the least recently served eligible publisher the next turn, then
 takes that publisher's oldest request. Between that candidate and existing slot
 deliveries, the older event wins. Each slot has one unfinished wake attempt.
-Claims respect configured launch spacing.
+Claims respect configured launch spacing. A claim scans at most 100 eligible
+publisher candidates. Assignment transfers the queued request's existing
+collection charge and adds only the newly selected recipient's delivery charge,
+checked against both the recipient and the producer/recipient dimensions using
+the stored publisher, so accepted work is never charged twice. A publisher whose assignment the policy
+refuses rotates to the back while its request and reply reservation stay
+pending; a claim result with `attempt: null` means no currently admissible
+assignment, not an empty pool.
 
 ## Availability and recovery
 
@@ -108,6 +118,10 @@ handling. Explicit completion and a successful process exit do not establish
 independent task acceptance. Native conversation UUID linkage uses the existing
 [wake contract](agent-wakeups.md).
 
-These contracts do not provide scheduled publication, deadlines, cancellation,
-automatic idle-session wakeups or response groups. Those remain in the
+Related contracts live in their own documents:
+[one-shot scheduling](event-scheduling.md) publishes to a pool at a future time;
+[request controls](request-controls.md) add admission expiry, task deadlines and
+cancellation; [response groups](response-groups.md) collect replies; and
+[automated wakeups](agent-wakeups.md) cover existing-session delivery. Remaining
+coordination work is tracked in the
 [coordination v1 plan](plans/agent-coordination-v1.md).

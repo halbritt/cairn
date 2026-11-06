@@ -30,8 +30,10 @@ Notices, notes and replies create no reservation.
 A reservation is consumed only by the exact reply: one published by the
 original delivery's consumer, addressed to the original publisher, carrying the
 request's correlation ID, and arriving before any declared group deadline or
-task deadline. A group reservation is consumed only by a `response` kind, as the
-response group counts it. A reply with another sender, causation, correlation
+task deadline. A `response` or an explicit `failure` report meeting those
+checks consumes a request or pool reservation. A group reservation is consumed
+only by a `response` kind while the group is still open, as the response group
+counts it. A reply with another sender, causation, correlation
 or destination, a duplicate, or a late reply is ordinary work. The `response`
 kind alone earns nothing. A wait reservation is consumed when the wait outbox
 publishes its notice.

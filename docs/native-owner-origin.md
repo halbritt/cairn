@@ -91,7 +91,11 @@ can admit a quiet batch. Store checks signature, generation, and exact identity
 again at admission, and input UUID reuse cannot admit another batch. A new root
 requires a signature at most 30 seconds old and at most 5 seconds in the future.
 An exact existing-root retry retains its original decision and cutoff after that
-window; it cannot admit notices that arrived later.
+window; it cannot admit notices that arrived later. Under an enforced
+[admission policy](event-admission.md), a queued quiet notice was charged when
+it was published; admitting, continuing or flushing it transfers that existing
+charge without a fresh capacity gate, so accepted quiet work still drains after
+limits are lowered.
 
 Origin JSON or matching process ancestry cannot authenticate a direct bearer
 claim or manually invoked hook. Store requires a valid signature for the exact

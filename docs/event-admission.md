@@ -62,6 +62,9 @@ distinct logical work items.
 ## Select an observation policy
 
 The schema is [event-admission-policy.schema.json](event-admission-policy.schema.json).
+The schema is preliminary validation: any limit requires a declared workload,
+and the API additionally enforces a 2000 UTF-8 **byte** cap on the workload text,
+while the schema's `maxLength` counts Unicode characters.
 An absent policy has revision 0, disabled mode and no implicit numeric defaults.
 An operator sets a policy with `event-admission-configure`, an explicit collection,
 `expected_revision`, and a stable `request_id`. A committed retry with identical

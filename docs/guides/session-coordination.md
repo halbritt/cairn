@@ -98,3 +98,9 @@ Existing sessions receive native delivery at supported host boundaries. Urgent
 notices skip routine deferral; they do not guarantee immediate interruption of a
 running turn. Fresh-worker launch requires a configured
 [wake supervisor](../agent-wakeups.md) or [pool](../worker-pools.md).
+
+A collection with an enforced [admission policy](../event-admission.md) can
+refuse a new publication with a typed capacity or rate reason. Retry an
+uncommitted refusal with the same request UUID and unchanged intent after the
+suggested backoff; handling, replies and other accepted-work closure are never
+gated by that capacity.

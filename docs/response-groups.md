@@ -27,6 +27,13 @@ correlation alone never identifies a group member or a reply's causal request.
 The group contains the 1–100 deliveries actually created by that publication.
 Later subscription changes cannot add or remove members.
 
+Publication also reserves [closure capacity](closure-reservations.md) for every
+snapshotted member's expected reply, so counted responses are never refused for
+capacity under an enforced [admission policy](event-admission.md). Terminal
+group closure releases the unconsumed reservations; a reply arriving after
+closure is ordinary work. Under enforcement, a grouped request whose member
+reservations cannot all be reserved refuses whole with `CLOSURE_RESERVE_FULL`.
+
 `GROUP_EMPTY`, `GROUP_LIMIT` and `GROUP_EXPIRED` refuse empty snapshots, more than
 100 recipients and an already-passed response deadline. The entire publication
 rolls back, including fanout. An identical successful publication retry returns

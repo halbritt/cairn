@@ -258,5 +258,8 @@ This recipe builds on the compact notice and response envelopes (CAIRN-216), rou
 urgency and deferral (CAIRN-220) and bounded notice batches (CAIRN-221). It also builds on
 the work view, artifacts, waits, quiet notices and advice review from CAIRN-279 through
 CAIRN-284. The token-efficiency rollout gate (CAIRN-227) remains in force; this recipe
-does not enable its optional opt-ins. Event admission limits are separate work described
-in [event pressure and admission](../event-admission.md).
+does not enable its optional opt-ins. Event admission limits are a separate
+contract described in [event pressure and admission](../event-admission.md);
+under an enforced policy the grouped request also reserves
+[closure capacity](../closure-reservations.md) for each member's reply and the
+wait's terminal notice, and those protected closures still drain at saturation.

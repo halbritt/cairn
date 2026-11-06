@@ -238,5 +238,8 @@ structure.
 The [verification report](verification/delivery-health-2026-09-27.md) records
 the inspected commits, executed checks, cross-review corrections and rollout
 limits. See [stopped-session backlog](stopped-session-backlog.md) for stranded
-inbox reporting and opt-in publisher notifications when a session stops.
+inbox reporting and opt-in publisher notifications when a session stops. For
+queue pressure and capacity refusals under an admission policy—work that was
+never admitted, as opposed to admitted work that stalled—use
+[event pressure and admission diagnostics](event-admission.md) instead.
 

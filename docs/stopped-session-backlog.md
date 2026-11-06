@@ -139,6 +139,18 @@ the following invariants:
 - **Non-mutation of original work**: Publishing a notification never claims,
   acknowledges, fails, reissues, releases holds on, forwards, or clears the
   original delivery, and never restarts or switches the stopped session.
+- **Ordinary admission, no reservation**: Each notice is published by the
+  trusted operator channel principal, charging that principal's producer and
+  owner rate buckets, and takes no [closure reservation](closure-reservations.md).
+  Under an `enforce` [admission policy](event-admission.md) a capacity or
+  reconciliation refusal rolls back the whole notice—source record, event,
+  delivery and retry identity—and returns `status: "deferred_capacity"` with the
+  refused dimension. The delivery's fingerprint is not marked notified, so a
+  later `coordination-review` retries with the same deterministic request UUID.
+  If retaining the refusal counter itself fails, the deferral still succeeds
+  with a structured warning and the batch keeps its earlier results and
+  fingerprints. The unresolved original delivery remains the durable record; a
+  notice is not guaranteed to be delivered.
 
 ## Explicit expiry
 

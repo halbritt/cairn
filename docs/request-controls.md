@@ -79,6 +79,9 @@ as a failed delivery with control time and store-owned caller attribution.
 Operator-selected reasons are available only in local control/review output;
 ordinary agent status omits the reason. An unassigned pool request records the
 same decision without creating a delivery and no longer consumes pending capacity.
+Each of these terminals also releases the request's
+[closure reservation](closure-reservations.md), so a withdrawn or expired
+request stops holding reply capacity.
 
 The supervisor polls `wake-control` approximately once per second. A failed
 control read stops the worker through the existing cleanup path. Worker context
@@ -202,7 +205,9 @@ marker, and its independent `/proc` ledger checks for false release.
 
 `cairn request-control-sweep` accepts `{"repo":"/projects/shared-memory"}`.
 One transaction processes at most 100 unassigned pool requests, 100 deliveries
-and 100 due [response groups](response-groups.md).
+and 100 due [response groups](response-groups.md). It also releases at most 100
+[closure reservations](closure-reservations.md) whose declared task deadline has
+passed although their delivery was already settled.
 The scheduler service runs this sweep before each scheduling tick. Claim paths
 also refuse overdue work, so a stopped scheduler does not permit late admission.
 Terminal bookkeeping can lag while the scheduler is stopped or backlogged.
