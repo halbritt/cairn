@@ -549,7 +549,7 @@
       if (!coordinationStillSelected(identity, sequence)) return;
       if (data.schema !== "cairn.work-coordination-view/1" || data.collection !== identity.collection
         || data.binding_id !== identity.binding || data.plane_item_uuid !== identity.item
-        || !Number.isSafeInteger(data.restore_generation) || data.restore_generation < 1
+        || !Number.isSafeInteger(data.restore_generation) || data.restore_generation < 0
         || !Number.isFinite(Date.parse(data.observed_at))) throw new Error("Unexpected coordination identity or observation");
       for (const panel of [data.waits, data.quiet_notices]) {
         if (!panel || !Array.isArray(panel.items) || typeof panel.feature_status !== "string"

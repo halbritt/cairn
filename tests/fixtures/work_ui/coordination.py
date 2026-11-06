@@ -93,6 +93,7 @@ def coordination_fixture(Base, uid, dump, require):
                     and body["plane_item_uuid"] == self.item_id, "coordination response identity mismatch")
             require(set(body) == {"schema", "collection", "binding_id", "plane_item_uuid", "observed_at",
                                  "restore_generation", "waits", "quiet_notices"}, "unexpected top-level coordination fields")
+            require(body["restore_generation"] == 0, "fresh disposable coordination view must accept initial generation zero")
             forbidden = {"response_ref", "reserved_source_record_uuid", "owner_principal", "profile_binding_id",
                          "source_body", "body", "title", "payload", "response_text", "owner_input_attestation", "native_turn_id"}
             def no_private_fields(value):
