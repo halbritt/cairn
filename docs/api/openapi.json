@@ -2370,6 +2370,373 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.CiteRequest"
       },
+      "core.CloseReplyObligationItem": {
+        "properties": {
+          "expected_revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "reservation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "reservation_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationItem"
+      },
+      "core.CloseReplyObligationItem.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reservation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationItem"
+      },
+      "core.CloseReplyObligationsRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/core.CloseReplyObligationItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "reason",
+          "request_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationsRequest"
+      },
+      "core.CloseReplyObligationsRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/core.CloseReplyObligationItem.accepted"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationsRequest"
+      },
+      "core.CloseReplyObligationsResult": {
+        "properties": {
+          "reservations": {
+            "items": {
+              "$ref": "#/components/schemas/core.ClosureReservation"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reservations"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationsResult"
+      },
+      "core.ClosureCounts": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "delivered_outstanding": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "legacy": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "legacy_unreserved": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outstanding": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reserved": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restore_generation": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available",
+          "restore_generation"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ClosureCounts"
+      },
+      "core.ClosureReservation": {
+        "properties": {
+          "consumed_delivery_id": {
+            "type": "string"
+          },
+          "consumed_event_id": {
+            "type": "string"
+          },
+          "consumed_redacted": {
+            "type": "boolean"
+          },
+          "correlation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expected_sender": {
+            "type": "string"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "obligation": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "release_reason": {
+            "type": "string"
+          },
+          "released_by": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "request_delivery_id": {
+            "type": "string"
+          },
+          "request_event_id": {
+            "type": "string"
+          },
+          "reservation_id": {
+            "type": "string"
+          },
+          "restore_generation": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "transitioned_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "wait_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "legacy",
+          "obligation",
+          "recipient",
+          "repo",
+          "reservation_id",
+          "restore_generation",
+          "revision",
+          "state",
+          "transitioned_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ClosureReservation"
+      },
+      "core.ClosureReservationPage": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/core.ClosureCounts"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "next_after": {
+            "type": "string"
+          },
+          "reservations": {
+            "items": {
+              "$ref": "#/components/schemas/core.ClosureReservation"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "counts",
+          "more",
+          "reservations",
+          "scope"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ClosureReservationPage"
+      },
+      "core.ClosureReservationQuery": {
+        "properties": {
+          "after": {
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "obligation": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ClosureReservationQuery"
+      },
+      "core.ClosureReservationQuery.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "obligation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ClosureReservationQuery"
+      },
       "core.CompileRequest": {
         "properties": {
           "advisory_conflicts": {
@@ -18935,6 +19302,324 @@
         "x-cairn-go-types": {
           "request": "github.com/halbritt/cairn/core.EventAdmissionPreviewRequest",
           "response": "github.com/halbritt/cairn/core.EventAdmissionPreview"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_events.go"
+      }
+    },
+    "/v1/event-close-replies": {
+      "post": {
+        "operationId": "event-close-replies",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "items": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/core.CloseReplyObligationItem.accepted"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CloseReplyObligationsRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.CloseReplyObligationsResult"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.CloseReplyObligationsRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.CloseReplyObligationsRequest",
+          "response": "github.com/halbritt/cairn/core.CloseReplyObligationsResult"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_events.go"
+      }
+    },
+    "/v1/event-closures": {
+      "post": {
+        "operationId": "event-closures",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "obligation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ClosureReservationQuery"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/core.ClosureReservationPage"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.ClosureReservationQuery"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.ClosureReservationQuery",
+          "response": "github.com/halbritt/cairn/core.ClosureReservationPage"
         },
         "x-cairn-local-roles": [
           "agent",

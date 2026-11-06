@@ -11,6 +11,8 @@ var agentEventOperations = []OperationSpec{
 	bindDestination(OperationSpec{Name: "event-fanout", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).EventFanout),
 	bindDestination(OperationSpec{Name: "event-pressure", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).EventPressure),
 	bindDestination(OperationSpec{Name: "event-admission-preview", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).PreviewEventAdmission),
+	bindDestination(OperationSpec{Name: "event-closures", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).ClosureReservations),
+	bindDestination(OperationSpec{Name: "event-close-replies", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).CloseReplyObligations),
 	bindDestination(OperationSpec{Name: "event-group", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).ResponseGroup),
 	bindDestination(OperationSpec{Name: "event-groups", SourceFile: "agent_events.go", RemoteAllowed: true, RetryClass: "read"}, (*core.Store).ResponseGroups),
 	bindDestination(OperationSpec{Name: "worker-register", SourceFile: "agent_events.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).RegisterWorkerSlot),

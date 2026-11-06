@@ -43,6 +43,8 @@ var eventCommandOperations = map[string]string{
 	"event-stats":             "event-metrics",
 	"response-group":          "event-group",
 	"response-groups":         "event-groups",
+	"closures":                "event-closures",
+	"close-replies":           "event-close-replies",
 }
 
 var agentSubcommands map[string]agentSubcommandSpec

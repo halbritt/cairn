@@ -292,7 +292,8 @@ def discover_cli_schema(repo_root):
         "event-pressure", "event-fanout", "event-admission-preview",
         "event-pressure-collection", "event-fanout-collection", "event-admission-policy",
         "event-admission-configure", "event-admission-preview-collection",
-        "event-admission-refusals",
+        "event-admission-refusals", "closures", "close-replies",
+        "event-closures-collection", "event-closure-close", "event-closure-reconcile",
     ])
 
     subcommands = {

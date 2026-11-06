@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,10 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   event-admission-preview (--to PRINCIPAL | --topic TOPIC) (observe-only forecast)
   response-group [--after POSITION] [--limit N] EVENT_UUID
   response-groups [--state open|collected|partial|incomplete] [--after POSITION] [--limit N]
+  closures [--state reserved|delivered|released] [--obligation KIND] [--after-reservation UUID] [--limit N]
+      reply and wait-notice reservations whose recipient is your inbox; counts are absent until reconciled
+  close-replies --request-id UUID --reason TEXT RESERVATION_UUID:REVISION...
+      release reply obligations you no longer expect (no open group or waiting wait); all or nothing
 
 Put flags before positional arguments. Source references accept UUID or cairn:UUID.
 Read the exact source with agent history using the returned ref.record_id and ref.version.
@@ -62,7 +67,7 @@ Ignored/failed dispositions require unsupported_kind, source_unavailable or proc
 
 func isEventCommand(command string) bool {
 	switch command {
-	case "event-fanout", "event-pressure", "event-admission-preview", "publish", "notice-flush", "notice-pending", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
+	case "closures", "close-replies", "event-fanout", "event-pressure", "event-admission-preview", "publish", "notice-flush", "notice-pending", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
 		return true
 	}
 	return false
@@ -124,7 +129,10 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
 	noticeDelivery := f.String("notice-delivery", "", "quiet notice delivery strategy (e.g. next_organic_turn)")
 	noticeExpiresAt := f.String("notice-expires-at", "", "expiration instant for quiet notice (RFC3339)")
-	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete)")
+	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete); closure state filter (reserved|delivered|released)")
+	obligation := f.String("obligation", "", "closure obligation filter (request_reply|group_reply|pool_reply|wait_notice)")
+	afterReservation := f.String("after-reservation", "", "exclusive closure reservation UUID cursor")
+	reason := f.String("reason", "", "reason recorded with an explicit close")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return commandHelp(eventHelp), nil
@@ -169,6 +177,10 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		allowed += "after limit "
 	case "response-groups":
 		allowed += "repo state after limit "
+	case "closures":
+		allowed += "repo state obligation after-reservation limit "
+	case "close-replies":
+		allowed += "repo request-id reason "
 	}
 	var unsupported string
 	f.Visit(func(option *flag.Flag) {
@@ -210,7 +222,11 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "publish", "notice-flush", "ack", "complete", "retry", "renew", "event-status", "response-group":
 		expect = 1
 	}
-	if f.NArg() != expect {
+	if command == "close-replies" {
+		if f.NArg() < 1 || f.NArg() > 100 {
+			return nil, invalid("close-replies takes 1 to 100 RESERVATION_UUID:REVISION arguments")
+		}
+	} else if f.NArg() != expect {
 		return nil, invalid("unexpected positional arguments; use --help")
 	}
 	if command == "publish" || command == "notice-flush" || command == "subscribe" || command == "unsubscribe" || command == "ack" || command == "complete" {
@@ -406,6 +422,21 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			return nil, invalid("EVENT_UUID is required")
 		}
 		req = core.ResponseGroupQuery{EventID: eventID, After: *after, Limit: *limit}
+	case "closures":
+		operation = "event-closures"
+		req = core.ClosureReservationQuery{Repo: *repo, State: *state, Obligation: *obligation, After: *afterReservation, Limit: *limit}
+	case "close-replies":
+		operation = "event-close-replies"
+		items := make([]core.CloseReplyObligationItem, 0, f.NArg())
+		for _, arg := range f.Args() {
+			id, rev, ok := strings.Cut(arg, ":")
+			revision, err := strconv.Atoi(rev)
+			if !ok || err != nil || revision < 1 {
+				return nil, invalid("each argument must be RESERVATION_UUID:REVISION with a positive revision")
+			}
+			items = append(items, core.CloseReplyObligationItem{ReservationID: id, ExpectedRevision: revision})
+		}
+		req = core.CloseReplyObligationsRequest{RequestID: *request, Repo: *repo, Reason: *reason, Items: items}
 	case "response-groups":
 		operation = "event-groups"
 		st := strings.TrimSpace(*state)

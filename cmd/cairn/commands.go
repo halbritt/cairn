@@ -30,6 +30,7 @@ Everyday commands:
   work --help (work features and coordination; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   event-pressure | event-fanout | event-admission-preview (observe event load; use --help)
+  closures | close-replies (reply and wait-notice reservations; use --help)
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
   version | agent [--token-file FILE] [--socket PATH] version
@@ -65,6 +66,7 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   event-admission-policy event-admission-configure event-pressure-collection event-fanout-collection event-admission-preview-collection event-admission-refusals (local operator; see docs/event-admission.md)
+  event-closures-collection event-closure-close event-closure-reconcile (local operator; see docs/closure-reservations.md)
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)
   coordination-review event-reissue native-hold-release stopped-inbox-expire (local operator recovery; see docs/event-recovery.md)
   delivery-alerts (local operator; owner alerts for starved online sessions; see docs/delivery-health.md)
