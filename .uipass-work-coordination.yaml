@@ -30,6 +30,26 @@ surfaces:
   stale:
     states:
       failed_refresh: {route: /, ready: '.work-card >> nth=0'}
+  freshness:
+    states:
+      crossed_two_minutes: {route: /, ready: '#staleness-indicator.stale'}
+  freshness_delayed:
+    states:
+      delayed_fresh_observation: {route: /, ready: '#staleness-indicator.stale'}
+  presence:
+    states:
+      timestamped_execution:
+        route: /
+        ready: '.session-expiry'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  disabled:
+    states:
+      retained_project:
+        route: /
+        ready: '#detail-admission'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
   auth_rejected:
     states:
       hidden_external_fields: {route: /, ready: '#auth-alert'}
@@ -85,3 +105,8 @@ surfaces:
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '#artifact-link-revision'}
+  artifact_races:
+    states:
+      unaffected_revision:
+        route: /
+        ready: '#artifact-revision-section'

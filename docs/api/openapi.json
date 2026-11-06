@@ -28695,6 +28695,11 @@
     },
     {
       "http_status": 409,
+      "code": "CONFLICT",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
       "code": "DELIVERY_ACTIVE",
       "source": "serveJSON"
     },
@@ -28791,6 +28796,11 @@
     {
       "http_status": 409,
       "code": "POOL_PAUSED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "PROJECT_DISABLED",
       "source": "serveJSON"
     },
     {
@@ -28990,6 +29000,7 @@
     "POLICY_UNENFORCEABLE",
     "POOL_FULL",
     "POOL_PAUSED",
+    "PROJECT_DISABLED",
     "PROTOCOL_UNSUPPORTED",
     "PURGE_UNRECORDED",
     "QUEUE_FULL",

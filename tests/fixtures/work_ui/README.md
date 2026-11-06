@@ -24,8 +24,9 @@ and binary hash. Neither checkout is modified. VCS stamping is disabled for the
 private copy; the report owns its build provenance. Each visual state uses
 a real server and collection. The script copies the checked-in UIPass manifest
 into the private output fixture tree and supplies a synthetic login cookie.
-Declared storage paths stay within that tree. It does not intercept Cairn HTTP
-responses or insert browser-side data to make an unfinished feature pass.
+Declared storage paths stay within that tree. It does not insert synthetic Cairn
+responses or browser-side data to make an unfinished feature pass. Explicit
+response-delay/loss cases forward the real handler's response or drop it.
 Use `--retain-binary` when another disposable proof needs the exact same build;
 it retains `cairn` in the private output directory and records that path and hash.
 For a readonly source capture, pass `--candidate-manifest /path/to/capture.json`.
@@ -44,8 +45,27 @@ missing, nonpositive and noncurrent revisions without changing the exact row.
 `review.md` separates these results from the screenshot inspection that the
 reviewing agent must perform. Screenshots and credentials are never committed.
 
-The stale fixture ages only the disposable refresh observation timestamps to
-exercise the clock boundary, then performs a real failing refresh. The unavailable fixture
+The stale fixture ages only the disposable refresh observation timestamps, then
+performs a real failing refresh. The freshness fixture starts with a successful
+snapshot 116 seconds old and waits for the real server and browser to cross the
+two-minute boundary. It requires a new HTTP read reporting stale data, the stale
+badge on both viewports, an unchanged retained snapshot and no Plane invocation.
+It does not replace the browser clock. The delayed-freshness case delivers an
+actual fresh HTTP response only after its snapshot passes two minutes, then
+requires another real read to correct the display.
+The `freshness_read_failed` check drops one genuine boundary-read response and
+requires an unknown-freshness label with the retained timestamp/cards and a read
+error. Its desktop/phone screenshots come from the affected pages. The report
+explicitly excludes this page-local fault from UIPass, whose separate navigation
+would read a different state; inspect both retained fault screenshots.
+The presence case stages only the actual execution's disposable expiry timestamp,
+then verifies the qualified status changes at that deadline. It checks the exact
+expiry and Plane assignee fields, preserves focused inline and note/association
+drafts across the timer and a real blocker-change detail read, and verifies that
+the browser did not change session/event/delivery rows. The disabled-project
+case uses the real disable command and checks retained details with unavailable
+refresh/new-association/annotation actions.
+The unavailable fixture
 publishes and associates an actual request, then forgets its payload through the
 operator preview/forget contract. Every other work transition uses the public
 CLI or browser. These cases do not establish native delivery or model behavior.
@@ -64,6 +84,9 @@ the board, progress, blockers and coordination projections described above.
 Scope selection is explicit in `report.json`. Required routes and commands in
 either scope fail when absent. Run WC02 against a candidate containing its Store,
 CLI and operator HTTP handlers, with the matching browser files.
+For a targeted regression check, repeat `--state` for each state to execute,
+such as `--state freshness --state stale`. The report lists all excluded states;
+a targeted pass does not establish the omitted workflows.
 
 The artifact scope registers all four kinds through real browser forms on both
 viewports, links and removes exact revisions, checks persisted state through the
@@ -79,3 +102,7 @@ selected after a newer one is registered. Separate states cover empty links,
 forgotten result metadata and disabled artifact admission with retained reads,
 unlink and purge. UIPass captures the item links, history and exact-revision
 surfaces; the agent must also inspect the retained scrolled screenshots.
+Current-read cases purge a source through the real CLI and require a refused
+impact read to clear old metadata. Another case forwards a real purge reply only
+after browser Back selects a different revision; that reply must not replace the
+new view. A malformed trailing JSON body must refuse without registering a row.

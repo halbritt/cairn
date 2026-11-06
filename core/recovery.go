@@ -77,17 +77,26 @@ type RecoveryWorkExclusion struct {
 	Revision  int64     `json:"revision"`
 }
 
+type RecoveryWorkArtifactPurgeFence struct {
+	Collection   string    `json:"collection"`
+	ArtifactID   uuid.UUID `json:"artifact_id"`
+	CanonicalKey string    `json:"canonical_key"`
+	PurgedBy     string    `json:"purged_by"`
+	PurgedAt     time.Time `json:"purged_at"`
+}
+
 type RecoveryRecord struct {
-	Schema         string                  `json:"schema"`
-	RootGrantID    string                  `json:"root_grant_id"`
-	CapturedAt     time.Time               `json:"captured_at"`
-	Audit          []AuditMember           `json:"audit"`
-	Withdrawals    []RecoveryWithdrawal    `json:"withdrawals"`
-	Contexts       []RecoveryContext       `json:"contexts"`
-	WorkExclusions []RecoveryWorkExclusion `json:"work_exclusions,omitempty"`
-	WorkPurges     []RecoveryWorkExclusion `json:"work_purges,omitempty"`
-	Segment        *RecoverySegment        `json:"segment,omitempty"`
-	SHA256         string                  `json:"sha256,omitempty"`
+	Schema                  string                           `json:"schema"`
+	RootGrantID             string                           `json:"root_grant_id"`
+	CapturedAt              time.Time                        `json:"captured_at"`
+	Audit                   []AuditMember                    `json:"audit"`
+	Withdrawals             []RecoveryWithdrawal             `json:"withdrawals"`
+	Contexts                []RecoveryContext                `json:"contexts"`
+	WorkExclusions          []RecoveryWorkExclusion          `json:"work_exclusions,omitempty"`
+	WorkPurges              []RecoveryWorkExclusion          `json:"work_purges,omitempty"`
+	WorkArtifactPurgeFences []RecoveryWorkArtifactPurgeFence `json:"work_artifact_purge_fences,omitempty"`
+	Segment                 *RecoverySegment                 `json:"segment,omitempty"`
+	SHA256                  string                           `json:"sha256,omitempty"`
 }
 type RecoveryGap struct {
 	Kind      string `json:"kind"`
@@ -358,7 +367,7 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
  NOT EXISTS(SELECT 1 FROM cairn.deletion_request WHERE record_id=$1)
  OR EXISTS(SELECT 1 FROM cairn.record_version WHERE record_id=$1 AND payload_deleted_by IS NULL)
  OR EXISTS(SELECT 1 FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 AND r.payload_deleted_by IS NULL)
- OR EXISTS(SELECT 1 FROM cairn.mutation_request WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND payload_deleted_by IS NULL AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text)))`, w.SubjectID).Scan(&unsafe)
+ OR EXISTS(SELECT 1 FROM cairn.mutation_request WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede','work-artifact-register','work-artifact-link','work-artifact-unlink') AND payload_deleted_by IS NULL AND (jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text)) OR jsonb_path_exists(response,'$.**.cairn_record_id ? (@ == $id)',jsonb_build_object('id',$1::text)) OR (operation = 'work-artifact-unlink' AND EXISTS (SELECT 1 FROM cairn.work_artifact a WHERE a.cairn_record_id = $1::uuid AND jsonb_path_exists(response, '$.**.artifact_id ? (@ == $id)', jsonb_build_object('id', a.artifact_id::text))))))`, w.SubjectID).Scan(&unsafe)
 	if err != nil {
 		return "", err
 	}
@@ -426,12 +435,9 @@ func (s *Store) inspectRecoveryTx(ctx context.Context, tx pgx.Tx, record Recover
 			SELECT 1 FROM cairn.work_association_history h JOIN cairn.work_association a ON h.association_id = a.association_id WHERE a.binding_id = $1 AND h.rationale ILIKE $2
 			UNION ALL
 			SELECT 1 FROM cairn.mutation_request WHERE operation LIKE 'work-%' AND response IS NOT NULL AND response->>'binding_id' = $1::text
-			AND (response->>'body' ILIKE $2 OR response->>'rationale' ILIKE $2 OR response->>'title' ILIKE $2)
+			  AND (response->>'body' ILIKE $2 OR response->>'text' ILIKE $2 OR response->>'rationale' ILIKE $2 OR response->'item'->>'title' ILIKE $2)
 		)`, we.BindingID, patternParam).Scan(&unredacted)
-		if err != nil {
-			return report, err
-		}
-		if unredacted {
+		if err == nil && unredacted {
 			if len(report.Gaps) < maxReportedDetails {
 				report.Gaps = append(report.Gaps, RecoveryGap{Kind: "work_exclusion", SubjectID: we.BindingID.String(), Reason: "METADATA_EXCLUSION_MISSING"})
 			}

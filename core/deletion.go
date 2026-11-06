@@ -191,7 +191,7 @@ func excludeDeletionPayloads(ctx context.Context, tx pgx.Tx, id, recordID string
 	}
 	// Include ordinary revision helpers and supersession: their cached results
 	// carry record IDs and must not survive a later forgetting of either record.
-	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text))`, id, recordID)
+	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1), response=CASE WHEN operation LIKE 'work-artifact-%' THEN NULL ELSE response END WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede','work-artifact-register','work-artifact-link','work-artifact-unlink') AND (jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text)) OR jsonb_path_exists(response,'$.**.cairn_record_id ? (@ == $id)',jsonb_build_object('id',$2::text)) OR (operation = 'work-artifact-unlink' AND EXISTS (SELECT 1 FROM cairn.work_artifact a WHERE a.cairn_record_id = $2::uuid AND jsonb_path_exists(response, '$.**.artifact_id ? (@ == $id)', jsonb_build_object('id', a.artifact_id::text)))))`, id, recordID)
 	return err
 }
 
@@ -321,7 +321,7 @@ func (s *Store) purgeDatabaseEffect(ctx context.Context, id string, effect Delet
 	case "db_retrieval_package":
 		_, err = tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET semantic_body=NULL WHERE receipt_id=$1 AND payload_deleted_by IS NOT NULL`, effect.TargetID)
 	case "db_mutation_responses":
-		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by IS NOT NULL AND operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text))`, effect.TargetID)
+		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by IS NOT NULL AND operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede','work-artifact-register','work-artifact-link','work-artifact-unlink') AND (jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text)) OR jsonb_path_exists(response,'$.**.cairn_record_id ? (@ == $id)',jsonb_build_object('id',$1::text)) OR (operation = 'work-artifact-unlink' AND EXISTS (SELECT 1 FROM cairn.work_artifact a WHERE a.cairn_record_id = $1::uuid AND jsonb_path_exists(response, '$.**.artifact_id ? (@ == $id)', jsonb_build_object('id', a.artifact_id::text)))))`, effect.TargetID)
 	default:
 		return failure("INVALID_REQUEST", "no database purge handler for effect type")
 	}

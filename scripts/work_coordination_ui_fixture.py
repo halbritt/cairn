@@ -28,7 +28,7 @@ ASSETS = ROOT / "tests/fixtures/work_ui"
 ORIGIN = "https://plane.fixture.invalid"
 NAMESPACE = uuid.UUID("f431dcf6-f8f9-4bb9-8905-10b2e24671ab")
 LONG_TITLE = 'Untrusted <img src=x onerror="window.workUiInjected=true"> ' + "long-title-" * 35
-STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "auth_rejected", "unavailable", "typed")
+STATES = ("workflow", "dense", "empty", "empty_failed", "stale", "freshness", "freshness_delayed", "freshness_read_failed", "presence", "disabled", "auth_rejected", "unavailable", "typed")
 WEB_FILES = ("web/workview/app.js", "web/workview/index.html", "web/workview/styles.css")
 EXTERNAL_FIELDS = ("identifier", "title", "state_id", "state_name", "state_group",
                    "assignee_ids", "assignee_names", "updated_at_source", "source_url")
@@ -93,6 +93,11 @@ class Fixture:
 
     def __init__(self, args):
         self.args = args
+        available_states = self.states
+        selected_states = tuple(args.state) if args.state else available_states
+        require(len(set(selected_states)) == len(selected_states) and set(selected_states).issubset(available_states),
+                "requested state is duplicate or outside the selected acceptance scope")
+        self.states = selected_states
         require(not args.output.is_symlink(), "output must not be a symlink")
         self.output = args.output.resolve()
         require(not self.output.exists() or not any(self.output.iterdir()), "output must be new or empty")
@@ -104,6 +109,7 @@ class Fixture:
                            checks=[], uipass=[], visual_review="pending actual screenshot inspection",
                            state_results={name: "not_run" for name in self.states},
                            selected_scope=args.scope,
+                           excluded_states=[name for name in available_states if name not in self.states],
                            scope="Real Cairn CLI/Store/browser; synthetic external Plane CLI only")
         self.report["fixture_inputs"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in (Path(__file__).resolve(), Path(disposable_host.__file__).resolve(),
@@ -198,6 +204,16 @@ class Fixture:
         require(listing["total"] == count, "seed refresh did not persist the exact Plane item count")
         if state_name == "workflow":
             self.session = self.register()
+        if state_name in ("presence", "disabled"):
+            self.session = self.register()
+            self.work("associate", "--project", self.slug, "--item", self.item_id, "--target-type", "session",
+                      "--target-id", self.session["agent_id"] + ":" + self.session["execution_id"])
+            self.work("progress", "add", "--project", self.slug, "--item", self.item_id, "--text", "Retained selected progress")
+            self.work("blocker", "add", "--project", self.slug, "--item", self.item_id, "--text", "Retained selected blocker")
+        if state_name == "disabled":
+            self.work("project", "disable", "--project", self.slug)
+            self.age_refresh_window()
+            require(self.work("project", "show", "--project", self.slug)["status"] == "disabled", "project did not disable")
         if state_name == "dense":
             # WUI-99 lies beyond the first page in the fixture's identifier order.
             # Blocker filtering must search the complete project before paging.
@@ -285,6 +301,147 @@ class Fixture:
         expect(page.locator("#view-error")).to_contain_text("synthetic Plane connection failure")
         expect(page.locator("#refresh-error")).to_contain_text("Refresh failed")
         expect(page.locator("#refresh-btn")).to_be_disabled()
+
+    def browser_freshness_transition(self, page, delayed=False):
+        from playwright.sync_api import expect
+        self.age_refresh_window()
+        self.host.sql("UPDATE cairn.work_project SET last_successful_refresh_at=clock_timestamp()-interval '116 seconds'")
+        self.host.sql("""UPDATE cairn.work_item i SET last_refreshed_at=p.last_successful_refresh_at
+            FROM cairn.work_project p WHERE i.binding_id=p.binding_id""")
+        self.report.setdefault("clock_staging", []).append(dict(collection=self.collection,
+            field="last_successful_refresh_at,last_refreshed_at", purpose="observe actual server/browser crossing of the two-minute boundary"))
+        before = self.work("list", "--project", self.slug)
+        project = self.work("project", "show", "--project", self.slug)
+        require(project["is_stale"] is False and all(not item["is_stale"] for item in before["items"]),
+                "near-boundary snapshot was not initially fresh")
+        calls = len(self.plane_calls())
+        if delayed:
+            def hold_fresh_response(route):
+                response = route.fetch()
+                require(response.ok and response.json()["project"]["is_stale"] is False,
+                        "delayed response was not an actual fresh Store read")
+                # Deliver the unmodified real response after its snapshot passes the threshold.
+                boundary = datetime.fromisoformat(project["last_successful_refresh_at"].replace("Z", "+00:00")).timestamp() + 120
+                time.sleep(max(0, boundary - time.time()) + 0.4)
+                route.fulfill(response=response)
+            page.route("**/api/work/items?*", hold_fresh_response, times=1)
+        page.reload()
+        badge = page.locator("#staleness-indicator")
+        expect(badge).to_have_class("badge fresh")
+        with page.expect_response(lambda response: "/api/work/items?" in response.url and response.request.method == "GET", timeout=9000) as pending:
+            expect(badge).to_contain_text("Stale cache", timeout=9000)
+        response = pending.value
+        require(response.ok and response.json()["project"]["is_stale"] is True,
+                "freshness transition did not use an actually stale server observation")
+        after = self.work("list", "--project", self.slug)
+        require(self.work("project", "show", "--project", self.slug)["last_successful_refresh_at"] == project["last_successful_refresh_at"]
+                and snapshot_projection(after) == snapshot_projection(before), "display transition changed retained snapshot")
+        require(len(self.plane_calls()) == calls, "display freshness timer invoked the Plane connector")
+        expect(badge).to_have_class("badge stale")
+
+    def browser_presence(self, page, viewport):
+        from playwright.sync_api import expect
+        before = self.coordination_state()
+        require(before == self.expected_coordination_state, "unexpected coordination change before fixture clock staging")
+        self.host.sql("UPDATE cairn.agent_session SET expires_at=clock_timestamp()+interval '6 seconds' WHERE agent_id='" + self.session["agent_id"] + "'")
+        self.expected_coordination_state = self.coordination_state()
+        self.report.setdefault("clock_staging", []).append(dict(collection=self.collection,
+            field="agent_session.expires_at", purpose="observe actual presence expiry without renewing or replacing the execution"))
+        self.age_refresh_window()
+        self.host.sql("UPDATE cairn.work_project SET last_successful_refresh_at=clock_timestamp()-interval '116 seconds'")
+        page.reload()
+        page.locator(".work-card").first.click()
+        detail = self.detail()
+        row = page.locator(".session-item")
+        expect(page.locator(".item-assignees")).to_contain_text("Synthetic external assignee")
+        expect(row.locator(".session-expiry")).to_have_attribute("datetime", detail["sessions"][0]["expires_at"])
+        expect(row).to_contain_text("Read at")
+        expect(row.locator(".session-presence-status")).to_have_text("Online at last read")
+        page.locator(".edit-progress-btn").click()
+        edit = page.locator(".edit-progress-input")
+        edit.fill("Unsaved inline " + viewport)
+        page.locator("#annotation-input").fill("Unsaved note " + viewport)
+        page.locator("#assoc-target-id").fill("Unsaved exact target " + viewport)
+        page.locator("#assoc-rationale").fill("Unsaved reason " + viewport)
+        edit.focus()
+        with page.expect_response(lambda response: "/api/work/items?" in response.url, timeout=9000):
+            expect(page.locator("#staleness-indicator")).to_have_class("badge stale", timeout=9000)
+        expect(row.locator(".session-presence-status")).to_have_text("Last observed presence expired", timeout=9000)
+        for selector, value in [(".edit-progress-input", "Unsaved inline "), ("#annotation-input", "Unsaved note "),
+                                ("#assoc-target-id", "Unsaved exact target "), ("#assoc-rationale", "Unsaved reason ")]:
+            expect(page.locator(selector)).to_have_value(value + viewport)
+        expect(edit).to_be_focused()
+        row.scroll_into_view_if_needed()
+        page.screenshot(path=str(self.output / ("presence-expired-" + viewport + ".png")), full_page=True)
+        # A real blocker mutation rereads this detail while an unrelated progress draft exists.
+        blocker = next(a for a in detail["annotations"] if a["kind"] == "blocker" and a["state"] == "open")
+        page.locator(f'.annot-item[data-annotation-id="{blocker["annotation_id"]}"] .resolve-blocker-btn').click()
+        expect(page.locator(f'.annot-item[data-annotation-id="{blocker["annotation_id"]}"]')).to_have_attribute("data-state", "resolved")
+        expect(page.locator(".edit-progress-input")).to_have_value("Unsaved inline " + viewport)
+        expect(page.locator("#annotation-input")).to_have_value("Unsaved note " + viewport)
+        expect(page.locator("#assoc-target-id")).to_have_value("Unsaved exact target " + viewport)
+        progress = next(a for a in detail["annotations"] if a["kind"] == "progress" and a["state"] == "active")
+        self.work("progress", "add", "--project", self.slug, "--item", self.item_id,
+                  "--text", "Replacement selected progress " + viewport)
+        page.locator(".remove-assoc-btn").click()
+        expect(page.locator(".remove-assoc-btn")).to_have_count(0)
+        retained_draft = page.locator(f'.annot-item[data-annotation-id="{progress["annotation_id"]}"] .edit-progress-input')
+        expect(retained_draft).to_have_value("Unsaved inline " + viewport)
+        expect(retained_draft).to_have_attribute("readonly", "")
+        expect(page.locator(f'.annot-item[data-annotation-id="{progress["annotation_id"]}"]')).to_have_count(1)
+        require(self.coordination_state() == self.expected_coordination_state, "presence browser changed coordination state")
+        self.work("associate", "--project", self.slug, "--item", self.item_id, "--target-type", "session",
+                  "--target-id", self.session["agent_id"] + ":" + self.session["execution_id"])
+        if viewport == "desktop":
+            self.work("blocker", "add", "--project", self.slug, "--item", self.item_id, "--text", "Retained selected blocker for phone")
+
+    def browser_freshness_read_failure(self, page, viewport):
+        from playwright.sync_api import expect
+        self.age_refresh_window()
+        self.host.sql("UPDATE cairn.work_project SET last_successful_refresh_at=clock_timestamp()-interval '116 seconds'")
+        self.report.setdefault("clock_staging", []).append(dict(collection=self.collection,
+            field="last_successful_refresh_at", purpose="fail the real boundary read after an initially fresh observation"))
+        page.reload()
+        badge = page.locator("#staleness-indicator")
+        expect(badge).to_have_class("badge fresh")
+        last = badge.get_attribute("data-last-successful-refresh")
+        displayed_timestamp = badge.inner_text().removeprefix("Last refreshed ")
+        require(last, "fresh badge did not retain its last successful refresh timestamp")
+        cards = page.locator(".work-card").all_text_contents()
+        snapshot = self.work("list", "--project", self.slug)
+        calls = len(self.plane_calls())
+        observed = []
+        def drop_boundary_response(route):
+            response = route.fetch()
+            require(response.ok and response.json()["project"]["is_stale"] is True,
+                    "failed read did not reach the actual stale Store projection")
+            observed.append(response.status)
+            route.abort("failed")
+        page.route("**/api/work/items?*", drop_boundary_response, times=1)
+        expect(badge).to_contain_text("Freshness unknown; last read failed", timeout=9000)
+        expect(badge).to_have_class("badge stale")
+        expect(badge).to_have_attribute("data-last-successful-refresh", last)
+        expect(badge).to_contain_text("last successful refresh")
+        expect(badge).to_contain_text(displayed_timestamp)
+        expect(page.locator("#view-error")).to_contain_text("Could not load work items")
+        require(observed == [200], "did not drop exactly one actual successful Store read")
+        require(page.locator(".work-card").all_text_contents() == cards, "failed read replaced retained cards")
+        require(snapshot_projection(self.work("list", "--project", self.slug)) == snapshot_projection(snapshot),
+                "failed read changed the retained snapshot")
+        require(len(self.plane_calls()) == calls, "failed display read invoked Plane")
+        page.screenshot(path=str(self.output / ("freshness-read-failed-" + viewport + ".png")), full_page=True)
+
+    def browser_disabled(self, page):
+        from playwright.sync_api import expect
+        expect(page.locator("#project-admission")).to_contain_text("Project disabled")
+        expect(page.locator("#refresh-btn")).to_be_disabled()
+        page.locator(".work-card").first.click()
+        expect(page.locator("#detail-admission")).to_contain_text("Project disabled")
+        expect(page.locator(".item-assignees")).to_contain_text("Synthetic external assignee")
+        expect(page.locator(".annot-body", has_text="Retained selected progress")).to_be_visible()
+        for selector in ["#add-assoc-btn", "#add-progress-btn", "#add-blocker-btn", ".edit-progress-btn", ".resolve-blocker-btn"]:
+            expect(page.locator(selector)).to_be_disabled()
+        expect(page.locator(".remove-assoc-btn")).to_be_enabled()
 
     def seed_typed_targets(self):
         self.session = self.register()
@@ -630,6 +787,7 @@ class Fixture:
             self.check("UIPass login", lambda: self.uipass("login", None))
         with browser.new_context(viewport=dict(width=1440, height=1000)) as context:
             unchanged = self.coordination_state()
+            self.expected_coordination_state = unchanged
             page = self.login(context)
             storage = context.storage_state()
             if name == "workflow":
@@ -643,23 +801,38 @@ class Fixture:
                         ui.goto(self.url)
                         self.check("browser mutations " + viewport,
                                    lambda: self.browser_mutations(ui, viewport), ui)
-            elif name == "typed":
+            elif name in ("typed", "freshness", "freshness_delayed", "freshness_read_failed", "presence", "disabled"):
                 for viewport, size in (("desktop", dict(width=1440, height=1000)),
                                        ("phone", dict(width=390, height=844))):
                     with browser.new_context(viewport=size, storage_state=storage) as targets:
                         ui = targets.new_page()
                         ui.set_default_timeout(5000)
                         ui.goto(self.url)
-                        self.check("typed target state " + viewport,
-                                   lambda: self.visual_state_assertions(ui, name, viewport), ui)
+                        if name == "typed":
+                            self.check("typed target state " + viewport,
+                                       lambda: self.visual_state_assertions(ui, name, viewport), ui)
+                        elif name == "presence":
+                            self.check("presence expiry and preserved drafts " + viewport,
+                                       lambda: self.browser_presence(ui, viewport), ui)
+                        elif name == "disabled":
+                            self.check("disabled project retained detail " + viewport, lambda: self.browser_disabled(ui), ui)
+                        elif name == "freshness_read_failed":
+                            self.check("failed boundary read " + viewport, lambda: self.browser_freshness_read_failure(ui, viewport), ui)
+                        else:
+                            self.check("fresh-to-stale clock transition " + viewport,
+                                       lambda: self.browser_freshness_transition(ui, delayed=name == "freshness_delayed"), ui)
             else:
                 page.set_default_timeout(5000)
                 if name == "empty_failed":
                     self.check("browser empty-cache refresh failure", lambda: self.browser_failed_refresh(page), page)
                 self.check("state " + name, lambda: self.visual_state_assertions(page, name), page)
-            self.check("UIPass " + name, lambda: self.uipass(name, storage))
+            if name != "freshness_read_failed":
+                self.check("UIPass " + name, lambda: self.uipass(name, storage))
+            else:
+                self.report.setdefault("uipass_scope_exclusions", []).append(dict(state=name,
+                    reason="The actual response-loss fault belongs to the existing Playwright page; a new UIPass navigation would read a different state. Inspect the two retained fault screenshots."))
             self.check("view preserves coordination " + name,
-                       lambda: require(self.coordination_state() == unchanged,
+                       lambda: require(self.coordination_state() == self.expected_coordination_state,
                                        "work browser changed session, event or delivery state"))
 
     def run(self):
@@ -784,6 +957,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scope", choices=("wc01", "wc02"), default="wc01",
                         help="explicit acceptance scope; required commands/routes fail within the selected scope")
+    parser.add_argument("--state", action="append", default=[],
+                        help="run only this explicit state within the selected scope; repeatable, exclusions recorded")
     parser.add_argument("--web-overlay", type=Path,
                         help="copy only the three workview browser files from this reviewed checkout into private build source")
     parser.add_argument("--retain-binary", action="store_true",

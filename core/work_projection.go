@@ -183,6 +183,7 @@ type WorkItemDetail struct {
 	RunReceipts    []AssociatedRunReceipt    `json:"run_receipts"`
 	Associations   []WorkAssociation         `json:"associations"`
 	Annotations    []WorkAnnotation          `json:"annotations"`
+	Artifacts      []WorkArtifactLink        `json:"artifacts,omitempty"`
 }
 
 type RefreshContext struct {
@@ -902,7 +903,7 @@ func (s *Store) ListWorkItemsExtended(ctx context.Context, collection string, sl
 	}
 
 	query := `SELECT item_id, binding_id, plane_item_uuid, identifier, title, state_id, state_name, state_group,
-		assignee_ids, assignee_names, updated_at_source, source_url, cache_generation, is_absent, last_refreshed_at, refresh_error
+		assignee_ids, assignee_names, updated_at_source, COALESCE(source_url, ''), cache_generation, is_absent, last_refreshed_at, refresh_error
 		FROM cairn.work_item ` + whereClause + " ORDER BY identifier"
 
 	if limit > 0 {
@@ -1003,11 +1004,11 @@ func (s *Store) resolveWorkItemAndAssociationsTx(ctx context.Context, tx pgx.Tx,
 	var row pgx.Row
 	if parseErr == nil {
 		row = tx.QueryRow(ctx, `SELECT item_id, binding_id, plane_item_uuid, identifier, title, state_id, state_name, state_group,
-			assignee_ids, assignee_names, updated_at_source, source_url, cache_generation, is_absent, last_refreshed_at, refresh_error
+			assignee_ids, assignee_names, updated_at_source, COALESCE(source_url, ''), cache_generation, is_absent, last_refreshed_at, refresh_error
 			FROM cairn.work_item WHERE binding_id = $1 AND (item_id = $2 OR plane_item_uuid = $2)`, bindingID, itemUUID)
 	} else {
 		row = tx.QueryRow(ctx, `SELECT item_id, binding_id, plane_item_uuid, identifier, title, state_id, state_name, state_group,
-			assignee_ids, assignee_names, updated_at_source, source_url, cache_generation, is_absent, last_refreshed_at, refresh_error
+			assignee_ids, assignee_names, updated_at_source, COALESCE(source_url, ''), cache_generation, is_absent, last_refreshed_at, refresh_error
 			FROM cairn.work_item WHERE binding_id = $1 AND identifier = $2`, bindingID, itemIDOrIdentifier)
 	}
 
@@ -1529,6 +1530,12 @@ func (s *Store) GetWorkItemDetail(ctx context.Context, collection string, slug s
 		return WorkItemDetail{}, err
 	}
 	annotRows.Close()
+
+	links, lErr := s.listWorkArtifactLinksTx(ctx, tx, collection, bindingID, itemUUID, "", false)
+	if lErr != nil {
+		return WorkItemDetail{}, lErr
+	}
+	detail.Artifacts = links
 
 	return detail, tx.Commit(ctx)
 }

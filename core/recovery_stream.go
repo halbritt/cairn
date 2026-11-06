@@ -96,7 +96,7 @@ func streamStagedRecovery(ctx context.Context, staged *recoveryStage, emit func(
 }
 
 func (s *recoveryStage) fresh() RecoveryRecord {
-	return RecoveryRecord{Schema: recoverySchema, RootGrantID: s.root, CapturedAt: s.captured, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}, WorkExclusions: []RecoveryWorkExclusion{}, WorkPurges: []RecoveryWorkExclusion{}}
+	return RecoveryRecord{Schema: recoverySchema, RootGrantID: s.root, CapturedAt: s.captured, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}, WorkExclusions: []RecoveryWorkExclusion{}, WorkPurges: []RecoveryWorkExclusion{}, WorkArtifactPurgeFences: []RecoveryWorkArtifactPurgeFence{}}
 }
 
 // small is bounded by both legacy per-list counts and one record's bytes. A
@@ -111,7 +111,7 @@ func (s *recoveryStage) small(ctx context.Context) (RecoveryRecord, bool, error)
 		return record, false, nil
 	}
 	bytes := 0
-	for _, kind := range []string{"audit", "withdrawal", "context", "work_exclusion", "work_purge"} {
+	for _, kind := range []string{"audit", "withdrawal", "context", "work_exclusion", "work_purge", "work_artifact_purge_fence"} {
 		after := ""
 		for {
 			bodies, keys, err := s.page(ctx, kind, after, recoveryPageSize)
@@ -157,6 +157,12 @@ func (s *recoveryStage) small(ctx context.Context) (RecoveryRecord, bool, error)
 						return record, false, err
 					}
 					record.WorkPurges = append(record.WorkPurges, item)
+				case "work_artifact_purge_fence":
+					var item RecoveryWorkArtifactPurgeFence
+					if err = json.Unmarshal(body, &item); err != nil {
+						return record, false, err
+					}
+					record.WorkArtifactPurgeFences = append(record.WorkArtifactPurgeFences, item)
 				}
 			}
 			after = keys[len(keys)-1]

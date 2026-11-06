@@ -229,7 +229,7 @@ func (s *workServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if strings.HasPrefix(r.URL.Path, "/api/work/") {
+	if strings.HasPrefix(r.URL.Path, "/api/work/") && !strings.HasPrefix(r.URL.Path, "/api/work/artifact") {
 		if s.store == nil {
 			http.Error(w, `{"error":"store unavailable"}`, http.StatusServiceUnavailable)
 			return
@@ -250,6 +250,8 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/work/artifact"):
+		HandleWorkArtifactAPI(s.store, s.collection, w, r)
 	case r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost:
 		var req struct {
 			Code  string `json:"code"`

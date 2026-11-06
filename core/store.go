@@ -43,6 +43,7 @@ func DefaultCompatibilityPolicy() CompatibilityPolicy {
 		MaxMigrationVersion: defaultMaxMigrationVersion(),
 		SupportedWorkFeatures: map[string]bool{
 			"work-view/1":          true,
+			"work-artifacts/1":     true,
 			"coordination-waits/1": true,
 			"next-turn-notices/1":  true,
 		},
@@ -199,6 +200,7 @@ func (s *Store) effectivePolicy() CompatibilityPolicy {
 	if pol.SupportedWorkFeatures == nil {
 		pol.SupportedWorkFeatures = map[string]bool{
 			"work-view/1":          true,
+			"work-artifacts/1":     true,
 			"coordination-waits/1": true,
 			"next-turn-notices/1":  true,
 		}
