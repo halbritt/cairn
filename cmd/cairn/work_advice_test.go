@@ -500,20 +500,23 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 	noteDraft := core.Draft{
 		Kind:        "note",
 		Body:        "Initial source version 1",
+		ClaimType:   "self",
 		Sensitivity: "shareable",
 		Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
 	}
-	src, err := s.Create(ctx, core.CreateRequest{Draft: noteDraft})
+	src, err := s.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: noteDraft})
 	if err != nil {
 		t.Fatal(err)
 	}
 	noteDraft2 := core.Draft{
 		Kind:        "note",
 		Body:        "Updated source version 2 with specific guidance",
+		ClaimType:   "self",
 		Sensitivity: "shareable",
 		Scope:       core.Scope{Repo: repo, TaskID: "*", RunID: "*"},
 	}
 	src2, err := s.Edit(ctx, core.EditRequest{
+		RequestID:       uuid.NewString(),
 		RecordID:        src.RecordID,
 		Draft:           noteDraft2,
 		ExpectedVersion: src.Version,
@@ -593,7 +596,7 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 		t.Fatalf("GenerateWorkAdvice failed: %v", err)
 	}
 
-	url := fmt.Sprintf("/api/work/advice?binding_id=%s&item_uuid=%s", bindingID, itemUUID)
+	url := fmt.Sprintf("/api/work/advice/show?proposal=%s", prop.ProposalUUID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	rec := httptest.NewRecorder()
 	HandleWorkAdviceAPI(s, repo, rec, req)
@@ -639,6 +642,7 @@ func TestWorkAdviceShow_EnvelopeCapturedBeforeAndStaleCurrentness(t *testing.T) 
 		Collection:       repo,
 		ProjectSlug:      slug,
 		ItemUUID:         itemUUID,
+		AnnotationID:     prog.AnnotationID,
 		ExpectedRevision: prog.Revision,
 		Body:             "manual independent progress edit",
 	})

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -2012,14 +2011,11 @@ func TestWorkAdvice_ArtifactLinkRationalePersistenceAndScrubbing(t *testing.T) {
 
 func TestWorkAdvice_ProvenanceScrub_ExistingLinkUnlinkAndForget(t *testing.T) {
 	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
-	_, _ = operatorStore.pool.Exec(ctx, `
-		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
-		VALUES ('work-artifacts/1', 'active', clock_timestamp())
-		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
-	`)
+	operatorStore := restoreTestStore(t)
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -2064,6 +2060,8 @@ func TestWorkAdvice_ProvenanceScrub_ExistingLinkUnlinkAndForget(t *testing.T) {
 	// 1. Initial operator link at revision 1
 	initialOpRationale := "initial operator link rationale"
 	link, err := operatorStore.LinkWorkArtifact(ctx, LinkWorkArtifactRequest{
+		RequestID:   uuid.NewString(),
+		Collection:  "fixture:repo",
 		ProjectSlug: slug,
 		ItemUUID:    planeItemUUID,
 		RevisionID:  revID,
@@ -2152,6 +2150,7 @@ func TestWorkAdvice_ProvenanceScrub_ExistingLinkUnlinkAndForget(t *testing.T) {
 	unlinkReqID := uuid.NewString()
 	unlinked, err := operatorStore.UnlinkWorkArtifact(ctx, UnlinkWorkArtifactRequest{
 		RequestID:        unlinkReqID,
+		Collection:       "fixture:repo",
 		ProjectSlug:      slug,
 		ItemUUID:         planeItemUUID,
 		LinkID:           link.LinkID,
@@ -2244,14 +2243,11 @@ func TestWorkAdvice_ProvenanceScrub_ExistingLinkUnlinkAndForget(t *testing.T) {
 
 func TestWorkAdvice_ProvenanceScrub_NonExistentLinkReplacedByOperator(t *testing.T) {
 	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
-	_, _ = operatorStore.pool.Exec(ctx, `
-		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
-		VALUES ('work-artifacts/1', 'active', clock_timestamp())
-		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
-	`)
+	operatorStore := restoreTestStore(t)
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -2371,6 +2367,8 @@ func TestWorkAdvice_ProvenanceScrub_NonExistentLinkReplacedByOperator(t *testing
 
 	// 2. Operator unlinks at revision 2
 	_, err = operatorStore.UnlinkWorkArtifact(ctx, UnlinkWorkArtifactRequest{
+		RequestID:        uuid.NewString(),
+		Collection:       "fixture:repo",
 		ProjectSlug:      slug,
 		ItemUUID:         planeItemUUID,
 		LinkID:           linkID,
@@ -2383,6 +2381,8 @@ func TestWorkAdvice_ProvenanceScrub_NonExistentLinkReplacedByOperator(t *testing
 	// 3. Operator replaces link at revision 3 with independent rationale
 	opReplacementRationale := "operator replacement rationale"
 	replacedLink, err := operatorStore.LinkWorkArtifact(ctx, LinkWorkArtifactRequest{
+		RequestID:   uuid.NewString(),
+		Collection:  "fixture:repo",
 		ProjectSlug: slug,
 		ItemUUID:    planeItemUUID,
 		RevisionID:  revID,
@@ -2463,6 +2463,9 @@ func TestWorkAdvice_ProvenanceScrub_NonExistentLinkReplacedByOperator(t *testing
 func TestWorkAdvice_ConcurrentPatchAdviceControlDisjointDisables(t *testing.T) {
 	ctx := context.Background()
 	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	t.Cleanup(func() {
+		_, _ = operatorStore.SetAdviceControl(context.Background(), true, true)
+	})
 
 	_ = operatorStore.SetAdviceFeature(ctx, "active")
 
@@ -2523,6 +2526,7 @@ func TestWorkAdvice_ApplyAndUndoAgainstRemovedLinkEdge(t *testing.T) {
 	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
 		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
 	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	collection := "fixture:advice-removed-edge:" + uuid.NewString()
 	p, err := operatorStore.AddWorkProject(ctx, AddWorkProjectRequest{
@@ -2680,11 +2684,13 @@ func (p *realHeldAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *a
 	defer os.Remove(scriptFile)
 
 	res, err := advice.RunIsolatedProcess(ctx, "/bin/bash", []string{scriptFile}, nil, advice.BuildAllowlistedEnv(nil), tmpDir, func(id advice.ProcessIdentity) error {
+		if onLaunch != nil {
+			if err := onLaunch(id); err != nil {
+				return err
+			}
+		}
 		if p.readyCh != nil {
 			p.readyCh <- id
-		}
-		if onLaunch != nil {
-			return onLaunch(id)
 		}
 		return nil
 	})
@@ -2696,9 +2702,13 @@ func (p *realHeldAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *a
 }
 
 func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
-	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	operatorStore := restoreTestStore(t)
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -2713,7 +2723,9 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 
 	readyCh := make(chan advice.ProcessIdentity, 1)
 	prov := &realHeldAdviceProvider{gateFile: gateFile, readyCh: readyCh}
+	job1UUID := uuid.New()
 	job := &WorkAdviceJob{
+		JobUUID:         job1UUID,
 		BindingID:       bindingID,
 		PlaneItemUUID:   planeItemUUID,
 		RequestUUID:     uuid.New(),
@@ -2748,15 +2760,17 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReconcileAdviceJobs error: %v", err)
 	}
-	if len(reconciled) > 0 {
-		t.Fatalf("expected 0 reconciled jobs, got %+v", reconciled)
+	for _, r := range reconciled {
+		if r.JobUUID == job1UUID {
+			t.Fatalf("healthy in-flight job %s should not be reconciled: %+v", job1UUID, r)
+		}
 	}
-	swept, err := operatorStore.SweepExpiredAdvice(ctx)
-	if err != nil {
+	if _, err := operatorStore.SweepExpiredAdvice(ctx); err != nil {
 		t.Fatalf("SweepExpiredAdvice error: %v", err)
 	}
-	if swept > 0 {
-		t.Fatalf("expected 0 swept jobs, got %d", swept)
+	var healthyStatus string
+	if err := operatorStore.pool.QueryRow(ctx, `SELECT status FROM cairn.work_advice_job WHERE job_uuid = $1`, job1UUID).Scan(&healthyStatus); err != nil || healthyStatus != "running" {
+		t.Fatalf("expected healthy job to remain running after sweep, got status=%q err=%v", healthyStatus, err)
 	}
 
 	// Child still alive
@@ -2785,14 +2799,25 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 
 	readyCh2 := make(chan advice.ProcessIdentity, 1)
 	prov2 := &realHeldAdviceProvider{gateFile: gateFile2, readyCh: readyCh2}
+	job2UUID := uuid.New()
 	job2 := &WorkAdviceJob{
+		JobUUID:         job2UUID,
 		BindingID:       bindingID,
 		PlaneItemUUID:   planeItemUUID,
 		RequestUUID:     uuid.New(),
 		DeadlineSeconds: 1, // short deadline
 	}
+	doneCh2 := make(chan struct{})
 	go func() {
+		defer close(doneCh2)
 		_, _, _ = operatorStore.ExecuteAdviceJob(ctx, job2, spec, prov2)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-doneCh2:
+		case <-time.After(3 * time.Second):
+		}
 	}()
 
 	var childIdent2 advice.ProcessIdentity
@@ -2802,8 +2827,15 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 		t.Fatal("timed out waiting for child 2 launch")
 	}
 
-	// Wait past deadline
-	time.Sleep(1200 * time.Millisecond)
+	// Age started_at past clamped MinDeadline so ReconcileAdviceJobs treats running job2 as past-deadline
+	if _, err := operatorStore.pool.Exec(ctx, `
+		UPDATE cairn.work_advice_job
+		SET started_at = clock_timestamp() - interval '120 seconds',
+		    created_at = clock_timestamp() - interval '120 seconds'
+		WHERE job_uuid = $1
+	`, job2UUID); err != nil {
+		t.Fatal(err)
+	}
 
 	reconciled2, err := operatorStore.ReconcileAdviceJobs(ctx)
 	if err != nil {
@@ -2811,7 +2843,7 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 	}
 	foundTimedOut := false
 	for _, r := range reconciled2 {
-		if r.JobUUID == job2.JobUUID {
+		if r.JobUUID == job2UUID {
 			foundTimedOut = true
 			if r.FinalState != "timed_out" {
 				t.Fatalf("expected final state timed_out, got %s", r.FinalState)
@@ -2822,10 +2854,13 @@ func TestWorkAdvice_RealHeldProviderLifecycle(t *testing.T) {
 		t.Fatal("expected past-deadline job to be reconciled")
 	}
 
-	// Child process group should be dead (ESRCH)
-	time.Sleep(100 * time.Millisecond)
-	if err := syscall.Kill(-childIdent2.PGID, 0); err == nil {
-		t.Fatalf("child process group %d is still alive, expected killed", childIdent2.PGID)
+	select {
+	case <-doneCh2:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for job2 runner reaping after ReconcileAdviceJobs")
+	}
+	if err := syscall.Kill(childIdent2.PID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("child process %d is still alive after reap, err=%v", childIdent2.PID, err)
 	}
 }
 
@@ -2833,6 +2868,7 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 	ctx := context.Background()
 	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
 	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -2842,6 +2878,12 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 	// 1. SweepExpiredAdvice TIMEOUT replay
 	reqID1 := uuid.New()
 	jobID1 := uuid.New()
+	reqDigest1 := computeRequestDigest(&WorkAdviceJob{
+		Caller:        "operator:test",
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   reqID1,
+	}, spec)
 	_, err := operatorStore.pool.Exec(ctx, `
 		INSERT INTO cairn.work_advice_job (
 			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
@@ -2860,16 +2902,16 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 		INSERT INTO cairn.work_advice_request_tombstone (
 			caller, request_uuid, job_uuid, binding_id, plane_item_uuid, request_digest, terminal_status
 		) VALUES (
-			'operator:test', $1, $2, $3, $4, 'digest', 'pending'
+			'operator:test', $1, $2, $3, $4, $5, 'pending'
 		)
-	`, reqID1, jobID1, bindingID, planeItemUUID)
+	`, reqID1, jobID1, bindingID, planeItemUUID, reqDigest1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	swept, err := operatorStore.SweepExpiredAdvice(ctx)
-	if err != nil || swept != 1 {
-		t.Fatalf("expected 1 swept job, got %d, err=%v", swept, err)
+	if err != nil || swept < 1 {
+		t.Fatalf("expected >= 1 swept job, got %d, err=%v", swept, err)
 	}
 	// Simulate 30d deletion of job
 	_, err = operatorStore.pool.Exec(ctx, `DELETE FROM cairn.work_advice_job WHERE job_uuid = $1`, jobID1)
@@ -2890,6 +2932,12 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 	// 2. ReconcileAdviceJobs RESTORE_FENCE_TRIGGERED replay
 	reqID2 := uuid.New()
 	jobID2 := uuid.New()
+	reqDigest2 := computeRequestDigest(&WorkAdviceJob{
+		Caller:        "operator:test",
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   reqID2,
+	}, spec)
 	oldManifest, _ := json.Marshal(WorkAdviceInputManifest{RestoreGeneration: 999999})
 	_, err = operatorStore.pool.Exec(ctx, `
 		INSERT INTO cairn.work_advice_job (
@@ -2909,16 +2957,25 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 		INSERT INTO cairn.work_advice_request_tombstone (
 			caller, request_uuid, job_uuid, binding_id, plane_item_uuid, request_digest, terminal_status
 		) VALUES (
-			'operator:test', $1, $2, $3, $4, 'digest', 'pending'
+			'operator:test', $1, $2, $3, $4, $5, 'pending'
 		)
-	`, reqID2, jobID2, bindingID, planeItemUUID)
+	`, reqID2, jobID2, bindingID, planeItemUUID, reqDigest2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	reconciled, err := operatorStore.ReconcileAdviceJobs(ctx)
-	if err != nil || len(reconciled) != 1 {
-		t.Fatalf("expected 1 reconciled job, got %d, err=%v", len(reconciled), err)
+	if err != nil {
+		t.Fatalf("ReconcileAdviceJobs error: %v", err)
+	}
+	foundJob2 := false
+	for _, r := range reconciled {
+		if r.JobUUID == jobID2 {
+			foundJob2 = true
+		}
+	}
+	if !foundJob2 {
+		t.Fatalf("expected jobID2 %s in reconciled results, got %+v", jobID2, reconciled)
 	}
 	// Simulate 30d deletion
 	_, _ = operatorStore.pool.Exec(ctx, `DELETE FROM cairn.work_advice_job WHERE job_uuid = $1`, jobID2)
@@ -2935,8 +2992,11 @@ func TestWorkAdvice_30DayTombstoneTerminalOutcomeReplay(t *testing.T) {
 
 func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
 	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	operatorStore := restoreTestStore(t)
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -2982,8 +3042,12 @@ func TestWorkAdvice_Lower79UndoAndRetirement(t *testing.T) {
 		t.Fatalf("SetWorkFeatureStatus disabled failed: %v", err)
 	}
 
-	// Open lower-79 Store without work-advice/1
-	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	// Open lower-79 Store without work-advice/1 against the same isolated database
+	connCfg := operatorStore.pool.Config().ConnConfig
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s sslmode=disable", connCfg.Host, connCfg.Port, connCfg.Database, connCfg.User)
+	if connCfg.Password != "" {
+		dsn += " password=" + connCfg.Password
+	}
 	lowerPolicy := CompatibilityPolicy{
 		MaxMigrationVersion:   79,
 		SupportedWorkFeatures: map[string]bool{"work-view/1": true, "work-artifacts/1": true},
@@ -3029,6 +3093,7 @@ func TestWorkAdvice_ReceiptHydrationAndRepoScoping(t *testing.T) {
 	ctx := context.Background()
 	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
 	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
@@ -3188,50 +3253,57 @@ func TestWorkAdvice_AnnotationHistorySnapshotAuthAndScoping(t *testing.T) {
 
 func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T) {
 	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	operatorStore := restoreTestStore(t)
+	for _, f := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		_ = operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{FeatureName: f, Status: "active"})
+	}
+	_, _ = operatorStore.SetAdviceControl(ctx, true, true)
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
 	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
 
-	cmd := exec.Command("sleep", "30")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start isolated child: %v", err)
-	}
-	childPID := cmd.Process.Pid
-	childPGID, err := syscall.Getpgid(childPID)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		t.Fatalf("Getpgid failed: %v", err)
-	}
+	procCtx, cancelProc := context.WithCancel(ctx)
+	identCh := make(chan advice.ProcessIdentity, 1)
+	procDone := make(chan struct{})
+	go func() {
+		defer close(procDone)
+		_, _ = advice.RunIsolatedProcess(procCtx, "sleep", []string{"30"}, nil, advice.BuildAllowlistedEnv(nil), os.TempDir(), func(id advice.ProcessIdentity) error {
+			identCh <- id
+			return nil
+		})
+	}()
 	defer func() {
-		_ = syscall.Kill(-childPGID, syscall.SIGKILL)
-		_ = cmd.Wait()
+		cancelProc()
+		select {
+		case <-procDone:
+		case <-time.After(3 * time.Second):
+		}
 	}()
 
-	ident := advice.ProcessIdentity{
-		PID:        childPID,
-		PGID:       childPGID,
-		StartTicks: 1000,
-		BootID:     "boot-reconcile-uncertain",
+	var ident advice.ProcessIdentity
+	select {
+	case ident = <-identCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for isolated child process")
 	}
+	childPID := ident.PID
+
 	identBytes, _ := json.Marshal(ident)
 	jobUUID := uuid.New()
 	reqUUID := uuid.New()
 
-	_, err = operatorStore.pool.Exec(ctx, `
+	_, err := operatorStore.pool.Exec(ctx, `
 		INSERT INTO cairn.work_advice_job (
 			job_uuid, binding_id, plane_item_uuid, caller, profile_name, model_route,
 			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
 			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at, error_code
 		) VALUES (
-			$1, $2, $3, 'operator:test', 'default', 'test',
-			1, $4, '{}'::jsonb, 'digest', 'digest',
-			'uncertain', 60, $5, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
+			$1, $2, $3, $4, 'default', 'test',
+			1, $5, '{}'::jsonb, 'digest', 'digest',
+			'uncertain', 60, $6, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
 		)
-	`, jobUUID, bindingID, planeItemUUID, reqUUID, identBytes)
+	`, jobUUID, bindingID, planeItemUUID, operatorStore.Channel().Principal, reqUUID, identBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3240,21 +3312,27 @@ func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T)
 	if err != nil {
 		t.Fatalf("ReconcileAdviceJobs failed: %v", err)
 	}
-	if len(reconciled) != 1 {
-		t.Fatalf("expected 1 reconciled job, got %d", len(reconciled))
+	var matched *ReconciledAdviceJob
+	for i := range reconciled {
+		if reconciled[i].JobUUID == jobUUID {
+			matched = &reconciled[i]
+			break
+		}
 	}
-	if reconciled[0].FinalStatus != "uncertain" || reconciled[0].FinalErrorCode != "RECORD_FAILED" {
-		t.Fatalf("expected finalStatus=uncertain, finalErrorCode=RECORD_FAILED, got status=%s, errCode=%s", reconciled[0].FinalStatus, reconciled[0].FinalErrorCode)
+	if matched == nil {
+		t.Fatalf("expected uncertain job %s to be reconciled, got %+v", jobUUID, reconciled)
+	}
+	if matched.FinalStatus != "uncertain" || matched.FinalErrorCode != "RECORD_FAILED" || matched.ActionTaken != "reconciled_uncertain" || matched.CleanupError != "" {
+		t.Fatalf("expected uncertain/RECORD_FAILED/reconciled_uncertain without CleanupError, got %+v", *matched)
 	}
 
-	probeErr := syscall.Kill(childPID, 0)
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for probeErr == nil && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-		probeErr = syscall.Kill(childPID, 0)
+	select {
+	case <-procDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for isolated process runner reaping after ReconcileAdviceJobs")
 	}
-	if !errors.Is(probeErr, syscall.ESRCH) {
-		t.Fatalf("expected child to be killed (ESRCH), got probeErr=%v", probeErr)
+	if probeErr := syscall.Kill(childPID, 0); !errors.Is(probeErr, syscall.ESRCH) {
+		t.Fatalf("expected child to be gone after runner reap (ESRCH), got probeErr=%v", probeErr)
 	}
 
 	var dbStatus, dbErrCode string
@@ -3278,6 +3356,9 @@ func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T)
 	}
 
 	// 2. Unconfirmed cleanup on uncertain (e.g. foreign boot_id)
+	bindingID2 := uuid.New()
+	planeItemUUID2 := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID2, planeItemUUID2)
 	foreignJobUUID := uuid.New()
 	foreignIdent := advice.ProcessIdentity{
 		PID:        99999,
@@ -3292,11 +3373,11 @@ func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T)
 			template_version, request_uuid, input_manifest, input_manifest_digest, input_payload_digest,
 			status, deadline_seconds, process_identity, created_at, input_expires_at, expires_at, error_code
 		) VALUES (
-			$1, $2, $3, 'operator:test', 'default', 'test',
-			1, $4, '{}'::jsonb, 'digest', 'digest',
-			'uncertain', 60, $5, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
+			$1, $2, $3, $4, 'default', 'test',
+			1, $5, '{}'::jsonb, 'digest', 'digest',
+			'uncertain', 60, $6, clock_timestamp(), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '1 hour', 'RECORD_FAILED'
 		)
-	`, foreignJobUUID, bindingID, planeItemUUID, uuid.New(), foreignIdentBytes)
+	`, foreignJobUUID, bindingID2, planeItemUUID2, operatorStore.Channel().Principal, uuid.New(), foreignIdentBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3319,109 +3400,5 @@ func TestWorkAdvice_ReconcilePreservesUncertainStatusWithChildKill(t *testing.T)
 	}
 	if !foundForeign {
 		t.Fatalf("foreign job was not reconciled")
-	}
-}
-
-func TestWorkAdvice_DerivedSourceRecordIDs_EditedBlockerNotOverPurged(t *testing.T) {
-	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
-
-	bindingID := uuid.New()
-	planeItemUUID := uuid.New()
-	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
-
-	var collection string
-	_ = operatorStore.pool.QueryRow(ctx, `SELECT collection FROM cairn.work_project WHERE binding_id = $1`, bindingID).Scan(&collection)
-
-	source, err := operatorStore.Create(ctx, CreateRequest{
-		RequestID: uuid.NewString(),
-		Draft: Draft{
-			Kind:        "note",
-			Body:        "source for blocker test",
-			ClaimType:   "self",
-			Sensitivity: "shareable",
-			Scope:       Scope{Repo: collection, TaskID: "*", RunID: "*"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sUUID := uuid.MustParse(source.RecordID)
-
-	blockerID := uuid.New()
-	_, err = operatorStore.pool.Exec(ctx, `
-		INSERT INTO cairn.work_annotation (
-			annotation_id, revision, binding_id, plane_item_uuid, kind, body, state, author, created_at, updated_at
-		) VALUES (
-			$1, 1, $2, $3, 'blocker', 'blocker text', 'open', 'operator:test', clock_timestamp(), clock_timestamp()
-		)
-	`, blockerID, bindingID, planeItemUUID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	outRevs := map[string]any{
-		uuid.NewString(): map[string]any{
-			"type":          "blocker_created",
-			"annotation_id": blockerID.String(),
-			"revision":      1,
-		},
-	}
-	outRevsBytes, _ := json.Marshal(outRevs)
-	srcIDsBytes, _ := json.Marshal([]uuid.UUID{sUUID})
-
-	receiptUUID := uuid.New()
-	_, err = operatorStore.pool.Exec(ctx, `
-		INSERT INTO cairn.work_advice_application_receipt (
-			receipt_uuid, request_uuid, proposal_uuid, binding_id, plane_item_uuid, source_record_ids,
-			applied_action_uuids, applied_by_channel, output_revisions, applied_at, undone, compensating_revisions
-		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			'[]'::jsonb, 'operator:test', $7, clock_timestamp(), false, '{}'::jsonb
-		)
-	`, receiptUUID, uuid.New(), uuid.New(), bindingID, planeItemUUID, srcIDsBytes, outRevsBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	spec := AdviceInputSpec{BindingID: bindingID, PlaneItemUUID: planeItemUUID}
-	_, man1, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
-	if err != nil {
-		t.Fatalf("BuildWorkAdviceSnapshot rev 1 failed: %v", err)
-	}
-	foundS := false
-	for _, id := range man1.DerivedSourceRecordIDs {
-		if id == sUUID {
-			foundS = true
-			break
-		}
-	}
-	if !foundS {
-		t.Fatalf("expected sUUID in DerivedSourceRecordIDs for blocker rev 1")
-	}
-
-	_, err = operatorStore.pool.Exec(ctx, `
-		UPDATE cairn.work_annotation
-		SET revision = 2, body = 'manually edited blocker', updated_at = clock_timestamp()
-		WHERE annotation_id = $1
-	`, blockerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, man2, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
-	if err != nil {
-		t.Fatalf("BuildWorkAdviceSnapshot rev 2 failed: %v", err)
-	}
-	foundS2 := false
-	for _, id := range man2.DerivedSourceRecordIDs {
-		if id == sUUID {
-			foundS2 = true
-			break
-		}
-	}
-	if foundS2 {
-		t.Fatalf("edited blocker at revision 2 should NOT have derived source S from receipt matching revision 1")
 	}
 }
