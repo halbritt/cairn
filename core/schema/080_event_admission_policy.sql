@@ -1,5 +1,6 @@
--- Drain transactions that passed the old compatibility check before upgrading.
-SELECT singleton FROM cairn.restore_admission WHERE singleton FOR UPDATE;
+-- Drain admitted transactions and invalidate blocked old RR/Serializable snapshots.
+-- A lock alone does not change the tuple and can leave an old snapshot usable.
+UPDATE cairn.restore_admission SET paused=paused WHERE singleton;
 
 -- Admission starts disabled. Only explicit operator configuration creates a row.
 CREATE TABLE cairn.agent_event_admission_policy (
