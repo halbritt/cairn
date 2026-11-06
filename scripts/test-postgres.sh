@@ -97,6 +97,7 @@ disposable scripts/check_inbox_resume_disposable.py
 disposable scripts/check_panel_compaction_settlement.py
 disposable scripts/check_work_projection_restore.py --report-directory "$test_root/work-projection-restore"
 disposable scripts/check_work_artifact_restore.py --report-directory "$test_root/work-artifact-restore"
+disposable scripts/check_scoped_coordination_recipe.py --report-directory "$test_root/scoped-coordination-recipe"
 shared scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 shared scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 disposable scripts/check_multi_machine.py "$test_root/multi-machine-home"

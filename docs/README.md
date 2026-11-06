@@ -14,6 +14,8 @@ or the [quickstart](quickstart.md) to try it with a local PostgreSQL store.
   a handoff for unfinished work.
 - [Coordinate agents](guides/session-coordination.md): discover sessions and
   exchange requests and results.
+- [Coordinate a bounded group of workers](guides/scoped-coordination.md): send one
+  review to exact recipients, wait for replies, link selected results and tear down.
 - [Operate work coordination](operator/work-coordination.md): inspect Plane work,
   link exact deliverables, wait for responses and manage quiet notices.
 
