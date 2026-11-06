@@ -4414,6 +4414,9 @@
           "producer": {
             "$ref": "#/components/schemas/core.PressureIdentity"
           },
+          "rate_evaluation": {
+            "type": "string"
+          },
           "recipient_count": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -4464,6 +4467,7 @@
           "mode",
           "policy_revision",
           "producer",
+          "rate_evaluation",
           "recipient_count",
           "recipient_count_exact",
           "recipient_count_state",
@@ -31953,6 +31957,7 @@
     "QUEUE_FULL",
     "QUEUE_OVERFLOW",
     "QUOTA_EXHAUSTED",
+    "RATE_UNRECONCILED",
     "RECOVERY_UNINITIALIZED",
     "REFRESH_IN_PROGRESS",
     "REFRESH_RATE_LIMITED",
