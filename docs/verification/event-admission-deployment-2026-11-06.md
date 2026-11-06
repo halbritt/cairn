@@ -26,8 +26,15 @@ certify the absence of an unknown installation on an uninspected host.
 
 ## Database and service cutover
 
-Proximal's actual store was managed PostgreSQL 18.6, schema 074. An application
-checkpoint and a successful pgBackRest incremental backup preceded the upgrade.
+Proximal's actual store was managed PostgreSQL 18.6, schema 074. A successful
+pgBackRest incremental backup preceded the upgrade. The attempted application
+checkpoint omitted its required JSON input and failed with `INVALID_REQUEST: EOF`;
+that pre-upgrade backup has no newly created Cairn checkpoint witness.
+
+After deployment, a valid checkpoint was created and verified against the live
+audit metadata. A second successful pgBackRest incremental backup then captured
+the deployed state with that checkpoint. Its witness does not apply to the earlier
+backup. This was a live checkpoint check, not a production restore rehearsal.
 The previous executable and installation files were retained outside the repository.
 The retired private-store bootstrap and backup scripts were not used.
 
