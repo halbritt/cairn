@@ -11,7 +11,7 @@ import (
 	"github.com/halbritt/cairn/internal/plane"
 )
 
-const workHelp = `cairn work: shared work projection and coordination
+const workHelp = `cairn work: shared work projection and work coordination
 
 Subcommands:
   work project add --slug SLUG --workspace WS_UUID --project PROJ_UUID [--origin URL] [--instance NAME] [--request-id UUID] [--collection REPO]
@@ -27,12 +27,19 @@ Subcommands:
   work progress edit --project SLUG --item ITEM_UUID_OR_IDENT --annotation-id UUID --text TEXT --expected-revision N [--request-id UUID] [--collection REPO]
   work blocker add --project SLUG --item ITEM_UUID_OR_IDENT --text TEXT [--request-id UUID] [--collection REPO]
   work blocker resolve --project SLUG --item ITEM_UUID_OR_IDENT --annotation-id UUID --expected-revision N [--request-id UUID] [--collection REPO]
+  work artifact (register|show|link|unlink|list|impact|purge) [FLAGS] [--collection REPO]
   work metadata purge --project SLUG --pattern PATTERN [--field FIELD] [--exclude] [--request-id UUID] [--collection REPO]
   work metadata exclude --project SLUG --field FIELD --pattern PATTERN [--request-id UUID] [--collection REPO]
-  work artifact (register|show|link|unlink|list|impact|purge) ...
-  work advice (generate|list|show|apply|reject|undo|profile|policy|reconcile) ...
+  work advice (generate|list|show|apply|reject|undo|profile|policy|control|reconcile|sweep) [FLAGS] [--collection REPO]
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
   work serve [--project SLUG] [--port PORT] [--collection REPO]
+
+Features: work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1, work-advice/1
+`
+
+const workFeaturesHelp = `cairn work features: manage work coordination features (work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1, work-advice/1)
+
+  work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
 `
 
 func hasWorkHelpArg(args []string) bool {
@@ -610,7 +617,6 @@ func workCommand(ctx context.Context, store *core.Store, args []string, input io
 
 	case "advice":
 		return workAdviceCommand(ctx, store, args[1:])
-
 	case "metadata":
 		if len(args) < 2 {
 			return nil, invalid("work metadata requires purge or exclude")
@@ -706,6 +712,11 @@ type workFeatureView struct {
 	Retired bool `json:"retired"`
 }
 
+type workFeatureSingleView struct {
+	workFeatureView
+	Features []workFeatureView `json:"features"`
+}
+
 func isValidWorkFeatureName(name string) bool {
 	switch name {
 	case "work-view/1", "work-artifacts/1", "coordination-waits/1", "next-turn-notices/1", "work-advice/1":
@@ -717,20 +728,25 @@ func isValidWorkFeatureName(name string) bool {
 
 func workFeaturesCommand(ctx context.Context, store *core.Store, args []string) (any, error) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		return commandHelp("cairn work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]\n"), nil
+		return commandHelp(workFeaturesHelp), nil
 	}
 	sub := args[0]
 	f := flags("work features " + sub)
 	feature := f.String("feature", "", "versioned feature name (default work-view/1 on mutate)")
 	requestID := f.String("request-id", "", "idempotency request ID")
 	_ = f.String("collection", "", "collection name")
+	_ = f.String("repo", "", "alias for collection")
 	if err := f.Parse(args[1:]); err != nil {
 		return nil, invalid(err.Error())
 	}
+	targetArg := *feature
+	if targetArg == "" && f.NArg() > 0 {
+		targetArg = f.Arg(0)
+	}
 	switch sub {
 	case "status":
-		if *feature != "" && !isValidWorkFeatureName(*feature) {
-			return nil, invalid(fmt.Sprintf("unknown work feature %q", *feature))
+		if targetArg != "" && !isValidWorkFeatureName(targetArg) {
+			return nil, invalid(fmt.Sprintf("unknown work feature %q", targetArg))
 		}
 		rows, err := store.ListWorkFeatures(ctx)
 		if err != nil {
@@ -738,25 +754,28 @@ func workFeaturesCommand(ctx context.Context, store *core.Store, args []string) 
 		}
 		out := make([]workFeatureView, 0, len(rows))
 		for _, r := range rows {
-			if *feature != "" && r.FeatureName != *feature {
+			if targetArg != "" && r.FeatureName != targetArg {
 				continue
 			}
 			out = append(out, workFeatureView{WorkFeature: r, Enabled: r.Status == "active", Retired: r.Status == "retired"})
 		}
-		if *feature != "" && len(out) == 0 {
-			st, err := store.GetWorkFeatureStatus(ctx, *feature)
+		if targetArg != "" && len(out) == 0 {
+			st, err := store.GetWorkFeatureStatus(ctx, targetArg)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, workFeatureView{
-				WorkFeature: core.WorkFeature{FeatureName: *feature, Status: st},
+				WorkFeature: core.WorkFeature{FeatureName: targetArg, Status: st},
 				Enabled:     st == "active",
 				Retired:     st == "retired",
 			})
 		}
+		if targetArg != "" && len(out) == 1 {
+			return workFeatureSingleView{workFeatureView: out[0], Features: out}, nil
+		}
 		return map[string]any{"features": out}, nil
 	case "enable", "disable", "retire":
-		target := *feature
+		target := targetArg
 		if target == "" {
 			target = "work-view/1"
 		}

@@ -1,0 +1,106 @@
+{
+  "schema": "cairn.codex-owner-origin-contract/1",
+  "contract": "codex.owner-input/1",
+  "version": 1,
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "manifest_schema": "cairn.codex-owner-origin/1",
+  "package": {
+    "executables": ["codex", "codex-code-mode-host"],
+    "code_mode_host_fields": ["path", "sha256"],
+    "code_mode_host_location": "adjacent fixed-name sibling of the selected native executable",
+    "required_owner_uid": "launcher uid",
+    "package_and_helper_group_other_writable": false
+  },
+  "capability_probe": "--cairn-owner-origin-capabilities",
+  "capability_schema": "codex.owner-input-capabilities/1",
+  "proof": {
+    "transport": "inherited unnamed connected Unix stream socket pair",
+    "magic_ascii": "CAIRN-OWNER-INPUT/1\n",
+    "secret_bytes": 32,
+    "endpoint_length_bytes": 1,
+    "endpoint_bytes_min": 1,
+    "endpoint_bytes_max": 107,
+    "endpoint_must_be_absolute": true,
+    "header": "x-codex-owner-ingress-v1",
+    "acknowledgement_header": "x-codex-owner-ingress-version",
+    "acknowledgement_value": "1",
+    "absolute_read_deadline_ms": 250
+  },
+  "hook": {
+    "event": "UserPromptSubmit",
+    "native_turn_id_field": "turn_id",
+    "origin_field": "owner_input_origin",
+    "source_values": [
+      "owner_composer",
+      "unknown"
+    ],
+    "admission_values": [
+      "fresh_start",
+      "joined",
+      "recovery",
+      "unknown"
+    ],
+    "input_id": "canonical nonnil UUID for a known composer input; otherwise null",
+    "positive_observation": {
+      "version": 1,
+      "source": "owner_composer",
+      "admission": "fresh_start",
+      "input_id_required": true
+    }
+  },
+  "registry": {
+    "scope": "native app-server process, across all threads",
+    "maximum_identities": 65536,
+    "duplicate_disposition": "recovery",
+    "saturated_new_identity_disposition": "unknown",
+    "serialized_trust": false
+  },
+  "attestation": {
+    "contract": "cairn.owner-input-attestation/1",
+    "envelope_field": "owner_input_attestation",
+    "envelope_fields": [
+      "schema",
+      "payload",
+      "signature"
+    ],
+    "encoding": "base64url without padding",
+    "signature": "Ed25519 over domain_ascii followed by decoded exact payload bytes",
+    "domain_ascii": "cairn.owner-input-attestation/1\n",
+    "payload_fields": [
+      "launch_id",
+      "restore_generation",
+      "issued_at_unix_ms",
+      "native_session_id",
+      "native_turn_id",
+      "origin_contract",
+      "origin_version",
+      "source",
+      "admission",
+      "input_id"
+    ],
+    "first_root_maximum_age_ms": 30000,
+    "first_root_maximum_future_skew_ms": 5000,
+    "startup_descriptor": {
+      "recipient": "private app-server only",
+      "transport": "separate inherited unnamed connected Unix stream socket pair",
+      "magic_ascii": "CAIRN-OWNER-ATTESTATION/1\n",
+      "launch_uuid_bytes": 16,
+      "seed_bytes": 32,
+      "response_public_key_bytes": 32,
+      "acknowledgement_generation": "8-byte signed nonnegative big-endian int64 followed by EOF",
+      "absolute_deadline_ms": 15000
+    },
+    "operator_registration_command": "cairn native-owner-launch-register",
+    "host_config_schema": "cairn.codex-owner-origin-host/1",
+    "host_config_fields": [
+      "schema",
+      "cairn_path",
+      "repo",
+      "profile_principal",
+      "binding"
+    ],
+    "reservation_hint": "CAIRN_CODEX_OWNER_ORIGIN_LAUNCH_ID",
+    "signature_signs_all_typed_dispositions": true,
+    "private_key_persisted": false
+  }
+}

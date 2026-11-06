@@ -17,6 +17,8 @@ var agentSessionOperations = []OperationSpec{
 		return c.store.ClaimSessionInbox(ctx, req, c.destination)
 	}),
 	bindDestination(OperationSpec{Name: "session-inbox-advance", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "request-id"}, (*core.Store).AdvanceSessionInbox),
+	bindDestination(OperationSpec{Name: "session-organic-notice-claim", SourceFile: "agent_sessions.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).ClaimOrganicNotice),
+	bindDestination(OperationSpec{Name: "session-organic-notice-advance", SourceFile: "agent_sessions.go", RemoteAllowed: false, RetryClass: "request-id"}, (*core.Store).AdvanceOrganicNotice),
 	bindOperation(OperationSpec{Name: "session-inbox-reconcile", SourceFile: "agent_sessions.go", RemoteAllowed: true, RetryClass: "request-id"}, func(ctx context.Context, _ *Server, _ *http.Request, c client, req core.SessionInboxReconcile) (core.SessionInboxAttempt, error) {
 		if c.remote && (req.Reason == "cancel_confirmed" || req.Reason == "exclusivity_revoked") {
 			return core.SessionInboxAttempt{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "remote cancellation reconciliation is unavailable"}

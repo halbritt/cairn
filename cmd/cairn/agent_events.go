@@ -29,7 +29,9 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--admission-expires-at RFC3339] [--task-deadline RFC3339]
     [--response-deadline RFC3339 --response-policy all|partial]
     [--notice-urgency routine|urgent --notice-defer-seconds 0..60] (notice only)
+    [--notice-delivery next_organic_turn --notice-expires-at RFC3339] (quiet notice only)
   notice-flush --request-id UUID EVENT_UUID (original publisher; releases pending routine deferral)
+  notice-pending [--agent AGENT] [--state queued|admitted|expired|flushed|restore_fenced] [--limit N]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] [--task TASK] [--run RUN] DELIVERY_UUID
@@ -55,7 +57,7 @@ Ignored/failed dispositions require unsupported_kind, source_unavailable or proc
 
 func isEventCommand(command string) bool {
 	switch command {
-	case "publish", "notice-flush", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
+	case "publish", "notice-flush", "notice-pending", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
 		return true
 	}
 	return false
@@ -114,6 +116,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
 	noticeUrgency := f.String("notice-urgency", "", "opt-in notice wake policy (routine|urgent)")
 	noticeDeferSeconds := f.Int("notice-defer-seconds", 0, "routine notice wake delay, 0-60 seconds")
+	noticeDelivery := f.String("notice-delivery", "", "quiet notice delivery strategy (e.g. next_organic_turn)")
+	noticeExpiresAt := f.String("notice-expires-at", "", "expiration instant for quiet notice (RFC3339)")
 	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -124,9 +128,11 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy notice-urgency notice-defer-seconds notice-delivery notice-expires-at "
 	case "notice-flush":
 		allowed += "request-id "
+	case "notice-pending":
+		allowed += "repo agent agent-id state limit "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -301,8 +307,52 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			parsedNoticePolicy = &core.NoticeWakePolicyRequest{Version: 1, Urgency: *noticeUrgency,
 				DeferSeconds: *noticeDeferSeconds}
 		}
+		var parsedNoticeExpires *time.Time
+		if provided["notice-expires-at"] {
+			if strings.TrimSpace(*noticeExpiresAt) == "" {
+				return nil, invalid("--notice-expires-at cannot be explicitly empty")
+			}
+			t, err := parseEventTimestamp(*noticeExpiresAt)
+			if err != nil {
+				return nil, invalid("invalid --notice-expires-at: must be an RFC3339 timestamp")
+			}
+			parsedNoticeExpires = &t
+		}
+		if provided["notice-delivery"] || provided["notice-expires-at"] {
+			if !provided["notice-delivery"] || !provided["notice-expires-at"] {
+				return nil, invalid("--notice-delivery and --notice-expires-at must both be provided")
+			}
+			if *kind != "notice" {
+				return nil, invalid("--notice-delivery requires --kind notice")
+			}
+			if *noticeDelivery != "next_organic_turn" {
+				return nil, invalid("unsupported --notice-delivery: only next_organic_turn is supported")
+			}
+			if provided["notice-urgency"] || provided["notice-defer-seconds"] {
+				return nil, invalid("--notice-delivery cannot combine with notice wake policy")
+			}
+		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline, ResponseGroup: parsedResponseGroup, NoticePolicy: parsedNoticePolicy}
+		req = core.PublishEventRequest{
+			RequestID:          *request,
+			Repo:               *repo,
+			Kind:               *kind,
+			Ref:                core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version},
+			Destination:        dest,
+			CausationID:        *causation,
+			CorrelationID:      *correlation,
+			Resolution:         resolution,
+			Pool:               needs,
+			AdmissionExpiresAt: parsedAdmission,
+			TaskDeadline:       parsedDeadline,
+			ResponseGroup:      parsedResponseGroup,
+			NoticePolicy:       parsedNoticePolicy,
+			NoticeDelivery:     *noticeDelivery,
+			NoticeExpiresAt:    parsedNoticeExpires,
+		}
+	case "notice-pending":
+		operation = "event-notice-pending"
+		req = core.NoticePendingRequest{Repo: *repo, Agent: *agent, State: *state, Limit: *limit}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}

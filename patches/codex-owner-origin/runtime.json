@@ -1,0 +1,59 @@
+{
+  "contract": "codex.owner-input/1",
+  "attestation_contract": "cairn.owner-input-attestation/1",
+  "version": 1,
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "patch_sha256": "4211c7d4e6e7b83bf5eeb70c0112f6fad6864d5bede0f14b7d0e115e10adf833",
+  "binary_sha256": "f1d57253dfd284924b9bb326b4aeb465ac68bb97efa45be30514e37b71beb0f3",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "strip": "GNU strip (GNU Binutils for Ubuntu) 2.46",
+  "schema": "cairn.codex-owner-origin-runtime/1",
+  "target": "x86_64-unknown-linux-gnu",
+  "profile": "dev",
+  "debug_information": "stripped from packaged artifact",
+  "capability_verified": true,
+  "launcher_manifest_verified": true,
+  "production_installed": false,
+  "applied_source_sha256": "96337d0f13af22c8209ad2369f1416ef848965ee0617d85cf7c79f71e36a8349",
+  "code_mode_host": {
+    "filename": "codex-code-mode-host",
+    "sha256": "d685c6b968035a731c55284ac22bee2544aa9680abbcc86ed97dc42cc6e0289e"
+  },
+  "v8_inputs": {
+    "version": "152.2.0",
+    "target": "x86_64-unknown-linux-gnu",
+    "release_url": "https://github.com/openai/codex/releases/download/rusty-v8-v152.2.0/",
+    "manifest_sha256": "1ec730635970ab1c0e8f4764ea113ad29d69d7f8d4c2ae69f3d766434a759350",
+    "archive_sha256": "b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd",
+    "binding_sha256": "3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5"
+  },
+  "build_helper_sha256": "99ababa08575b167fc37a1d9c7a377659e6a29b0b996f2e5b465838802316b22",
+  "package_contract_sha256": "2535102db83ae7b201b9383b788d9baab139d0e05456f32b447719d9e2ec0234",
+  "workflow_validation": {
+    "status": "passed",
+    "date": "2026-11-05",
+    "default_code_mode": true,
+    "provider": "local scripted Responses fixture",
+    "local_provider_requests": 19,
+    "model_usefulness_measured": false,
+    "source_commit": "434511b1dcdefe8d03c6035c2fa01fe461a47ef7",
+    "fixture_overlay_commit": "9f2ace19fc02728f8a9ee7835a008f9499292026",
+    "source_receipt_sha256": "cc4d63984469fa66c67b14f4b3266debc57d4aaf246b79d402d3d42a3e3e1c00",
+    "cairn_binary_sha256": "ec501f12bf17a53b16528b696bfdc987b899200343595392f449f24c0220feb8",
+    "fixture_sha256": "a97edd8fda1be6f3921c5af5c1ad11e961df403a7124267eebc32b550ef181e2",
+    "lifecycle_bundle_sha256": "53649855290f423dbb82992873a7c2f0bc7be6f91d78a807f9036009421398f1",
+    "native_manifest_sha256": "511443acc1050e5f49f8f0cb2b69df1b5e8261a5666b3a2f6f80fc8094e05da7",
+    "stages": [
+      "actual_pty_composer_signed_capability",
+      "forged_base_profile_claim_refused",
+      "ordinary_native_tool_child_forged_hook_refused",
+      "actual_same_text_automatic_queue_stays_ineligible",
+      "physical_composer_three_exact_sources_three_acks_overflow_retained",
+      "next_composer_handles_overflow_and_excludes_new_arrival",
+      "restricted_cached_claim_retires_actual_older_control_hold"
+    ],
+    "disposable_store_cleaned": true,
+    "production_installed": false
+  }
+}

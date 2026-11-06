@@ -156,6 +156,8 @@ type nativeAttemptOpen struct {
 	DeliveryID, LeaseID, NativeTurnID     string
 	TurnExclusive                         bool
 	Batch                                 *nativeBatchPosition
+	AdmissionKind                         string
+	OrganicRoot                           string
 }
 
 // nativeBatchPosition places an attempt in a bounded notice batch.
@@ -168,11 +170,15 @@ type nativeBatchPosition struct {
 // openAttempt inserts the native attempt row. The schema refuses a second
 // exclusive attempt for one native turn (isTurnAlreadyBound).
 func openAttempt(ctx context.Context, tx pgx.Tx, a nativeAttemptOpen) error {
+	admissionKind := a.AdmissionKind
+	if admissionKind == "" {
+		admissionKind = "ordinary"
+	}
 	if a.Batch == nil {
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,admission_kind,organic_root) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, admissionKind, a.OrganicRoot)
 		return err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,batch_root,batch_index,batch_limit) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, a.Batch.Root, a.Batch.Index, a.Batch.Limit)
+	_, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,repo,delivery_id,lease_id,native_turn_id,turn_exclusive,batch_root,batch_index,batch_limit,admission_kind,organic_root) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::uuid)`, a.AttemptID, a.AgentID, a.ExecutionID, a.Repo, a.DeliveryID, a.LeaseID, a.NativeTurnID, a.TurnExclusive, a.Batch.Root, a.Batch.Index, a.Batch.Limit, admissionKind, a.OrganicRoot)
 	return err
 }
 

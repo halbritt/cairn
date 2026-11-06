@@ -26,6 +26,7 @@ type agentSubcommandSpec struct {
 var eventCommandOperations = map[string]string{
 	"publish":         "event-publish",
 	"notice-flush":    "event-notice-flush",
+	"notice-pending":  "event-notice-pending",
 	"inbox":           "event-next",
 	"ack":             "event-complete",
 	"complete":        "event-complete",
@@ -106,6 +107,15 @@ func buildAgentSubcommandCatalog() map[string]agentSubcommandSpec {
 					ServerProtocol localapi.ProtocolRange `json:"server_protocol"`
 					Protocol       int                    `json:"protocol"`
 				}{"cairn.version/1", buildinfo.Read(), server.Info, localapi.Protocol, serverProtocol, localapi.Protocol.Effective(serverProtocol, declared)}, nil
+			},
+		},
+		{
+			Name:        "wait",
+			Operation:   "wait-create",
+			AcceptsArgs: true,
+			Help:        func() (commandHelp, error) { return commandHelp(waitHelp), nil },
+			Dispatch: func(ctx context.Context, client *localapi.Client, _ *core.AgentSessionRef, _, _ string, args []string, input io.Reader) (any, error) {
+				return waitCommand(ctx, args, input, client)
 			},
 		},
 		{

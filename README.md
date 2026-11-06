@@ -60,6 +60,7 @@ account. It then links to authenticated agent setup.
 | Find and inspect memory | [Memory search](docs/guides/memory-search.md) |
 | Resume or hand off work | [Agent workflows](docs/guides/agent-workflows.md) |
 | Coordinate several agents | [Session coordination](docs/guides/session-coordination.md) |
+| Inspect work and deliverables | [Work coordination](docs/operator/work-coordination.md) |
 | Run a shared service | [Deployment](docs/operator/deployment.md) |
 | Understand or extend Cairn | [Architecture](docs/developer/architecture.md) and [contributing](docs/developer/contributing.md) |
 

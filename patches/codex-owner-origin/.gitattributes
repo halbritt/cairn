@@ -1,0 +1,2 @@
+# Unified diffs contain single-space blank context lines; check applied source.
+owner-origin.patch -whitespace

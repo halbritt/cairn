@@ -44,6 +44,9 @@ func (s *Store) FlushNotice(ctx context.Context, req NoticeFlushRequest, dest De
 		if event.From != s.channel.Principal {
 			return failure("AUTHORITY_DENIED", "notice flush requires the original publisher")
 		}
+		if event.NoticeDelivery == "next_organic_turn" {
+			return nil
+		}
 		if event.NoticePolicy == nil || event.NoticePolicy.Urgency != "routine" || event.NoticePolicy.DeferSeconds == 0 {
 			return failure("INVALID_REQUEST", "only deferred routine notices can be flushed")
 		}
@@ -59,6 +62,13 @@ func (s *Store) FlushNotice(ctx context.Context, req NoticeFlushRequest, dest De
 			return result, nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return NoticeFlushResult{}, err
+		}
+		event, err := s.readEvent(ctx, tx, req.EventID, dest)
+		if err != nil {
+			return NoticeFlushResult{}, err
+		}
+		if event.NoticeDelivery == "next_organic_turn" {
+			return flushOrganicNoticeTx(ctx, tx, s, req.EventID, req.RequestID)
 		}
 		rows, err := tx.Query(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d WHERE d.event_id=$1 ORDER BY d.delivery_id FOR UPDATE OF d`, req.EventID)
 		if err != nil {

@@ -91,7 +91,7 @@ def _diagnostic_path_roles(binary, config, candidate_root, codex_entry, codex_ro
 def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
                 turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
                 scenario="single", diagnostic_output=None, api_role="bob",
-                preopened_trace=None):
+                preopened_trace=None, publication_factory=None):
     """Run one disposable native notice turn.
 
     ``binary`` is the selected Codex installation identity. It is never
@@ -110,6 +110,8 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
 
     if scenario not in ("single", "batch"):
         raise ValueError("scenario must be single or batch")
+    if publication_factory is not None and scenario != "single":
+        raise ValueError("publication_factory requires the single scenario")
     if scenario == "batch" and diagnostic_output is None:
         raise ValueError("batch actor fixture requires a private diagnostic output path")
     setup_stage("validate_codex_paths")
@@ -248,7 +250,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
     stalled = threading.Event()
     release_stall = threading.Event()
     timeout_evidence = None
-    event_owner = "alice"
+    event_owner = api_role if publication_factory is not None else "alice"
     attempt_claimed = False
     actor_turn_started = False
     batch_item_index = 0
@@ -558,6 +560,7 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
 
     def verify(rpc):
         nonlocal native_id, actor_turn_id, actor_turn_started, notice, source, delivery_id
+        nonlocal notice_body
         nonlocal actor_terminal_class
         nonlocal attempt_id, native_turn_id, timeout_evidence
         if scenario == "batch":
@@ -603,18 +606,32 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
             notice, source, delivery_id = batch_notices[0], batch_sources[0], batch_notices[0]["delivery_id"]
             setup_done()
         else:
-            created = api_call("alice", "create", raw=True, body=json.dumps(dict(
-                request_id=str(uuid.uuid4()), draft=dict(kind="note", body=notice_body,
-                    sensitivity="shareable", claim_type="self",
-                    scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
-            source = created
-            notice = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
-                "--to", target["inbox"], "--kind", "notice", "--version",
-                str(created["version"]), created["record_id"])
+            if publication_factory is None:
+                created = api_call("alice", "create", raw=True, body=json.dumps(dict(
+                    request_id=str(uuid.uuid4()), draft=dict(kind="note", body=notice_body,
+                        sensitivity="shareable", claim_type="self",
+                        scope=dict(repo=config["repo"], task_id="*", run_id="*")))))
+                source = created
+                notice = api_call("alice", "publish", "--request-id", str(uuid.uuid4()),
+                    "--to", target["inbox"], "--kind", "notice", "--version",
+                    str(created["version"]), created["record_id"])
+            else:
+                publication = publication_factory(target)
+                source, notice = publication["source"], publication["event"]
+                notice_body = source["body"]
+                assert isinstance(notice_body, str) and notice_body
+                assert notice["ref"] == dict(record_id=source["record_id"], version=source["version"])
+                assert notice["kind"] == "notice"
+                assert notice["destination"] == dict(type="agent", name=target["inbox"])
             published = api_call(event_owner, "event-status", notice["event_id"])
             assert len(published["deliveries"]) == 1, "fixture notice did not create exactly one delivery"
             pending = published["deliveries"][0]
             assert pending["state"] == "pending" and pending["attempts"] == 0
+            if publication_factory is not None:
+                assert published["event"] == notice and all(
+                    pending[key] == publication["delivery"][key]
+                    for key in ("delivery_id", "state", "attempts")), \
+                    "publication_factory returned a different Store event or delivery"
             delivery_id = pending["delivery_id"]
 
         if scenario == "batch":
@@ -822,12 +839,18 @@ def _check_impl(binary, root, config, api_call, candidate_root=None, sandbox_aut
 
 def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file=None,
           turn_timeout=60, codex_entry=None, codex_root=None, mode="complete",
-          scenario="single", diagnostic_output=None, api_role="bob"):
-    """Prepare the private batch trace before running any fixture setup."""
+          scenario="single", diagnostic_output=None, api_role="bob", publication_factory=None):
+    """Run the native probe, optionally publishing a selected notice for its target.
+
+    A single-scenario factory receives the registered target and returns exact
+    ``source``, ``event`` and ``delivery`` objects. Inspection uses ``api_role``;
+    its API adapter must bind that recipient session for event-status reads.
+    """
     if scenario != "batch" or diagnostic_output is None:
         return _check_impl(binary, root, config, api_call, candidate_root,
                            sandbox_auth_file, turn_timeout, codex_entry, codex_root,
-                           mode, scenario, diagnostic_output, api_role)
+                           mode, scenario, diagnostic_output, api_role,
+                           publication_factory=publication_factory)
     from native_notice_batch_diagnostics import (
         AdvanceDiagnosticWriter,
         classify_setup_filename,
@@ -843,7 +866,7 @@ def check(binary, root, config, api_call, candidate_root=None, sandbox_auth_file
         return _check_impl(binary, root_path, config, api_call, candidate_root,
                            sandbox_auth_file, turn_timeout, codex_entry, codex_root,
                            mode, scenario, diagnostic_output, api_role,
-                           preopened_trace=trace)
+                           preopened_trace=trace, publication_factory=publication_factory)
     except BaseException as exc:
         if (not trace.stream.closed and not trace.setup_finished
                 and not trace.setup_failure_recorded):

@@ -332,6 +332,9 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"project": proj, "items": items, "total": total})
 
+	case r.URL.Path == "/api/work/item/coordination":
+		s.handleWorkItemCoordination(w, r)
+
 	case r.URL.Path == "/api/work/item" && r.Method == http.MethodGet:
 		slug := r.URL.Query().Get("project")
 		if slug == "" {

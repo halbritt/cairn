@@ -27,6 +27,7 @@ ATTEMPT_KEYS = (
     'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
     'cancel_scan_report', 'cancel_final_report',
     'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint',
+    'organic_root', 'organic_advance_intent', 'organic_claim_intent', 'inbox_intent_kind',
 )
 BATCH_NEXT_KEYS_CLEARED = ('inbox_close', 'inbox_completion', 'inbox_response', 'inbox_ack_reminded',
                            'inbox_ack_reminder_revision')
@@ -125,22 +126,107 @@ class NativeSession:
         record = self.record
         record['inbox_intent'] = dict(request_id=str(uuid.uuid4()),
                                       session=self.host.session_ref(record['agent']), **(binding or {}))
+        record['inbox_intent_kind'] = 'ordinary'
         record['inbox_result_policy'] = dict(claim_request_id=record['inbox_intent']['request_id'], version=1)
         self.save()
         return self.host.recover(self)
 
+    def admit_organic_notice(self, native_owner_turn_id, owner_input_origin=None, attestation=None):
+        """Persist a signed observation independently of any existing inbox hold."""
+        request = dict(session=self.host.session_ref(self.record['agent']),
+                       native_owner_turn_id=native_owner_turn_id,
+                       owner_input_origin=owner_input_origin, owner_input_attestation=attestation)
+        pending = self.record.get('organic_claim_intent')
+        fresh = pending is None
+        if pending is not None:
+            if {k: v for k, v in pending.items() if k != 'request_id'} != request:
+                raise self.host.refusal('INTENT_PENDING', 'another signed observation is unresolved')
+        else:
+            self.record['organic_claim_intent'] = dict(request_id=str(uuid.uuid4()), **request)
+            self.save()
+        return self._recover_organic_claim(fresh=fresh)
+
+    def _recover_organic_claim(self, *, fresh=False):
+        record, refusal = self.record, self.host.refusal
+        request = record['organic_claim_intent']
+        if request.get('session') != self.host.session_ref(record['agent']):
+            raise refusal('STALE_SESSION', 'signed observation left its execution')
+        try:
+            result = self.host.call(self.config, 'session-organic-notice-claim', request)
+        except refusal as exc:
+            if fresh and exc.code in BATCH_ADVANCE_FINAL_REFUSALS + ('FEATURE_DISABLED', 'VERSION_CONFLICT',
+                                                                   'CONFLICT', 'INPUT_ID_REUSED'):
+                record.pop('organic_claim_intent')
+                self.save()
+            raise
+        if not isinstance(result, dict) or result.get('decision') not in ('none', 'admitted', 'exhausted'):
+            raise refusal('INVALID_HOST', 'signed observation returned an invalid result')
+        selected = result.get('attempt')
+        if selected is not None:
+            if (not isinstance(selected, dict) or selected.get('session') != request['session']
+                    or selected.get('native_turn_id') != request['native_owner_turn_id']
+                    or selected.get('admission_kind') != 'organic'
+                    or not result.get('root_id') or selected.get('organic_root') != result['root_id']
+                    or not selected.get('attempt_id') or selected.get('finished_at')
+                    or selected.get('turn_exclusive')
+                    or (selected.get('delivery') or {}).get('event', {}).get('kind') != 'notice'):
+                raise refusal('INVALID_HOST', 'signed observation changed item ownership')
+            old = record.get('inbox_attempt')
+            if old and old.get('attempt_id') != selected['attempt_id']:
+                raise refusal('INVALID_HOST', 'signed observation replaced an existing inbox hold')
+            if not old:
+                record['inbox_attempt'] = selected
+                record['organic_root'] = result['root_id']
+                record['inbox_intent'] = dict(request_id=selected['attempt_id'], session=request['session'],
+                                               native_turn_id=selected['native_turn_id'])
+                record['inbox_intent_kind'] = 'organic'
+                record['inbox_result_policy'] = dict(claim_request_id=selected['attempt_id'], version=1)
+        record.pop('organic_claim_intent')
+        self.save()
+        return result
+
+    def advance_organic_notice(self, request=None):
+        """Persist the next exact handoff, then use the shared batch transition."""
+        record = self.record
+        old = record.get('inbox_attempt') or {}
+        if old.get('admission_kind') != 'organic' or not old.get('organic_root'):
+            raise self.host.refusal('INVALID_REQUEST', 'no organic notice is held')
+        pending = record.get('organic_advance_intent')
+        fresh = pending is None
+        if pending is None:
+            request = request or dict(request_id=str(uuid.uuid4()), session=old['session'],
+                attempt_id=old['attempt_id'], root_id=old['organic_root'], version=1)
+            record['organic_advance_intent'] = request
+            self.save()
+        elif request is not None and request != pending:
+            raise self.host.refusal('SESSION_BUSY', 'another notice handoff is unresolved')
+        return self.advance_batch(fresh_organic=fresh)
+
     def recover(self):
         """Replay a saved batch handoff, then claim a pending intent; the attempt or None."""
         record = self.record
-        if record.get('batch_advance_intent'):
+        if record.get('organic_claim_intent'):
+            self._recover_organic_claim()
+        if record.get('batch_advance_intent') or record.get('organic_advance_intent'):
             self.advance_batch()
         if record.get('inbox_intent') and not record.get('inbox_attempt'):
-            result = self.host.call(self.config, 'session-inbox-claim', record['inbox_intent'])
-            if result['attempt']:
-                record['inbox_attempt'] = result['attempt']
+            if record.get('inbox_intent_kind') == 'organic' or 'native_owner_turn_id' in record['inbox_intent']:
+                result = self.host.call(self.config, 'session-organic-notice-claim', record['inbox_intent'])
+                if result and result.get('attempt'):
+                    record['inbox_attempt'] = result['attempt']
+                    record['organic_root'] = result.get('root_id')
+                else:
+                    record.pop('inbox_intent', None)
+                    record.pop('inbox_intent_kind', None)
+                self.save()
             else:
-                record.pop('inbox_intent')
-            self.save()
+                result = self.host.call(self.config, 'session-inbox-claim', record['inbox_intent'])
+                if result.get('attempt'):
+                    record['inbox_attempt'] = result['attempt']
+                else:
+                    record.pop('inbox_intent', None)
+                    record.pop('inbox_intent_kind', None)
+                self.save()
         return record.get('inbox_attempt')
 
     def refresh_attempt(self, attempt):
@@ -149,26 +235,33 @@ class NativeSession:
         self.save()
         return attempt
 
-    def advance_batch(self):
+    def advance_batch(self, *, fresh_organic=False):
         """Replay one saved atomic notice handoff before interpreting local state."""
         record, refusal = self.record, self.host.refusal
-        request = record.get('batch_advance_intent')
-        if not isinstance(request, dict) or set(request) != {'request_id', 'session', 'attempt_id', 'version'}:
+        organic = bool(record.get('organic_advance_intent'))
+        intent_key = 'organic_advance_intent' if organic else 'batch_advance_intent'
+        if organic and record.get('batch_advance_intent'):
+            raise refusal('SESSION_BUSY', 'two notice handoffs are unresolved')
+        request = record.get(intent_key)
+        fields = {'request_id', 'session', 'attempt_id', 'version'} | ({'root_id'} if organic else set())
+        if not isinstance(request, dict) or set(request) != fields:
             raise refusal('INVALID_HOST', 'native batch advance intent is malformed')
         old = record.get('inbox_attempt') or {}
         if (request['attempt_id'] != old.get('attempt_id') or request['session'] != old.get('session')
-                or request['version'] != 1 or not old.get('native_turn_id')):
+                or request['version'] != 1 or not old.get('native_turn_id')
+                or organic != (old.get('admission_kind') == 'organic')
+                or (organic and request['root_id'] != old.get('organic_root'))):
             raise refusal('STALE_SESSION', 'native batch advance left its active turn')
         try:
             # Native inbox mutations require the base profile; the execution is
             # fenced by the explicit session in the request body.
-            result = self.host.call(self.config, 'session-inbox-advance', request)
+            result = self.host.call(self.config, 'session-organic-notice-advance' if organic else 'session-inbox-advance', request)
         except refusal as exc:
             # A definite refusal transferred no hold. Do not replay it ahead of
             # later settlement on every hook. Unknown transport results retain
             # the exact intent for idempotent recovery.
-            if exc.code in BATCH_ADVANCE_FINAL_REFUSALS:
-                record.pop('batch_advance_intent')
+            if (not organic or fresh_organic) and exc.code in BATCH_ADVANCE_FINAL_REFUSALS:
+                record.pop(intent_key)
                 self.save()
             raise
         if not isinstance(result, dict) or not isinstance(result.get('remainder', ''), str) or 'attempt' not in result:
@@ -182,15 +275,18 @@ class NativeSession:
                     next_attempt.get('batch_root') != (old.get('batch_root') or old['attempt_id']) or
                     next_attempt.get('batch_index') != expected_index + 1 or
                     next_attempt.get('batch_limit') != BATCH_LIMIT or next_attempt.get('finished_at') or
+                    (organic and (next_attempt.get('admission_kind') != 'organic' or
+                                  next_attempt.get('organic_root') != request['root_id'])) or
                     (next_attempt.get('delivery') or {}).get('event', {}).get('kind') != 'notice'):
                 raise refusal('INVALID_HOST', 'native batch advance changed item ownership')
             record['inbox_attempt'] = next_attempt
             record['inbox_intent'] = dict(request_id=next_attempt['attempt_id'], session=request['session'],
                                           native_turn_id=next_attempt['native_turn_id'])
             record['inbox_result_policy'] = dict(claim_request_id=next_attempt['attempt_id'], version=1)
+            record['inbox_intent_kind'] = 'organic' if organic else 'ordinary'
             for key in BATCH_NEXT_KEYS_CLEARED:
                 record.pop(key, None)
-        record.pop('batch_advance_intent')
+        record.pop(intent_key)
         self.save()
         return result
 
@@ -330,6 +426,19 @@ class NativeSession:
         if not record.get('agent'):
             record['agent'] = self.host.call(self.config, 'agent-register', record['registration'], timeout=timeout)
             self.save()
+        if record.get('organic_claim_intent') or record.get('organic_advance_intent'):
+            # An unknown observation/handoff reply can own a Store hold even
+            # when no local inbox_intent exists yet. Resolve that exact saved
+            # operation before leaving fences access to its receipt.
+            try:
+                self.recover()
+            except refusal as exc:
+                if exc.code not in ('NOT_FOUND', 'AUTHORITY_DENIED'):
+                    raise
+                # A cached reply can become source-ineligible after its hold
+                # committed. Only Store's actual owned attempt metadata can
+                # recover that hold; request IDs need not equal its identity.
+                self._retirement_organic_control()
         if not self.host.flush(self.config, record, 'all'):
             # Leaving would strand a result or reply that may still commit under this execution.
             raise refusal('INTENT_PENDING', 'a journaled inbox command is still uncertain; the session stays until it settles')
@@ -340,6 +449,41 @@ class NativeSession:
                 raise
         self.host.release(self, record['ending_reason'], True)
         record['retired'] = True
+        self.save()
+
+    def _retirement_organic_control(self):
+        record, refusal = self.record, self.host.refusal
+        pending = record.get('organic_claim_intent')
+        advance = record.get('organic_advance_intent')
+        old = record.get('inbox_attempt') or {}
+        result = self.host.call(self.config, 'session-inbox-control', self.host.session_ref(record['agent']))
+        selected = result.get('attempt') if isinstance(result, dict) else None
+        owner_turn = pending.get('native_owner_turn_id') if pending else old.get('native_turn_id')
+        if (not isinstance(selected, dict) or selected.get('session') != self.host.session_ref(record['agent'])
+                or selected.get('native_turn_id') != owner_turn or not owner_turn
+                or selected.get('admission_kind') != 'organic' or not selected.get('organic_root')
+                or not selected.get('attempt_id') or selected.get('finished_at') or selected.get('turn_exclusive')
+                or (selected.get('delivery') or {}).get('event', {}).get('kind') != 'notice'):
+            raise refusal('INTENT_PENDING', 'Store did not prove the exact organic hold for retirement')
+        if advance:
+            if (selected.get('organic_root') != advance.get('root_id')
+                    or selected.get('attempt_id') == old.get('attempt_id')
+                    or selected.get('batch_root') != (old.get('batch_root') or old.get('attempt_id'))
+                    or selected.get('batch_index') != old.get('batch_index', 1) + 1):
+                raise refusal('INTENT_PENDING', 'Store did not prove the uncertain organic handoff')
+        elif old and old.get('attempt_id') != selected['attempt_id']:
+            raise refusal('INTENT_PENDING', 'Store control differs from the previously held item')
+        if old.get('attempt_id') != selected['attempt_id']:
+            for key in BATCH_NEXT_KEYS_CLEARED:
+                record.pop(key, None)
+        record['inbox_attempt'] = selected
+        record['inbox_intent'] = dict(request_id=selected['attempt_id'], session=selected['session'],
+                                      native_turn_id=selected['native_turn_id'])
+        record['inbox_intent_kind'] = 'organic'
+        record['organic_root'] = selected['organic_root']
+        record['inbox_result_policy'] = dict(claim_request_id=selected['attempt_id'], version=1)
+        record.pop('organic_claim_intent', None)
+        record.pop('organic_advance_intent', None)
         self.save()
 
 

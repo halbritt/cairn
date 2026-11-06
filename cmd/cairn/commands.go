@@ -26,6 +26,8 @@ Everyday commands:
   notice-flush --help (publisher rollback of a deferred routine notice)
   watch --help (read-only inbox arrivals with a saved cursor)
   response-group | response-groups (owned reply collections; use --help)
+  wait --help (durable coordination waits: create, get, list, cancel; use --help)
+  work --help (work features and coordination; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
@@ -145,6 +147,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if _, ok := eventCommandOperations[args[0]]; ok {
 		return eventCommand(ctx, args[0], args[1:], input, nil)
 	}
+	if args[0] == "wait" {
+		return waitCommand(ctx, args[1:], input, nil)
+	}
 	if args[0] == "machine" {
 		return machineCommand(ctx, args[1:])
 	}
@@ -161,8 +166,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		}
 		return installOpenCode(args[1:], executable)
 	}
-	if args[0] == "work" && len(args) > 1 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
+	if args[0] == "work" && (len(args) == 1 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
 		return commandHelp(workHelp), nil
+	}
+	if args[0] == "work" && len(args) > 1 && args[1] == "features" && (len(args) == 2 || hasWorkHelpArg(args[2:])) {
+		return commandHelp(workFeaturesHelp), nil
+	}
+	if args[0] == "work" && len(args) > 1 && args[1] == "artifact" && (len(args) == 2 || hasWorkHelpArg(args[2:])) {
+		return commandHelp(workArtifactHelp), nil
 	}
 	if args[0] == "work" && len(args) > 2 && args[1] == "serve" && (args[2] == "--help" || args[2] == "-h" || args[2] == "help") {
 		return commandHelp("cairn work serve [--project SLUG] [--port PORT] [--collection REPO]\n"), nil

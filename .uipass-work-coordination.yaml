@@ -110,3 +110,35 @@ surfaces:
       unaffected_revision:
         route: /
         ready: '#artifact-revision-section'
+  coordination_waits:
+    states:
+      linked_waits:
+        route: /
+        ready: '.coordination-wait >> nth=0'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.coordination-wait summary >> nth=0'}
+  coordination_empty:
+    states:
+      no_linked_dependencies:
+        route: /
+        ready: '#coordination-waits-empty'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#coordination-reload'}
+  coordination_disabled:
+    states:
+      retained_waits:
+        route: /
+        ready: '.coordination-wait >> nth=0'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.coordination-wait summary >> nth=0'}
+  coordination_transitions:
+    states:
+      after_restore_fence:
+        route: /
+        ready: '.coordination-wait >> nth=0'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.coordination-wait summary >> nth=0'}

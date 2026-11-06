@@ -106,3 +106,47 @@ Current-read cases purge a source through the real CLI and require a refused
 impact read to clear old metadata. Another case forwards a real purge reply only
 after browser Back selects a different revision; that reply must not replace the
 new view. A malformed trailing JSON body must refuse without registering a row.
+
+## Coordination panels
+
+Use `--scope coordination` with a coherent WC01/WC03/WC04 candidate. The fixture
+creates real registered owners, request and response-group
+dependencies, waits, cancellation and exact work associations through existing
+CLI/API operations. Its current cases check wait membership/provenance/pagination,
+an unsupported recipient, empty membership and disabled retained reads. The
+transition case waits for a real 30-second GET, forwards an actual delayed reply
+after opening another item, removes an exact association, and uses the operator
+restore fence to make a retained cursor refuse before reloading the first page.
+It checks that these reads preserve an unsaved note and do not mutate coordination
+state. The fence case does not perform a database backup/restore. Missing
+schema or the selected operator endpoint fails; no successful Cairn reply is
+substituted. It compares complete retained coordination rows around browser reads.
+
+This scope does not yet establish complete coordination acceptance. Its report
+lists pending native supported-notice lifecycle/pagination, privacy and complete
+native restore behavior. Supported quiet-notice setup reuses the verified native
+fixture's physically activated launch/session binding; it does not insert a
+capability or queue row. Run the separate native panel fixture against the same
+immutable source and retained binary:
+
+```sh
+uv run --project "$HOME/git/uipass" --frozen python -B \
+  tests/fixtures/work_ui/native_queued.py \
+  --source /absolute/path/to/captured-source \
+  --capture-manifest /absolute/path/to/capture.json \
+  --binary /absolute/path/to/retained-cairn \
+  --binary-report /absolute/path/to/work-ui-report.json \
+  --native-manifest /absolute/path/to/verified-native-manifest.json \
+  --output /absolute/path/to/fresh-native-panel-evidence
+```
+
+The build report must bind that binary to the same unchanged source with no web
+overlay. Native scripts and lifecycle inputs come from the captured candidate;
+the adjacent callback fixture has its own recorded hash. The native fixture uses
+the verified patched Codex TUI and a local scripted Responses server. Its bounded
+callback creates an actual supported backlog, checks exact notice membership and
+association provenance across both pages and viewports, expands a known source
+row to check that its body is absent, and runs UIPass on the notice views. All
+reads must leave the queue and ordinary delivery state unchanged. This callback
+does not claim the native fixture's separate full delivery workflow, expiry or
+restore acceptance. Inspect its screenshots and retained pending-case list.

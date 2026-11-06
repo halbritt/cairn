@@ -104,7 +104,7 @@ class Admission:
     """The decision one hook invocation received."""
 
     __slots__ = ("kind", "verdict", "reason", "message", "event", "phase", "native_id", "workspace",
-                 "project", "observed_model", "native_turn_id", "home", "exclusions")
+                 "project", "observed_model", "native_turn_id", "home", "exclusions", "owner_observation")
 
     def __init__(self, kind, verdict, reason=None, message=None, **fields):
         self.kind, self.verdict, self.reason, self.message = kind, verdict, reason, message
@@ -120,7 +120,7 @@ class Admission:
         """The coordination presence observation (the former ``normalize`` result)."""
         return dict(native_id=self.native_id, workspace=self.workspace, project=self.project,
                     observed_model=self.observed_model, phase=self.phase, event=self.event,
-                    native_turn_id=self.native_turn_id)
+                    native_turn_id=self.native_turn_id, **(self.owner_observation or {}))
 
 
 def _skip(kind, reason, **fields):
@@ -283,8 +283,35 @@ def observe(config, event, event_name=None, *, probe=PROBE):
             return _invalid(kind, "invalid native ownership key", event=name)
         if owner:
             owner = ("claude-channel:" + owner) if harness == "claude" else owner
+    owner_observation = {}
+    if harness == "codex" and name == "UserPromptSubmit" and event.get("owner_input_attestation") is not None:
+        # This only bounds transport data. Store verifies the raw signed bytes,
+        # operator key reservation, execution, generation and observation age.
+        envelope, origin = event["owner_input_attestation"], event.get("owner_input_origin")
+        if (not owner or not isinstance(envelope, dict)
+                or set(envelope) != {"schema", "payload", "signature"}
+                or envelope["schema"] != "cairn.owner-input-attestation/1"
+                or not isinstance(envelope["payload"], str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,2732}", envelope["payload"])
+                or not isinstance(envelope["signature"], str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{86}", envelope["signature"])):
+            return _invalid(kind, "invalid owner input attestation envelope", event=name)
+        if (not isinstance(origin, dict) or set(origin) != {"version", "source", "admission", "input_id"}
+                or type(origin["version"]) is not int or origin["version"] != 1
+                or origin["source"] not in ("owner_composer", "unknown")
+                or origin["admission"] not in ("fresh_start", "joined", "recovery", "unknown")):
+            return _invalid(kind, "invalid owner input origin", event=name)
+        ident = origin["input_id"]
+        try:
+            if ident is not None and (not isinstance(ident, str) or str(uuid.UUID(ident)) != ident
+                                      or uuid.UUID(ident).int == 0):
+                raise ValueError()
+        except (ValueError, AttributeError):
+            return _invalid(kind, "invalid owner input identity", event=name)
+        owner_observation = dict(owner_input_origin=dict(origin), owner_input_attestation=dict(envelope))
     return Admission(kind, "run", event=name, phase=phase, native_id=native, workspace=str(workspace),
-                     project=root.name or str(workspace), observed_model=model, native_turn_id=owner)
+                     project=root.name or str(workspace), observed_model=model, native_turn_id=owner,
+                     owner_observation=owner_observation)
 
 
 def decide(kind, config, event, event_name=None, *, environ=None, probe=PROBE, wake_accepted=False):
