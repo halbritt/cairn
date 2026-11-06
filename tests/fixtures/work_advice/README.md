@@ -1,4 +1,4 @@
-# Advice restore and upgrade fixtures
+# Advice recovery and compatibility fixtures
 
 These explicit, locally run checks use owned disposable PostgreSQL clusters.
 They do not install executables or use a production database. The advice provider
@@ -14,6 +14,40 @@ unchanged. The restore executable's reviewed SHA-256 is
 It receives selected synthetic source text, has no network client, and holds a
 real process family only in the explicit `hold_family` mode. The case registers
 the copied executable's exact hash through the operator CLI.
+
+## Build the exact candidates
+
+From a clean committed checkout, run:
+
+```sh
+python3 -B scripts/build_work_advice_compatibility.py \
+  --repo /path/to/cairn-checkout --candidate FULL_COMMIT_SHA \
+  --output /path/to/new-build-directory
+```
+
+The builder captures and compiles three private candidates: the selected normal
+build, the same schema079 source with only its two advice-support declarations
+removed, and the landed schema078 build. It does not replace installed binaries.
+The normal and old78 capture manifests and physical-build receipts in that output
+directory are also the inputs for the restore and upgrade checks below.
+
+## Maintenance without advice support
+
+Run the durable compatibility check against that build receipt:
+
+```sh
+python3 -B scripts/check_work_advice_compatibility.py \
+  --build-receipt /path/to/new-build-directory/build-receipt.json \
+  --output /path/to/new-compatibility-report
+```
+
+The same lower-support HTTP process and cold CLI must refuse active advice or
+unsettled obligations. After admission is disabled and real pending actions are
+settled, that build must inspect retained applications, Undo an application and
+retry the exact Undo. A separate held-provider case checks refusal while a job
+is running and reopening only after the actual runner confirms process cleanup.
+The older schema078 binary must still refuse schema079. SQL is read-only; the
+fixture does not alter feature tables to make the downgrade pass.
 
 ## Whole-database restore
 
