@@ -26,13 +26,15 @@ type StoppedDeliveryNotificationRequest struct {
 }
 
 type StoppedDeliveryNotificationResult struct {
-	DeliveryID          string `json:"delivery_id"`
-	EventID             string `json:"event_id,omitempty"`
-	Publisher           string `json:"publisher,omitempty"`
-	NotificationID      string `json:"notification_id"`
-	NotificationEventID string `json:"notification_event_id,omitempty"`
-	Status              string `json:"status"`
-	Reason              string `json:"reason,omitempty"`
+	DeliveryID                  string `json:"delivery_id"`
+	EventID                     string `json:"event_id,omitempty"`
+	Publisher                   string `json:"publisher,omitempty"`
+	NotificationID              string `json:"notification_id"`
+	NotificationEventID         string `json:"notification_event_id,omitempty"`
+	Status                      string `json:"status"`
+	Reason                      string `json:"reason,omitempty"`
+	RefusalDiagnosticUnrecorded bool   `json:"refusal_diagnostic_unrecorded,omitempty"`
+	DiagnosticWarning           string `json:"diagnostic_warning,omitempty"`
 }
 
 type stoppedDeliveryNoticePayload struct {
@@ -252,6 +254,12 @@ func (s *Store) publishStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, r
 	return s.commitStoppedDeliveryNoticeTx(ctx, tx, req, out, digest, publisher, eventID, correlationID, sensitivity, payload)
 }
 
+// commitStoppedDeliveryNoticeTx publishes a notice as the trusted operator
+// channel principal (intentionally charging the operator's producer/owner rate
+// buckets rather than impersonating an agent). On capacity or reconciliation
+// refusal it rolls back before out-of-transaction diagnostic retention; if
+// diagnostic retention fails, the clean deferral still succeeds with a structured
+// warning so batch review preserves current alert fingerprints.
 func (s *Store) commitStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, req StoppedDeliveryNotificationRequest, out StoppedDeliveryNotificationResult, digest []byte, publisher, eventID, correlationID, sensitivity string, payload stoppedDeliveryNoticePayload) (StoppedDeliveryNotificationResult, error) {
 	if _, err := retrievalGeneration(ctx, tx); err != nil {
 		return out, err
@@ -266,17 +274,14 @@ func (s *Store) commitStoppedDeliveryNoticeTx(ctx context.Context, tx pgx.Tx, re
 			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 				return out, rbErr
 			}
-			if retained := s.retainEventAdmissionRefusal(ctx, req.Repo, err); retained != err {
-				return out, &Error{
-					Code:    "REFUSAL_UNRECORDED",
-					Message: "stopped-delivery notice deferred; admission refusal diagnostic could not commit",
-					Cause:   retained,
-				}
-			}
 			out.Status = "deferred_capacity"
 			out.Reason = refusal.Code
 			if refusal.Admission != nil && refusal.Admission.Dimension != "" {
 				out.Reason = refusal.Admission.Dimension
+			}
+			if retained := s.retainEventAdmissionRefusal(ctx, req.Repo, err); retained != err {
+				out.RefusalDiagnosticUnrecorded = true
+				out.DiagnosticWarning = "stopped-delivery notice deferred; admission refusal diagnostic could not be retained"
 			}
 			return out, nil
 		}

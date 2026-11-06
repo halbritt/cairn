@@ -143,9 +143,10 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		t.Fatalf("tick2 failed fair rotation to healthy S2: %+v %v", tick2, err)
 	}
 
-	// Post-commit telemetry fault: when S1 is refused alongside healthy S2b in a single tick
+	// Post-commit telemetry fault (M1): when S1 is refused alongside healthy S2b in a single tick
 	// and refusal diagnostic persistence fails, S2b stays durably committed while TickSchedules
-	// surfaces REFUSAL_UNRECORDED with committed Occurrences intact.
+	// returns nil error with structured UnrecordedRefusalDiagnostics + DiagnosticWarning so
+	// schedule-serve still reaches SweepWaitTimeouts and DrainWaitOutbox.
 	s2b, err := op.ScheduleEvent(ctx, ScheduleEventRequest{
 		RequestID:    uuid.NewString(),
 		NotBefore:    time.Now().Add(-time.Second),
@@ -167,12 +168,20 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 	}
 	defer op.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON cairn.agent_event_admission_refusal; DROP FUNCTION IF EXISTS cairn.%s()`, trig, trig))
 	tickFault, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: repo, Limit: 2})
-	requireCode(t, err, "REFUSAL_UNRECORDED")
-	if len(tickFault.Occurrences) != 1 || tickFault.Occurrences[0].OccurrenceID != s2b.OccurrenceID || tickFault.Occurrences[0].State != "fired" {
-		t.Fatalf("expected committed S2b preserved across post-commit telemetry fault: %+v %v", tickFault, err)
+	if err != nil {
+		t.Fatalf("expected post-commit refusal telemetry fault not to abort TickSchedules: %v", err)
+	}
+	if len(tickFault.Occurrences) != 1 || tickFault.Occurrences[0].OccurrenceID != s2b.OccurrenceID || tickFault.Occurrences[0].State != "fired" || tickFault.Deferred != 1 || tickFault.UnrecordedRefusalDiagnostics != 1 || tickFault.DiagnosticWarning == "" {
+		t.Fatalf("expected committed S2b + structured diagnostic warning across telemetry fault: %+v", tickFault)
 	}
 	if _, err = op.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER %s ON cairn.agent_event_admission_refusal; DROP FUNCTION cairn.%s()`, trig, trig)); err != nil {
 		t.Fatal(err)
+	}
+	// Real transaction errors (e.g. cancelled context) remain fatal.
+	cancelledCtx, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+	if _, err = op.TickSchedules(cancelledCtx, ScheduleTickRequest{Repo: repo, Limit: 1}); err == nil {
+		t.Fatal("expected cancelled context transaction error to remain fatal in TickSchedules")
 	}
 
 	// Unsubscribing consumerC brings topic back to 2 recipients; S1 fires on next tick.
@@ -428,6 +437,56 @@ func TestAlternateAdmission_PoolAdmitAndAssignTransferUnderLoweredLimits(t *test
 		t.Fatalf("pool closure reservation did not transfer cleanly on assignPool: %+v", probe)
 	}
 	finishPool(t, workerBStore, *claimed, dest)
+	allowFixtureLaunch(t, workerBStore)
+
+	// Public ClaimWake publisher rotation (T1): brand-new pubBlocked (last_dispatch=0) queues
+	// blockedPoolEvt and saturates pubBlocked->workerB (MaxProducerRecipientOutstanding=1), while
+	// earlier-dispatched pub (last_dispatch=1, 0 outstanding on workerB) queues healthyPoolEvt;
+	// public ClaimWake must try pubBlocked first, record producer_recipient_outstanding, and assign healthyPoolEvt.
+	enablePublicEnforcePolicy(t, op, repo, func(l *EventAdmissionLimits) {
+		l.MaxCollectionOutstanding = 6
+		l.MaxRecipientOutstanding = 3
+		l.MaxProducerRecipientOutstanding = 1
+		l.MaxClosureReserved = 6
+		l.MaxRecipientClosureReserved = 6
+	})
+	pubBlocked := testStore(t, Channel{Principal: "pub-blocked-" + uuid.NewString(), Repo: repo})
+	draft2 := projectNote(repo)
+	draft2.Sensitivity = "shareable"
+	srcBlocked, err := pubBlocked.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draft2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedPoolEvt := poolPublish(t, pubBlocked, srcBlocked, dest, needs)
+	healthyPoolEvt := poolPublish(t, pub, source, dest, needs)
+	if _, err = pubBlocked.PublishEvent(ctx, PublishEventRequest{
+		RequestID:   uuid.NewString(),
+		Repo:        repo,
+		Kind:        "notice",
+		Ref:         RecordVersionRef{RecordID: srcBlocked.RecordID, Version: srcBlocked.Version},
+		Destination: EventDestination{Type: "agent", Name: workerBStore.channel.Principal},
+	}, dest); err != nil {
+		t.Fatal(err)
+	}
+	rotatedClaim := poolClaim(t, workerBStore, workerB, dest)
+	if rotatedClaim == nil || rotatedClaim.Delivery.Event.EventID != healthyPoolEvt.EventID {
+		t.Fatalf("public ClaimWake did not rotate past pair-saturated pubBlocked to healthy pub: %+v", rotatedClaim)
+	}
+	blockedStatus, err := pubBlocked.AgentEventStatus(ctx, EventStatusRequest{EventID: blockedPoolEvt.EventID}, dest)
+	if err != nil || blockedStatus.Pool == nil || blockedStatus.Pool.State != "queued" {
+		t.Fatalf("blocked pool request was lost during public ClaimWake rotation: %+v %v", blockedStatus, err)
+	}
+	poolRefusals, err := op.EventAdmissionRefusals(ctx, EventAdmissionPolicyQuery{Repo: repo})
+	foundPairRefusal := false
+	for _, r := range poolRefusals {
+		if r.Dimension == "producer_recipient_outstanding" && r.RefusalCount >= 1 {
+			foundPairRefusal = true
+		}
+	}
+	if err != nil || !foundPairRefusal {
+		t.Fatalf("expected producer_recipient_outstanding refusal from public ClaimWake: %+v %v", poolRefusals, err)
+	}
+	finishPool(t, workerBStore, *rotatedClaim, dest)
 }
 
 func TestAlternateAdmission_QueuedQuietNoticeTransfersOnClaimAdvanceFlushAndRestore(t *testing.T) {
@@ -674,9 +733,86 @@ func TestAlternateAdmission_StoppedNoticeRollbackAndDeterministicSameUUIDRetry(t
 	}
 	// Third pass with updated cache suppresses duplicate with same deterministic NotificationID.
 	cur3 := AttentionCache{Schema: "cairn.delivery-attention/1", Scope: repo, Deliveries: map[string]AttentionEntry{}}
-	batch3, _, err := NotifyStoppedPublishers(ctx, op, repo, review.Deliveries, cache2, cur3, now.Add(2*time.Second))
+	batch3, cache3, err := NotifyStoppedPublishers(ctx, op, repo, review.Deliveries, cache2, cur3, now.Add(2*time.Second))
 	if err != nil || batch3.Suppressed != 1 || batch3.Results[0].NotificationID != detReqID || batch3.Results[0].Status != "duplicate_suppressed" {
 		t.Fatalf("expected duplicate_suppressed on 3rd review: %+v %v", batch3, err)
+	}
+
+	// M2 fault-injection: in a multi-item sweep where sender2's notice commits ("sent") and
+	// saturated sender3's notice defers ("deferred_capacity") while refusal diagnostic persistence
+	// fails, NotifyStoppedPublishers must NOT abort or discard sender2's NotifiedFingerprint,
+	// whereas a real transaction failure remains fatal and preserves previous cache.
+	enablePublicEnforcePolicy(t, op, repo, func(l *EventAdmissionLimits) {
+		l.MaxRecipientOutstanding = 3
+		l.MaxProducerRecipientOutstanding = 3
+		l.MaxCollectionOutstanding = 16
+		l.MaxClosureReserved = 4
+		l.MaxRecipientClosureReserved = 4
+	})
+	sender2 := testStore(t, Channel{Principal: "sender2-" + repo, Repo: repo})
+	sender3 := testStore(t, Channel{Principal: "sender3-" + repo, Repo: repo})
+	for _, s := range []*Store{sender2, sender3} {
+		if _, err = s.PublishEvent(ctx, PublishEventRequest{
+			RequestID:   uuid.NewString(),
+			Repo:        repo,
+			Kind:        "notice",
+			Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
+			Destination: EventDestination{Type: "agent", Name: f.agent.Inbox},
+		}, f.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = peer.PublishEvent(ctx, PublishEventRequest{
+		RequestID:   uuid.NewString(),
+		Repo:        repo,
+		Kind:        "notice",
+		Ref:         RecordVersionRef{RecordID: peerNote.RecordID, Version: peerNote.Version},
+		Destination: EventDestination{Type: "agent", Name: sender3.channel.Principal},
+	}, f.dest); err != nil {
+		t.Fatal(err)
+	}
+	enablePublicEnforcePolicy(t, op, repo, func(l *EventAdmissionLimits) {
+		l.MaxRecipientOutstanding = 1
+		l.MaxProducerRecipientOutstanding = 3
+		l.MaxCollectionOutstanding = 16
+		l.MaxClosureReserved = 4
+		l.MaxRecipientClosureReserved = 4
+	})
+	trigM2 := "stopped_refusal_probe_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	trigM2SQL := fmt.Sprintf(`CREATE FUNCTION cairn.%s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected stopped refusal telemetry fault'; END $$; CREATE TRIGGER %s BEFORE INSERT OR UPDATE ON cairn.agent_event_admission_refusal FOR EACH ROW WHEN (NEW.repo='%s') EXECUTE FUNCTION cairn.%s()`, trigM2, trigM2, repo, trigM2)
+	if _, err = op.pool.Exec(ctx, trigM2SQL); err != nil {
+		t.Fatal(err)
+	}
+	defer op.pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON cairn.agent_event_admission_refusal; DROP FUNCTION IF EXISTS cairn.%s()`, trigM2, trigM2))
+
+	reviewM2, err := op.ReviewEvents(ctx, EventReviewRequest{Repo: repo, Consumer: f.agent.Inbox, State: "pending"})
+	if err != nil || len(reviewM2.Deliveries) != 3 {
+		t.Fatalf("expected 3 stopped pending deliveries: %+v %v", reviewM2, err)
+	}
+	var del2ID, del3ID string
+	for _, d := range reviewM2.Deliveries {
+		if d.Event.From == sender2.channel.Principal {
+			del2ID = d.DeliveryID
+		} else if d.Event.From == sender3.channel.Principal {
+			del3ID = d.DeliveryID
+		}
+	}
+	curM2 := AttentionCache{Schema: "cairn.delivery-attention/1", Scope: repo, Deliveries: map[string]AttentionEntry{}}
+	batchM2, cacheM2, err := NotifyStoppedPublishers(ctx, op, repo, reviewM2.Deliveries, cache3, curM2, dbNow(t, op).Add(3*time.Second))
+	if err != nil {
+		t.Fatalf("expected M2 diagnostic telemetry fault not to abort NotifyStoppedPublishers: %v", err)
+	}
+	if batchM2.Sent != 1 || batchM2.Suppressed != 1 || batchM2.Deferred != 1 || batchM2.UnrecordedRefusalDiagnostics != 1 || batchM2.DiagnosticWarning == "" {
+		t.Fatalf("unexpected M2 batch summary: %+v", batchM2)
+	}
+	if cacheM2.Deliveries[del2ID].NotifiedFingerprint == "" || cacheM2.Deliveries[del3ID].NotifiedFingerprint != "" {
+		t.Fatalf("M2 cache lost committed sender2 fingerprint or poisoned deferred sender3: del2=%+v del3=%+v", cacheM2.Deliveries[del2ID], cacheM2.Deliveries[del3ID])
+	}
+	cancelledCtx, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+	curFatal := AttentionCache{Schema: "cairn.delivery-attention/1", Scope: repo, Deliveries: map[string]AttentionEntry{}}
+	if _, preservedCache, fatalErr := NotifyStoppedPublishers(cancelledCtx, op, repo, reviewM2.Deliveries, cacheM2, curFatal, dbNow(t, op).Add(4*time.Second)); fatalErr == nil || preservedCache.Deliveries[del2ID].NotifiedFingerprint == "" {
+		t.Fatalf("expected fatal transaction error to return error while preserving previous cache: err=%v cache=%+v", fatalErr, preservedCache)
 	}
 }
 

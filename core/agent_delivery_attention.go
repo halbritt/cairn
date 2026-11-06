@@ -94,13 +94,15 @@ type StoppedSessionBacklog struct {
 }
 
 type PublisherNotificationBatch struct {
-	Attempted   int                                 `json:"attempted"`
-	Sent        int                                 `json:"sent"`
-	Suppressed  int                                 `json:"suppressed"`
-	Unavailable int                                 `json:"unavailable"`
-	Skipped     int                                 `json:"skipped"`
-	Deferred    int                                 `json:"deferred"`
-	Results     []StoppedDeliveryNotificationResult `json:"results"`
+	Attempted                    int                                 `json:"attempted"`
+	Sent                         int                                 `json:"sent"`
+	Suppressed                   int                                 `json:"suppressed"`
+	Unavailable                  int                                 `json:"unavailable"`
+	Skipped                      int                                 `json:"skipped"`
+	Deferred                     int                                 `json:"deferred"`
+	UnrecordedRefusalDiagnostics int                                 `json:"unrecorded_refusal_diagnostics,omitempty"`
+	DiagnosticWarning            string                              `json:"diagnostic_warning,omitempty"`
+	Results                      []StoppedDeliveryNotificationResult `json:"results"`
 }
 
 type StarvedSession struct {
@@ -513,6 +515,10 @@ func NotifyStoppedPublishers(ctx context.Context, store *Store, repo string, del
 			current.Deliveries[d.DeliveryID] = cur
 		case "deferred_capacity":
 			batch.Deferred++
+			if out.RefusalDiagnosticUnrecorded {
+				batch.UnrecordedRefusalDiagnostics++
+				batch.DiagnosticWarning = "stopped-delivery notice deferred; one or more admission refusal diagnostics could not be retained"
+			}
 		case "recipient_unavailable":
 			batch.Unavailable++
 		default:

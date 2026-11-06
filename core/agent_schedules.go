@@ -33,7 +33,10 @@ type ScheduleTickRequest struct {
 	Limit int    `json:"limit,omitempty"`
 }
 type ScheduleTickResult struct {
-	Occurrences []ScheduledEvent `json:"occurrences"`
+	Occurrences                  []ScheduledEvent `json:"occurrences"`
+	Deferred                     int              `json:"deferred,omitempty"`
+	UnrecordedRefusalDiagnostics int              `json:"unrecorded_refusal_diagnostics,omitempty"`
+	DiagnosticWarning            string           `json:"diagnostic_warning,omitempty"`
 }
 
 type ScheduleQuery struct {
@@ -185,7 +188,10 @@ func (s *Store) ScheduleEvent(ctx context.Context, req ScheduleEventRequest) (Sc
 
 // TickSchedules uses database time and a bounded transaction. Event creation,
 // fanout and the occurrence's terminal state either all commit or all roll back.
-// A lost response is reconciled by listing occurrences, never by republishing.
+// Scheduled publications intentionally publish as the trusted operator channel
+// principal and charge that operator's rate buckets rather than impersonating an
+// agent. Post-commit refusal telemetry failures are surfaced on ScheduleTickResult
+// without turning committed schedule outcomes into tick failures.
 func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (ScheduleTickResult, error) {
 	out := ScheduleTickResult{Occurrences: []ScheduledEvent{}}
 	var err error
@@ -266,6 +272,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_schedule SET last_checked_at=clock_timestamp(),code=$2 WHERE occurrence_id=$1`, item.OccurrenceID, refusal.Code); err != nil {
 						return out, err
 					}
+					out.Deferred++
 					continue
 				case refusal.Code == "NOT_FOUND",
 					refusal.Code == "DESTINATION_PROHIBITED",
@@ -287,18 +294,13 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 	if err = tx.Commit(ctx); err != nil {
 		return out, err
 	}
-	var telemetryErrs []error
 	for _, re := range retainedRefusals {
 		if retained := s.retainEventAdmissionRefusal(ctx, req.Repo, re); retained != re {
-			telemetryErrs = append(telemetryErrs, retained)
+			out.UnrecordedRefusalDiagnostics++
 		}
 	}
-	if len(telemetryErrs) > 0 {
-		return out, &Error{
-			Code:    "REFUSAL_UNRECORDED",
-			Message: "schedule tick committed; admission refusal diagnostic could not commit",
-			Cause:   errors.Join(telemetryErrs...),
-		}
+	if out.UnrecordedRefusalDiagnostics > 0 {
+		out.DiagnosticWarning = "schedule tick committed; admission refusal diagnostic could not be retained"
 	}
 	return out, nil
 }

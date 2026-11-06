@@ -10,10 +10,13 @@ import (
 )
 
 type ScheduleServeOnceResult struct {
-	Repo                string `json:"repo"`
-	SweptTimeouts       int64  `json:"swept_timeouts"`
-	PublishedNotices    int64  `json:"published_notices"`
-	ScheduleOccurrences int    `json:"schedule_occurrences"`
+	Repo                         string `json:"repo"`
+	SweptTimeouts                int64  `json:"swept_timeouts"`
+	PublishedNotices             int64  `json:"published_notices"`
+	ScheduleOccurrences          int    `json:"schedule_occurrences"`
+	DeferredSchedules            int    `json:"deferred_schedules,omitempty"`
+	UnrecordedRefusalDiagnostics int    `json:"unrecorded_refusal_diagnostics,omitempty"`
+	DiagnosticWarning            string `json:"diagnostic_warning,omitempty"`
 }
 
 func serveSchedules(ctx context.Context, store *core.Store, args []string, log io.Writer) (any, error) {
@@ -73,12 +76,18 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 			fmt.Fprintln(log, "scheduler ready")
 			ready = true
 		}
+		if result.UnrecordedRefusalDiagnostics > 0 {
+			fmt.Fprintf(log, "schedule refusal_diagnostics_unrecorded=%d warning=%q\n", result.UnrecordedRefusalDiagnostics, result.DiagnosticWarning)
+		}
 		if *once {
 			return ScheduleServeOnceResult{
-				Repo:                *repo,
-				SweptTimeouts:       sweptTimeouts,
-				PublishedNotices:    publishedNotices,
-				ScheduleOccurrences: len(result.Occurrences),
+				Repo:                         *repo,
+				SweptTimeouts:                sweptTimeouts,
+				PublishedNotices:             publishedNotices,
+				ScheduleOccurrences:          len(result.Occurrences),
+				DeferredSchedules:            result.Deferred,
+				UnrecordedRefusalDiagnostics: result.UnrecordedRefusalDiagnostics,
+				DiagnosticWarning:            result.DiagnosticWarning,
 			}, nil
 		}
 		for _, item := range result.Occurrences {
