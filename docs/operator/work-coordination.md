@@ -13,7 +13,7 @@ does not make its contents eligible for hosted memory or model input.
 ## Build and upgrade together
 
 Use one complete source revision for the CLI, API, scheduler and browser. The
-work-coordination release includes migrations 075 through 078 together. Do not
+work-coordination release includes migrations 075 through 079 together. Do not
 install a branch containing 077 without 076: migration history uses the ordered
 file position and digest. Installing that incomplete set makes later insertion
 of the missing migration incompatible with the recorded history.
@@ -32,7 +32,7 @@ cairn work features status
 ```
 
 The feature names are `work-view/1`, `work-artifacts/1`,
-`coordination-waits/1` and `next-turn-notices/1`. Enable a selected feature with
+`coordination-waits/1`, `next-turn-notices/1` and `work-advice/1`. Enable a selected feature with
 `cairn work features enable --feature NAME --request-id UUID`. Use a new UUID
 for new intent, and preserve the exact UUID and arguments after an uncertain
 response. `disable` stops new admission while preserving the feature's maintenance
@@ -162,6 +162,52 @@ to ordinary delivery. Supply the same connection and sender/session flags as
 publication. Expiry is a recorded outcome, not an acknowledgement. Disabling quiet
 admission does not turn the remaining queue into a wake request.
 
+## Review model suggestions
+
+Advice proposes local progress, blocker changes and exact artifact links. It does
+not update Plane or send a message. An operator must review and accept selected
+actions before their effects exist. Each application has its own receipt and
+guarded Undo; rejecting the remaining suggestions preserves earlier applications.
+
+Register an immutable subscription profile that identifies the protected native
+executable, its digest, the source and patch identities, the existing subscription
+home and one model. Inspect the profile before using it. Profile registration is
+not authentication, and the adapter must still verify the native package and
+subscription route at invocation. An authentication or quota refusal ends that
+request. It does not select another account, provider or API key.
+
+Select the project fields that may be sent, then save that explicit field policy.
+Select exact source versions and candidate artifact revisions for each request.
+Work-view access alone does not authorize model input. An empty source or artifact
+selection stays empty. The review shows the retained input, its source identities,
+profile, model and currentness alongside the proposed before/after effects.
+Model text does not grant authority or establish that a claim is true.
+
+Generate performs one bounded invocation and retains its request identity.
+After a timeout or lost response, inspect that same request before retrying.
+Do not create another request merely because the first result is unknown.
+An explicit new request is a new invocation. A cleanup-unconfirmed job keeps its
+capacity reserved until the recorded process group is proved absent.
+
+Apply selects an explicit action subset at the displayed review version. Cairn
+rechecks the source, policy, project, restore generation and relevant target
+revisions. A later manual edit can make the proposal stale. Undo targets one exact
+application and compensates only while its recorded output revisions still match;
+it does not overwrite later operator changes.
+
+Generation and application have separate controls. Disabling either preserves
+retained review and the supported rejection, Undo, cleanup and purge operations.
+Before retiring advice, stop generation and application, settle pending proposals,
+reconcile actual processes and inspect the remaining required state. Keep the
+compatible readers and maintenance path available.
+
+Input payload retention is bounded to 24 hours; unreviewed proposals expire after
+one hour. Unapplied proposal text is removed after seven days and job audit detail
+is reduced after 30 days. Accepted annotations follow normal annotation retention.
+Forget takes priority over these timers and removes known copied text, including
+applied annotation/history copies, while retaining minimal operation identities
+needed for idempotency and guarded compensation.
+
 ## Disable, settle and retire
 
 Settle dependencies before removing feature support. Keep compatible readers,
@@ -173,6 +219,7 @@ maintenance commands and additive schema after retirement.
 | Artifacts | Disable registration and new links. | Unlink active relationships at exact revisions; preserve history and purge fences. Dependent advice must also be settled before artifact retirement. |
 | Waits | Disable creation. | Complete or explicitly cancel accepted waits, drain their original notification outbox and reconcile actual delivery. |
 | Quiet notices | Disable new admission. | Inspect queued notices, explicitly flush or expire them, and reconcile exact materialized native holds. |
+| Advice | Disable generation and application separately. | Inspect retained requests, reject pending actions and reconcile processes; preserve guarded Undo, purge and retention maintenance. |
 
 Check `pending_count` and `unsafe_downgrade_reason` after each step. A count is
 outstanding required state, not necessarily the number of work items. Retirement

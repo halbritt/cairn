@@ -133,3 +133,16 @@ A routine notice queued for a recipient's next supported owner-input boundary.
 It does not wake that conversation. Admission requires a verified native
 observation; ordinary user-role messages and caller-selected origin fields do
 not establish one.
+
+**Advice Job**:
+One bounded model invocation with immutable request intent, selected input and
+provider identity. Its execution state is separate from the work item's status.
+
+**Advice Proposal**:
+A retained, versioned set of possible local changes. Generation creates no work
+annotations or artifact links; an operator must select actions for application.
+
+**Advice Application**:
+An atomic application of a selected action subset, with its own receipt and exact
+output revisions. Undo is a guarded compensation of that application. The
+requesting actor, model provenance and accepting actor remain distinct.
