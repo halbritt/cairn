@@ -187,8 +187,9 @@ This directory identity does not hash the receipt that names the directory.
 The owner-controlled, versioned host hook configuration independently fixes
 the approved absolute interpreter and verified vector `V`: `-I -S -c`
 followed by the reviewed stdlib-only verifier literal, the receipt absolute
-path and expected SHA-256, the entrypoint role and the frontend config absolute
-path. Release records the verifier literal's SHA-256 with that launch selection
+path and expected SHA-256, separate `--role memory|coordination` and
+`--entrypoint ALIAS`, the frontend config absolute path and trusted hook timeout
+selection. Release records the verifier literal's SHA-256 with that launch selection
 and verifies the installed argv, including the literal. No unchecked Python
 file runs merely because it is beside the receipt. The interpreter, its
 stdlib and the literal are the trusted launch anchor; the receipt authenticates
@@ -230,9 +231,11 @@ receipt does not claim their dependency closure or full native migration.
 
 ### Public launch and issued commands
 
-Let `V` be the exact authenticated launch vector: the approved interpreter,
-`-I -S -c` and trusted verifier literal, receipt path and expected SHA-256,
-coordination role or declared alias, and its selected configuration. The
+Let `V` be Foundation's exact verified argv: approved Python, `-I -S -c`, the
+trusted literal, `--receipt PATH --receipt-sha256 SHA`,
+`--role memory|coordination`, `--entrypoint ALIAS` and `--config ABS`, plus the
+trusted hook timeout selection. The alias maps to that role's canonical member
+and the config is its corresponding receipt selection. The
 command grammar is `V + ["--", *original_mode_and_args]`. The verifier/bootstrap
 validates that tail and invokes the checked coordination role with the exact
 original suffix and unchanged stdin. It does not accept another role/config
@@ -271,7 +274,7 @@ handles and issued argv stay untouched and usable.
 
 Foundation's accepted `foundation/v4` at `8b768649` supplies the fixed renderer
 and validation contract for `L`; Release stages, publishes, reads back and
-retains it. For each exact `V`/configuration selection, `L` is a minimal approved
+retains it. For each exact `V`/configuration/timeout selection, `L` is a minimal approved
 noninteractive shell script containing only `exec <shlex.join(V)> -- "$@"`.
 It parses no event/handle, evaluates no tail string and selects no alternate
 program or Python pathname. Original tail arguments, stdin and streams reach
@@ -481,7 +484,10 @@ fixtures cover every row, wake/non-wake, optional/proven-required, both
 
 Use one absolute enclosing deadline: capture monotonic `t0` at the earliest
 trusted verifier entry, before receipt/member validation. The trusted installed
-hook row supplies `H`, never event input; `D = t0 + H`, or an earlier native
+hook row supplies `H`, never event input. Release places that exact timeout
+element in `V` and reads it back; a hook process does not read its host's row.
+Different 13/150 or 2/15 selections require distinct exact `V`/`L` even for one
+configuration. Set `D = t0 + H`, or an earlier native
 deadline when supplied. The child gets exactly `max(0, D - now)`, including
 spawn, both Go image hashes, pipe I/O, normal full 1.5-second ledger wait and
 persistence. There is no fresh phase budget or shorter arbitrary sublimit;
