@@ -298,7 +298,7 @@ def discover_cli_schema(repo_root):
         "agent": {"search", "pull", "pull-evidence", "remember", "start", "run", "clients",
                   "version", "evidence", "send", "publish", "inbox", "ack", "complete",
                   "retry", "renew", "wake-attempts"},
-        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "features", "serve"},
+        "work": {"project", "refresh", "list", "show", "associate", "unassociate", "progress", "blocker", "metadata", "artifact", "advice", "features", "serve"},
         "wait": {"create", "get", "list", "cancel"},
     }
 
