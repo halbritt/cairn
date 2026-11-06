@@ -1,6 +1,6 @@
 # Semantic worker contract
 
-Revision: `semantic/1`, proposed for X-01 acceptance. Source baseline:
+Revision: `semantic/1`, proposed for X-01 acceptance. Characterization baseline:
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` (2026-11-06).
 The semantic team owns this file. Overall owns the shared contract index;
 Release consumes the packaging, service-switch and rebuild requirements.
@@ -9,31 +9,42 @@ acceptance. Shared-contract implementation waits for Overall's X-01 completion
 notice. Read-only inventory and characterization of the existing Python worker
 may proceed before that notice.
 
-The [implementation plan](../hybrid-runtime-implementation.md) controls where
+The [shared contract index](README.md) records cross-team decisions and the
+X-01 gate. The [implementation plan](../hybrid-runtime-implementation.md) controls where
 the earlier [proposal](../hybrid-runtime-consolidation.md) differs from source.
 Keep characterization, a behavioral repair, Rust replacement, and production
 cutover as separate reviewed checkpoints.
 
 ## Owners and delivery boundaries
 
-| Plan key | Deliverable | Builder role | Dependencies |
-| --- | --- | --- | --- |
-| S-01a | Freeze the Python numerical/tokenization oracle and synthetic fixture inputs | S-B1 | Existing source; may characterize before X-01 |
-| S-01b | Characterize wire/process failures and add executable-worker comparison | S-B2 | Characterization may start now; the comparison extension waits for X-01 and criteria review |
-| S-01 | All three reference modes and the differential acceptance harness | S-B1, S-B2 | X-01, S-01a, S-01b |
-| S-02 | Rust rank and stream modes behind Go supervision | S-B1 | S-01 |
-| S-03 | Rust embed mode, original-text spans and derivation identity | S-B1 | S-01; serialize shared Rust edits with S-02 |
-| S-04 | Offline worker/model staging, fixed launchers and native-library evidence | S-B2 | S-02, S-03; Release's supported-host inventory |
-| S-05 | Switch/rebuild/reverse-rebuild tests and runbook | S-B2 | S-04, R-01 |
-| HC-01 | Accepted S-01 through S-04 and independent parity evidence | Semantic lead | S-01, S-02, S-03, S-04 |
-| HC-02 | Accepted semantic transition and observed installed re-index | Semantic and Release leads | HC-01, S-05, R-07 |
+| Plan key | Plane | Deliverable | Builder role | Dependencies |
+| --- | --- | --- | --- | --- |
+| S-01a | CAIRN-323 | Freeze the Python numerical/tokenization oracle and synthetic fixture inputs | S-B1 | Existing source; may characterize before X-01 |
+| S-01b | CAIRN-324 | Characterize wire/process failures and add executable-worker comparison | S-B2 | Characterization may start now; the comparison extension waits for X-01 and criteria review |
+| S-01 | CAIRN-322 | All three reference modes and the differential acceptance harness | S-B1, S-B2 | X-01 / CAIRN-302, S-01a, S-01b |
+| S-02 | CAIRN-325 | Rust rank and stream modes behind Go supervision | S-B1 | S-01 |
+| S-03 | CAIRN-326 | Rust embed mode, original-text spans and derivation identity | S-B1 | S-01; serialize shared Rust edits with S-02 |
+| S-04 | CAIRN-327 | Offline worker/model staging, fixed launchers and native-library evidence | S-B2 | S-02, S-03; Release's supported-host inventory |
+| S-05 | CAIRN-328 | Switch/rebuild/reverse-rebuild tests and runbook | S-B2 | S-04, R-01 / CAIRN-303 |
+| HC-01 | CAIRN-329 | Accepted S-01 through S-04 and independent parity evidence | Semantic lead | S-01, S-02, S-03, S-04 |
+| HC-02 | CAIRN-330 | Accepted semantic transition and observed installed re-index | Semantic and Release leads | HC-01, S-05, R-07 / CAIRN-309 |
 
 S-R1 independently reviews criteria before implementation and exact candidate
 commits before landing. No two builders write the same file concurrently.
-The semantic lead owns this contract; the overall lead allocates Makefile and
-shared CLI edits. Later Rust ownership must name individual files before work
-starts. Authors retain responsibility for review fixes, integration, pushing
-main, and branch/worktree cleanup.
+The semantic lead owns this contract. The shared index assigns
+`scripts/install-semantic.sh` and the first dedicated Cargo/build/actual-worker
+Makefile targets to S-B2 after X-01. Overall transfers Makefile ownership to
+Release only after those targets land. Release supplies host/architecture
+requirements, reviews installer compatibility, and owns final activation and
+service configuration. Later Rust ownership must name individual files before
+work starts. Authors retain responsibility for review fixes, integration,
+pushing main, and branch/worktree cleanup.
+
+All seven semantic delivery/milestone items are direct children of CAIRN-301;
+S-01a/S-01b are children of S-01. Native parent/external-ID readbacks are separate
+from blocking edges. No relation tool is exposed to this session, so native
+blocking edges remain unverified and dependencies are enforced in Plane bodies
+and the campaign map.
 
 ## Existing process and wire behavior
 
@@ -47,9 +58,10 @@ dependent replacement until separately resolved.
 | Worker selection | One absolute executable path, no configured argv. Fixed launchers select rank, stream, embed and a pinned local model directory. | [command.go](../../../semantic/command.go), [installer](../../../scripts/install-semantic.sh) |
 | One-shot rank | One JSON request, 1–64 notes, query nonblank and at most 4096 UTF-8 bytes, total bodies at most 1 MiB, exact body hashes. Python's stdin cap is 8 MiB; Go caps stdout at 65536 bytes. | [semantic_rank.py](../../../scripts/semantic_rank.py), [command.go](../../../semantic/command.go) |
 | Stream rank | Newline-delimited `id`/`request`, optional `cache` only when advertised. IDs contain 1–64 Python characters. Go sends at most 8 MiB before newline. Ordinary reply including newline is at most 65536 bytes; cache is separately at most 600 KiB. Matching IDs and stable model/algorithm are required. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
-| Stream cache | `cairn.passage-vectors/1`, at most 128 passage hashes and raw 384-component little-endian float32 base64 vectors. Only a fresh worker may restore. Another model's cache is ignored; malformed same-model state refuses. Cache survives idle release only in the Go owner's memory; failure or close discards it. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
+| Stream cache | `cairn.passage-vectors/1`, at most 128 passage hashes and raw 384-component little-endian float32 base64 vectors. Only a fresh worker may restore. Format/envelope bounds are checked before model identity; an otherwise bounded envelope from another model is ignored before vector decoding. Malformed same-model state refuses. Cache survives idle release only in the Go owner's memory; failure or close discards it. | [semantic_rank.py](../../../scripts/semantic_rank.py), [stream.go](../../../semantic/stream.go) |
 | Embed request | Exactly `id`, `operation`, `text`; ID length 1–128 Python characters. A complete JSON line is at most 512 KiB. `identity` requires empty text, `query` at most 4096 UTF-8 bytes, and nonblank `document` at most 65536 UTF-8 bytes. Unknown keys and operations refuse. | [embedding_worker.py](../../../scripts/embedding_worker.py) |
 | Embed reply | Complete line at most 4 MiB, matching ID, `identity`, and operation-specific projection/vector/passages. Identity is stable across query/document lanes and worker restarts. Go rejects unknown reply fields and trailing JSON. | [embedding_command.go](../../../semantic/embedding_command.go), [command.go](../../../semantic/command.go) |
+| Model handshake | Python constructs its scorer/model/tokenizer before reading embedding requests. Missing or unusable assets/backend prevent the identity reply; a digest-only identity must not be treated as proof of an initialized embedder. | [embedding_worker.py](../../../scripts/embedding_worker.py), [semantic_rank.py](../../../scripts/semantic_rank.py), [index_service.go](../../../semantic/index_service.go) |
 | Supervision | Go owns process groups, cancellation, bounded pipes and reaping. Rank/query worker timeout is 25 seconds, document timeout 90 seconds, stream idle release 30 seconds. StartIndex bounds retrieval calls to 2 seconds and document leases are 2 minutes. Busy calls refuse without queueing. | [command.go](../../../semantic/command.go), [stream.go](../../../semantic/stream.go), [embedding_command.go](../../../semantic/embedding_command.go), [index_service.go](../../../semantic/index_service.go), [index.go](../../../semantic/index.go) |
 | Trust boundary | No database, API, credentials or orchestration in Rust. Go supplies a sanitized offline environment and discards worker stderr. This does not establish OS-enforced network isolation. | [command.go](../../../semantic/command.go), [stream.go](../../../semantic/stream.go) |
 
@@ -58,6 +70,9 @@ length, duplicate/unknown JSON keys, truncated JSON, EOF and extra output.
 Do not replace characterized permissiveness with an undocumented Rust rule.
 Serialization whitespace and object-key order may differ; IDs, metadata,
 source hashes, spans, score values, ordering and failure dispositions may not.
+Rank/stream results retain `bge-max-chunk/1` and return score entries in note
+input order. Embed retains `bge-original-passages/1`, dimensions 384, and
+query-projection method `original-prefix/1`.
 
 ## Numerical, tokenization and identity criteria
 
@@ -70,7 +85,9 @@ capture/comparison code and selected manifests in source; never replace the
 reference implementation while measuring the candidate.
 
 The baseline uses `fastembed==0.8.0`, CPUExecutionProvider, two inference
-threads and batch size 1. Its scorer hashes `model_optimized.onnx`,
+threads and batch size 1 for `BAAI/bge-small-en-v1.5`. Rank and embed queries
+prepend the exact string `"Represent this sentence for searching relevant passages: "`,
+including its trailing ASCII space. The scorer hashes `model_optimized.onnx`,
 `config.json`, `tokenizer.json`, `special_tokens_map.json`, and
 `tokenizer_config.json`, plus package versions and scoring constants.
 Embedding identity additionally hashes both worker source files. Inspect the
@@ -86,6 +103,11 @@ pooling/normalization path before implementing their Rust equivalents.
 | Continuous values | For every reference/candidate embedding pair, `1 - cosine(reference, candidate) <= 1e-6`; separately compare query/passage cosine differences at `<= 1e-6`. Record finite/nonzero checks and normalization. Do not substitute this tolerance for exact rank-score parity. | [proposal](../hybrid-runtime-consolidation.md), [implementation corrections](../hybrid-runtime-implementation.md) |
 | Discrete values | Preserve exact clamped, scaled integer scores and ranking assertions on `core/testdata/retrieval-quality.json`, repeated requests, shared passages and long-tail cases. Test positive/negative half-integer scaling with Python's ties-to-even rounding. An off-by-one score fails even when vector tolerance passes. | [semantic_rank.py](../../../scripts/semantic_rank.py), [existing comparator](../../../scripts/compare_semantic_workers.py) |
 | Go validation | 384 finite, nonzero components; valid source spans and bounded passage count. Go currently has no `[0.99, 1.01]` norm rejection rule. Verify the worker's normalization separately. | [index.go](../../../semantic/index.go) |
+
+The Python rounding requirement applies to rank and streaming-rank output.
+The stored index computes scores with Go's existing `math.Round` after
+PostgreSQL cosine distance; preserve and test that path separately rather than
+silently changing its half-integer behavior to match Python.
 
 Rust derivation identity must change when any consumed model/config asset,
 backend/tokenizer version, vector-affecting build feature, preprocessing,
@@ -129,7 +151,13 @@ The assigned review checks these fixture families against source before code:
   mismatch, installation refusal paths and reverse configuration.
 - **F-REBUILD:** Python→Rust→Python, service restart during rebuild, worker
   death/deadline, edits/deletes while embedding, expired leases, retry backlog,
-  and partial versus complete dense coverage in disposable PostgreSQL.
+  and partial versus complete dense coverage in disposable PostgreSQL. Include
+  competing writer/service configurations for different collections sharing
+  the same database queue, plus inactive definitions that could restart an old
+  generation; observe exclusion before replacement effects. Current OpenIndex
+  itself does not reject a second model generation, so this fixture must prove
+  the switching controller's stop/join behavior rather than invent that store
+  guarantee.
 
 Existing anchors include [command tests](../../../semantic/command_test.go),
 [stream tests](../../../semantic/stream_test.go),
@@ -163,7 +191,9 @@ derivation deletes the old document. Therefore:
 1. Release inventories every writer sharing the database/queue, stops it and
    joins indexing and worker processes before starting a different model
    generation. Stopping only one collection's named service is insufficient
-   if another process shares the queue.
+   if another process shares the queue. Include inactive/restartable alternate
+   service definitions and prevent old generations restarting during the switch
+   and rebuild. Apply the same exclusion to reverse rebuilds.
 2. Switch through fixed executable launchers and a controlled service restart.
    Keep the existing schema. Measure availability and rebuild duration;
    uninterrupted dense coverage and instant rollback are not acceptance claims.
@@ -184,10 +214,14 @@ backup/restore behavior changes. HC-02 additionally needs Release's exact
 installed-source/binary/model manifest, active-service evidence and completed
 re-index evidence. Setup acceptance cannot close S-01–S-05 or either milestone.
 
-## Decisions still requiring cross-team closure
+## Cross-team agreement and remaining acceptance
 
-- Overall accepts the queue-wide writer inventory/fence requirement into X-01.
-- Release supplies supported hosts/architectures and R-01/R-07 item identities.
-- Overall assigns the dedicated Cargo Makefile changes to one writer.
+- The shared index adopts database/queue-wide exclusion and assigns S-B2 the
+  semantic installer and first Cargo targets. Release's `release/1` draft
+  agrees on the binary/model/native-library identity manifest, architecture/ABI
+  requirements, fixed launchers, activation ownership and reverse rebuild.
+- Release's R-01 / CAIRN-303 supplies supported hosts/architectures; its
+  R-07 / CAIRN-309 supplies installed cutover and completed re-index evidence.
+  Those evidence gates remain open.
 - Review records acceptance or concrete missing fixtures against this revision;
   any contract change is sent to all consumers before dependent work merges.
