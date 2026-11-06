@@ -122,8 +122,10 @@ owning-session settlement and retained old closures remain required.
 Authenticate the receipt and complete executing closure before execution;
 launch Go through its checked executable descriptor. With valid code, preserve
 source admission before any `/3` binding-data or target-pin read, using the
-captured parent environment, cwd, event and checked config. Excluded callbacks
-skip without binding access or activation mutation. Admitted work still performs
+captured parent environment, cwd, event and checked config. An excluded activation
+prefix returns its source skip/false result without binding access or activation
+mutation; the retained frontend still follows its ordinary policy. This is not
+a whole-hook skip. Admitted work still performs
 the full binding/image/config checks before effects. Invalid executing code or
 receipt selection is an explicit new compatibility-preflight failure, including
 on excluded callbacks: empty stdout, exit 1 and the fixed role-specific
