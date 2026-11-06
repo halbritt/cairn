@@ -623,10 +623,11 @@ func (s *Store) reclaimSwap(ctx context.Context, req CandidateReclaimRequest, gu
 	}
 }
 
-// reclaimSwapOnce takes the restore admission row exclusively, so every ordinary
-// transaction has finished and none can start until commit. Writing that row also
-// fails any repeatable-read transaction already waiting behind it: its snapshot
-// predates this swap and could not see the new relation's rows.
+// reclaimSwapOnce takes the restore admission row exclusively, draining
+// transactions that participate in that check and blocking new participants
+// until commit. Direct-pool helpers are outside this barrier. Writing the row
+// also fails repeatable-read or serializable transactions already waiting behind
+// it: their snapshots predate the swap and could miss the new relation's rows.
 func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest, result *CandidateReclaimResult) (held bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -645,8 +646,8 @@ func (s *Store) reclaimSwapOnce(ctx context.Context, req CandidateReclaimRequest
 		return false, err
 	}
 	started := time.Now()
-	// Waiting for the drain delays nobody. Holding it delays everything, so from here
-	// each statement has a fixed limit however patient the caller is about the wait.
+	// Holding the drain delays participating transactions, so from here each
+	// statement has a fixed limit however patient the caller is about the wait.
 	if _, err = tx.Exec(ctx, `SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$1,true)`, candidateReclaimHoldLimit); err != nil {
 		return true, err
 	}
