@@ -80,6 +80,17 @@ query-projection method `original-prefix/1`.
 
 ## Numerical, tokenization and identity criteria
 
+Until S-04R is accepted, every Python reference, oracle, comparison and
+transition execution requires actual network isolation and a disposable mapped
+home/cache that also protects OS home-directory lookup. This includes existing
+real-model tests, sequential rebuilds, API probes and execution through Go's
+real sanitized supervisor, which removes HOME. A disposable HOME variable alone
+does not establish that protection. Failed isolation stops the run. Apply the
+same home-lookup protection to every Rust acceptance run through the real
+supervisor. Prove the isolation wrapper changes no vector-affecting setting by
+matching raw model outputs against the frozen reference. Preserve the actual
+supervisor and its deadlines inside the external isolation boundary.
+
 Freeze both Python worker source files before recording reference results.
 Record source commit and hashes, fixture-input hashes, every model/config
 digest, Python and package versions, CPU architecture, backend/provider,
@@ -272,12 +283,21 @@ experiment with the identical frozen source/assets/input and an external
 deadline of at most 180 seconds. This neither changes nor passes the 90-second
 production supervision requirement. Record runtime-versus-oracle commands,
 timings, environment/isolation differences, hashes and outcomes separately.
+Only the external deadline and isolation wrapper may differ: interpreter/venv,
+worker source bytes, model snapshot, launcher command, sanitized environment,
+ORT 2/2 thread/session settings and the exact Go-generated request bytes match
+the production path. Any vector-affecting difference invalidates the oracle.
 If that bounded oracle also fails, retain the numerical gap without further
 deadline inflation. Independent review must agree this distinction before
 the case is counted as numerically covered. A faster Rust reply need not
 mimic Python's slowness, but needs both oracle numerical/span comparison and
 actual execution through the unchanged real supervisor. Never drop the case
 or substitute source-only geometry for a model reply.
+The Python 90-second timeout remains in its failure population; oracle vectors
+do not make that source embeddable or covered for Python. A Rust reply within
+90 seconds changes the failure population and therefore requires the recorded
+disposition below, plus raw-output and exact-span comparison for all 256
+passages.
 
 ### Required acceptance inventory
 
@@ -506,8 +526,11 @@ controls above, including every mode through the real sanitized Go supervisor.
 Compare numerical/discrete outputs, spans/projection and both identities against
 the frozen reference. A launcher-only setting must prove the expected identities
 remain exact. If source changes are needed, record the resulting derivation
-identity and explicitly revise and review rollback expectations. S-05 rollback
-acceptance and R-06 / CAIRN-308 qualification require accepted S-04R evidence.
+identity and explicitly revise and review rollback expectations.
+Any added wrapper or sitecustomize code is included in the closure manifest,
+because the existing Python derivation identity does not hash that code.
+S-05 rollback acceptance and R-06 / CAIRN-308 qualification require accepted
+S-04R evidence.
 Release retains final staging/activation control; X-01 names this downstream
 gate without claiming its implementation is complete.
 
