@@ -183,6 +183,33 @@ selection stays empty. The review shows the retained input, its source identitie
 profile, model and currentness alongside the proposed before/after effects.
 Model text does not grant authority or establish that a claim is true.
 
+Use the [native advice package](../native-work-advice.md) build receipt for the
+executable, upstream commit and patch digests below. `CODEX_HOME_PATH` identifies
+the existing subscription login; `FULL_MODEL` is the selected full model name.
+
+```sh
+cairn work advice profile register --profile example-advice \
+  --executable /path/to/advice-package/codex --binary-sha256 BINARY_SHA256 \
+  --expected-upstream-commit UPSTREAM_COMMIT \
+  --expected-patch-sha256 PATCH_SHA256 \
+  --codex-home CODEX_HOME_PATH --model FULL_MODEL
+cairn work advice profile show --profile example-advice
+cairn work advice policy set --project example --collection COLLECTION \
+  --fields identifier,title,state,blockers,artifacts,sources
+cairn work advice policy get --project example --collection COLLECTION
+cairn work advice generate --project example --item ITEM_UUID \
+  --collection COLLECTION --profile example-advice --timeout 90 \
+  --candidate-revision REVISION_UUID --source SOURCE_UUID:SOURCE_VERSION \
+  --request-id GENERATION_REQUEST_UUID
+cairn work advice show --request-id GENERATION_REQUEST_UUID \
+  --collection COLLECTION
+```
+
+The field list is an example of an explicit policy, not a required minimum. Save
+only fields approved for this project. Omit the candidate or source flags when
+those inputs are not selected; repeat either flag for each additional exact
+selection. The deadline is bounded to 10–180 seconds.
+
 Generate performs one bounded invocation and retains its request identity.
 After a timeout or lost response, inspect that same request before retrying.
 Do not create another request merely because the first result is unknown.
@@ -195,17 +222,51 @@ revisions. A later manual edit can make the proposal stale. Undo targets one exa
 application and compensates only while its recorded output revisions still match;
 it does not overwrite later operator changes.
 
+Read the proposal UUID, current review version and action UUIDs from `show`.
+Use a separate request UUID for each new application. For example:
+
+```sh
+cairn work advice apply --proposal PROPOSAL_UUID --version REVIEW_VERSION \
+  --action ACTION_UUID --request-id APPLICATION_REQUEST_UUID \
+  --collection COLLECTION
+cairn work advice show --proposal PROPOSAL_UUID --collection COLLECTION
+cairn work advice undo --request-id APPLICATION_REQUEST_UUID \
+  --collection COLLECTION
+cairn work advice reject --proposal PROPOSAL_UUID --version REVIEW_VERSION \
+  --collection COLLECTION
+```
+
+Repeat `--action` to accept more than one selected action. Omitting it applies all
+pending actions, so use explicit action UUIDs for a subset. Undo also accepts the
+returned receipt UUID with `--receipt`. Re-read the proposal before rejecting
+remaining actions because an earlier application changes its review version.
+
 Generation and application have separate controls. Disabling either preserves
 retained review and the supported rejection, Undo, cleanup and purge operations.
 Before retiring advice, stop generation and application, settle pending proposals,
 reconcile actual processes and inspect the remaining required state. Keep the
 compatible readers and maintenance path available.
 
+```sh
+cairn work advice control status
+cairn work advice control set --generation=false --apply=false
+cairn work advice reconcile
+cairn work advice sweep
+cairn work features status
+```
+
+Reconcile checks retained process identities before releasing uncertain jobs and
+also runs retention maintenance. Sweep performs retention maintenance without
+launching a provider. Both commands remain available after generation is disabled.
+
 Input payload retention is bounded to 24 hours; unreviewed proposals expire after
-one hour. Unapplied proposal text is removed after seven days and job audit detail
-is reduced after 30 days. Accepted annotations follow normal annotation retention.
+one hour. Proposal and action text is removed after seven days. After 30 days,
+terminal jobs without applications and their proposal details are removed;
+applied proposals retain the identities needed for compensation and later source
+deletion. Unresolved process identities remain fenced. Accepted annotations
+follow normal annotation retention.
 Forget takes priority over these timers and removes known copied text, including
-applied annotation/history copies, while retaining minimal operation identities
+applied annotation/history and artifact-link rationale copies, while retaining minimal operation identities
 needed for idempotency and guarded compensation.
 
 ## Disable, settle and retire

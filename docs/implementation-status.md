@@ -64,6 +64,15 @@ input without waking a conversation. Quiet admission currently requires the
 unpatched Codex remain unsupported for this delivery mode. Neither a source
 checkout nor a successful probe installs that package in a running session.
 
+Model suggestions use a separately pinned [native subscription
+adapter](native-work-advice.md) and explicit project input policy. One bounded
+request produces a retained proposal for local progress, blockers or exact
+artifact links. An operator reviews the captured input and selects actions;
+generation itself changes no work item. Application receipts support guarded
+Undo without overwriting later edits. Generation and application have separate
+controls, and retained requests remain inspectable after admission is disabled.
+See the [operator workflow](operator/work-coordination.md#review-model-suggestions).
+
 Versioned feature controls distinguish admission, retained maintenance and
 retirement. Use the [operator runbook](operator/work-coordination.md) for the
 combined migration boundary and settlement requirements before changing binary
