@@ -1,6 +1,7 @@
 # Semantic worker contract
 
-Revision: `semantic/1`, proposed for X-01 acceptance. Characterization baseline:
+Revision: `semantic/2`, proposed for X-01 acceptance after independent review
+of `semantic/1`. Characterization baseline:
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` (2026-11-06).
 The semantic team owns this file. Overall owns the shared contract index;
 Release consumes the packaging, service-switch and rebuild requirements.
@@ -24,7 +25,7 @@ cutover as separate reviewed checkpoints.
 | S-01 | CAIRN-322 | All three reference modes and the differential acceptance harness | S-B1, S-B2 | X-01 / CAIRN-302, S-01a, S-01b |
 | S-02 | CAIRN-325 | Rust rank and stream modes behind Go supervision | S-B1 | S-01 |
 | S-03 | CAIRN-326 | Rust embed mode, original-text spans and derivation identity | S-B1 | S-01; serialize shared Rust edits with S-02 |
-| S-04 | CAIRN-327 | Offline worker/model staging, fixed launchers and native-library evidence | S-B2 | S-02, S-03; Release's supported-host inventory |
+| S-04 | CAIRN-327 | Offline worker/model staging, fixed launchers and native-library evidence | S-B2 | S-02, S-03, R-01 / CAIRN-303 for the supported-host inventory |
 | S-05 | CAIRN-328 | Switch/rebuild/reverse-rebuild tests and runbook | S-B2 | S-04, R-01 / CAIRN-303 |
 | HC-01 | CAIRN-329 | Accepted S-01 through S-04 and independent parity evidence | Semantic lead | S-01, S-02, S-03, S-04 |
 | HC-02 | CAIRN-330 | Accepted semantic transition and observed installed re-index | Semantic and Release leads | HC-01, S-05, R-07 / CAIRN-309 |
@@ -122,14 +123,99 @@ compiler-level ranking assertions remain separate. Characterize reference
 workload relevance misses without changing their scores or inventing a new
 worker-only top-rank requirement to obtain acceptance.
 
-Rust derivation identity must change when any consumed model/config asset,
-backend/tokenizer version, native-runtime library digest/build identity,
-vector-affecting build feature, preprocessing,
-prefix, truncation, passage slicing, inference, pooling, normalization or
-implementation source changes. Include a versioned derivation tag and a
-deterministic digest of the relevant source and locked build inputs. Include
-all effective vector-affecting settings. Exclude timestamps and checkout
-paths. The worker must not claim Python's derivation identity.
+Rust derivation identity uses the complete manifest below. Every consumed
+model/config asset, implementation/compiler/runtime input and effective
+vector-affecting setting is bound. Exclude timestamps and checkout paths;
+the worker must not claim Python's derivation identity.
+
+### Strict score arithmetic and indexed parity
+
+The selected policy is exact discrete parity. There is no rounding-boundary
+margin or permission for a one-unit score difference. Vector tolerance does
+not discharge this requirement. Capture the unrounded reference similarities
+through a harness around the frozen scorer, without editing its code.
+
+The rank reference performs these operations in order:
+
+1. ORT float32 CLS output passes through FastEmbed's float32 L2 normalization
+   with epsilon `1e-12`.
+2. Reconstruct the contiguous float32 matrix with the query first, then every
+   chunk occurrence in source order, including cache hits and duplicate chunks.
+3. Apply NumPy 2.4.6's float32 row norm and division again, then its matrix-vector
+   multiplication on that matrix shape. A per-row dot, float64 accumulation,
+   single normalization or multiplication over only unique chunks is a
+   different reference path.
+4. Promote each float32 similarity to float64, clamp to `[-1, 1]`, multiply by
+   `1000000` in float64 and apply Python ties-to-even rounding.
+
+S-01 freezes the NumPy code/native-library hashes, loaded OpenBLAS/other math
+library version and digest, selected CPU/kernel class, dispatch settings,
+matrix shape/layout and operation trace with its arithmetic fixtures. For
+identical raw float32 arithmetic inputs, the candidate's normalization and
+unrounded similarities must match that executable reference bit for bit.
+Actual model runs additionally pass the vector/pairwise-cosine targets and
+exact final integer scores/order. Test the known alternative arithmetic paths
+as negative controls. Test ties in isolated arithmetic fixtures, including
+representable float32 similarities `±1/128`, `±3/128` and `±5/128`; do not
+claim that a fabricated tie was observed in model output.
+
+Run reference and candidate on the same host for each supported CPU class.
+Cross-CPU bit stability is not assumed. A new CPU/kernel class requires its
+own frozen reference and identity inputs before packaging acceptance. If
+strict parity cannot be achieved, stop the affected migration and obtain an
+explicit Overall decision; do not tune fixtures or relax the rule.
+
+S-03 also compares the indexed path on the same disposable PostgreSQL/pgvector
+instance, with fixed source records and sequential Python and Rust rebuilds.
+Through [Index.Search](../../../semantic/index.go) and
+[compiler integration](../../../core/indexed_retrieval.go), assert every
+hit's record/version/body hash/span/integer score, SQL hit order, compiler
+returned order, query projection, discovery state and `Indexed/Eligible`
+counts. Include near-ties, equal-distance record-ID ties, long queries, partial
+coverage and the retained ranking fixtures. Go's `math.Round` and pgvector
+distance calculation remain the indexed score owner; Rust emits vectors,
+not indexed scores. These discrete assertions are exact as well.
+
+### Derivation manifest
+
+Rank and embed use separate versioned tags, respectively
+`cairn.rust-rank-worker/1` and `cairn.rust-embedding-worker/1`.
+Each SHA-256 binds a canonical manifest containing the following inputs.
+The common input digest may be shared, but the final identities differ by tag
+and mode-specific constants. Stream caches carry the Rust rank identity, so
+bounded Python-cache envelopes from another model are ignored under the
+existing restore ordering.
+
+| Input | Required identity material |
+| --- | --- |
+| Implementation | Sorted relative paths and content digests for every crate Rust source file, build script, Cargo manifest/lockfile and toolchain declaration, plus non-secret effective build settings; do not select an undefined subset of relevant source files or read credential configuration. |
+| Compilation | Exact rustc identity, target triple, enabled features, target-cpu/CPU features and effective vector-affecting codegen flags. Normalize path-remapping inputs; incidental build paths/timestamps do not enter the digest. |
+| Native execution | ORT version reported at runtime, digest of the actually loaded ORT library and any native math library, CPU/kernel dispatch class and effective provider. A static link needs retained archive/linkage provenance and digests instead of a dynamic-path assertion. |
+| Session | Effective optimization/execution/determinism options, intra/inter-op caps, batch size and input dtypes/layout. Record actual runtime values, including defaults that affect vectors. |
+| Assets | Content hashes for every consumed model/config/tokenizer/special-token asset and the prepared model provenance. Pin Rust tokenizers to the reference wheel's 0.23.2 release; another tokenizer release is a recorded backend change requiring the same parity gates. |
+| Algorithms | Prefix bytes; token/truncation/retreat/window/stride/passage limits; special-token/normalizer/WordPiece behavior; CLS pooling; normalization epsilon/dtype/order; rank arithmetic/kernel policy; dimensions and algorithm labels. |
+
+Hash the compact UTF-8 JSON manifest with lexically sorted object keys and
+relative-path entries, exact strings, decimal integers, and vector-affecting
+floating constants represented as canonical decimal strings. Sort set-valued
+feature lists; sequence-valued algorithm inputs retain order. The tag is an
+explicit field. Absolute installation/library paths are provenance fields in
+the release handoff, not identity inputs; their selected content digests and
+effective settings are identity inputs.
+
+F-IDENTITY swaps a same-version native library, changes a thread cap and
+target-cpu/features, mutates each source/config/asset input, and moves an
+otherwise identical build/model tree. Each vector-affecting change invalidates
+the corresponding derivation; moves and timestamps alone do not. A missing,
+unreadable or mismatched runtime/asset fails initialization rather than
+falling back to another loader-path copy. Identity remains stable throughout
+each selected worker lifetime and across the embed owner's lanes/restarts.
+
+The package handoff is a versioned `cairn.semantic-worker-manifest/1` document
+with source/build identity, binary digest, rank/embed identities, the complete
+derivation inputs, asset/library provenance and digests, target/ABI/CPU
+requirements, and per-mode absolute launcher path plus launcher digest.
+Release consumes this manifest; no credential or operational note belongs in it.
 
 S-01 must provide a comparison path that executes a native candidate directly;
 the current comparator always prefixes candidates with Python, covers only
@@ -149,21 +235,105 @@ review before claiming complete required-model coverage. Do not drop the
 case, relax the deadline, or substitute its source-only geometry for a model
 reply. Other successful maximum-document cases do not close this gap.
 
+### Required acceptance inventory
+
+S-B2 supplies a phase-selecting acceptance entry point and dedicated Makefile
+targets after X-01. These are requirements for new tooling. They are not
+claims that a Cargo target or strict runner already exists.
+
+The runner reads a committed, reviewed fixture/test inventory with names,
+expected run counts, applicable phase, required assets/environment and
+reference input hashes. It never derives success expectations from whichever
+tests happened to run. A missing expected case, failed command, mismatch,
+required `skip`/`ignored`, or zero-ran suite fails the selected phase. Parse
+Go `-json` run/skip/pass events and Python unittest class/method run and skipped
+counts. Enforce equivalent nonzero named coverage for required Cargo suites.
+The tested inventory changes only with the owning item and independent review.
+
+| Phase / owner | Required inventory and expected positive counts |
+| --- | --- |
+| Reference / S-01 | Prepared-Python `PassageContractTest` 5, `SemanticStreamTest` 4, `SemanticCacheTest` 9 and `SemanticResumeTest` 5: 23 tests, no skips. Run the actual tokenizer test. Capture all three real Python worker modes. The 17 retrieval-quality queries plus long-tail and 64-short cases give 19 rank requests / 269 note scores; stream cold/warm repeats give 38 successful replies plus a separately counted idle-restore case. Every failure-family case has its own inventory ID and expected refusal tuple. |
+| Reference embeddings / S-01 | Nine named positive query cases: ASCII, CJK, emoji, combining marks, special tokens, exact-512 tokens, over-512 tokens, exact-4096 UTF-8 bytes and tokenizer-empty/nonblank. Six named positive documents: ASCII, CJK, mixed Unicode/combining, trailing decision, maximum Latin and maximum CJK. Exact projection/span/vector counts are frozen per input. The maximum-punctuation gap is a separate required unresolved/failure case, never a positive model pass. |
+| Rank / S-02 | Reference/candidate arithmetic fixtures, all 19 exact-score cases, all 38 stream replies and the idle/cache-restart case; real `Command` and `StreamCommand` supervisor runs, not only script doubles. Add those native-model process tests; no real-model rank/stream Go test currently exists. The 21 current non-DB/non-real-model semantic tests remain separately required process/unit coverage. |
+| Embed and index / S-03 | All nine query and six document comparisons; the two configured real tests `TestRealMaximumDocumentEmbeddingCompletes` and `TestRealProjectedLongQuery`; `TestRealPersistentPassageDiscovery` and the three remaining index/store tests with a disposable DSN. Add the sequential Python/Rust indexed-comparison matrix above, with all 17 workload queries and the nine query-boundary cases. |
+| Package / S-04 | For `N >= 1` supported CPU classes, all three modes run both as clean offline artifacts and through real Go supervision: `6*N` positive runs. Separately count live-staging rerun, wrong/missing library, wrong/missing asset, digest mismatch and shadow-system-library cases per class. Inventory must cover every managed host running a semantic service; an empty list cannot pass. |
+| Transition / S-05 | Ten named cases: full forward/reverse rebuild; mid-rebuild restart; worker death/deadline; edit during embedding; delete/forget during embedding; expired lease/retry backlog; partial versus unavailable coverage; competing collection writers/inactive units; unembeddable-population refusal; default-selection/whole-API-restart/rollback handoff. Each runs real workers and disposable PostgreSQL, with declared subcase counts. |
+
+S-01 accepts the frozen Python reference and tested harness mechanics, not an
+unimplemented Rust model. Its native-executable-path self-tests may use an
+explicit process fixture, labelled as such. S-02/S-03 and HC-01 require the
+actual Rust models; a process fixture never satisfies those phases. This
+separates the gates without making S-01 depend circularly on S-02/S-03.
+
+Preflight checks the prepared Python/NumPy, tokenizer, immutable baseline and
+candidate launchers, all model/runtime assets, and the owned disposable DSN
+when required. Configure `CAIRN_EMBEDDING_WORKER`,
+`CAIRN_EMBEDDING_TOKENIZER`, `CAIRN_TEST_DATABASE_URL`, and rank/stream worker
+selectors for their applicable tests; default `make test` or `make
+test-integration` does not establish model coverage. The strict runner
+explicitly runs the real rank/stream API probes currently conditional in
+`scripts/test-postgres.sh`. It fails before counting a missing selector as a skip.
+
+`TestDocumentationRetrievalQuality` is an opt-in lexical/no-model measurement,
+as its source states. If selected, set `CAIRN_RETRIEVAL_REPORT` and a disposable
+DSN and require its one test to run; it does not count as a model test or turn
+authored relevance observations into new acceptance thresholds. Preserve all
+existing compiler ranking assertions separately.
+
+Negative runner self-tests remove each required selector/asset, inject a Go
+skip event, a skipped Python class, a zero-ran suite and a missing named case,
+and introduce score/span/order mismatches. Every control must produce a
+failing acceptance exit. Dependency removal is simulated in isolated fixtures,
+not by uninstalling packages from the live reference environment.
+
+### Decoder and tokenizer compatibility
+
+Preserve Python 3.11's whitespace predicate for rank query, embed query,
+document and retreat-prefix blank checks. Freeze its full character set,
+including U+001C–U+001F, and test U+0085, U+00A0 and U+3000 as well. Rust's
+default trim predicate does not establish parity. Freeze BertNormalizer
+lowercase/clean_text/handle_chinese_chars/strip_accents, WordPiece's 100-character
+word bound, special tokens and decoder cleanup. Include chunks starting with
+`##` subwords and punctuation affected by cleanup; decode and re-encode the
+actual passage text, not the original token-ID slice.
+
+Go-generated typed UTF-8 frames are the operational consumer path. Record the
+Python worker's additional direct-input behavior separately: duplicate keys,
+ignored rank/note keys, unvalidated echoed version types, NaN/Infinity tokens,
+lone-surrogate escapes, BOM and UTF-16/32 bytes. The selected compatibility
+policy preserves each observed accepted/refused disposition in worker-boundary
+fixtures; do not infer that all such frames succeed in every mode or survive
+Go's downstream validation. Any proposed narrowing requires an explicit
+Overall contract decision before the affected implementation. Go reply field
+matching is case-insensitive, duplicate fields keep the last value, and BOM
+replies refuse; Rust's canonical replies do not alter those Go semantics.
+
 ## Required failure evidence
 
 The assigned review checks these fixture families against source before code:
 
 - **F-RANK:** zero/65 notes, empty/oversize query, wrong body hash, body-byte
   overflow, 128 versus 129 chunk occurrences, decoded chunk above token
-  bounds, malformed JSON, and nonfinite/zero inference vectors.
+  bounds, malformed JSON, and nonfinite/zero inference vectors. Include
+  token-empty notes that refuse the whole request, a query above 512 model
+  tokens but within 4096 bytes, one-shot input above 8 MiB, structural errors,
+  ignored extra request/note keys and unvalidated echoed version types.
 - **F-STREAM:** incomplete/oversize lines, wrong/absent response ID, missing
   result, unexpected/trailing output, second-frame failure, identity change,
   cache omission, corrupt cache, wrong-model cache, warm/cold score equality,
-  actual idle exit/restore, and cache discard after failure/close.
+  actual idle exit/restore, and cache discard after failure/close. Include
+  missing/extra envelope keys, wrong/empty/over-64-character IDs, unadvertised
+  cache, late restore, entry/hash/base64/finite/nonzero/size checks, and the
+  format/size-before-model restore ordering. Check identity within a child;
+  a new idle-replacement child may report another identity.
 - **F-EMBED:** all three operations, wrong request fields/types, Unicode ID
   boundaries, bad query projection, long-query retreat refusal, 65536-byte
   documents, invalid UTF-8 span boundaries, too many passages, bad dimensions,
-  NaN/infinity/zero vectors, and model change after worker restart.
+  NaN/infinity/zero vectors, and model change after worker restart. Include
+  blank queries, blank/token-empty documents, identity with nonempty text,
+  missing newline and above-512-KiB input. Preserve Go's acceptance of an
+  omitted query projection for legacy replies; the replacement worker itself
+  emits the current complete projection.
 - **F-PROCESS:** blocked input/output, output caps, early exit, query/document
   concurrency, busy refusal, earlier caller deadline, owner shutdown and
   descendants holding pipes. Observe process-group termination and joining;
@@ -184,11 +354,31 @@ The assigned review checks these fixture families against source before code:
   the switching controller's stop/join behavior rather than invent that store
   guarantee.
 
+For the pinned tokenizer, no real input is yet shown to make a decoded rank
+chunk or re-encoded document passage exceed 512 tokens. Exercise those guards
+with an explicitly labelled tokenizer test double; do not count them as
+actual-model cases or invent a reachable production input.
+
+Each failure fixture records a disposition tuple: Go error/result plus
+discovery state/coverage where exercised; process exit/kill and stdout prefix;
+cache retained/discarded state; and restart count. Python refusal exits are
+not structured error replies. A second unsolicited stream line can fail the
+next exchange rather than the first. Sparse one-shot replies accepted by the
+transport are distinguished from downstream semantic validation failures.
+
+Real-worker faults use harness-owned SIGSTOP/SIGKILL, earlier caller deadlines,
+pipe pressure and private wrapper launchers that execute the actual worker.
+Record the real binary/identity and observed process tree. No fault command,
+environment switch or launcher-selectable fault hook is shipped in a release
+worker. Test-double protocol checks remain separately labelled.
+
 Existing anchors include [command tests](../../../semantic/command_test.go),
 [stream tests](../../../semantic/stream_test.go),
 [cache process tests](../../../semantic/stream_cache_test.go),
 [embedding process tests](../../../semantic/embedding_command_test.go), and
-[index tests](../../../semantic/index_test.go). Record which assertions run
+[index tests](../../../semantic/index_test.go), plus
+[busy-start tests](../../../semantic/busy_test.go) and
+[deadline tests](../../../semantic/deadline_test.go). Record which assertions run
 against real assets/processes and which isolate a protocol boundary with a
 test double. Characterization does not silently repair the oracle.
 
@@ -202,10 +392,48 @@ reopens the backend decision with Overall; it does not authorize a silent
 Candle substitution or tolerance relaxation. Do not describe the worker as
 static until actual linkage establishes it.
 
+The Release inventory is nonempty and names every managed host with an active
+or restartable semantic service, its architecture/ABI and CPU/kernel class.
+An unreachable/uninspected host remains a gap. S-04 depends on R-01's inventory
+and cannot pass by declaring no supported targets. Compare reference and
+candidate numerics on each supported CPU class.
+
+Stage worker/model/native-runtime payloads and mode launchers into versioned,
+content-addressed immutable paths. A live service configuration selects one
+specific absolute launcher, never a mutable `current` symlink or stable path
+whose target/content is rewritten. Each launcher selects an immutable payload
+and explicitly supplies mode, model directory, thread caps and native-library
+location; it cannot depend on inherited HOME, LD_LIBRARY_PATH or thread
+variables, which Go removes. Keep payload and rendered-launcher addressing
+separate so hashing an absolute launcher does not create a self-referential
+generation digest.
+
+Staging never rewrites/re-targets any live-selected file/symlink and never
+updates the existing Python venv, source workers or model cache. An existing
+content-addressed path with different bytes refuses; it is not repaired in
+place. Activation selects a new path through Release's controlled configuration
+change/restart after the writer fence. Re-running staging against a disposable
+running service must leave its executed launcher digest and identity unchanged,
+including after idle/failure respawn.
+
+Execute every mode through the real Go supervisor environment as well as clean
+offline packaging fixtures. Observe the loaded ORT/math-library path in
+`/proc/PID/maps` and hash the actual file; a declared path or ldd output alone
+is insufficient. Demonstrate that a shadow system library is not selected and
+that absent/mismatched selected libraries fail. Retain provenance/digests for
+any ORT binary fetched at build time. Static linking requires actual linkage
+evidence. Runtime builds exclude download features not needed for local assets;
+network-isolated acceptance uses a namespace with no external interfaces/routes.
+That test confinement does not claim production Go workers already have an
+OS-enforced network sandbox.
+
 The current installer stages `semantic/venv`, source workers and fixed
 `worker`, `worker-stream` and `worker-embeddings` launchers. Inventory the
 actual installed paths and active configuration before changing them. Preserve
-Python rollback artifacts until the release retirement gates pass.
+Python rollback artifacts until the release retirement gates pass. Release's
+retained rollback target remains the qualified Python closure after retirement;
+Semantic supplies its interpreter/venv/source/model/native-library/launcher
+facts. Do not silently substitute a previous Rust generation as that target.
 
 [Schema 056](../../../core/schema/056_semantic_passages.sql) keys documents
 and jobs by record and passages by record/ordinal.
@@ -220,8 +448,13 @@ derivation deletes the old document. Therefore:
    service definitions and prevent old generations restarting during the switch
    and rebuild. Apply the same exclusion to reverse rebuilds.
 2. Switch through fixed executable launchers and a controlled service restart.
-   Keep the existing schema. Measure availability and rebuild duration;
-   uninterrupted dense coverage and instant rollback are not acceptance claims.
+   Keep the existing schema. Measure whole-API outage as well as semantic
+   availability and rebuild duration: restarting the current combined API
+   service affects more than its semantic lane. Characterize a cold query-lane
+   restart inside StartIndex's two-second retrieval budget. Report lease/backoff
+   state and prove that no old-identity document is published after the fence;
+   an expired/empty lease set alone does not prove writers were joined.
+   Uninterrupted dense coverage and instant rollback are not acceptance claims.
 3. Exercise both directions on a disposable store. Observe labelled
    unavailability when the backend cannot serve, and separately report the
    indexed/eligible counts for partial coverage. A ready index with some
@@ -233,6 +466,35 @@ derivation deletes the old document. Therefore:
    configuration and completing the reverse rebuild. Preserve operational
    source data; no production database is a test fixture.
 
+The completion population is exactly OpenIndex's database-wide seeding set:
+every active record's current version with no payload-deletion marker, across
+all collections. For each source require its current version/body hash,
+selected model identity, and `1..256` valid passage rows with contiguous
+ordinals `0..n-1`, valid UTF-8 spans and finite/nonzero 384-component vectors.
+Document-only rows or empty/missing passage sets fail completion.
+
+List unembeddable records and retained failures/backoff with reasons. Compare
+the Python and Rust failure populations; a difference requires a recorded
+disposition. Never silently remove these records from the denominator or
+delete/re-scope them to obtain a complete rebuild. A nonempty unresolved list
+blocks a full-coverage claim, even if both implementations refuse the same
+record. Negative disposable fixtures prove that the completion gate refuses
+Python-blank/token-empty records instead of reporting success forever.
+
+The pinned Python rollback configuration is its preserved executable
+interpreter/venv closure, exact worker sources, prepared model/config snapshot,
+native libraries and launcher bytes, not a new installation of
+`fastembed==0.8.0` with freshly resolved dependencies. Record exact pre-cutover
+rank and embed identities in the release manifest and assert both on reverse
+selection before rebuilding the full population. Release owns retention and
+offline restore qualification; Semantic supplies these identities and assets.
+
+S-05 supplies the reviewed default-selection/configuration delta and reverse
+selection for the fixed launchers, retaining the service's selected rank,
+stream or embed mode. Release owns the actual shared service configuration
+write and final activation. Exercise that handoff in disposable services;
+there is no concurrent Semantic/Release writer for production configuration.
+
 S-05 requires `make test-integration` and `make check` for store changes,
 focused process/model checks, and lifecycle checks when service lifecycle or
 backup/restore behavior changes. HC-02 additionally needs Release's exact
@@ -242,7 +504,7 @@ re-index evidence. Setup acceptance cannot close S-01–S-05 or either milestone
 ## Cross-team agreement and remaining acceptance
 
 - The shared index adopts database/queue-wide exclusion and assigns S-B2 the
-  semantic installer and first Cargo targets. Release's `release/1` draft
+  semantic installer and first Cargo targets. Release's `release/2` draft
   agrees on the binary/model/native-library identity manifest, architecture/ABI
   requirements, fixed launchers, activation ownership and reverse rebuild.
 - Release's R-01 / CAIRN-303 supplies supported hosts/architectures; its
