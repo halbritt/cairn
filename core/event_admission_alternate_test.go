@@ -184,6 +184,59 @@ func TestAlternateAdmission_ScheduleFairSweepRotatesBlockedAndFencesRestore(t *t
 		t.Fatalf("tick3 expected S1 to fire once topic fanout returned within limit: %+v %v", tick3, err)
 	}
 
+	// RATE_UNRECONCILED on one bucket (e.g. producer delivery bucket) must keep sUnrec
+	// pending with actionable Code="RATE_UNRECONCILED" and rotate without aborting unrelated
+	// due work (sEmptyTopic, cost 0 deliveries) in the same TickSchedules batch.
+	if _, err = op.pool.Exec(ctx, `INSERT INTO cairn.agent_event_rate_bucket(repo,identity_kind,identity,unit,tokens_nano,refill_at,policy_revision,restore_generation)
+		SELECT $1,'producer',$2,'delivery',1000000000000,clock_timestamp(),1,generation+1 FROM cairn.retrieval_generation WHERE singleton
+		ON CONFLICT(repo,identity_kind,identity,unit) DO UPDATE SET restore_generation=EXCLUDED.restore_generation`,
+		repo, op.channel.Principal); err != nil {
+		t.Fatal(err)
+	}
+	sUnrec, err := op.ScheduleEvent(ctx, ScheduleEventRequest{
+		RequestID:    uuid.NewString(),
+		NotBefore:    time.Now().Add(-2 * time.Second),
+		GraceSeconds: 300,
+		Publication: PublishEventRequest{
+			Repo:        repo,
+			Kind:        "notice",
+			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+			Destination: EventDestination{Type: "agent", Name: consumerB.channel.Principal},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sEmptyTopic, err := op.ScheduleEvent(ctx, ScheduleEventRequest{
+		RequestID:    uuid.NewString(),
+		NotBefore:    time.Now().Add(-time.Second),
+		GraceSeconds: 300,
+		Publication: PublishEventRequest{
+			Repo:        repo,
+			Kind:        "notice",
+			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: source.Version},
+			Destination: EventDestination{Type: "topic", Name: "empty-unreconciled-peer"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tickUnrec, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: repo, Limit: 2})
+	if err != nil || len(tickUnrec.Occurrences) != 1 || tickUnrec.Occurrences[0].OccurrenceID != sEmptyTopic.OccurrenceID || tickUnrec.Occurrences[0].State != "fired" {
+		t.Fatalf("expected RATE_UNRECONCILED sUnrec not to abort sEmptyTopic in same tick: %+v %v", tickUnrec, err)
+	}
+	sUnrecPage, err := op.Schedules(ctx, ScheduleQuery{Repo: repo, OccurrenceID: sUnrec.OccurrenceID})
+	if err != nil || len(sUnrecPage.Occurrences) != 1 || sUnrecPage.Occurrences[0].State != "pending" || sUnrecPage.Occurrences[0].Code != "RATE_UNRECONCILED" || sUnrecPage.Occurrences[0].EventID != "" {
+		t.Fatalf("expected sUnrec pending with actionable RATE_UNRECONCILED code and no fabricated completion: %+v %v", sUnrecPage, err)
+	}
+	if _, err = op.pool.Exec(ctx, `UPDATE cairn.agent_event_rate_bucket SET restore_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton) WHERE repo=$1 AND identity_kind='producer' AND identity=$2 AND unit='delivery'`, repo, op.channel.Principal); err != nil {
+		t.Fatal(err)
+	}
+	tickRepaired, err := op.TickSchedules(ctx, ScheduleTickRequest{Repo: repo, Limit: 1})
+	if err != nil || len(tickRepaired.Occurrences) != 1 || tickRepaired.Occurrences[0].OccurrenceID != sUnrec.OccurrenceID || tickRepaired.Occurrences[0].State != "fired" {
+		t.Fatalf("expected sUnrec to fire once rate bucket generation was repaired: %+v %v", tickRepaired, err)
+	}
+
 	// Schedule S3 blocked by closure saturation, then FenceRestore must fence S3 as skipped/restore_fenced.
 	enablePublicEnforcePolicy(t, op, repo, func(l *EventAdmissionLimits) {
 		l.MaxClosureReserved = 1

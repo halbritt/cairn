@@ -259,6 +259,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 					refusal.Code == "POOL_PAUSED",
 					refusal.Code == "CLOSURE_RESERVE_FULL",
 					refusal.Code == "CLOSURE_UNRECONCILED",
+					refusal.Code == "RATE_UNRECONCILED",
 					refusal.Code == "EVENT_ADMISSION_REFUSED":
 					// Accepted schedule stays pending until capacity returns or grace expires.
 					// Rotate blocked work behind unchecked occurrences in bounded ticks.
