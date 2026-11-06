@@ -46,13 +46,21 @@ func closureForWait(t *testing.T, s *Store, waitID string) ClosureReservation {
 func enforceClosureTestPolicy(t *testing.T, op *Store, repo string, policy EventAdmissionPolicy) {
 	t.Helper()
 	ctx := context.Background()
-	configured, err := op.SetEventAdmissionPolicy(ctx, SetEventAdmissionPolicyRequest{RequestID: uuid.NewString(), Repo: repo, Policy: policy})
+	if _, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := op.EventAdmissionPolicy(ctx, EventAdmissionPolicyQuery{Repo: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// ES2 exercises enforcement before the public all-writer capability is ready.
-	// Only this disposable fixture changes the stored policy directly.
-	if _, err = op.pool.Exec(ctx, `UPDATE cairn.agent_event_admission_policy SET policy=jsonb_set(policy,'{mode}','"enforce"') WHERE repo=$1 AND revision=$2`, repo, configured.Revision); err != nil {
+	// These scenarios isolate closure capacity; unrelated rate budgets must not
+	// refuse their short publication/retry sequences before the closure boundary.
+	rate := EventAdmissionRate{PerSecond: 10000, Burst: 10000}
+	policy.Mode = "enforce"
+	policy.Limits.ProducerPublications, policy.Limits.ProducerDeliveries = rate, rate
+	policy.Limits.OwnerPublications, policy.Limits.OwnerDeliveries = rate, rate
+	policy.Limits.CollectionPublications, policy.Limits.CollectionDeliveries = rate, rate
+	if _, err = op.SetEventAdmissionPolicy(ctx, SetEventAdmissionPolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevision: current.Revision, Policy: policy}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -221,6 +229,8 @@ func TestClosureAdversarialRestoreRequiresFreshReconciliation(t *testing.T) {
 	}
 	policy := admissionFixturePolicy()
 	policy.Limits.MaxClosureReserved, policy.Limits.MaxRecipientClosureReserved = 10, 10
+	policy.Limits.MaxCollectionOutstanding = 100
+	policy.Limits.MaxRecipientOutstanding, policy.Limits.MaxProducerRecipientOutstanding = 100, 100
 	enforceClosureTestPolicy(t, op, source.Scope.Repo, policy)
 	fence, err := op.FenceRestore(ctx, RestoreFenceRequest{RequestID: uuid.NewString(), Reason: "Fence uncertain post-backup replies in disposable closure fixture"})
 	if err != nil {
