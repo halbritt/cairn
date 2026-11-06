@@ -140,9 +140,17 @@ J-B1 serializes J-02/J-03. J-B2 can implement wake transport after its contracts
 | S-02 | L | Rust rank and streaming-rank modes through the existing Go supervisors. Match ranking and numeric contracts; malformed frames, deadlines, cancellation and output limits fail correctly. | S-01 |
 | S-03 | L | Rust embed mode with metadata handshake, UTF-8 byte spans, passage coverage, normalization and bounded CPU settings. Same-model cosine differences meet the proposal's `1e-6` target and ranking fixtures pass. | S-01 |
 | S-04 | M | Reproducible offline worker/model installation for supported host architectures. Prove native-library requirements, provenance, checksums and clean-environment execution. Core Go builds remain usable without Cargo. | S-02, S-03, R-01 supported host/CPU inventory |
-| S-05 | L | Disposable-store Python→Rust→Python switch/rebuild and restart recovery tests, default configuration change, and the semantic cutover runbook. Show no concurrent different-model writers and report readiness, incomplete coverage and fallback accurately. | S-04, R-01 |
+| S-05 | L | Disposable-store Python→Rust→Python switch/rebuild and restart recovery tests, default configuration change, and the semantic cutover runbook. Show no concurrent different-model writers and report readiness, incomplete coverage and fallback accurately. | S-04, S-04R, R-01 |
 
 HC-01 closes after S-01–S-04 and worker parity. HC-02 closes after S-05's verified implementation and R-07's installed semantic cutover/re-index evidence. The Rust ORT backend is the initial choice. Packaging failure can reopen that backend decision against the same parity contract; it does not permit silent backend substitution or tolerance relaxation.
+
+The added bounded repair **S-04R / CAIRN-355** qualifies a telemetry-disabled
+retained Python launcher/rollback closure, with Semantic implementation and
+S-R1 review plus Release rollback review. It depends on X-01, S-01 and R-01,
+then gates S-05 and R-06. The frozen oracle and current installed selection are
+not silently changed. See the [shared acceptance record](hybrid-runtime-contracts/README.md)
+for its isolation, identity and evidence requirements. This is a split repair
+within the full campaign, additional to the 25 base plan keys.
 
 ### Integration and release: HC-05 and HC-06
 
@@ -153,7 +161,7 @@ HC-01 closes after S-01–S-04 and worker parity. HC-02 closes after S-05's veri
 | R-03 | M | Thin Hermes adapter delegates memory and coordination to the staged binary while preserving actual in-process host contracts, custody and cancellation. | F-02, F-03, J-05, R-02 |
 | R-04 | M | OpenCode adapter and Claude/Codex/Agy hook wiring use the staged binary for their supported operations. Fresh and existing sessions work after targeted refresh; unsupported harness operations remain explicit. | J-06, R-02 |
 | R-05 | L | Selective migration of slow checks to Go, with independent process/crash/install coverage retained. Profile before and after; demonstrate equivalent assertions and fixtures before removing old checks. | F-02, F-03, J-06, S-05, R-01 |
-| R-06 | M | Full documentation audit and release candidate. Qualify drain/switch/restart/rollback for each complete watcher, all config-dir bindings and shared-state/runtime users after lifecycle prerequisites. Update architecture/status, CLI and lifecycle references, all affected harness guides, installation, semantic operation, testing, rollout and rollback. Local checks and independent release review pass. | R-03, R-04, R-05, S-05 |
+| R-06 | M | Full documentation audit and release candidate. Qualify drain/switch/restart/rollback for each complete watcher, all config-dir bindings and shared-state/runtime users after lifecycle prerequisites. Update architecture/status, CLI and lifecycle references, all affected harness guides, installation, semantic operation, testing, rollout and rollback. Local checks and independent release review pass. | R-03, R-04, R-05, S-05, S-04R |
 | R-07 | L | Deploy the reviewed release to every currently managed Cairn host/client. Re-inventory known Proximal, Archon and Talos installations; drain and switch each supported harness and semantic service; verify actual binaries, configuration, schemas, live connections and re-index completion. | R-06 |
 | R-08 | M | Complete burn-in, then retire live Python lifecycle installs and unused semantic/websocket dependencies. Preserve required Hermes Python, frozen trials and the documented rollback artifacts. No active configuration or process references a retired runtime. | R-07, burn-in exit criteria |
 | R-09 | M | Verify the final removal commit, deploy it everywhere, and reconcile every host/client against that final commit. Publish final operational evidence and close the campaign after independent acceptance. | R-08 |

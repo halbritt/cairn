@@ -39,6 +39,8 @@ fixture and review before dependent code lands.
 | `cmd/cairn/main.go`, `cmd/cairn/commands.go` initial lifecycle registration | Foundation F-B1 / F-01 | Coordination implements separate handlers and supplies later registration requirements. Overall grants a later shared-file slot after Foundation lands. |
 | Shared state-file and process-peer primitives | Foundation F-B1 | Coordination supplies behavior requirements and consumes the same implementation. Extract only with exercised consumers. |
 | Journal execution, recovery and inspection | Coordination J-B1 / J-02, J-03 | Native-session integration consumes named journal operations/facts, with no copied transition logic. |
+| J-04 shared peer-client addition and first wake consumer | Foundation F-B1 owns the shared client; Coordination J-B2 owns separate consumer files | Name nonoverlapping files and one combined candidate before coding. F-R1 and J-R2 review independently; integrate the exercised pair together, without an unused helper-only trunk commit. |
+| F-04 compatibility caller and original-input plumbing | Foundation F-B3 after the F-01 handoff | Narrow `inbox_binding.py`, `memory.py` and `coordination.py` changes require Coordination agreement before its overlapping frontend rewrites. Journal/watcher transition ownership remains with Coordination. |
 | `scripts/install-semantic.sh` | Semantic S-B2 / S-04 | Release supplies host/architecture requirements and reviews staging/activation compatibility. A later writer requires explicit transfer. |
 | `Makefile` initial Cargo and required real-worker targets | Semantic S-B2 | Other teams submit target requirements. After these targets land, Overall explicitly transfers ownership to Release for R-05 and final test wiring. |
 | Service configuration, lifecycle installation and final activation | Release | Semantic supplies the binary/model/native-library manifest and fixed launchers. No production switch before R-06/R-07 gates. |
@@ -135,6 +137,27 @@ Python semantic closure; retirement removes active requirements, not that
 rollback material.
 
 Semantic S-04 also requires R-01's nonempty supported host/CPU inventory.
+The separately classified S-04R / CAIRN-355 repair qualifies a telemetry-disabled
+retained Python semantic launcher/rollback closure. It depends on X-01, S-01
+and R-01, and gates S-05 rollback acceptance and R-06 qualification. Semantic
+owns its implementation and S-R1 review; Release independently reviews rollback
+compatibility. Keep the frozen numerical oracle, installed venv/model cache and
+current production selection unchanged during characterization. Prefer a new
+immutable launcher selection; if source changes alter derivation identity,
+record that transition explicitly. Prove the selected closure's numerical
+behavior and absence of telemetry-store writes or connection attempts through
+isolated process observation. Rust-only evidence does not qualify Python.
+
+The exact 65536-punctuation reference case retains its observed 90-second
+supervised timeout. A separately labelled offline numerical-oracle capture of
+the identical frozen input may use one external deadline of at most 180 seconds
+to obtain missing reference vectors, with independent reviewer agreement.
+This does not change or pass the production deadline. Protect the owner's
+telemetry store and network through actual isolation, including OS home lookup;
+missing isolation stops the experiment. Another timeout remains a model-evidence
+gap, without repeated deadline inflation. Candidate numerical comparison and
+execution through the unchanged real supervisor remain separate requirements.
+
 Other domain reviews and the F-04 decision's delta agreements remain pending.
 X-01 / CAIRN-302 remains open.
 No runtime implementation, production switch, burn-in or retirement has been
