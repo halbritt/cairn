@@ -286,6 +286,12 @@ consumer, in a Foundation-owned shared-file slot coordinated with J-B2. F-01
 must not pre-land unused client APIs. Harness JSON-RPC, wake/cancel meaning and
 journal transitions remain with Coordination.
 
+Root's J-04 slot uses nonoverlapping F-B1 primitive and J-B2 consumer files,
+one combined candidate/test boundary, independent F-R1 and J-R2 reviews and
+paired integration. The two leads name exact files before coding; root
+serializes any shared CLI registration. No helper-only intermediate main commit
+or competing peer implementation is accepted.
+
 Keep the `ProcessRef` wire identity `pid`, `start`, `boot`, where `start` is the
 `/proc/<pid>/stat` start tick value and `boot` is the kernel boot ID. Ancillary
 state and parent metadata in Python records must not disappear during roundtrip.
@@ -376,6 +382,25 @@ snapshot, so the child cannot silently observe a different enabled decision.
 This digest binds the parent's observation, not authority or a new config
 selection. The parent's continued handler uses that same checked snapshot.
 
+The child interprets those event bytes with the source-compatible lossless
+reader profile, not Go struct decoding or replacement-character normalization.
+The state-file equivalence rules also apply to the event: case-sensitive keys,
+duplicate-last values with original insertion positions, exact scalar types,
+large integers, non-finite values, surrogate-preserving strings and the same
+accepted encodings, integer-digit and recursion limits. Every admission and
+activation field retains Python's type checks, string/path semantics and
+failure order. Capture the actual isolated interpreter profile (`-I` ignores
+`PYTHONINTMAXSTRDIGITS`) and run both sides against it.
+
+Fixtures include escaped lone surrogates and surrogate-escape code points in
+`prompt_id`, `turn_id`, `session_id`, `cwd` and `project_path`, case-variant
+duplicate admission/identity keys, canonical/noncanonical UUIDs and non-ASCII
+prompts on both frontends. Preserve the filesystem encoding/error profile used
+for privacy walks. In particular, a lone-surrogate Claude prompt owner raises
+`UnicodeEncodeError` before any activation write; replacing it with U+FFFD and
+persisting a different owner is forbidden. Passing the same bytes alone does
+not establish parse or decision equivalence.
+
 This operation ports admission, one enabled snapshot and one activation
 decision, including the source marker-first persistence order. It neither
 allocates/refunds grants nor claims a turn, calls the store or transitions a
@@ -397,6 +422,67 @@ unknown class/reason, panic and persistence failures must never become
 `enabled:false`. Once the child starts, there is no Python activation fallback.
 Unexpected failures retain their source escaping/caught distinction; a child
 panic never accidentally returns the host-blocking exit 2.
+
+### Child failures and the enclosing deadline
+
+Valid exit-1 error frames retain their exact source exception category through
+the existing public handlers. Failures without a valid frame use this fixed
+mapping; the parent never forwards the child's numeric status as its own:
+
+| Child failure | Parent category |
+| --- | --- |
+| Spawn `ENOENT`, `EACCES` or another OS failure | Preserve the actual `OSError` subtype and errno (`FileNotFoundError`, `PermissionError`, etc.) |
+| Enclosing child timer expires, before launch or while waiting | `TimeoutError` / `ETIMEDOUT`, an `OSError`; explicitly convert `subprocess.TimeoutExpired` to it |
+| Signal death, panic/status 2, or another unexpected exit without a valid exit-1 frame | `subprocess.SubprocessError` |
+| Empty/malformed/extra/oversized/unknown frame, invalid UTF-8, invalid success shape, any stdout with nonzero exit, or any stderr with success | `subprocess.SubprocessError` |
+
+Both pipes are read concurrently under their exact bounds. Stop and reap only
+the child created by this invocation on timeout/protocol failure; never retry
+activation or run a Python fallback. A timeout after a possible durable write
+remains uncertain and retains the existing state/recovery evidence. External
+parent interruption keeps its original host signal/exit behavior while cleaning
+up that owned child; it is not converted to an activation retry.
+
+The public result is fixed by frontend, event and source requirement state:
+
+| Category / frontend | Reserved wake `UserPromptSubmit` | Other events |
+| --- | --- | --- |
+| OS/timeout, memory | Existing activation diagnostic (`OSError`; `BlockingIOError` remains its own label). Without a proven required restoration: empty stdout, ordinary fixed lifecycle failure line, exit 1. With proven required restoration: empty stdout, existing required-context refusal line, exit 2. | Ordinary `UserPromptSubmit` follows the same proven-required distinction. Codex `SessionStart` with proven required restoration emits the exact existing stop JSON and exits 0; Claude `SessionStart` keeps its existing caught failure line and exit 1. Other cases have empty stdout, ordinary caught failure line and exit 1. |
+| OS/timeout, coordination | Existing `phase=activation` diagnostic uses `refusal_error_class` (including `OtherError` for `TimeoutError`), attempts the existing activation-refusal record and then emits the fixed `NativePromptRefused` line, empty stdout and exit 2. Refusal-record failure retains its existing extra diagnostic. | Empty stdout, `Cairn coordination: <actual fixed exception type>; session presence unavailable`, newline, exit 1. |
+| Transport/protocol `SubprocessError`, memory | Empty stdout; exactly `Cairn lifecycle diagnostic: phase=activation error_class=UnexpectedError` plus newline; exit 1, without required-context promotion or an activation-refusal write. | The same fixed unexpected-error line, empty stdout and exit 1. |
+| Transport/protocol `SubprocessError`, coordination | Empty stdout; exactly `Cairn coordination: SubprocessError; session presence unavailable` plus newline; exit 1, without activation-refusal recording. | The same fixed line, empty stdout and exit 1. |
+
+The memory compatibility boundary catches this transport `SubprocessError`
+only around the F-04 activation IPC call, before `_main`'s ordinary
+classification, and renders the declared unexpected-error result. It does not
+catch or relabel unrelated legacy handler failures. Coordination uses its existing outer
+`SubprocessError` handler. OS/timeout errors enter the existing activation try;
+their intentional wake refusal is distinct from propagating a panic's status 2.
+Private frames and arbitrary child output are never echoed. Process fixtures
+cover every failure-table row on both frontends, wake/non-wake, optional and
+proven-required cases, both `SessionStart` variants and signal interruption.
+
+Use one absolute enclosing hook deadline. Capture monotonic start `t0` at the
+earliest trusted verifier entry, before receipt/member validation; `H` is the
+actual installed hook timeout from the trusted host selection, never event
+input. Set `D = t0 + H`, or the earlier native host deadline when supplied.
+The child timeout is exactly `max(0, D - now)`, not a fresh per-phase timer or
+an arbitrary shorter 1/2/5-second sublimit. It includes spawning, both Go image
+hashes, pipe I/O, the full normal 1.5-second ledger wait and persistence. The
+ledger keeps its original initial attempt and wait policy; only expiry of the
+enclosing hook can interrupt that full wait. Subsequent retained-handler work
+uses the remaining same deadline, preserving its existing tighter API limits.
+Missing/invalid trusted timeout selection refuses before child launch.
+
+The reference installed selections are 13 seconds for memory recall and 150
+for its listed capture hooks; Claude/Codex coordination uses 2 seconds for
+`SessionEnd`/`Interrupt`/`PostToolUse` and 15 for its other installed events.
+Use the exact R-01 row, including absent/unsupported cells, rather than invent
+an event or enlarge a host timeout. Non-wake admission has no activation-lock
+wait. Fixtures prove a normal 1.5-second wake contention is not cut short by a
+new sublimit, expiration stays inside the enclosing budget and no read/wait
+resets it. Record interpreter/receipt/hash/spawn/activation latency for every
+bound event against that host budget; performance gains remain measured targets.
 
 ### Independently pinned compatibility caller
 
@@ -459,6 +545,13 @@ The approved interpreter and standard library belong to Release's offline
 restoration closure. Owner-controlled launch configuration is the explicit
 trust root; its selection changes require install/readback, not self-authentication.
 
+This isolated launch is for these two hook frontends only. Do not reuse it for
+the watcher or inbox/operator commands without separately pinning and testing
+their dependency closure: `codex_queue` lazily imports third-party `websocket`
+on those paths, outside the hook call graph. `-I -S` does not load that package
+from user/site paths. Differential fixtures use the same captured isolated
+parser/interpreter profile on both sides.
+
 The hash graph is acyclic: configs name only their versioned binding path;
 the `/3` manifest hashes Go and config bytes; the receipt hashes that manifest,
 closure and the same Go/config selections; the external hook pins the receipt.
@@ -498,6 +591,16 @@ bridge and engine roles. Downstream `binding`, `validate`, `coordinates_wake`
 and engine selection reuse checked objects/bytes, not pathname reloads or
 another activation. This is an explicit compatibility-loader path, not a
 second Release implementation of Foundation validation.
+
+Other activation callers remain on their original `/2` path:
+`coordination.handle` and `memory.handle_event` when unresolved, plus
+`scripts/preflight_source_fit.py` and `scripts/check_recall_observation.py`.
+Without the loader's authenticated compatibility invocation context, they
+refuse `/3` before any Python activation mutation. A config/event field cannot
+manufacture that context. Fixtures prove unchanged `/2` behavior and a valid
+reserved-wake `/3` refusal with unchanged ledgers for each caller. The F-B3
+edits must not turn those existing paths into implicit Go or Python executors
+for a new binding.
 
 F-04 acceptance runs both actual public frontends, enabled and disabled, in
 process fixtures using the admitted compatibility caller. Prove one Go
@@ -587,9 +690,10 @@ errors inside the `Flush`/`end_turn` try region and, for nonexception
 uncertainty, only when `strict` is true. A non-strict unsettled call preserves
 the prior diagnostic. Persist logical ending before API work; refuse
 retirement while an all-journal flush is uncertain; leave/reconcile before
-marking retired. F-04 supplies the storage/API seam and an exercised storage
-consumer without waiting for J-05. Coordination later owns the full
-orchestration. Scripted adapters are test-only; a missing production adapter
+marking retired. These native-session failure-order fixtures and their compiled
+seam are J-05 / HC-04 obligations, with Foundation compatibility review. F-04's
+separate exercised shared-state/activation consumer does not wait for J-05.
+Scripted adapters are test-only; a missing production adapter
 must use the retained legacy path or explicit unavailability, never a no-op
 successful flush.
 
