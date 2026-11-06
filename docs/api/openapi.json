@@ -4156,6 +4156,34 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.EventAdmissionRate"
       },
+      "core.EventAdmissionRefusal": {
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "policy_revision": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "retry_after_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dimension",
+          "policy_revision",
+          "retry_after_seconds",
+          "retryable"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.EventAdmissionRefusal"
+      },
       "core.EventDestination": {
         "properties": {
           "name": {
@@ -14727,6 +14755,16 @@
       },
       "localapi.response": {
         "properties": {
+          "admission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "data": {},
           "message": {
             "type": "string"
@@ -14861,6 +14899,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentInstance"
                     },
@@ -15053,6 +15101,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentDirectoryPage"
                     },
@@ -15181,6 +15239,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentInstance"
                     },
@@ -15309,6 +15377,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentInstance"
                     },
@@ -15465,6 +15543,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentInstance"
                     },
@@ -15657,6 +15745,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ResolveAgentResult"
                     },
@@ -15805,6 +15903,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Revision"
                     },
@@ -15989,6 +16097,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Assessment"
                     },
@@ -16104,6 +16222,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "items": {
                         "$ref": "#/components/schemas/core.Assessment"
@@ -16249,6 +16377,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AssessmentPage"
                     },
@@ -16437,6 +16575,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -16677,6 +16825,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -16821,6 +16979,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.CaptureObservations"
                     },
@@ -16947,6 +17115,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EvidenceCheck"
                     },
@@ -17103,6 +17281,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Revision"
                     },
@@ -17220,6 +17408,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "properties": {},
                       "type": "object"
@@ -17351,6 +17549,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/localapi.ClientsResponse"
                     },
@@ -17628,6 +17836,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Package"
                     },
@@ -17745,6 +17963,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ConflictDetail"
                     },
@@ -17901,6 +18129,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ConflictPage"
                     },
@@ -18031,6 +18269,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Record"
                     },
@@ -18167,6 +18415,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.DeletedRecord"
                     },
@@ -18325,6 +18583,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -18469,6 +18737,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Record"
                     },
@@ -18601,6 +18879,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventAdmissionPreview"
                     },
@@ -18764,6 +19052,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentDelivery"
                     },
@@ -18902,6 +19200,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventFanoutPage"
                     },
@@ -19040,6 +19348,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ResponseGroupStatus"
                     },
@@ -19184,6 +19502,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ResponseGroupPage"
                     },
@@ -19320,6 +19648,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventStatus"
                     },
@@ -19470,6 +19808,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventPage"
                     },
@@ -19620,6 +19968,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventStats"
                     },
@@ -19754,6 +20112,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.NextEventResult"
                     },
@@ -19880,6 +20248,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.NoticeFlushResult"
                     },
@@ -20028,6 +20406,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.NoticePendingResult"
                     },
@@ -20164,6 +20552,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventPressure"
                     },
@@ -20425,6 +20823,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentEvent"
                     },
@@ -20561,6 +20969,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentDelivery"
                     },
@@ -20697,6 +21115,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentDelivery"
                     },
@@ -20841,6 +21269,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentSubscription"
                     },
@@ -20991,6 +21429,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EventSubscriptionPage"
                     },
@@ -21139,6 +21587,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.InboxPage"
                     },
@@ -21291,6 +21749,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Evidence"
                     },
@@ -21429,6 +21897,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EvidenceImpact"
                     },
@@ -21589,6 +22067,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Expansion"
                     },
@@ -21752,6 +22240,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.EvidenceExpansion"
                     },
@@ -21896,6 +22394,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ExplanationPage"
                     },
@@ -22018,6 +22526,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Record"
                     },
@@ -22160,6 +22678,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.HandoffRequestStatus"
                     },
@@ -22327,6 +22855,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.RecordHistory"
                     },
@@ -22604,6 +23142,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.IndexResult"
                     },
@@ -22750,6 +23298,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.RunRetrieval"
                     },
@@ -22870,6 +23428,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.NoticeExpirySweepResult"
                     },
@@ -23038,6 +23606,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -23158,6 +23736,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WorkerPoolList"
                     },
@@ -23278,6 +23866,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.RetractionPreview"
                     },
@@ -23536,6 +24134,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -23686,6 +24294,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "properties": {
                         "historical": {
@@ -23815,6 +24433,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Refusal"
                     },
@@ -23973,6 +24601,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.ManagedContext"
                     },
@@ -24125,6 +24763,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Revision"
                     },
@@ -24273,6 +24921,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Revision"
                     },
@@ -24401,6 +25059,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.IndexResult"
                     },
@@ -24527,6 +25195,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Package"
                     },
@@ -24681,6 +25359,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.RunReport"
                     },
@@ -24796,6 +25484,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.RunStatus"
                     },
@@ -24964,6 +25662,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionDeliveryObservationResult"
                     },
@@ -25110,6 +25818,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxAdvanceResult"
                     },
@@ -25260,6 +25978,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxResult"
                     },
@@ -25388,6 +26116,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxControlStatus"
                     },
@@ -25516,6 +26254,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxPending"
                     },
@@ -25644,6 +26392,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxReadiness"
                     },
@@ -25788,6 +26546,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxAttempt"
                     },
@@ -25940,6 +26708,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxAdvanceResult"
                     },
@@ -26110,6 +26888,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionOrganicNoticeResult"
                     },
@@ -26262,6 +27050,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxAttempt"
                     },
@@ -26438,6 +27236,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.SessionInboxAttempt"
                     },
@@ -26590,6 +27398,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Revision"
                     },
@@ -26740,6 +27558,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Attempt"
                     },
@@ -26902,6 +27730,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Supersession"
                     },
@@ -27024,6 +27862,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Supersession"
                     },
@@ -27174,6 +28022,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.TaskState"
                     },
@@ -27312,6 +28170,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Attempt"
                     },
@@ -27464,6 +28332,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -27604,6 +28482,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.Observation"
                     },
@@ -27768,6 +28656,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.UseReport"
                     },
@@ -27877,6 +28775,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/localapi.VersionResponse"
                     },
@@ -28036,6 +28944,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentWait"
                     },
@@ -28198,6 +29116,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentWait"
                     },
@@ -28347,6 +29275,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.AgentWait"
                     },
@@ -28518,6 +29456,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WaitListResult"
                     },
@@ -28664,6 +29612,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WakePage"
                     },
@@ -28848,6 +29806,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WakeAttempt"
                     },
@@ -28980,6 +29948,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WakeResult"
                     },
@@ -29100,6 +30078,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WakeControlResult"
                     },
@@ -29259,6 +30247,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WorkerSlot"
                     },
@@ -29385,6 +30383,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WorkerSlot"
                     },
@@ -29505,6 +30513,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WorkerList"
                     },
@@ -29641,6 +30659,16 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/core.EventAdmissionRefusal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "data": {
                       "$ref": "#/components/schemas/core.WorkerSlot"
                     },
@@ -29782,6 +30810,11 @@
     {
       "http_status": 409,
       "code": "DELIVERY_ACTIVE",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 429,
+      "code": "EVENT_ADMISSION_REFUSED",
       "source": "serveJSON"
     },
     {
@@ -30146,6 +31179,7 @@
     "DELIVERY_ACTIVE",
     "DEPENDENCY_CONFLICT",
     "DESTINATION_PROHIBITED",
+    "EVENT_ADMISSION_REFUSED",
     "EVIDENCE_UNAVAILABLE",
     "EXCLUSION_CONFLICT",
     "EXPIRED",

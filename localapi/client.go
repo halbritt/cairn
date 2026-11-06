@@ -149,13 +149,14 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	}
 	// Responses are decoded tolerantly: a newer server may add fields.
 	var envelope struct {
-		Schema    string          `json:"schema"`
-		RefusalID string          `json:"refusal_id"`
-		OK        bool            `json:"ok"`
-		Status    string          `json:"status"`
-		Message   string          `json:"message"`
-		Data      json.RawMessage `json:"data"`
-		Protocol  *ProtocolRange  `json:"protocol"`
+		Schema    string                      `json:"schema"`
+		RefusalID string                      `json:"refusal_id"`
+		Admission *core.EventAdmissionRefusal `json:"admission"`
+		OK        bool                        `json:"ok"`
+		Status    string                      `json:"status"`
+		Message   string                      `json:"message"`
+		Data      json.RawMessage             `json:"data"`
+		Protocol  *ProtocolRange              `json:"protocol"`
 	}
 	if err = json.Unmarshal(encoded, &envelope); err != nil {
 		return err
@@ -170,7 +171,11 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 			return &core.Error{Code: "PROTOCOL_UNSUPPORTED", Message: "the server predates protocol " +
 				strconv.Itoa(Protocol.Min) + ", this client's minimum; upgrade the server"}
 		}
-		return &core.Error{Code: envelope.Status, Message: envelope.Message, RefusalID: envelope.RefusalID}
+		refused := &core.Error{Code: envelope.Status, Message: envelope.Message, RefusalID: envelope.RefusalID}
+		if envelope.Status == "EVENT_ADMISSION_REFUSED" {
+			refused.Admission = envelope.Admission
+		}
+		return refused
 	}
 	return json.Unmarshal(envelope.Data, response)
 }

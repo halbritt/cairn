@@ -19,12 +19,39 @@ import (
 )
 
 type response struct {
-	RefusalID string `json:"refusal_id,omitempty"`
-	Schema    string `json:"schema"`
-	OK        bool   `json:"ok"`
-	Status    string `json:"status"`
-	Data      any    `json:"data,omitempty"`
-	Message   string `json:"message,omitempty"`
+	RefusalID string                      `json:"refusal_id,omitempty"`
+	Admission *core.EventAdmissionRefusal `json:"admission,omitempty"`
+	Schema    string                      `json:"schema"`
+	OK        bool                        `json:"ok"`
+	Status    string                      `json:"status"`
+	Data      any                         `json:"data,omitempty"`
+	Message   string                      `json:"message,omitempty"`
+}
+
+// commandEnvelope builds the cairn.response/1 envelope and exit code for one
+// command result. Typed admission details accompany only EVENT_ADMISSION_REFUSED.
+func commandEnvelope(data any, err error) (response, int) {
+	envelope := response{Schema: "cairn.response/1", OK: err == nil, Status: "OK", Data: data}
+	if err == nil {
+		return envelope, 0
+	}
+	envelope.Status = core.Code(err)
+	var refusalError *core.Error
+	if errors.As(err, &refusalError) {
+		envelope.RefusalID = refusalError.RefusalID
+		if envelope.Status == "EVENT_ADMISSION_REFUSED" {
+			envelope.Admission = refusalError.Admission
+		}
+	}
+	envelope.Message = err.Error()
+	classification := refusal.Classify(envelope.Status)
+	if classification.CLIMessage != "" {
+		envelope.Message = classification.CLIMessage
+	}
+	if envelope.Status == "CLIENT_SETUP_FAILED" || envelope.Status == "API_CONNECTION_FAILED" {
+		envelope.Message = refusalError.Error()
+	}
+	return envelope, classification.ExitCode
 }
 
 func main() {
@@ -98,24 +125,7 @@ func main() {
 			err = plan.execute(ctx)
 		}
 	}
-	envelope := response{Schema: "cairn.response/1", OK: err == nil, Status: "OK", Data: data}
-	exitCode := 0
-	if err != nil {
-		envelope.Status = core.Code(err)
-		var refusalError *core.Error
-		if errors.As(err, &refusalError) {
-			envelope.RefusalID = refusalError.RefusalID
-		}
-		envelope.Message = err.Error()
-		classification := refusal.Classify(envelope.Status)
-		exitCode = classification.ExitCode
-		if classification.CLIMessage != "" {
-			envelope.Message = classification.CLIMessage
-		}
-		if envelope.Status == "CLIENT_SETUP_FAILED" || envelope.Status == "API_CONNECTION_FAILED" {
-			envelope.Message = refusalError.Error()
-		}
-	}
+	envelope, exitCode := commandEnvelope(data, err)
 	output := os.Stdout
 	if watchOutput {
 		output = os.Stderr

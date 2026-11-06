@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -350,11 +351,14 @@ type recordRequest struct {
 }
 type response struct {
 	RefusalID string `json:"refusal_id,omitempty"`
-	Schema    string `json:"schema"`
-	OK        bool   `json:"ok"`
-	Status    string `json:"status"`
-	Data      any    `json:"data,omitempty"`
-	Message   string `json:"message,omitempty"`
+	// Admission carries only the refused dimension, policy revision and retry
+	// guidance of an EVENT_ADMISSION_REFUSED publication; never recipient data.
+	Admission *core.EventAdmissionRefusal `json:"admission,omitempty"`
+	Schema    string                      `json:"schema"`
+	OK        bool                        `json:"ok"`
+	Status    string                      `json:"status"`
+	Data      any                         `json:"data,omitempty"`
+	Message   string                      `json:"message,omitempty"`
 	// Protocol is the replying party's supported range (server or relay). It
 	// is always present from this release; legacy clients ignore it, and its
 	// absence identifies a legacy peer.
@@ -366,8 +370,18 @@ func writeError(w http.ResponseWriter, status int, code, message string, refusal
 	if len(refusalIDs) > 0 {
 		id = refusalIDs[0]
 	}
+	writeRefusal(w, status, response{Status: code, Message: message, RefusalID: id})
+}
+
+// writeRefusal completes and writes one error envelope; callers supply only
+// the code, message and the refusal's own typed fields.
+func writeRefusal(w http.ResponseWriter, status int, refused response) {
+	refused.Schema, refused.OK, refused.Data, refused.Protocol = "cairn.response/1", false, nil, Protocol
+	if refused.Admission != nil && refused.Admission.RetryAfterSeconds > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(refused.Admission.RetryAfterSeconds))
+	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message, RefusalID: id, Protocol: Protocol})
+	_ = json.NewEncoder(w).Encode(refused)
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
 	limit := RequestBodyLimit(strings.TrimPrefix(r.URL.Path, "/v1/"))
@@ -398,13 +412,17 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 		if classification.HTTPMessage != "" {
 			message = classification.HTTPMessage
 		}
+		refused := response{Status: code, Message: message}
 		var failure *core.Error
-		id := ""
 		if errors.As(err, &failure) {
-			id = failure.RefusalID
+			refused.RefusalID = failure.RefusalID
+			if code == "EVENT_ADMISSION_REFUSED" && failure.Admission != nil {
+				admission := *failure.Admission
+				refused.Admission = &admission
+			}
 		}
 		logRefusal(os.Stderr, strings.TrimPrefix(r.URL.Path, "/v1/"), code, status)
-		writeError(w, status, code, message, id)
+		writeRefusal(w, status, refused)
 		return
 	}
 	// HTTP write errors mean the caller may not have received a committed result;

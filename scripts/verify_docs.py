@@ -289,6 +289,10 @@ def discover_cli_schema(repo_root):
         "policy", "policy-revision", "instruction-policy", "runs", "grants",
         "run-status", "recover-run", "set-sections", "cite", "worker-pool-configure",
         "candidate-retention", "candidate-reclaim", "work", "wait",
+        "event-pressure", "event-fanout", "event-admission-preview",
+        "event-pressure-collection", "event-fanout-collection", "event-admission-policy",
+        "event-admission-configure", "event-admission-preview-collection",
+        "event-admission-refusals",
     ])
 
     subcommands = {

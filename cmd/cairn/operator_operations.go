@@ -185,7 +185,9 @@ func buildOperatorOperations() map[string]operatorOperation {
 
 		// Operator recovery, coordination and scheduling.
 		storeOperation("event-admission-policy", (*core.Store).EventAdmissionPolicy),
+		sharedOperation("event-admission-preview-collection", "event-admission-preview"),
 		storeOperation("event-admission-configure", (*core.Store).SetEventAdmissionPolicy),
+		storeOperation("event-admission-refusals", (*core.Store).EventAdmissionRefusals),
 		storeOperation("event-pressure-collection", (*core.Store).CollectionEventPressure),
 		storeOperation("event-fanout-collection", (*core.Store).CollectionEventFanout),
 		storeOperation("worker-pool-configure", (*core.Store).ConfigureWorkerPool),

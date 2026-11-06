@@ -64,7 +64,7 @@ Everyday commands:
   work project (add|list|show|disable) | work refresh | work list | work show | work associate | work unassociate | work progress | work blocker | work artifact | work advice | work metadata | work features | work serve
 
 JSON commands (read one request from stdin):
-  event-admission-policy event-admission-configure event-pressure-collection event-fanout-collection (local operator; see docs/event-admission.md)
+  event-admission-policy event-admission-configure event-pressure-collection event-fanout-collection event-admission-preview-collection event-admission-refusals (local operator; see docs/event-admission.md)
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)
   coordination-review event-reissue native-hold-release stopped-inbox-expire (local operator recovery; see docs/event-recovery.md)
   delivery-alerts (local operator; owner alerts for starved online sessions; see docs/delivery-health.md)

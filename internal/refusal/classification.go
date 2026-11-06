@@ -41,6 +41,8 @@ var classifications = map[string]Classification{
 	"DEPENDENCY_CONFLICT":      {HTTPStatus: 422, ExitCode: 4},
 	"DESTINATION_PROHIBITED":   {HTTPStatus: 422, ExitCode: 2},
 	"EVIDENCE_UNAVAILABLE":     {HTTPStatus: 422, ExitCode: 2},
+	// Capacity refusals keep their safe dimension text; the typed details ride in the envelope.
+	"EVENT_ADMISSION_REFUSED":  {HTTPStatus: 429, ExitCode: 4},
 	"EXCLUSION_CONFLICT":       {HTTPStatus: 409, ExitCode: 4},
 	"EXPIRED":                  {HTTPStatus: 410, ExitCode: 4},
 	"FEATURE_DISABLED":         {HTTPStatus: 409, ExitCode: 4},
