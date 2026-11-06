@@ -18,10 +18,12 @@ module's interface is the fixture's test surface.
   stopped; `remove()` deletes the directory only then.
 - `ProvidedDatabase.from_environment()` names an already migrated disposable
   database through `CAIRN_TEST_DATABASE_URL` and `CAIRN_DATABASE_URL`, which
-  must be equal. Shared-database fixtures and `scripts/test-local-lifecycle.sh`
-  use it.
+  must be equal. Equality is a configuration check, not proof of database
+  ownership or disposability; provision that database before calling it.
+  Shared-database fixtures and `scripts/test-local-lifecycle.sh` use it.
 - `DisposableHost.start(source, repo=..., ...)` creates and migrates the
-  database (`cairn_<fixture label>` unless named), stages one owner-only token
+  database (`cairn_<fixture label>` unless named), sets both DSNs and a private
+  `CAIRN_HOME` in `host.env`, stages one owner-only token
   per role with `identities.json`, starts `cairn serve` and waits until the
   socket accepts. `host.agent(role, operation, body)`,
   `host.operator(command, body)` and `host.command(argv, body)` read one
@@ -46,15 +48,20 @@ root and the binary and owns its database; a `shared` fixture uses `cairn_test`
 through the exported DSN. The panel controller lists its workflows
 (`token_efficiency_panel_controller.py --list-workflows`) and names each
 database (`database_name`), so the runner holds no second registry.
-`CAIRN_TEST_ONLY='<glob> ...'` runs only the matching fixtures and skips the Go
-suites while a fixture is being developed.
+`CAIRN_TEST_ONLY='<glob> ...'` matches script stems without `.py` and runs only
+the matching fixtures, skipping Go suites while a fixture is being developed.
+For example, use `CAIRN_TEST_ONLY='check_inbox_resume_disposable' make test-integration`.
 
 ## Boundaries
 
-The module never uses an existing store: a provided root must be a fresh
-private cluster, an owned cluster is created by the fixture, and a provided
-database must be the test database named twice. `TrialStore` in
-`scripts/trial_task_eval.py` keeps its own cluster routing and delegates
+Provided and owned clusters are restricted to fixture-owned state. A
+`ProvidedDatabase` instead trusts the caller's explicit pair of equal DSNs;
+never supply an operational database. Keep CLI and child processes on
+`host.env`, and do not override its DSNs or `CAIRN_HOME` with installed defaults.
+The Go CLI suite's independent guard and manual-probe requirements are described
+in [testing](developer/testing.md#keep-cli-and-fixture-defaults-isolated).
+
+`TrialStore` in `scripts/trial_task_eval.py` keeps its own cluster routing and delegates
 identity staging, API startup and teardown here. Fixtures that drive several
 services (`check_multi_machine.py`, `check_panel_relay_uncertain_response.py`,
 `check_protocol_skew.py`, `check_api_version_skew.py`) keep their own service

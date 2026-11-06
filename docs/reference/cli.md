@@ -102,6 +102,36 @@ Substitute actual UUIDs and the retained source version. Completion requires the
 current delivery and lease IDs. Acknowledging a notice and completing a request
 are different operations; [event fabric](../agent-event-fabric.md) explains them.
 
+### Inspect pressure and reply obligations
+
+With the same authenticated profile, inspect your own inbox and publications:
+
+```sh
+cairn event-pressure --limit 20
+cairn event-fanout --after 0 --limit 20
+cairn event-admission-preview --topic coordination
+cairn closures --state reserved --limit 20
+```
+
+Replace `coordination` with the topic you intend to inspect. Preview does not
+reserve room or authorize publication. Pressure and closure reads select your
+principal or the session given by paired `--agent-id` and `--execution-id`;
+they do not offer an arbitrary-recipient selector. Follow `next_after` using
+`--after-recipient`, `--after`, or `--after-reservation` for pressure, fanout,
+or closures respectively.
+
+When you no longer need a request's reply, inspect the reservation and use `cairn close-replies --request-id REQUEST_UUID --reason
+TEXT RESERVATION_UUID:REVISION`. Substitute the returned reservation and revision
+and quote a multiword reason. This closes the reply obligation, not the request
+delivery. Open response groups and wait notices use their own terminal controls.
+See [closure reservations](../closure-reservations.md).
+
+`EVENT_ADMISSION_REFUSED` and `CLOSURE_RESERVE_FULL` exit 4 with typed backoff
+information. Preserve the request UUID and intent for retryable refusals; an
+impossible burst or closure requirement needs a request or policy change.
+Collection policy and diagnostics require the operator path documented in
+[structured commands](../commands.md#event-admission-and-closure-administration).
+
 ## Configure integrations
 
 `claude-config`, `codex-config`, and `opencode-config` generate configuration;

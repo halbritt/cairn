@@ -34,15 +34,59 @@ for the fixture contract.
 To work on a particular Python integration fixture:
 
 ```sh
-CAIRN_TEST_ONLY='check_fixture_name.py' make test-integration
+CAIRN_TEST_ONLY='check_inbox_resume_disposable' make test-integration
 ```
 
-Replace the pattern with an existing fixture name. This focused mode skips the
-Go package suites and does not replace the full required integration run.
+The selector matches script stems without `.py`, with space-separated shell
+globs permitted. This focused mode skips the Go package suites and does not
+replace the full required integration run.
 
 `go test ./...` and `make test` skip database coverage unless
 `CAIRN_TEST_DATABASE_URL` is supplied. Prefer the integration target, which
 creates and cleans up its own database.
+
+### Keep CLI and fixture defaults isolated
+
+The integration runner passes both `CAIRN_TEST_DATABASE_URL` and
+`CAIRN_DATABASE_URL` with the same disposable DSN to each Go package. The first
+selects integration-test stores; the second selects ordinary CLI store access.
+Setting only the test variable is insufficient for standalone CLI subprocesses.
+
+`cmd/cairn/testmain_test.go` creates a private `CAIRN_HOME` before CLI tests run,
+so default sockets and tokens cannot resolve to the installed profile. It
+replaces an inherited `CAIRN_DATABASE_URL` with the test DSN, or a private absent
+socket when no test DSN exists. This guard is part of the test binary; it does
+not protect a separately built CLI. For a manual database probe, explicitly set
+both DSNs to a database you created for that probe and use a private
+`CAIRN_HOME`. Do not rely on inherited credentials or the local-store default.
+
+Python fixtures using `DisposableHost` receive the same pair of DSNs and a
+private home. `ProvidedDatabase` checks DSN equality, not whether a database is
+actually disposable; the caller must provision it. See the
+[fixture interfaces](../disposable-fixtures.md) before adding a subprocess.
+
+### Event admission coverage
+
+Event admission changes require the full store checks above. The relevant
+integration suites cover these boundaries:
+
+| Boundary | Source tests |
+| --- | --- |
+| Scoped pressure, fanout snapshots, policy revisions | `core/event_admission_test.go` |
+| Atomic admission, concurrent capacity, validated replies | `core/event_admission_enforcement_test.go` |
+| Closure lifetime, visibility, reconciliation and restore generations | `core/agent_closure_reservations_test.go`, `core/agent_closure_adversarial_test.go` |
+| Durable rate balances, owner identity, refill and rollback | `core/event_admission_rates_test.go` |
+| Scheduler, stopped notices, quiet-notice and pool transfers | `core/event_admission_alternate_test.go`, `core/event_admission_transfers_test.go` |
+| Disabled/re-enabled policy and migration barriers | `core/event_admission_disable_test.go`, `core/event_admission_migration_test.go` |
+| HTTP/CLI refusal details and committed scheduler progress after diagnostic failure | `localapi/event_admission_transport_test.go`, `cmd/cairn/event_admission_transport_test.go`, `cmd/cairn/schedule_serve_admission_test.go` |
+
+Use `nativeFixture` in `core/native_fixture_test.go` for existing-session store
+scenarios. It centralizes registration, publication, native claim, operator
+access and explicit time/state changes; scenario assertions remain in their
+tests. It simulates store state and does not establish live harness delivery.
+These suites test bounded contracts, not production throughput or better agent
+outcomes. Check the [rollout guide](../operator/event-admission-rollout.md) for
+upgrade requirements distinct from passing tests.
 
 ## Run unit and adapter checks
 

@@ -30,9 +30,12 @@ has `ok: false`, a machine-readable code in `status`, and a `message`.
 An `EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` refusal can also carry
 `admission`: the refused `dimension`, the `policy_revision`, `retry_after_seconds`
 and `retryable`. It never names other recipients or reports their counts or
-remaining capacity. A positive retry hint is also sent as a `Retry-After` header;
-it is backoff guidance, not a promise of admission. No other code carries
-`admission`. The `protocol` field declares the responding peer's supported range.
+remaining capacity. The API server also sends a positive hint as `Retry-After`;
+the current relay forwards the JSON envelope but does not forward that header.
+Use `admission.retry_after_seconds` through a relay. It is backoff guidance, not
+a promise of admission; `retryable: false` requires changing the request or
+policy instead of a timed retry. No other code carries `admission`. The
+`protocol` field declares the responding peer's supported range.
 
 | Status | HTTP status | Client action |
 | --- | --- | --- |
@@ -41,8 +44,8 @@ it is backoff guidance, not a promise of admission. No other code carries
 | `NOT_FOUND` | 404 | Check the identifier and caller visibility |
 | `VERSION_CONFLICT` | 409 | Read current state, reconcile, then submit a new mutation |
 | `IDEMPOTENCY_CONFLICT` | 409 | Do not reuse a request UUID for changed intent |
-| `EVENT_ADMISSION_REFUSED` | 429 | Retry the same request UUID with unchanged intent after backoff; see [event admission](../event-admission.md) |
-| `CLOSURE_RESERVE_FULL` | 429 | Close or settle accepted obligations, then retry the same request UUID; see [closure reservations](../closure-reservations.md) |
+| `EVENT_ADMISSION_REFUSED` | 429 | Inspect the dimension and `retryable`; retry unchanged intent with the same UUID only when capacity can recover; see [event admission](../event-admission.md) |
+| `CLOSURE_RESERVE_FULL` | 429 | Drain or explicitly close obligations; if `retryable` is false, change the request or policy; see [closure reservations](../closure-reservations.md) |
 | `CLOSURE_UNRECONCILED` | 409 | Wait for an operator to reconcile closures for the current restore generation, then retry |
 | `RATE_UNRECONCILED` | 409 | Rate state does not match the current restore generation; report it to the operator, then retry |
 | `BUDGET_REFUSED` | 422 | Reduce the requested output or make a deliberate new request with sufficient room |
@@ -67,12 +70,20 @@ the OpenAPI contract contains the complete catalog and encoded request limits.
 | Register and locate sessions | `agent-register`, `agent-context`, `agent-heartbeat`, `agent-leave`, `agent-directory`, `agent-resolve` |
 | Publish and process events | `event-publish`, `event-next`, `event-complete`, `event-retry`, `event-renew` |
 | Observe delivery | `event-watch`, `event-list`, `event-inspect`, `event-group`, `event-groups` |
+| Inspect own pressure and publication fanout | `event-pressure`, `event-fanout`, `event-admission-preview` |
+| Inspect and close own reply obligations | `event-closures`, `event-close-replies` |
 
 For example, session registration is `/v1/agent-register`, and publishing an
 event is `/v1/event-publish`. The CLI's `ack` and `complete` commands both map
 to `event-complete` with different dispositions. Some listed operations require
 a local destination or are unavailable to remote profiles; check the operation's
 access contract before using it.
+
+Admission policy configuration, collection-wide diagnostics, and closure
+reconciliation are operator CLI operations, with no agent API routes. The
+scoped inspection routes above do not accept another recipient's identity or a
+collection-wide selector. See [local API](../local-api.md#agent-event-operations)
+for their request fields.
 
 Most encoded request bodies are limited to 128 KiB. Record text operations and
 event completion have larger limits; `explain-page` has a smaller limit. Limits

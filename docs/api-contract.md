@@ -137,6 +137,34 @@ See [preview compatibility](preview-qualifier-limit.md#replay-and-compatibility)
 for cached facade choices and rollback/retry behavior. Generic API clients do
 not opt in on behalf of their callers.
 
+## Event admission contract
+
+The event catalog in `localapi/agent_events.go` binds `event-pressure`,
+`event-fanout`, `event-admission-preview`, `event-closures` and
+`event-close-replies` to their store types. The first four are read operations;
+closing replies uses request-ID idempotency. Collection-wide inspection, policy
+configuration, refusal counters and closure reconciliation are operator CLI
+commands and are not routes in this contract.
+
+Error envelopes have an optional typed `admission` object only for
+`EVENT_ADMISSION_REFUSED` and `CLOSURE_RESERVE_FULL`. It contains `dimension`,
+`policy_revision`, `retry_after_seconds` and `retryable`, without private
+recipient identities, counts or remaining capacity. Both codes map to HTTP 429
+and CLI exit 4. `CLOSURE_UNRECONCILED` and `RATE_UNRECONCILED` map to HTTP 409
+and exit 4, without typed admission detail. The server also emits a positive
+`Retry-After` hint; the relay preserves the JSON body but does not forward that
+header. Clients must use the JSON hint when operating through a relay.
+
+The generated contract describes the fields, not the transactional guarantees:
+publication refusal rolls back its effects, a committed same-intent retry does
+not spend rate tokens again, and a preview never reserves capacity. Those
+contracts are exercised by the admission and closure suites listed in
+[testing](developer/testing.md#event-admission-coverage). Transport tests in
+`localapi/event_admission_transport_test.go` and
+`cmd/cairn/event_admission_transport_test.go` cover the typed error path and the
+exact code allowlist. See [event admission](event-admission.md) for policy,
+accounting and retry semantics.
+
 ## Requests
 
 - **Method and path.** Every operation is `POST /v1/OPERATION` with one JSON

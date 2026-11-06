@@ -64,3 +64,38 @@ The feature covers these implemented policy boundaries. Invalid payloads,
 authentication failures, arbitrary storage errors, and every possible adapter or
 expansion failure are not automatically retained. General refusal analytics,
 review dispositions and the remaining class D/governed-policy paths remain open.
+
+## Event admission diagnostics
+
+Event admission uses a separate, bounded counter store. An
+`EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` response carries a safe
+`admission` object with the dimension, policy revision and retry guidance. It
+does not create one protected `refusal_id` trace per attempt. For publication
+refusals, the refused publication's changes roll back before a separate diagnostic
+transaction updates one row per collection and fixed dimension. Repeated attempts increment
+that row, including across policy revisions; its revision, retry hint and time
+refer to the latest recorded refusal. At most 12 dimensions are retained per
+collection. Counters have no automatic expiry and do not establish a complete
+count of attempted work.
+
+The operator reads these rows with `cairn event-admission-refusals` and JSON
+`repo`. Ordinary agent profiles have no route to collection-wide refusal
+counters. See [event admission](event-admission.md) for capacity dimensions and
+the [HTTP reference](reference/api-rest.md#responses-and-failures) for the error
+envelope. `retry_after_seconds` is guidance, not a guarantee; `retryable: false`
+means the request or policy needs to change.
+
+Diagnostic failure does not replace a capacity refusal with
+`REFUSAL_UNRECORDED`: the original code and typed details survive, with a message
+that the diagnostic could not be retained. Inspect the original refusal and
+apply its retry rules even when its counter is missing.
+
+Batch processing also distinguishes progress from telemetry. A schedule tick
+can commit fired occurrences and deferred capacity decisions, then report
+`unrecorded_refusal_diagnostics` and `diagnostic_warning` on a successful result.
+`schedule-serve` preserves that result and continues timeout sweeping and
+wait-outbox draining. Stopped-recipient notification review similarly retains
+sent/suppressed progress while reporting a `deferred_capacity` result and
+`refusal_diagnostic_unrecorded` for an unrecorded capacity diagnostic; its batch
+contains the warning and count. A warning does not mean those committed effects
+rolled back. Other store errors still fail processing.

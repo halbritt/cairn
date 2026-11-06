@@ -26,12 +26,39 @@ operations use POST with JSON. No request can select its publisher or inbox owne
 | `event-list` | optional repo/agent/topic, after numeric position, limit | events, next_after, more |
 | `event-inspect` | event_id, optional after delivery UUID, limit | Event and visible recipient handling reports |
 | `event-metrics` | optional repo/agent | Publication and inbox counters |
+| `event-pressure` | optional repo, after recipient principal, limit | Own pressure, closure availability and rate-state diagnostic |
+| `event-fanout` | optional repo, after numeric position, limit | Own publications' snapshotted fanout; events, next_after, more |
+| `event-admission-preview` | optional repo, destination `{type,name}` for agent or topic | Read-only forecast with would_refuse, unevaluated and unsupported dimensions |
+| `event-closures` | optional repo, state, obligation, after reservation UUID, limit | Own visible reservations, counts, next_after, more |
+| `event-close-replies` | request_id, optional repo, reason, items `[{reservation_id,expected_revision}]` | Atomically closed reply reservations |
 
 The raw JSON form is `cairn agent OPERATION < request.json`; the top-level event
 commands are flag-based aliases. Subscription lists include inactive membership.
 Completed deliveries remain in event history. Status never exposes lease tokens.
 An expired or replaced lease returns HTTP 409 / `STALE_LEASE`. Completion request
 retries return the original result, with no duplicated result note.
+
+Pressure and closure reads are scoped to the authenticated principal or selected
+session, and fanout reads cover that publisher's events. They cannot select
+another inbox. Hosted visibility still applies. A preview is not authorization
+or a reservation: source eligibility and validated closure eligibility remain
+unevaluated, and private recipient counts stay undisclosed. Read the returned
+availability/state labels; absent counts do not mean zero.
+
+`event-close-replies` closes 1–100 reserved reply obligations owned by the
+publisher, with expected revisions and a reason. It does not cancel request
+deliveries, close an open response group, or cancel a wait. A waiting
+`request_response` wait also blocks explicit close until it is cancelled. See
+[closure reservations](closure-reservations.md) for the exact close rules.
+
+These five operations are available to remote profiles under the catalog's
+normal role checks. Policy configuration, collection-wide pressure/fanout,
+refusal counters and reconciliation remain operator-only, without agent API
+routes. See [event admission](event-admission.md) and
+[operator commands](commands.md#event-admission-and-closure-administration).
+Capacity failures preserve typed `admission` details in the error envelope;
+[HTTP failure handling](reference/api-rest.md#responses-and-failures) explains
+retry guidance and the relay header limitation.
 
 ## Memory API
 

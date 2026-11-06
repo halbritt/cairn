@@ -55,6 +55,26 @@ once the reader or relay is upgraded. Which receipts can trigger it, why disabli
 binding does not make an older binary safe, and the reader-readiness conditions are
 in [source openings](note-span-openings.md#disabling-versus-downgrading).
 
+## Event admission additions and database compatibility
+
+Event pressure, fanout, preview and closure routes, typed `admission` error
+details, and the four admission/closure reconciliation refusal codes are
+additive; the wire range remains `[1, 2]`. An older client can preserve a new
+refusal code without understanding the optional details. Current clients retain
+`admission` only for `EVENT_ADMISSION_REFUSED` and `CLOSURE_RESERVE_FULL`.
+The [HTTP reference](reference/api-rest.md#responses-and-failures) defines their
+fields and explains why relay callers use the JSON retry hint rather than
+relying on `Retry-After`.
+
+Wire compatibility does not establish store-writer compatibility. Event
+admission enforcement requires the complete writer implementation, schema
+migration 084, and closure reconciliation for the collection's current restore
+generation. Migrations 080 and 084 update the restore-admission tuple to drain
+participating transactions and invalidate stale snapshots. Policy `disabled`
+is not permission to downgrade a binary against the migrated store. Follow the
+[admission rollout procedure](operator/event-admission-rollout.md) for the
+writer upgrade barrier and rollback limits.
+
 ## Rules for changes
 
 | Change | Protocol effect |

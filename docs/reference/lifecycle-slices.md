@@ -39,6 +39,8 @@ For actual operation and integration contracts, use:
 
 - [Evidence refresh](../evidence-refresh.md) and [retention](../candidate-retention.md).
 - [Restore admission](../restore-admission.md) and [restore fencing](../restore-fencing.md).
+- [Event admission](../event-admission.md), [closure reservations](../closure-reservations.md),
+  and the [admission rollout procedure](../operator/event-admission-rollout.md).
 - [Index and pull](../index-and-pull.md) and [managed context](../managed-context.md).
 - [Lifecycle bundles](../lifecycle-bundles.md), [compact inbox](../compact-inbox.md),
   and [native inbox](../native-inbox.md).

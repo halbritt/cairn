@@ -62,6 +62,32 @@ state through database generations. Restoring a dump alone cannot account for
 later revocations or forgotten data. Follow [restore admission](../restore-admission.md)
 and [recovery reapplication](../recovery-reapplication.md).
 
+## Event admission and accepted work
+
+Event publication can create many deliveries. The collection's explicit
+[admission policy](../event-admission.md) checks that work in the store
+transaction, using authenticated producer and profile-owner identities. Policy
+modes are `disabled` (the default), `observe`, and `enforce`. Only `enforce`
+applies the configured limits; a preview does not reserve capacity.
+
+Normal outstanding limits bound retained unfinished work. Durable rate buckets
+limit publication and delivery charges over time.
+[Closure reservations](../closure-reservations.md) reserve room for the exact
+reply or terminal notice an accepted
+obligation may still need. Completing a request delivery alone does not release
+its reply reservation. Materializing already accepted quiet notices or assigning
+pool work transfers retained charges instead of admitting a second publication.
+
+Migrations 080–084 add policy and pressure indexes, closure state and
+reconciliation, bounded refusal counters, rate buckets, and the complete-writer
+schema floor. The 080 and 084 tuple updates form an upgrade barrier for
+transactions participating in restore admission; they are not a blanket lock
+on every database client. Enabling enforcement also requires closure
+reconciliation for the current restore generation. Follow the
+[rollout procedure](../operator/event-admission-rollout.md) when upgrading all
+writers; a successful wire-protocol handshake does not establish database-writer
+compatibility.
+
 ## Extending Cairn
 
 Start from the relevant store operation, then update its CLI/API/MCP surfaces and

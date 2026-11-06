@@ -184,9 +184,10 @@ Hidden destination records are excluded. Detail is separate from model rendering
 which exposes a fixed census with zero counts. Explanation version 0 means a
 legacy receipt has no retained detail; version 1 covers the initial successful compilations; version 2 adds frozen
 gate facts for [historical recompilation](currentness-and-replay.md),
-including empty results. Hard compilation refusals do not yet have durable
-explanations. `ESCALATION_BLOCKED` docket entries point to relevant current A
-versions requested for consequential use. They are grouped by record/version;
+including empty results. Covered hard compilation refusals retain a separate,
+partial [refusal observation](refusals.md), not a replayable package explanation.
+`ESCALATION_BLOCKED` docket entries point to relevant current A versions requested
+for consequential use. They are grouped by record/version;
 editing or promoting the record removes that old version from current demand
 without deleting its historical receipt.
 
@@ -275,6 +276,46 @@ These are operator commands with no agent API route.
 - `cairn refusal REFUSAL_UUID`: Reads recorded refusal details and partial diagnostic trace.
 - `cairn evidence-checks EVIDENCE_UUID`: Lists all verification checks for an evidence object (unpaged).
 - `cairn assessments RECEIPT_UUID`: Lists qualitative task assessments for an owned receipt (unpaged).
+
+## Event admission and closure administration
+
+These commands use the local operator store and accept one JSON object on stdin.
+They are not `cairn agent` API operations. Use the exact collection identity in
+`repo`; inspect an existing policy before changing its revision.
+
+| Command after `cairn` | Request fields | Effect |
+| --- | --- | --- |
+| `event-admission-policy` | repo | Current revision, policy and writer/schema readiness |
+| `event-admission-configure` | request_id, repo, expected_revision, policy | Set an explicit version-1 disabled/observe/enforce policy |
+| `event-admission-preview-collection` | repo, destination `{type,name}` | Operator forecast; no reservation |
+| `event-pressure-collection` | repo, optional after recipient principal, limit | Collection reservoirs and recipient page |
+| `event-fanout-collection` | repo, optional after numeric position, limit | Collection publication fanout page |
+| `event-admission-refusals` | repo | Bounded counters by refusal dimension |
+| `event-closures-collection` | repo, optional state, obligation, after reservation UUID, limit | Visible collection reservations and counts |
+| `event-closure-close` | request_id, repo, reason, items `[{reservation_id,expected_revision}]` | Explicitly close eligible reserved reply obligations |
+| `event-closure-reconcile` | request_id, repo, optional limit | One bounded reconciliation batch for the current restore generation |
+
+For example, after selecting the intended operator store:
+
+```sh
+printf '%s\n' '{"repo":"/path/to/collection"}' | cairn event-admission-policy
+printf '%s\n' '{"repo":"/path/to/collection"}' | cairn event-admission-refusals
+```
+
+Replace the collection path. Mutation payloads and the sequence for reconciling
+closures before enforcement are in [event admission](event-admission.md),
+[closure reservations](closure-reservations.md), and the
+[rollout guide](operator/event-admission-rollout.md). Ordinary profiles use
+`event-pressure`, `event-fanout`, `event-admission-preview`, `closures`, and
+`close-replies` for their own scope; see the [CLI reference](reference/cli.md).
+
+`schedule-tick` and `schedule-serve --repo REPO --once` can return success with
+`unrecorded_refusal_diagnostics` and `diagnostic_warning`: progress committed,
+but one or more admission diagnostic counters could not be retained.
+`schedule-serve` continues timeout sweeping and wait-outbox draining and logs
+the warning. Inspect the committed result before retrying; this warning is not
+a rollback. [Refusal diagnostics](refusals.md#event-admission-diagnostics)
+describes the separate failure contract.
 
 ## Operator JSON and daemon administration
 
