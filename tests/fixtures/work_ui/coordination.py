@@ -166,7 +166,7 @@ def coordination_fixture(Base, uid, dump, require):
             require(self.coordination_state() == before, "coordination GET/view mutated waits, outboxes, notices or sessions")
 
         def browser_transitions(self, page):
-            from playwright.sync_api import expect
+            from playwright.sync_api import Error, expect
             from urllib.parse import parse_qs, urlparse
             page.set_default_timeout(7000)
             with page.expect_response(lambda response: "/api/work/item/coordination?" in response.url) as initial:
@@ -189,25 +189,54 @@ def coordination_fixture(Base, uid, dump, require):
             require(self.coordination_state() == before, "automatic coordination read changed retained state")
             self.report["coordination_timer_seconds"] = elapsed
 
-            delivered = []
+            delayed = {"request": None, "outcome": None, "fulfill_error": None}
             pattern = "**/api/work/item/coordination?*"
+            def request_finished(request):
+                if request is delayed["request"]:
+                    delayed["outcome"] = "finished"
+            def request_failed(request):
+                if request is delayed["request"]:
+                    delayed["outcome"] = "failed"
+                    delayed["failure"] = request.failure
             def reply_after_item_switch(route):
                 page.unroute(pattern, reply_after_item_switch)
+                delayed["request"] = route.request
                 require(parse_qs(urlparse(route.request.url).query)["item"] == [self.item_id], "delayed read selected the wrong item")
                 response = route.fetch()
                 require(response.ok and response.json()["plane_item_uuid"] == self.item_id, "delayed source was not a genuine successful item read")
                 page.locator("#modal-close").click()
                 page.locator(f'.work-card[data-item-uuid="{self.guard_item_id}"]').click()
                 expect(page.locator("#coordination-waits-empty")).to_be_visible()
-                delivered.append(response.json()["plane_item_uuid"])
-                route.fulfill(response=response)
+                delayed["response_item"] = response.json()["plane_item_uuid"]
+                try:
+                    route.fulfill(response=response)
+                except Error as error:
+                    # closeDetail may have validly aborted this exact request.
+                    # Accept that only with its actual requestfailed event below.
+                    delayed["fulfill_error"] = str(error)
+            page.on("requestfinished", request_finished)
+            page.on("requestfailed", request_failed)
             page.route(pattern, reply_after_item_switch)
-            page.locator("#coordination-reload").click()
-            expect(page.locator("#modal-meta")).to_contain_text(self.guard_item_id)
-            expect(page.locator("#coordination-waits-empty")).to_be_visible()
-            expect(page.locator(".coordination-wait")).to_have_count(0)
-            expect(page.locator(".coordination-recipient")).to_have_count(0)
-            require(delivered == [self.item_id], "late real response was not exercised")
+            try:
+                page.locator("#coordination-reload").click()
+                deadline = time.monotonic() + 5
+                while delayed["outcome"] is None and time.monotonic() < deadline:
+                    page.wait_for_timeout(25)
+                require(delayed.get("response_item") == self.item_id, "late real response was not obtained")
+                require(delayed["outcome"] == "finished" and delayed["fulfill_error"] is None
+                    or delayed["outcome"] == "failed" and delayed.get("failure") == "net::ERR_ABORTED",
+                    "delayed request neither completed nor reported its intentional abort: " +
+                    json.dumps({key: value for key, value in delayed.items() if key != "request"}))
+                page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                expect(page.locator("#modal-meta")).to_contain_text(self.guard_item_id)
+                expect(page.locator("#coordination-waits-empty")).to_be_visible()
+                expect(page.locator(".coordination-wait")).to_have_count(0)
+                expect(page.locator(".coordination-recipient")).to_have_count(0)
+                self.report["delayed_coordination_read"] = {key: value for key, value in delayed.items() if key != "request"}
+            finally:
+                page.unroute(pattern, reply_after_item_switch)
+                page.remove_listener("requestfinished", request_finished)
+                page.remove_listener("requestfailed", request_failed)
             require(self.coordination_state() == before, "item-switch reads changed retained state")
 
             page.locator("#modal-close").click()
