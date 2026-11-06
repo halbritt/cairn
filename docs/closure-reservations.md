@@ -138,6 +138,10 @@ compatibility is a separate requirement.
 
 ## Capacity and refusals
 
+Reservations are recorded in every policy mode. They are the ledger of
+accepted obligations, not a forecast: disabled and observe modes write the same
+rows, never refuse, and keep no shadow counters or rate balances.
+
 Policy limits `max_closure_reserved` (collection) and
 `max_recipient_closure_reserved` (per recipient) apply only when a policy is in
 `enforce` mode, which the operator command cannot yet select. Under enforcement
