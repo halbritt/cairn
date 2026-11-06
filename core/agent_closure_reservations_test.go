@@ -15,18 +15,27 @@ func closureOperator(t *testing.T, repo string) *Store {
 	return testStore(t, Channel{Principal: "operator-" + repo, Operator: true})
 }
 
-// setClosurePolicy writes an enforce-mode row directly: the public setter
-// keeps enforcement unavailable until every writer is covered.
-func setClosurePolicy(t *testing.T, s *Store, repo, mode string, collection, recipient int64) {
+// setClosurePolicy configures a policy through the public operator setter with
+// the same validation as production. Closure tests constrain only closure
+// capacity: rate budgets and ordinary queue caps are finite but generous so
+// that only the closure dimension under test can refuse.
+func setClosurePolicy(t *testing.T, repo, mode string, collection, recipient int64) {
 	t.Helper()
-	policy := EventAdmissionPolicy{Version: 1, Mode: mode, Workload: "closure test", Limits: &EventAdmissionLimits{
-		MaxTopicRecipients: 100, MaxRecipientOutstanding: 1000, MaxProducerRecipientOutstanding: 1000, MaxCollectionOutstanding: 1000,
+	ctx := context.Background()
+	op := closureOperator(t, repo)
+	generous := EventAdmissionRate{PerSecond: 1000000, Burst: 1000000}
+	policy := EventAdmissionPolicy{Version: 1, Mode: mode, Workload: "closure capacity test; rates and queues deliberately unconstraining", Limits: &EventAdmissionLimits{
+		MaxTopicRecipients: 100, MaxRecipientOutstanding: 100000, MaxProducerRecipientOutstanding: 100000, MaxCollectionOutstanding: 100000,
 		MaxClosureReserved: collection, MaxRecipientClosureReserved: recipient,
-		ProducerPublications: EventAdmissionRate{1, 1}, ProducerDeliveries: EventAdmissionRate{1, 1}, OwnerPublications: EventAdmissionRate{1, 1},
-		OwnerDeliveries: EventAdmissionRate{1, 1}, CollectionPublications: EventAdmissionRate{1, 1}, CollectionDeliveries: EventAdmissionRate{1, 1},
+		ProducerPublications: generous, ProducerDeliveries: generous, OwnerPublications: generous,
+		OwnerDeliveries: generous, CollectionPublications: generous, CollectionDeliveries: generous,
 	}}
-	if _, err := s.pool.Exec(context.Background(), `INSERT INTO cairn.agent_event_admission_policy(repo,revision,policy,updated_by) VALUES($1,1,$2,'test') ON CONFLICT (repo) DO UPDATE SET revision=cairn.agent_event_admission_policy.revision+1, policy=EXCLUDED.policy`, repo, policy); err != nil {
+	current, err := op.EventAdmissionPolicy(ctx, EventAdmissionPolicyQuery{Repo: repo})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err = op.SetEventAdmissionPolicy(ctx, SetEventAdmissionPolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevision: current.Revision, Policy: policy}); err != nil {
+		t.Fatalf("configure %s policy: %v", mode, err)
 	}
 }
 
@@ -128,7 +137,7 @@ func TestClosureEnforcementRequiresReconciliationAndBoundsRecipient(t *testing.T
 	a, b, r, dest := eventFixture(t)
 	repo := r.Scope.Repo
 	op := closureOperator(t, repo)
-	setClosurePolicy(t, a, repo, "enforce", 100, 1)
+	setClosurePolicy(t, repo, "enforce", 100, 1)
 	_, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
 	requireCode(t, err, "CLOSURE_UNRECONCILED")
 	// Notices create no obligation and are not gated by closure capacity.
@@ -331,7 +340,7 @@ func TestClosureScheduledRequestStaysPendingWhenReserveFull(t *testing.T) {
 	if _, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil {
 		t.Fatal(err)
 	}
-	setClosurePolicy(t, a, repo, "enforce", 100, 1)
+	setClosurePolicy(t, repo, "enforce", 100, 1)
 	local := Destination{Name: "local", AllowLocal: true}
 	first := requestTo(r, b.channel.Principal)
 	first.Repo = repo
@@ -370,7 +379,7 @@ func TestClosureReconcileBatchesCertifyOnlyWhenExhausted(t *testing.T) {
 	if _, err := a.pool.Exec(ctx, `DELETE FROM cairn.agent_closure_reservation WHERE repo=$1`, repo); err != nil {
 		t.Fatal(err)
 	}
-	setClosurePolicy(t, a, repo, "enforce", 100, 100)
+	setClosurePolicy(t, repo, "enforce", 100, 100)
 	for i := 0; i < 2; i++ {
 		out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo, Limit: 1})
 		if err != nil || !out.More || out.Complete || out.LegacyReserved != 1 || out.ReconciledAt != nil {
@@ -402,7 +411,7 @@ func TestClosureAdmitCarriesTypedRefusalDetails(t *testing.T) {
 	if out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil || !out.Complete {
 		t.Fatalf("reconcile: %+v %v", out, err)
 	}
-	setClosurePolicy(t, a, repo, "enforce", 2, 1)
+	setClosurePolicy(t, repo, "enforce", 2, 1)
 	check := func(recipient string, n int64, dimension string, retryable bool) {
 		t.Helper()
 		tx, err := a.begin(ctx)
