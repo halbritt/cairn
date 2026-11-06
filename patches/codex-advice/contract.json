@@ -1,0 +1,21 @@
+{
+  "schema": "cairn.codex-advice-contract/1",
+  "upstream_commit": "6ff1e1ca3b30fc8b914720681fcf5fe62e95f856",
+  "capability_arguments": ["cairn-advice", "--capabilities"],
+  "capability_schema": "cairn.codex-advice-capabilities/1",
+  "request_schema": "cairn.codex-advice-request/1",
+  "result_schema": "cairn.codex-advice-result/1",
+  "provider": "openai",
+  "auth_method": "chatgpt_subscription",
+  "stdin_limit_bytes": 262144,
+  "stdout_default_bytes": 65536,
+  "stdout_min_bytes": 1024,
+  "stdout_max_bytes": 262144,
+  "raw_response_limit_bytes": 2097152,
+  "timeout_default_ms": 90000,
+  "timeout_min_ms": 10000,
+  "timeout_max_ms": 180000,
+  "generation_request_limit": 1,
+  "tools": false,
+  "retries": false
+}

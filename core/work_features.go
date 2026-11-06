@@ -91,6 +91,20 @@ func countRequiredWorkFeatureState(ctx context.Context, q queryRower, featureNam
 				return count, fmt.Sprintf("%d active work artifact link(s) require this feature", count), nil
 			}
 		}
+		var adviceActExists bool
+		if err := q.QueryRow(ctx, `SELECT to_regclass('cairn.work_advice_action') IS NOT NULL`).Scan(&adviceActExists); err != nil {
+			return 0, "", err
+		}
+		if adviceActExists {
+			var unsettled int
+			err := q.QueryRow(ctx, `SELECT count(*) FROM cairn.work_advice_action WHERE action_type = 'link_artifact' AND status = 'pending'`).Scan(&unsettled)
+			if err != nil {
+				return 0, "", err
+			}
+			if unsettled > 0 {
+				return unsettled, fmt.Sprintf("%d unsettled link_artifact advice action(s) require this feature", unsettled), nil
+			}
+		}
 		return 0, "", nil
 
 	case "coordination-waits/1":
@@ -344,3 +358,8 @@ func (s *Store) checkFeatureEnabledTx(ctx context.Context, tx pgx.Tx, featureNam
 func (s *Store) checkWorkArtifactFeatureTx(ctx context.Context, tx pgx.Tx) error {
 	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-artifacts/1")
 }
+
+func (s *Store) checkWorkAdviceFeatureTx(ctx context.Context, tx pgx.Tx) error {
+	return s.lockAndCheckFeatureAdmissionTx(ctx, tx, "work-advice/1")
+}
+

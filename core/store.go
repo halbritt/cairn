@@ -46,6 +46,7 @@ func DefaultCompatibilityPolicy() CompatibilityPolicy {
 			"work-artifacts/1":     true,
 			"coordination-waits/1": true,
 			"next-turn-notices/1":  true,
+			"work-advice/1":        true,
 		},
 	}
 }
@@ -203,6 +204,7 @@ func (s *Store) effectivePolicy() CompatibilityPolicy {
 			"work-artifacts/1":     true,
 			"coordination-waits/1": true,
 			"next-turn-notices/1":  true,
+			"work-advice/1":        true,
 		}
 	}
 	return pol

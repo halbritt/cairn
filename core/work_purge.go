@@ -160,6 +160,17 @@ func (s *Store) PurgeMetadata(ctx context.Context, req PurgeMetadataRequest) (Pu
 			return PurgeResult{}, err
 		}
 
+		// Scrub advice proposal and action text matching pattern
+		_, _ = tx.Exec(ctx, `UPDATE cairn.work_advice_proposal
+			SET raw_result = '', normalized_payload = '{"actions":[],"redacted":true}'::jsonb
+			WHERE binding_id = $1 AND (raw_result ILIKE $2 OR normalized_payload::text ILIKE $2)`,
+			bindingID, patternParam)
+		_, _ = tx.Exec(ctx, `UPDATE cairn.work_advice_action
+			SET target_payload = '{}'::jsonb, rationale = '[purged]'
+			WHERE proposal_uuid IN (SELECT proposal_uuid FROM cairn.work_advice_proposal WHERE binding_id = $1)
+			  AND (target_payload::text ILIKE $2 OR rationale ILIKE $2)`,
+			bindingID, patternParam)
+
 		// Record purge entry in cairn.work_metadata_purge (whether req.Exclude is true or false)
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.work_metadata_purge (binding_id, field_name, pattern, revision)
 			VALUES ($1, $2, $3, $4)`, bindingID, req.FieldName, req.Pattern, newRev)

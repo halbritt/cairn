@@ -30,13 +30,14 @@ Subcommands:
   work artifact (register|show|link|unlink|list|impact|purge) [FLAGS] [--collection REPO]
   work metadata purge --project SLUG --pattern PATTERN [--field FIELD] [--exclude] [--request-id UUID] [--collection REPO]
   work metadata exclude --project SLUG --field FIELD --pattern PATTERN [--request-id UUID] [--collection REPO]
+  work advice (generate|list|show|apply|reject|undo|profile|policy|control|reconcile|sweep) [FLAGS] [--collection REPO]
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
   work serve [--project SLUG] [--port PORT] [--collection REPO]
 
-Features: work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1
+Features: work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1, work-advice/1
 `
 
-const workFeaturesHelp = `cairn work features: manage work coordination features (work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1)
+const workFeaturesHelp = `cairn work features: manage work coordination features (work-view/1, work-artifacts/1, coordination-waits/1, next-turn-notices/1, work-advice/1)
 
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
 `
@@ -614,6 +615,8 @@ func workCommand(ctx context.Context, store *core.Store, args []string, input io
 	case "artifact":
 		return workArtifactCommand(ctx, store, args[1:])
 
+	case "advice":
+		return workAdviceCommand(ctx, store, args[1:])
 	case "metadata":
 		if len(args) < 2 {
 			return nil, invalid("work metadata requires purge or exclude")
