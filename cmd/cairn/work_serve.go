@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -715,8 +716,12 @@ func runWorkServe(ctx context.Context, store *core.Store, args []string) error {
 	}
 
 	go func() {
-		_, _ = store.ReconcileAdviceJobs(ctx)
-		_, _ = store.SweepExpiredAdvice(ctx)
+		if _, err := store.ReconcileAdviceJobs(ctx); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "reconcile advice jobs: %v\n", err)
+		}
+		if _, err := store.SweepExpiredAdvice(ctx); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "sweep expired advice: %v\n", err)
+		}
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -724,8 +729,12 @@ func runWorkServe(ctx context.Context, store *core.Store, args []string) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_, _ = store.ReconcileAdviceJobs(ctx)
-				_, _ = store.SweepExpiredAdvice(ctx)
+				if _, err := store.ReconcileAdviceJobs(ctx); err != nil && ctx.Err() == nil {
+					fmt.Fprintf(os.Stderr, "reconcile advice jobs: %v\n", err)
+				}
+				if _, err := store.SweepExpiredAdvice(ctx); err != nil && ctx.Err() == nil {
+					fmt.Fprintf(os.Stderr, "sweep expired advice: %v\n", err)
+				}
 			}
 		}
 	}()
