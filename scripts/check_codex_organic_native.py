@@ -151,8 +151,9 @@ raise SystemExit(result.returncode)
 '''
 
 
-def scenario(host, manifest, report, *, queued_case=None):
-    report['variant']='queued_case' if queued_case is not None else 'full_workflow'
+def scenario(host, manifest, report, *, queued_case=None, restore_case=None):
+    require(queued_case is None or restore_case is None, 'select at most one native fixture extension')
+    report['variant']='physical_restore' if restore_case is not None else ('queued_case' if queued_case is not None else 'full_workflow')
     selected = json.loads(manifest.read_text())
     native = Path(selected['binary_path'])
     require(digest(native) == selected['binary_sha256'], 'selected native digest changed')
@@ -192,6 +193,7 @@ def scenario(host, manifest, report, *, queued_case=None):
     phase = {'name':'warmup', 'tool':None, 'action':'read', 'index':1, 'position':1, 'limit':3, 'sequence':0}
     report['items']=[]
     events=[]
+    extension = {'handler': None}
 
     def publish(body):
         source=host.agent('sender','create',dict(request_id=uid(),draft=dict(kind='note',body=body,
@@ -219,6 +221,8 @@ def scenario(host, manifest, report, *, queued_case=None):
             # Native title generation is an independent local model request;
             # it cannot advance the scripted owner-turn/tool sequence.
             return message_item('msg_'+uid(),json.dumps(dict(title='Organic notice proof')))
+        if extension['handler'] is not None:
+            return extension['handler'](request, _results)
         if phase['name']=='restricted-receipt':
             current=saved()['inbox_attempt']
             signed=next(row for row in observations_for('UserPromptSubmit') if row.get('turn_id')==current['native_turn_id'])
@@ -342,6 +346,12 @@ def scenario(host, manifest, report, *, queued_case=None):
         require(host.sql("SELECT count(*) FROM cairn.agent_native_owner_session_binding WHERE state='active'")=='1',
                 'native signed observation did not activate Store capability')
         report['stages'].append('actual_pty_composer_signed_capability')
+        if restore_case is not None:
+            restore_case(dict(host=host, session=dict(session), terminal=terminal, server=server,
+                saved=saved, observations_for=observations_for, publish=publish, engine_root=engine_root,
+                config_path=config_path, state_dir=state_dir, native_argv=list(argv), native_env=dict(env),
+                native_work=work, extension=extension, native_root=root, root_grant=root_grant))
+            return
         for body in BODIES:
             publish(body)
         require(host.sql('SELECT count(*) FROM cairn.agent_delivery')=='0','quiet publication created wakeable delivery')
