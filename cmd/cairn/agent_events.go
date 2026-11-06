@@ -352,7 +352,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		}
 	case "notice-pending":
 		operation = "event-notice-pending"
-		req = core.NoticePendingRequest{Repo: *repo, Agent: *agent, AgentID: *agentID, State: *state, Limit: *limit}
+		req = core.NoticePendingRequest{Repo: *repo, Agent: *agent, State: *state, Limit: *limit}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
