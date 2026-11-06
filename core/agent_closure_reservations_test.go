@@ -21,6 +21,13 @@ func closureOperator(t *testing.T, repo string) *Store {
 // that only the closure dimension under test can refuse.
 func setClosurePolicy(t *testing.T, repo, mode string, collection, recipient int64) {
 	t.Helper()
+	if err := trySetClosurePolicy(t, repo, mode, collection, recipient); err != nil {
+		t.Fatalf("configure %s policy: %v", mode, err)
+	}
+}
+
+func trySetClosurePolicy(t *testing.T, repo, mode string, collection, recipient int64) error {
+	t.Helper()
 	ctx := context.Background()
 	op := closureOperator(t, repo)
 	generous := EventAdmissionRate{PerSecond: 1000000, Burst: 1000000}
@@ -34,9 +41,8 @@ func setClosurePolicy(t *testing.T, repo, mode string, collection, recipient int
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = op.SetEventAdmissionPolicy(ctx, SetEventAdmissionPolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevision: current.Revision, Policy: policy}); err != nil {
-		t.Fatalf("configure %s policy: %v", mode, err)
-	}
+	_, err = op.SetEventAdmissionPolicy(ctx, SetEventAdmissionPolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevision: current.Revision, Policy: policy})
+	return err
 }
 
 type closureRow struct {
@@ -137,14 +143,14 @@ func TestClosureEnforcementRequiresReconciliationAndBoundsRecipient(t *testing.T
 	a, b, r, dest := eventFixture(t)
 	repo := r.Scope.Repo
 	op := closureOperator(t, repo)
-	setClosurePolicy(t, repo, "enforce", 100, 1)
-	_, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
-	requireCode(t, err, "CLOSURE_UNRECONCILED")
-	// Notices create no obligation and are not gated by closure capacity.
-	if _, err = a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{r.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest); err != nil {
+	// Enforcement cannot be enabled before a complete reconciliation.
+	requireCode(t, trySetClosurePolicy(t, repo, "enforce", 100, 1), "CLOSURE_UNRECONCILED")
+	if _, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil {
+	setClosurePolicy(t, repo, "enforce", 100, 1)
+	// Notices create no obligation and are not gated by closure capacity.
+	if _, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{r.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest); err != nil {
 		t.Fatal(err)
 	}
 	first, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
@@ -379,20 +385,19 @@ func TestClosureReconcileBatchesCertifyOnlyWhenExhausted(t *testing.T) {
 	if _, err := a.pool.Exec(ctx, `DELETE FROM cairn.agent_closure_reservation WHERE repo=$1`, repo); err != nil {
 		t.Fatal(err)
 	}
-	setClosurePolicy(t, repo, "enforce", 100, 100)
 	for i := 0; i < 2; i++ {
 		out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo, Limit: 1})
 		if err != nil || !out.More || out.Complete || out.LegacyReserved != 1 || out.ReconciledAt != nil {
 			t.Fatalf("batch %d: %+v %v", i, out, err)
 		}
-		// A partial pass certifies nothing: enforcement still refuses.
-		_, err = a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
-		requireCode(t, err, "CLOSURE_UNRECONCILED")
+		// A partial pass certifies nothing: enforcement still cannot be enabled.
+		requireCode(t, trySetClosurePolicy(t, repo, "enforce", 100, 100), "CLOSURE_UNRECONCILED")
 	}
 	out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo, Limit: 1})
 	if err != nil || out.More || !out.Complete || *out.LegacyRows != 2 {
 		t.Fatalf("final batch: %+v %v", out, err)
 	}
+	setClosurePolicy(t, repo, "enforce", 100, 100)
 	if _, err = a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest); err != nil {
 		t.Fatal(err)
 	}
