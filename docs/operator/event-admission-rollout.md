@@ -37,34 +37,42 @@ checksum differs`), and a missing file cannot be inserted later.
 
 1. Back up the store and keep the recovery witness, as described in
    [maintenance](maintenance.md#upgrade-the-schema).
-2. Stop consumers, the scheduler, wake supervisors and dispatch. Let the old API finish
-   its in-flight requests, then stop it too. No old process may hold a connection
-   while you migrate.
+2. Stop direct-store consumers, the scheduler, wake supervisors and dispatch. Pause
+   timers that can start them. Let the old API finish its in-flight requests, then
+   stop it too. No old direct-store process may retain a PostgreSQL connection while
+   you migrate.
 3. Run `cairn migrate` with the new executable. Migrations 080 and 084 each begin by
    updating the `cairn.restore_admission` row in place (`SET paused = paused WHERE
    singleton`). Its conflicting row-level tuple lock waits for already-admitted
    `FOR SHARE` transactions to finish, and its new tuple version causes waiting
    repeatable-read or serializable snapshots that started through `restore_admission`
-   before the migration committed to abort with SQLSTATE `40001` — surfacing
-   `SCHEMA_MISMATCH` (exit code 4) on paths that retry serialization failures (such as
-   `Bootstrap`) and `STORE_ERROR` (exit code 7) on non-retrying repeatable-read paths
-   (such as `coordination-review`), rather than committing against a pre-migration
-   snapshot.
+   before the migration committed to abort with SQLSTATE `40001`. In the verified
+   schema-079 baseline (`e09277f`), retrying `Bootstrap` then refuses with
+   `SCHEMA_MISMATCH` (exit code 4), and non-retrying `coordination-review` refuses with
+   `STORE_ERROR` (exit code 7). Those results do not establish a schema ceiling for
+   older binaries that never implemented one.
 
    This barrier covers transactions that pass through that admission check. It is not
    a connection fence. An old process that already holds an open connection pool can
    still run the few operations that use the pool directly, such as quiet-notice
    expiry and work-feature or advice-control reads. That is why step 2 is mandatory:
-   stop every old process before migrating, and restart only upgraded binaries.
+   stop every old direct-store process before migrating, and restart only upgraded binaries.
 4. Restart the API, then the scheduler, supervisors and consumers.
 
-An older binary started after the upgrade cannot use the store. Its schema ceiling is
-the number of migrations it embeds; a build without 080 has a ceiling of 79. When it
-opens the store, any command or API process, including `cairn migrate` and operator
-commands such as `coordination-review`, refuses with exit code 4 and `SCHEMA_MISMATCH`
-(`database schema version 84 exceeds supported version 79`). That check runs when a
-process opens the store, not on every later call, so it does not stop a process that
-was already running. Stop and upgrade every process.
+Schema ceilings depend on the executable, not just the database version. The verified
+schema-079 baseline (`e09277f`) implements compatibility checks when opening a store
+and entering transactions through `beginLevel`. Against schema 084, it refuses with
+exit code 4 and `SCHEMA_MISMATCH` (`database schema version 84 exceeds supported
+version 79`). Direct-pool operations can bypass those transaction checks.
+
+The deployed schema-074 binary (`d2cccca`) predates these compatibility checks. In the
+2026-11-06 disposable upgrade check, its `migrate` command refused schema 084, but a
+fresh ordinary `create` command still committed a note after the upgrade. Migration
+refusal is therefore not proof that an old binary cannot write. Stop and replace every
+old direct-store process, including one-shot commands, and confirm no old PostgreSQL
+connections remain before migrating. API-only MCP facades and local channel bridges
+do not hold database connections; their harness conversations need not be stopped for
+the database migration. They retain their own build capabilities until restarted.
 
 Check what is actually running before you continue:
 
