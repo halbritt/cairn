@@ -26,7 +26,8 @@ cutover as separate reviewed checkpoints.
 | S-02 | CAIRN-325 | Rust rank and stream modes behind Go supervision | S-B1 | S-01 |
 | S-03 | CAIRN-326 | Rust embed mode, original-text spans and derivation identity | S-B1 | S-01; serialize shared Rust edits with S-02 |
 | S-04 | CAIRN-327 | Offline worker/model staging, fixed launchers and native-library evidence | S-B2 | S-02, S-03, R-01 / CAIRN-303 for the supported-host inventory |
-| S-05 | CAIRN-328 | Switch/rebuild/reverse-rebuild tests and runbook | S-B2 | S-04, R-01 / CAIRN-303 |
+| S-04R | CAIRN-355 | Separately qualify a telemetry-disabled retained Python launcher/closure | S-B2; S-R1 and Release review | X-01, frozen S-01 reference, R-01 / CAIRN-303 |
+| S-05 | CAIRN-328 | Switch/rebuild/reverse-rebuild tests and runbook | S-B2 | S-04, S-04R, R-01 / CAIRN-303 |
 | HC-01 | CAIRN-329 | Accepted S-01 through S-04 and independent parity evidence | Semantic lead | S-01, S-02, S-03, S-04 |
 | HC-02 | CAIRN-330 | Accepted semantic transition and observed installed re-index | Semantic and Release leads | HC-01, S-05, R-07 / CAIRN-309 |
 
@@ -41,7 +42,7 @@ service configuration. Later Rust ownership must name individual files before
 work starts. Authors retain responsibility for review fixes, integration,
 pushing main, and branch/worktree cleanup.
 
-All seven semantic delivery/milestone items are direct children of CAIRN-301;
+All eight semantic delivery/milestone items are direct children of CAIRN-301;
 S-01a/S-01b are children of S-01. Native parent/external-ID readbacks are separate
 from blocking edges. No relation tool is exposed to this session, so native
 blocking edges remain unverified and dependencies are enforced in Plane bodies
@@ -492,6 +493,24 @@ behavior repair and requires a recorded Release/Overall disposition. The Rust
 no-write/no-connect gate does not silently claim the legacy closure already
 satisfies it.
 
+Overall selected S-04R / CAIRN-355 as that bounded repair. It stages a new
+immutable Python launcher/closure with the verified telemetry-disable setting;
+it never changes the frozen oracle, existing installed source/venv/model cache
+or current service selection during characterization. Independent S-R1 criteria
+and exact-candidate review and Release rollback review precede acceptance.
+Use actual network isolation and a disposable mapped HOME/cache/telemetry
+location, also protecting OS home-directory lookup when HOME is absent. Failed
+isolation stops an experiment; it never falls back to the owner's store.
+Apply the same zero-store/zero-connect process-tree observation and observer
+controls above, including every mode through the real sanitized Go supervisor.
+Compare numerical/discrete outputs, spans/projection and both identities against
+the frozen reference. A launcher-only setting must prove the expected identities
+remain exact. If source changes are needed, record the resulting derivation
+identity and explicitly revise and review rollback expectations. S-05 rollback
+acceptance and R-06 / CAIRN-308 qualification require accepted S-04R evidence.
+Release retains final staging/activation control; X-01 names this downstream
+gate without claiming its implementation is complete.
+
 The current installer stages `semantic/venv`, source workers and fixed
 `worker`, `worker-stream` and `worker-embeddings` launchers. Inventory the
 actual installed paths and active configuration before changing them. Preserve
@@ -550,7 +569,7 @@ The pinned Python rollback configuration is its preserved executable
 interpreter/venv closure, exact worker sources, prepared model/config snapshot,
 native libraries and launcher bytes, not a new installation of
 `fastembed==0.8.0` with freshly resolved dependencies. Record exact pre-cutover
-rank and embed identities in the release manifest and assert both on reverse
+rank and embed identities, qualified by S-04R, in the release manifest and assert both on reverse
 selection before rebuilding the full population. Release owns retention and
 offline restore qualification; Semantic supplies these identities and assets.
 
