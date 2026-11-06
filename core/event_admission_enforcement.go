@@ -18,8 +18,9 @@ type EventAdmissionRefusal struct {
 	Retryable         bool   `json:"retryable"`
 }
 
-// No operator flag can enable an incomplete writer set.
-func eventAdmissionEnforcementReady() bool { return false }
+// This binary implements the complete writer contract. The database floor and
+// current-generation closure certificate are checked separately in transactions.
+func eventAdmissionEnforcementReady() bool { return true }
 
 const eventAdmissionSchemaVersion = 84
 
