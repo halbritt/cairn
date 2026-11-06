@@ -42,8 +42,9 @@ enable bounded event admission.
 [documentation](developer/documentation.md) describe how to make and validate a
 change. The [glossary](../GLOSSARY.md) explains the design vocabulary.
 
-Design and acceptance plan: [work coordination design](plans/work-coordination-design.md) and
-[implementation sequence](plans/work-coordination-implementation.md).
+Design and acceptance plans: [work coordination design](plans/work-coordination-design.md),
+[work coordination implementation sequence](plans/work-coordination-implementation.md), and
+[hybrid runtime consolidation](plans/hybrid-runtime-consolidation.md).
 
 ## Reference
 

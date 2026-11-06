@@ -19,6 +19,13 @@ The [work coordination design](work-coordination-design.md) and
 work view, artifact links, durable waits, next-turn notices and reviewed model
 advice. They specify complete reversible features; they do not claim deployment.
 
+## Runtime consolidation
+
+The [hybrid runtime consolidation plan](hybrid-runtime-consolidation.md) covers
+moving live Python lifecycle and coordination logic into the single Go `cairn`
+binary while replacing the Python FastEmbed/ONNX semantic subprocesses with a
+standalone Rust worker behind the existing JSON-line boundary.
+
 ## Later changes to specific receipts
 
 These notes were added on 2026-09-25. They do not change the recorded
