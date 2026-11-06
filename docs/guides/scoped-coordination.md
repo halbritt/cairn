@@ -260,6 +260,7 @@ the work view, artifacts, waits, quiet notices and advice review from CAIRN-279 
 CAIRN-284. The token-efficiency rollout gate (CAIRN-227) remains in force; this recipe
 does not enable its optional opt-ins. Event admission limits are a separate
 contract described in [event pressure and admission](../event-admission.md);
-under an enforced policy the grouped request also reserves
-[closure capacity](../closure-reservations.md) for each member's reply and the
-wait's terminal notice, and those protected closures still drain at saturation.
+the grouped request reserves [closure capacity](../closure-reservations.md) for
+each member's reply, and creating the wait reserves its terminal notice.
+Enforced policy bounds those reservations while allowing their eligible replies
+and notices to drain at saturation.
