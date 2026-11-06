@@ -553,11 +553,12 @@ class SessionLedgerCharacterizationTests(unittest.TestCase):
                     self.assertEqual(len(ledger.load_inbox()["grants"]), 1)
 
     def test_lock_creation_profiles_and_native_holder_death(self):
-        for operation, expected_mode in (("hold", 0o640), ("native_hold", 0o600)):
-            with self.subTest(operation=operation):
+        for operation, umask, expected_mode in (("hold", 0o027, 0o640), ("native_hold", 0o027, 0o600),
+                                                ("hold", 0o000, 0o666), ("native_hold", 0o000, 0o600)):
+            with self.subTest(operation=operation, umask=umask):
                 with tempfile.TemporaryDirectory(dir=self.root) as directory:
                     root = Path(directory)
-                    child = OwnedChild(self, dict(root=str(root), harness="codex", operation=operation, umask=0o027))
+                    child = OwnedChild(self, dict(root=str(root), harness="codex", operation=operation, umask=umask))
                     locked = child.event("locked")
                     child.event("checkpoint")
                     self.assertEqual(locked["mode"], expected_mode)
