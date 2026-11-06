@@ -41,8 +41,10 @@ memory and coordination hook implementations in its adapter work.
 
 F-B1 owns the proposed shared state, peer, admission and binding packages and
 changes to their existing Go helper consumers. F-B3 owns session/ledger packages,
-then capture. F-B2 owns recall. The overall lead allocates shared CLI registration
-and Makefile edits before any writer touches them. Foundation does not edit
+then capture. F-B2 owns recall. The overall lead assigned F-B1 the initial `lifecycle` registration in
+`cmd/cairn/main.go` and `cmd/cairn/commands.go` for F-01. Subsequent shared
+registration edits require a new slot after Foundation integration. Makefile
+changes remain outside Foundation ownership; send target requirements to root. Foundation does not edit
 Coordination's journal/watcher implementation or Release's installers/adapters.
 There is one writer per file; extraction and consumer migrations are sequenced.
 
@@ -198,6 +200,52 @@ choices before delivery. Wrong identity, malformed state or a conflicting
 initialized marker must not become an empty successful ledger. F-04 owns these
 operations; J-05 later integrates their use with turn/custody policy.
 
+## Native-session journal adapter
+
+Root's X-01 boundary decision requires one named adapter for the callbacks in
+`native_session.Host`. The proposed Foundation-owned consumer interface is
+`session.JournalBoundary` in `internal/lifecycle/session`. Coordination supplies
+`journal.SessionJournalAdapter`; the session package does not import journal.
+The proposed callable boundary is:
+
+```go
+// Proposed API, to implement after X-01; State preserves the complete /1 object.
+type FlushScope string // exactly "attempt" or "all"
+type JournalBoundary interface {
+    Flush(ctx context.Context, state *State, scope FlushScope) (settled bool, err error)
+    Committed(ctx context.Context, state *State) (bool, error)
+    TurnEndDiagnostic(ctx context.Context, state *State) error
+}
+```
+
+`State` is the session-owned lossless native-session object. The real consumer
+holds the existing session lock. `Flush` delegates to the single journal owner;
+it does not recreate retry, completion or reply execution in Foundation.
+It may seed/prune `inbox_journals` as the current `session_journals` /
+`flush_inbox_intents` path does. The enclosing session transition persists those
+changes at its existing boundaries. It must not drop other state fields.
+
+`Flush("attempt")` is false while the active attempt has an uncertain/running
+command; `Flush("all")` is false while any owned journal does. An unused journal
+or a committed request still awaiting a possible reply does not alone make a
+flush uncertain. Preserve completion-before-response execution and the exact
+reply reference. A refusal is a journal fact, not permission to send a new
+command. `Committed` reads only whether the active completion/ack slot committed:
+missing state is false; malformed/unreadable state preserves the current error
+policy. It sends no command and does not stand in for reply completion.
+`TurnEndDiagnostic` retains the existing bounded diagnostic/state update and
+never completes or acknowledges a delivery.
+
+Failure-order fixtures must exercise the current `NativeSession.settle`,
+`end_turn` and `retire` boundaries: persist ended-turn evidence before flush;
+flush before reconciliation; mark settlement pending on an uncertain/error path;
+persist logical ending before API work; refuse retirement while an all-journal
+flush is uncertain; leave/reconcile before marking retired. F-04 supplies the
+storage/API seam and an exercised storage consumer without waiting for J-05.
+Coordination later owns the full orchestration. Scripted adapters are test-only;
+a missing production adapter must use the retained legacy path or explicit
+unavailability, never a no-op successful flush.
+
 ## Memory hook and local API contract
 
 The reference is [`memory.py`](../../../integrations/lifecycle/memory.py),
@@ -270,9 +318,9 @@ separate Release/campaign claims.
 
 ## Open decisions and handoff
 
-1. Root must allocate the `lifecycle` command registration and any shared
-   Makefile edit before F-01 implementation; Foundation supplies the callable
-   handler and command/stream fixtures.
+1. F-B1 has the root-assigned first CLI registration slot; the proposed
+   `session.JournalBoundary` needs Coordination agreement and both independent
+   reviews. Foundation owns no Makefile edit in this wave.
 2. Review the state-file write/sync error discrepancy before choosing a separate
    repair or changing the preservation baseline. Parser/mode/symlink differences
    discovered by characterization follow the same explicit decision path.
