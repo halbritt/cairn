@@ -1815,14 +1815,14 @@ func TestWorkAdvice_30DayRetentionAndTombstoneDedupe(t *testing.T) {
 
 func TestWorkAdvice_ArtifactLinkRationalePersistenceAndScrubbing(t *testing.T) {
 	ctx := context.Background()
-	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
-
-	_ = operatorStore.SetAdviceFeature(ctx, "active")
-	_, _ = operatorStore.pool.Exec(ctx, `
-		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
-		VALUES ('work-artifacts/1', 'active', clock_timestamp())
-		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
-	`)
+	// Forget requires bootstrapping this fixture's authority root. The package
+	// database may already have a different root from an earlier test.
+	operatorStore := restoreTestStore(t)
+	for _, feature := range []string{"work-view/1", "work-artifacts/1", "work-advice/1"} {
+		if err := operatorStore.SetWorkFeatureStatus(ctx, SetWorkFeatureStatusRequest{RequestID: uuid.NewString(), FeatureName: feature, Status: "active"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	bindingID := uuid.New()
 	planeItemUUID := uuid.New()
