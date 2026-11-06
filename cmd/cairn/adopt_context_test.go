@@ -43,7 +43,9 @@ func operatorProcess(t *testing.T, args ...string) (int, envelope) {
 	t.Helper()
 	encoded, _ := json.Marshal(args)
 	cmd := exec.Command(os.Args[0], "-test.run=^TestAdoptContextMainHelper$")
-	cmd.Env = append(os.Environ(), "CAIRN_TEST_MAIN_ARGS="+string(encoded))
+	// The child TestMain accepts only an explicit test DSN, including this
+	// scenario's database override rather than the package's base database.
+	cmd.Env = append(os.Environ(), "CAIRN_TEST_MAIN_ARGS="+string(encoded), "CAIRN_TEST_DATABASE_URL="+os.Getenv("CAIRN_DATABASE_URL"))
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	err := cmd.Run()
