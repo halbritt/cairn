@@ -79,6 +79,19 @@ These observations describe source, not current installations:
   `integrations/lifecycle/coordination.py`. Coordination owns its full grammar
   and issued-context compatibility fixtures; release must not invent an
   incompatible shorter recovery interface.
+  Its `flush_journal` also has a specific `finish_reply` recovery exception:
+  when a committed completion lacks the exact result reference and no response
+  exists, it retries that same completion to recover the reference before
+  creating the reply. Preserve this exception alongside ordinary pending-slot
+  automatic replay; it does not permit replaying arbitrary settled/refused
+  commands. `flush_inbox_intents(scope='attempt')` still flushes all
+  conversation-owned journals; scope changes the settlement Boolean, not the
+  replay set. Installed state/recovery acceptance follows Coordination's
+  characterization of these cases and Foundation's session boundary.
+  `NativeSession.settle(strict=False)` retains its prior diagnostic on a
+  nonexception uncertain result, as covered by
+  `integrations/lifecycle/test_native_session.py`; release must not accidentally
+  strengthen this behavior when moving installation and adapters.
 - `scripts/install-semantic.sh` currently uses `semantic/venv`.
   `semantic/embedding_command.go` supervises an executable command; service
   flags do not carry arbitrary launcher arguments. Semantic provides fixed
