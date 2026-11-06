@@ -1,4 +1,4 @@
-# Foundation contracts: foundation/v3
+# Foundation contracts: foundation/v4
 
 Status: acceptance criteria for the authorized hybrid runtime campaign, prepared
 against `d3c255a4bb75438e93527eaa1d83da780fd11eea` on 2026-11-06.
@@ -50,7 +50,8 @@ F-B1 owns the proposed shared state, peer, admission and binding packages and
 changes to their existing Go helper consumers. F-B3 owns session/ledger
 packages, the F-04 compatibility caller and its narrowly scoped
 event/configuration plumbing in `inbox_binding.py`, `memory.py` and
-`coordination.py`, then capture. The caller edits require a sequenced
+`coordination.py`, including the authenticated issued-command constructor,
+then capture. The caller edits require a sequenced
 shared-file slot agreed with Coordination; they do not transfer native-session
 or journal policy ownership. F-B2 owns recall. The overall lead assigned F-B1
 the initial `lifecycle` registration in `cmd/cairn/main.go` and
@@ -185,18 +186,21 @@ unknown-field, duplicate-key or Unicode rejection. A new uniform rejection is a
 behavior change if the reference accepted the input. Resolve such differences
 explicitly rather than rewriting the oracle.
 
-Root selected a separate correctness repair, F-01R / CAIRN-331, for this
-source-level discrepancy:
-`LockedStateFile.writeAtomic` declares a new `err` inside the `tmp.Write` `if`
-block, while later checks use the outer `err`. Write/sync failures can therefore
-be lost by that control flow. The initial finding was static. F-01C characterizes
-the path; F-R1 reviews repair criteria
+Root selected a separate correctness repair, F-01R / CAIRN-331, for the
+characterization-base discrepancy: `LockedStateFile.writeAtomic` declared a
+new `err` inside the `tmp.Write` `if` block, while later checks used the outer
+`err`. Write/sync failures could therefore be lost. The initial finding was
+static. F-01C characterizes the path; F-R1 reviews repair criteria
 before meaningful injected-I/O regression tests and the narrow correction. The
 original failure must propagate and the prior durable state must remain unchanged;
 rename must not publish the failed write. Review binds the exact repaired
 candidate. This current-helper repair can proceed before X-01 once its own
 criteria are accepted; helper extraction remains gated on X-01 and the integrated
 repair. Characterization and repair evidence stay separate.
+The first temporary Write/Sync error survives a later Close failure; Close
+still runs, and final `Update` errors retain `errors.Is` identity. Directory
+sync failure after rename remains published-state-plus-error and does not
+restore the old target. Keep that distinction in extraction regressions.
 
 ### Legacy state equivalence and serialization
 
@@ -515,7 +519,8 @@ escaped aliases, duplicate receipt JSON object keys and unknown schemas. This
 new receipt parsing rule does not change legacy state duplicate-last behavior.
 The new receipt is at most 1 MiB and each
 member at most 2 MiB, matching the existing bundle's member limit. Hash exact
-bytes, not reserialized JSON. Descriptor agreement is always checked; opening
+bytes, not reserialized JSON. Receipt structure and its selected code always
+validate; cross-checking `/3` descriptors follows source admission. Opening
 and hashing final downstream configs follows the disabled-staging exception
 below. Unknown, missing, mixed, changed or incompatible enabled selections
 refuse before effects.
@@ -533,8 +538,9 @@ actual argv contains its reviewed `-c` literal and independently recorded
 receipt path/digest, selected role/alias and config path. Release separately
 records the verifier digest with that selection and reads back the installed
 argv, including its literal.
-The verifier itself is not the receipt's bootstrap. Using Foundation's bounded
-checked-source implementation, it verifies the external receipt digest and
+The verifier itself is not the receipt's bootstrap. Foundation's bounded
+checking code is part of that reviewed literal, not imported from an unchecked
+file. It verifies the external receipt digest and
 the complete closure before executing any member, including bootstrap/loader.
 The loader executes only this process-local checked source cache.
 Aliases must match their selected role's bytes. No unchecked adjacent import,
@@ -545,12 +551,14 @@ The approved interpreter and standard library belong to Release's offline
 restoration closure. Owner-controlled launch configuration is the explicit
 trust root; its selection changes require install/readback, not self-authentication.
 
-This isolated launch is for these two hook frontends only. Do not reuse it for
-the watcher or inbox/operator commands without separately pinning and testing
-their dependency closure: `codex_queue` lazily imports third-party `websocket`
-on those paths, outside the hook call graph. `-I -S` does not load that package
-from user/site paths. Differential fixtures use the same captured isolated
-parser/interpreter profile on both sides.
+This isolated launch covers the two hook frontends and their existing issued
+inbox command tails as specified below. It does not cover watcher, recovery,
+inspection or other operator modes without separately pinning/testing their
+dependency closure: `codex_queue` lazily imports third-party `websocket` on
+those paths, outside the qualified hook/issued-inbox call graph. `-I -S` does
+not load that package from user/site paths. Those modes retain their `/2`
+executor until their real migration consumer lands. Differential fixtures use
+the same captured isolated parser/interpreter profile on both sides.
 
 The hash graph is acyclic: configs name only their versioned binding path;
 the `/3` manifest hashes Go and config bytes; the receipt hashes that manifest,
@@ -574,8 +582,10 @@ or fall back after Go has started. Disabled callbacks preserve the source
 staging/skip behavior without inspecting disabled pins being replaced.
 
 The disabled exception applies only to final downstream configuration byte
-hash/profile checks. Trusted launch, receipt, every closure/alias/role member,
-Go image and the `/3` binding bytes always authenticate. Read the current
+hash/profile checks. Trusted launch, receipt, every closure/alias/role member
+and the Go executable always authenticate as executing code. The `/3` binding
+data is read and authenticated only after source hook admission reaches it,
+as specified below. Read the current
 frontend config once with its source owner/file policy, verify its selected
 path and pass its actual digest to Go even if its final staged descriptor hash
 does not yet match. When the effective activation is false, do not open/hash
@@ -601,6 +611,103 @@ manufacture that context. Fixtures prove unchanged `/2` behavior and a valid
 reserved-wake `/3` refusal with unchanged ledgers for each caller. The F-B3
 edits must not turn those existing paths into implicit Go or Python executors
 for a new binding.
+
+### Admission order and code preflight
+
+The trusted verifier authenticates its externally pinned receipt and complete
+Python closure. Before spawning Go, the checked caller validates the receipt's
+Go descriptor and executes that checked descriptor, not a pathname reopened
+after hashing. Code trust precedes code execution. This is independent of
+opening the `/3` binding data. After source admission, F-01's complete binding,
+binary/running-image and same-inode checks still apply before any state effect;
+the receipt does not weaken them.
+
+A missing, unsafe, mixed or tampered **executing code/receipt selection** is a
+declared new compatibility-preflight difference, including on an otherwise
+excluded callback. It produces empty stdout, exit 1 and exactly one fixed line:
+memory uses `Cairn lifecycle diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError`;
+coordination uses `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError`.
+Each ends in a newline. There is no required-context/native-prompt promotion,
+refusal-record/ledger/token/API effect or arbitrary error text on this path.
+This new-artifact failure is not claimed to match a legacy excluded callback
+that had no such artifact. `/2` keeps its original behavior.
+
+With valid executing code and the checked parent config/event, the Go child
+runs the source `inbox_recall` admission prefix once **before** opening/hash
+checking the binding or target config pins. Preserve the captured parent
+environment and cwd, including guard, wake-context and account-home variables;
+do not pass a sanitized subset, add `CAIRN_LIFECYCLE_CHILD`, change `HOME`,
+`CODEX_HOME` or `CLAUDE_CONFIG_DIR`, or otherwise alter source admission inputs.
+No environment values are logged or copied into a receipt.
+
+Excluded/invalid-for-this-prefix decisions use the source skip/false result,
+without a binding read or activation mutation. For admitted work, validate the
+expected binding digest and selected descriptors, then perform activation in
+its original order. Source binding/state errors use the ordinary F-04 error
+frame and public handling; they are not relabelled as code-preflight errors.
+The new parent-config-digest consistency guard remains an explicit IPC boundary,
+not a substitute environment/body admission rule.
+
+Enabled continuation may read the same immutable binding against the same
+expected digest to populate its checked context after the child returns. It
+does not recompute the effective enabled choice or run activation again.
+Fixtures contrast valid code plus an excluded event and invalid binding (source
+skip with no binding access) against invalid executing code (the new fixed preflight exit 1),
+and cover every environment/account-home/privacy/identity guard and the same
+parent config/event/environment on both frontends.
+
+### Authenticated issued commands and cached selections
+
+Let `V` be the exact verified launch argv: approved Python, `-I -S -c`, the
+trusted literal, `--receipt PATH --receipt-sha256 SHA`, `--role memory|coordination`,
+`--entrypoint ALIAS` and `--config ABS`, plus the trusted hook timeout selection.
+The alias must map to that role's canonical member and the config must be its
+corresponding receipt selection. Execute `V + ["--", *original_command_tail]`;
+the separator and tail are argv elements, not shell text. Memory retains its
+original memory CLI arguments; coordination retains its original `hook` or
+qualified `inbox` mode/arguments. No new command capability is added.
+
+The verifier/bootstrap dispatches that tail through the checked role before
+reading stdin as a hook event. Inbox completion stdin remains the original
+selected body; it is not parsed as event JSON or consumed twice. Any tail
+`--config` must equal the selected config; it cannot select another receipt,
+role, interpreter or code path. Existing context/lease/version/causation checks,
+command suffixes and stdin pass through unchanged. Hook deadlines apply only
+to hook mode; issued inbox commands retain their existing command/intent-lock
+deadlines and never re-enter hook activation.
+
+Every new Python completion/ack/respond/finish-reply/advance/drain wrapper and
+cue emitted by this compatibility caller uses that same authenticated vector.
+Do not emit `[sys.executable, __file__, ...]` or another direct snapshot-member
+invocation. The current `context.read` is direct `cairn agent history`, so it
+keeps that existing CLI command rather than inventing a Python `read` mode;
+any actual Python read/helper tail must use `V`. Fresh issued-command processes
+revalidate their pinned selection and checked closure, including binding/config
+context, before the existing command authority checks and effects.
+
+Every compatibility entrypoint/member alias refuses direct path execution
+before any adjacent loader, manifest or local import. Foundation supplies the
+receipt-context guard in the new staged entrypoint bytes; Release stages those
+checked bytes. A config/event/environment flag is not the authenticated
+process-local loader context. Existing immutable `/2` members and already-issued
+`/2` argv remain executable and are not rewritten.
+
+F-04 process fixtures execute a real issued completion/ack and a request response
+through `V` after hook activation. Include malformed role/config/tail, closure/
+alias replacement and direct-member execution with an adjacent-loader sentinel;
+all negatives refuse before that unchecked code or command effect. Preserve
+the same journal request/result references; do not duplicate journal policy.
+
+Compatibility enabled/descriptor changes publish a new immutable binding,
+receipt and launch selection. There is no in-place disable. Publishing disabled
+selection B does not disable a cached enabled A. Supported per-session
+refresh/readback of B must precede D1/D6; old-A, unsupported or unknown refresh
+blocks R-02 activation and R-06 transition. A retained per-turn true activation
+still requires ordinary owning-session settlement; refresh is not drain and
+does not clear accounting. F-04 source fixtures cover cached A, refreshed B,
+unknown/unsupported refresh and retained true decisions. R-02/R-06/R-07 supply
+the actual installed/full-unit proof. Retain all referenced selections and issued
+argv/closures until qualified retirement; no new mutable quiesce API is implied.
 
 F-04 acceptance runs both actual public frontends, enabled and disabled, in
 process fixtures using the admitted compatibility caller. Prove one Go
