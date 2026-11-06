@@ -29,7 +29,7 @@ type response struct {
 }
 
 // commandEnvelope builds the cairn.response/1 envelope and exit code for one
-// command result. Typed admission details accompany only EVENT_ADMISSION_REFUSED.
+// command result. Typed admission details accompany only refusal.CarriesAdmissionDetails codes.
 func commandEnvelope(data any, err error) (response, int) {
 	envelope := response{Schema: "cairn.response/1", OK: err == nil, Status: "OK", Data: data}
 	if err == nil {
@@ -39,7 +39,7 @@ func commandEnvelope(data any, err error) (response, int) {
 	var refusalError *core.Error
 	if errors.As(err, &refusalError) {
 		envelope.RefusalID = refusalError.RefusalID
-		if envelope.Status == "EVENT_ADMISSION_REFUSED" {
+		if refusal.CarriesAdmissionDetails(envelope.Status) {
 			envelope.Admission = refusalError.Admission
 		}
 	}

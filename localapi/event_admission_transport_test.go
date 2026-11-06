@@ -86,6 +86,22 @@ func TestServeJSONEventAdmissionRefusalEnvelope(t *testing.T) {
 		t.Fatalf("ordinary refusal envelope %d %v", recorder.Code, got)
 	}
 
+	// Closure-capacity refusals carry the same bounded details; an
+	// unreconciled closure state is not a capacity refusal and carries none.
+	closure := admissionRefusal()
+	closure.Code = "CLOSURE_RESERVE_FULL"
+	closure.Admission.Dimension = "closure_recipient"
+	recorder, fields = serveRefusal(t, closure)
+	if _, ok := fields["admission"]; !ok || recorder.Code != http.StatusTooManyRequests || recorder.Header().Get("Retry-After") != "3" {
+		t.Fatalf("closure capacity refusal: %d %v", recorder.Code, fieldNames(fields))
+	}
+	unreconciled := admissionRefusal()
+	unreconciled.Code = "CLOSURE_UNRECONCILED"
+	recorder, fields = serveRefusal(t, unreconciled)
+	if _, ok := fields["admission"]; ok || recorder.Code != http.StatusConflict || recorder.Header().Get("Retry-After") != "" {
+		t.Fatalf("unreconciled refusal exposed details: %d %v", recorder.Code, fieldNames(fields))
+	}
+
 	// An admission refusal without guidance sets no Retry-After header.
 	quiet := admissionRefusal()
 	quiet.Admission.RetryAfterSeconds = 0
@@ -149,6 +165,19 @@ func TestClientDecodesEventAdmissionRefusal(t *testing.T) {
 	err = fixedEnvelopeClient(t, http.StatusNotFound, mislabeled).Call(context.Background(), "event-publish", map[string]string{}, &json.RawMessage{})
 	if !errors.As(err, &failure) || failure.Code != "NOT_FOUND" || failure.Admission != nil {
 		t.Fatalf("admission details accepted for another code: %#v", err)
+	}
+
+	closure := `{"schema":"cairn.response/1","ok":false,"status":"CLOSURE_RESERVE_FULL","message":"m","protocol":{"min":1,"current":2},` +
+		`"admission":{"dimension":"closure_collection","policy_revision":5,"retry_after_seconds":1,"retryable":true}}`
+	err = fixedEnvelopeClient(t, http.StatusTooManyRequests, closure).Call(context.Background(), "event-publish", map[string]string{}, &json.RawMessage{})
+	if !errors.As(err, &failure) || failure.Code != "CLOSURE_RESERVE_FULL" || failure.Admission == nil || failure.Admission.Dimension != "closure_collection" {
+		t.Fatalf("closure capacity refusal: %#v", err)
+	}
+	unreconciled := `{"schema":"cairn.response/1","ok":false,"status":"CLOSURE_UNRECONCILED","message":"m","protocol":{"min":1,"current":2},` +
+		`"admission":{"dimension":"closure_collection","policy_revision":5,"retry_after_seconds":1,"retryable":true}}`
+	err = fixedEnvelopeClient(t, http.StatusConflict, unreconciled).Call(context.Background(), "event-publish", map[string]string{}, &json.RawMessage{})
+	if !errors.As(err, &failure) || failure.Code != "CLOSURE_UNRECONCILED" || failure.Admission != nil {
+		t.Fatalf("unreconciled refusal accepted details: %#v", err)
 	}
 
 	legacy := `{"schema":"cairn.response/1","ok":false,"status":"EVENT_ADMISSION_REFUSED","message":"m","protocol":{"min":1,"current":2}}`

@@ -19,6 +19,7 @@ import (
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/internal/jsontext"
+	"github.com/halbritt/cairn/internal/refusal"
 )
 
 // Client uses a provisioned Unix API identity. Calls are never automatically
@@ -172,7 +173,7 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 				strconv.Itoa(Protocol.Min) + ", this client's minimum; upgrade the server"}
 		}
 		refused := &core.Error{Code: envelope.Status, Message: envelope.Message, RefusalID: envelope.RefusalID}
-		if envelope.Status == "EVENT_ADMISSION_REFUSED" {
+		if refusal.CarriesAdmissionDetails(envelope.Status) {
 			refused.Admission = envelope.Admission
 		}
 		return refused

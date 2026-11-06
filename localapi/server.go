@@ -352,7 +352,7 @@ type recordRequest struct {
 type response struct {
 	RefusalID string `json:"refusal_id,omitempty"`
 	// Admission carries only the refused dimension, policy revision and retry
-	// guidance of an EVENT_ADMISSION_REFUSED publication; never recipient data.
+	// guidance of an admission or closure-capacity refusal; never recipient data.
 	Admission *core.EventAdmissionRefusal `json:"admission,omitempty"`
 	Schema    string                      `json:"schema"`
 	OK        bool                        `json:"ok"`
@@ -416,7 +416,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 		var failure *core.Error
 		if errors.As(err, &failure) {
 			refused.RefusalID = failure.RefusalID
-			if code == "EVENT_ADMISSION_REFUSED" && failure.Admission != nil {
+			if refusal.CarriesAdmissionDetails(code) && failure.Admission != nil {
 				admission := *failure.Admission
 				refused.Admission = &admission
 			}

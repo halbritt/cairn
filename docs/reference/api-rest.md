@@ -27,7 +27,12 @@ Responses use the `cairn.response/1` envelope. A successful response has
 `ok: true`, `status: "OK"`, and operation-specific `data`. A refused response
 has `ok: false`, a machine-readable code in `status`, and a `message`.
 `refusal_id` is present when the refusal has a retained inspection reference.
-The `protocol` field declares the responding peer's supported range.
+An `EVENT_ADMISSION_REFUSED` or `CLOSURE_RESERVE_FULL` refusal can also carry
+`admission`: the refused `dimension`, the `policy_revision`, `retry_after_seconds`
+and `retryable`. It never names other recipients or reports their counts or
+remaining capacity. A positive retry hint is also sent as a `Retry-After` header;
+it is backoff guidance, not a promise of admission. No other code carries
+`admission`. The `protocol` field declares the responding peer's supported range.
 
 | Status | HTTP status | Client action |
 | --- | --- | --- |
@@ -36,6 +41,9 @@ The `protocol` field declares the responding peer's supported range.
 | `NOT_FOUND` | 404 | Check the identifier and caller visibility |
 | `VERSION_CONFLICT` | 409 | Read current state, reconcile, then submit a new mutation |
 | `IDEMPOTENCY_CONFLICT` | 409 | Do not reuse a request UUID for changed intent |
+| `EVENT_ADMISSION_REFUSED` | 429 | Retry the same request UUID with unchanged intent after backoff; see [event admission](../event-admission.md) |
+| `CLOSURE_RESERVE_FULL` | 429 | Close or settle accepted obligations, then retry the same request UUID; see [closure reservations](../closure-reservations.md) |
+| `CLOSURE_UNRECONCILED` | 409 | Wait for an operator to reconcile closures for the current restore generation, then retry |
 | `BUDGET_REFUSED` | 422 | Reduce the requested output or make a deliberate new request with sufficient room |
 | `PROTOCOL_UNSUPPORTED` | 426 | Use a compatible client/server pair |
 

@@ -42,6 +42,17 @@ func TestCommandEnvelopeCarriesEventAdmissionRefusal(t *testing.T) {
 		t.Fatalf("admission envelope fields %v", got)
 	}
 
+	closure := &core.Error{Code: "CLOSURE_RESERVE_FULL", Message: "dimension closure_recipient; policy revision 4", Admission: details}
+	envelope, code = commandEnvelope(nil, closure)
+	if code != 4 || envelope.Admission != details || envelope.Message != closure.Error() {
+		t.Fatalf("closure capacity envelope %+v exit %d", envelope, code)
+	}
+	unreconciled := &core.Error{Code: "CLOSURE_UNRECONCILED", Message: "closure reservations are not reconciled", Admission: details}
+	envelope, code = commandEnvelope(nil, unreconciled)
+	if code != 4 || envelope.Admission != nil || envelope.Message != unreconciled.Error() {
+		t.Fatalf("unreconciled envelope %+v exit %d", envelope, code)
+	}
+
 	other := &core.Error{Code: "INVALID_REQUEST", Message: "bad", Admission: details, RefusalID: "refusal-1"}
 	envelope, code = commandEnvelope(nil, other)
 	if envelope.Admission != nil || code != 2 || envelope.RefusalID != "refusal-1" {

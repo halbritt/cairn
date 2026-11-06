@@ -31483,6 +31483,16 @@
       "source": "serveJSON"
     },
     {
+      "http_status": 429,
+      "code": "CLOSURE_RESERVE_FULL",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "CLOSURE_UNRECONCILED",
+      "source": "serveJSON"
+    },
+    {
       "http_status": 409,
       "code": "CONFIG_CONFLICT",
       "source": "serveJSON"

@@ -43,6 +43,8 @@ var classifications = map[string]Classification{
 	"EVIDENCE_UNAVAILABLE":     {HTTPStatus: 422, ExitCode: 2},
 	// Capacity refusals keep their safe dimension text; the typed details ride in the envelope.
 	"EVENT_ADMISSION_REFUSED":  {HTTPStatus: 429, ExitCode: 4},
+	"CLOSURE_RESERVE_FULL":     {HTTPStatus: 429, ExitCode: 4},
+	"CLOSURE_UNRECONCILED":     {HTTPStatus: 409, ExitCode: 4},
 	"EXCLUSION_CONFLICT":       {HTTPStatus: 409, ExitCode: 4},
 	"EXPIRED":                  {HTTPStatus: 410, ExitCode: 4},
 	"FEATURE_DISABLED":         {HTTPStatus: 409, ExitCode: 4},
@@ -123,6 +125,14 @@ var classifications = map[string]Classification{
 	"VERSION_CONFLICT":         {HTTPStatus: 409, ExitCode: 4},
 	"WORKER_UNAVAILABLE":       {HTTPStatus: 409, ExitCode: 4},
 }
+
+// admissionDetailCodes are the only codes whose envelopes may carry typed
+// admission details (dimension, policy revision and retry guidance).
+var admissionDetailCodes = map[string]bool{"EVENT_ADMISSION_REFUSED": true, "CLOSURE_RESERVE_FULL": true}
+
+// CarriesAdmissionDetails reports whether an envelope with this code may carry
+// typed admission details. Every transport applies the same exact allowlist.
+func CarriesAdmissionDetails(code string) bool { return admissionDetailCodes[code] }
 
 // Classify retains the open-code contracts: HTTP passes unknown refusal text
 // through with 422; the CLI suppresses unknown text that may contain store data.
