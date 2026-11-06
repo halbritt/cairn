@@ -499,6 +499,8 @@ def advice_fixture():
                 self.retain_refusal_response(response, viewport, mode, code)
                 base.require(not response.ok and response.json().get("code") == code, "provider refusal did not retain its intended typed reason")
                 expect(page.locator("#advice-error")).to_contain_text(code)
+                page.locator("#advice-error").scroll_into_view_if_needed()
+                self.screenshot(page, "advice-" + mode + "-error-" + viewport)
                 base.require(len(self.invocation_rows()) == before + 1, "output refusal repaired, retried, or skipped the actual invocation")
                 page.locator("#advice-inspect-request").click()
                 expect(page.locator("#advice-job-status")).to_contain_text(code)
@@ -507,6 +509,7 @@ def advice_fixture():
                 # input so a distinct requested operation gets a distinct UUID.
                 if mode == "malformed":
                     page.locator("#advice-selected-candidates .advice-remove-input").click()
+            page.locator("#advice-job-status").scroll_into_view_if_needed()
             self.screenshot(page, "advice-refusal-" + viewport)
 
         def forget_source(self):
@@ -538,6 +541,7 @@ def advice_fixture():
             expect(page.locator("#item-advice")).not_to_contain_text(self.source_body)
             expect(page.locator("#advice-review-meta")).to_contain_text(review["proposal"]["proposal_uuid"])
             base.require(len(self.invocation_rows()) == before, "review/currentness reads launched provider")
+            page.locator("#advice-currentness").scroll_into_view_if_needed()
             self.screenshot(page, "advice-purged-desktop")
 
         def disabled_case(self, page):
@@ -607,6 +611,7 @@ def advice_fixture():
                 and receipt["receipt_uuid"] == altered[0]["receipt"]["receipt_uuid"], "invalid receipt discarded the original apply retry identity")
             retained = self.current_review(page)
             base.require(len(retained["applications"]) == 1, "receipt retry created another application")
+            page.locator(".advice-application > p").first.scroll_into_view_if_needed()
             self.screenshot(page, "advice-recovered-desktop")
 
         def conflict_case(self, page):
@@ -628,6 +633,7 @@ def advice_fixture():
             base.require(not response.ok and response.json().get("code") == "UNDO_CONFLICT", "guarded Undo did not refuse intervening edits")
             current = next(value for value in self.detail()["annotations"] if value["annotation_id"] == edited["annotation_id"])
             base.require(current == edited, "Undo refusal changed the exact intervening edit")
+            row.locator("p").scroll_into_view_if_needed()
             self.screenshot(page, "advice-undo-conflict-desktop")
 
         def navigation_case(self, page):
@@ -662,6 +668,7 @@ def advice_fixture():
                 expect(page.locator("#modal-title")).to_contain_text("task 002")
                 page.locator("#modal-close").click(); self.open_item(page)
                 expect(page.locator("#advice-source-record")).to_have_value("RETAIN THIS UNSAVED SOURCE DRAFT")
+                page.locator("#advice-source-record").scroll_into_view_if_needed()
                 self.screenshot(page, "advice-navigation-draft-desktop")
             finally:
                 if held and not held.get("delivered"):
@@ -703,6 +710,7 @@ def advice_fixture():
                 expect(page.locator("#item-advice")).not_to_contain_text(self.source_body)
                 expect(page.locator("#advice-source-record")).to_have_value("POLL MUST PRESERVE THIS DRAFT")
                 self.report["busy_poll_elapsed_seconds"] = time.monotonic() - held["captured_at"]
+                page.locator("#advice-currentness").scroll_into_view_if_needed()
                 self.screenshot(page, "advice-poll-after-failure-desktop")
             finally:
                 if held and not held.get("delivered"):

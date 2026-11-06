@@ -31,6 +31,7 @@ surfaces:
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
           - {type: click, selector: '#advice-manifest summary'}
+          - {type: click, selector: '#advice-currentness'}
   advice_disabled:
     states:
       disabled_with_retained_history:
@@ -38,6 +39,13 @@ surfaces:
         ready: '#advice-review:not([hidden])'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.advice-application > p >> nth=0'}
+      disabled_controls:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-status'}
   advice_retries:
     states:
       retained_once_only_outcome:
@@ -45,6 +53,7 @@ surfaces:
         ready: '#advice-review:not([hidden])'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.advice-application > p >> nth=0'}
   advice_conflicts:
     states:
       intervening_edit_preserved:
@@ -52,6 +61,7 @@ surfaces:
         ready: '.advice-application >> nth=0'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '.advice-application > p >> nth=0'}
   advice_navigation:
     states:
       exact_retained_item:
@@ -59,6 +69,8 @@ surfaces:
         ready: '#advice-review:not([hidden])'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-manifest summary'}
+          - {type: click, selector: '#advice-manifest-meta dt:has-text("Item title sent") + dd'}
   advice_polling:
     states:
       withdrawn_after_failed_write:
@@ -66,3 +78,4 @@ surfaces:
         ready: '#advice-review:not([hidden])'
         actions:
           - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-currentness'}
