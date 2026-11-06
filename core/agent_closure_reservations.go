@@ -614,6 +614,9 @@ func (s *Store) ClosureReservations(ctx context.Context, req ClosureReservationQ
 		out.Reservations = append(out.Reservations, c)
 		out.NextAfter = c.ReservationID
 	}
+	// Stopping at limit+1 leaves an unread row; release the connection
+	// before committing so the commit does not find it busy.
+	rows.Close()
 	if err = rows.Err(); err != nil {
 		return out, err
 	}

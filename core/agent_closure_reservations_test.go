@@ -488,3 +488,54 @@ func TestClosureLegacyUnreservedExcludesGroupedRequests(t *testing.T) {
 		t.Fatalf("closed group overstated legacy_unreserved: %+v %v", out, err)
 	}
 }
+
+func TestClosureReservationsPageThroughEveryReservation(t *testing.T) {
+	ctx := context.Background()
+	a, b, r, dest := eventFixture(t)
+	want := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		e, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want[e.EventID] = true
+	}
+	seen := map[string]bool{}
+	after := ""
+	for page := 0; ; page++ {
+		got, err := a.ClosureReservations(ctx, ClosureReservationQuery{After: after, Limit: 1}, dest)
+		if err != nil {
+			t.Fatalf("page %d: %v", page, err)
+		}
+		if len(got.Reservations) != 1 {
+			t.Fatalf("page %d size: %+v", page, got)
+		}
+		c := got.Reservations[0]
+		if seen[c.RequestEventID] || !want[c.RequestEventID] || got.NextAfter != c.ReservationID {
+			t.Fatalf("page %d reservation: %+v", page, got)
+		}
+		seen[c.RequestEventID] = true
+		if page < 2 && !got.More {
+			t.Fatalf("page %d ended early: %+v", page, got)
+		}
+		if page == 2 {
+			if got.More {
+				t.Fatalf("terminal page reports more: %+v", got)
+			}
+			break
+		}
+		after = got.NextAfter
+	}
+	if len(seen) != 3 {
+		t.Fatalf("traversal missed reservations: %v", seen)
+	}
+	empty, err := a.ClosureReservations(ctx, ClosureReservationQuery{After: after, Limit: 1}, dest)
+	if err != nil || len(empty.Reservations) != 1 {
+		t.Fatalf("re-reading the terminal page: %+v %v", empty, err)
+	}
+	last := empty.Reservations[0].ReservationID
+	beyond, err := a.ClosureReservations(ctx, ClosureReservationQuery{After: last, Limit: 1}, dest)
+	if err != nil || len(beyond.Reservations) != 0 || beyond.More {
+		t.Fatalf("page after the last reservation: %+v %v", beyond, err)
+	}
+}
