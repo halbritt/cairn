@@ -86,8 +86,9 @@ certify the earlier candidate's complete issued-command coverage.
 
 The trusted launch vector `V` contains the independently selected interpreter,
 verifier literal, receipt path/digest, role/alias and config. New issued Python
-commands use `V + ["--", *original_command_tail]`, with original stdin and
-command authority checks. Revalidate the selection in each new process; do not
+commands reach `V + ["--", *original_command_tail]` through the short trusted
+launcher `L` defined by [Foundation's launcher contract](foundation.md#compact-launcher-commands-and-presentation).
+Preserve original stdin and command authority checks. Revalidate the selection in each new process; do not
 assume the hook's checked context survives. Direct `cairn agent history` remains
 direct. Hook deadlines do not replace inbox command/intent-lock deadlines.
 
@@ -95,13 +96,36 @@ This includes existing `inbox compact read|inspect|settle|advance` operations.
 They are session-scoped issued commands, distinct from excluded offline/operator
 inspection such as `inspect-held-refusal`. The current `inbox_context` separately
 renders bare `cairn-inbox` cues, so changing only `inbox_handoff` and
-`inbox_cue_text` is insufficient. New compatibility compact cues must render
-`V + ["--", "inbox", "compact", OP, HANDLE, ...]`, including fallback and
-next-item cues. Bind the handle-resolved config/root/context to the checked
+`inbox_cue_text` is insufficient. New compatibility compact cues render
+`L inbox compact OP HANDLE ...`, including fallback and next-item cues; the
+launcher executes exactly `V + ["--", "inbox", "compact", OP, HANDLE, ...]`.
+Bind the handle-resolved config/root/context to the checked
 selection before loading its derived config or performing existing effects.
 `CAIRN_INBOX_ROOT` is a lookup input, not authentication. Preserve owner, TTL,
 lease, causation, journal and native-turn checks. Existing `/2` bare launchers,
 handles and issued argv remain untouched and usable until qualified retirement.
+
+Release installs one immutable, versioned `L` per exact vector/config selection
+under a persistent private content-addressed path. The approved noninteractive
+shell script only executes the quoted vector followed by `-- "$@"`; it neither
+parses the tail nor chooses another program. `L`, the approved shell and owner
+hook selection are the explicit external trust anchor, not self-authenticating
+receipt members. Record exact bytes, path, hash and vector identity on controlled
+installation/readback. Generate `L` after the receipt; the receipt does not hash
+`L`, avoiding a cycle. Retain referenced old launchers. Qualify the selected
+shell against `ENV`/`BASH_ENV` startup execution while preserving the captured
+parent environment required by admission.
+
+All newly issued Python wrapper command fields and their cues, fallbacks and
+turn-end reminders use `L` plus the original tail. Never expose the full verifier
+literal in these commands. Direct `context.read` and inner store CLI argv keep
+their existing forms. Each rendered command is at most 512 UTF-8 bytes and
+aggregate command/control prose at most 2048 bytes; actual encoded output and
+recall must also fit every smaller configured/source/harness limit. Reject
+unrepresentable installation choices, without truncation or false delivery.
+Fixtures execute the exact emitted shell text, including quoting/non-ASCII and
+long legal arguments, all wrappers, compact modes and reminder variants.
+Programmatic argv-only tests do not establish this presentation contract.
 
 Foundation F-B3 receives the sequenced compatibility-only slot for the issued
 argv constructor in `inbox_handoff`, command rendering in `inbox_cue_text` and

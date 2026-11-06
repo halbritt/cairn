@@ -123,6 +123,17 @@ runtime work.
 
 ## Acceptance record
 
+The following area criteria have landed with independent review. Pending
+cross-team deltas remain prerequisites to X-01 closure, even when an earlier
+area revision was accepted.
+
+| Area | Accepted revision and landed commit | Remaining agreement |
+| --- | --- | --- |
+| Foundation | `foundation/v4`, `8b7686496e78224cfedbccdde4ffde34c0f900c0` | Release and Coordination mirror the short trusted launcher and complete issued-command contract. |
+| Coordination | `coordination/v5`, `a6ff2a9125ef56d37e2c2d15e5dd5237f7523ad4` | Its narrow caller-slot, compact-selection and `L`-to-`V` delta needs exact review and landing. |
+| Semantic | `semantic/3`, `ac3dee7a45592312782e3d8724fa9193f77d2a31` | Release rollback/S-04R criteria agreement and R-06 prerequisite readback. |
+| Release | `release/2`, `aa0c26fa1a8ab8faeb93c183c112f21dcbfa7ab9` | Compatibility receipt/launcher delta and Semantic rollback agreement. |
+
 Release setup criteria `release/2` were independently accepted at candidate
 `58a83eb91d1693b06a7c44c5d725bb3c318ea9a2` and landed as
 `aa0c26fa1a8ab8faeb93c183c112f21dcbfa7ab9` with an identical contract blob.
@@ -158,7 +169,7 @@ missing isolation stops the experiment. Another timeout remains a model-evidence
 gap, without repeated deadline inflation. Candidate numerical comparison and
 execution through the unchanged real supervisor remain separate requirements.
 
-Other domain reviews and the F-04 decision's delta agreements remain pending.
+The table's cross-team deltas and final tracker/consumer reconciliation remain pending.
 X-01 / CAIRN-302 remains open.
 No runtime implementation, production switch, burn-in or retirement has been
 accepted by this record.
