@@ -1,6 +1,6 @@
 # Release installation and acceptance contract
 
-Revision: `release/2`, proposed for campaign X-01 on 2026-11-06. Review packets
+Revision: `release/3`, proposed for campaign X-01 on 2026-11-06. Review packets
 and Plane items identify the exact candidate commit; root's shared index
 records the accepted revision and commit. This is a
 specification and source characterization, not evidence of an implemented or
@@ -125,6 +125,181 @@ live MCP refresh and running-image verification. It is discovery context, not
 a current inventory or proof of the hybrid release. Re-inventory those hosts
 and any additional installations discovered through existing configuration.
 Unreachable or uninspected hosts are gaps, not evidence of absence.
+
+## Temporary compatibility receipt and loader
+
+The [F-04 consumer decision](f04-consumer-decision.md), committed in `32ca633`,
+permits a new immutable Python compatibility caller as F-04's first consumer.
+It replaces the activation prefix used by the real memory and coordination
+frontends. This section specifies that caller's installation boundary;
+Foundation owns the sole receipt validator and callable protocol. Release owns
+immutable staging and activation. These are proposed interfaces until their
+exact candidate receives Foundation agreement, independent delta review and
+root's X-01 admission. They are not current installer capabilities.
+
+### Receipt and independent selection
+
+Use schema `cairn.lifecycle-compatibility/1`. The receipt is an ordinary UTF-8
+JSON file; its independent pin is SHA-256 of its exact file bytes, including
+whitespace. It has no self-digest field; duplicate JSON object keys refuse.
+`source_revision` records provenance and grants no authority. The required
+fields are:
+
+| Field | Exact selection |
+| --- | --- |
+| `schema`, `source_revision` | The schema above and the source commit used to build this compatibility snapshot. |
+| `snapshot_root` | Canonical absolute, persistent, content-addressed private directory containing the Python snapshot. |
+| `members` | Map of relative member names to `{sha256, bytes}`; lowercase 64-hex SHA-256 of raw bytes and exact integer byte length. Includes bootstrap, loader, public aliases and every retained imported implementation helper. |
+| `bootstrap`, `loader` | `lifecycle_compatibility.py` and the retained/adapted `lifecycle_bundle.py` in this new snapshot. They are checked payload code, distinct from the trusted launch verifier. |
+| `roles` | Exactly `memory: memory.py`, `coordination: coordination.py`, `inbox_recall: inbox_recall.py`, `inbox_binding: inbox_binding.py`. The memory role also supplies the retained engine. |
+| `aliases` | Map of each public alias basename to `memory.py` or `coordination.py`. Both are in `members`; alias bytes must equal that role's checked bytes. No arbitrary role or adjacent path may be loaded. |
+| `binary` | Exact `/3` Go executable descriptor `{path, sha256}`. |
+| `binding` | Exact versioned descriptor `{path, sha256, schema}` for the selected `cairn.inbox-recall-binding/3` file. |
+| `memory_config`, `coordination_configs` | `{path, sha256}` descriptors, with the same ordered one-to-eight coordination membership as the selected `/3` binding. |
+
+Member paths cannot escape the snapshot, contain traversal, duplicate a
+canonical name or resolve through symlinks. Missing members, unknown schemas,
+invalid field types, unknown or missing roles and mixed selections refuse.
+The exact complete inventory for this receipt version contains all 17 members
+of `lifecycle_bundle.py:MODULE_FILES`, the new bootstrap and the declared aliases;
+the loader is already one of those 17 members. Reject extra or missing members.
+Each member is at most 2 MiB, preserving the complete-bundle member bound;
+the receipt itself is at most 1 MiB. Byte counts are exact integers, not Booleans.
+An unlisted local import, an adjacent checkout or a process-global module cache
+is not an execution source. A changed inventory requires a reviewed contract
+version, not a manifest that silently broadens executable membership.
+The final directory component of `snapshot_root` is the lowercase SHA-256 of
+the member-name-to-SHA-256 map serialized as sorted-key, ASCII JSON with compact
+`,`/`:` separators, matching the existing complete-bundle digest convention.
+This directory identity does not hash the receipt that names the directory.
+
+The owner-controlled, versioned host hook configuration independently fixes
+the approved absolute interpreter and the actual launch argv: `-I -S -c`
+followed by the reviewed stdlib-only verifier literal, the receipt absolute
+path and expected SHA-256, the entrypoint role and the frontend config absolute
+path. Release records the verifier literal's SHA-256 with that launch selection
+and verifies the installed argv, including the literal. No unchecked Python
+file runs merely because it is beside the receipt. The interpreter, its
+stdlib and the literal are the trusted launch anchor; the receipt authenticates
+the subsequently loaded bootstrap and implementation. A receipt cannot
+authenticate the verifier that is already interpreting it. Changes to the
+owner-controlled launch anchor require the same controlled install, refresh
+and readback as other hook configuration changes. Preserve its approved
+interpreter/dependency closure in the declared offline rollback artifacts.
+
+The hash graph is acyclic: hook selection pins receipt bytes; receipt pins
+Python members, binding, binary and configuration descriptors; `/3` pins the
+same binary and configuration descriptors. Configuration files name the
+versioned binding path, without a binding or receipt digest back-reference.
+The memory entrypoint selects `memory_config.path`; the coordination entrypoint
+selects exactly one `coordination_configs` path. An alias retains its canonical
+role's selection; a different profile is not an interchangeable argument.
+Compare the declared path, digest and coordination order across the receipt
+and `/3`; actual downstream configuration byte/hash and profile validation has
+only the disabled-staging exception below. Matching only a binary hash is
+insufficient. A binding/activation/configuration
+change publishes new immutable binding, receipt and selection artifacts.
+No `/2` descriptor, frozen trial or cached legacy callback is edited in place.
+
+### Checked execution and disabled staging
+
+The trusted verifier reads the selected receipt once, checks its independent
+digest and validates owner, mode, symlink, regular-file and stable-descriptor
+properties. It reads and validates the complete executing Python closure
+before executing any member. Use Foundation's bounded checked-source
+implementation: execute the exact captured bytes, including bootstrap and
+loader, with a snapshot-local module cache. Never hash a member and reopen its
+pathname for execution. The Go executable continues to satisfy Foundation's
+real-UID, safe-path, digest and running-image device/inode rules; the receipt
+does not replace or weaken `/3` binary validation.
+
+The explicit compatibility loader supplies the checked bundle and invocation
+context to every retained role. In that context, `InboxBinding.load_bridge`,
+`validate`, `coordinates_wake` and the bridge's `binding` call select the
+checked retained bridge, engine and profile snapshots. They do not enter the
+legacy `/2`-only descriptor path. The engine and bridge share that invocation's
+resolved binding and cannot reread a different pathname or execute activation
+again. This is a new explicit loader route; it never synthesizes a `/2`
+descriptor to authorize Go. Existing immutable `/2` entrypoints keep their
+original complete Python loader and execution behavior.
+
+Always authenticate the selected launch anchor, receipt, executing caller
+closure, Go selection and `/3` binding. Preserve the source's disabled-staging
+exception for the final downstream pins: a false effective activation decision
+does not open or hash-check final engine/coordinator configuration pins being
+replaced. The current frontend still reads its own owner-controlled configuration
+once; the actual digest is checked at the child even while its final descriptor
+hash is being staged and not yet valid. A reserved wake may read the source-required owner-controlled
+configuration that locates the existing activation ledger without requiring
+its final pin. Do not eagerly perform full profile validation on that path.
+The full final configuration/hash/profile checks apply when the effective
+decision is true, including a retained per-turn true decision under a now-false
+manifest Boolean. An `enabled:false` flag alone is neither a drain proof nor
+permission to execute unauthenticated compatibility code.
+
+### Parent and activation child handoff
+
+The proposed private child remains `cairn lifecycle binding activation
+--entrypoint memory|coordination --config /absolute/config.json`; add
+`--config-sha256` with SHA-256 of the parent's original checked configuration
+bytes and `--binding-sha256` from the checked receipt. The child validates both
+against the exact configuration and binding bytes it consumes before any
+activation mutation. It must either use those same checked snapshot bytes
+or refuse a changed path read. These digests prove consistency, not authority
+to choose another profile. Retain the parent's parsed snapshot for the complete
+enabled continuation; later validation or handler loading cannot silently
+consume a newer configuration. Preserve the original bounded hook-event bytes
+on stdin unchanged; serializing the parsed event again is insufficient.
+
+Go owns the one enabled snapshot and activation decision. The parent has not
+acquired its ordinary memory/coordination session lock; Go acquires/releases
+the existing activation lock and preserves marker-first persistence. It does
+not allocate/refund grants, claim a turn, call the store or flush a journal.
+The parent removes the opt-in from its private effective config only for an
+actual false result, then continues the retained public handler. Child launch,
+protocol, configuration-race or persistence errors cannot become false.
+
+Success is exit 0, empty stderr and exactly one compact JSON line,
+`{"enabled":true}` or `{"enabled":false}`, including its terminating newline.
+Private failure is exit 1, empty stdout and at most 4096 UTF-8 bytes on stderr:
+one `{"error":{"class":CLASS,"reason":SOURCE_SITE,"errno":NUMBER_OR_NULL}}`
+line. Foundation fixes the source-class/site vocabulary and maps it back to
+the parent's existing exception category; no raw path, event or exception text
+is added to this protocol. Preserve distinct missing-file, permission, lock,
+JSON, value, key and type errors, and the source's uncaught-error boundary.
+Malformed/extra/oversized output, launch failure and unexpected child exit are
+failures. The parent alone renders its characterized public streams/exits,
+including existing required-context and native-prompt refusal behavior. No
+child frame is echoed and no error launches a Python activation fallback.
+An uncertain Go write remains uncertain under the existing recovery rules.
+
+### Required acceptance and staging order
+
+F-04 stages its real admitted compatibility caller in disposable homes before
+R-02's production installer exists. Execute both complete public frontends as
+real processes, enabled and disabled. Prove exactly one Go activation,
+no duplicate Python activation mutation and real retained-handler continuation;
+an activation-only command or successful no-op wrapper is insufficient.
+Include config replacement between parent and child, changes before downstream
+continuation, missing/tampered bootstrap/loader/helper/alias, mixed receipt and
+binding/config/binary, false staging with unfinished final pins, retained true
+activation under a false manifest, and unchanged legacy coexistence. Compare
+public stdout, stderr, exits, state and ordering with the characterized source.
+The child must refuse uncertainty without a second activation attempt.
+
+R-02 stages the exact same reviewed receipt/loader contract through the real
+installer, offline without a checkout, preserving unrelated selections. Its
+durability map includes syncing the complete immutable closure and receipt,
+publishing their versioned paths, publishing a disabled owner-controlled launch
+selection, supported refresh/readback, then final validated activation under
+the applicable barrier. Receipt publication alone is not atomic hook activation.
+Inject interruption/concurrent-install faults at each actual durable boundary.
+Complete watcher/config-dir/shared-user cutover and reverse selection remain
+R-06/R-07 work; this agreement creates no new production mixed-executor unit.
+Retain compatibility selections, interpreter and still-referenced code with
+the existing issued-argv and rollback closure until retirement is qualified.
+F-04 acceptance does not close HC-03's remaining grants, HC-04 native policy,
+HC-05 installed coverage, X-01 or the full runtime migration.
 
 ## Required install and transition behavior
 
@@ -312,6 +487,7 @@ Each successful case includes a concrete negative or interruption case.
 | REL-IDENTITY | Wrong owner/mode/hash, stale process identity, wrong account/home and another session's context refuse before effects. Store owns principal and observation channel. | `inbox_binding.py`; `IdleWakeupPreflight` and `CompactInboxInstaller` in `scripts/test_install_agent_coordination.py`; Foundation/Coordination process fixtures. |
 | REL-FRESH | Run at least one effectful installed event for every supported R-01 row, offline without checkout or retired dependencies, using a disposable API/store and real selected executables/host adapters. Assert the resulting write/retrieval/journal effect and exact streams/status, plus missing/changed-file negatives. | The cited legacy installed-bundle tests prove closure smoke behavior only: `--help`, hint/no-op memory and excluded coordination are not effectful acceptance. R-02 covers implemented F-01/F-04 paths; R-03/R-04/R-06 complete actual supported memory, hook/watch/inbox/recovery rows after their dependencies. Claude Stop is coordination, not memory capture; Agy has no current ordinary lifecycle memory hook. Do not invent support to fill the matrix. |
 | REL-PIN | Pin and execute the same immutable bytes; reject mixed installations, stale sidecars and unsafe ownership/modes. Check both account and repository-local selection. | Legacy binding/bundle validation; future Foundation `/3` admission and R-02 installed tests. Include a replacement race rather than checking only a hash before execution. |
+| REL-COMPAT | Independently pin the new complete Python compatibility receipt, trusted launch literal and exact `/3` selection; execute checked bootstrap/loader/alias/role bytes and preserve complete enabled/disabled frontend behavior. Reject mixed selections and config/binding races without a second activation or fallback. | The concrete receipt, disabled exception and private handoff above. F-04 first proves real complete frontend processes in disposable source staging; R-02 then proves the actual installer emits and executes the same contract offline. Neither replaces R-06's whole-unit qualification. |
 | REL-LEGACY | `/2` stays with Python; `/3` binds the Go binary. Test both incompatible cross-version directions fail closed, versioned binding/config paths, retained issued argv and cached hooks, and the declared activation-unit topology. | Legacy validation and new real-executor cross-read/contention/crash fixtures; no in-place `/2` to `/3` binding rewrite and no unqualified mixed production watcher. Frozen two-file and bundle trials stay unchanged. |
 | REL-DRAIN | Every predicate D1–D7 above has positive and negative evidence under a held quiescence barrier; stop, stage, repin, refresh, restart and reverse selection preserve the whole unit. | Legacy enabled/shared-account refusal tests are partial smoke coverage. R-02 proves available F-01/F-04 staging/activation controls. R-06 qualifies the full watcher/hook unit after J-05/F-02/F-03 and adapter dependencies; R-07 repeats it for production. |
 | REL-ROLLBACK | Reverse `/3` to retained `/2` with compatible state, pins and supported refresh. Before selecting the semantic rollback generation, stop and join every index writer sharing the database/job queue and prevent inactive definitions from restarting. | Custom-state/ledger preservation tests in `scripts/test_installed_lifecycle_bundle.py`; R-02 disposable homes and S-05 disposable-store switch/reverse-rebuild evidence. |
