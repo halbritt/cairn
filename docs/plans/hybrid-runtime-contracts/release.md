@@ -26,17 +26,26 @@ implementation and exact candidates before landing.
 | Lifecycle command grammar, stdin/stdout/stderr, exit/refusal semantics | Foundation and Coordination | Installers and host adapters | Preserve the characterized full command surface, including already issued inbox commands; the proposal's abbreviated grammar is insufficient. |
 | Binding admission, state files, ledgers and native sessions | Foundation | Coordination, installers, adapters | Preserve authenticated identity, compatible schemas, lock and persistence order; release does not implement a competing validator. |
 | Journal, process identity, wake and custody | Coordination with Foundation primitives | Installers, adapters and installed acceptance | No replacement conversation, new credentials, alternate inbox claim or uncertain-action replay to refresh a client. |
-| Worker binaries, model assets, derivation and rebuild runbook | Semantic | Release staging and deployment | Offline artifact identity, fixed executable launchers, one indexing generation and tested reverse rebuild. |
+| Worker binaries, model assets, derivation and rebuild runbook | Semantic | Release staging and deployment | Offline artifact identity, fixed executable launchers, one indexing generation across the shared database/job queue and tested reverse rebuild. |
 | Install, pin, drain, restart and rollback | Release | Every team and supported client | Immutable selected code, explicit disabled staging, checked activation and observed live connections. |
 
 Foundation supplies `/3` validation and any necessary shared state primitives;
 release supplies installation and its independent black-box proof. The exact
 `/3` descriptor and lifecycle command spelling must agree with Foundation's
-reviewed contract before R-02 code starts. The overall lead allocates edits to
-shared CLI registration, Makefile targets and service wiring. Ownership of
-`scripts/install-semantic.sh` must be agreed with Semantic before either team
-edits it; the semantic package manifest and host configuration are separate
-deliverables.
+reviewed contract before R-02 code starts. The overall lead's X-01 ownership
+decision assigns `scripts/install-semantic.sh` to Semantic S-B2 for S-04
+packaging. Semantic supplies the binary/model/native-library identity manifest,
+architecture/ABI requirements and fixed rank/stream/embed launchers; release
+supplies the host inventory, reviews installer compatibility and owns final
+service configuration and staging activation. Release does not edit that
+installer without transfer.
+
+Semantic S-B2 also owns the first dedicated Cargo/build/actual-worker acceptance
+Makefile targets. Root transfers Makefile ownership to release for R-05/final
+suite wiring only after those targets land. Foundation F-B1 owns initial
+lifecycle registration in `cmd/cairn/main.go` and `cmd/cairn/commands.go`;
+Coordination uses separate implementation files and a callable dispatch seam.
+Subsequent shared CLI/service edits require an explicit root slot.
 
 ## Current source facts and preservation boundary
 
@@ -75,6 +84,10 @@ These observations describe source, not current installations:
   flags do not carry arbitrary launcher arguments. Semantic provides fixed
   mode/model launchers and the selected derivation. The record-keyed semantic
   storage does not retain complete Python and Rust generations concurrently.
+  `semantic/index.go` seeds and leases `cairn.semantic_job` without a collection
+  predicate and replaces documents per record. Writer exclusion therefore
+  covers the entire shared database/job queue, including writers configured
+  for other collections, not just the collection being released.
 
 R-01 records the complete operation matrix from actual source and installed
 observations. Each row names harness, account selector, operation/event,
@@ -149,12 +162,12 @@ Each successful case includes a concrete negative or interruption case.
 | REL-PIN | Pin and execute the same immutable bytes; reject mixed installations, stale sidecars and unsafe ownership/modes. Check both account and repository-local selection. | Legacy binding/bundle validation; future Foundation `/3` admission and R-02 installed tests. Include a replacement race rather than checking only a hash before execution. |
 | REL-LEGACY | `/2` stays with its Python executor; mixed `/2` and `/3` clients can coexist without treating either receipt as the other's authentication. | Current `/2` validation plus explicit legacy-route and drain/repin fixtures under the reviewed `/3` contract. Frozen two-file and bundle trials stay unchanged. |
 | REL-DRAIN | Enabled/shared-account binding replacement refuses without mutation. Active callbacks/attempts block transition. Drain, restage, validate, repin and restart succeed after settlement. Concurrent installers and crashes preserve selection. | Legacy `test_explicit_memory_reinstall_preserves_config_and_refuses_enabled_binding`, `test_shared_coordination_reinstall_refuses_another_enabled_account`; new active-attempt, concurrency and interruption fixtures. |
-| REL-ROLLBACK | Reverse `/3` to retained `/2` with compatible state, pins and supported refresh. Semantic reverse rebuild obeys single-writer-generation rules. | Custom-state/ledger preservation tests in `scripts/test_installed_lifecycle_bundle.py`; R-02 disposable homes and S-05 disposable-store switch/reverse-rebuild evidence. |
+| REL-ROLLBACK | Reverse `/3` to retained `/2` with compatible state, pins and supported refresh. Semantic reverse rebuild excludes every different-generation writer sharing the database/job queue. | Custom-state/ledger preservation tests in `scripts/test_installed_lifecycle_bundle.py`; R-02 disposable homes and S-05 disposable-store switch/reverse-rebuild evidence. |
 | REL-PROCESS | Real `flock` contention, crash, pipes, cancellation, shutdown, process-tree cleanup, restart and state persistence. | `scripts/test_install_agent_coordination_timeout.py`, active-turn integration tests, `scripts/test_install_wake_service.py`, and Foundation/Coordination process tests. In-process mocks do not replace process-boundary assertions. |
 | REL-HERMES | Actual `MemoryProvider`, registration and hook objects preserve host returns, custody/cancel and shutdown while delegating policy/state. | `integrations/hermes/`, `scripts/check_hermes_lifecycle.py` and `scripts/check_hermes_coordination.py`. Preserve required Python and test the installed adapter with missing/refusing selected binary. |
 | REL-HOOKS | Required OpenCode plugin objects and each supported Claude/Codex/Agy hook retain their host contract and native trust requirements. | `integrations/opencode/`, `scripts/install-opencode-hooks.py`, `scripts/install-codex-hooks.py`, `scripts/install-claude-hooks.py`, `scripts/install-agent-coordination.py`; real native trust/refresh evidence separate from mocked installer fixtures. |
 | REL-LIVE | Installed source/artifact/config identities match actual running executables and active connections; old process and repository override are detected. | Read-only current inventory and dated prior deployment as a discovery checklist. Repeat before release, after rollout and against the final removal commit. |
-| REL-SEMANTIC | Stop and join every old model-generation writer; restart with fixed launcher, rebuild current eligible sources, disclose partial/fallback/backoff and reverse rebuild. | S-05 implementation/evidence; selected-model document versions/body hashes must cover all eligible active nonforgotten records. Empty queue or ready query is insufficient. |
+| REL-SEMANTIC | Inventory, stop and join every different-generation writer sharing the database/job queue, including other collections and inactive units that could restart; switch only after exclusion, then restart with the fixed launcher, rebuild and disclose partial/fallback/backoff. Apply the same exclusion for reverse rebuild. | `semantic/index.go` has no collection predicate on queue seeding/claiming. S-05 must exercise competing writers configured for different collections in the same disposable database. Selected-model document versions/body hashes must cover all eligible active nonforgotten records; an empty queue or ready query is insufficient. |
 | REL-EQUIVALENCE | Replacement checks preserve reference assertions and fail for meaningful behavioral differences against both executors. Required model tests execute rather than skip. | R-05 mapping from old to new checks, exact fixture identities and before/after commands. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
 | REL-DOCS | Every affected current-facing CLI/config/example and operational claim agrees with implemented source and checked invocation. | Architecture/status, CLI/lifecycle references, harness guides, semantic install/rebuild, testing, deployment and recovery. Apply docs-guard; proposed commands stay labelled proposed. |
