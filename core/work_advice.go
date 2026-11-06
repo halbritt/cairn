@@ -2488,19 +2488,27 @@ func (s *Store) ExecuteAdviceJob(ctx context.Context, job *WorkAdviceJob, spec A
 		if errors.As(err, &clErr) {
 			clIdent, _ := json.Marshal(clErr.Identity)
 			if pErr := s.FinishAdviceJobWithProcessIdentity(persistCtx, job.JobUUID, "cleanup_unconfirmed", advice.ErrCleanupUnconfirmed, clIdent); pErr != nil {
-				return nil, nil, failure("JOB_STATE_UNCERTAIN", fmt.Sprintf("advice job failed and terminal state could not be recorded: %v", errors.Join(err, pErr)))
+				return nil, nil, &Error{Code: "JOB_STATE_UNCERTAIN", Message: "advice job failed and terminal state could not be recorded; inspect the retained job", Cause: errors.Join(err, pErr)}
 			}
-			return nil, nil, err
+			return nil, nil, &Error{Code: advice.ErrCleanupUnconfirmed,
+				Message: "advice process cleanup could not be confirmed; inspect the retained job", Cause: err}
 		}
 		var advErr *advice.AdviceError
-		errCode := "MODEL_EXECUTION_FAILED"
+		errCode := advice.ErrModelExecutionFailed
+		message := "model advice execution failed"
 		if errors.As(err, &advErr) {
 			errCode = advErr.Code
 		}
-		if pErr := s.FinishAdviceJob(persistCtx, job.JobUUID, "failed", errCode); pErr != nil {
-			return nil, nil, failure("JOB_STATE_UNCERTAIN", fmt.Sprintf("advice job failed and terminal state could not be recorded: %v", errors.Join(err, pErr)))
+		// A launch gate may return a Store refusal through the process adapter.
+		// Preserve that refusal on both the first response and its retained retry.
+		var storeErr *Error
+		if errors.As(err, &storeErr) {
+			errCode, message = storeErr.Code, storeErr.Message
 		}
-		return nil, nil, err
+		if pErr := s.FinishAdviceJob(persistCtx, job.JobUUID, "failed", errCode); pErr != nil {
+			return nil, nil, &Error{Code: "JOB_STATE_UNCERTAIN", Message: "advice job failed and terminal state could not be recorded; inspect the retained job", Cause: errors.Join(err, pErr)}
+		}
+		return nil, nil, &Error{Code: errCode, Message: message, Cause: err}
 	}
 
 	// Completed: Record proposal and actions in PostgreSQL
@@ -2564,7 +2572,7 @@ func (s *Store) ExecuteAdviceJob(ctx context.Context, job *WorkAdviceJob, spec A
 		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if pErr := s.FinishAdviceJob(persistCtx, job.JobUUID, "uncertain", "RECORD_FAILED"); pErr != nil {
-			return nil, nil, failure("JOB_STATE_UNCERTAIN", fmt.Sprintf("advice job failed and terminal state could not be recorded: %v", errors.Join(err, pErr)))
+			return nil, nil, &Error{Code: "JOB_STATE_UNCERTAIN", Message: "advice job failed and terminal state could not be recorded; inspect the retained job", Cause: errors.Join(err, pErr)}
 		}
 		return nil, nil, err
 	}
