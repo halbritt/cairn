@@ -44,6 +44,7 @@ it is backoff guidance, not a promise of admission. No other code carries
 | `EVENT_ADMISSION_REFUSED` | 429 | Retry the same request UUID with unchanged intent after backoff; see [event admission](../event-admission.md) |
 | `CLOSURE_RESERVE_FULL` | 429 | Close or settle accepted obligations, then retry the same request UUID; see [closure reservations](../closure-reservations.md) |
 | `CLOSURE_UNRECONCILED` | 409 | Wait for an operator to reconcile closures for the current restore generation, then retry |
+| `RATE_UNRECONCILED` | 409 | Rate state does not match the current restore generation; report it to the operator, then retry |
 | `BUDGET_REFUSED` | 422 | Reduce the requested output or make a deliberate new request with sufficient room |
 | `PROTOCOL_UNSUPPORTED` | 426 | Use a compatible client/server pair |
 

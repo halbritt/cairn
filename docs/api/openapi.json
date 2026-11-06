@@ -4431,6 +4431,15 @@
           "schema": {
             "type": "string"
           },
+          "unevaluated": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "unsupported": {
             "items": {
               "type": "string"
@@ -4459,6 +4468,7 @@
           "recipient_count_exact",
           "recipient_count_state",
           "schema",
+          "unevaluated",
           "unsupported",
           "would_refuse"
         ],
@@ -4804,6 +4814,9 @@
       },
       "core.EventPressure": {
         "properties": {
+          "closure": {
+            "$ref": "#/components/schemas/core.ClosureCounts"
+          },
           "computed_at": {
             "format": "date-time",
             "type": "string"
@@ -4868,6 +4881,7 @@
           }
         },
         "required": [
+          "closure",
           "computed_at",
           "delivery_fanout_last_minute_publications",
           "more",
@@ -4968,6 +4982,14 @@
       },
       "core.EventPressureReservoirs": {
         "properties": {
+          "closure_delivered_outstanding": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "closure_reserved": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -4983,6 +5005,14 @@
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": "integer"
+          },
+          "normal_outstanding": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "pending_deliveries": {
             "maximum": 9223372036854775807,
@@ -5021,9 +5051,11 @@
           }
         },
         "required": [
+          "closure_delivered_outstanding",
           "closure_reserved",
           "closure_state",
           "leased_deliveries",
+          "normal_outstanding",
           "pending_deliveries",
           "pending_schedules",
           "pending_wait_outbox",
@@ -31695,6 +31727,11 @@
     {
       "http_status": 429,
       "code": "QUOTA_EXHAUSTED",
+      "source": "serveJSON"
+    },
+    {
+      "http_status": 409,
+      "code": "RATE_UNRECONCILED",
       "source": "serveJSON"
     },
     {

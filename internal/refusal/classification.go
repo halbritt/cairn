@@ -45,6 +45,7 @@ var classifications = map[string]Classification{
 	"EVENT_ADMISSION_REFUSED":  {HTTPStatus: 429, ExitCode: 4},
 	"CLOSURE_RESERVE_FULL":     {HTTPStatus: 429, ExitCode: 4},
 	"CLOSURE_UNRECONCILED":     {HTTPStatus: 409, ExitCode: 4},
+	"RATE_UNRECONCILED":        {HTTPStatus: 409, ExitCode: 4},
 	"EXCLUSION_CONFLICT":       {HTTPStatus: 409, ExitCode: 4},
 	"EXPIRED":                  {HTTPStatus: 410, ExitCode: 4},
 	"FEATURE_DISABLED":         {HTTPStatus: 409, ExitCode: 4},
