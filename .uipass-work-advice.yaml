@@ -1,0 +1,67 @@
+# Run through tests/fixtures/work_ui/advice.py against its disposable server.
+# The fixture supplies only the synthetic operator browser cookie and exact card
+# selector. Generated/reviewed content comes from actual Cairn API and Store reads.
+schema_version: 1
+viewports:
+  desktop: {width: 1440, height: 1000}
+  phone: {width: 390, height: 844}
+timeouts: {build: 300, startup: 30, case: 25, total: 180}
+surfaces:
+  advice_workflow:
+    states:
+      retained_review:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-manifest summary'}
+  advice_empty:
+    states:
+      completed_without_suggestions:
+        route: /
+        ready: '#advice-no-suggestions:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  advice_currentness:
+    states:
+      retained_after_forgetting:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+          - {type: click, selector: '#advice-manifest summary'}
+  advice_disabled:
+    states:
+      disabled_with_retained_history:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  advice_retries:
+    states:
+      retained_once_only_outcome:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  advice_conflicts:
+    states:
+      intervening_edit_preserved:
+        route: /
+        ready: '.advice-application >> nth=0'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  advice_navigation:
+    states:
+      exact_retained_item:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}
+  advice_polling:
+    states:
+      withdrawn_after_failed_write:
+        route: /
+        ready: '#advice-review:not([hidden])'
+        actions:
+          - {type: click, selector: '.work-card >> nth=0'}

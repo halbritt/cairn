@@ -150,3 +150,51 @@ row to check that its body is absent, and runs UIPass on the notice views. All
 reads must leave the queue and ordinary delivery state unchanged. This callback
 does not claim the native fixture's separate full delivery workflow, expiry or
 restore acceptance. Inspect its screenshots and retained pending-case list.
+
+## Suggestions fixture
+
+The WC05 fixture is prepared separately in `advice.py`. Browser execution and
+visual review require a coherent candidate containing the selected advice API
+contract; source checks alone do not establish acceptance.
+
+```sh
+uv run --project "$HOME/git/uipass" --frozen python -B \
+  tests/fixtures/work_ui/advice.py \
+  --candidate /absolute/path/to/immutable-cairn-candidate \
+  --candidate-manifest /absolute/path/to/capture.json \
+  --output /absolute/path/to/new-external-evidence-directory \
+  --retain-binary
+```
+
+This reuses `DisposableHost`, actual migrations, the candidate CLI/server,
+terminal-code login, and the synthetic Plane boundary. It registers the exact
+hash of `advice_provider.py` copied into its owned fixture home. The provider is
+an actual subprocess that accepts the adapter's native envelope and records
+invocation and canonical-input digests. It has no model or network client and
+uses no owner credential. Its protocol envelopes are synthetic test responses;
+they do not prove native Codex, subscription authentication or useful model advice.
+Those claims require the separate native tests and authorized subscription smoke.
+
+The scenarios exercise explicit first-policy creation and profile/source/artifact
+selection; exact retained input inspection; progress plus artifact subset apply,
+then the remaining blocker; separate application compensation; blocker resolution
+and reopening; rejection and no-suggestions; source/model refusals; source
+forgetting; disabled retained reads and Undo; intervening edits; response loss and
+exact retry identity; item switching; and resumed polling after a delayed failed
+write. Default feature, policy and runtime gates are used through their actual
+operator commands. No policy table, role or production configuration is changed
+to make the fixture pass. Missing required functionality fails.
+
+Response faults forward an actual response, delay or drop it, or alter one real
+application receipt to test rejection. They do not substitute a successful Cairn
+workflow. The polling case crosses a real 30-second interval with no fake clock.
+Intended work effects are checked through the real CLI, and coordination rows
+are compared before and after. The refusal screenshots belong to the actual
+failed requests; a separate UIPass navigation would not reproduce those transient
+errors without another invocation, so that exclusion is recorded explicitly.
+Other retained states use `.uipass-work-advice.yaml` at desktop and phone sizes.
+
+Repeat `--state` to select a bounded scenario. The report lists exclusions and
+the provider invocation count. Inspect the actual images and UIPass findings
+before claiming visual acceptance. No completed browser evidence is implied by
+this prepared fixture.
