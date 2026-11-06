@@ -49,6 +49,12 @@ REQUIRED_DOC_SUITES = {
         "docs/guides/session-coordination.md",
         "docs/guides/agent-workflows.md",
     ],
+    "event_admission": [
+        "docs/event-admission.md",
+        "docs/closure-reservations.md",
+        "docs/guides/scoped-coordination.md",
+        "docs/operator/event-admission-rollout.md",
+    ],
     "developer": [
         "docs/developer/architecture.md",
         "docs/developer/testing.md",

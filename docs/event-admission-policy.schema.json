@@ -22,7 +22,7 @@
     "workload": {
       "type": "string",
       "maxLength": 2000,
-      "description": "Declared workload, at most 2000 UTF-8 bytes; required when limits are present."
+      "description": "Declared workload; required when limits are present. The API additionally enforces a 2000 UTF-8 byte limit; maxLength here counts Unicode characters."
     },
     "limits": {
       "type": "object",
@@ -124,6 +124,9 @@
         ]
       },
       "then": {
+        "required": [
+          "workload"
+        ],
         "properties": {
           "workload": {
             "minLength": 1,

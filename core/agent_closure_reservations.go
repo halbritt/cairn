@@ -115,7 +115,8 @@ type ClosureReconcileRequest struct {
 
 // ClosureReconciliation reports one batch. Complete means this batch found
 // every candidate class exhausted and recorded completion for the restore
-// generation; More means another batch is needed and nothing was recorded.
+// generation; More means another batch is needed. Partial reservation, adoption
+// and release changes commit, but that batch writes no completion certificate.
 // Completion is evidence for an enforcement gate together with writer
 // compatibility, not the gate itself.
 type ClosureReconciliation struct {
@@ -624,7 +625,9 @@ func (s *Store) ClosureReservations(ctx context.Context, req ClosureReservationQ
 }
 
 // CloseReplyObligations releases reply reservations the publisher no longer
-// needs, for requests that have no declared deadline. The caller is the
+// needs, provided no open response group or waiting request_response wait
+// still expects them. A declared request deadline does not prevent explicit
+// closure. The caller is the
 // request publisher (the reservation recipient) or an operator. Every item
 // must still be reserved at its expected revision; the request is
 // all-or-nothing and a cached retry re-checks visibility.

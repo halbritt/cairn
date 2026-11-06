@@ -10,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Admission limits count real deliveries. Future schedule membership is unknown.
+// Admission limits count retained work, including queued quiet notices and
+// unassigned pool requests before delivery. Future schedule membership is unknown.
 // Rates use publications or deliveries per second, with explicitly selected bursts.
 type EventAdmissionRate struct {
 	PerSecond int64 `json:"per_second"`

@@ -36,6 +36,9 @@ need to check remembered advice against current source and instructions.
 - **Coordinate agents:** discover sessions, publish requests or notices, track
   replies, and schedule work through durable inboxes. Native delivery and worker
   launch require configured host integrations.
+- **Bound coordination load:** inspect fanout and backlog, then explicitly
+  configure per-collection admission limits. Reserved capacity lets exact replies
+  and accepted wait notices finish when ordinary queues are full.
 - **Inspect and operate:** examine retrieval receipts and recorded outcomes,
   manage evidence and authorized instructions, delete or forget records through
   explicit workflows, and back up or restore the store.
@@ -60,6 +63,7 @@ account. It then links to authenticated agent setup.
 | Find and inspect memory | [Memory search](docs/guides/memory-search.md) |
 | Resume or hand off work | [Agent workflows](docs/guides/agent-workflows.md) |
 | Coordinate several agents | [Session coordination](docs/guides/session-coordination.md) |
+| Limit event fanout and backlog | [Event admission](docs/event-admission.md) and [rollout](docs/operator/event-admission-rollout.md) |
 | Inspect work and deliverables | [Work coordination](docs/operator/work-coordination.md) |
 | Run a shared service | [Deployment](docs/operator/deployment.md) |
 | Understand or extend Cairn | [Architecture](docs/developer/architecture.md) and [contributing](docs/developer/contributing.md) |

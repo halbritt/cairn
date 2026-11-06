@@ -46,6 +46,27 @@ bounded opportunity to handle that delivery.
 **Execution UUID**: The current registered execution of an agent session. A new
 execution fences stale session activity; the UUID itself is not a credential.
 
+**Event admission policy**: A collection's explicit limits on new event fanout,
+outstanding work and publication/delivery rates. `disabled`, `observe` and
+`enforce` select whether those limits are inactive, forecast or enforced. See
+[event admission](docs/event-admission.md).
+
+**Normal outstanding work**: Ordinary pending or leased deliveries, queued quiet
+notices and open unassigned pool requests, counted under the relevant collection,
+recipient or producer/recipient limit. Reserved closure deliveries use separate
+capacity; pending schedules have their own bound.
+
+**Closure reservation**: Capacity retained for the exact reply to an accepted
+request or the terminal notice owed by an accepted wait. It becomes a delivery
+charge when consumed and stays charged until that delivery settles. Handling
+the original request alone does not release it. See
+[closure reservations](docs/closure-reservations.md).
+
+**Rate bucket**: Persistent publication or delivery capacity for an authenticated
+producer, validated profile owner or collection. Enforced admission spends tokens
+atomically with the publication; PostgreSQL time replenishes them up to the
+configured burst. Observe mode does not spend tokens.
+
 ## Lifecycle integration
 
 **Lifecycle bundle**:

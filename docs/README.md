@@ -130,7 +130,7 @@ The feature references below cover behavior, configuration, and failure paths.
 - [Stopped-session backlog and publisher notification](stopped-session-backlog.md)
 - [Authorized successor event continuity](successor-event-continuity.md)
 - [Delivery health observations](delivery-health.md)
-- [Event pressure and observation policy](event-admission.md)
+- [Event pressure, admission limits and rates](event-admission.md)
 - [Closure reservations for replies and wait notices](closure-reservations.md)
 - [Operator review and explicit reissue](event-recovery.md)
 - [Worker provider failures](provider-failures.md)

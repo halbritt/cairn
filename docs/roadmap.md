@@ -24,6 +24,14 @@ A database transition or successful fixture does not close the corresponding
 native-host acceptance requirement. The [coordination plan](plans/agent-coordination-v1.md)
 and [request-control guide](request-controls.md) retain those contracts.
 
+The source now supports [bounded event admission](event-admission.md), separate
+reply capacity and persistent producer rates. Remaining operating work includes
+choosing limits for real workloads, observing pressure before enforcement, and
+verifying upgraded writers and native integrations on each installation. The
+[rollout guide](operator/event-admission-rollout.md) describes those gates.
+Synthetic overload and restore fixtures do not establish a production workload's
+safe limits or demonstrate reduced model cost.
+
 ## Lifecycle and recovery
 
 Keep evidence current, make retention and deletion effects inspectable, and

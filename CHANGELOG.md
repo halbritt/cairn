@@ -13,6 +13,33 @@ See the [implementation log](docs/history/implementation-log.md) for dated deplo
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-11-06
+
+- Added [event admission policies](docs/event-admission.md) for topic fanout,
+  recipient and collection backlog, and authenticated producer, profile-owner
+  and collection rates. Policies default to disabled; observe mode provides
+  bounded forecasts without debiting rate buckets. Enforce requires schema 084,
+  compatible writers and current-generation closure reconciliation. Migrations
+  080–084 add policy, reservation, refusal-diagnostic and rate state; see the
+  [upgrade and rollout procedure](docs/operator/event-admission-rollout.md).
+- [Closure reservations](docs/closure-reservations.md) retain separate capacity
+  for exact replies and accepted wait notices. Pool assignment and quiet-notice
+  delivery transfer accepted charges. Scheduled publications, operator reissue
+  and stopped-delivery notices obey fresh admission; refused work remains
+  available for the documented retry or recovery path. Topic publication commits
+  its full snapshot or refuses it, and a committed UUID retry adds no debit.
+- Admission failures expose safe dimensions and retry guidance through the
+  [API](docs/reference/api-rest.md). Scheduler and stopped-notice diagnostics
+  report warning fields when refusal counters cannot be written, preserving
+  earlier committed progress and accepted outbox draining. Restore fencing
+  resets retained rate buckets with a stable database-time refill anchor;
+  new work waits for fresh closure reconciliation.
+- Added a [bounded coordination guide](docs/guides/scoped-coordination.md) and
+  overload, transfer, restore and native delivery fixtures. These verify local
+  contracts; they do not enable an installed policy or establish model savings.
+  CLI tests now isolate both their database route and API/token home; see
+  [testing](docs/developer/testing.md).
+
 ## 2026-11-01
 
 - Overlapping searches fail far less often. Compiles that expose the same note

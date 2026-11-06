@@ -42,6 +42,23 @@ against exact source versions. [Session discovery](agent-sessions.md),
 [worker pools](worker-pools.md), [scheduling](event-scheduling.md), and
 [response groups](response-groups.md) support routing and tracking work.
 
+[Event admission](event-admission.md) bounds topic fanout, ordinary outstanding
+work, and publication and delivery rates for authenticated producers, validated
+profile owners, and the collection. Policies start disabled. Observe mode offers
+read-only forecasts; enforce mode requires a compatible binary, schema 084 and
+completed closure reconciliation for the current restore generation. Use the
+[rollout guide](operator/event-admission-rollout.md) to choose workload limits
+and upgrade every writer before enabling them.
+
+[Closure reservations](closure-reservations.md) keep separate capacity for exact
+replies and accepted waits' terminal notices. Handling a request alone does not
+release its reply obligation. Accepted quiet notices and pool requests transfer
+their existing charges when delivered; operator reissue and stopped-delivery
+notices need fresh admission. Refusal leaves an event publication uncommitted,
+so callers can retry the same unchanged request after the reported constraint
+clears. This bounds new work without promising completion, preventing all causal
+loops, or measuring model cost savings.
+
 [Native inbox delivery](native-inbox.md) and [worker wakeups](agent-wakeups.md)
 require host configuration. An online session does not prove a message was
 handled; acknowledgment and task acceptance are separate. Use
