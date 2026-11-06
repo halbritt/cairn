@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -387,4 +389,88 @@ func TestClosureReconcileBatchesCertifyOnlyWhenExhausted(t *testing.T) {
 	}
 	_, err = op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo, Limit: closureReconcileMaxLimit + 1})
 	requireCode(t, err, "INVALID_REQUEST")
+}
+
+func TestClosureAdmitCarriesTypedRefusalDetails(t *testing.T) {
+	ctx := context.Background()
+	a, b, r, dest := eventFixture(t)
+	repo := r.Scope.Repo
+	op := closureOperator(t, repo)
+	if _, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo}); err != nil || !out.Complete {
+		t.Fatalf("reconcile: %+v %v", out, err)
+	}
+	setClosurePolicy(t, a, repo, "enforce", 2, 1)
+	check := func(recipient string, n int64, dimension string, retryable bool) {
+		t.Helper()
+		tx, err := a.begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		err = closureAdmitTx(ctx, tx, repo, recipient, n)
+		var refusal *Error
+		if !errors.As(err, &refusal) || refusal.Code != "CLOSURE_RESERVE_FULL" || refusal.Admission == nil {
+			t.Fatalf("refusal for %s n=%d: %v", recipient, n, err)
+		}
+		d := refusal.Admission
+		if d.Dimension != dimension || d.PolicyRevision != 1 || d.Retryable != retryable || (d.RetryAfterSeconds > 0) != retryable {
+			t.Fatalf("details for %s n=%d: %+v", recipient, n, d)
+		}
+		if strings.Contains(refusal.Message, a.channel.Principal) || strings.Contains(refusal.Message, b.channel.Principal) {
+			t.Fatalf("refusal names a principal: %s", refusal.Message)
+		}
+	}
+	check(a.channel.Principal, 1, "closure_recipient", true)
+	check("other-"+repo, 2, "closure_collection", true)
+	check("other-"+repo, 3, "closure_collection", false)
+	tx, err := a.begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err = closureAdmitTx(ctx, tx, repo, "other-"+repo, 1); err != nil {
+		t.Fatalf("capacity remained: %v", err)
+	}
+}
+
+func TestClosureLegacyUnreservedExcludesGroupedRequests(t *testing.T) {
+	ctx := context.Background()
+	a, b, r, dest := eventFixture(t)
+	repo := r.Scope.Repo
+	op := closureOperator(t, repo)
+	grouped := requestTo(r, b.channel.Principal)
+	grouped.ResponseGroup = &ResponseGroupSpec{Deadline: time.Now().Add(time.Hour), PartialPolicy: "all"}
+	g, err := a.PublishEvent(ctx, grouped, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := a.PublishEvent(ctx, requestTo(r, b.channel.Principal), dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{g.EventID, plain.EventID} {
+		d := nextFixture(t, b, dest)
+		if d.Event.EventID != want {
+			t.Fatalf("delivery order: got %s want %s", d.Event.EventID, want)
+		}
+		if _, err = b.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: d.DeliveryID, LeaseID: d.LeaseID, Disposition: "handled"}, dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = a.pool.Exec(ctx, `UPDATE cairn.agent_response_group SET deadline=clock_timestamp()-interval '1 second' WHERE event_id=$1`, g.EventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = op.SweepRequestControls(ctx, RequestControlSweep{Repo: repo}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.pool.Exec(ctx, `DELETE FROM cairn.agent_closure_reservation WHERE repo=$1`, repo); err != nil {
+		t.Fatal(err)
+	}
+	out, err := op.ReconcileClosureReservations(ctx, ClosureReconcileRequest{RequestID: uuid.NewString(), Repo: repo})
+	if err != nil || !out.Complete || *out.LegacyUnreserved != 1 {
+		t.Fatalf("closed group overstated legacy_unreserved: %+v %v", out, err)
+	}
 }

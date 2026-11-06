@@ -191,12 +191,25 @@ func closureAdmitTx(ctx context.Context, tx pgx.Tx, repo, recipient string, n in
 	}
 	limits := policy.Policy.Limits
 	if collection+n > limits.MaxClosureReserved {
-		return failure("CLOSURE_RESERVE_FULL", fmt.Sprintf("dimension closure_collection; policy revision %d; retry after accepted obligations close", policy.Revision))
+		return closureReserveFull("closure_collection", policy.Revision, n > limits.MaxClosureReserved)
 	}
 	if own+n > limits.MaxRecipientClosureReserved {
-		return failure("CLOSURE_RESERVE_FULL", fmt.Sprintf("dimension closure_recipient; policy revision %d; retry after your accepted obligations close", policy.Revision))
+		return closureReserveFull("closure_recipient", policy.Revision, n > limits.MaxRecipientClosureReserved)
 	}
 	return nil
+}
+
+// closureReserveFull carries the typed admission details beside its own code:
+// the dimension and policy revision only, never counts or other principals.
+// Demand larger than the limit itself can never be admitted unchanged.
+func closureReserveFull(dimension string, revision int64, exceedsLimit bool) error {
+	details := &EventAdmissionRefusal{Dimension: dimension, PolicyRevision: revision, RetryAfterSeconds: 1, Retryable: true}
+	guidance := "retry unchanged intent after accepted obligations close"
+	if exceedsLimit {
+		details.RetryAfterSeconds, details.Retryable = 0, false
+		guidance = "the obligation needs more closure capacity than the policy allows; change the request or the policy"
+	}
+	return &Error{Code: "CLOSURE_RESERVE_FULL", Message: fmt.Sprintf("closure capacity dimension %s at policy revision %d; %s", dimension, revision, guidance), Admission: details}
 }
 
 const closureOutstandingPredicate = `(r.state='reserved' OR (r.state='delivered' AND EXISTS(SELECT 1 FROM cairn.agent_delivery cd WHERE cd.delivery_id=r.consumed_delivery_id AND cd.state IN ('pending','leased'))))`
@@ -757,9 +770,12 @@ func (s *Store) ReconcileClosureReservations(ctx context.Context, req ClosureRec
 		}
 		out.RestoreGeneration = generation
 		var unreserved int64
+		// Grouped requests are excluded: an open group's members are reserved
+		// below and a closed group is already a terminal for its replies.
 		if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  WHERE e.repo=$1 AND e.kind='request' AND d.state IN ('handled','ignored','failed') AND d.control_at IS NULL
    AND (e.task_deadline IS NULL OR e.task_deadline>clock_timestamp())
+   AND NOT EXISTS(SELECT 1 FROM cairn.agent_response_group g WHERE g.event_id=e.event_id)
    AND NOT EXISTS(SELECT 1 FROM cairn.agent_closure_reservation x WHERE x.request_delivery_id=d.delivery_id)
    AND NOT EXISTS(SELECT 1 FROM cairn.agent_event e2 WHERE e2.causation_id=e.event_id AND e2.publisher=d.consumer AND e2.kind IN ('response','failure') AND e2.destination_type='agent' AND e2.destination_name=e.publisher)`, repo).Scan(&unreserved); err != nil {
 			return zero, err
