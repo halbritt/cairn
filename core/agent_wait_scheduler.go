@@ -436,7 +436,7 @@ FOR SHARE OF m`, rv.recordID, rv.version, item.collection).Scan(&rSens, &rLife, 
 		// reservations existed acquires one or stays pending, rotating behind
 		// other outbox items, instead of publishing past an enforced limit.
 		recipient := "agent/" + item.ownerAgentUUID
-		if err = ensureWaitClosureTx(ctx, tx, item.collection, item.waitUUID, recipient); err != nil {
+		if err = ensureWaitClosureTx(ctx, tx, item.collection, item.waitUUID, item.noticeEventUUID, recipient); err != nil {
 			if c := Code(err); c != "CLOSURE_RESERVE_FULL" && c != "CLOSURE_UNRECONCILED" {
 				return 0, err
 			}

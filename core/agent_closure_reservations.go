@@ -393,17 +393,19 @@ func reserveWaitClosureTx(ctx context.Context, tx pgx.Tx, repo, waitUUID, recipi
 }
 
 // ensureWaitClosureTx confirms that a pending wait notice holds a reserved
-// closure before it is published. A wait accepted before reservations
-// existed acquires one now; a capacity refusal is returned so the outbox
-// keeps the notice pending instead of publishing past the limit.
-func ensureWaitClosureTx(ctx context.Context, tx pgx.Tx, repo, waitUUID, recipient string) error {
-	var state string
-	err := tx.QueryRow(ctx, `SELECT state FROM cairn.agent_closure_reservation WHERE wait_uuid=$1 FOR UPDATE`, waitUUID).Scan(&state)
+// closure before it is published. A replayed drain finds the closure already
+// consumed by this exact notice and proceeds idempotently. A wait accepted
+// before reservations existed acquires one now; a capacity refusal is
+// returned so the outbox keeps the notice pending instead of publishing past
+// the limit.
+func ensureWaitClosureTx(ctx context.Context, tx pgx.Tx, repo, waitUUID, noticeEventID, recipient string) error {
+	var state, consumed string
+	err := tx.QueryRow(ctx, `SELECT state, COALESCE(consumed_event_id::text,'') FROM cairn.agent_closure_reservation WHERE wait_uuid=$1 FOR UPDATE`, waitUUID).Scan(&state, &consumed)
 	if err == nil {
-		if state != "reserved" {
-			return failure("INTEGRITY_FAILURE", "pending wait notice has no reserved closure ("+state+")")
+		if state == "reserved" || (state == "delivered" && consumed == noticeEventID) {
+			return nil
 		}
-		return nil
+		return failure("INTEGRITY_FAILURE", "pending wait notice has no reserved closure ("+state+")")
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
@@ -420,13 +422,18 @@ func ensureWaitClosureTx(ctx context.Context, tx pgx.Tx, repo, waitUUID, recipie
 }
 
 // consumeWaitClosureTx binds the wait's reservation to its published notice.
+// A replay of a notice that already consumed it changes nothing.
 func consumeWaitClosureTx(ctx context.Context, tx pgx.Tx, waitUUID, noticeEventID, recipient string) error {
 	tag, err := tx.Exec(ctx, `UPDATE cairn.agent_closure_reservation r SET state='delivered', consumed_event_id=d.event_id, consumed_delivery_id=d.delivery_id, revision=r.revision+1, transitioned_at=clock_timestamp()
  FROM cairn.agent_delivery d WHERE r.wait_uuid=$1 AND r.state='reserved' AND d.event_id=$2 AND d.consumer=$3`, waitUUID, noticeEventID, recipient)
-	if err != nil {
+	if err != nil || tag.RowsAffected() == 1 {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
+	var replay bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_closure_reservation WHERE wait_uuid=$1 AND state='delivered' AND consumed_event_id=$2)`, waitUUID, noticeEventID).Scan(&replay); err != nil {
+		return err
+	}
+	if !replay {
 		return failure("INTEGRITY_FAILURE", "wait notice closure changed before consumption")
 	}
 	return nil
