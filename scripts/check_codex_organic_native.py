@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL = 'gpt-6-luna'
 TEXT = 'Process the already waiting routine notices.'
 BODIES = ['Organic native fixture item ' + str(i) for i in range(1, 5)]
+QUEUED_CASE_SECONDS = 45
 
 
 def uid():
@@ -59,6 +60,28 @@ def wait_for(predicate, label, timeout=30, terminal=None):
             require(terminal.process.poll() is None, 'native launcher exited during ' + label)
         time.sleep(.05)
     raise AssertionError('timed out: ' + label)
+
+
+def run_queued_case(host, session, callback):
+    """Run one fixture-owned extension; it owns cleanup of its own resources.
+
+    Only the already established host and a copy of its exact session reference
+    cross this seam. SIGALRM bounds the main-thread callback; its subprocesses
+    must also have their own deadlines and finally cleanup.
+    """
+    require(callable(callback),'queued case must be callable')
+    require(threading.current_thread() is threading.main_thread(),'queued case requires the main thread')
+    require(signal.getitimer(signal.ITIMER_REAL)==(0.0,0.0),'queued case cannot replace an existing alarm')
+    previous=signal.getsignal(signal.SIGALRM)
+    def expired(_signal,_frame):
+        raise TimeoutError('queued case exceeded its 45-second deadline')
+    signal.signal(signal.SIGALRM,expired)
+    signal.setitimer(signal.ITIMER_REAL,QUEUED_CASE_SECONDS)
+    try:
+        callback(host,dict(session))
+    finally:
+        signal.setitimer(signal.ITIMER_REAL,0)
+        signal.signal(signal.SIGALRM,previous)
 
 
 class Terminal:
@@ -128,7 +151,8 @@ raise SystemExit(result.returncode)
 '''
 
 
-def scenario(host, manifest, report):
+def scenario(host, manifest, report, *, queued_case=None):
+    report['variant']='queued_case' if queued_case is not None else 'full_workflow'
     selected = json.loads(manifest.read_text())
     native = Path(selected['binary_path'])
     require(digest(native) == selected['binary_sha256'], 'selected native digest changed')
@@ -321,6 +345,10 @@ def scenario(host, manifest, report):
         for body in BODIES:
             publish(body)
         require(host.sql('SELECT count(*) FROM cairn.agent_delivery')=='0','quiet publication created wakeable delivery')
+        if queued_case is not None:
+            run_queued_case(host,session,queued_case)
+            report['stages'].append('queued_case_completed')
+            return
         host.agent('worker','session-organic-notice-claim',dict(request_id=uid(),session=session,
             native_owner_turn_id='forged',owner_input_origin=dict(version=1,source='owner_composer',
                 admission='fresh_start',input_id=uid())),expected='AUTHORITY_DENIED')
@@ -397,17 +425,17 @@ def scenario(host, manifest, report):
         report['restricted_receipt_retirement']=dict(actual_attempt_id=actual,retry_request_id=phase['retirement_request'],
                                                    reason=close_reason)
         report['stages'].append('restricted_cached_claim_retires_actual_older_control_hold')
-        report['local_provider_requests']=server.post_count
-        report['native_manifest_sha256']=digest(manifest)
-        report['native_runtime_sha256']=selected['binary_sha256']
-        report['code_mode_host_sha256']=selected['code_mode_host']['sha256']
-        report['lifecycle_bundle_sha256']=json.loads((engine_root/'lifecycle-bundle.json').read_text())['sha256']
     finally:
         if terminal is not None:
             terminal.close()
             # Kept only in the disposable private directory on a failed proof.
             (root/'terminal.txt').write_bytes(terminal.output)
         server.close()
+        report['local_provider_requests']=server.post_count
+        report['native_manifest_sha256']=digest(manifest)
+        report['native_runtime_sha256']=selected['binary_sha256']
+        report['code_mode_host_sha256']=selected['code_mode_host']['sha256']
+        report['lifecycle_bundle_sha256']=json.loads((engine_root/'lifecycle-bundle.json').read_text())['sha256']
         if server.failures:
             write_private(root/'provider-requests.json',json.dumps(server.requests))
 

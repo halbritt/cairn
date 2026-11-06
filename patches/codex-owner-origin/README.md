@@ -133,3 +133,15 @@ its disposable Store. The associated lifecycle suite passed 53 tests, launcher
 suite 20 tests, and build-input verification suite 2 tests; `make check` passed.
 Store integration coverage is recorded separately by the Cairn change that
 supplies the admission and cached-disclosure guards.
+
+Other disposable acceptance fixtures can call
+`scenario(host, manifest, report, queued_case=callback)`. After real native
+activation and four quiet publications, the callback receives only that
+`DisposableHost` and a copy of its exact `{agent_id, execution_id}` reference.
+It runs on the main thread with a 45-second alarm and must give its subprocesses
+their own deadlines and cleanup. The result is labelled `variant: queued_case`;
+it returns through normal native cleanup and does not claim the remaining full
+workflow stages. Omitting the callback preserves the seven-stage scenario.
+Publisher-owned notice IDs are available through `event-notice-pending` using
+the existing `sender` profile and supplied agent ID. No launch key or synthetic
+capability registration is exposed by this seam.

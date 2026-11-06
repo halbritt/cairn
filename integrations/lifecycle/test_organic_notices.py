@@ -3,6 +3,8 @@ import importlib.util
 import io
 import json
 import os
+import signal
+import sys
 from pathlib import Path
 import tempfile
 import time
@@ -19,6 +21,30 @@ SESSION = dict(AGENT)
 CONFIG = dict(binding="test", harness="codex")
 ORIGIN = dict(version=1, source="owner_composer", admission="fresh_start", input_id=str(uuid.UUID(int=3)))
 ENVELOPE = dict(schema="cairn.owner-input-attestation/1", payload="e30", signature="A" * 86)
+
+
+class QueuedCaseBoundary(unittest.TestCase):
+    def test_callback_gets_existing_handles_and_deadline_restores_signal_state(self):
+        scripts=HERE.parent.parent/'scripts'
+        sys.path.insert(0,str(scripts))
+        try:
+            spec=importlib.util.spec_from_file_location('organic_queued_case_fixture',scripts/'check_codex_organic_native.py')
+            fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+        finally:
+            sys.path.remove(str(scripts))
+        host=object();session=dict(SESSION);seen=[]
+        def callback(actual_host,actual_session):
+            seen.append((actual_host,dict(actual_session)))
+            actual_session['agent_id']='local-change'
+        previous=signal.getsignal(signal.SIGALRM)
+        fixture.run_queued_case(host,session,callback)
+        self.assertEqual(seen,[(host,SESSION)])
+        self.assertEqual(session,SESSION)
+        with patch.object(fixture,'QUEUED_CASE_SECONDS',.02):
+            with self.assertRaisesRegex(TimeoutError,'queued case'):
+                fixture.run_queued_case(host,session,lambda *_:time.sleep(.2))
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL),(0.0,0.0))
+        self.assertEqual(signal.getsignal(signal.SIGALRM),previous)
 
 
 def attempt(ident="first", index=1):
