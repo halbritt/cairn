@@ -207,6 +207,7 @@ func (f *eventScalingScenario) lowerLimitsBelowBacklog() {
 	}
 	f.policy.Limits.MaxRecipientOutstanding, f.policy.Limits.MaxProducerRecipientOutstanding, f.policy.Limits.MaxCollectionOutstanding = 1, 1, 4
 	f.setPolicy()
+	f.refuseNewWorkAboveLoweredLimits()
 	f.assertAccounting(5, 2, 0)
 	claimed := f.claim(f.executor)
 	if claimed.Event.EventID != f.request.EventID {
@@ -215,6 +216,37 @@ func (f *eventScalingScenario) lowerLimitsBelowBacklog() {
 	if _, err := f.executor.CompleteEvent(f.ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: claimed.DeliveryID, LeaseID: claimed.LeaseID, Disposition: "handled"}, f.dest); err != nil {
 		f.t.Fatalf("accepted work cannot complete above lowered normal limits: %v", err)
 	}
+}
+
+func (f *eventScalingScenario) refuseNewWorkAboveLoweredLimits() {
+	f.t.Helper()
+	intent := PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: f.ref, Destination: EventDestination{Type: "agent", Name: f.coordinator.channel.Principal}, CorrelationID: uuid.NewString()}
+	before := f.admissionFootprint(f.healthyPublisher, intent.RequestID)
+	_, err := f.healthyPublisher.PublishEvent(f.ctx, intent, f.dest)
+	requireAdmissionDimension(f.t, err, "collection_outstanding")
+	after := f.admissionFootprint(f.healthyPublisher, intent.RequestID)
+	if after != before || after.receipts != 0 {
+		f.t.Fatalf("ordinary refusal above lowered limits retained partial admission: before=%+v after=%+v", before, after)
+	}
+}
+
+type scalingAdmissionFootprint struct {
+	events, closures, receipts int64
+	rates                      string
+}
+
+func (f *eventScalingScenario) admissionFootprint(publisher *Store, requestID string) scalingAdmissionFootprint {
+	f.t.Helper()
+	var footprint scalingAdmissionFootprint
+	err := f.op.pool.QueryRow(f.ctx, `SELECT
+ (SELECT count(*) FROM cairn.agent_event WHERE repo=$1),
+ (SELECT count(*) FROM cairn.agent_closure_reservation WHERE repo=$1),
+ (SELECT count(*) FROM cairn.mutation_request WHERE caller=$2 AND operation='event-publish' AND request_id=$3),
+ (SELECT COALESCE(jsonb_agg(to_jsonb(b) ORDER BY identity_kind,identity,unit),'[]'::jsonb)::text FROM cairn.agent_event_rate_bucket b WHERE repo=$1)`, f.repo, publisher.channel.Principal, requestID).Scan(&footprint.events, &footprint.closures, &footprint.receipts, &footprint.rates)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return footprint
 }
 
 func (f *eventScalingScenario) finishProtectedWork() {
