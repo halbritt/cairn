@@ -114,3 +114,23 @@ summary { cursor: pointer; padding: .5rem 0; }
 /* Coordination observations render only selected typed metadata. */
 .coordination-rows > li { margin-block: 0.8rem; padding-block: 0.5rem; border-bottom: 1px solid #d5d9e2; overflow-wrap: anywhere; }
 .coordination-provenance { margin-top: 0.4rem; padding-left: 1.3rem; }
+
+#item-advice { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid #8993a4; overflow-wrap: anywhere; }
+#item-advice h4 { margin-block: 1rem .5rem; }
+#item-advice button { margin-block: .3rem; }
+#item-advice input, #item-advice select { width: 100%; min-width: 0; }
+#item-advice .checkbox-label { display: flex; flex-direction: row; align-items: start; gap: .5rem; margin-block: .65rem; }
+#item-advice input[type="checkbox"] { width: 1.2rem; min-width: 1.2rem; min-height: 1.2rem; margin-top: .15rem; }
+.advice-form, .advice-settings { padding: .85rem; margin-block: .85rem; border: 1px solid #b3bac5; border-radius: 6px; }
+.advice-form { display: grid; gap: .7rem; }
+.advice-form fieldset, #advice-policy-fields { min-width: 0; border: 1px solid #b3bac5; padding: .75rem; }
+.advice-form fieldset > label { display: block; margin-block: .6rem; }
+.advice-action, .advice-application, .advice-source { padding: .8rem; margin-block: .8rem; border: 1px solid #b3bac5; border-radius: 6px; }
+.advice-diff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.advice-diff > div { background: #f4f5f7; padding: .65rem; min-width: 0; }
+.advice-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+#advice-notice { padding: .75rem; border: 1px solid #b3d4ff; background: #e9f2ff; border-radius: 4px; }
+@media (max-width: 540px) {
+  .advice-diff { grid-template-columns: minmax(0, 1fr); }
+  .advice-form, .advice-settings { padding: .65rem; }
+}

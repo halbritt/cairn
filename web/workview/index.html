@@ -210,6 +210,88 @@
         <button type="button" id="add-progress-btn">Add progress</button>
         <button type="button" id="add-blocker-btn">Add blocker</button>
       </div>
+      <section id="item-advice" aria-labelledby="advice-heading">
+        <h3 id="advice-heading">Suggestions</h3>
+        <p class="hint">Review model-assisted changes before applying them. Suggestions never change Plane task state.</p>
+        <p id="advice-status" role="status">Reading advice availability…</p>
+        <div id="advice-error" class="alert alert-danger" role="alert" hidden></div>
+        <p id="advice-notice" role="status" hidden></p>
+        <button id="advice-reload" type="button">Reload suggestions</button>
+        <details id="advice-control-settings" class="advice-settings">
+          <summary>Generation and apply controls</summary>
+          <p class="hint">These controls affect all work advice in this store. Disabling generation or apply preserves retained review and eligible cleanup.</p>
+          <label class="checkbox-label"><input id="advice-generation-enabled" type="checkbox"> Enable generation</label>
+          <label class="checkbox-label"><input id="advice-apply-enabled" type="checkbox"> Enable application</label>
+          <button id="advice-save-control" type="button" disabled>Save advice controls</button>
+        </details>
+        <details id="advice-policy-settings" class="advice-settings">
+          <summary>Project sharing policy</summary>
+          <p id="advice-policy-status" class="hint">No saved policy has been read.</p>
+          <p class="hint">Save exactly which fields may enter the hosted subscription route. Selecting a source still requires current hosted eligibility.</p>
+          <fieldset id="advice-policy-fields">
+            <legend>Allowed work fields</legend>
+            <label class="checkbox-label"><input type="checkbox" value="identifier"> Item identifier</label>
+            <label class="checkbox-label"><input type="checkbox" value="title"> Item title</label>
+            <label class="checkbox-label"><input type="checkbox" value="state"> Observed Plane state</label>
+            <label class="checkbox-label"><input type="checkbox" value="blockers"> Selected blockers</label>
+            <label class="checkbox-label"><input type="checkbox" value="artifacts"> Selected artifact metadata</label>
+            <label class="checkbox-label"><input type="checkbox" value="sources"> Explicitly selected source text</label>
+          </fieldset>
+          <button id="advice-save-policy" type="button" disabled>Save sharing policy</button>
+        </details>
+        <form id="advice-generate-form" class="advice-form">
+          <h4>Request a suggestion</h4>
+          <label for="advice-profile">Registered subscription profile<select id="advice-profile" required><option value="">Select a profile</option></select></label>
+          <p id="advice-profile-info" class="hint">No profile selected.</p>
+          <fieldset>
+            <legend>Explicit source versions</legend>
+            <p class="hint">Only the exact records added here may contribute source text. No private transcript or repository files are fetched.</p>
+            <label for="advice-source-record">Record UUID<input id="advice-source-record" type="text" spellcheck="false"></label>
+            <label for="advice-source-version">Version<input id="advice-source-version" type="number" min="1" step="1" value="1"></label>
+            <button id="advice-add-source" type="button">Add source version</button>
+            <ul id="advice-selected-sources" class="detail-list"></ul>
+          </fieldset>
+          <fieldset>
+            <legend>Candidate artifact revisions</legend>
+            <p class="hint">Copy an exact registered revision UUID from Artifacts. Selecting it permits a proposed link; it does not create a link.</p>
+            <label for="advice-candidate-revision">Artifact revision UUID<input id="advice-candidate-revision" type="text" spellcheck="false"></label>
+            <button id="advice-add-candidate" type="button">Add registered revision</button>
+            <ul id="advice-selected-candidates" class="detail-list"></ul>
+          </fieldset>
+          <p id="advice-input-summary" class="hint"></p>
+          <button id="advice-generate" type="submit" disabled>Generate suggestions</button>
+        </form>
+        <div id="advice-request-recovery" hidden>
+          <label for="advice-request-id">Generation request UUID<input id="advice-request-id" type="text" readonly></label>
+          <button id="advice-inspect-request" type="button">Inspect generation request</button>
+          <button id="advice-reconcile" type="button" disabled>Reconcile advice jobs</button>
+          <p class="hint">After an uncertain response, inspect this request or retry the unchanged request. Inspection never invokes the model.</p>
+          <p class="hint">Reconcile checks retained process state and cleanup; it does not generate again.</p>
+        </div>
+        <label for="advice-proposal-select">Retained proposals<select id="advice-proposal-select"><option value="">No retained proposals</option></select></label>
+        <p id="advice-empty" hidden>No retained proposal for this item.</p>
+        <section id="advice-review" aria-labelledby="advice-review-heading" hidden>
+          <h4 id="advice-review-heading">Review the exact proposal</h4>
+          <p id="advice-currentness" role="status"></p>
+          <dl id="advice-review-meta" class="artifact-identity"></dl>
+          <p id="advice-job-status" role="status"></p>
+          <details id="advice-manifest">
+            <summary>Input manifest and source inspection</summary>
+            <dl id="advice-manifest-meta" class="artifact-identity"></dl>
+            <ul id="advice-manifest-sources" class="detail-list"></ul>
+            <ul id="advice-manifest-candidates" class="detail-list"></ul>
+          </details>
+          <p id="advice-no-suggestions" hidden>The model completed this request with no suggestions. No work changes were made.</p>
+          <ul id="advice-actions" class="detail-list"></ul>
+          <div class="modal-actions">
+            <button id="advice-apply" type="button" disabled>Apply selected actions</button>
+            <button id="advice-reject" type="button" disabled>Reject remaining proposal</button>
+          </div>
+          <h4>Applications and Undo</h4>
+          <p id="advice-applications-empty">No application has been recorded for this proposal.</p>
+          <ul id="advice-applications" class="detail-list"></ul>
+        </section>
+      </section>
       <section id="item-artifacts" aria-labelledby="item-artifacts-title">
         <h3 id="item-artifacts-title">Artifacts</h3>
         <p id="artifact-admission" class="hint" role="status">Checking artifact admission…</p>
