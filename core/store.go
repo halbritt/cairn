@@ -44,6 +44,7 @@ func DefaultCompatibilityPolicy() CompatibilityPolicy {
 		SupportedWorkFeatures: map[string]bool{
 			"work-view/1":      true,
 			"work-artifacts/1": true,
+			"work-advice/1":    true,
 		},
 	}
 }
@@ -199,6 +200,7 @@ func (s *Store) effectivePolicy() CompatibilityPolicy {
 		pol.SupportedWorkFeatures = map[string]bool{
 			"work-view/1":      true,
 			"work-artifacts/1": true,
+			"work-advice/1":    true,
 		}
 	}
 	return pol

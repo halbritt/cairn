@@ -6,8 +6,23 @@ INSERT INTO cairn.work_feature (feature_name, status)
 VALUES ('work-advice/1', 'disabled')
 ON CONFLICT (feature_name) DO NOTHING;
 
+CREATE TABLE cairn.work_advice_profile (
+    profile_name text PRIMARY KEY,
+    route text NOT NULL,
+    executable_path text NOT NULL,
+    binary_sha256 text NOT NULL,
+    expected_upstream_commit text NOT NULL,
+    expected_patch_sha256 text NOT NULL,
+    codex_home text NOT NULL,
+    model text NOT NULL,
+    timeout_ms bigint NOT NULL,
+    max_output_bytes bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
 CREATE TABLE cairn.work_advice_policy (
     binding_id uuid PRIMARY KEY REFERENCES cairn.work_project(binding_id) ON DELETE CASCADE,
+    policy_revision bigint NOT NULL DEFAULT 1,
     allowed_fields jsonb NOT NULL DEFAULT '[]'::jsonb,
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
@@ -31,6 +46,9 @@ CREATE TABLE cairn.work_advice_job (
     error_code text,
     process_identity jsonb NOT NULL DEFAULT '{}'::jsonb,
     expires_at timestamptz NOT NULL,
+    input_snapshot jsonb,
+    input_expires_at timestamptz NOT NULL DEFAULT (clock_timestamp() + interval '24 hours'),
+    input_unavailable_reason text,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT work_advice_job_caller_request_unique UNIQUE (caller, request_uuid)
 );
@@ -75,7 +93,10 @@ CREATE INDEX work_advice_action_proposal ON cairn.work_advice_action(proposal_uu
 CREATE TABLE cairn.work_advice_application_receipt (
     receipt_uuid uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     request_uuid uuid NOT NULL UNIQUE,
-    proposal_uuid uuid NOT NULL REFERENCES cairn.work_advice_proposal(proposal_uuid) ON DELETE CASCADE,
+    proposal_uuid uuid REFERENCES cairn.work_advice_proposal(proposal_uuid) ON DELETE SET NULL,
+    binding_id uuid NOT NULL,
+    plane_item_uuid uuid NOT NULL,
+    source_record_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
     applied_action_uuids jsonb NOT NULL DEFAULT '[]'::jsonb,
     applied_by_channel text NOT NULL,
     output_revisions jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -87,3 +108,31 @@ CREATE TABLE cairn.work_advice_application_receipt (
 );
 
 CREATE INDEX work_advice_receipt_proposal ON cairn.work_advice_application_receipt(proposal_uuid);
+CREATE INDEX work_advice_receipt_item ON cairn.work_advice_application_receipt(binding_id, plane_item_uuid);
+
+CREATE TABLE IF NOT EXISTS cairn.work_advice_request_tombstone (
+    caller text NOT NULL,
+    request_uuid uuid NOT NULL,
+    job_uuid uuid NOT NULL,
+    binding_id uuid NOT NULL,
+    plane_item_uuid uuid NOT NULL,
+    request_digest text NOT NULL,
+    terminal_status text NOT NULL DEFAULT 'pending',
+    error_code text,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (caller, request_uuid)
+);
+
+CREATE INDEX IF NOT EXISTS work_advice_tombstone_req ON cairn.work_advice_request_tombstone(request_uuid);
+
+CREATE TABLE IF NOT EXISTS cairn.work_advice_control (
+    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+    generation_enabled boolean NOT NULL DEFAULT true,
+    apply_enabled boolean NOT NULL DEFAULT true,
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+INSERT INTO cairn.work_advice_control (singleton, generation_enabled, apply_enabled)
+VALUES (true, true, true)
+ON CONFLICT (singleton) DO NOTHING;

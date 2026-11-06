@@ -29,6 +29,8 @@ Subcommands:
   work blocker resolve --project SLUG --item ITEM_UUID_OR_IDENT --annotation-id UUID --expected-revision N [--request-id UUID] [--collection REPO]
   work metadata purge --project SLUG --pattern PATTERN [--field FIELD] [--exclude] [--request-id UUID] [--collection REPO]
   work metadata exclude --project SLUG --field FIELD --pattern PATTERN [--request-id UUID] [--collection REPO]
+  work artifact (register|show|link|unlink|list|impact|purge) ...
+  work advice (generate|list|show|apply|reject|undo|profile|policy|reconcile) ...
   work features (status|enable|disable|retire) [--feature NAME] [--request-id UUID] [--collection REPO]
   work serve [--project SLUG] [--port PORT] [--collection REPO]
 `
@@ -605,6 +607,9 @@ func workCommand(ctx context.Context, store *core.Store, args []string, input io
 
 	case "artifact":
 		return workArtifactCommand(ctx, store, args[1:])
+
+	case "advice":
+		return workAdviceCommand(ctx, store, args[1:])
 
 	case "metadata":
 		if len(args) < 2 {

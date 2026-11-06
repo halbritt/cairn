@@ -215,30 +215,45 @@ Instructions:
 {
   "summary": "Concise summary (max 2048 bytes)",
   "actions": [
+    // Each action is a FLAT object. Do NOT nest inside "progress", "blocker", or "artifact" objects.
+    // Action type 1: annotate_progress
     {
-      "action_type": "annotate_progress" | "annotate_blocker" | "link_artifact",
+      "action_type": "annotate_progress",
       "rationale": "Short rationale (max 1024 bytes)",
-      "progress": {
-        "text": "Progress update text (max 2048 bytes)",
-        "source_references": ["<source_id_from_snapshot>"]
-      },
-      "blocker": {
-        "blocker_action": "create" | "resolve",
-        "text": "Blocker text (required if create)",
-        "existing_blocker_id": "<existing_blocker_id_from_snapshot> (required if resolve)",
-        "expected_revision": <revision_number> (required if resolve),
-        "source_references": ["<source_id_from_snapshot>"]
-      },
-      "artifact": {
-        "artifact_revision_id": "<candidate_revision_uuid_from_snapshot>",
-        "role": "input" | "output" | "evidence"
-      }
+      "text": "Progress update text (max 2048 bytes)",
+      "source_references": ["<source_id_from_snapshot>"]
+    },
+    // Action type 2: annotate_blocker (create new blocker)
+    {
+      "action_type": "annotate_blocker",
+      "rationale": "Short rationale (max 1024 bytes)",
+      "blocker_action": "create",
+      "text": "Blocker description (max 2048 bytes)",
+      "source_references": ["<source_id_from_snapshot>"]
+    },
+    // Action type 3: annotate_blocker (resolve existing blocker)
+    {
+      "action_type": "annotate_blocker",
+      "rationale": "Short rationale (max 1024 bytes)",
+      "blocker_action": "resolve",
+      "existing_blocker_id": "<existing_blocker_id_from_snapshot>",
+      "expected_revision": 1,
+      "text": "Optional resolution note (max 2048 bytes)",
+      "source_references": ["<source_id_from_snapshot>"]
+    },
+    // Action type 4: link_artifact
+    {
+      "action_type": "link_artifact",
+      "rationale": "Short rationale (max 1024 bytes)",
+      "artifact_revision_id": "<candidate_revision_uuid_from_snapshot>",
+      "role": "input" | "output" | "evidence"
     }
   ]
 }
-3. You may propose at most 12 actions. Total normalized output must not exceed 16 KiB.
-4. Only reference source IDs and candidate revision UUIDs present in the input snapshot.
-5. If no actions are warranted, return {"summary": "...", "actions": []}.
+3. All action objects are flat: do NOT nest inside "progress", "blocker", or "artifact" objects.
+4. You may propose at most 12 actions. Total normalized output must not exceed 16 KiB.
+5. Only reference source IDs, existing blocker IDs, and candidate revision UUIDs present in the input snapshot.
+6. If no actions are warranted, return {"summary": "...", "actions": []}.
 `, string(snapJSON))
 
 	return prompt, nil

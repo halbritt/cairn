@@ -485,6 +485,99 @@ func TestBuildAdvicePrompt(t *testing.T) {
 	}
 }
 
+func TestBuildAdvicePrompt_PromptSchemaRoundTrip(t *testing.T) {
+	snap := sampleSnapshot()
+	prompt, err := BuildAdvicePrompt(snap)
+	if err != nil {
+		t.Fatalf("BuildAdvicePrompt failed: %v", err)
+	}
+
+	// Verify the prompt explicitly advises flat actions and no nested wrapper objects
+	if !strings.Contains(prompt, "Each action is a FLAT object") {
+		t.Errorf("prompt missing flat action instruction")
+	}
+
+	// Construct a canonical payload matching the exact schema advertised in BuildAdvicePrompt
+	payload := `{
+  "summary": "Full coordination cycle with all advertised flat action types.",
+  "actions": [
+    {
+      "action_type": "annotate_progress",
+      "rationale": "Marked schema implementation completed.",
+      "text": "Completed database schema implementation and verified migrations.",
+      "source_references": ["src-note-1"]
+    },
+    {
+      "action_type": "annotate_blocker",
+      "rationale": "Need dependency review before landing.",
+      "blocker_action": "create",
+      "text": "Waiting on security review of external dependencies.",
+      "source_references": ["src-note-1"]
+    },
+    {
+      "action_type": "annotate_blocker",
+      "rationale": "Upstream specification has been clarified.",
+      "blocker_action": "resolve",
+      "existing_blocker_id": "77777777-7777-7777-7777-777777777777",
+      "expected_revision": 1,
+      "text": "Upstream API specification confirmed and implemented.",
+      "source_references": ["src-note-1"]
+    },
+    {
+      "action_type": "link_artifact",
+      "rationale": "Linked implementation commit.",
+      "artifact_revision_id": "88888888-8888-8888-8888-888888888888",
+      "role": "evidence"
+    }
+  ]
+}`
+
+	proposal, err := ParseProposal(payload, snap)
+	if err != nil {
+		t.Fatalf("ParseProposal refused canonical prompt-advertised schema payload: %v", err)
+	}
+
+	if len(proposal.Actions) != 4 {
+		t.Fatalf("expected 4 actions, got %d", len(proposal.Actions))
+	}
+
+	// Verify action 0: annotate_progress
+	act0 := proposal.Actions[0]
+	if act0.ActionType != ActionAnnotateProgress || act0.Progress == nil {
+		t.Fatalf("action 0 not parsed as annotate_progress: %+v", act0)
+	}
+	if act0.Progress.Text != "Completed database schema implementation and verified migrations." {
+		t.Errorf("action 0 unexpected text: %q", act0.Progress.Text)
+	}
+
+	// Verify action 1: annotate_blocker create
+	act1 := proposal.Actions[1]
+	if act1.ActionType != ActionAnnotateBlocker || act1.Blocker == nil || act1.Blocker.BlockerAction != "create" {
+		t.Fatalf("action 1 not parsed as blocker create: %+v", act1)
+	}
+	if act1.Blocker.Text != "Waiting on security review of external dependencies." {
+		t.Errorf("action 1 unexpected text: %q", act1.Blocker.Text)
+	}
+
+	// Verify action 2: annotate_blocker resolve
+	act2 := proposal.Actions[2]
+	if act2.ActionType != ActionAnnotateBlocker || act2.Blocker == nil || act2.Blocker.BlockerAction != "resolve" {
+		t.Fatalf("action 2 not parsed as blocker resolve: %+v", act2)
+	}
+	if act2.Blocker.ExistingBlockerID != "77777777-7777-7777-7777-777777777777" || act2.Blocker.ExpectedRevision != 1 {
+		t.Errorf("action 2 unexpected resolve targets: %+v", act2.Blocker)
+	}
+
+	// Verify action 3: link_artifact
+	act3 := proposal.Actions[3]
+	if act3.ActionType != ActionLinkArtifact || act3.Artifact == nil {
+		t.Fatalf("action 3 not parsed as link_artifact: %+v", act3)
+	}
+	if act3.Artifact.ArtifactRevisionID != "88888888-8888-8888-8888-888888888888" || act3.Artifact.Role != "evidence" {
+		t.Errorf("action 3 unexpected artifact fields: %+v", act3.Artifact)
+	}
+}
+
 func hashFileSHA256(path string) string {
 	data, _ := os.ReadFile(path)
 	h := sha256.Sum256(data)

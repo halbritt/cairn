@@ -229,7 +229,7 @@ func (s *workServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if strings.HasPrefix(r.URL.Path, "/api/work/") && !strings.HasPrefix(r.URL.Path, "/api/work/artifact") {
+	if strings.HasPrefix(r.URL.Path, "/api/work/") && !strings.HasPrefix(r.URL.Path, "/api/work/artifact") && !strings.HasPrefix(r.URL.Path, "/api/work/advice") {
 		if s.store == nil {
 			http.Error(w, `{"error":"store unavailable"}`, http.StatusServiceUnavailable)
 			return
@@ -250,6 +250,8 @@ func (s *workServer) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/work/advice"):
+		HandleWorkAdviceAPI(s.store, s.collection, w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/work/artifact"):
 		HandleWorkArtifactAPI(s.store, s.collection, w, r)
 	case r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost:
@@ -708,6 +710,22 @@ func runWorkServe(ctx context.Context, store *core.Store, args []string) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+
+	go func() {
+		_, _ = store.ReconcileAdviceJobs(ctx)
+		_, _ = store.SweepExpiredAdvice(ctx)
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = store.ReconcileAdviceJobs(ctx)
+				_, _ = store.SweepExpiredAdvice(ctx)
+			}
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()

@@ -180,13 +180,50 @@ func RunIsolatedProcess(ctx context.Context, cmdPath string, args []string, inpu
 	if onLaunch != nil {
 		if err := onLaunch(identity); err != nil {
 			_ = stdinW.Close()
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			var killErr error
+			if pgid > 1 {
+				kErr := syscall.Kill(-pgid, syscall.SIGKILL)
+				if kErr != nil && !errors.Is(kErr, syscall.ESRCH) {
+					killErr = kErr
+				}
+			}
 			if cmd.Process != nil {
 				_ = cmd.Process.Kill()
 			}
 			_ = stdoutR.Close()
 			_ = stderrR.Close()
 			_ = cmd.Wait()
+
+			var finalProbeErr error
+			if pgid > 1 {
+				deadline := time.Now().Add(500 * time.Millisecond)
+				for {
+					finalProbeErr = syscall.Kill(-pgid, 0)
+					if errors.Is(finalProbeErr, syscall.ESRCH) {
+						break
+					}
+					if time.Now().After(deadline) {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+
+			if pgid <= 1 || killErr != nil || !errors.Is(finalProbeErr, syscall.ESRCH) {
+				cause := err
+				if killErr != nil {
+					cause = errors.Join(cause, killErr)
+				}
+				if finalProbeErr != nil && !errors.Is(finalProbeErr, syscall.ESRCH) {
+					cause = errors.Join(cause, finalProbeErr)
+				} else if finalProbeErr == nil {
+					cause = errors.Join(cause, errors.New("process group still active after onLaunch failure"))
+				}
+				return nil, &CleanupUnconfirmedError{
+					Identity: identity,
+					Cause:    cause,
+				}
+			}
 			return nil, NewAdviceError(ErrModelExecutionFailed, fmt.Sprintf("onLaunch gate failed: %v", err), err)
 		}
 	}
@@ -374,4 +411,29 @@ func RunIsolatedProcess(ctx context.Context, cmdPath string, args []string, inpu
 	}
 
 	return result, nil
+}
+
+// TerminateProcessGroup sends SIGKILL to the process group -pgid and confirms cleanup.
+// If the process group remains active or cleanup cannot be confirmed (probe is not ESRCH),
+// it returns an explicit non-nil error.
+func TerminateProcessGroup(pgid int) error {
+	if pgid <= 1 {
+		return nil
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
+			return nil
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	probe := syscall.Kill(-pgid, 0)
+	if errors.Is(probe, syscall.ESRCH) {
+		return nil
+	}
+	if probe == nil {
+		return errors.New("process group still active after SIGKILL termination")
+	}
+	return fmt.Errorf("process group cleanup unconfirmed: %w", probe)
 }

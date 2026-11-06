@@ -105,7 +105,7 @@ type SnapshotSource struct {
 	Version    int       `json:"version"`
 	Kind       string    `json:"kind"`
 	BodySHA256 string    `json:"body_sha256"`
-	ObservedAt time.Time `json:"observed_at"`
+	ObservedAt time.Time `json:"-"`
 	Body       string    `json:"body"`
 	Title      string    `json:"title,omitempty"`
 }
@@ -135,6 +135,7 @@ type Snapshot struct {
 	ExistingBlockers   []ExistingBlocker   `json:"existing_blockers,omitempty"`
 	CandidateArtifacts []CandidateArtifact `json:"candidate_artifacts,omitempty"`
 	SourceReferences   []SnapshotSource    `json:"source_references,omitempty"`
+	ObservedAt         time.Time           `json:"-"`
 }
 
 // ProgressPayload contains fields for annotate_progress.

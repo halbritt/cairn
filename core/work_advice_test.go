@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/internal/advice"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestWorkAdviceMigrationAndFeatureControl(t *testing.T) {
@@ -838,16 +840,16 @@ func TestWorkAdviceGuardedUndoConflict(t *testing.T) {
 		t.Fatalf("ApplyAdviceProposal failed: %v", err)
 	}
 
-	// 1. Proposal status externally changed to 'rejected' -> Undo fails with UNDO_CONFLICT
-	_, err := operatorStore.pool.Exec(ctx, `UPDATE cairn.work_advice_proposal SET status = 'rejected' WHERE proposal_uuid = $1`, propUUID)
+	// 1. Target annotation revision moved externally -> Undo fails with UNDO_CONFLICT
+	_, err := operatorStore.pool.Exec(ctx, `UPDATE cairn.work_annotation SET revision = revision + 1 WHERE body = 'progress test'`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = operatorStore.UndoAdviceApplication(ctx, applyReqUUID)
 	requireCode(t, err, "UNDO_CONFLICT")
 
-	// Restore proposal status to 'applied'
-	_, _ = operatorStore.pool.Exec(ctx, `UPDATE cairn.work_advice_proposal SET status = 'applied' WHERE proposal_uuid = $1`, propUUID)
+	// Restore target annotation revision
+	_, _ = operatorStore.pool.Exec(ctx, `UPDATE cairn.work_annotation SET revision = revision - 1 WHERE body = 'progress test'`)
 
 	// 2. Action status changed to 'undone' already -> Undo fails with UNDO_CONFLICT
 	_, err = operatorStore.pool.Exec(ctx, `UPDATE cairn.work_advice_action SET status = 'undone' WHERE action_uuid = $1`, actUUID)
@@ -1527,3 +1529,474 @@ func TestWorkAdvice_ArtifactLinkAndUndoRestore(t *testing.T) {
 		t.Errorf("expected link to be in removed state after undo, got count %d", linkCount)
 	}
 }
+
+func TestWorkAdvice_OpenStoreAfterFeatureActive(t *testing.T) {
+	s := restoreTestStore(t)
+	ctx := context.Background()
+	if err := s.SetAdviceFeature(ctx, "active"); err != nil {
+		t.Fatal(err)
+	}
+
+	var currentDB string
+	if err := s.pool.QueryRow(ctx, "SELECT current_database()").Scan(&currentDB); err != nil {
+		t.Fatal(err)
+	}
+
+	baseDSN := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	cfg, err := pgxpool.ParseConfig(baseDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=disable", cfg.ConnConfig.Host, cfg.ConnConfig.Port, currentDB)
+
+	freshStore, err := Open(ctx, dsn, Channel{Principal: "test-fresh-operator", Operator: true})
+	if err != nil {
+		t.Fatalf("Open failed after work-advice/1 activated: %v", err)
+	}
+	defer freshStore.Close()
+
+	active, err := freshStore.CheckAdviceFeature(ctx)
+	if err != nil {
+		t.Fatalf("CheckAdviceFeature failed on fresh store: %v", err)
+	}
+	if !active {
+		t.Error("expected work-advice/1 to be active on fresh store")
+	}
+}
+
+func TestWorkAdviceProfileRegistration(t *testing.T) {
+	s := restoreTestStore(t)
+	ctx := context.Background()
+
+	prof := &advice.Profile{
+		Name:                   "test-profile",
+		Route:                  advice.RouteCodexSubscription,
+		ExecutablePath:         "/usr/bin/codex",
+		BinarySHA256:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		ExpectedUpstreamCommit: advice.RequiredCodexUpstreamCommit,
+		ExpectedPatchSHA256:    "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+		CodexHome:              "/tmp/codex-home",
+		Model:                  "o3-mini",
+		TimeoutMs:              120000,
+		MaxOutputBytes:         65536,
+	}
+
+	// 1. Register new profile
+	if err := s.RegisterAdviceProfile(ctx, prof); err != nil {
+		t.Fatalf("RegisterAdviceProfile failed: %v", err)
+	}
+
+	// 2. Idempotent re-registration with identical fields succeeds
+	if err := s.RegisterAdviceProfile(ctx, prof); err != nil {
+		t.Fatalf("idempotent RegisterAdviceProfile failed: %v", err)
+	}
+
+	// 3. Differing fields return CONFLICT
+	conflicting := *prof
+	conflicting.Model = "gpt-4o"
+	err := s.RegisterAdviceProfile(ctx, &conflicting)
+	requireCode(t, err, "CONFLICT")
+
+	// 4. Get profile
+	got, err := s.GetAdviceProfile(ctx, "test-profile")
+	if err != nil {
+		t.Fatalf("GetAdviceProfile failed: %v", err)
+	}
+	if got.Name != prof.Name || got.Model != prof.Model || got.ExecutablePath != prof.ExecutablePath {
+		t.Errorf("GetAdviceProfile mismatch: %+v", got)
+	}
+
+	// 5. List profiles
+	profiles, err := s.ListAdviceProfiles(ctx)
+	if err != nil {
+		t.Fatalf("ListAdviceProfiles failed: %v", err)
+	}
+	if len(profiles) != 1 || profiles[0].Name != "test-profile" {
+		t.Errorf("ListAdviceProfiles unexpected: %+v", profiles)
+	}
+}
+
+type slowAdviceProvider struct {
+	delay time.Duration
+}
+
+func (s *slowAdviceProvider) Name() string { return "slow-provider" }
+func (s *slowAdviceProvider) VerifyCapabilities(ctx context.Context) (*advice.CodexCapabilities, error) {
+	return &advice.CodexCapabilities{
+		Schema:         advice.CodexAdviceCapabilitiesSchema,
+		RequestSchema:  advice.CodexAdviceRequestSchema,
+		ResultSchema:   advice.CodexAdviceResultSchema,
+		Provider:       "openai",
+		AuthMethod:     "chatgpt_subscription",
+		OneRequest:     true,
+		UpstreamCommit: advice.RequiredCodexUpstreamCommit,
+		PatchSHA256:    "0000000000000000000000000000000000000000000000000000000000000000",
+	}, nil
+}
+func (s *slowAdviceProvider) GenerateAdvice(ctx context.Context, snapshot *advice.Snapshot, deadline time.Duration, onLaunch func(advice.ProcessIdentity) error) (*advice.Proposal, *advice.ProcessResult, error) {
+	if onLaunch != nil {
+		_ = onLaunch(advice.ProcessIdentity{PID: 1000, PGID: 1000, StartTicks: 1000, BootID: "test-boot"})
+	}
+	time.Sleep(s.delay)
+	return &advice.Proposal{
+		Summary: "slow advice",
+		Actions: []advice.ProposedAction{
+			{ActionType: advice.ActionAnnotateProgress, Progress: &advice.ProgressPayload{Text: "slow progress"}},
+		},
+	}, &advice.ProcessResult{ExitCode: 0}, nil
+}
+
+func TestWorkAdvice_ProposalCaptureTimeExpiry(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	spec := AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+	}
+
+	slowProv := &slowAdviceProvider{delay: 150 * time.Millisecond}
+	job := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   uuid.New(),
+	}
+
+	before := time.Now().UTC()
+	prop, _, err := operatorStore.ExecuteAdviceJob(ctx, job, spec, slowProv)
+	if err != nil {
+		t.Fatalf("ExecuteAdviceJob failed: %v", err)
+	}
+
+	// Proposal expiry must be anchored to snapshot capture time (+1h), NOT completion (+1h)
+	expectedMaxExpiry := before.Add(1*time.Hour + 80*time.Millisecond)
+	if prop.ExpiresAt.After(expectedMaxExpiry) {
+		t.Fatalf("proposal.ExpiresAt (%v) was not anchored to snapshot capture (exceeds %v)", prop.ExpiresAt, expectedMaxExpiry)
+	}
+	if !prop.ExpiresAt.After(before.Add(59 * time.Minute)) {
+		t.Fatalf("proposal.ExpiresAt (%v) is unexpectedly before snapshot capture + 59m", prop.ExpiresAt)
+	}
+}
+
+func TestWorkAdvice_30DayRetentionAndTombstoneDedupe(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	spec := AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+	}
+
+	countedProv := &countedAdviceProvider{
+		proposal: &advice.Proposal{
+			Summary: "test advice",
+			Actions: []advice.ProposedAction{
+				{
+					ActionType: advice.ActionAnnotateProgress,
+					Progress:   &advice.ProgressPayload{Text: "test progress"},
+				},
+			},
+		},
+	}
+	reqUUID1 := uuid.New()
+	job1 := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   reqUUID1,
+	}
+	prop1, actions1, err := operatorStore.ExecuteAdviceJob(ctx, job1, spec, countedProv)
+	if err != nil {
+		t.Fatalf("ExecuteAdviceJob 1 failed: %v", err)
+	}
+	if countedProv.callCount.Load() != 1 {
+		t.Fatalf("expected 1 call, got %d", countedProv.callCount.Load())
+	}
+
+	applyReqUUID := uuid.New()
+	receipt := &WorkAdviceApplicationReceipt{
+		RequestUUID:  applyReqUUID,
+		ProposalUUID: prop1.ProposalUUID,
+	}
+	appliedReceipt, err := operatorStore.ApplyAdviceProposal(ctx, receipt, prop1.ReviewVersion, []uuid.UUID{actions1[0].ActionUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+
+	reqUUID2 := uuid.New()
+	job2 := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   reqUUID2,
+	}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, job2, spec, countedProv)
+	if err != nil {
+		t.Fatalf("ExecuteAdviceJob 2 failed: %v", err)
+	}
+	if countedProv.callCount.Load() != 2 {
+		t.Fatalf("expected 2 calls, got %d", countedProv.callCount.Load())
+	}
+
+	_, err = operatorStore.pool.Exec(ctx, `
+		UPDATE cairn.work_advice_job SET created_at = clock_timestamp() - interval '31 days';
+		UPDATE cairn.work_advice_proposal SET created_at = clock_timestamp() - interval '31 days';
+		UPDATE cairn.work_advice_action SET created_at = clock_timestamp() - interval '31 days';
+	`)
+	if err != nil {
+		t.Fatalf("failed to age rows: %v", err)
+	}
+
+	swept, err := operatorStore.SweepExpiredAdvice(ctx)
+	if err != nil {
+		t.Fatalf("SweepExpiredAdvice failed: %v", err)
+	}
+	if swept == 0 {
+		t.Fatalf("expected non-zero swept count, got 0")
+	}
+
+	var j2Exists bool
+	_ = operatorStore.pool.QueryRow(ctx, `SELECT true FROM cairn.work_advice_job WHERE job_uuid = $1`, job2.JobUUID).Scan(&j2Exists)
+	if j2Exists {
+		t.Fatalf("expected unapplied job %s to be deleted after 30d sweep", job2.JobUUID)
+	}
+
+	var j1Snapshot []byte
+	err = operatorStore.pool.QueryRow(ctx, `SELECT input_snapshot FROM cairn.work_advice_job WHERE job_uuid = $1`, job1.JobUUID).Scan(&j1Snapshot)
+	if err != nil {
+		t.Fatalf("expected applied job 1 to survive: %v", err)
+	}
+	if len(j1Snapshot) > 0 {
+		t.Fatalf("expected applied job 1 input_snapshot to be purged after 30d sweep")
+	}
+
+	retryJob2 := &WorkAdviceJob{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		RequestUUID:   reqUUID2,
+	}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, retryJob2, spec, countedProv)
+	if err == nil {
+		t.Fatalf("expected refusal when retrying 30d swept job, got nil")
+	}
+	if countedProv.callCount.Load() != 2 {
+		t.Fatalf("provider was re-invoked on 30d swept request! calls = %d, expected 2", countedProv.callCount.Load())
+	}
+
+	changedSpec := spec
+	changedSpec.CandidateRevisionIDs = []uuid.UUID{uuid.New()}
+	_, _, err = operatorStore.ExecuteAdviceJob(ctx, retryJob2, changedSpec, countedProv)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+	if countedProv.callCount.Load() != 2 {
+		t.Fatalf("provider was invoked on changed selection! calls = %d, expected 2", countedProv.callCount.Load())
+	}
+
+	if err := operatorStore.UndoAdviceApplication(ctx, appliedReceipt.RequestUUID); err != nil {
+		t.Fatalf("UndoAdviceApplication on post-30d applied receipt failed: %v", err)
+	}
+}
+
+func TestWorkAdvice_ArtifactLinkRationalePersistenceAndScrubbing(t *testing.T) {
+	ctx := context.Background()
+	operatorStore := testStore(t, Channel{Principal: "operator:test", Operator: true})
+
+	_ = operatorStore.SetAdviceFeature(ctx, "active")
+	_, _ = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_feature (feature_name, status, updated_at)
+		VALUES ('work-artifacts/1', 'active', clock_timestamp())
+		ON CONFLICT (feature_name) DO UPDATE SET status = 'active'
+	`)
+
+	bindingID := uuid.New()
+	planeItemUUID := uuid.New()
+	seedWorkAdviceTestEntities(t, ctx, operatorStore, bindingID, planeItemUUID)
+
+	// Create source record
+	source, err := operatorStore.Create(ctx, CreateRequest{
+		RequestID: uuid.NewString(),
+		Draft: Draft{
+			Kind:        "note",
+			Body:        "source text for link rationale test",
+			ClaimType:   "self",
+			Sensitivity: "shareable",
+			Scope:       Scope{Repo: "fixture:repo", TaskID: "*", RunID: "*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create artifact & revision in fixture:repo
+	artID := uuid.New()
+	revID := uuid.New()
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact (artifact_id, collection, kind, canonical_key, display_name)
+		VALUES ($1, 'fixture:repo', 'report', 'link-test-key', 'link-test-artifact')
+	`, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = operatorStore.pool.Exec(ctx, `
+		INSERT INTO cairn.work_artifact_revision (
+			revision_id, artifact_id, collection, revision_label, created_by
+		) VALUES (
+			$1, $2, 'fixture:repo', 'v1', 'operator:test'
+		)
+	`, revID, artID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	spec := AdviceInputSpec{
+		BindingID:     bindingID,
+		PlaneItemUUID: planeItemUUID,
+		SelectedSources: []SourceRefSpec{{
+			RecordID: uuid.MustParse(source.RecordID),
+			Version:  source.Version,
+		}},
+	}
+	_, manifest, err := operatorStore.BuildWorkAdviceSnapshot(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, _ := json.Marshal(manifest)
+
+	jobUUID := uuid.New()
+	reqUUID := uuid.New()
+	job := &WorkAdviceJob{
+		JobUUID:             jobUUID,
+		BindingID:           bindingID,
+		PlaneItemUUID:       planeItemUUID,
+		RequestUUID:         reqUUID,
+		Status:              "completed",
+		InputManifest:       manifestJSON,
+		InputManifestDigest: "test-manifest-digest",
+		InputPayloadDigest:  "test-payload-digest",
+		ExpiresAt:           time.Now().Add(1 * time.Hour),
+	}
+	if err := operatorStore.CreateAdviceJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	propUUID := uuid.New()
+	prop := &WorkAdviceProposal{
+		ProposalUUID:      propUUID,
+		JobUUID:           jobUUID,
+		BindingID:         bindingID,
+		PlaneItemUUID:     planeItemUUID,
+		ReviewVersion:     1,
+		Status:            "pending",
+		RawResult:         `{"actions":[]}`,
+		NormalizedPayload: json.RawMessage(`{"actions":[]}`),
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+	}
+	actUUID := uuid.New()
+	actPayload, _ := json.Marshal(advice.ArtifactPayload{
+		ArtifactRevisionID: revID.String(),
+		Role:               "evidence",
+	})
+	testRationale := "verified evidence rationale from model"
+	act := &WorkAdviceAction{
+		ActionUUID:    actUUID,
+		ProposalUUID:  propUUID,
+		ActionIndex:   0,
+		ActionType:    "link_artifact",
+		TargetPayload: actPayload,
+		Rationale:     testRationale,
+	}
+	if err := operatorStore.RecordAdviceProposal(ctx, prop, []*WorkAdviceAction{act}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Apply advice proposal
+	applyReqUUID := uuid.New()
+	receipt := &WorkAdviceApplicationReceipt{
+		RequestUUID:  applyReqUUID,
+		ProposalUUID: propUUID,
+	}
+	_, err = operatorStore.ApplyAdviceProposal(ctx, receipt, 1, []uuid.UUID{actUUID})
+	if err != nil {
+		t.Fatalf("ApplyAdviceProposal failed: %v", err)
+	}
+
+	// Verify rationale was persisted on work_artifact_link and work_artifact_link_history
+	var linkRationale, histRationale string
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT rationale FROM cairn.work_artifact_link
+		WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = $3
+	`, bindingID, planeItemUUID, revID).Scan(&linkRationale)
+	if err != nil {
+		t.Fatalf("failed to query work_artifact_link rationale: %v", err)
+	}
+	if linkRationale != testRationale {
+		t.Fatalf("expected link rationale %q, got %q", testRationale, linkRationale)
+	}
+
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT rationale FROM cairn.work_artifact_link_history
+		WHERE link_id = (SELECT link_id FROM cairn.work_artifact_link WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = $3)
+		  AND revision = 1
+	`, bindingID, planeItemUUID, revID).Scan(&histRationale)
+	if err != nil {
+		t.Fatalf("failed to query work_artifact_link_history rationale: %v", err)
+	}
+	if histRationale != testRationale {
+		t.Fatalf("expected history rationale %q, got %q", testRationale, histRationale)
+	}
+
+	// Now call Store.Forget on the source record
+	grant, err := operatorStore.Bootstrap(ctx, BootstrapRequest{
+		RequestID: uuid.NewString(),
+		Reason:    "test artifact rationale scrub on Forget",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := operatorStore.PreviewDeletion(ctx, source.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := operatorStore.Forget(ctx, ForgetRequest{
+		RequestID:       uuid.NewString(),
+		RecordID:        source.RecordID,
+		ExpectedVersion: source.Version,
+		GrantID:         grant.ID,
+		PreviewID:       preview.PreviewID,
+	}); err != nil {
+		t.Fatalf("Forget failed: %v", err)
+	}
+
+	// Verify Store.Forget scrubbed rationale on both work_artifact_link and work_artifact_link_history
+	var scrubbedLinkRat, scrubbedHistRat string
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT rationale FROM cairn.work_artifact_link
+		WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = $3
+	`, bindingID, planeItemUUID, revID).Scan(&scrubbedLinkRat)
+	if err != nil {
+		t.Fatalf("failed to query scrubbed work_artifact_link rationale: %v", err)
+	}
+	if scrubbedLinkRat != "[purged due to source deletion]" {
+		t.Fatalf("expected scrubbed link rationale %q, got %q", "[purged due to source deletion]", scrubbedLinkRat)
+	}
+
+	err = operatorStore.pool.QueryRow(ctx, `
+		SELECT rationale FROM cairn.work_artifact_link_history
+		WHERE link_id = (SELECT link_id FROM cairn.work_artifact_link WHERE binding_id = $1 AND plane_item_uuid = $2 AND revision_id = $3)
+		  AND revision = 1
+	`, bindingID, planeItemUUID, revID).Scan(&scrubbedHistRat)
+	if err != nil {
+		t.Fatalf("failed to query scrubbed work_artifact_link_history rationale: %v", err)
+	}
+	if scrubbedHistRat != "[purged due to source deletion]" {
+		t.Fatalf("expected scrubbed history rationale %q, got %q", "[purged due to source deletion]", scrubbedHistRat)
+	}
+}
+
