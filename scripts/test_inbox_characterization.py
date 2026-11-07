@@ -120,11 +120,12 @@ class InboxCharacterization(unittest.TestCase):
 
     def test_final_refusals_and_transport_uncertainty_keep_distinct_recovery_states(self):
         context = self.context()
-        cases = [(code, dict(ok=False, status=code)) for code in (
+        codes = (
             'STALE_LEASE', 'STALE_SESSION', 'HOLD_RELEASED', 'REQUEST_CANCELLED', 'DEADLINE_EXCEEDED',
             'IDEMPOTENCY_CONFLICT', 'INVALID_REQUEST', 'NOT_FOUND', 'AUTHORITY_DENIED',
-            'PAYLOAD_UNAVAILABLE', 'DESTINATION_PROHIBITED', 'STALE_RESOLUTION',
-            'API_CONNECTION_FAILED', 'FUTURE_REFUSAL')]
+            'PAYLOAD_UNAVAILABLE', 'DESTINATION_PROHIBITED', 'STALE_RESOLUTION')
+        self.assertEqual(set(codes), coord.INTENT_FINAL_REFUSALS)
+        cases = [(code, dict(ok=False, status=code)) for code in (*codes, 'API_CONNECTION_FAILED', 'FUTURE_REFUSAL')]
         cases.append(('non_json', dict(hang=True)))
         traces = []
         for name, reply in cases:
@@ -330,7 +331,9 @@ class InboxCharacterization(unittest.TestCase):
         wc = wake_fixture.coord
         wake.cc['cairn'] = str(self.cairn)
         wake.mc['cairn'] = str(self.cairn)
-        owner = wc.process_reference(os.getppid())
+        parent = os.getppid()
+        self.assertGreater(parent, 1, 'rejected-wake fixture requires a live parent PID >= 2')
+        owner = wc.process_reference(parent)
         wake.state['process'] = owner
         wake.state['idle_wake']['parent'] = owner
         current_wake = wake.state.pop('idle_wake')
@@ -439,6 +442,7 @@ class InboxCharacterization(unittest.TestCase):
     def compact_run(self, context, *arguments, launcher=None):
         env = dict(os.environ, CAIRN_INBOX_ROOT=str(self.root), CLAUDE_SESSION_ID='native-1')
         if launcher:
+            env['CAIRN_INBOX_ROOT'] = str(self.root / 'decoy-root')
             env['PATH'] = str(launcher.parent) + os.pathsep + env.get('PATH', '')
             command = ['cairn-inbox', *arguments, context['compact_handle']]
         else:
@@ -717,8 +721,26 @@ class InboxCharacterization(unittest.TestCase):
         self.assertIn('\u2028\u2029', run.stdout)
         self.assertIn('<>&', run.stdout)
         self.assertEqual(run.stdout, json.dumps(json.loads(run.stdout), ensure_ascii=False, separators=(',', ':')) + '\n')
-        self.golden('v5_recall_wake_stdout', dict(exit=run.returncode, stdout=run.stdout, stderr=run.stderr,
+        stdout = self.checked_recall_budget(run.stdout, wake.mc['context_bytes'])
+        self.golden('v5_recall_wake_stdout', dict(exit=run.returncode, stdout=stdout, stderr=run.stderr,
                     operations=[entry['operation'] for entry in self.log()]))
+
+    def checked_recall_budget(self, stdout, budget):
+        output = json.loads(stdout)
+        context = output['hookSpecificOutput']['additionalContext']
+        start = context.rindex('{"selected":')
+        view = json.loads(context[start:])
+        remaining = view['remaining_memory_bytes']
+        self.assertIs(type(remaining), int)
+        view['remaining_memory_bytes'] = budget
+        output['hookSpecificOutput']['additionalContext'] = context[:start] + json.dumps(
+            view, ensure_ascii=False, separators=(',', ':'))
+        provisional = json.dumps(output, ensure_ascii=False, separators=(',', ':')) + '\n'
+        self.assertEqual(remaining, budget - len(provisional.encode('utf-8')))
+        view['remaining_memory_bytes'] = '$CHECKED_REMAINING_MEMORY_BYTES'
+        output['hookSpecificOutput']['additionalContext'] = context[:start] + json.dumps(
+            view, ensure_ascii=False, separators=(',', ':'))
+        return json.dumps(output, ensure_ascii=False, separators=(',', ':')) + '\n'
 
     def test_v5_finish_reply_materialized_identity_conflict_uses_exit_seven(self):
         context = self.context()
@@ -798,6 +820,98 @@ class InboxCharacterization(unittest.TestCase):
                 outcomes.append(dict(scope=scope, settled=settled, journal_index=list(self.state['inbox_journals'])))
         self.assertTrue(all(entry == self.log()[0] for entry in self.log()))
         self.golden('v5_flush_scopes', dict(outcomes=outcomes, api_sends=len(self.log()), request=self.log()[0]))
+
+    def test_v6_busy_journal_is_unsettled_and_retained_for_both_flush_scopes(self):
+        context = self.context()
+        target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+        coord.write_state(target, dict(schema='cairn.inbox-intent/1', attempt_id=fixture.ATTEMPT,
+            completion=dict(kind='complete', status='pending', request_id=REQUEST_IDS['completion'],
+                            argv=context['commands']['complete'], input='Selected result')))
+        traces = []
+        with target.with_suffix('.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for scope in ('attempt', 'all'):
+                settled = coord.flush_inbox_intents(self.config, self.state, scope)
+                traces.append(dict(scope=scope, settled=settled, inbox_journals=list(self.state['inbox_journals']),
+                                   api_sends=len(self.log())))
+        self.golden('v6_busy_flush_scopes', traces)
+
+    def test_v6_finish_reply_pins_completion_priority_refused_publish_and_inline_conflict(self):
+        context = self.context()
+        traces = []
+        for name, completion, publication in (
+                ('completion_refused', dict(ok=False, status='STALE_LEASE'), fixture.REPLIED),
+                ('completion_lost', fixture.LOST, fixture.REPLIED),
+                ('publication_refused', fixture.HANDLED, dict(ok=False, status='DESTINATION_PROHIBITED')),
+                ('changed_input', fixture.HANDLED, fixture.REPLIED)):
+            self.reset_journal()
+            self.replies({'complete': [completion], 'publish': [publication]})
+            run = self.run_context(context['finish_reply'], 'Selected result')
+            if name == 'changed_input':
+                (self.root / 'log.jsonl').unlink()
+                run = self.run_context(context['finish_reply'], 'Changed result')
+            journal = self.journal()
+            traces.append(dict(case=name, exit=run.returncode, output=json.loads(run.stdout),
+                completion_status=journal['completion']['status'], response_status=journal.get('response', {}).get('status'),
+                response_present='response' in journal, operations=[entry['operation'] for entry in self.log()]))
+        self.golden('v6_finish_reply_priority', traces)
+
+    def legacy_reader_refusal(self, name):
+        wake = self.activation_fixture()
+        target = coord.intent_path(wake.cc['state_dir'], fixture.ATTEMPT)
+        target.parent.mkdir()
+        if name == 'directory':
+            target.mkdir()
+        elif name == 'extension':
+            coord.write_state(target, dict(attempt_id=fixture.ATTEMPT, extension=True,
+                session=dict(agent_id=wake.state['agent']['agent_id'])))
+        else:
+            target.write_text('{' if name == 'malformed' else '[]')
+        manifest = json.loads(wake.binding.read_text())
+        manifest['enabled'] = 'malformed activation state'
+        coord.write_state(wake.binding, manifest)
+        (self.root / 'log.jsonl').unlink(missing_ok=True)
+        self.replies({})
+        run = subprocess.run([sys.executable, str(fixture.SCRIPT), 'hook', '--config',
+                              str(wake.root / 'coordination.json')], input=json.dumps(wake.event),
+                             capture_output=True, text=True, timeout=30)
+        state = json.loads(wake.path.read_text())
+        receipt = wake.path.parent / 'wake-refusals' / (state['wake_rejection'] + '.json')
+        self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(hashlib.sha256(json.dumps(json.loads(receipt.read_text()), sort_keys=True,
+            separators=(',', ':')).encode()).hexdigest(), state['wake_rejection'])
+        return dict(case=name, exit=run.returncode, stdout=run.stdout, wake_retained='idle_wake' in state,
+            receipt_retained=receipt.exists(), wake_rejection_retained=bool(state.get('wake_rejection')),
+            diagnostics=[line for line in run.stderr.splitlines() if line.startswith('Cairn coordination')],
+            error=run.stderr.splitlines()[-1], traceback='Traceback' in run.stderr,
+            operations=[entry['operation'] for entry in self.log()])
+
+    def test_v6_legacy_and_compact_readers_pin_oserror_nonobject_and_extension_cells(self):
+        legacy = [self.legacy_reader_refusal(name) for name in ('malformed', 'directory', 'non_object', 'extension')]
+        with patch.object(coord.os, 'urandom', return_value=b'\x06' * 8):
+            context, _ = self.compact_context('notice', 'Selected source.')
+        replies = json.loads((self.root / 'replies.json').read_text())
+        replies['event-renew'] = [dict(ok=False, status='STALE_LEASE')]
+        target = coord.intent_path(self.config['state_dir'], fixture.ATTEMPT)
+        target.parent.mkdir(exist_ok=True)
+        target.mkdir()
+        self.replies(replies)
+        directory = self.compact_run(context, 'settle', 'handled')
+        target.rmdir()
+        self.replies(json.loads((self.root / 'replies.json').read_text()) | {
+            'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])]})
+        first = self.compact_run(context, 'settle', 'handled')
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        journal = self.journal()
+        journal['extension'] = True
+        coord.write_state(target, journal)
+        (self.root / 'log.jsonl').unlink()
+        self.replies(replies)
+        extended = self.compact_run(context, 'settle', 'handled')
+        self.golden('v6_reader_remaining_cells', dict(legacy=legacy,
+            compact_directory=dict(exit=directory.returncode, output=json.loads(directory.stdout)),
+            compact_extension=dict(exit=extended.returncode, output=json.loads(extended.stdout),
+                                   operations=[entry['operation'] for entry in self.log()])))
 
 
 if __name__ == '__main__':
