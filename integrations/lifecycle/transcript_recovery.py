@@ -35,6 +35,7 @@ NATIVE_HOOK_TIMEOUT_SECONDS = 15
 CODEX_ENDED_TURN_REGION_LIMIT = 8 * 1024 * 1024
 CODEX_ENDED_TURN_TAIL_LIMIT = 64 * 1024 * 1024
 CODEX_ERROR_SCAN_LIMIT = 8 * 1024 * 1024
+CODEX_REFUSAL_SCAN_SECONDS = 1.0
 UUID_TEXT = r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}'
 CODEX_QUEUE_OUTCOMES = ('admitted_active', 'completed', 'cancelled', 'never_admitted', 'unknown')
 
@@ -609,38 +610,58 @@ def codex_queue_rollout_proof(config, state, wake, locators, *, coord=None):
 
 
 def find_codex_refusal_locators(config, state, turn, *, coord=None):
-    """Locate the three contiguous rollout records of an empty refused Codex queue turn."""
+    """Scan the captured snapshot with bounded buffers; a tail cannot exclude earlier matches."""
+    deadline = time.monotonic() + CODEX_REFUSAL_SCAN_SECONDS
     rollout_fn = getattr(coord, 'codex_rollout_path', None)
     path = rollout_fn(config, state) if rollout_fn is not None else codex_rollout_path(config, state, coord=coord)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 16 * 1024 * 1024:
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
             return None
-        content = os.pread(fd, info.st_size, 0) if info.st_size else b''
+        def identity(item):
+            return (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+
+        matches = []
+        offset = line_number = 0
+        skipping = False
+        with os.fdopen(fd, 'rb', closefd=False) as source:
+            while offset < info.st_size:
+                if time.monotonic() >= deadline:
+                    return None
+                start = offset
+                raw = source.readline(min(NATIVE_RECORD_LIMIT + 1, info.st_size - offset))
+                if not raw:
+                    return None
+                offset += len(raw)
+                complete = raw.endswith(b'\n')
+                # Discard an oversized physical line in bounded pieces, as the
+                # old finder skipped oversized records. Never parse its suffix.
+                if skipping or len(raw) > NATIVE_RECORD_LIMIT:
+                    skipping = not complete
+                    if complete:
+                        line_number += 1
+                    continue
+                if not complete:
+                    return None
+                try:
+                    parsed = json.loads(raw.decode('utf-8'))
+                except (UnicodeDecodeError, ValueError, RecursionError):
+                    parsed = None
+                payload = parsed.get('payload') if isinstance(parsed, dict) else None
+                if isinstance(payload, dict) and (payload.get('turn_id') == turn or payload.get('root_turn_id') == turn):
+                    if len(matches) == 3 or (matches and line_number != matches[-1][0] + 1):
+                        return None
+                    matches.append((line_number, dict(offset=start, length=len(raw), sha256=hashlib.sha256(raw).hexdigest())))
+                line_number += 1
+        if skipping or time.monotonic() >= deadline or identity(os.fstat(fd)) != identity(info):
+            return None
+        rechecked = rollout_fn(config, state) if rollout_fn is not None else codex_rollout_path(config, state, coord=coord)
+        if rechecked != path or identity(path.stat()) != identity(info) or time.monotonic() >= deadline:
+            return None
+        return [locator for _, locator in matches] if len(matches) == 3 else None
     finally:
         os.close(fd)
-    entries = []
-    turn_indices = []
-    offset = 0
-    for raw in content.splitlines(keepends=True):
-        length = len(raw)
-        item = None
-        if raw.endswith(b'\n') and length <= NATIVE_RECORD_LIMIT:
-            try:
-                parsed = json.loads(raw.decode('utf-8'))
-            except (UnicodeDecodeError, ValueError):
-                parsed = None
-            if isinstance(parsed, dict):
-                item = (dict(offset=offset, length=length, sha256=hashlib.sha256(raw).hexdigest()), parsed)
-                payload = parsed.get('payload')
-                if isinstance(payload, dict) and (payload.get('turn_id') == turn or payload.get('root_turn_id') == turn):
-                    turn_indices.append(len(entries))
-        entries.append(item)
-        offset += length
-    if len(turn_indices) != 3 or turn_indices != [turn_indices[0], turn_indices[0] + 1, turn_indices[0] + 2]:
-        return None
-    return [entries[i][0] for i in turn_indices]
 
 
 def auto_settle_codex_refused_wake(config, state, path, *, coord=None):

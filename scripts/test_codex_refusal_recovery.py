@@ -3,6 +3,7 @@ import hashlib
 import contextlib
 import io
 import json
+import os
 import sys
 import unittest
 from datetime import datetime
@@ -70,6 +71,26 @@ class CodexBase(Base):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.ops, [])
 
+    def prepend_history(self, minimum_bytes, *, leading=b'', trailing=b''):
+        history = b'{"type":"fixture_metadata","payload":{"padding":"' + b'x' * 4096 + b'"}}\n'
+        count = minimum_bytes // len(history) + 1
+        records = self.rollout.read_bytes()
+        with self.rollout.open('wb') as output:
+            output.write(leading)
+            for _ in range(count):
+                output.write(history)
+            output.write(records)
+            output.write(trailing)
+        for locator in self.locators:
+            locator['offset'] += len(leading) + count * len(history)
+
+    def assert_watcher_keeps_hold(self):
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'held')
+        self.assertEqual(self.load()['inbox_attempt']['attempt_id'], ATTEMPT)
+        self.assertNotIn('turn_ended', [r['reason'] for r in self.reconciles()])
+
     def recover(self, check_only=False):
         with self.patched(), patch.object(coord, 'process_alive', return_value=True):
             return coord.recover_codex_refused_wake(self.cc, SESSION, ATTEMPT, self.locators,
@@ -77,6 +98,142 @@ class CodexBase(Base):
 
 
 class CodexRecoveryTests(CodexBase):
+    def test_watcher_settles_refusal_after_large_rollout_history(self):
+        self.prepend_history(17 * 1024 * 1024)
+        self.assertGreater(self.rollout.stat().st_size, 16 * 1024 * 1024)
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True), \
+                patch.object(coord._transcript_recovery.time, 'monotonic', return_value=0):
+            observation = coord.held_attempt_refusal_observation(self.cc, self.load())
+            self.assertEqual(observation['evidence_state'], 'codex_rollout_ready')
+            coord.watch_inbox(self.cc, self.load(), self.path)
+        saved = self.load()
+        self.assertEqual(saved['wake_refusal_diagnostic']['native_record']['records'], self.locators)
+        self.assertEqual([(r['attempt_id'], r['reason']) for r in self.reconciles()], [(ATTEMPT, 'turn_ended')])
+        self.assertNotIn('inbox_attempt', saved)
+        self.assertNotIn('inbox_intent', saved)
+
+    def test_discovery_covers_history_beyond_64mib(self):
+        self.prepend_history(65 * 1024 * 1024)
+        self.assertGreater(self.rollout.stat().st_size, 64 * 1024 * 1024)
+        # A virtual clock keeps this coverage independent of host load. Expiry
+        # is tested separately; proof and filesystem checks still run normally.
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True), \
+                patch.object(coord._transcript_recovery.time, 'monotonic', return_value=0):
+            observation = coord.held_attempt_refusal_observation(self.cc, self.load())
+        self.assertEqual(observation['evidence_state'], 'codex_rollout_ready')
+        self.assertEqual(self.ops, [])
+
+    def test_duplicate_matching_record_anywhere_in_large_history_keeps_hold(self):
+        duplicate = json.dumps(self.records[0]).encode() + b'\n'
+        for placement in ('before', 'after'):
+            with self.subTest(placement=placement):
+                self.write_records()
+                self.prepend_history(17 * 1024 * 1024,
+                    leading=duplicate if placement == 'before' else b'',
+                    trailing=duplicate if placement == 'after' else b'')
+                self.ops.clear()
+                self.assert_watcher_keeps_hold()
+
+    def test_unrelated_malformed_and_oversized_lines_do_not_hide_valid_proof(self):
+        records = self.rollout.read_bytes()
+        # The final fragment looks like a matching record, but belongs to one
+        # oversized physical line and must never be parsed as a fresh suffix.
+        ignored = b'not-json\n\xff\n' + b'x' * (2 * 65537) + json.dumps(self.records[0]).encode() + b'\n'
+        self.rollout.write_bytes(ignored + records)
+        for locator in self.locators:
+            locator['offset'] += len(ignored)
+        self.assertEqual(self.recover(check_only=True)['status'], 'eligible')
+        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+            self.assertEqual(coord.held_attempt_refusal_observation(self.cc, self.load())['evidence_state'],
+                             'codex_rollout_ready')
+
+    def test_partial_or_invalid_candidate_records_keep_hold(self):
+        rows = [json.dumps(record).encode() + b'\n' for record in self.records]
+        variants = {
+            'partial_eof': b''.join(rows)[:-1],
+            'partial_history_tail': b''.join(rows) + b'{"type":',
+            'oversized_partial_tail': b''.join(rows) + b'x' * 70000,
+            'invalid_context': rows[0] + b'not-json\n' + rows[2],
+            'invalid_utf8_context': rows[0] + b'\xff\n' + rows[2],
+            'noncontiguous': rows[0] + b'not-json\n' + b''.join(rows[1:]),
+        }
+        for name, contents in variants.items():
+            with self.subTest(case=name):
+                self.rollout.write_bytes(contents)
+                self.ops.clear()
+                self.assert_watcher_keeps_hold()
+
+    def test_candidate_record_size_boundary(self):
+        for length in (65536, 65537):
+            with self.subTest(length=length):
+                self.records[1]['payload']['padding'] = ''
+                empty = len(json.dumps(self.records[1]).encode()) + 1
+                self.records[1]['payload']['padding'] = 'x' * (length - empty)
+                self.write_records()
+                self.assertEqual(self.locators[1]['length'], length)
+                with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+                    observation = coord.held_attempt_refusal_observation(self.cc, self.load())
+                self.assertEqual(observation['evidence_state'],
+                    'codex_rollout_ready' if length == 65536 else 'awaiting_codex_turn_end')
+                self.assertEqual(self.ops, [])
+
+    def test_discovery_deadline_exhaustion_keeps_hold(self):
+        with patch.object(coord._transcript_recovery.time, 'monotonic', side_effect=[0, 2]):
+            with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+                observation = coord.held_attempt_refusal_observation(self.cc, self.load())
+        self.assertEqual(observation['evidence_state'], 'awaiting_codex_turn_end')
+        self.assertEqual(self.ops, [])
+        self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'held')
+
+    def test_large_valid_proof_does_not_override_a_grant(self):
+        self.prepend_history(17 * 1024 * 1024)
+        self.write_grant(attempt_id=ATTEMPT)
+        self.assert_watcher_keeps_hold()
+
+    def test_rollout_changed_during_discovery_keeps_hold(self):
+        original_fdopen = os.fdopen
+        for change in ('append', 'truncate', 'rewrite', 'replace'):
+            with self.subTest(change=change):
+                self.rollout_handle.close()
+                self.write_records()
+                self.rollout_handle = self.rollout.open('rb')
+                self.addCleanup(self.rollout_handle.close)
+                inode = self.rollout.stat().st_ino
+                changed = False
+
+                class Reader:
+                    def __init__(reader, source):
+                        reader.source = source
+
+                    def readline(reader, limit):
+                        nonlocal changed
+                        raw = reader.source.readline(limit)
+                        if not changed:
+                            changed = True
+                            if change == 'append':
+                                with self.rollout.open('ab') as output:
+                                    output.write(b'{}\n')
+                            elif change == 'truncate':
+                                self.rollout.write_bytes(b'')
+                            elif change == 'rewrite':
+                                with self.rollout.open('r+b') as output:
+                                    output.write(b' ')
+                            else:
+                                replacement = self.rollout.with_suffix('.replacement')
+                                replacement.write_bytes(self.rollout.read_bytes())
+                                replacement.replace(self.rollout)
+                        return raw
+
+                @contextlib.contextmanager
+                def mutating_reader(fd, *args, **kwargs):
+                    with original_fdopen(fd, *args, **kwargs) as source:
+                        yield Reader(source) if os.fstat(fd).st_ino == inode else source
+
+                with patch.object(os, 'fdopen', side_effect=mutating_reader):
+                    self.ops.clear()
+                    self.assert_watcher_keeps_hold()
+                self.assertTrue(changed)
+
     def test_check_only_validates_live_open_rollout_without_mutation(self):
         before = self.path.read_bytes()
         result = self.recover(check_only=True)

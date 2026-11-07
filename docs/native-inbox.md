@@ -464,6 +464,25 @@ handled or automatically replayed. Store failure retains the ended-turn proof fo
 reconciliation retry. This command is explicit recovery, not an automatic Codex refusal detector.
 Post-claim diagnostics retain allowlisted cause codes and reasons when available, never raw error text.
 
+Automatic discovery of those three locators scans the live owner's whole captured
+rollout snapshot, including histories larger than 16 or 64 MiB. It retains only
+three matching locators and reads at most 65537 bytes at a time. Proof records
+must fit the existing 65536-byte record limit; unrelated malformed or oversized
+physical lines are skipped, with oversized lines discarded in bounded pieces.
+Exactly three matching parseable, bounded records must be adjacent across the
+whole snapshot: a duplicate earlier in the history also prevents recovery.
+This is uniqueness among eligible records, not a guarantee about arbitrary
+oversized or undecodable data.
+
+Discovery has a one-second cooperative monotonic budget and no whole-file size
+ceiling. Deadline exhaustion, a partial final line, changed size/timestamps/inode
+or owner, or incomplete proof leaves the result unknown and preserves the hold.
+The existing `active_or_unproven`/`awaiting_codex_turn_end` diagnostic includes
+that unknown outcome; it does not prove the native turn is still active. Checks
+between bounded reads/parses do not interrupt a stalled filesystem operation or
+promise a hard one-second wall-clock limit. Exact-record proof, grant, tools,
+journal and no-replay settlement checks still apply after discovery.
+
 A Codex queue turn can also end on a provider error after it received inbox context. For example,
 `task_complete` can carry `error.codex_error_info: usage_limit_exceeded` with no last agent message.
 Such a turn runs no `Stop` hook. The process stays alive and the watcher keeps renewing the lease, so
