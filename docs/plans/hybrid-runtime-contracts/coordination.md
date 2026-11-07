@@ -1,10 +1,14 @@
-# Coordination contracts: coordination/v6
+# Coordination contracts: coordination/v7
 
 Status: acceptance criteria and source characterization for the authorized hybrid
 runtime consolidation campaign (`CAIRN-301`), prepared against baseline commit
 `db45c4474fa7911b5569f2f55ebf2bd19c9a81bb` (`shared/1`, consumer ownership updated at `4b912bb2`, `8f7357b1`/`88b77474`, and `cca6fb78`) and reconciled with
 `foundation/v4` ([`foundation.md`](foundation.md) `8b768649`, [`f04-consumer-decision.md`](f04-consumer-decision.md) `32ca633` + `cca6fb78`)
-and `release/2` ([`release.md`](release.md) `aa0c26f` / `891acd75`, plus `C1`–`C3` compatibility receipt closure) on 2026-11-06. These
+and `release/2` ([`release.md`](release.md) `aa0c26f` / `891acd75`, plus `C1`–`C3` compatibility receipt closure) on 2026-11-06. Revision
+`coordination/v7` is a bounded source-preserving docs-only erratum over `coordination/v6`
+(`c9a1908bacac65806f233d040bd0656c8b43f97e`, blob `e9e81fc2`, per overall instruction `987eadf4` v1)
+correcting the nonexistent `10s` `INTENT_LOCK_TIMEOUT` prose against frozen `coordination.py`
+(`92716c54`) without altering runtime scope, `X-01` agreements, or acceptance gates. These
 contracts specify behavior to characterize, implement, and verify. They do **not**
 claim that `internal/lifecycle/journal`, `internal/lifecycle/wake`,
 `internal/lifecycle/transcript`, `internal/lifecycle/coordination`, or the
@@ -28,7 +32,7 @@ The [implementation plan](../hybrid-runtime-implementation.md) and shared
   error-family mappings and transferring **zero** command grammar, claim, journal,
   native-session, or watcher/recovery transition ownership); **Coordination defers
   overlapping Python frontend and `J-05` rewrites until `F-04`'s reviewed caller
-  change lands**. Coordination owns this contract (`coordination/v6`) and separate
+  change lands**. Coordination owns this contract (`coordination/v7`) and separate
   `internal/lifecycle/{journal,wake,transcript,coordination}` packages, wiring CLI
   subcommands in a serialized shared-file slot after `F-01`.
 - New Go implementation consuming shared contracts (`J-02` through `J-06`) waits
@@ -218,8 +222,13 @@ multi-binding watcher entrypoint:
      `--config != selected --config`, refuse direct snapshot-member/alias path execution
      before any adjacent loader or local import, perform **no** hook activation re-entry
      or hook-admission bypass, and impose **no** hook timeout on `inbox`/`drain`/`compact`
-     modes (preserving existing `30s` CLI, `10s` `INTENT_LOCK_TIMEOUT`, `4s` API `call()`,
-     and `90s`/`900s` lease deadlines). Existing immutable `/2` copies, bare `PATH`
+     modes (preserving explicit `inbox_command` `30s` `intent_lock(target, 30)` wait and
+     `30s` `send_intent(..., 30)` timeout at `lines 2067, 2093, 2098, 2128` vs
+     watcher/hook `flush_journal` `0s` `intent_lock(target, 0)` try-lock and `10s`
+     `send_intent(..., 10)` timeout under `session_lock` at `lines 2365, 2372, 2381`;
+     default `4s` API `call(..., timeout=4)` timeout at `line 1502` plus explicit
+     caller/outer deadlines; and `90s`/`900s` lease deadlines at `native_session.py:37`
+     and `lines 2251, 4284, 4305`). Existing immutable `/2` copies, bare `PATH`
      `cairn-inbox` launchers, `cairn.compact-inbox-handle/1` handles, and already-issued
      `/2` argv remain untouched and executable until qualified retirement (`R-08`).
 3. **Offline Recovery & Inspection Subcommands (`J-06`, excluded from `V`/`L`):**
@@ -744,7 +753,7 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
 
 | Fixture family | Reference source & tests | Required positive, negative, and crash cases |
 | --- | --- | --- |
-| `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes, `C3`/`C1` `CompatibilityPreflightError` exit `1` with zero journal/lock/lease/refusal-record/API effects across `hook`, `inbox --context`, `inbox drain`, and `inbox compact` vs `NATIVE_PROMPT_REFUSED` exit `2`, plus joined Claude channel wake preflight exit `1` leaving no claim, pending delivery, and explicit wake custody state); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `/2` bare `cairn-inbox` launcher + `C1` `L`/`V` shell-executed compact `read\|inspect\|settle\|advance` (including non-default root with `CAIRN_INBOX_ROOT` unset succeeding via `V`'s `--config` grandparent, mismatched `CAIRN_INBOX_ROOT` / wrong-config / post-validation config-swap refusing before `load_config`/effects, out-of-tree caller and in-tree mismatched `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID` refusing with `NOT_THIS_SESSION` exit `7` before effects, `inspect` lease renewal, and `advance` `next`-cue rendering) + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, direct `cairn renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real `30s`/`10s` inbox deadlines (no hook timeout imposed on `inbox` modes) |
+| `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes, `C3`/`C1` `CompatibilityPreflightError` exit `1` with zero journal/lock/lease/refusal-record/API effects across `hook`, `inbox --context`, `inbox drain`, and `inbox compact` vs `NATIVE_PROMPT_REFUSED` exit `2`, plus joined Claude channel wake preflight exit `1` leaving no claim, pending delivery, and explicit wake custody state); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `/2` bare `cairn-inbox` launcher + `C1` `L`/`V` shell-executed compact `read\|inspect\|settle\|advance` (including non-default root with `CAIRN_INBOX_ROOT` unset succeeding via `V`'s `--config` grandparent, mismatched `CAIRN_INBOX_ROOT` / wrong-config / post-validation config-swap refusing before `load_config`/effects, out-of-tree caller and in-tree mismatched `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID` refusing with `NOT_THIS_SESSION` exit `7` before effects, `inspect` lease renewal, and `advance` `next`-cue rendering) + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, direct `cairn renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real explicit `30s` lock/`30s` send vs watcher `0s` lock/`10s` send deadlines (no hook timeout imposed on `inbox` modes) |
 | `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3183-3198, 3722-3827`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
 | `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
 | `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4088-4511` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
@@ -801,7 +810,7 @@ Required local validation before any Coordination slice is marked `Done`:
      CLI/refusal rules), and integrated together (no unused helper-only `main` commit).
 2. **Foundation `F-01` & `F-04` agreements (`agent-1267`, [`foundation.md`](foundation.md) `foundation/v4` `8b768649`, sources `89e8c1d6` v1 + `5d50aa56` v1):**
    Coordination sent explicit Cairn agreements (`deb6c59a`, `e7977c58`, `14f74fd1`,
-   `9639d71b` v1, plus this `coordination/v6` consumer-boundary closure) covering: `F-04`
+   `9639d71b` v1, plus the `coordination/v6` consumer-boundary closure `e9e81fc2`, carried forward unchanged in `coordination/v7`) covering: `F-04`
    real activation/shared-state caller preceding `F-02`/`F-03` and `J-02` (no `J-05`
    dependency); `J-05` delivering native-session orchestration together with the
    compiled `session.JournalBoundary` and `journal.SessionJournalAdapter` (`HC-04`
