@@ -1,11 +1,12 @@
 # Hybrid runtime shared contracts
 
-Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/3`,
-accepting the downstream `semantic/4` and `release/4` criteria pair on
-2026-11-06. The earlier `shared/2` acceptance closed X-01 for setup on that
-date. The overall lead owns this index. Domain leads own their area documents
-and independent reviewers assess the criteria against source before new
-implementation consumes them.
+Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/4`,
+recording the `coordination/v7` deadline documentation correction on 2026-11-06.
+The earlier `shared/3` accepted the downstream `semantic/4` and `release/4`
+criteria pair; `shared/2` closed X-01 for setup on the same date. The overall
+lead owns this index. Domain leads own their area documents and independent
+reviewers assess the criteria against source before new implementation
+consumes them.
 
 X-01 is **closed for specification and coordination setup**. The overall lead
 has reconciled the reviewed area contracts, consumer agreements and dependency
@@ -131,9 +132,24 @@ cross-team deltas and consumer agreements are closed for specification scope.
 | Area | Accepted revision and landed commit | Consumer agreement |
 | --- | --- | --- |
 | Foundation | `foundation/v4`, `8b7686496e78224cfedbccdde4ffde34c0f900c0` | Release/Coordination mirror the short launcher, full issued-command scope and sequenced caller slot; Foundation accepted the complete final Release delta. |
-| Coordination | `coordination/v6`, `c9a1908bacac65806f233d040bd0656c8b43f97e` | Both independent reviewers accepted the compact/L delta, selected-config root, caller/thread custody and source error policy; Release found no conflict. |
+| Coordination | `coordination/v7`, `98a5efefaa8181cae5b9423096befb9ed1d955ca` | J-R1 `38677b6b-d500-485e-abf1-07d1b1ab38a5` v1 and J-R2 `c7acc0aa-8d6a-4498-8b55-864c9a36c960` v1 passed the deadline documentation correction; v6's consumer boundaries remain unchanged. |
 | Semantic | `semantic/4`, `8d4d42b226110f50ec1ac48e56ba021d6a00ea46` | S-R1 `1189989e-fd48-4d75-b7ed-c20222fa509e` v1 and R-R1 `eab98590-d76e-4ca6-a4c3-90f33abf87b4` v1 accept the exact criteria. Release's consumer agreement is `f2f75fbc-12e6-46df-ba98-ff91147cf32e` v1. |
 | Release | `release/4`, `4137d2c95d2964e4d48852620606ffce721626a7` | R-R1 `686e3997-6ace-4eb6-b059-c1211ea93b48` v1 accepts the paired criteria. Semantic's consumer agreement is `f1e9923e-acd1-4762-ad83-432d8ba3dce3` v1. |
+
+The reviewed Coordination candidate `24aa8ef5f09734cbac4350c62f1266abeb2c78c9`
+landed with blob `411ab0c30966a645eb4b0922dd93331bf389fec1` unchanged.
+It records the existing explicit inbox CLI's 30-second lock wait and
+30-second send timeout, and watcher/hook flushing's zero-second lock attempt and
+10-second send timeout. The production `coordination.py` SHA-256 remains
+`92716c54be54a9f2e0fbe4dbd5edc77aecb02d6f7da3422708828376e63b0116`.
+This documentation correction changes no runtime policy, F-01/F-04 consumer
+boundary or release gate and establishes no implementation acceptance.
+
+For Coordination history, `coordination/v6` landed at
+`c9a1908bacac65806f233d040bd0656c8b43f97e`. Both independent reviewers accepted
+its compact/L delta, selected-config root, caller/thread custody and source
+error policy; Release found no conflict. Those agreements carry forward
+unchanged in v7.
 
 The accepted Semantic candidate `49b4652c83d2b8a6e5761230db3273ed75063ef4`
 and Release candidate `564a53216e9f3b78849910d1d1703e4b1eefc93e` landed with
