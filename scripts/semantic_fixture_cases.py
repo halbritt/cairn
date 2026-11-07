@@ -1,4 +1,4 @@
-"""Public synthetic inputs for semantic/3; importing this module loads no model."""
+"""Public synthetic inputs for semantic/4; importing this module loads no model."""
 
 import copy
 import hashlib
@@ -22,7 +22,7 @@ def ranking_cases():
     path = Path(__file__).resolve().parents[1] / 'core/testdata/retrieval-quality.json'
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != WORKLOAD_SHA256:
-        raise ValueError('retrieval workload differs from the frozen semantic/3 inputs')
+        raise ValueError('retrieval workload differs from the frozen semantic/4 inputs')
     workload = json.loads(raw)
     notes = [_note(note['id'], note['body']) for note in workload['notes']]
     cases = [{'id': query['id'], 'query': query['query'], 'notes': copy.deepcopy(notes)}
@@ -41,7 +41,7 @@ def _embedding(identifier, operation, text, expected='accepted'):
 
 
 def embedding_cases():
-    """Return the nine positive queries and six positive documents from semantic/3."""
+    """Return the nine positive queries and six positive documents from semantic/4."""
     return [
         _embedding('query-ascii', 'query', 'database storage'),
         _embedding('query-cjk', 'query', '漢' * 1365),
@@ -77,10 +77,10 @@ def embedding_failure_cases():
 
 def consumed_punctuation_case():
     """Import-only input: the single longer oracle is consumed and unqualified."""
-    # Separate import-only legacy observation, outside the accepted/refused
-    # executable-case schema and never included in either embedding inventory.
+    # Observations, not an expected outcome under the unmeasured Go supervisor.
     return {'id': 'document-maximum-punctuation', 'operation': 'document',
-            'text': '!' * 65536, 'expected_disposition': 'timeout'}
+            'text': '!' * 65536, 'observed_direct_supervisor_disposition': 'timeout',
+            'real_go_disposition': 'unmeasured'}
 
 
 def wordpiece_boundary_case(tokenizer):

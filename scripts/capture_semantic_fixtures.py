@@ -23,6 +23,7 @@ import struct
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 from pathlib import Path
 
@@ -45,6 +46,11 @@ REVIEWER_RAW_BASELINE = {
     'ids_i64le': '1762a94e5b785ffcfa300f404252994026b18a71f763086f297f89a9809394a9',
     'lengths_i64le': 'a81f2c9f819d10049549d14dcdb38983febf0a41cbfe314421e4f70bba8ded33',
     'cls_f32le': '1f7ba8c969c2053385ce6e89528d2decea78b627e9fb6ef40cfc322fd760b623',
+}
+NATIVE_DIGESTS = {
+    'onnxruntime_pybind11_state': 'a434baf53b7eba95c0c819eb67505099d9c8027e1fce4f3e25a0a368bc01045b',
+    '_multiarray_umath': '1535fbed1e9ac6b717e72ad9bd5c20b9f0536a21084fcadc40c00255a8f35d1d',
+    'openblas': '05c9f9eb89ee68a4b9d673184fa91c99587e736392c0c2d49180a8aa5303d080',
 }
 
 
@@ -113,6 +119,11 @@ def verify_sealed_bundle(root, expected_sha256):
 def _strict_json(raw):
     def reject(value):
         raise EvidenceError('nonfinite JSON constant: ' + value)
+    def finite_float(value):
+        result = float(value)
+        if not math.isfinite(result):
+            raise EvidenceError('nonfinite JSON number: ' + value)
+        return result
     def object_pairs(pairs):
         result = {}
         for key, value in pairs:
@@ -121,7 +132,7 @@ def _strict_json(raw):
             result[key] = value
         return result
     try:
-        return json.loads(raw, parse_constant=reject, object_pairs_hook=object_pairs)
+        return json.loads(raw, parse_constant=reject, parse_float=finite_float, object_pairs_hook=object_pairs)
     except (ValueError, UnicodeDecodeError) as error:
         raise EvidenceError('invalid evidence JSON: ' + str(error)) from error
 
@@ -163,7 +174,7 @@ def reference_inventory():
     cells += ['stream/idle-restore']
     cells += ['embed/' + case['id'] for case in embed]
     cells += ['arithmetic/raw-294', 'tests/prepared-23', 'oracle/punctuation-numerical', 'failures/s01b']
-    return {'schema': 'cairn.semantic-reference-inventory/1', 'contract': 'semantic/3',
+    return {'schema': 'cairn.semantic-reference-inventory/1', 'contract': 'semantic/4',
             'rank_requests': 19, 'rank_scores': 269, 'stream_replies': 38, 'idle_restore_cases': 1,
             'positive_queries': 9, 'positive_documents': 6, 'prepared_tests': 23, 'required_cells': cells}
 
@@ -302,13 +313,30 @@ def _python_capture(bundle, document):
         raise EvidenceError('missing, zero, duplicate or reordered positive observations')
     external = provenance.get('actual_worker_observation', {})
     workers = external.get('model_workers', [])
-    if not workers or external.get('errors') != [] or provenance.get('disposable_home_removed') is not True:
-        raise EvidenceError('missing actual worker observation or disposable-home cleanup')
+    if not workers or external.get('errors') != []:
+        raise EvidenceError('missing actual worker observation')
+    if provenance.get('capture_scope') != 'ordinary-default-reference' or provenance.get('conditional_b1_proof') is not False:
+        raise EvidenceError('ordinary capture is not the conditional B1 proof')
+    cleanup = provenance.get('cleanup_evidence', {})
+    home_receipt = bundle.json(cleanup.get('home_receipt', ''))
+    final_receipt = bundle.json(cleanup.get('final_receipt', ''))
+    identity = home_receipt.get('initial_identity')
+    if (cleanup.get('backing_absent_observed') is not True or cleanup.get('backing') != home_receipt.get('backing')
+            or not isinstance(cleanup.get('backing'), str) or not Path(cleanup['backing']).is_absolute()
+            or cleanup.get('initial_identity') != identity or not isinstance(identity, dict)
+            or set(identity) != {'inode', 'device', 'owner', 'mode'}
+            or not all(type(value) is int for value in identity.values())
+            or identity['inode'] <= 0 or identity['device'] < 0 or identity['owner'] < 0 or identity['mode'] != 0o700
+            or final_receipt.get('backing_removed') is not True
+            or final_receipt.get('all_observed_processes_exited') is not True or final_receipt.get('errors') != []):
+        raise EvidenceError('missing/mismatched declared backing identity or joined cleanup receipt')
     proof = provenance.get('isolation_proof', {})
-    if proof.get('wrapper_sha256') != review['module_sha256'] or not proof.get('home_probe_inode'):
+    if (proof.get('wrapper_sha256') != review['module_sha256'] or not proof.get('home_probe_inode')
+            or proof.get('profile') != 'default'):
         raise EvidenceError('missing reviewed-wrapper confinement preflight')
     result = []
     aggregate = {name: bytearray() for name in REVIEWER_RAW_BASELINE}
+    counts = dict(logical_occurrences=0, observed_model_executions=0, mapped_duplicate_rows=0)
     for observation, case in zip(observations, expected_cases):
         if observation.get('exit_code') != 0 or observation.get('status') != 'observed' or observation.get('skipped', 0) != 0:
             raise EvidenceError('failed/skipped positive reference observation')
@@ -331,31 +359,44 @@ def _python_capture(bundle, document):
         if (not runtime.get('network_namespace') or
                 runtime['network_namespace'] == provenance.get('host_network_namespace') or
                 runtime.get('passwd_home') != proof.get('home') or
+                runtime.get('expanduser_home') != proof.get('home') or
                 runtime.get('home_probe_inode') != proof['home_probe_inode']):
             raise EvidenceError('model child did not retain the network/OS-home boundary')
+        _validate_declared_environment(proof, runtime.get('effective_environment'), runtime.get('cwd'))
         own_exe = runtime.get('executable', {})
         libraries = runtime.get('mapped_libraries', {})
-        ort = [(path, info) for path, info in libraries.items() if 'onnxruntime_pybind11_state' in path]
-        if (len(ort) != 1 or ort[0][1].get('sha256') != 'a434baf53b7eba95c0c819eb67505099d9c8027e1fce4f3e25a0a368bc01045b'
-                or not ort[0][1].get('inode') or not own_exe.get('inode')):
-            raise EvidenceError('missing actual Python/ORT inode/hash observation')
+        native = _native_images(libraries)
+        if (type(own_exe.get('inode')) is not int or own_exe['inode'] <= 0
+                or not isinstance(own_exe.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', own_exe['sha256'])):
+            raise EvidenceError('missing actual Python executable inode/hash')
         if not any(worker.get('executable_inode') == own_exe['inode']
                 and worker.get('executable_sha256') == own_exe.get('sha256')
                 and worker.get('network_namespace') == runtime.get('network_namespace')
-                and any(lib.get('inode') == ort[0][1]['inode'] and lib.get('sha256') == ort[0][1]['sha256']
-                        for lib in worker.get('libraries', [])) for worker in workers):
+                and all(any(lib.get('inode') == info['inode'] and lib.get('sha256') == info['sha256']
+                            and lib.get('device') == info['device'] for lib in worker.get('libraries', []))
+                        for _, info in native.values()) for worker in workers):
             raise EvidenceError('runtime observation does not identify the actual model child')
         trace = bundle.json(artifacts['trace'])
         if (trace.get('case_id') != case['id'] or trace.get('mode') != phase
+                or trace.get('scope') != 'ordinary-default-reference' or trace.get('conditional_b1_proof') is not False
                 or not trace.get('replay') or not all(value is True for value in trace['replay'].values())):
             raise EvidenceError('missing/mismatched bit-exact arithmetic trace')
         tensors = _array_archive(bundle, artifacts['arrays'], trace.get('arrays'))
         inferences, rows = trace.get('inferences', []), trace.get('row_order', [])
-        if not inferences or not rows or trace.get('logical_occurrences') != len(rows):
+        expected_counts = dict(logical_occurrences=len(rows), observed_model_executions=len(inferences),
+                               mapped_duplicate_rows=len(rows) - len(inferences))
+        if (not inferences or not rows or len(rows) < len(inferences)
+                or trace.get('unique_inferences') != len(inferences)
+                or any(type(trace.get(key)) is not int or trace[key] != value for key, value in expected_counts.items())
+                or any(observation.get(key) != value for key, value in expected_counts.items())):
             raise EvidenceError('missing actual inference or occurrence mapping')
+        for key, value in expected_counts.items():
+            counts[key] += value
         if len(trace.get('first_stage', [])) != len(inferences):
             raise EvidenceError('missing first normalization stage')
-        for inference in inferences:
+        for index, inference in enumerate(inferences):
+            if inference.get('index') != index:
+                raise EvidenceError('reordered actual inference indices')
             inputs = inference.get('inputs', {})
             if set(inputs) != {'input_ids', 'attention_mask', 'token_type_ids'}:
                 raise EvidenceError('missing actual int64 input tensors')
@@ -363,29 +404,61 @@ def _python_capture(bundle, document):
             for name in inputs.values():
                 if tensors[name]['dtype'] != '<i8' or tensors[name]['shape'] != shape or shape[0] != 1:
                     raise EvidenceError('actual input tensor shape/dtype mismatch')
-            if tensors[inference['raw_cls']]['shape'] != (1, 384):
+            if (tensors[inference['raw_cls']]['shape'] != (1, 384) or tensors[inference['raw_cls']]['dtype'] != '<f4'
+                    or inference.get('hidden_shape') != [1, shape[1], 384]):
                 raise EvidenceError('raw CLS shape mismatch')
+            for field, expected in (('attention_mask', 1), ('token_type_ids', 0)):
+                if any(value[0] != expected for value in struct.iter_unpack('<q', tensors[inputs[field]]['data'])):
+                    raise EvidenceError('actual mask/type tensor mismatch')
+            stage = trace['first_stage'][index]
+            if stage.get('p') != 2 or stage.get('dim') != 1 or stage.get('eps') != 1e-12:
+                raise EvidenceError('normalization settings mismatch')
+            for field in ('pooled', 'norm_unclipped', 'norm', 'normalized'):
+                tensor = tensors[stage[field]]
+                if tensor['dtype'] != '<f4' or tensor['shape'] != ((1, 384) if field in ('pooled', 'normalized') else (1, 1)):
+                    raise EvidenceError('normalization tensor shape/dtype mismatch')
         if phase == 'rank':
-            for row in rows:
+            texts = trace.get('inference_texts', [])
+            if len(texts) != len(inferences) or texts[0] != 'Represent this sentence for searching relevant passages: ' + request['query']:
+                raise EvidenceError('missing inference text mapping')
+            owners, keys = [], []
+            for ordinal, row in enumerate(rows):
                 index = row.get('inference')
-                if type(index) is not int or not 0 <= index < len(inferences):
+                if type(index) is not int or not 0 <= index < len(inferences) or row.get('row') != ordinal:
                     raise EvidenceError('invalid occurrence-to-inference mapping')
+                if ordinal == 0:
+                    if index != 0 or row.get('role') != 'prefixed_query':
+                        raise EvidenceError('query is not the first logical row')
+                else:
+                    owner = row.get('note_index')
+                    key = row.get('passage_sha256')
+                    if (type(owner) is not int or not 0 <= owner < len(request['notes']) or index == 0
+                            or row.get('record_id') != request['notes'][owner]['record_id']
+                            or key != hashlib.sha256(texts[index].encode()).hexdigest()
+                            or trace.get('missing', {}).get(key) != index):
+                        raise EvidenceError('note owner/passage/inference mapping mismatch')
+                    owners.append(owner)
+                    keys.append(key)
                 inference = inferences[index]
                 tensor = tensors[inference['inputs']['input_ids']]
                 aggregate['ids_i64le'].extend(tensor['data'])
                 aggregate['lengths_i64le'].extend(struct.pack('<q', tensor['shape'][1]))
                 aggregate['cls_f32le'].extend(tensors[inference['raw_cls']]['data'])
+            if trace.get('owners') != owners or trace.get('passage_keys') != keys or set(owners) != set(range(len(request['notes']))):
+                raise EvidenceError('missing or reordered note ownership')
         reason = 'validated isolated traced Python reference; actual Go-supervisor evidence remains with S-01b'
         if phase == 'embed':
             reason += '; wrapper raw-output invariance for all query/document inputs remains unproved'
         result.append(dict(observation, status='unqualified', reason=reason))
     if phase == 'rank':
         digests = {name: hashlib.sha256(raw).hexdigest() for name, raw in aggregate.items()}
-        if digests != REVIEWER_RAW_BASELINE or provenance.get('raw_gate') != digests:
-            raise EvidenceError('294-occurrence raw-output baseline mismatch')
+        if digests != REVIEWER_RAW_BASELINE or provenance.get('expanded_row_digests') != digests:
+            raise EvidenceError('ordinary expanded-row digest mismatch; no B1 proof')
         for name, raw in aggregate.items():
             if bundle.raw(name + '.bin') != raw:
                 raise EvidenceError('aggregate raw tensor bytes mismatch')
+    if provenance.get('execution_counts') != counts:
+        raise EvidenceError('observed-execution/logical-mapping totals mismatch')
     return {'kind': 'isolated-python-reference', 'provenance': provenance, 'observations': result}
 
 
@@ -415,9 +488,12 @@ def _embedding_reply(request, reply):
     if reply.get('id') != request.get('id') or reply.get('identity') != identity:
         raise EvidenceError('embedding reply identity mismatch')
     if request['operation'] == 'query':
+        if set(reply) != {'id', 'identity', 'query_projection', 'vector'}:
+            raise EvidenceError('query reply keys differ from the wire contract')
         vectors = [reply.get('vector')]
         projection = reply.get('query_projection')
-        if not isinstance(projection, dict) or projection.get('method') != 'original-prefix/1':
+        if (not isinstance(projection, dict) or set(projection) != {'method', 'truncated', 'original_tokens',
+                'embedded_tokens', 'prefix_bytes', 'prefix_sha256'} or projection.get('method') != 'original-prefix/1'):
             raise EvidenceError('missing query projection')
         count = projection.get('prefix_bytes')
         if type(count) is not int or not 0 < count <= len(request['text'].encode('utf-8')):
@@ -427,7 +503,15 @@ def _embedding_reply(request, reply):
             raise EvidenceError('original prefix hash mismatch')
         if type(projection.get('embedded_tokens')) is not int or not 0 < projection['embedded_tokens'] <= 512:
             raise EvidenceError('invalid embedded token count')
+        original = projection['original_tokens']
+        truncated = projection['truncated']
+        if (type(original) is not int or original < projection['embedded_tokens']
+                or type(truncated) is not bool or truncated != (count < len(request['text'].encode('utf-8')))
+                or (truncated and original <= 512) or (not truncated and original != projection['embedded_tokens'])):
+            raise EvidenceError('inconsistent original-prefix projection')
     else:
+        if set(reply) != {'id', 'identity', 'passages'}:
+            raise EvidenceError('document reply keys differ from the wire contract')
         passages = reply.get('passages')
         if not isinstance(passages, list) or not 1 <= len(passages) <= 256:
             raise EvidenceError('invalid passage count')
@@ -435,7 +519,8 @@ def _embedding_reply(request, reply):
         vectors = []
         previous = -1
         for passage in passages:
-            if not isinstance(passage, dict) or not isinstance(passage.get('span'), dict):
+            if (not isinstance(passage, dict) or set(passage) != {'span', 'vector'}
+                    or not isinstance(passage.get('span'), dict) or set(passage['span']) != {'offset', 'length'}):
                 raise EvidenceError('invalid source passage')
             span = passage.get('span', {})
             offset, length = span.get('offset'), span.get('length')
@@ -448,7 +533,7 @@ def _embedding_reply(request, reply):
             vectors.append(passage.get('vector'))
     for vector in vectors:
         if (not isinstance(vector, list) or len(vector) != 384
-                or not all(_finite(component) for component in vector)
+                or not all(_finite_f32(component) for component in vector)
                 or not any(vector)):
             raise EvidenceError('invalid finite/nonzero 384-component vector')
     return len(vectors)
@@ -468,14 +553,25 @@ def _finite(value):
         return False
 
 
+def _finite_f32(value):
+    if not _finite(value):
+        return False
+    try:
+        return struct.unpack('<f', struct.pack('<f', value))[0] == value
+    except (OverflowError, struct.error):
+        return False
+
+
 def _rank_reply(request, reply):
     if not isinstance(reply, dict) or reply.get('model_sha256') != RANK_IDENTITY or reply.get('algorithm') != 'bge-max-chunk/1':
         raise EvidenceError('rank model/algorithm mismatch')
+    if set(reply) != {'model_sha256', 'algorithm', 'scores'}:
+        raise EvidenceError('rank reply keys differ from the wire contract')
     scores = reply.get('scores')
     if not isinstance(scores, list) or len(scores) != len(request['notes']):
         raise EvidenceError('rank score count mismatch')
     for note, score in zip(request['notes'], scores):
-        if not isinstance(score, dict):
+        if not isinstance(score, dict) or set(score) != {'record_id', 'version', 'body_sha256', 'score'}:
             raise EvidenceError('rank score must be an object')
         if (type(score.get('version')) is not int
                 or any(score.get(key) != note[key] for key in ('record_id', 'version', 'body_sha256'))):
@@ -505,8 +601,10 @@ def _characterization(bundle):
         if name == 'embed-dense-max-ascii':
             if (record.get('status') != 'timeout' or record.get('timeout_seconds') != 90 or stdout
                     or _strict_json(request_raw).get('text') != '!' * 65536):
-                raise EvidenceError('changed maximum-punctuation90s failure')
-            auxiliary.append(dict(id='normal/punctuation-90s', status='failed', elapsed_seconds=record['elapsed_seconds'], artifacts=paths))
+                raise EvidenceError('changed direct-supervisor punctuation90s observation')
+            auxiliary.append(dict(id='direct-supervisor/punctuation-90s', status='observed',
+                observed_direct_supervisor_disposition='timeout', real_go_disposition='unmeasured',
+                elapsed_seconds=record['elapsed_seconds'], artifacts=paths))
         elif name == 'existing-tests':
             log = bundle.raw(paths['stderr']).decode('utf-8')
             if record.get('exit_code') != 0 or 'Ran 23 tests' not in log or '\nOK\n' not in log or 'skipped' in log.lower():
@@ -534,7 +632,7 @@ def _characterization(bundle):
                 if envelope['id'] != reply.get('id'):
                     raise EvidenceError('stream request ID mismatch')
                 case = rank[index // 2]
-                temperature = 'cold' if index % 2 == 0 else 'warm'
+                temperature = 'cold' if index == 0 else 'warm'
                 observations.append(_observation('stream/' + case['id'] + '/' + temperature, paths,
                     reason='legacy stream frames; only first frame is cold and no T1/runtime qualification',
                     original_request_id=envelope['id'], frame_index=index))
@@ -681,7 +779,7 @@ def import_bundles(specifications, output):
                'bundles': imported, 'cells': cells,
                'missing_cells': [cell['id'] for cell in cells if cell['status'] == 'missing'],
                'unqualified_cells': [cell['id'] for cell in cells if cell['status'] == 'unqualified']}
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, mode=0o700, exist_ok=False)
     (output / 'catalog.json').write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return catalog
 
@@ -731,19 +829,118 @@ def _copy_reference(output, sources, assets, isolation_module, isolation_review)
         shutil.copyfile(source, tooling / filename)
 
 
-def _seal_output(output):
-    if (output / 'isolation/mapped-home').exists():
-        raise EvidenceError('disposable home cleanup failed; refusing to read/seal its contents')
+def _seal_output(output, relatives=None):
     rows = []
-    for path in sorted(output.rglob('*')):
-        if path.is_symlink():
+    paths = sorted(output.rglob('*')) if relatives is None else [output / name for name in sorted(set(relatives))]
+    sealed = []
+    for path in paths:
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(mode):
             raise EvidenceError('symlink in new evidence: ' + str(path))
-        if path.is_file() and path.name != 'SHA256SUMS':
-            rows.append(_digest(path) + '  ' + path.relative_to(output).as_posix() + '\n')
+        if stat.S_ISDIR(mode):
+            continue
+        if not stat.S_ISREG(mode):
+            raise EvidenceError('non-regular file in new evidence: ' + str(path))
+        if path != output / 'SHA256SUMS':
+            relative = path.relative_to(output).as_posix()
+            with _sealed_file(output, relative) as stream:
+                rows.append(hashlib.file_digest(stream, 'sha256').hexdigest() + '  ' + relative + '\n')
+            sealed.append(path)
     (output / 'SHA256SUMS').write_text(''.join(rows), encoding='utf-8')
-    for path in output.rglob('*'):
-        if path.is_file():
-            path.chmod(0o444)
+    for path in [*sealed, output / 'SHA256SUMS']:
+        path.chmod(0o444)
+
+
+def _cleanup_evidence(output):
+    """Consume the shared wrapper's named backing identity and final receipt."""
+    def read(relative):
+        with _sealed_file(output, relative) as stream:
+            value = _strict_json(stream.read(1024 * 1024 + 1))
+        if not isinstance(value, dict):
+            raise EvidenceError('cleanup receipt must be an object')
+        return value
+    home = read('isolation/disposable-home.json')
+    final = read('isolation/cleanup.json')
+    identity, backing = home.get('initial_identity'), home.get('backing')
+    if (not isinstance(backing, str) or not Path(backing).is_absolute()
+            or not isinstance(identity, dict) or set(identity) != {'inode', 'device', 'owner', 'mode'}
+            or not all(type(value) is int for value in identity.values())
+            or identity['inode'] <= 0 or identity['device'] < 0
+            or identity['owner'] != os.getuid() or identity['mode'] != 0o700):
+        raise EvidenceError('missing declared backing identity')
+    try:
+        current = Path(backing).lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        same = (current.st_ino, current.st_dev) == (identity['inode'], identity['device'])
+        raise EvidenceError('declared backing still present' if same else 'declared backing identity changed')
+    if (final.get('backing_removed') is not True or final.get('all_observed_processes_exited') is not True
+            or final.get('errors') != []):
+        raise EvidenceError('shared wrapper did not prove joined cleanup')
+    return {'backing': backing, 'initial_identity': identity, 'backing_absent_observed': True,
+            'home_receipt': 'isolation/disposable-home.json', 'final_receipt': 'isolation/cleanup.json'}
+
+
+def _capture_file_inventory(cases):
+    # Explicit public artifacts only. Never walk a failed wrapper's private backing.
+    paths = ['capture-manifest.json', 'failure.json', 'cleanup-failure.json']
+    paths += [name + '.bin' for name in REVIEWER_RAW_BASELINE]
+    paths += ['reference/scripts/' + name for name in SOURCE_DIGESTS]
+    paths += ['assets/' + name for name in ASSET_DIGESTS]
+    paths += ['reference/tooling/' + name for name in ('capture_semantic_fixtures.py', 'semantic_fixture_cases.py',
+              'retrieval-quality.json', 'semantic_acceptance_isolation.py', 'isolation-review.json')]
+    paths += ['isolation/' + name for name in ('isolation-proof.json', 'runtime-observations.json',
+              'disposable-home.json', 'cleanup.json', 'read-only-probe')]
+    for case in cases:
+        paths += ['isolation/raw/' + case['id'] + '/' + name for name in (
+            'request.stdin', 'wire.stdout', 'wire.stderr', 'trace.json', 'trace-arrays.npz', 'runtime.json',
+            'ids_i64le.bin', 'lengths_i64le.bin', 'cls_f32le.bin')]
+    return paths
+
+
+def _exception_record(error):
+    return {'type': type(error).__name__, 'message': str(error),
+            'traceback': ''.join(traceback.format_exception(type(error), error, error.__traceback__))}
+
+
+@contextlib.contextmanager
+def _capture_context(manager, manifest):
+    with manager as isolation:
+        try:
+            yield isolation
+        except BaseException as error:
+            manifest['primary_failure'] = _exception_record(error)
+            raise
+
+
+def _validate_declared_environment(proof, environment, actual_cwd):
+    expected = proof.get('model_environment')
+    prefix = proof.get('effective_prefix')
+    if (not isinstance(expected, dict) or not expected or 'HOME' in expected
+            or not all(isinstance(key, str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_]*', key)
+                       and isinstance(value, str) and '\0' not in value for key, value in expected.items())
+            or not isinstance(prefix, list) or not all(isinstance(arg, str) for arg in prefix)
+            or prefix.count('--chdir') != 1):
+        raise EvidenceError('missing declared construction environment/cwd')
+    position = prefix.index('--chdir')
+    if position + 1 >= len(prefix) or not prefix[position + 1].startswith('/'):
+        raise EvidenceError('missing declared absolute cwd')
+    cwd = prefix[position + 1]
+    expected = dict(expected)
+    if actual_cwd != cwd or ('PWD' in expected and expected['PWD'] != cwd):
+        raise EvidenceError('collector cwd differs from declared construction')
+    expected['PWD'] = cwd  # bwrap adds this even under --clearenv.
+    if not isinstance(environment, dict):
+        raise EvidenceError('missing observed collector environment')
+    # The sole optional CPython addition; no wildcard environment allowance.
+    if 'LC_CTYPE' not in expected and environment.get('LC_CTYPE') == 'C.UTF-8':
+        expected['LC_CTYPE'] = 'C.UTF-8'
+    if environment != expected:
+        raise EvidenceError('collector environment differs from reviewed sanitized settings')
 
 
 def _isolation_guard(proof_path, parent_namespace):
@@ -763,19 +960,29 @@ def _isolation_guard(proof_path, parent_namespace):
                 raise EvidenceError('collector network isolation probe failed') from error
         else:
             raise EvidenceError('collector namespace has an external network route')
+    if proof.get('profile') != 'default':
+        raise EvidenceError('ordinary collector requires the declared default profile; it cannot qualify derived-W')
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
-    if (home.as_posix() != proof.get('home') or
+    if ('HOME' in os.environ or home.as_posix() != proof.get('home')
+            or os.path.expanduser('~') != home.as_posix() or
             (home / '.semantic-isolation-probe').stat().st_ino != proof.get('home_probe_inode')):
         raise EvidenceError('collector OS home lookup is not the preflighted disposable home')
-    expected = {'PATH': '/usr/bin:/bin', 'HF_HUB_OFFLINE': '1',
-                'HF_HUB_DISABLE_TELEMETRY': '1', 'TOKENIZERS_PARALLELISM': 'false'}
-    environment = dict(os.environ)
-    # CPython may add this during UTF-8 locale coercion, before Python code runs.
-    if environment.get('LC_CTYPE') == 'C.UTF-8':
-        del environment['LC_CTYPE']
-    if environment != expected:
-        raise EvidenceError('collector environment differs from reviewed sanitized settings')
-    return dict(proof, collector_network_namespace=namespace)
+    _validate_declared_environment(proof, dict(os.environ), os.getcwd())
+    return dict(proof, collector_network_namespace=namespace,
+                collector_getpwuid_home=str(home), collector_expanduser_home=os.path.expanduser('~'))
+
+
+def _native_images(mapped):
+    result = {}
+    for marker, digest in NATIVE_DIGESTS.items():
+        matches = [(path, info) for path, info in mapped.items() if marker in path]
+        if (len(matches) != 1 or matches[0][1].get('sha256') != digest
+                or type(matches[0][1].get('inode')) is not int or matches[0][1]['inode'] <= 0
+                or not isinstance(matches[0][1].get('device'), str)
+                or not re.fullmatch('[0-9a-fA-F]+:[0-9a-fA-F]+', matches[0][1]['device'])):
+            raise EvidenceError('missing/changed actual native image: ' + marker)
+        result[marker] = matches[0]
+    return result
 
 
 def _mapped_runtime(scorer):
@@ -799,9 +1006,7 @@ def _mapped_runtime(scorer):
                 raise EvidenceError('actual loaded library inode/device mismatch: ' + filename)
             mapped[filename] = {'inode': identity.st_ino, 'device': fields[3],
                 'sha256': hashlib.file_digest(stream, 'sha256').hexdigest(), 'bytes': identity.st_size}
-    ort_libraries = [path for path in mapped if 'onnxruntime_pybind11_state' in path]
-    if len(ort_libraries) != 1 or mapped[ort_libraries[0]]['sha256'] != 'a434baf53b7eba95c0c819eb67505099d9c8027e1fce4f3e25a0a368bc01045b':
-        raise EvidenceError('actual ORT reference image is missing or changed')
+    _native_images(mapped)
     blas_paths = [path for path in mapped if '/numpy.libs/' in path and 'openblas' in path]
     if len(blas_paths) != 1:
         raise EvidenceError('expected exactly one observed NumPy OpenBLAS image')
@@ -858,10 +1063,12 @@ def _mapped_runtime(scorer):
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     return {'schema': 'cairn.semantic-python-runtime/1', 'pid': os.getpid(), 'executable': executable,
         'network_namespace': os.readlink('/proc/self/ns/net'),
-        'passwd_home': str(home), 'home_probe_inode': (home / '.semantic-isolation-probe').stat().st_ino,
+        'passwd_home': str(home), 'expanduser_home': os.path.expanduser('~'),
+        'home_probe_inode': (home / '.semantic-isolation-probe').stat().st_ino,
         'resource_usage': {'max_rss_kib': usage.ru_maxrss, 'user_seconds': usage.ru_utime, 'system_seconds': usage.ru_stime},
         'python': sys.version, 'compiler': platform.python_compiler(), 'abi': sys.implementation.cache_tag,
-        'packages': packages, 'effective_environment': dict(os.environ), 'cpu_kernel_class': cpu_kernel_class(facts),
+        'packages': packages, 'effective_environment': dict(os.environ), 'cwd': os.getcwd(),
+        'cpu_kernel_class': cpu_kernel_class(facts),
         'cpu_capability_method': 'NumPy runtime CPUID/OS vector-state detector and Linux getauxval',
         'numpy_cpu_features': features, 'numpy_config': config.getvalue(), 'openblas_getters': getters,
         'mapped_libraries': mapped, 'imported_code': native_sources, 'ort_version': ort.__version__,
@@ -871,8 +1078,38 @@ def _mapped_runtime(scorer):
         'unknowns': ['No instruction-level per-call microkernel trace.', 'Not run through the actual Go supervisor.']}
 
 
+def _load_frozen_sources(sources):
+    """Execute only the .py bytes verified here; Python must not consult pyc."""
+    raw_sources = {}
+    for filename, digest in SOURCE_DIGESTS.items():
+        raw = (sources / filename).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise EvidenceError('frozen source mismatch: ' + filename)
+        raw_sources[filename] = raw
+    previous = {name: sys.modules.get(name) for name in ('semantic_rank', 'embedding_worker')}
+    loaded = {}
+    try:
+        for filename, raw in raw_sources.items():
+            name = filename[:-3]
+            spec = importlib.util.spec_from_file_location(name, sources / filename)
+            module = importlib.util.module_from_spec(spec)
+            module.__cairn_source_bytes__ = raw
+            sys.modules[name] = module
+            exec(compile(raw, str(sources / filename), 'exec'), module.__dict__)
+            loaded[name] = module
+    except BaseException:
+        for name, module in previous.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+        raise
+    return loaded['semantic_rank'], loaded['embedding_worker']
+
+
 def _collect_reference(args):
     """Instrument frozen call frames without editing or replacing the oracle."""
+    _capture_admission()
     # main has already checked the actual namespace, network and passwd home.
     for filename, digest in SOURCE_DIGESTS.items():
         if _digest(args.sources / filename) != digest:
@@ -889,18 +1126,34 @@ def _collect_reference(args):
                 {key: selected[key] for key in ('id', 'operation', 'text')})
     if not _same_json(request, expected):
         raise EvidenceError('collector request differs from the committed fixture')
-    sys.path.insert(0, str(args.sources))
     import numpy as np
     import fastembed.common.utils as fastembed_utils
-    import semantic_rank
-    import embedding_worker
+    semantic_rank, embedding_worker = _load_frozen_sources(args.sources)
     if (Path(semantic_rank.__file__).resolve() != (args.sources / 'semantic_rank.py').resolve() or
             Path(embedding_worker.__file__).resolve() != (args.sources / 'embedding_worker.py').resolve()):
         raise EvidenceError('oracle import shadowed by another source')
     embeddings = embedding_worker.Embeddings(args.assets) if args.mode == 'embed' else None
     scorer = embeddings.scorer if embeddings else semantic_rank.Scorer(args.assets)
+    result, metadata, arrays, raw_rows = _trace_reference(
+        scorer=scorer, semantic_rank=semantic_rank, embedding_worker=embedding_worker,
+        normalize=fastembed_utils.normalize, normalize_source=Path(fastembed_utils.__file__).read_bytes(),
+        request=request, mode=args.mode, case_id=args.case_id, embeddings=embeddings)
+    for name, raw in raw_rows.items():
+        (args.output / (name + '.bin')).write_bytes(raw)
+    np.savez(args.output / 'trace-arrays.npz', **arrays)
+    (args.output / 'trace.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n')
+    (args.output / 'runtime.json').write_text(json.dumps(_mapped_runtime(scorer), indent=2) + '\n')
+    print(json.dumps(result, ensure_ascii=False, separators=(',', ':'), allow_nan=False))
+
+
+def _trace_reference(*, scorer, semantic_rank, embedding_worker, normalize, normalize_source,
+                     request, mode, case_id, embeddings=None):
+    """Observe one ordinary frozen score call; backend execution is injectable in tests."""
+    np = scorer.np
     arrays, stages, pending_norms = {}, [], {}
-    metadata = {'schema': 'cairn.semantic-operation-trace/1', 'case_id': args.case_id, 'mode': args.mode,
+    raw_rows = {}
+    metadata = {'schema': 'cairn.semantic-operation-trace/1', 'case_id': case_id, 'mode': mode,
+                'scope': 'ordinary-default-reference', 'conditional_b1_proof': False,
                 'arrays': {}, 'inferences': [], 'row_order': [], 'replay': {}, 'logical_occurrences': 0}
 
     def store(name, value):
@@ -912,19 +1165,18 @@ def _collect_reference(args):
         arrays[name] = value.copy()
 
     score_code = semantic_rank.Scorer.score.__code__
-    normalize_code = fastembed_utils.normalize.__code__
+    normalize_code = normalize.__code__
     model = scorer.model.model
     onnx_code = model.onnx_embed.__func__.__code__
-    post_code = model._post_process_onnx_output.__func__.__code__
     line_events = {}
-    for node in ast.walk(ast.parse(Path(semantic_rank.__file__).read_text())):
+    for node in ast.walk(ast.parse(semantic_rank.__cairn_source_bytes__)):
         if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == 'vectors':
             line_events['divide'] = node.lineno
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'similarities' for t in node.targets):
             line_events['matvec'] = node.lineno
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'scores' for t in node.targets):
             line_events['maxima'] = node.lineno
-    before_clip = next(node.lineno for node in ast.walk(ast.parse(Path(fastembed_utils.__file__).read_text()))
+    before_clip = next(node.lineno for node in ast.walk(ast.parse(normalize_source))
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
         and isinstance(node.value.func, ast.Attribute) and node.value.func.attr == 'maximum')
     if set(line_events) != {'divide', 'matvec', 'maxima'}:
@@ -932,7 +1184,9 @@ def _collect_reference(args):
 
     def trace(frame, event, argument):
         if event == 'call':
-            return trace if frame.f_code in (score_code, normalize_code, onnx_code, post_code) else None
+            return trace if frame.f_code in (score_code, normalize_code, onnx_code) else None
+        if event == 'return' and argument is None:
+            return trace  # An exception is unwinding; preserve the original error.
         local = frame.f_locals
         if frame.f_code == onnx_code and event == 'return':
             inputs = local['onnx_input']
@@ -989,6 +1243,7 @@ def _collect_reference(args):
         return trace
 
     started = time.monotonic()
+    previous_trace = sys.gettrace()
     sys.settrace(trace)
     try:
         if embeddings:
@@ -997,7 +1252,7 @@ def _collect_reference(args):
             semantic_rank.validate_request(request)
             result = scorer.score(request)
     finally:
-        sys.settrace(None)
+        sys.settrace(previous_trace)
     if not stages or len(stages) != len(metadata['inferences']):
         raise EvidenceError('missing actual inference/normalization stages')
     metadata['first_stage'] = stages
@@ -1046,22 +1301,38 @@ def _collect_reference(args):
                 ('ids_i64le', b''.join(arrays[metadata['inferences'][index]['inputs']['input_ids']].astype('<i8', copy=False).tobytes() for index in mapping)),
                 ('lengths_i64le', b''.join(struct.pack('<q', arrays[metadata['inferences'][index]['inputs']['input_ids']].shape[1]) for index in mapping)),
                 ('cls_f32le', b''.join(arrays[metadata['inferences'][index]['raw_cls']].astype('<f4', copy=False).tobytes() for index in mapping))):
-            (args.output / (name + '.bin')).write_bytes(raw)
+            raw_rows[name] = raw
     if not all(metadata['replay'].values()):
         raise EvidenceError('float32 operation trace is not bit-exact on replay')
     metadata['logical_occurrences'] = len(metadata['row_order'])
     metadata['unique_inferences'] = len(metadata['inferences'])
+    metadata['observed_model_executions'] = len(metadata['inferences'])
+    metadata['mapped_duplicate_rows'] = len(metadata['row_order']) - len(metadata['inferences'])
     metadata['elapsed_scoring_seconds'] = time.monotonic() - started
     metadata['line_events'] = line_events
-    np.savez(args.output / 'trace-arrays.npz', **arrays)
-    (args.output / 'trace.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n')
-    (args.output / 'runtime.json').write_text(json.dumps(_mapped_runtime(scorer), indent=2) + '\n')
-    print(json.dumps(result, ensure_ascii=False, separators=(',', ':'), allow_nan=False))
+    return result, metadata, arrays, raw_rows
+
+
+def _capture_admission():
+    # No caller boolean/review pointer can substitute for that missing proof.
+    raise EvidenceError('actual capture unavailable: accepted pretoken gate and B1 proof vehicle pending')
+
+
+def validate_pretoken_digests(observed):
+    """Input-only identity check, never a permission or numerical qualification."""
+    if (not isinstance(observed, dict) or type(observed.get('text_count')) is not int or observed['text_count'] != 294
+            or type(observed.get('token_count')) is not int or observed['token_count'] != 33395
+            or any(observed.get(name) != REVIEWER_RAW_BASELINE[name]
+                for name in ('ids_i64le', 'lengths_i64le'))):
+        raise EvidenceError('pre-inference input-ID/length/count mismatch; no session may be built')
 
 
 def capture_reference(*, output, phase, python, sources, assets, isolation_module, isolation_review,
                       isolation_review_sha256=None, source_commit=None):
     """Run only committed positive inputs through S-B2's reviewed boundary."""
+    if isolation_module is None or isolation_review is None or isolation_review_sha256 is None:
+        raise EvidenceError('reviewed isolation module and pinned review receipt are required; no model was run')
+    _capture_admission()
     module, review = _reviewed_isolation(isolation_module, isolation_review, isolation_review_sha256)
     if phase not in ('rank', 'embed'):
         raise EvidenceError('capture phase must be rank or embed; consumed punctuation is import-only')
@@ -1092,24 +1363,40 @@ def capture_reference(*, output, phase, python, sources, assets, isolation_modul
             capture_output=True, check=True).stdout
         if hashlib.sha256(committed).hexdigest() != _digest(path):
             raise EvidenceError('capture tool/input differs from the specified commit')
-    output.mkdir(parents=True, exist_ok=False)
-    _copy_reference(output, sources, assets, isolation_module, isolation_review)
-    if (_digest(output / 'reference/tooling/semantic_acceptance_isolation.py') != review['module_sha256']
-            or _digest(output / 'reference/tooling/isolation-review.json') != isolation_review_sha256):
-        raise EvidenceError('reviewed isolation inputs changed while copying; no model was run')
     cases = ranking_cases() if phase == 'rank' else embedding_cases()
-    manifest = {'schema': 'cairn.semantic-reference-capture/1', 'selected_phase': phase,
-                'provenance': {'kind': 'python-reference', 'wrapper_review': review,
+    provenance = {'kind': 'python-reference', 'wrapper_review': review,
                     'capture_source_sha256': _digest(script), 'fixture_source_sha256': _digest(fixture_module),
                     'source_commit': source_commit, 'host_network_namespace': os.readlink('/proc/self/ns/net'),
                     'sources': SOURCE_DIGESTS, 'assets': ASSET_DIGESTS,
                     'request_encoding': 'capture compact UTF-8 JSON; not claimed Go-generated',
-                    'reviewer_raw_baseline': REVIEWER_RAW_BASELINE},
+                    'reviewer_raw_baseline': REVIEWER_RAW_BASELINE}
+    def prepare():
+        _copy_reference(output, sources, assets, isolation_module, isolation_review)
+        if (_digest(output / 'reference/tooling/semantic_acceptance_isolation.py') != review['module_sha256']
+                or _digest(output / 'reference/tooling/isolation-review.json') != isolation_review_sha256):
+            raise EvidenceError('reviewed isolation inputs changed while copying; no model was run')
+    return _run_reference_capture(module=module, output=output, phase=phase, cases=cases, python=python,
+        sources=sources, assets=assets, read_only=read_only, provenance=provenance, prepare=prepare)
+
+
+def _run_reference_capture(*, module, output, phase, cases, python, sources, assets, read_only,
+                           provenance, prepare=None):
+    """Orchestration below admission; model-free tests inject only a fake wrapper."""
+    output.mkdir(parents=True, mode=0o700, exist_ok=False)
+    script = Path(__file__).resolve()
+    manifest = {'schema': 'cairn.semantic-reference-capture/1', 'selected_phase': phase,
+                'provenance': dict(provenance, capture_scope='ordinary-default-reference', conditional_b1_proof=False),
                 'observations': [], 'failure': None}
     isolation_output = output / 'isolation'
     raw_gate = {name: bytearray() for name in REVIEWER_RAW_BASELINE}
+    primary = None
     try:
-        with module.SemanticIsolation(read_only_paths=read_only, output_dir=isolation_output) as isolation:
+        if prepare is not None:
+            prepare()
+        with _capture_context(module.SemanticIsolation(read_only_paths=read_only, output_dir=isolation_output),
+                              manifest) as isolation:
+            if isolation.proof.get('profile') != 'default':
+                raise EvidenceError('ordinary capture cannot consume a derived-W construction or claim B1 proof')
             for case in cases:
                 mode = 'rank' if phase == 'rank' else 'embed'
                 case_output = isolation_output / 'raw' / case['id']
@@ -1158,26 +1445,47 @@ def capture_reference(*, output, phase, python, sources, assets, isolation_modul
                     for name in raw_gate:
                         raw_gate[name].extend((case_output / (name + '.bin')).read_bytes())
                 observation['logical_occurrences'] = trace['logical_occurrences']
-            runtime_evidence = isolation.runtime_evidence(require_ort=True)
-            manifest['provenance']['actual_worker_observation'] = runtime_evidence
-            manifest['provenance']['isolation_proof'] = isolation.proof
+                observation['observed_model_executions'] = trace['observed_model_executions']
+                observation['mapped_duplicate_rows'] = trace['mapped_duplicate_rows']
+            try:
+                runtime_evidence = isolation.runtime_evidence(require_ort=True)
+                manifest['provenance']['actual_worker_observation'] = runtime_evidence
+                manifest['provenance']['isolation_proof'] = isolation.proof
+            except BaseException as error:
+                primary = _exception_record(error)
+                raise
         if phase == 'rank':
             digests = {name: hashlib.sha256(raw).hexdigest() for name, raw in raw_gate.items()}
             for name, raw in raw_gate.items():
                 (output / (name + '.bin')).write_bytes(raw)
-            manifest['provenance']['raw_gate'] = digests
+            manifest['provenance']['expanded_row_digests'] = digests
             if digests != REVIEWER_RAW_BASELINE or len(raw_gate['cls_f32le']) != 294 * 384 * 4:
-                raise EvidenceError('wrapper invariance/raw-output baseline mismatch')
+                raise EvidenceError('ordinary expanded-row digest mismatch; no conditional B1 proof')
+        manifest['provenance']['execution_counts'] = {
+            key: sum(entry[key] for entry in manifest['observations'])
+            for key in ('logical_occurrences', 'observed_model_executions', 'mapped_duplicate_rows')}
         manifest['provenance']['wrapper_invariance_scope'] = (
-            '294 ranking occurrences match reviewer b31016f5 v1' if phase == 'rank'
-            else 'unqualified: no pre-isolation raw CLS baseline for all query/document inputs')
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
-        manifest['failure'] = str(error)
-    manifest['provenance']['disposable_home_removed'] = not (isolation_output / 'mapped-home').exists()
+            'ordinary default construction only; observed executions and mapped duplicate rows are separate; '
+            'expanded digest equality establishes neither executed duplicate rows nor the semantic/4 B1 proof')
+    except BaseException as error:
+        manifest['failure'] = _exception_record(error)
+        if primary is not None:
+            manifest['primary_failure'] = primary
+    try:
+        manifest['provenance']['cleanup_evidence'] = _cleanup_evidence(output)
+    except BaseException as error:
+        cleanup = _exception_record(error)
+        manifest['cleanup_failure'] = cleanup
+        (output / 'cleanup-failure.json').write_text(json.dumps(cleanup, indent=2) + '\n')
+        if manifest['failure'] is None:
+            manifest['failure'] = cleanup
+    if manifest['failure'] is not None:
+        (output / 'failure.json').write_text(json.dumps(manifest['failure'], indent=2) + '\n')
     (output / 'capture-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    _seal_output(output)
+    _seal_output(output, _capture_file_inventory(cases))
     if manifest['failure']:
-        raise EvidenceError('capture retained as failed/incomplete: ' + manifest['failure'])
+        raise EvidenceError('capture retained as failed/incomplete: ' + manifest['failure']['type']
+                            + ': ' + manifest['failure']['message'])
     return manifest
 
 
@@ -1188,7 +1496,7 @@ def main(argv=None):
     importer = commands.add_parser('import', help='validate pinned seals and import evidence outside git')
     importer.add_argument('--bundle', action='append', nargs=2, metavar=('DIRECTORY', 'SEAL_SHA256'), required=True)
     importer.add_argument('--output', type=Path, required=True)
-    capturer = commands.add_parser('capture', help='capture positives only through reviewed S-B2 isolation')
+    capturer = commands.add_parser('capture', help='unavailable until an accepted pretoken gate/proof vehicle exists')
     capturer.add_argument('--phase', choices=('rank', 'embed'), required=True)
     for option in ('output', 'python', 'sources', 'assets'):
         capturer.add_argument('--' + option, type=Path, required=True)
@@ -1199,13 +1507,19 @@ def main(argv=None):
     collector = commands.add_parser('_collect', help=argparse.SUPPRESS)
     collector.add_argument('--mode', choices=('rank', 'embed'), required=True)
     collector.add_argument('--case-id', required=True)
+    collector.add_argument('--preflight-only', action='store_true', help='validate declared facts without model imports')
     for option in ('request', 'sources', 'assets', 'output', 'isolation-proof'):
         collector.add_argument('--' + option, type=Path, required=True)
     collector.add_argument('--parent-net-namespace', required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == '_collect':
-            _isolation_guard(args.isolation_proof, args.parent_net_namespace)
+            proof = _isolation_guard(args.isolation_proof, args.parent_net_namespace)
+            if args.preflight_only:
+                print(json.dumps({'status': 'ordinary-preflight-observed', 'model_imported': False,
+                                  'network_namespace': proof['collector_network_namespace']}))
+                return 0
+            _capture_admission()
             _collect_reference(args)
             return 0
         if args.command == 'inputs':
@@ -1224,7 +1538,7 @@ def main(argv=None):
                           'missing_cells': len(catalog['missing_cells']), 'unqualified_cells': len(catalog['unqualified_cells']),
                           'catalog': str(args.output / 'catalog.json')}))
         return 3
-    except (EvidenceError, OSError, ValueError, subprocess.SubprocessError, ImportError) as error:
+    except (Exception, KeyboardInterrupt) as error:
         print(json.dumps({'status': 'refused', 'error': str(error)}), file=sys.stderr)
         return 2
 

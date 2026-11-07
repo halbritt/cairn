@@ -6,6 +6,9 @@ import os
 import subprocess
 import sys
 import unittest
+import ast
+import uuid
+from pathlib import Path
 
 import semantic_fixture_cases
 
@@ -18,6 +21,19 @@ class SemanticFixtureCasesTest(unittest.TestCase):
         self.assertEqual([case['id'] for case in cases[-2:]], ['long-tail', '64-short'])
         canonical = json.dumps(cases, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), 'ebeecaa4a508ec4cd735ae6f6844f3c96dd30f4d48ef85e7caadbc4cdc9420ba')
+        # Execute only the frozen comparator's pure case-building statements,
+        # before repeat-storage, argparse, subprocesses or worker calls.
+        root = Path(semantic_fixture_cases.__file__).resolve().parents[1]
+        source = subprocess.check_output(['git', '-C', str(root), 'show',
+            'd3c255a4bb75438e93527eaa1d83da780fd11eea:scripts/compare_semantic_workers.py'])
+        body = ast.parse(source).body
+        start = next(index for index, node in enumerate(body) if isinstance(node, ast.FunctionDef) and node.name == 'note')
+        stop = next(index for index, node in enumerate(body) if isinstance(node, ast.AugAssign)
+                    and isinstance(node.target, ast.Name) and node.target.id == 'cases')
+        namespace = {'uuid': uuid, 'hashlib': hashlib,
+                     'workload': json.loads((root / 'core/testdata/retrieval-quality.json').read_bytes())}
+        exec(compile(ast.Module(body=body[start:stop], type_ignores=[]), 'frozen-comparator-case-builder', 'exec'), namespace)
+        self.assertEqual(cases, namespace['cases'])
 
     def test_embedding_inventory_keeps_nine_queries_six_documents_and_exact_byte_limits(self):
         cases = semantic_fixture_cases.embedding_cases()
@@ -75,7 +91,11 @@ assert len(semantic_fixture_cases.embedding_cases())==15
         by_id = {case['id']: case for case in failures}
         self.assertEqual(len(by_id['query-byte-overflow']['text'].encode()), 4097)
         self.assertEqual(len(by_id['document-byte-overflow']['text'].encode()), 65537)
-        self.assertEqual(semantic_fixture_cases.consumed_punctuation_case()['expected_disposition'], 'timeout')
+        punctuation = semantic_fixture_cases.consumed_punctuation_case()
+        self.assertEqual(punctuation['observed_direct_supervisor_disposition'], 'timeout')
+        self.assertEqual(punctuation['real_go_disposition'], 'unmeasured')
+        self.assertNotIn('expected', punctuation)
+        self.assertNotIn('expected_disposition', punctuation)
 
     def test_wordpiece_boundary_requires_an_explicit_tokenizer_without_a_fallback(self):
         with self.assertRaisesRegex(ValueError, 'prepared tokenizer'):

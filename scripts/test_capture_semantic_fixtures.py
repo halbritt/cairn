@@ -10,6 +10,15 @@ import unittest
 import io
 import struct
 import zipfile
+import py_compile
+import ast
+import types
+import __future__
+import contextlib
+import shutil
+import socket
+import copy
+from unittest import mock
 from pathlib import Path
 
 import capture_semantic_fixtures as capture
@@ -29,7 +38,474 @@ def sealed_bundle(root, files):
     return hashlib.sha256(raw).hexdigest()
 
 
+def manufactured_case():
+    notes = []
+    for index, body in enumerate(('red blue', 'red blue', 'green blue')):
+        notes.append({'record_id': f'00000000-0000-4000-8000-{index:012d}', 'version': 1,
+                      'body': body, 'body_sha256': hashlib.sha256(body.encode()).hexdigest()})
+    return {'id': 'manufactured-shared-notes', 'query': 'red', 'notes': notes}
+
+
+def fake_onnx_worker(output, mode='rank', corruption=None):
+    """Prepared NumPy arithmetic with frozen code; no ORT/tokenizer/model import."""
+    class NoModel:
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname.split('.')[0] in {'fastembed', 'onnxruntime', 'tokenizers'}:
+                raise AssertionError('real model dependency imported in manufactured trace')
+    sys.meta_path.insert(0, NoModel())
+    import numpy as np
+    rank, embed = capture._load_frozen_sources(Path(capture.__file__).parent)
+    packages = Path(np.__file__).resolve().parent.parent
+    normalize_path = packages / 'fastembed/common/utils.py'
+    onnx_path = packages / 'fastembed/text/onnx_text_model.py'
+    normalize_source = normalize_path.read_bytes()
+
+    def function(path, name):
+        tree = ast.parse(path.read_bytes())
+        node = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name)
+        namespace = {'np': np, 'OnnxOutputContext': types.SimpleNamespace}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec',
+                     flags=__future__.annotations.compiler_flag), namespace)
+        return namespace[name]
+
+    normalize = function(normalize_path, 'normalize')
+
+    class ManufacturedTokenizer:
+        words = {}
+
+        def encode(self, text, add_special_tokens=True):
+            import re
+            matches = list(re.finditer(r'\S+', text))
+            ids = [self.words.setdefault(match.group(), len(self.words) + 1000) for match in matches]
+            offsets = [match.span() for match in matches]
+            if add_special_tokens:
+                ids, offsets = [101] + ids + [102], [(0, 0)] + offsets + [(0, 0)]
+            return types.SimpleNamespace(ids=ids, attention_mask=[1] * len(ids), offsets=offsets)
+
+        def decode(self, ids, skip_special_tokens=False):
+            reverse = {value: key for key, value in self.words.items()}
+            return ' '.join(reverse[value] for value in ids)
+
+    tokenizer = ManufacturedTokenizer()
+
+    class FakeSession:
+        calls = 0
+
+        def get_inputs(self):
+            return [types.SimpleNamespace(name=name) for name in ('input_ids', 'attention_mask', 'token_type_ids')]
+
+        def run(self, names, inputs):
+            self.calls += 1
+            if corruption == 'exception':
+                raise RuntimeError('manufactured ONNX execution error')
+            raw = np.arange(1, 385, dtype=np.float32) + np.float32(inputs['input_ids'].sum() / 1024)
+            hidden = np.broadcast_to(raw, (1, inputs['input_ids'].shape[1], 384)).copy()
+            if corruption == 'nonfinite':
+                hidden[0, 0, 0] = np.nan
+            if corruption == 'shape':
+                hidden = hidden[:, :, :383]
+            return [hidden]
+
+    class FakeOnnx:
+        onnx_embed = function(onnx_path, 'onnx_embed')
+        ONNX_OUTPUT_NAMES = None
+        model = FakeSession()
+
+        def tokenize(self, documents, **kwargs):
+            return [tokenizer.encode(text) for text in documents]
+
+        def _preprocess_onnx_input(self, inputs, **kwargs):
+            if corruption == 'mask':
+                inputs['attention_mask'][:] = 0
+            return inputs
+
+    class FakeEmbedding:
+        model = FakeOnnx()
+
+        def embed(self, texts, batch_size):
+            assert batch_size == 1
+            for text in texts:
+                response = self.model.onnx_embed([text])
+                yield normalize(response.model_output[:, 0])[0]
+
+    # __init__ would construct a real session; it is deliberately never called.
+    scorer = rank.Scorer.__new__(rank.Scorer)
+    scorer.np, scorer.tokenizer, scorer.model = np, tokenizer, FakeEmbedding()
+    scorer.model_hash, scorer.chunk_vectors = capture.RANK_IDENTITY, {}
+    case = manufactured_case()
+    request = {key: case[key] for key in ('query', 'notes')}
+    embeddings = None
+    if mode != 'rank':
+        request = {'id': 'manufactured-' + mode, 'operation': mode, 'text': 'red blue'}
+        case = dict(request, expected='accepted')
+        embeddings = embed.Embeddings.__new__(embed.Embeddings)
+        embeddings.scorer = scorer
+        embeddings.identity = {'model_sha256': capture.EMBED_IDENTITY,
+                               'algorithm': 'bge-original-passages/1', 'dimensions': 384}
+    result, trace, arrays, raw = capture._trace_reference(
+        scorer=scorer, semantic_rank=rank, embedding_worker=embed, normalize=normalize,
+        normalize_source=normalize_source, request=request, mode='rank' if mode == 'rank' else 'embed',
+        case_id=case['id'], embeddings=embeddings)
+    output.mkdir()
+    for name, contents in raw.items():
+        (output / (name + '.bin')).write_bytes(contents)
+    np.savez(output / 'arrays.npz', **arrays)
+    (output / 'trace.json').write_text(json.dumps(trace))
+    (output / 'case.json').write_text(json.dumps(case))
+    (output / 'result.json').write_text(json.dumps(result))
+    assert not any(name.split('.')[0] in {'fastembed', 'onnxruntime', 'tokenizers'} for name in sys.modules)
+    print(json.dumps({'manufactured': True, 'model_calls': scorer.model.model.model.calls,
+                      'logical_rows': trace['logical_occurrences'], 'all_replay_bits_match': all(trace['replay'].values())}))
+
+
+def manufactured_reference(trace_root):
+    """Construct adversarial parser data. Patched test pins are not real references."""
+    def raw_json(value):
+        return json.dumps(value, separators=(',', ':'))
+    def digest(value):
+        return hashlib.sha256(value.encode() if isinstance(value, str) else value).hexdigest()
+    files = {
+        'reference/tooling/capture_semantic_fixtures.py': Path(capture.__file__).read_bytes(),
+        'reference/tooling/semantic_fixture_cases.py': Path(capture.__file__).with_name('semantic_fixture_cases.py').read_bytes(),
+        'reference/tooling/semantic_acceptance_isolation.py': '# manufactured review fixture\n',
+    }
+    for filename in capture.SOURCE_DIGESTS:
+        files['reference/scripts/' + filename] = Path(capture.__file__).with_name(filename).read_bytes()
+    assets = {filename: digest('manufactured asset ' + filename) for filename in capture.ASSET_DIGESTS}
+    for filename in assets:
+        files['assets/' + filename] = 'manufactured asset ' + filename
+    native = {marker: str(index + 1) * 64 for index, marker in enumerate(capture.NATIVE_DIGESTS)}
+    libraries = {'/manufactured/' + marker + '.so': {'inode': index + 100, 'device': '00:01', 'sha256': sha}
+                 for index, (marker, sha) in enumerate(native.items())}
+    review = {'schema': 'cairn.semantic-isolation-review/1', 'status': 'accepted', 'source_commit': 'a' * 40,
+        'module_sha256': digest(files['reference/tooling/semantic_acceptance_isolation.py']),
+        'review_record': {'record_id': '00000000-0000-4000-8000-000000000001',
+                         'version': 1, 'body_sha256': 'b' * 64}, 'manufactured': True}
+    files['reference/tooling/isolation-review.json'] = raw_json(review)
+    identity = {'inode': 303, 'device': 1, 'owner': os.getuid(), 'mode': 0o700}
+    home = {'backing': '/manufactured/private-backing', 'initial_identity': identity}
+    final = {'all_observed_processes_exited': True, 'backing_removed': True, 'errors': []}
+    files['isolation/disposable-home.json'] = raw_json(home)
+    files['isolation/cleanup.json'] = raw_json(final)
+    cleanup = dict(home, backing_absent_observed=True, home_receipt='isolation/disposable-home.json',
+                   final_receipt='isolation/cleanup.json')
+    environment = {'PATH': '/usr/bin:/bin', 'HF_HUB_OFFLINE': '1', 'HF_HUB_DISABLE_TELEMETRY': '1',
+                   'TOKENIZERS_PARALLELISM': 'false'}
+    proof = {'wrapper_sha256': review['module_sha256'], 'profile': 'default', 'home': '/fixture-home',
+        'home_probe_inode': 77, 'model_environment': environment, 'effective_prefix': ['bwrap', '--chdir', '/']}
+    runtime = {'schema': 'cairn.semantic-python-runtime/1', 'network_namespace': 'child-ns',
+        'passwd_home': '/fixture-home', 'expanduser_home': '/fixture-home', 'home_probe_inode': 77,
+        'executable': {'inode': 55, 'sha256': 'e' * 64}, 'mapped_libraries': libraries,
+        'effective_environment': dict(environment, PWD='/', LC_CTYPE='C.UTF-8'), 'cwd': '/',
+        'cpu_kernel_class': capture.cpu_kernel_class({'architecture': 'manufactured', 'byte_order': 'little',
+            'pointer_bits': 64, 'effective_isa': ['synthetic'], 'os_vector_state': ['synthetic'],
+            'blas_core': 'synthetic', 'blas_config': 'synthetic'})}
+    worker = {'executable_inode': 55, 'executable_sha256': 'e' * 64, 'network_namespace': 'child-ns',
+              'libraries': [dict(path=path, **info) for path, info in libraries.items()]}
+    case = json.loads((trace_root / 'case.json').read_text())
+    prefix = 'isolation/raw/' + case['id'] + '/'
+    artifacts = {'request': prefix + 'request.stdin', 'stdout': prefix + 'wire.stdout', 'stderr': prefix + 'wire.stderr',
+                 'trace': prefix + 'trace.json', 'arrays': prefix + 'trace-arrays.npz', 'runtime': prefix + 'runtime.json'}
+    files[artifacts['request']] = raw_json({key: case[key] for key in ('query', 'notes')})
+    files[artifacts['stdout']] = (trace_root / 'result.json').read_bytes()
+    files[artifacts['stderr']] = b''
+    files[artifacts['trace']] = (trace_root / 'trace.json').read_bytes()
+    files[artifacts['arrays']] = (trace_root / 'arrays.npz').read_bytes()
+    files[artifacts['runtime']] = raw_json(runtime)
+    aggregates = {}
+    for name in capture.REVIEWER_RAW_BASELINE:
+        raw = (trace_root / (name + '.bin')).read_bytes()
+        files[name + '.bin'] = raw
+        aggregates[name] = digest(raw)
+    observation = {'cell': 'rank/' + case['id'], 'status': 'observed', 'exit_code': 0, 'skipped': 0,
+        'logical_occurrences': 4, 'observed_model_executions': 3, 'mapped_duplicate_rows': 1, 'artifacts': artifacts}
+    provenance = {'kind': 'python-reference', 'manufactured': True, 'capture_scope': 'ordinary-default-reference',
+        'conditional_b1_proof': False, 'wrapper_review': review, 'source_commit': 'c' * 40,
+        'capture_source_sha256': digest(files['reference/tooling/capture_semantic_fixtures.py']),
+        'fixture_source_sha256': digest(files['reference/tooling/semantic_fixture_cases.py']),
+        'sources': capture.SOURCE_DIGESTS, 'assets': assets, 'isolation_proof': proof,
+        'actual_worker_observation': {'model_workers': [worker], 'errors': []}, 'host_network_namespace': 'host-ns',
+        'cleanup_evidence': cleanup, 'expanded_row_digests': aggregates,
+        'execution_counts': {'logical_occurrences': 4, 'observed_model_executions': 3, 'mapped_duplicate_rows': 1}}
+    files['capture-manifest.json'] = raw_json({'schema': 'cairn.semantic-reference-capture/1',
+        'selected_phase': 'rank', 'provenance': provenance, 'observations': [observation], 'failure': None})
+    return files, assets, native, aggregates, case
+
+
 class CaptureSemanticFixturesTest(unittest.TestCase):
+    def test_manufactured_python_reference_stays_unqualified_and_every_gate_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace_root = root / 'trace'
+            result = subprocess.run([sys.executable, '-B', __file__, '--fake-onnx-worker', str(trace_root), 'rank'],
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            files, assets, native, aggregates, case = manufactured_reference(trace_root)
+            artifacts = json.loads(files['capture-manifest.json'])['observations'][0]['artifacts']
+            variants = ['valid', 'scope', 'profile', 'netns', 'home', 'expanduser', 'home-inode', 'environment',
+                        'replay', 'mapping', 'ordinal', 'owner', 'count', 'mask', 'aggregate', 'aggregate-bytes',
+                        'cleanup', 'cleanup-identity', 'backing-observation', 'outer-child',
+                        'missing-executable-hash', 'skipped', 'zero-observations', 'missing-runtime']
+            variants += ['native-' + name for name in native]
+            variants += ['missing-native-' + name for name in native]
+            for index, variant in enumerate(variants):
+                with self.subTest(variant=variant):
+                    changed = copy.deepcopy(files)
+                    manifest = json.loads(changed['capture-manifest.json'])
+                    provenance = manifest['provenance']
+                    runtime = json.loads(changed[artifacts['runtime']])
+                    trace = json.loads(changed[artifacts['trace']])
+                    if variant == 'scope':
+                        provenance['conditional_b1_proof'] = True
+                    elif variant == 'profile':
+                        provenance['isolation_proof']['profile'] = 'derived-W'
+                    elif variant == 'netns':
+                        runtime['network_namespace'] = 'host-ns'
+                    elif variant == 'home':
+                        runtime['passwd_home'] = '/wrong'
+                    elif variant == 'expanduser':
+                        runtime['expanduser_home'] = '/wrong'
+                    elif variant == 'home-inode':
+                        runtime['home_probe_inode'] += 1
+                    elif variant == 'environment':
+                        runtime['effective_environment']['UNDECLARED'] = 'bad'
+                    elif variant == 'replay':
+                        trace['replay'][next(iter(trace['replay']))] = False
+                    elif variant == 'mapping':
+                        trace['row_order'][2]['inference'] = 99
+                    elif variant == 'ordinal':
+                        trace['row_order'][2]['row'] = 99
+                    elif variant == 'owner':
+                        trace['row_order'][2]['record_id'] = 'wrong'
+                    elif variant == 'count':
+                        trace['observed_model_executions'] = 294
+                    elif variant == 'mask':
+                        trace['inferences'][0]['inputs']['attention_mask'] = trace['inferences'][0]['inputs']['token_type_ids']
+                    elif variant == 'aggregate':
+                        provenance['expanded_row_digests']['ids_i64le'] = '0' * 64
+                    elif variant == 'aggregate-bytes':
+                        changed['cls_f32le.bin'] = b'changed'
+                    elif variant == 'cleanup':
+                        changed['isolation/cleanup.json'] = json.dumps({'backing_removed': False})
+                    elif variant == 'cleanup-identity':
+                        provenance['cleanup_evidence']['initial_identity']['inode'] += 1
+                    elif variant == 'backing-observation':
+                        provenance['cleanup_evidence']['backing_absent_observed'] = False
+                    elif variant == 'outer-child':
+                        provenance['actual_worker_observation']['model_workers'][0]['executable_inode'] += 1
+                    elif variant == 'missing-executable-hash':
+                        runtime['executable'].pop('sha256')
+                    elif variant == 'skipped':
+                        manifest['observations'][0]['skipped'] = 1
+                    elif variant == 'zero-observations':
+                        manifest['observations'] = []
+                    elif variant == 'missing-runtime':
+                        provenance.pop('actual_worker_observation')
+                    elif variant.startswith('missing-native-'):
+                        marker = variant[len('missing-native-'):]
+                        path = next(path for path in runtime['mapped_libraries'] if marker in path)
+                        runtime['mapped_libraries'].pop(path)
+                    elif variant.startswith('native-'):
+                        marker = variant[len('native-'):]
+                        library = next(info for path, info in runtime['mapped_libraries'].items() if marker in path)
+                        library['sha256'] = '0' * 64
+                    changed['capture-manifest.json'] = json.dumps(manifest)
+                    changed[artifacts['runtime']] = json.dumps(runtime)
+                    changed[artifacts['trace']] = json.dumps(trace)
+                    bundle = root / ('bundle-' + str(index))
+                    seal = sealed_bundle(bundle, changed)
+                    with mock.patch.object(capture, 'ASSET_DIGESTS', assets), \
+                            mock.patch.object(capture, 'NATIVE_DIGESTS', native), \
+                            mock.patch.object(capture, 'REVIEWER_RAW_BASELINE', aggregates), \
+                            mock.patch.object(capture, 'ranking_cases', return_value=[case]):
+                        if variant == 'valid':
+                            catalog = capture.import_bundles([(bundle, seal)], root / ('catalog-' + str(index)))
+                            self.assertEqual(catalog['cells'][0]['status'], 'unqualified')
+                            self.assertFalse(catalog['model_acceptance'])
+                            self.assertEqual(catalog['phase_status'], 'incomplete')
+                        else:
+                            with self.assertRaises(capture.EvidenceError):
+                                capture.import_bundles([(bundle, seal)], root / ('catalog-' + str(index)))
+    def test_missing_runtime_interface_seals_failure_and_checks_declared_backing(self):
+        """Fake wrapper only; no subprocess/model call. Failure is never a pass."""
+        for leave_backing, failure_type in ((False, AttributeError), (True, AttributeError),
+                                           (False, KeyError), (False, TypeError), (False, RuntimeError)):
+            with self.subTest(leave_backing=leave_backing, failure=failure_type.__name__), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'capture'
+
+                class MissingRuntimeWrapper:
+                    def __init__(self, *, read_only_paths, output_dir):
+                        self.output = output_dir
+                        self.proof = {'profile': 'default'}
+
+                    def __enter__(self):
+                        self.output.mkdir(mode=0o700)
+                        self.backing = self.output / 'actual-private-backing'
+                        self.backing.mkdir(mode=0o700)
+                        self.identity = self.backing.stat()
+                        (self.backing / 'private-payload').write_text('never copy or inspect this fixture payload')
+                        return self
+
+                    def run(self, command, **kwargs):
+                        target = Path(command[command.index('--output') + 1])
+                        (target / 'trace.json').write_text(json.dumps({
+                            'logical_occurrences': 1, 'observed_model_executions': 1, 'mapped_duplicate_rows': 0}))
+                        return subprocess.CompletedProcess(command, 0, b'{}', b'')
+
+                    def __exit__(self, *exception):
+                        if not leave_backing:
+                            shutil.rmtree(self.backing)
+                        (self.output / 'disposable-home.json').write_text(json.dumps({
+                            'backing': str(self.backing), 'initial_identity': {
+                                'inode': self.identity.st_ino, 'device': self.identity.st_dev,
+                                'owner': self.identity.st_uid, 'mode': 0o700}}))
+                        (self.output / 'cleanup.json').write_text(json.dumps({
+                            'backing_removed': not leave_backing, 'all_observed_processes_exited': True, 'errors': []}))
+
+                def run_fake(**kwargs):
+                    return capture._run_reference_capture(module=types.SimpleNamespace(SemanticIsolation=MissingRuntimeWrapper),
+                        output=output, phase='embed',
+                        cases=[{'id': 'manufactured', 'operation': 'query', 'text': 'red', 'expected': 'accepted'}],
+                        python=Path(sys.executable), sources=Path(directory), assets=Path(directory),
+                        read_only=[], provenance={'kind': 'mechanics', 'manufactured': True})
+
+                if failure_type is not AttributeError:
+                    def failed_runtime(self, **kwargs):
+                        raise failure_type('manufactured runtime interface error')
+                    MissingRuntimeWrapper.runtime_evidence = failed_runtime
+
+                with mock.patch.object(capture, 'capture_reference', side_effect=run_fake), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    code = capture.main(['capture', '--phase', 'embed', '--output', str(output),
+                        '--python', sys.executable, '--sources', directory, '--assets', directory,
+                        '--isolation-module', '/absent', '--isolation-review', '/absent',
+                        '--isolation-review-sha256', '0' * 64, '--source-commit', '0' * 40])
+                self.assertEqual(code, 2)
+                manifest = json.loads((output / 'capture-manifest.json').read_bytes())
+                self.assertEqual(manifest['failure']['type'], failure_type.__name__)
+                if failure_type is AttributeError:
+                    self.assertIn('runtime_evidence', manifest['failure']['message'])
+                self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+                entries = capture.verify_sealed_bundle(output, hashlib.sha256((output / 'SHA256SUMS').read_bytes()).hexdigest())
+                self.assertIn('failure.json', entries)
+                self.assertFalse(any('private-payload' in path for path in entries))
+                if leave_backing:
+                    self.assertIn('cleanup_failure', manifest)
+                    self.assertNotIn('cleanup_evidence', manifest['provenance'])
+                else:
+                    self.assertTrue(manifest['provenance']['cleanup_evidence']['backing_absent_observed'])
+                    self.assertEqual(manifest['provenance']['cleanup_evidence']['initial_identity']['inode'],
+                                     json.loads((output / 'isolation/disposable-home.json').read_text())['initial_identity']['inode'])
+
+    def test_actual_capture_refuses_before_wrapper_import_or_session_construction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'absent'
+            with mock.patch.object(capture, '_reviewed_isolation', side_effect=AssertionError('wrapper imported')):
+                with self.assertRaisesRegex(capture.EvidenceError, 'pretoken'):
+                    capture.capture_reference(output=output, phase='rank', python=Path(sys.executable),
+                        sources=Path(directory), assets=Path(directory), isolation_module=Path('/absent'),
+                        isolation_review=Path('/absent'), isolation_review_sha256='0' * 64)
+            self.assertFalse(output.exists())
+        expected = dict(text_count=294, token_count=33395,
+            **{key: capture.REVIEWER_RAW_BASELINE[key] for key in ('ids_i64le', 'lengths_i64le')})
+        capture.validate_pretoken_digests(expected)  # mechanics only; never an admission stamp
+        for field in expected:
+            changed = dict(expected, **{field: 0})
+            with self.assertRaisesRegex(capture.EvidenceError, 'pre-inference'):
+                capture.validate_pretoken_digests(changed)
+
+    def test_overflow_reply_shape_and_f32_representability_refuse(self):
+        with self.assertRaises(capture.EvidenceError):
+            capture._strict_json(b'{"unrelated":1e400}')
+        request = {'id': 'manufactured', 'operation': 'query', 'text': 'red'}
+        reply = {'id': request['id'], 'identity': {'model_sha256': capture.EMBED_IDENTITY,
+            'algorithm': 'bge-original-passages/1', 'dimensions': 384}, 'vector': [1.0] * 384,
+            'query_projection': {'method': 'original-prefix/1', 'truncated': False,
+                'original_tokens': 3, 'embedded_tokens': 3, 'prefix_bytes': 3,
+                'prefix_sha256': hashlib.sha256(b'red').hexdigest()}}
+        capture._embedding_reply(request, reply)
+        for change in ('extra', 'truncated', 'original', 'float64'):
+            altered = json.loads(json.dumps(reply))
+            if change == 'extra':
+                altered['extra'] = True
+            elif change == 'truncated':
+                altered['query_projection']['truncated'] = True
+            elif change == 'original':
+                altered['query_projection']['original_tokens'] = 4
+            else:
+                altered['vector'][0] = 0.1
+            with self.assertRaises(capture.EvidenceError):
+                capture._embedding_reply(request, altered)
+
+    def test_seal_refuses_fifo_and_socket_instead_of_silently_omitting_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.mkfifo(root / 'fifo')
+            with self.assertRaisesRegex(capture.EvidenceError, 'non-regular'):
+                capture._seal_output(root)
+            (root / 'fifo').unlink()
+            with socket.socket(socket.AF_UNIX) as endpoint:
+                endpoint.bind(str(root / 'socket'))
+                with self.assertRaisesRegex(capture.EvidenceError, 'non-regular'):
+                    capture._seal_output(root)
+    def test_frozen_trace_counts_executions_mapping_and_bit_replay_without_a_model(self):
+        for mode in ('rank', 'query', 'document'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'trace'
+                result = subprocess.run([sys.executable, '-B', __file__, '--fake-onnx-worker', str(output), mode],
+                                        capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                summary = json.loads(result.stdout)
+                trace = json.loads((output / 'trace.json').read_text())
+                self.assertTrue(summary['manufactured'])
+                self.assertTrue(summary['all_replay_bits_match'])
+                self.assertEqual(summary['model_calls'], 3 if mode == 'rank' else 1)
+                self.assertEqual(trace['observed_model_executions'], summary['model_calls'])
+                self.assertFalse(trace['conditional_b1_proof'])
+                if mode == 'rank':
+                    self.assertEqual([row['inference'] for row in trace['row_order']], [0, 1, 1, 2])
+                    self.assertEqual(trace['mapped_duplicate_rows'], 1)
+                    self.assertEqual(len((output / 'cls_f32le.bin').read_bytes()), 4 * 384 * 4)
+                    self.assertEqual(len((output / 'lengths_i64le.bin').read_bytes()), 4 * 8)
+
+    def test_frozen_trace_refuses_bad_fake_onnx_tensors(self):
+        for corruption in ('mask', 'nonfinite', 'shape', 'exception'):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.run([sys.executable, '-B', __file__, '--fake-onnx-worker',
+                    str(Path(directory) / 'trace'), 'rank', corruption], capture_output=True, text=True, timeout=20)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('manufactured ONNX execution error' if corruption == 'exception' else 'EvidenceError', result.stderr)
+                self.assertNotIn('real model dependency imported', result.stderr)
+    def test_shared_stream_ledger_has_only_one_observed_cold_cell(self):
+        """Manufactured ledger mechanics, never model observations."""
+        cases = capture.ranking_cases()[:17]
+        requests, replies = [], []
+        for index, case in enumerate(cases):
+            for repeat in range(2):
+                identifier = f'frame-{index * 2 + repeat}'
+                request = {key: case[key] for key in ('query', 'notes')}
+                requests.append(json.dumps({'id': identifier, 'request': request}))
+                scores = [{key: note[key] for key in ('record_id', 'version', 'body_sha256')}
+                          | {'score': 0} for note in case['notes']]
+                replies.append(json.dumps({'id': identifier, 'result': {
+                    'model_sha256': capture.RANK_IDENTITY, 'algorithm': 'bge-max-chunk/1', 'scores': scores}}))
+        stdin, stdout = ('\n'.join(requests) + '\n').encode(), ('\n'.join(replies) + '\n').encode()
+        record = {'name': 'retrieval-quality-stream', 'input_sha256': hashlib.sha256(stdin).hexdigest(),
+                  'stdout_sha256': hashlib.sha256(stdout).hexdigest(), 'stderr_sha256': hashlib.sha256(b'').hexdigest()}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            seal = sealed_bundle(root, {'inventory/frozen-manifest.json': json.dumps({'baseline': 'manufactured'}),
+                'captures.json': json.dumps({'records': [record]}), 'additional-captures.json': '{"records":[]}',
+                'inputs/retrieval-quality-stream.stdin': stdin, 'raw/retrieval-quality-stream.stdout': stdout,
+                'raw/retrieval-quality-stream.stderr': b''})
+            with mock.patch.object(capture, '_fixed_digests'):
+                catalog = capture.import_bundles([(root, seal)], Path(directory) / 'catalog')
+            cold = [cell for cell in catalog['cells'] if cell['id'].startswith('stream/') and cell['id'].endswith('/cold')]
+            self.assertEqual(sum(cell['status'] == 'unqualified' for cell in cold), 1)
+            self.assertEqual(sum(cell['status'] == 'missing' for cell in cold), 18)  # 16 legacy + 2 never captured
+            warm_observations = [entry for cell in catalog['cells'] if cell['id'].endswith('/warm') for entry in cell['observations']]
+            self.assertEqual(len(warm_observations), 33)
+
     def test_seal_validation_rejects_changed_file_and_changed_seal(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'bundle'
@@ -137,9 +613,7 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
             receipt = Path(directory) / 'review.json'
             receipt.write_text('{}')
             with self.assertRaisesRegex(capture.EvidenceError, 'receipt digest mismatch'):
-                capture.capture_reference(output=Path(directory) / 'output', phase='rank',
-                    python=Path(sys.executable), sources=Path(directory), assets=Path(directory),
-                    isolation_module=module, isolation_review=receipt, isolation_review_sha256='0' * 64)
+                capture._reviewed_isolation(module, receipt, '0' * 64)
             self.assertFalse((Path(directory) / 'output').exists())
 
     def test_typed_archive_refuses_tampered_bits_nonfinite_data_and_object_dtype(self):
@@ -201,6 +675,87 @@ raise SystemExit(capture_semantic_fixtures.main(sys.argv[1:]))
             self.assertIn('network namespace', result.stderr)
             self.assertNotIn('model imported', result.stderr)
 
+    def test_real_bwrap_guard_accepts_declared_environment_and_refuses_an_extra(self):
+        """Real namespace, manufactured home/proof; all model imports blocked."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'private-home'
+            home.mkdir(mode=0o700)
+            probe = home / '.semantic-isolation-probe'
+            probe.write_text('manufactured guard fixture')
+            passwd = root / 'passwd'
+            passwd.write_text(f'fixture:x:{os.getuid()}:{os.getgid()}:fixture:/fixture-home:/bin/sh\n')
+            group = root / 'group'
+            group.write_text(f'fixture:x:{os.getgid()}:\n')
+            environment = {'PATH': '/usr/bin:/bin', 'HF_HUB_OFFLINE': '1',
+                'HF_HUB_DISABLE_TELEMETRY': '1', 'TOKENIZERS_PARALLELISM': 'false',
+                'CAIRN_DECLARED_TEST_VALUE': 'declared'}
+            prefix = ['bwrap', '--unshare-all', '--die-with-parent', '--new-session',
+                '--clearenv', '--ro-bind', '/usr', '/usr']
+            for name in ('bin', 'lib', 'lib64', 'sbin'):
+                path = Path('/') / name
+                if path.is_symlink():
+                    prefix += ['--symlink', os.readlink(path), '/' + name]
+                elif path.exists():
+                    prefix += ['--ro-bind', str(path), str(path)]
+            prefix += ['--proc', '/proc', '--dev', '/dev', '--dir', '/etc',
+                '--ro-bind', str(passwd), '/etc/passwd', '--ro-bind', str(group), '/etc/group',
+                '--bind', str(home), '/fixture-home',
+                '--ro-bind', str(Path(capture.__file__).parent), str(Path(capture.__file__).parent)]
+            proof = root / 'proof.json'
+            prefix += ['--ro-bind', str(proof), '/fixture-proof.json', '--chdir', '/', '--remount-ro', '/']
+            proof.write_text(json.dumps({'profile': 'default', 'home': '/fixture-home',
+                'home_probe_inode': probe.stat().st_ino, 'model_environment': environment, 'effective_prefix': prefix}))
+            command = [
+                'import sys',
+                'class NoModel:',
+                ' def find_spec(self, fullname, path=None, target=None):',
+                "  if fullname.split('.')[0] in {'numpy','fastembed','onnxruntime','tokenizers'}:",
+                "   raise AssertionError('model import during preflight')",
+                'sys.meta_path.insert(0,NoModel())',
+                f'sys.path.insert(0,{str(Path(capture.__file__).parent)!r})',
+                'import capture_semantic_fixtures as capture',
+                "raise SystemExit(capture.main(['_collect','--preflight-only','--mode','rank','--case-id','manufactured',"
+                "'--request','/absent','--sources','/absent','--assets','/absent','--output','/absent',"
+                "'--isolation-proof','/fixture-proof.json','--parent-net-namespace',"
+                + repr(os.readlink('/proc/self/ns/net')) + ']))']
+            for extra in (False, True):
+                env_args = [part for key, value in environment.items() for part in ('--setenv', key, value)]
+                if extra:
+                    env_args += ['--setenv', 'CAIRN_UNDECLARED_TEST_VALUE', 'refuse']
+                result = subprocess.run(prefix + env_args + ['--', '/usr/bin/python3', '-I', '-B', '-S', '-c',
+                    '\n'.join(command)], capture_output=True, text=True, timeout=15)
+                if extra:
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn('environment', result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(json.loads(result.stdout)['model_imported'])
+                self.assertNotIn('model import during preflight', result.stderr)
+
+    def test_frozen_sources_execute_verified_bytes_despite_adjacent_pyc(self):
+        """Only temporary source copies/pyc; never touch installed bytecode."""
+        source_root = Path(capture.__file__).parent
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules):
+            root = Path(directory)
+            for filename in capture.SOURCE_DIGESTS:
+                raw = (source_root / filename).read_bytes()
+                malicious = b"raise AssertionError('adjacent pyc executed')\n"
+                path = root / filename
+                path.write_bytes(malicious + b' ' * (len(raw) - len(malicious)))
+                os.utime(path, (1700000000, 1700000000))
+                py_compile.compile(str(path), doraise=True)
+                path.write_bytes(raw)
+                os.utime(path, (1700000000, 1700000000))
+            rank, embed = capture._load_frozen_sources(root)
+            self.assertEqual(rank.ALGORITHM, 'bge-max-chunk/1')
+            self.assertEqual(embed.ALGORITHM, 'bge-original-passages/1')
+            self.assertIs(embed.semantic_rank, rank)
+            self.assertTrue((root / '__pycache__').is_dir())
+            (root / 'semantic_rank.py').write_text('changed source')
+            with self.assertRaisesRegex(capture.EvidenceError, 'source mismatch'):
+                capture._load_frozen_sources(root)
+
     def test_reply_checks_refuse_zero_nonfinite_dimensions_and_invalid_utf8_spans(self):
         request = {'id': 'manufactured-document', 'operation': 'document', 'text': 'é🙂'}
         identity = {'model_sha256': capture.EMBED_IDENTITY, 'algorithm': 'bge-original-passages/1', 'dimensions': 384}
@@ -230,4 +785,7 @@ raise SystemExit(capture_semantic_fixtures.main(sys.argv[1:]))
 
 
 if __name__ == '__main__':
-    unittest.main()
+    if len(sys.argv) > 1 and sys.argv[1] == '--fake-onnx-worker':
+        fake_onnx_worker(Path(sys.argv[2]), sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
+    else:
+        unittest.main()
