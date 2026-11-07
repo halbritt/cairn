@@ -14,13 +14,46 @@ from semantic_acceptance_isolation import (
     IsolationError,
     SemanticIsolation,
     augment_sealed_prefix,
+    check_sealed_oracle,
     derive_w_prefix,
     stop_process,
 )
 
 
 class SemanticIsolationTest(unittest.TestCase):
-    def synthetic_w(self, root, *, bad_preflight=False):
+    def test_path_constructor_cannot_create_frozen_children(self):
+        with tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory:
+            root = Path(directory)
+            frozen, _, _ = self.synthetic_w(root)
+            before = frozen.stat()
+            for name in ("disposable", "inputs-new"):
+                with self.subTest(name=name), self.assertRaises(IsolationError):
+                    DisposableBacking(frozen / name)
+                self.assertFalse((frozen / name).exists())
+            self.assertEqual(frozen.stat(), before)
+
+    def test_factory_refuses_frozen_or_unlisted_roots_before_allocation(self):
+        with (
+            tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
+            frozen, _, pin = self.synthetic_w(Path(directory))
+            with patch("semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin):
+                before = check_sealed_oracle(frozen)
+                for task_root, name in (
+                    (frozen, "disposable"),
+                    (frozen, "inputs-new"),
+                    (Path(outside), "backing"),
+                ):
+                    with self.subTest(root=task_root, name=name):
+                        with self.assertRaises(IsolationError):
+                            DisposableBacking.create(
+                                sealed_root=frozen, task_root=task_root, name=name
+                            )
+                        self.assertFalse((task_root / name).exists())
+                        self.assertEqual(check_sealed_oracle(frozen), before)
+
+    def synthetic_w(self, root, *, bad_preflight=False, bad_environment=False):
         frozen = root / "frozen"
         frozen.mkdir()
         for name in ("inventory", "preflight", "etc", "reference", "runtime", "assets"):
@@ -104,6 +137,8 @@ class SemanticIsolationTest(unittest.TestCase):
         ]
         for key, value in env.items():
             prefix += ["--setenv", key, value]
+        if bad_environment:
+            prefix[-1] = "undeclared-setting"
         prefix += ["--chdir", "/oracle-1276-180s", "--remount-ro", "/"]
         self.assertEqual(len(prefix), 97)
         (frozen / "inventory/experiment-manifest.json").write_text(
@@ -136,33 +171,168 @@ class SemanticIsolationTest(unittest.TestCase):
         task.mkdir(mode=0o700)
         return frozen, task, hashlib.sha256(seal.encode()).hexdigest()
 
+    def test_factory_refuses_links_nonprivate_roots_and_paths_outside_root(self):
+        with tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory:
+            root = Path(directory)
+            frozen, task, pin = self.synthetic_w(root)
+            link = root / "linked-task"
+            link.symlink_to(task, target_is_directory=True)
+            nonprivate = root / "nonprivate"
+            nonprivate.mkdir(mode=0o755)
+            with patch("semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin):
+                before = check_sealed_oracle(frozen)
+                for task_root, name in (
+                    (link, "backing"),
+                    (nonprivate, "backing"),
+                    (task, "../outside"),
+                    (task, str(root / "outside")),
+                ):
+                    with self.subTest(root=task_root, name=name):
+                        with self.assertRaises(IsolationError):
+                            DisposableBacking.create(
+                                sealed_root=frozen, task_root=task_root, name=name
+                            )
+                self.assertFalse((task / "backing").exists())
+                self.assertFalse((nonprivate / "backing").exists())
+                self.assertFalse((root / "outside").exists())
+                self.assertEqual(check_sealed_oracle(frozen), before)
+
+    def test_factory_refuses_a_real_bind_mount_inode_alias_before_allocation(self):
+        with tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory:
+            root = Path(directory)
+            frozen, task, pin = self.synthetic_w(root)
+            frozen.chmod(0o700)
+            script = """
+import sys
+sys.path.insert(0, sys.argv[1])
+import semantic_acceptance_isolation as isolation
+isolation.SEALED_ORACLE_SHA256 = sys.argv[4]
+try:
+    isolation.DisposableBacking.create(sealed_root=sys.argv[2], task_root=sys.argv[3], name='backing')
+except isolation.IsolationError as error:
+    assert 'aliases' in str(error), str(error)
+else:
+    raise AssertionError('bind-mounted frozen inode accepted as a task root')
+print('inode alias refused before allocation')
+"""
+            with patch("semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin):
+                before = check_sealed_oracle(frozen)
+                result = subprocess.run(
+                    [
+                        "/usr/bin/bwrap",
+                        "--unshare-all",
+                        "--die-with-parent",
+                        "--ro-bind",
+                        "/",
+                        "/",
+                        "--proc",
+                        "/proc",
+                        "--dev",
+                        "/dev",
+                        "--ro-bind",
+                        str(frozen),
+                        str(task),
+                        "--clearenv",
+                        "--",
+                        "/usr/bin/python3",
+                        "-I",
+                        "-B",
+                        "-S",
+                        "-c",
+                        script,
+                        str(Path(__file__).parent),
+                        str(frozen),
+                        str(task),
+                        pin,
+                    ],
+                    capture_output=True,
+                    timeout=10,
+                    env={},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(b"inode alias refused before allocation", result.stdout)
+                self.assertFalse((task / "backing").exists())
+                self.assertFalse((frozen / "backing").exists())
+                self.assertEqual(check_sealed_oracle(frozen), before)
+
+    def test_changed_root_or_backing_identity_refuses_launch_and_cleanup(self):
+        for changed in ("root", "backing"):
+            for phase in ("launch", "cleanup"):
+                with (
+                    self.subTest(changed=changed, phase=phase),
+                    tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory,
+                ):
+                    root = Path(directory)
+                    frozen, task, pin = self.synthetic_w(root)
+                    with patch(
+                        "semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin
+                    ):
+                        before = check_sealed_oracle(frozen)
+                        backing = DisposableBacking.create(
+                            sealed_root=frozen, task_root=task, name="backing"
+                        )
+                        boundary = SemanticIsolation.sealed_oracle(
+                            sealed_root=frozen,
+                            backing=backing,
+                            task_scratch_roots=[task],
+                            read_only_paths=[],
+                            output_dir=root / "out",
+                        )
+                        with self.assertRaisesRegex(IsolationError, "cleanup"):
+                            with boundary:
+                                if phase == "cleanup":
+                                    boundary.run(["/usr/bin/true"], timeout=5)
+                                replaced = task if changed == "root" else backing.path
+                                held = root / "held"
+                                replaced.rename(held)
+                                replaced.mkdir(mode=0o700)
+                                if changed == "root":
+                                    backing.path.mkdir(mode=0o700)
+                                if phase == "launch":
+                                    with self.assertRaises(IsolationError):
+                                        boundary.run(["/usr/bin/false"], timeout=5)
+                        cleanup = json.loads((root / "out/cleanup.json").read_text())
+                        self.assertTrue(cleanup["all_observed_processes_exited"])
+                        self.assertFalse(cleanup["backing_removed"])
+                        self.assertTrue(cleanup["errors"])
+                        self.assertEqual(
+                            len(cleanup["invocations"]), 1 if phase == "launch" else 2
+                        )
+                        self.assertTrue(held.exists())
+                        self.assertTrue(backing.path.exists())
+                        self.assertEqual(check_sealed_oracle(frozen), before)
+
     def test_derived_w_runs_nonmodel_preflight_and_checks_cleanup_and_all_three_records(
         self,
     ):
-        for fault in ("none", "tampered-after", "third-prefix"):
+        for fault in ("none", "tampered-after", "third-prefix", "setenv"):
             with (
                 self.subTest(fault=fault),
                 tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory,
             ):
                 root = Path(directory)
                 frozen, task, pin = self.synthetic_w(
-                    root, bad_preflight=fault == "third-prefix"
+                    root,
+                    bad_preflight=fault == "third-prefix",
+                    bad_environment=fault == "setenv",
                 )
-                backing = DisposableBacking(task / "backing")
                 tool = root / "tool"
                 tool.write_text("read-only")
                 with patch("semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin):
-                    if fault == "third-prefix":
-                        with self.assertRaisesRegex(IsolationError, "prefix"):
-                            SemanticIsolation.sealed_oracle(
+                    if fault in ("third-prefix", "setenv"):
+                        with self.assertRaisesRegex(
+                            IsolationError, "prefix|environment"
+                        ):
+                            DisposableBacking.create(
                                 sealed_root=frozen,
-                                backing=backing,
-                                task_scratch_roots=[task],
-                                read_only_paths=[tool],
-                                output_dir=root / "out",
+                                task_root=task,
+                                name="backing",
                             )
-                        backing.remove()
+                        self.assertFalse((task / "backing").exists())
                         continue
+                    backing = DisposableBacking.create(
+                        sealed_root=frozen, task_root=task, name="backing"
+                    )
                     boundary = SemanticIsolation.sealed_oracle(
                         sealed_root=frozen,
                         backing=backing,
@@ -187,6 +357,22 @@ class SemanticIsolationTest(unittest.TestCase):
                             )
                             proof = boundary.proof
                             self.assertEqual(proof["profile"], "derived-W")
+                            original = json.loads(
+                                (
+                                    frozen / "inventory/experiment-manifest.json"
+                                ).read_text()
+                            )["sandbox_prefix"]
+                            expected = list(original)
+                            expected[34] = str(backing.path)
+                            expected[-2:-2] = [
+                                "--ro-bind",
+                                str(tool),
+                                str(tool),
+                                "--ro-bind",
+                                str(root / "out/read-only-probe"),
+                                "/semantic-read-only-probe",
+                            ]
+                            self.assertEqual(proof["effective_prefix"], expected)
                             self.assertEqual(
                                 proof["backing_argument_diff"][0]["index"], 34
                             )
@@ -277,6 +463,43 @@ class SemanticIsolationTest(unittest.TestCase):
                 self.assertIsNotNone(error.evidence["exit_code"])
                 self.assertTrue(error.evidence["processes_joined"])
                 self.assertEqual(error.evidence["timeout_seconds"], 1)
+                error.evidence["invocation"]["role"] = "caller-mutation"
+            cleanup = json.loads((Path(directory) / "out/cleanup.json").read_text())
+            self.assertEqual(cleanup["invocations"][-1]["role"], "tool")
+
+    def test_timeout_and_kernel_signal_failure_preserve_partial_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with SemanticIsolation(
+                read_only_paths=[], output_dir=Path(directory) / "out"
+            ) as boundary:
+                # The OS signal API is the boundary; context exit uses real cleanup.
+                with patch(
+                    "semantic_acceptance_isolation.signal.pidfd_send_signal",
+                    side_effect=PermissionError("fixture signal refusal"),
+                ):
+                    with self.assertRaises(IsolationError) as caught:
+                        boundary.run(
+                            [
+                                "/usr/bin/python3",
+                                "-I",
+                                "-S",
+                                "-c",
+                                "import time;print('partial',flush=True);time.sleep(10)",
+                            ],
+                            timeout=0.2,
+                        )
+                error = caught.exception
+                self.assertEqual(error.code, "cleanup")
+                self.assertEqual(error.evidence["failure_code"], "timeout")
+                self.assertEqual(error.evidence["stdout"], b"partial\n")
+                self.assertFalse(error.evidence["processes_joined"])
+                self.assertEqual(
+                    error.evidence["cleanup_error"]["type"], "PermissionError"
+                )
+            cleanup = json.loads((Path(directory) / "out/cleanup.json").read_text())
+            self.assertTrue(cleanup["all_observed_processes_exited"])
+            self.assertTrue(cleanup["backing_removed"])
+            self.assertEqual(cleanup["errors"], [])
 
     def test_each_invocation_needs_its_own_pinned_runtime_descendant(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -295,15 +518,16 @@ class SemanticIsolationTest(unittest.TestCase):
             with SemanticIsolation(
                 read_only_paths=[root], output_dir=root / "out"
             ) as boundary:
+                command = [
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    "-c",
+                    "import ctypes,sys;handle=ctypes.CDLL(sys.argv[1]);print('ready',flush=True);sys.stdin.read()",
+                    str(library),
+                ]
                 first = boundary.popen(
-                    [
-                        "/usr/bin/python3",
-                        "-I",
-                        "-S",
-                        "-c",
-                        "import ctypes,sys;handle=ctypes.CDLL(sys.argv[1]);print('ready',flush=True);sys.stdin.read()",
-                        str(library),
-                    ],
+                    command,
                     role="reference",
                     mode="rank",
                     stdin=subprocess.PIPE,
@@ -321,17 +545,24 @@ class SemanticIsolationTest(unittest.TestCase):
                         sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
                     )
                 ]
-                deadline = time.monotonic() + 3
-                while time.monotonic() < deadline:
-                    observed = boundary.runtime_evidence()["model_workers"]
-                    if any(
-                        any(
-                            lib["sha256"] == pins[0]["sha256"] for lib in p["libraries"]
-                        )
-                        for p in observed
-                    ):
-                        break
-                    time.sleep(0.02)
+
+                def await_library(invocation):
+                    deadline = time.monotonic() + 3
+                    while time.monotonic() < deadline:
+                        observed = boundary.runtime_evidence()["model_workers"]
+                        if any(
+                            p["launcher_pid"] == invocation["pid"]
+                            and any(
+                                lib["sha256"] == pins[0]["sha256"]
+                                for lib in p["libraries"]
+                            )
+                            for p in observed
+                        ):
+                            return
+                        time.sleep(0.02)
+                    self.fail("fixture library was not observed for its own invocation")
+
+                await_library(first_invocation)
                 own = boundary.invocation_runtime(first_invocation, pins)
                 self.assertEqual(own["launcher_pid"], first_invocation["pid"])
                 for changed in (
@@ -349,6 +580,19 @@ class SemanticIsolationTest(unittest.TestCase):
                     boundary.invocation_runtime(
                         first_invocation, [dict(path=str(library), sha256="0" * 64)]
                     )
+                altered = boundary.popen(
+                    ["/usr/bin/env", "FOO=1", *command],
+                    role="candidate",
+                    mode="embed",
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                self.assertEqual(altered.stdout.readline(), b"ready\n")
+                await_library(altered._semantic_invocation)
+                with self.assertRaises(IsolationError) as caught:
+                    boundary.invocation_runtime(altered._semantic_invocation, pins)
+                self.assertEqual(caught.exception.code, "environment_mismatch")
 
     def test_task_allowlist_and_proof_tampering_refuse_without_leaking_backing(self):
         from semantic_acceptance_isolation import task_scratch_identity
@@ -374,22 +618,26 @@ class SemanticIsolationTest(unittest.TestCase):
             self.assertFalse((root / "out/mapped-home").exists())
 
     def test_owned_backing_and_sealed_prefix_refuse_reuse_or_unsealed_inputs(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(prefix="cairn-semantic-") as directory:
             root = Path(directory)
-            backing = DisposableBacking(root / "disposable")
-            self.assertEqual(backing.path.stat().st_mode & 0o777, 0o700)
-            with self.assertRaises(IsolationError):
-                DisposableBacking(backing.path)
-            with self.assertRaisesRegex(IsolationError, "seal"):
-                SemanticIsolation.sealed_oracle(
-                    sealed_root=root,
-                    backing=backing,
-                    read_only_paths=[],
-                    output_dir=root / "capture",
+            frozen, task, pin = self.synthetic_w(root)
+            with patch("semantic_acceptance_isolation.SEALED_ORACLE_SHA256", pin):
+                backing = DisposableBacking.create(
+                    sealed_root=frozen, task_root=task, name="backing"
                 )
-            self.assertTrue(backing.path.exists())
-            backing.remove()
-            self.assertFalse(backing.path.exists())
+                self.assertEqual(backing.path.stat().st_mode & 0o777, 0o700)
+                with self.assertRaises(IsolationError):
+                    DisposableBacking.create(
+                        sealed_root=frozen, task_root=task, name="backing"
+                    )
+                with self.assertRaisesRegex(IsolationError, "seal"):
+                    DisposableBacking.create(
+                        sealed_root=root, task_root=task, name="unsealed"
+                    )
+                self.assertFalse((task / "unsealed").exists())
+                self.assertTrue(backing.path.exists())
+                backing.remove()
+                self.assertFalse(backing.path.exists())
 
     def test_sealed_prefix_adds_only_read_only_binds_without_rewriting_environment(
         self,

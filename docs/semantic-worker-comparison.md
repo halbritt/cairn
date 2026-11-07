@@ -16,11 +16,15 @@ runtime observations and qualification records belong outside the repository.
 ## Process mechanics
 
 On Linux with `bwrap`, `gcc` and Python installed, run from the repository root.
-Keep ambient worker/database selectors absent for Go mechanics:
+Keep ambient worker/database selectors absent for each mechanics subprocess:
 
 ```sh
-python3 -B scripts/test_semantic_acceptance_isolation.py
-python3 -B scripts/test_compare_semantic_workers.py
+env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
+  -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
+  python3 -B scripts/test_semantic_acceptance_isolation.py
+env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
+  -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
+  python3 -B scripts/test_compare_semantic_workers.py
 env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
   -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
   go test -race -count=1 -v ./semantic
@@ -37,6 +41,14 @@ invocation, distinct manifest identities, repeated stream replies, fresh cache
 restore, refusal cleanup, exact score failure and an independent pairwise-cosine
 failure. They also reject missing assets/cells, skipped tests and empty or
 duplicate named test inventories.
+
+Ten shared `stream_limit_cases` drive both the Python framed reader and the
+unchanged Go `StreamCommand` through the compiled model-free fixture. Go bounds
+the compact typed `{id,result}` plus newline at 65536 bytes; the raw line has
+that bound only when cache is absent or null. Cache-bearing frames may contain
+extra whitespace. The cache and outer-frame limits remain 600 KiB and
+600 KiB + 65536 bytes. Cases also cover typed zero values, Go's HTML escaping
+and UTF-8 encoding. These checks establish protocol mechanics only.
 
 Normal Go tests skip the three opt-in `TestWorkerAcceptance*` model tests. Those
 skips are visible and do not count as model coverage. The strict comparator runs
@@ -109,6 +121,7 @@ none bypasses a gate. Model phases additionally require:
   source commit's module bytes must also match. A local JSON `qualified` or
   `accepted` field cannot replace this record. No such accepted evidence receipt
   is created by the harness; missing qualification stays a failure.
+
 - `--python`: the prepared Python interpreter; `--go-test-binary`: a semantic
   test binary compiled with `go test -c`; `--go-test2json`: the installed Go
   `test2json` executable. The prepared tokenizer must be a uniquely named
@@ -118,6 +131,13 @@ none bypasses a gate. Model phases additionally require:
   `expected: "accepted"` fields must match the committed inventory. No fallback
   generator or alternate disposition field is accepted. Canonical UTF-8 input
   hashes must also match the inventory.
+
+The current review binding pins the isolation module against `source_commit`;
+it does not bind the running comparator or inventory bytes and names the
+campaign's S-R1 UUID directly. Future actual evidence review must cover those
+facts. A fabricated JSON verdict cannot establish that review or actual
+acceptance. The Go and prepared-Python test lanes also lack per-invocation
+runtime binding; their smoke/skip results do not qualify an actual worker.
 
 The checked-in
 [inventory](../semantic/testdata/executable-harness/reference-inventory.json)
@@ -185,8 +205,10 @@ argument used by `run()`/`popen()`: schema, profile, cwd, `environment`,
 `cpython_environment` and justified `runtime_additions`. Default execution has
 the four sanitized worker values plus bwrap's `PWD` equal to the declared cwd.
 CPython's C-locale coercion adds exactly `LC_CTYPE=C.UTF-8`; its complete
-in-process environment must equal `cpython_environment`. Custom locale or
-interpreter-control variables are refused. Derived-W retains its literal
+in-process environment must equal `cpython_environment`. Custom `LANG`,
+`LC_ALL`, `LC_CTYPE`, `PYTHONCOERCE_C_LOCALE`, `PYTHONUTF8`, `PYTHONHOME` and
+`PYTHONPATH` are refused. Other supplied variables remain part of the exact
+declaration. Derived-W retains its literal
 HOME/XDG/TMPDIR/cache/bytecode settings and cwd, with no overrides. Stream and
 direct embedding lanes declare `CAIRN_SEMANTIC_STREAM_CACHE=1`.
 
@@ -198,8 +220,8 @@ declaration digest. The ambiguous `proof.model_environment` field is absent.
 The proof accessor returns a copy. Proof/declaration files are read-only and
 their digests are checked before another launch and during cleanup.
 
-The public timeout form is `IsolationError` with `code == "timeout"`, not
-`TimeoutExpired`. Its `evidence` contains `failure_code`, bounded partial
+The bounded worker-deadline form is `IsolationError` with `code == "timeout"`.
+Its `evidence` contains `failure_code`, bounded partial
 `stdout`/`stderr` bytes, actual argv/exit code, `timeout_seconds`, invocation
 metadata and `processes_joined`. Output bounds use `stdout_limit` or
 `stderr_limit`. Context exit separately records cleanup; it must not be inferred
@@ -224,7 +246,8 @@ library inodes/device IDs/hashes, correlated by role/mode and launcher PID/start
 ORT-mapped descendant for that invocation and matches its loaded digests to the
 pins. One worker cannot qualify a missing role/mode. The observer also checks
 the actual child's proc exec-environment block against the declaration; that
-block is distinct from CPython's later in-process locale coercion. A bwrap
+block is distinct from CPython's later in-process locale coercion. Cwd is
+declared and set by bwrap; `/proc/PID/cwd` is not observed. A bwrap
 process alone cannot satisfy `runtime_evidence(require_ort=True)`.
 Short-lived processes may evade sampling; missing evidence fails.
 Numerical qualification also requires
@@ -241,6 +264,13 @@ inode/device/owner/mode. `cleanup.json` records `all_observed_processes_exited`,
 both booleans and an empty error list; process joining is separate from overall
 success or a seal/proof failure. Never guess a `mapped-home` path.
 
+`DisposableBacking.create(sealed_root=..., task_root=..., name=...)` validates
+the sealed profile, an explicit owned `0700` allowlisted task root, protected
+overlaps and inode aliases before allocating one fresh child. `name` is one
+basename; paths and existing children refuse. `DisposableBacking(path)` has no
+allocation authority. The factory also requires the prefix's `--setenv` pairs
+to equal the sealed environment.
+
 `SemanticIsolation.sealed_oracle(...)` is a separate, pinned construction path
 for the one sealed W oracle. It checks the authorized 31-file seal and all three
 original prefix records, then constructs
@@ -254,11 +284,14 @@ review. It never borrows the default wrapper's qualification. The
 caller passes `task_scratch_roots` explicitly. Each root must be owned `0700`,
 resolved without symlinks/aliases, and below the campaign's dedicated
 `semantic-S-B1`/`semantic-S-B2` task roots. Named `/tmp/cairn-semantic-*`
-disposable task directories support synthetic tests. The whole owner cache or
+disposable task directories support synthetic tests; actual B1 uses its own
+external `semantic-S-B1` task directory. The whole owner cache or
 `~/.local/share/cairn` is not an allowlist. Backing must be a fresh child of a
 declared root and cannot overlap/alias sealed or live state. Root identity is
-checked again at launch/cleanup. The `DisposableBacking` caller owns exclusive creation; after entering, the context
-owns removal. New evidence belongs outside the frozen oracle root and bounded
+checked again at launch/cleanup, along with backing identity. The caller uses
+the validated factory; after entering, the context owns removal. Identity
+changes refuse launch/removal and are recorded as failed cleanup. New evidence
+belongs outside the frozen oracle root and bounded
 pipe output is captured there.
 An end-to-end test uses manufactured 31-file evidence and a 97-argument prefix;
 only the seal pin is patched inside the test. It exercises unchanged and
@@ -289,6 +322,11 @@ digests, and the three retained frozen-baseline arrays. Missing qualification
 prints `semantic comparison refused:` and exits nonzero before starting a worker.
 This mode explicitly runs Python scripts; it is distinct from fixed executable
 mode.
+
+Open tooling notes remain: legacy runtime pins do not have the fixed manifest's
+nonempty ORT/NumPy/OpenBLAS validation, and rare setup or direct cleanup waits
+can still expose `subprocess.TimeoutExpired`. Neither note is an actual-evidence
+acceptance claim or permission to execute an unqualified lane.
 
 Revert the harness files and opt-in test file to remove this tooling. No installed
 worker, model asset, environment profile, service or production database is

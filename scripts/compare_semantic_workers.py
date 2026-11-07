@@ -258,6 +258,45 @@ class JsonLineProcess:
         )
 
 
+def _go_rank_result(result):
+    """Zero values and field order of core.SemanticRankResult for Go's bound."""
+    if not isinstance(result, dict):
+        raise ComparisonFailure("worker omitted typed rank result")
+    typed = {}
+    for key in ("model_sha256", "algorithm"):
+        value = result.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ComparisonFailure("invalid typed rank string")
+        typed[key] = "" if value is None else value
+    scores = result.get("scores")
+    if scores is not None:
+        if not isinstance(scores, list):
+            raise ComparisonFailure("invalid typed rank scores")
+        typed_scores = []
+        for score in scores:
+            score = {} if score is None else score
+            if not isinstance(score, dict):
+                raise ComparisonFailure("invalid typed rank score")
+            fields = {}
+            for key, default in (
+                ("record_id", ""),
+                ("version", 0),
+                ("body_sha256", ""),
+                ("score", 0),
+            ):
+                value = score.get(key)
+                value = default if value is None else value
+                if type(value) is not type(default) or (
+                    isinstance(value, int) and not -(1 << 63) <= value < 1 << 63
+                ):
+                    raise ComparisonFailure("invalid typed rank score field")
+                fields[key] = value
+            typed_scores.append(fields)
+        scores = typed_scores
+    typed["scores"] = scores
+    return typed
+
+
 def stream_response_limits(frame, reply):
     if set(reply) - {"id", "result", "cache"}:
         raise ComparisonFailure("invalid typed stream response fields")
@@ -265,9 +304,7 @@ def stream_response_limits(frame, reply):
     decoder = json.JSONDecoder()
     position = text.index("{") + 1
     fields = {}
-    ordinary_members = []
     while True:
-        member_start = position
         position += len(text[position:]) - len(text[position:].lstrip())
         if text[position] == "}":
             break
@@ -278,16 +315,25 @@ def stream_response_limits(frame, reply):
         _, position = decoder.raw_decode(text, position)
         fields[key] = text[start:position].encode("utf-8")
         position += len(text[position:]) - len(text[position:].lstrip())
-        if key != "cache":
-            ordinary_members.append(text[member_start:position])
         if text[position] == ",":
             position += 1
     cache = fields.get("cache", b"null")
-    ordinary = (
-        text[: text.index("{") + 1] + ",".join(ordinary_members) + text[position:]
-    ).encode("utf-8")
+    ordinary = json.dumps(
+        dict(id=reply["id"], result=_go_rank_result(reply.get("result"))),
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    # encoding/json.Marshal emits UTF-8 and escapes HTML and these separators.
+    for literal, escaped in (
+        ("<", r"\u003c"),
+        (">", r"\u003e"),
+        ("&", r"\u0026"),
+        ("\u2028", r"\u2028"),
+        ("\u2029", r"\u2029"),
+    ):
+        ordinary = ordinary.replace(literal, escaped)
     if (
-        len(ordinary) > 65536
+        len(ordinary.encode("utf-8")) + 1 > 65536
         or (cache != b"null" and len(cache) > 600 * 1024)
         or (cache == b"null" and len(frame) > 65536)
     ):

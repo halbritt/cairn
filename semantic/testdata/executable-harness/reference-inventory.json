@@ -256,5 +256,47 @@
   },
   "future_gates": {
     "S-03/unit-norm": "Worker normalization/unit-norm correctness belongs to S-03; this comparator checks finite/nonzero and angle/pairwise gates, not a new Go unit-norm rejection interval."
-  }
+  },
+  "stream_limit_cases": [
+    {
+      "id": "ordinary",
+      "accepted": true
+    },
+    {
+      "id": "padded-with-cache",
+      "accepted": true
+    },
+    {
+      "id": "compact-oversized",
+      "accepted": false
+    },
+    {
+      "id": "padded-absent-cache",
+      "accepted": false
+    },
+    {
+      "id": "padded-null-cache",
+      "accepted": false
+    },
+    {
+      "id": "oversized-cache",
+      "accepted": false
+    },
+    {
+      "id": "outer-frame-oversized",
+      "accepted": false
+    },
+    {
+      "id": "typed-expansion-over-limit",
+      "accepted": false
+    },
+    {
+      "id": "html-escaping-over-limit",
+      "accepted": false
+    },
+    {
+      "id": "unicode-near-limit",
+      "accepted": true
+    }
+  ]
 }

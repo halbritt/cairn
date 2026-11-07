@@ -126,6 +126,11 @@ def task_scratch_identity(path):
         raise IsolationError(
             "scratch root is outside the dedicated semantic task allowlist"
         )
+    return _private_directory_identity(path)
+
+
+def _private_directory_identity(path):
+    path = Path(path).absolute()
     if (
         path.is_symlink()
         or any(p.is_symlink() for p in path.parents)
@@ -148,28 +153,137 @@ def task_scratch_identity(path):
     )
 
 
+def _sealed_profile(root):
+    root = Path(root).absolute()
+    seal = check_sealed_oracle(root)
+    manifest = json.loads((root / "inventory/experiment-manifest.json").read_text())
+    attempt = json.loads((root / "oracle-attempt.json").read_text())
+    preflight = json.loads((root / "preflight/full-isolation-command.json").read_text())
+    prefix = manifest["sandbox_prefix"]
+    if (
+        attempt["command"][: len(prefix) + 1] != prefix + ["--"]
+        or preflight["command"][: len(prefix) + 1] != prefix + ["--"]
+        or manifest["sandbox_environment"] != attempt["sandbox_environment"]
+    ):
+        raise IsolationError("sealed W prefix/environment records disagree")
+    pairs = [prefix[i + 1 : i + 3] for i, arg in enumerate(prefix) if arg == "--setenv"]
+    if (
+        prefix.count("--clearenv") != 1
+        or any(len(pair) != 2 for pair in pairs)
+        or len(dict(pairs)) != len(pairs)
+        or dict(pairs) != manifest["sandbox_environment"]
+    ):
+        raise IsolationError(
+            "sealed W setenv pairs differ from the declared environment"
+        )
+    # Validate the authorized writable operand before any allocation.
+    derive_w_prefix(prefix, root / "disposable", root / "disposable")
+    owner = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    protected = [
+        root,
+        owner / ".cache/Microsoft",
+        owner / ".local/share/cairn/hosted-agent.token",
+        owner / ".ssh",
+        owner / ".aws",
+        *owner.glob(".codex*"),
+        *[
+            Path(prefix[i + 1]).resolve()
+            for i, arg in enumerate(prefix)
+            if arg == "--ro-bind"
+        ],
+    ]
+    return root, seal, prefix, manifest["sandbox_environment"], protected
+
+
+def _check_scratch_protection(recorded, protected):
+    root = Path(recorded["path"])
+    for path in protected:
+        if root == path or root in path.parents or path in root.parents:
+            raise IsolationError(
+                "task scratch root overlaps sealed or protected live state"
+            )
+    owner = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    for path in (owner, owner / ".cache", owner / ".local/share/cairn", *protected):
+        if path.exists():
+            info = path.stat()
+            if (recorded["device"], recorded["inode"]) == (info.st_dev, info.st_ino):
+                raise IsolationError(
+                    "task scratch root aliases sealed or protected live state"
+                )
+
+
 class DisposableBacking:
-    """Exclusive directory creation is the cleanup authority; pre-existing data refuses."""
+    """Allocation requires a validated root, never an arbitrary caller path."""
 
     def __init__(self, path):
-        self.path = Path(path).absolute()
-        if self.path.is_symlink() or any(p.is_symlink() for p in self.path.parents):
-            raise IsolationError("disposable backing path contains a symlink")
+        raise IsolationError("use DisposableBacking.create with a private task root")
+
+    @classmethod
+    def create(cls, *, sealed_root, task_root, name):
+        """Validate a sealed profile and private task root before creating one child."""
+        root, _, _, _, protected = _sealed_profile(sealed_root)
+        recorded = task_scratch_identity(task_root)
+        _check_scratch_protection(recorded, protected)
+        return cls._allocate(recorded, name, sealed_root=root, protected=protected)
+
+    @classmethod
+    def _for_default(cls, output_dir):
+        return cls._allocate(_private_directory_identity(output_dir), "mapped-home")
+
+    @classmethod
+    def _allocate(cls, root_identity, name, *, sealed_root=None, protected=()):
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in (".", "..")
+            or Path(name).name != name
+            or "\0" in name
+        ):
+            raise IsolationError("backing name must be one fresh child basename")
+        root = Path(root_identity["path"])
+        if _private_directory_identity(root) != root_identity:
+            raise IsolationError("task scratch root identity changed before allocation")
+        _check_scratch_protection(root_identity, protected)
+        self = object.__new__(cls)
+        self.path = root / name
+        self._root_identity = dict(root_identity)
+        self._sealed_root = sealed_root
+        self._protected = tuple(protected)
+        descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            self.path.mkdir(mode=0o700)
+            info = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino) != (
+                root_identity["device"],
+                root_identity["inode"],
+            ) or _private_directory_identity(root) != root_identity:
+                raise IsolationError(
+                    "task scratch root identity changed before allocation"
+                )
+            os.mkdir(name, mode=0o700, dir_fd=descriptor)
+            self.identity = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
         except FileExistsError as error:
             raise IsolationError(
                 f"disposable backing already exists: {self.path}"
             ) from error
-        self.identity = self.path.stat()
+        finally:
+            os.close(descriptor)
         self.removed = False
         if (
             self.identity.st_uid != os.getuid()
             or self.identity.st_mode & 0o777 != 0o700
         ):
             raise IsolationError("disposable backing is not owned/private")
+        return self
 
     def verify(self, *, empty=False):
+        if (
+            self.path.parent != Path(self._root_identity["path"])
+            or _private_directory_identity(self.path.parent) != self._root_identity
+        ):
+            raise IsolationError(
+                "task scratch root identity changed or backing moved outside it"
+            )
+        _check_scratch_protection(self._root_identity, self._protected)
         current = self.path.lstat()
         if (
             self.removed
@@ -333,7 +447,7 @@ def bounded_communicate(process, data, *, timeout, stdout_limit, stderr_limit=65
             cleanup_error=None
             if cleanup_error is None
             else dict(type=type(cleanup_error).__name__, message=str(cleanup_error)),
-            invocation=process._semantic_invocation,
+            invocation=json.loads(json.dumps(process._semantic_invocation)),
             timeout_seconds=timeout
             if isinstance(error, subprocess.TimeoutExpired)
             else None,
@@ -437,89 +551,40 @@ class SemanticIsolation:
     def sealed_oracle(
         cls, *, sealed_root, backing, read_only_paths, output_dir, task_scratch_roots=()
     ):
-        """W only: caller creates the exclusive backing; this context removes it.
+        """W only: use DisposableBacking.create; this context removes its child.
 
         No model is imported by construction or preflight. The sealed environment
         is literal for model commands. Additional mounts are read-only; capture
         output travels through bounded stdout/stderr pipes.
         """
-        root = Path(sealed_root).absolute()
-        check_sealed_oracle(root)
+        root, seal, prefix, environment, protected = _sealed_profile(sealed_root)
         if not isinstance(backing, DisposableBacking):
             raise IsolationError(
                 "derived W requires a newly owned external scratch backing"
             )
         backing.verify(empty=True)
-        manifest = json.loads((root / "inventory/experiment-manifest.json").read_text())
-        attempt = json.loads((root / "oracle-attempt.json").read_text())
-        prefix = manifest["sandbox_prefix"]
-        preflight = json.loads(
-            (root / "preflight/full-isolation-command.json").read_text()
-        )
-        if (
-            attempt["command"][: len(prefix)] != prefix
-            or attempt["command"][len(prefix)] != "--"
-            or manifest["sandbox_environment"] != attempt["sandbox_environment"]
-            or preflight["command"][: len(prefix)] != prefix
-            or preflight["command"][len(prefix)] != "--"
-        ):
-            raise IsolationError("sealed W prefix/environment records disagree")
+        if backing._sealed_root != root:
+            raise IsolationError("backing belongs to a different sealed profile")
         derived = derive_w_prefix(prefix, root / "disposable", backing.path)
         instance = cls(read_only_paths=read_only_paths, output_dir=output_dir)
         instance._task_scratch_roots = [
             task_scratch_identity(p) for p in task_scratch_roots
         ]
-        if not any(
-            Path(p["path"]) in backing.path.parents
-            for p in instance._task_scratch_roots
-        ):
+        if backing._root_identity not in instance._task_scratch_roots:
             raise IsolationError(
                 "external backing must be below an explicit private task scratch root"
             )
-        protected = [
-            root,
-            instance.owner_home / ".cache/Microsoft",
-            instance.owner_home / ".local/share/cairn/hosted-agent.token",
-            instance.owner_home / ".ssh",
-            *instance.owner_home.glob(".codex*"),
-        ]
-        protected += [
-            Path(prefix[i + 1]).resolve()
-            for i, arg in enumerate(prefix)
-            if arg == "--ro-bind"
-        ]
-        protected_identities = {
-            (p.stat().st_dev, p.stat().st_ino) for p in protected if p.exists()
-        }
-        if any(
-            (item["device"], item["inode"]) in protected_identities
-            for item in instance._task_scratch_roots
-        ):
-            raise IsolationError(
-                "task scratch root aliases sealed or protected live state"
-            )
-        if (
-            backing.path == instance.owner_home
-            or backing.path in instance.owner_home.parents
-            or any(
-                backing.path == p
-                or p in backing.path.parents
-                or backing.path in p.parents
-                for p in protected
-            )
-        ):
-            raise IsolationError(
-                "derived W backing overlaps sealed or protected live state"
-            )
+        for recorded in instance._task_scratch_roots:
+            _check_scratch_protection(recorded, protected)
         if instance.output_dir == root or root in instance.output_dir.parents:
             raise IsolationError(
                 "new W evidence must be outside the frozen oracle root"
             )
         instance._sealed_root = root
-        instance._seal_before = check_sealed_oracle(root)
+        instance._seal_before = seal
         instance._original_prefix = prefix
         instance._sealed_prefix = derived
-        instance._sealed_environment = manifest["sandbox_environment"]
+        instance._sealed_environment = environment
         instance._cwd = prefix[prefix.index("--chdir") + 1]
         instance._backing = backing
         instance.home_dir = backing.path / "home"
@@ -580,7 +645,7 @@ class SemanticIsolation:
             ) from error
         try:
             if self._sealed_root is None:
-                self._backing = DisposableBacking(self.home_dir)
+                self._backing = DisposableBacking._for_default(self.output_dir)
             else:
                 self._backing.verify(empty=True)
                 self._verify_scratch_roots()
@@ -1066,6 +1131,8 @@ class SemanticIsolation:
                 )
 
     def _verify_scratch_roots(self):
+        if self._backing is not None and not self._backing.removed:
+            self._backing.verify()
         for recorded in self._task_scratch_roots:
             if task_scratch_identity(recorded["path"]) != recorded:
                 raise IsolationError("task scratch root identity changed")

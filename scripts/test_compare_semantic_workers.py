@@ -126,10 +126,44 @@ class ExecutableComparisonTest(unittest.TestCase):
                 self.assertGreater(stats["max_rss_kib"], 0)
             self.assertTrue(path.is_file())
 
-    def test_stream_limit_measures_original_bytes_instead_of_compacting_them(self):
-        frame = b'{"id":' + b" " * 65536 + b'"1","result":{},"cache":{}}\n'
-        with self.assertRaises(comparison.ComparisonFailure):
-            comparison.stream_response_limits(frame, json.loads(frame))
+    def test_stream_frame_limits_match_the_shared_unchanged_go_reader_cases(self):
+        inventory = json.loads(
+            (
+                Path(__file__).resolve().parents[1]
+                / "semantic/testdata/executable-harness/reference-inventory.json"
+            ).read_text()
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker_path = self.compile_worker(root, "stream-limits", 4, "a" * 64)
+            with SemanticIsolation(
+                read_only_paths=[worker_path], output_dir=root / "out"
+            ) as isolation:
+                for case in inventory["stream_limit_cases"]:
+                    with self.subTest(case=case["id"]):
+                        worker = comparison.JsonLineProcess(
+                            isolation,
+                            [str(worker_path)],
+                            limit=600 * 1024 + 65536,
+                            cache=True,
+                        )
+                        try:
+                            try:
+                                reply = worker.exchange(
+                                    dict(
+                                        id="1", request=dict(query=case["id"], notes=[])
+                                    )
+                                )
+                                comparison.stream_response_limits(
+                                    worker.frames[-1], reply
+                                )
+                            except comparison.ComparisonFailure:
+                                accepted = False
+                            else:
+                                accepted = True
+                            self.assertEqual(accepted, case["accepted"])
+                        finally:
+                            worker.close()
 
     def test_native_metadata_span_and_projection_mismatches_fail(self):
         with tempfile.TemporaryDirectory() as directory:

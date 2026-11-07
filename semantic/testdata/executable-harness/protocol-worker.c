@@ -54,6 +54,37 @@ static void rank_result(void) {
            "\"body_sha256\":\"%s\",\"score\":%d}]}",MODEL,VERSION,BODY_HASH,SCORE);
 }
 
+static void repeat(int byte, size_t count) {
+    while (count--) putchar(byte);
+}
+
+/* Cases characterize the unchanged Go stream reader, without any model. */
+static int stream_limit_frame(const char *line, const char *id) {
+    char query[80];
+    if (!field(line,"query",query,sizeof(query))) return 93;
+    int padded = !strcmp(query,"padded-with-cache") || !strcmp(query,"padded-absent-cache") || !strcmp(query,"padded-null-cache");
+    int outer = !strcmp(query,"outer-frame-oversized");
+    printf("{\"id\":");
+    if (padded || outer) repeat(' ',outer ? 600*1024+65536 : 65536);
+    printf("\"%s\",\"result\":",id);
+    if (!strcmp(query,"compact-oversized") || !strcmp(query,"typed-expansion-over-limit") || !strcmp(query,"html-escaping-over-limit") || !strcmp(query,"unicode-near-limit")) {
+        fputs("{\"algorithm\":\"",stdout);
+        if (!strcmp(query,"html-escaping-over-limit")) repeat('<',10920);
+        else if (!strcmp(query,"unicode-near-limit")) {
+            for (size_t n=0;n<21800;n++) fputs("\xe7\x95\x8c",stdout);
+        } else repeat('a',!strcmp(query,"compact-oversized") ? 65536 : 65480);
+        fputs("\"}",stdout);
+    } else rank_result();
+    if (!strcmp(query,"padded-null-cache")) fputs(",\"cache\":null",stdout);
+    else if (!strcmp(query,"oversized-cache")) {
+        fputs(",\"cache\":{\"padding\":\"",stdout);
+        repeat('a',600*1024);
+        fputs("\"}",stdout);
+    } else if (strcmp(query,"padded-absent-cache")) fputs(",\"cache\":{}",stdout);
+    puts("}");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     (void)argv;
     if (argc != 1) return 91;
@@ -67,7 +98,10 @@ int main(int argc, char **argv) {
         char id[80],operation[80];
         if (!field(line,"id",id,sizeof(id))) return 2;
         if (strstr(line,"\"query\":\"refuse\"")) {fputs("fixture refused\n",stderr);return 7;}
-        if (MODE==2) {
+        if (MODE==4) {
+            int error=stream_limit_frame(line,id);
+            if (error) return error;
+        } else if (MODE==2) {
             if (strstr(line,"\"cache\":") && calls) return 8;
             printf("{\"id\":\"%s\",\"result\":",id);rank_result();
             printf(",\"cache\":{\"format\":\"cairn.passage-vectors/1\",\"model_sha256\":\"%s\",\"vectors\":{}}}\n",MODEL);
