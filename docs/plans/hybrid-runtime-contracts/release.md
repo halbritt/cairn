@@ -701,64 +701,104 @@ multi-file copy is not an atomic activation protocol.
 ## Maximum-document semantic evidence
 
 Release consumes the "Conditional maximum-document reference" section of the
-[Semantic worker contract](semantic.md), proposed `semantic/4`, selected by
-Overall decision
+[Semantic worker contract](semantic.md), proposed `semantic/4`, as the normative
+ordered sequence in steps 1–6, selected by Overall decision
 `0ba29009-f422-4a11-a94b-018f1d3139b0` version 1. It applies only to the sealed
 `"!" * 65536` case reviewed in S-R1 verdict
 `378ded83-462a-47f1-82d8-f5243bef82db` version 1, seal SHA-256
 `ef04e09d5bb7d906740da0f6406b14b4de3d14a6dfe664d313ce8ebb87815a4d`.
 That verdict verifies the artifact inventory and leaves numerical qualification
 open. The old external 90-second Python timeout is direct-supervisor
-characterization; actual Go/production timeout behavior was not observed.
+characterization with an unrecorded full environment; actual Go/production
+timeout behavior was not observed.
 The single at-most-180-second oracle attempt is consumed. Retain both immutable
 observations and their limitations separately.
 
-The evidence sequence is mandatory. Before inference, reproduce sealed wrapper
-W's exact prefix, allowing only declared read-only tool/input binds; prove real
-network isolation and disposable mapped OS-home/cache protection, including
-`getpwuid` and `expanduser` with HOME absent. Pin the complete 294-text baseline
-digests before its already-scoped capture and require exact int64 input-ID,
-length and raw float32 CLS matches. Then permit exactly two additional
-passage-level executions, A = `"!" * 288` and B = `"!" * 256`, with raw CLS and
-FastEmbed-normalized output captured from each same execution. A second raw
-inference is forbidden. Require the exact retained A/B normalized row hashes,
-per-input tensors and A-to-rows-`0..254`/B-to-row-`255` mapping specified in
-`semantic/4`; sample the actual Python worker's `/proc/self/maps` and hash its
-loaded ORT, NumPy and OpenBLAS images against the frozen runtime. Frozen
-source/assets/interpreter/provider, batch 1, ORT settings and tensor
-shapes/masks/type IDs remain fixed. Failed isolation, digest or runtime checks
-stop the experiment; uncertain or failed attempts do not retry automatically.
+Steps 1–3 govern W's declared derivation and proof in the relevant namespace,
+the pinned 294-text recipe and digest table, token-ID/length checks before
+model execution, raw CLS match, and the two same-execution A/B references.
+Step 4 governs the corpus-bounded and stateless mapping disposition, its
+contradiction rule and the prohibition on reconstructed historical evidence.
+No unapproved wrapper change or write under sealed evidence is permitted.
+The ceilings remain exactly two additional B1 A/B passage executions and one B2 document
+request. Every attempt is recorded. Any failed, uncertain or interrupted
+attempt or failed pre-inference proof ends that experiment with its gap retained.
+Any further execution, including a re-attempt after a fix, needs a new Overall
+decision.
 
-These A/B raw values and mappings are new references and observations, never
-reconstructed historical raw CLS or loaded-library evidence. A baseline match
-is corpus-bounded wrapper evidence. Reusing A for 255 passages also requires
-the exact retained row mapping and frozen batch-1/stateless-source analysis;
-it does not prove 255-repeat determinism. The old request bytes, environment
-and launcher differences (O-4 through O-6) remain explicit and input-specific,
-without literal compliance or general equivalence claims. Any stateful,
-batch-dependent or vector-affecting contradiction defeats this disposition.
+Overall construction amendment `b8bde736-20e4-4957-88f3-2acc7109e4fb` version 1
+permits only the existing RW bind's host-source operand to change to a fresh,
+empty, owned `0700` scratch directory outside the sealed root. The `--bind`
+flag, guest `/sandbox` destination and all other prefix arguments stay fixed,
+apart from the previously permitted declared read-only tool/input additions.
+This is a declared derivation of W, never byte-identical reproduction, and
+grants no extra attempt or budget reset. Release's receipt binds original and
+derived argv plus their exact diff; resolved scratch path, owner, mode and
+emptiness; rejection of symlink substitution and overlap/alias with sealed or
+protected live trees; and before/after seal and ownership/mode checks. Preserve
+all old files/directories, including unsealed delivery material, mount needed
+old evidence read-only, and put every new log/result/receipt outside that root.
+Retain cleanup evidence: remove only the newly owned scratch after the worker
+and descendants are joined. Run all step 1–3 proofs against this construction;
+the host-path change alone proves no numerical equivalence.
 
-After that proof and independent review of the S-01b isolation/recording
-harness, permit one synthetic maximum-document request through the unchanged
-Go `CommandEmbedder`, real fixed Python launcher, actual Go-generated frame and
-sanitized environment under its existing 90-second deadline. Normal startup
-and identity exchange are allowed; no extra model/document probe or repeated
-request is implied. Keep external isolation and record its overhead separately
-without replacing or extending Go's timer. Retain actual child identity,
-cleanup, cancellation and whichever outcome occurs. A successful reply is a
-separate immutable artifact: compare it with the sealed oracle and escalate
-differences without replacing either reference. Python's real-Go failure
-population remains unmeasured until this run; record and obtain a disposition
-for a differing Rust/Python population.
+Step 5's one real-Go Python request is specifically operation `document`, text
+`"!" * 65536` (65536 UTF-8 bytes). All steps 1–3 checks must pass, including
+the 294 match, both normalized row hashes and actual worker maps, and the exact
+S-01b isolation/recording harness candidate must be independently accepted.
+Prove network isolation and mapped OS-home/cache protection, including
+`getpwuid` and `expanduser` with HOME absent, in the Go-spawned child's namespace
+before the request. The A/B proof does not transfer. Go's unchanged
+`CommandEmbedder`, actual frame, sanitized environment and 90-second timer
+remain required; record outer isolation overhead separately without extending
+that timer. Normal startup/identity exchange permits no extra document/model
+probe or repeated request.
+
+Release's installed-runtime receipt names the currently selected installed
+`worker-embeddings` launcher by absolute path and SHA-256 before the run,
+cross-checked against R-01's installed row. This is never S-04R's staged
+telemetry-disabled launcher. Run installed launcher, venv and model bytes
+read-only with before/after digests and no service-selection change. Bind the
+Go binary/source identity, interpreter digest, launcher argv/digest and actual
+worker ORT/NumPy/OpenBLAS image hashes sampled externally from
+`/proc/<pid>/maps`; do not inject a probe into the unchanged Python child.
+Record the exact Go frame digest/UUID/decoded operation and text, and sanitized
+environment names with only non-secret values. Preserve outcome, cleanup and
+cancellation evidence.
+
+The concrete O-4 through O-6 differences from `378ded83` version 1 remain
+explicit: oracle Python serialization differs from Go's compact frame;
+the oracle omitted `CAIRN_SEMANTIC_STREAM_CACHE=1` and added HOME, four XDG
+variables, TMPDIR, FASTEMBED_CACHE_PATH, PYTHONDONTWRITEBYTECODE and PWD;
+the oracle used direct remapped `python -B` instead of the fixed launcher.
+Each input-specific source argument needs file:line proof in fixture provenance
+and independent review, using the recorded Go frame/environment as comparison
+inputs. These are case-specific arguments, not literal compliance or general
+equivalence. The old 90-second run's missing full environment is a separate
+limitation.
+
+Seal each B1 reference set and the B2 record, whether timeout or reply, with
+digest manifests. REL-EQUIVALENCE and REL-MANIFEST cite them alongside the
+original oracle seal and any population disposition. A timeout is bounded
+isolated real-Go evidence; a successful reply is a separate immutable artifact.
+Compare a reply with the sealed oracle and escalate differences to Overall,
+preserving both references. R-01, R-05 and REL-PERF keep direct-supervisor,
+oracle and isolated real-Go timings separate; none is production latency.
+Experiment outputs, including a B2 reply, are reference artifacts and never
+index coverage or proof that the Python source is covered.
+Until the authorized real-Go Python run returns a valid reply, a Rust reply
+within 90 seconds counts as a population difference, including when Python is
+unmeasured, blocked or failed. Overall owns its recorded disposition with
+Semantic and Release review.
 
 Before counting numerical coverage, obtain exact S-R1 and R-R1 acceptance of
 the Semantic amendment and exact R-R1 acceptance of the Release delta. Send
 accepted revisions, consumer agreement and proposed shared-index wording to
 Overall. Actual experiment evidence receives separate review. All 256 Rust
-vectors and spans, bit-identical raw-output gates, pairwise `<=1e-6`, exact integer scores
-and order, and execution through unchanged real-Go 90-second supervision remain
+vectors and spans, bit-identical raw-output gates, pairwise `<=1e-6`, exact
+integer scores and order, and execution through unchanged real-Go 90-second supervision remain
 mandatory. No new 180-second oracle, deadline inflation, production action,
-source-oracle repair or backend/tolerance change is authorized by this route.
+source-oracle repair or backend/tolerance/role change is authorized by this route.
 Criteria acceptance passes no coverage, runtime, R-05/R-06 or deployment gate.
 
 ## Rollback, observation and retirement
@@ -841,10 +881,10 @@ Each successful case includes a concrete negative or interruption case.
 | REL-HOOKS | Required OpenCode plugin objects and each supported Claude/Codex/Agy hook retain their host contract and native trust requirements. | `integrations/opencode/`, `scripts/install-opencode-hooks.py`, `scripts/install-codex-hooks.py`, `scripts/install-claude-hooks.py`, `scripts/install-agent-coordination.py`; real native trust/refresh evidence separate from mocked installer fixtures. |
 | REL-LIVE | Verify actual executable and semantic worker image/closure, fixed launcher hashes, selected L/V/verifier and approved-shell identity/readback, active connection identity, and effective hook/issued-command identity for each live session. Detect cached old hooks, old issued argv, repository overrides and retained processes separately. | Caller-origin `implementation_id` in `docs/client-observations.md` is reported, not attested or per-session evidence. Pair it with a session-correlated native hook/host observation; a manifest alone does not show which L that session executed. Coordination requires an equivalent supported signal or an explicit blocking gap. Repeat before release, after rollout and on the final removal commit; process parentage and a current MCP connection do not prove hook refresh. |
 | REL-SEMANTIC | Inventory every index writer sharing the database/job queue, including other collections; stop/join all running writers and prevent inactive definitions from restarting before switch or reverse rebuild. Disclose partial coverage, fallback and backoff. | S-05 tests competing writers configured for different collections in one disposable database. Selected-model current version/body hashes and present, valid passage rows must cover every eligible active nonforgotten record. Check parent correspondence, ordinals, byte spans and vector validity against the accepted worker contract; document/queue counts alone are insufficient. |
-| REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. The maximum-punctuation case additionally requires the conditional evidence sequence above and separately reviewed experiment artifacts; authorization and criteria agreement do not count as numerical coverage. Retain frozen trial/SDK surfaces. |
+| REL-EQUIVALENCE | Map each old/new assertion and seed observable faults that both checks must reject before old coverage is removed. Required model tests execute rather than skip. | R-05 records applicable changed refusal/exit, reordered operations, request-ID reuse, missing persisted field, wrong span and corrupted pin faults, their expected failures and actual results on both executors/checks. An insensitive old assertion is a disclosed gap, not permission to weaken or silently repair the reference. The maximum-punctuation case additionally cites the original oracle seal, separately reviewed B1/B2 digest manifests and Overall's population disposition under the conditional sequence above; authorization and criteria agreement do not count as numerical coverage. Retain frozen trial/SDK surfaces. |
 | REL-PERF | Compare the same workload and machine conditions; distinguish build/setup time, subprocess latency, worker footprint and suite duration. | Reproducible R-01 baseline and R-05 comparison with exact commands, environment, sample count and durations. Proposal targets are not observed results. |
 | REL-DOCS | Every affected current-facing CLI/config/example and operational claim agrees with implemented source and checked invocation. | Architecture/status, CLI/lifecycle references, harness guides, semantic install/rebuild, testing, deployment and recovery. Apply docs-guard; proposed commands stay labelled proposed. |
-| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, compatibility L/V/verifier identity and approved shell/Python trust closure/readback, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. No credentials, raw sessions, generated binaries or operational memory committed. |
+| REL-MANIFEST | One exact candidate binds source, Go/Rust/model/config and fixed-launcher hashes, compatibility L/V/verifier identity and approved shell/Python trust closure/readback, running worker/interpreter/library closure, derivation, schema, host/session matrix, checks, findings, limitations and executable offline rollback closure. | R-06 candidate evidence, R-07 installed/live observations, transition/backup ledger and R-09 final reconciliation. Include the maximum-punctuation oracle seal, reviewed B1/B2 digest manifests and required population disposition. No credentials, raw sessions, generated binaries or operational memory committed. |
 | REL-OBSERVE | Each defined lane completes its minimum supported cycles and 24 continuous hours after its last relevant change; the shared-queue semantic lane completes a full rebuild. | Use the lane/reset/rehearsal rules above, disclose unobserved rows and failed/pending work, and reset after affected removal/runtime changes. Time alone is insufficient. |
 | REL-RETIRE | No active configuration, process, cached session hook or unsettled issued context needs a removed file/dependency. Every session has new hook-identity evidence; no retired identity is observed during the qualified window. | R-08 exact candidate, reference/session/process inventory, initially dependency-free offline rollback restore plus lifecycle execution and semantic reverse rebuild in disposable environments. Keep required Hermes Python, frozen trials/SDK and still-referenced compatible paths. Unknown identity/reference or missing rollback closure blocks removal. |
 | REL-FINAL | Recheck and redeploy the exact removal commit everywhere, including every long-lived client, then reconcile findings and clean pushed trunk. | R-09 final manifest and independent review. Pre-removal deployment evidence does not verify the removal release. |
