@@ -96,12 +96,16 @@ Replace `/home/USER` with your absolute home directory. JSON does not expand
 
 ## Existing Codex sessions
 
-Codex's JSON hook layout can represent these commands, but adoption of changed
-hook settings in an already loaded session has not been established. A separate
-helper app-server's successful `hooks/list` does not prove that adoption. Do not
-restart or replace a conversation solely to make a comparison run.
+On 2026-11-07 (UTC), Codex 0.166.0's guarded
+[hook trust refresh](codex-lifecycle.md#existing-conversations) was verified in
+an existing conversation: the reviewed definitions became trusted, a natural
+turn end updated Cairn to idle, and pending inbox work automatically woke the
+same conversation. A changed recall dispatcher still requires its own native
+comparison proving that the selected candidate runs and other paths preserve
+the original behavior. A separate helper app-server's `hooks/list` is not that
+proof. Do not restart or replace a conversation solely to make a comparison run.
 
-A bounded deployment may instead retain the original command pathname and
+A bounded deployment may retain the original command pathname and
 replace only that script with a small launcher. Preserve the original engine's
 exact bytes in a separate file, and have the launcher run this dispatcher with
 `--session EXACT_ID`, the route file, and the preserved engine plus the incoming
