@@ -25,14 +25,19 @@ spec.loader.exec_module(channel)
 peer = channel._transport
 
 
+def build_private_cli(test_class):
+    build = tempfile.TemporaryDirectory(prefix="f01-cli-", dir="/tmp")
+    test_class.addClassCleanup(build.cleanup)
+    binary = Path(build.name) / "cairn"
+    subprocess.run(["go", "build", "-o", str(binary), "./cmd/cairn"],
+                   cwd=ROOT, check=True, capture_output=True, timeout=90)
+    return binary
+
+
 class RetainedBridgeProcessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.build = tempfile.TemporaryDirectory(prefix="f01-cli-", dir="/tmp")
-        cls.addClassCleanup(cls.build.cleanup)
-        cls.binary = Path(cls.build.name) / "cairn"
-        subprocess.run(["go", "build", "-o", str(cls.binary), "./cmd/cairn"],
-                       cwd=ROOT, check=True, capture_output=True, timeout=90)
+        cls.binary = build_private_cli(cls)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="f01-peer-", dir="/tmp")
@@ -152,7 +157,12 @@ class RetainedBridgeProcessTests(unittest.TestCase):
                 connection.sendall(part)
             self.assertEqual(peer.recv_json_line(connection), {"status": "written"})
         self.assertEqual(self.read_mcp()["params"]["content"], request["content"])
+        oversized = dict(request, content=request["content"] + "x")
+        oversized_raw = json.dumps(oversized, separators=(",", ":")).encode()
+        self.assertEqual(len(oversized_raw), 8193)
+        self.assertEqual(json.loads(oversized_raw), oversized)
         for payload, half_close, delayed in (
+                (oversized_raw + b"\n", False, False),
                 (raw + b"x\n", False, False), (b"not JSON\n", False, False),
                 (b"{", True, False), (b"{", False, True)):
             with self.subTest(size=len(payload), eof=half_close, timeout=delayed), self.connection() as connection:
@@ -166,6 +176,16 @@ class RetainedBridgeProcessTests(unittest.TestCase):
                     self.assertLess(time.monotonic() - started, 5)
         self.no_notification()
 
+    def test_oversized_unterminated_frame_refused_before_socket_deadline(self):
+        self.initialize()
+        with self.connection() as connection:
+            # The retained server deadline is two seconds. Leave the sender
+            # open: refusal must come from the byte bound, not EOF or timeout.
+            connection.settimeout(1.5)
+            connection.sendall(b"x" * 65536)
+            self.assertEqual(peer.recv_json_line(connection), {"status": "unavailable"})
+        self.no_notification()
+
     def test_killed_owned_bridge_is_not_a_verified_peer(self):
         self.initialize()
         self.assertGreater(self.process.pid, 1)
@@ -174,6 +194,27 @@ class RetainedBridgeProcessTests(unittest.TestCase):
         with self.assertRaises(channel.ChannelUnavailable):
             channel.write(self.record["socket"], self.record["process"],
                           self.record["parent"], "after owned exit", self.meta())
+
+
+class RetainedRegistryOracleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.binary = build_private_cli(cls)
+
+    def test_unchanged_registry_assertion_with_current_private_binary(self):
+        source = ROOT / "scripts/test_claude_channel.py"
+        spec = importlib.util.spec_from_file_location("f01_retained_registry", source)
+        retained = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(retained)
+        # Replace only the retained test's build supplier. Its assertion and
+        # actual Python client/Go bridge route remain unchanged.
+        retained.build_cairn = lambda: self.binary
+        result = unittest.TestResult()
+        retained.GoGeneratedRegistry(
+            "test_actual_go_registry_selects_for_a_real_python_reference").run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.skipped, [])
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
 
 
 if __name__ == "__main__":

@@ -136,6 +136,31 @@ remain separate.
 
 F-01 process and image fixtures require Go and Python and act only on their own staged files and child processes. They establish source behavior when executed; they do not qualify an installed lifecycle selection. Campaign tests await the coordinator-approved isolation wrapper that hides production homes, sockets, network and host processes. Build and vet results alone are not parity acceptance.
 
+The retained real-registry assertion uses a fresh private build supplied
+through its test's `build_cairn` helper. The retained
+`scripts/test_claude_channel.py` assertions stay unchanged; the wrapper neither
+uses nor clears the UID-shared temporary binary cache. Other retained Claude
+client cases use Python fake peers. Frame cases include an independent literal
+8192-byte success, valid-JSON 8193-byte refusal and an oversized open sender
+without a newline; the latter must refuse by byte bound before the deadline.
+
+Image fixtures distinguish an in-process root-owned pin refusal from executing
+a root-owned image. Positive temporary staging covers `/tmp` and `/var/tmp`;
+`/dev/shm` and other-writable nonsticky ancestors are negative descriptor-walk
+cases. Missing host conditions remain explicit skips. The descriptor-metadata
+case blocks a pipe while changing metadata; it does not mutate a live ELF.
+There is no deterministic rename-during-hashing case. Foreign-owned ancestors,
+temporary root-owner/sticky conditions, root invocation, real PID reuse, reboot
+and X process state remain unprivileged or unexercised gaps. Inactive helper
+entrypoints do not count as asserting tests.
+
+The binary primitive does not check `/` as an ancestor or reject noncanonical
+path spellings. Release requires canonical persistent production placement;
+production pins never use the temporary-ancestor exception. Python credential
+mismatch cases exercise the verifier directly; the killed-owned-bridge case
+exercises the retained verify-before-send path. None of these historical
+fixture descriptions claims that the rebased candidate has passed them.
+
 ## Exercise backup and recovery
 
 ```sh

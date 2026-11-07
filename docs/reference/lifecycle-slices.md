@@ -12,7 +12,6 @@ client. Integrators must connect a decision to the action it is intended to gate
 | [`procpeer.ProcessRefOf` and `Live`](../../internal/procpeer/process.go) | The retained Claude bridge measures PID/start/boot and preserves its Go measurement-equality policy. Python callers separately exclude Z/X states. |
 | [`procpeer.ReadLine` and `WriteLine`](../../internal/procpeer/frame.go) | The bridge retains an 8192-byte request payload excluding newline and two-second socket deadlines. MCP emission keeps its separate deadline. |
 | [`procpeer.ConnectClient` and client I/O](../../internal/procpeer/client.go) | Go wake clients validate credentials and expected identity before payload. Callers select process-owned or same-user policy, timing, framing and cumulative read budgets. The connector returns the actual peer identity. |
-
 | [`binding.ValidateBinary`](../../internal/lifecycle/binding/binary_linux.go) | Image fixtures exercise real-UID ownership, safe staging, stable descriptor metadata and matching pinned/running digest and inode. This helper has no active lifecycle command consumer and performs no launch or activation. |
 
 See [primitive test boundaries](../developer/testing.md#shared-go-lifecycle-primitives).

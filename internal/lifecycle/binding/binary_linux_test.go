@@ -154,7 +154,7 @@ func runImage(t *testing.T, executable, pin, digest string, before func()) strin
 }
 
 func TestRunningAndPinnedImageCustody(t *testing.T) {
-	for _, name := range []string{"staged", "hard-link", "another-copy", "replaced", "missing", "deleted-running-hard-link", "modified-image", "symlink-file", "symlink-parent", "unsafe-parent", "nonprivate-snapshot", "wrong-digest", "no-owner-execute", "group-writable", "set-id", "sticky-file"} {
+	for _, name := range []string{"staged", "hard-link", "another-copy", "replaced", "missing", "deleted-running-hard-link", "modified-image", "symlink-file", "symlink-parent", "unsafe-parent", "unsafe-parent-other-write", "nonprivate-snapshot", "wrong-digest", "no-owner-execute", "group-writable", "set-id", "sticky-file"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			if err := os.Chmod(root, 0700); err != nil {
@@ -220,6 +220,12 @@ func TestRunningAndPinnedImageCustody(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+			case "unsafe-parent-other-write":
+				before = func() {
+					if err := os.Chmod(root, 0707); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case "nonprivate-snapshot":
 				before = func() {
 					if err := os.Chmod(filepath.Dir(path), 0750); err != nil {
@@ -254,7 +260,7 @@ func TestRunningAndPinnedImageCustody(t *testing.T) {
 				"another-copy": "same device/inode", "replaced": "same device/inode",
 				"deleted-running-hard-link": "running executable is deleted", "modified-image": "digest changed",
 				"missing": "binary unavailable", "symlink-file": "symlink", "symlink-parent": "symlink",
-				"unsafe-parent": "ancestor", "nonprivate-snapshot": "snapshot directory",
+				"unsafe-parent": "ancestor", "unsafe-parent-other-write": "ancestor", "nonprivate-snapshot": "snapshot directory",
 				"wrong-digest": "digest changed", "no-owner-execute": "owner execute", "set-id": "owner execute", "group-writable": "owner execute", "sticky-file": "owner execute",
 			}[name]
 			if refusal != "" && !strings.Contains(err, refusal) {
@@ -278,5 +284,51 @@ func TestActualRootOwnedSourcePinRefusedForNonroot(t *testing.T) {
 	}
 	if err := ValidateBinary(path, strings.Repeat("0", 64)); err == nil || !strings.Contains(err.Error(), "real UID") {
 		t.Fatalf("root-owned source pin was not refused for its owner: %v", err)
+	}
+}
+
+func TestNonEnumeratedRootStickyAncestorRefused(t *testing.T) {
+	// This exercises the real descriptor walk in-process. /dev/shm can be
+	// noexec; no ELF is executed there and no mount or host mode is changed.
+	info, err := os.Stat("/dev/shm")
+	if err != nil {
+		t.Skipf("non-enumerated sticky fixture unavailable: %v", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.IsDir() || stat.Uid != 0 || stat.Mode&syscall.S_ISVTX == 0 || stat.Mode&0022 == 0 {
+		t.Skip("/dev/shm is not a writable root-owned sticky directory on this host")
+	}
+	root, err := os.MkdirTemp("/dev/shm", "f01-ancestor-")
+	if err != nil {
+		t.Skipf("cannot create owned non-enumerated ancestor fixture: %v", err)
+	}
+	defer os.RemoveAll(root)
+	path, digest := stageImage(t, filepath.Join(root, "snapshot"))
+	if err := ValidateBinary(path, digest); err == nil || !strings.Contains(err.Error(), `binary ancestor "/dev/shm"`) {
+		t.Fatalf("non-enumerated root sticky ancestor was not refused at its path policy: %v", err)
+	}
+}
+
+func TestEnumeratedTemporaryAncestorsAllowPrivateStaging(t *testing.T) {
+	for _, directory := range []string{"/tmp", "/var/tmp"} {
+		t.Run(directory, func(t *testing.T) {
+			info, err := os.Stat(directory)
+			if err != nil {
+				t.Skipf("enumerated temporary fixture unavailable: %v", err)
+			}
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			if !ok || !info.IsDir() || stat.Uid != 0 || stat.Mode&syscall.S_ISVTX == 0 || stat.Mode&0022 == 0 {
+				t.Skip("enumerated temporary fixture is not writable, root-owned and sticky")
+			}
+			root, err := os.MkdirTemp(directory, "f01-private-stage-")
+			if err != nil {
+				t.Skipf("cannot create owned private staging fixture: %v", err)
+			}
+			defer os.RemoveAll(root)
+			path, digest := stageImage(t, filepath.Join(root, "snapshot"))
+			if err := runImage(t, path, path, digest, nil); err != "" {
+				t.Fatalf("enumerated ancestor refused private staging: %q", err)
+			}
+		})
 	}
 }
