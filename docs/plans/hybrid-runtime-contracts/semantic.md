@@ -405,7 +405,10 @@ experiments; it establishes no completed evidence or general equivalence rule.
    `semantic/worker-embeddings`, SHA-256
    `f63e0a943e1607e0b24e960206e67d9161290115c9999447bd133305b56b5aa8`;
    its exact absolute host path and argv are pinned in the external S-01
-   experiment plan. It is never S-04R's staged telemetry-disabled selection.
+   `semantic-oracle-installed-reference-selection.json`, SHA-256
+   `0531831177d52dcd11fe86a3790cbbd0825a0e35b14db04d35fc0a391e6e5f41`.
+   The execution plan binds this selection plus the built Go artifact.
+   It is never S-04R's staged telemetry-disabled selection.
    Mount the selected runtime read-only and verify launcher/source/interpreter
    digests before and after. Operational paths/manifests remain outside git.
    Before this request, repeat network and HOME-absent OS-home/cache preflight
