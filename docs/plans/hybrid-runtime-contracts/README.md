@@ -1,9 +1,11 @@
 # Hybrid runtime shared contracts
 
-Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/2`,
-accepted for implementation on 2026-11-06. The overall lead owns this
-index. Domain leads own their area documents and independent reviewers assess
-the criteria against source before new implementation consumes them.
+Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/3`,
+accepting the downstream `semantic/4` and `release/4` criteria pair on
+2026-11-06. The earlier `shared/2` acceptance closed X-01 for setup on that
+date. The overall lead owns this index. Domain leads own their area documents
+and independent reviewers assess the criteria against source before new
+implementation consumes them.
 
 X-01 is **closed for specification and coordination setup**. The overall lead
 has reconciled the reviewed area contracts, consumer agreements and dependency
@@ -130,8 +132,23 @@ cross-team deltas and consumer agreements are closed for specification scope.
 | --- | --- | --- |
 | Foundation | `foundation/v4`, `8b7686496e78224cfedbccdde4ffde34c0f900c0` | Release/Coordination mirror the short launcher, full issued-command scope and sequenced caller slot; Foundation accepted the complete final Release delta. |
 | Coordination | `coordination/v6`, `c9a1908bacac65806f233d040bd0656c8b43f97e` | Both independent reviewers accepted the compact/L delta, selected-config root, caller/thread custody and source error policy; Release found no conflict. |
-| Semantic | `semantic/3`, `ac3dee7a45592312782e3d8724fa9193f77d2a31` | Release accepted the exact rollback, S-04R, native-package/ABI, fixed-launcher and database-wide fence criteria; R-06's named prerequisite was read back. |
-| Release | `release/3`, `a02da07c372c6418ff329da267473888bf97a781` | Independent final review and Foundation whole-contract agreement cover the receipt/L contract and five updated item bodies; Semantic confirmed the rollback dependency. |
+| Semantic | `semantic/4`, `8d4d42b226110f50ec1ac48e56ba021d6a00ea46` | S-R1 `1189989e-fd48-4d75-b7ed-c20222fa509e` v1 and R-R1 `eab98590-d76e-4ca6-a4c3-90f33abf87b4` v1 accept the exact criteria. Release's consumer agreement is `f2f75fbc-12e6-46df-ba98-ff91147cf32e` v1. |
+| Release | `release/4`, `4137d2c95d2964e4d48852620606ffce721626a7` | R-R1 `686e3997-6ace-4eb6-b059-c1211ea93b48` v1 accepts the paired criteria. Semantic's consumer agreement is `f1e9923e-acd1-4762-ad83-432d8ba3dce3` v1. |
+
+The accepted Semantic candidate `49b4652c83d2b8a6e5761230db3273ed75063ef4`
+and Release candidate `564a53216e9f3b78849910d1d1703e4b1eefc93e` landed with
+their reviewed blobs unchanged: `a44b916cf7e48ed579c95f7b4d60fd1914788874`
+and `e2ed2fe07344de428d5aaf02d714cf3a3a0f111f`, respectively. This downstream
+amendment accepts the conditional maximum-document evidence criteria below;
+it does not accept an experiment, harness, numerical result or runtime.
+
+For X-01 history, `semantic/3` landed at
+`ac3dee7a45592312782e3d8724fa9193f77d2a31`, with Release's agreement on
+rollback, S-04R, native-package/ABI, fixed-launcher and database-wide fence
+criteria. `release/3` landed at `a02da07c372c6418ff329da267473888bf97a781`,
+with independent review and Foundation's whole-contract agreement on the
+receipt/L contract and updated item bodies; Semantic confirmed the rollback
+dependency. Those requirements remain in the accepted pair.
 
 Root's final reconciliation checked current contract blobs, exact review and
 consumer receipts, native parents, stable plan-key identities and body/map
@@ -175,18 +192,87 @@ record that transition explicitly. Prove the selected closure's numerical
 behavior and absence of telemetry-store writes or connection attempts through
 isolated process observation. Rust-only evidence does not qualify Python.
 
-The exact 65536-punctuation reference case retains its observed 90-second
-supervised timeout. A separately labelled offline numerical-oracle capture of
-the identical frozen input may use one external deadline of at most 180 seconds
-to obtain missing reference vectors, with independent reviewer agreement.
-This does not change or pass the production deadline. Protect the owner's
-telemetry store and network through actual isolation, including OS home lookup;
-missing isolation stops the experiment. Another timeout remains a model-evidence
-gap, without repeated deadline inflation. Candidate numerical comparison and
-execution through the unchanged real supervisor remain separate requirements.
+The retained `"!" * 65536` 90-second Python observation used a direct external
+supervisor; it was not an observed real-Go or production timeout. Its full
+inherited environment was not recorded. The single at-most-180-second oracle
+attempt is consumed and remains unqualified; its recorded environment and
+output remain separate immutable evidence. Overall decision
+`0ba29009-f422-4a11-a94b-018f1d3139b0` v1 permits a conditional route only for
+that sealed case. The ordered steps in the
+[Semantic contract](semantic.md#conditional-maximum-document-reference) and
+the [Release evidence requirements](release.md#maximum-document-semantic-evidence)
+govern the following summary.
 
-X-01 closes setup only. S-01 and J-01 evidence, each implementation's tests and
-review, remaining release-policy gates, actual runtime/ABI qualification and
-production acceptance remain with their downstream items.
+Construction amendment `b8bde736-20e4-4957-88f3-2acc7109e4fb` v1 changes only
+W's existing RW bind host-source operand to one fresh, empty, owned `0700`
+scratch directory outside the frozen artifact root. Preserve the `--bind`
+flag, guest `/sandbox` destination and all other prefix arguments, guest paths,
+namespace/settings, environment and mount flags, apart from declared read-only
+tool/input additions. This is a declared derivation of W, not byte-identical
+reproduction. Record original/derived argv and the exact diff, verify backing
+ownership/mode/emptiness without symlink substitution or overlap/alias, and
+preserve every old artifact and directory. New logs, results and receipts stay
+outside the frozen root; needed old evidence is mounted read-only. Retain
+before/after seal and ownership/mode checks and cleanup evidence; remove only
+the newly owned scratch after workers and descendants are joined. This
+exception grants no new attempt, budget reset or numerical equivalence.
+
+Against that derived construction, pin and match the complete 294-text
+baseline: check exact int64 token IDs and lengths before inference, then exact
+raw CLS digests. Keep the frozen sources/assets, interpreter/provider, batch 1,
+ORT settings and tensors. B1 then permits exactly two additional passage
+executions, A = `"!" * 288` and B = `"!" * 256`, capturing raw CLS and normalized
+output from each same execution. Preserve the specified row hashes, per-input
+tensors, A-to-rows-0..254/B-to-row-255 mapping, and actual-worker loaded
+ORT/NumPy/OpenBLAS mappings and hashes. Before inference, prove network and
+mapped OS-home/cache isolation, including `getpwuid` and `expanduser` with
+HOME absent in the relevant namespace. New raw outputs and maps are new
+references, never reconstructed historical evidence. Corpus-bounded proof and
+batch-1/stateless mapping do not prove 255-repeat determinism or general source
+equivalence; contradictions defeat the disposition. The concrete O-4 through
+O-6 source-equivalence arguments remain input-specific and independently
+reviewed.
+
+After the complete B1 proof passes, including the 294-text match, both
+normalized row hashes and actual-worker maps, and the exact S-01b
+isolation/recording harness candidate is independently accepted, B2 permits one `operation=document`,
+`"!" * 65536` request through the selected installed pre-repair fixed Python
+launcher and unchanged Go `CommandEmbedder` with its actual frame, sanitized
+environment and 90-second timer. This is not S-04R's staged launcher. Normal
+startup/identity exchange permits no extra model/document probe. Repeat the
+network and HOME-absent OS-home/cache proof in the actual Go child's namespace;
+B1 proof does not transfer. Bind installed launcher/source/interpreter and Go
+identities, actual child mappings, frame/environment evidence and read-only
+runtime before/after digests. Keep isolation overhead separate from Go's timer.
+Preserve the outcome, cancellation and joined cleanup, and seal each B1
+reference set and B2 record with digest manifests. Compare any B2 reply with
+the sealed oracle and escalate differences while retaining both references.
+
+Every attempt, including preflight, is recorded. Failed proof or a failed,
+uncertain or interrupted attempt ends that experiment with its gap retained;
+further execution requires a new Overall decision. No new 180-second oracle,
+deadline inflation, automatic or manual retry, production action, source-oracle
+repair, backend, tolerance or role change is authorized by this route. The criteria
+reviews and mutual agreements above close specification scope only; actual
+experiment evidence receives separate independent review before numerical
+coverage is counted. Experimental outputs never establish index coverage.
+Until a valid Python real-Go document reply exists, a Rust reply within 90
+seconds requires Overall's population disposition with Semantic/Release review;
+blocked, failed or unmeasured Python runs never establish equal populations.
+All 256 Rust vectors and spans, bit-identical raw-output gates, pairwise
+`<=1e-6` comparison, exact integer scores/order and unchanged real-Go deadlines
+remain mandatory. No coverage, runtime, R-05/R-06 or deployment gate is passed
+by this criteria acceptance.
+
+J-01 / CAIRN-332 and CAIRN-276 are Done with characterization landed at
+`cff2061eaaef83956a2ef4e8ddf48a249fd7ddc7`. The
+[characterization record](../../verification/2026-11-06-j01-inbox-characterization.md)
+retains J-R1 O-2 and the v6 C1/C3 J-F1 cells as post-F-04 obligations carried
+by J-02; their later verification is not claimed here.
+
+X-01 closes setup only. S-01 evidence, the remaining coordination obligations,
+each implementation's tests and review, remaining release-policy gates,
+actual runtime/ABI qualification and production acceptance remain with their
+downstream items.
 No runtime implementation, production switch, burn-in or retirement has been
 accepted by this record.
