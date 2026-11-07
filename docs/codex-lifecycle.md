@@ -196,9 +196,45 @@ existing hooks, including Cairn's coordination hooks. It keeps the first
 original as `hooks.json.before-cairn-lifecycle`. It then trusts exactly those
 four definitions through Codex's own app-server protocol, as the coordination
 installer does. Rerunning it updates the installation without duplicating
-hooks. Start a fresh Codex session afterward. Put `.cairn-no-memory` in a
-project (it applies to every directory below it) to opt it out, or set
+hooks. New sessions load those definitions; existing conversations need the
+checks below. Put `.cairn-no-memory` in a project (it applies to every directory
+below it) to opt it out, or set
 `CAIRN_LIFECYCLE_DISABLED=1` for one run.
+
+### Existing conversations
+
+The installer's cwd-based `hooks/list` runs in a separate app-server. A loaded
+thread can still report `trustStatus: modified` and skip its coordination Stop
+hook even when disk `hooks.state` trusts the current definition. Cairn then
+retains `busy` and its watcher cannot wake that conversation. Inspect `hooks/list` with the exact
+`threadId`; a fresh cwd listing or MCP connection does not establish live hook
+trust. Compare expected commands, keys and `currentHash` with the selected
+account's already owner-trusted `trusted_hash`; refresh only when those hashes
+agree. Unknown or changed definitions need normal [hook trust review](https://learn.chatgpt.com/docs/hooks).
+
+Codex 0.166.0 supports `config/batchWrite` with
+`{"edits":[],"reloadUserConfig":true}`. Supply the selected `filePath` and
+`expectedVersion` from the `config/read` user layer to guard the configuration
+snapshot. Stop on a version conflict; do not retry without the guard. Verify
+the running version's schema and the Unix peer's PID, start time and boot ID. Inventory
+`thread/loaded/list` and metadata-only `thread/read`: the request refreshes
+runtime settings for **all loaded threads** on that app-server, including
+plugins, skills and MCP configuration. It is not a hooks-only reload. Review
+that scope and effective-versus-disk differences; recheck the peer, loaded
+thread set and configuration hashes immediately before applying. Stop on an
+unexpected change or unrelated session outside the authorized refresh scope.
+Empty edits add no trust decision. Preserve the conversation and Cairn execution;
+do not re-register, restart or launch a replacement conversation.
+
+Afterward, verify every affected loaded thread has the exact expected hook key
+set and unchanged definitions, all enabled and `trusted`; configuration bytes
+and session identities must remain unchanged. A successful response can leave
+a thread unrefreshed with only a warning, so partial readback is insufficient. At the next natural turn end, verify the
+coordination Stop hook completes and Cairn records idle at a newer context
+revision while the native thread is idle. Then observe eligible pending inbox
+work wake the same conversation normally. Do not synthesize Stop or report an
+active conversation as idle. If that transition fails, retain the hook's fixed
+failure metadata for diagnosis; restored trust alone does not prove delivery.
 
 ## Optional invocation trace (diagnostic window)
 

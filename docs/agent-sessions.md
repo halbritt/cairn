@@ -133,6 +133,8 @@ one `cairn-presence.service` watcher. Supply an existing token file and a distin
 configuration home, so merged hook layers cannot register a conversation under
 another account. Codex hook trust is recorded through its installed app-server
 API for the four exact Cairn commands. Other hooks and settings are preserved.
+Its cwd-based trust check does not certify an already loaded thread; see
+[existing Codex conversations](codex-lifecycle.md#existing-conversations).
 
 ```sh
 python3 scripts/install-agent-coordination.py \
@@ -140,8 +142,8 @@ python3 scripts/install-agent-coordination.py \
 ```
 
 For Claude, `--settings` names its `settings.json`; for Agy, its `hooks.json`.
-For OpenCode and Hermes it names the configuration directory. Start a fresh
-native process to load installed hooks. Hermes CLI/gateway require restart.
+For OpenCode and Hermes it names the configuration directory. New native
+processes load the installed hooks. Hermes CLI/gateway require restart.
 
 With `--idle-wakeup`, installation also covers the selected account home with
 Herdr's own native integration: it checks `herdr integration status` and runs
