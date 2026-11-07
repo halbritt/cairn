@@ -326,6 +326,8 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                     self.assertEqual(caught.exception.evidence['setup_marker'], 'retained')
                     self.assertIn('consumer_setup_failure', caught.exception.evidence)
                     self.assertIn('consumer_allocation_cleanup_failure', caught.exception.evidence)
+                    self.assertEqual(caught.exception.evidence['consumer_setup_failure']['code'], 'configuration')
+                    self.assertEqual(caught.exception.evidence['consumer_allocation_cleanup_failure']['code'], 'configuration')
                     backing.remove.assert_not_called()
                 else:
                     self.assertIs(caught.exception, setup)

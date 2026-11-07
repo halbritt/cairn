@@ -1018,8 +1018,13 @@ def _collector_isolation(module, *, profile, read_only_paths, output_dir,
                     backing.remove()
             except BaseException as cleanup_error:
                 evidence = dict(error.evidence) if isinstance(error, module.IsolationError) else {}
-                evidence.update(consumer_setup_failure=_exception_record(error),
-                                consumer_allocation_cleanup_failure=_exception_record(cleanup_error))
+                setup_failure, cleanup_failure = _exception_record(error), _exception_record(cleanup_error)
+                if isinstance(error, module.IsolationError):
+                    setup_failure['code'] = error.code
+                if isinstance(cleanup_error, module.IsolationError):
+                    cleanup_failure['code'] = cleanup_error.code
+                evidence.update(consumer_setup_failure=setup_failure,
+                                consumer_allocation_cleanup_failure=cleanup_failure)
                 raise module.IsolationError('collector setup failed and owned empty-child release refused',
                                             code='cleanup', evidence=evidence) from error
         raise
