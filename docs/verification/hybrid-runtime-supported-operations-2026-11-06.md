@@ -4,8 +4,10 @@ This characterizes the existing lifecycle source for CAIRN-303 / R-01.
 Runtime and focused-fixture bytes were measured at
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` and rechecked unchanged at
 `db45c4474fa7911b5569f2f55ebf2bd19c9a81bb`. The latter adds campaign
-documentation. This page records source behavior and bounded fixture results;
-it does not establish installed-client acceptance or close R-01 or X-01.
+documentation. Those discovery observations remain historical. The later
+[shared/2 acceptance](../plans/hybrid-runtime-contracts/README.md) closes X-01
+for specification setup. This page and the legacy runner below do not establish
+installed-client acceptance or close R-01.
 
 The current [bundle inventory](../../integrations/lifecycle/lifecycle_bundle.py#L16)
 has 17 members. Its source-derived descriptor, after the normal installed-loader
@@ -166,3 +168,160 @@ pins and process images alone cannot establish which connection or cached hook
 implementation a live session uses. Operational observations remain outside
 this source/fixture record. The [testing guide](../developer/testing.md) and
 [deployment guide](../operator/deployment.md) describe their separate checks.
+
+## Runnable legacy baseline
+
+[check_hybrid_release_baseline.py](../../scripts/check_hybrid_release_baseline.py)
+pins 16 existing fixture files and 141 selected test IDs. It uses a loader with
+an explicit import root and named IDs, including the two fixture files without
+`unittest.main()`. Every sample must produce exactly the selected ID multiset;
+zero tests, missing/duplicate/unselected results, skips, expected failures,
+unexpected successes, malformed reports, nonzero exits and timeouts fail.
+Missing tools/packages or changed fixture bytes report missing coverage.
+The child checks and executes the same captured fixture bytes.
+
+| Profile | Selected tests per sample | Evidence boundary |
+| --- | --- | --- |
+| `legacy-closure` | 35 | The five historical groups above. Help, hint and excluded calls remain closure smoke; synthetic setup/active-turn cleanup does not attest native request cancellation. |
+| `legacy-memory` | 23 | Claude/Codex/Hermes and OpenCode shared-engine source boundaries, required-context guards, real pipe pressure and synthetic selector/engine cleanup. API/model and host doubles remain labelled. |
+| `legacy-coordination` | 83 | Journal/issued-command/recovery assertions, native-session doubles, same-process Unix peers, actual hook-process activation contention, wake guards and installer fixtures. Scripted loss/restart does not prove abrupt writer death or live recovery. |
+| `legacy-all` | 141 | All three selections; no additional installed, model or live qualification. |
+
+The first combined invocation passed all 141 selected tests with no skips.
+The companion's 12 hermetic tests passed, including false-green reports,
+fixture replacement, child environment leakage, process-group timeout cleanup
+and observer transparency. These are runner/source checks, not R-01 completion.
+Later samples retain their own timestamps, source/module hashes and results.
+They do not replace the earlier 35-test discovery or its sample counts.
+
+Run from the checkout root. Keep measurement artifacts outside the checkout:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/test_hybrid_release_baseline.py -v
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s scripts -p test_hybrid_release_baseline.py -v
+baseline_dir="$(mktemp -d)"
+PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/check_hybrid_release_baseline.py \
+  --profile legacy-all --samples 1 --output "$baseline_dir/legacy.json"
+```
+
+`--output` refuses an existing file or a path inside the checkout. JSON always
+goes to stdout too. Required prerequisites include Linux/Python, PyYAML, working
+`bwrap`, `herdr` and `/usr/bin/node` for the relevant closure suites; missing
+coverage cannot pass that profile. The companion itself requires none of those
+native tools, PostgreSQL, network access or the real HOME.
+
+Every selected ID records one evidence lane (`source-only`, `fake-boundary`,
+`real-process`, `installed-smoke`, `installed-effectful` or `live-session`),
+one row kind and its REL fixture IDs. This runner supplies no
+`installed-effectful` or `live-session` result. Unsupported-expectation and
+closure-smoke passes stay out of supported-expectation counts; no fixture count
+is a successful native cycle. Unselected methods in partial suites are listed
+as not run: Claude 62, Codex 20, Hermes 17, Claude bound recall 13, shared bound
+recall 59, activation contention 4 and idle wake 56.
+
+Children receive disposable HOME/account/XDG/TMPDIR selections and explicit
+tool lookup; owner credentials, disable flags and Herdr socket selectors are
+not inherited. The running subscription session is unchanged. Reports separate
+module/import setup, fixture-test wall time and suite duration. Observed
+`subprocess.run` wall times retain the same arguments, returned streams and
+errors; Popen-only and mocked inner timings remain unavailable. Test durations
+include fixture setup/teardown. No real model task or native agent conversation is launched,
+and no performance improvement is established. Complete actual hook-subprocess
+latency remains an open R-01 requirement.
+
+## Operation evidence and required installed effects
+
+The following are expectations for later effectful checks. Each uses synthetic
+inputs and a disposable API/store and home, with the selected installed bytes.
+Capture exact stdin, stdout/stderr, status and resulting state; a JSON field's
+presence, a help call or a fake API reply alone does not prove the effect.
+The current source [memory frontend](../../integrations/lifecycle/memory.py)
+and [coordination frontend](../../integrations/lifecycle/coordination.py) own
+serialization and error order. Do not normalize refusal, identity, ordering,
+request IDs or state differences away.
+
+| Supported row | Required positive observable and stream/status | Required negative |
+| --- | --- | --- |
+| Claude/Codex ordinary `SessionStart` and `UserPromptSubmit` recall | Retrieve a seeded current source with correct scope/hash; observe the selected context and state/meter. Memory CLI emits its `hookSpecificOutput` JSON line and exits 0; the host receives that exact event's frame. | Wrong account/privacy exclusion must make no memory/API reads. Optional failure keeps its source diagnostics; known required-context refusal on prompt exits 2. Codex required `SessionStart` instead emits `continue:false`/`stopReason`, exit 0; Claude keeps its source exit-1 boundary. |
+| Claude `PreCompact`/`SessionEnd`; Codex `PreCompact` and async `Stop` capture | Observe a confirmed selected write and matching committed capture marker; normal engine JSON/exit 0 and host async/synchronous contract preserved. Stop uses the documented threshold/retry rules. | Failed save must not advance the marker or claim saved; duplicate, continuation and unchanged-dialogue cases preserve source suppression. Claude ordinary Stop and Codex ordinary SessionEnd remain uninstalled boundaries. |
+| Claude tool hints; OpenCode host tool hints | Observe bounded hint state and later use of those hints; engine JSON/exit 0 and the adapter's native return remain unchanged. | Excluded/private/child activity must not create hints or reads. Codex has no installed ordinary hint hook. |
+| OpenCode task transform and idle/compaction/disposal capture | Run the actual TS plugin: seed recall, inspect the request copy without altering original history, then confirm selected capture and coalescing. Preserve native callback returns plus engine JSON/status. | Child/title/compaction requests cannot acquire ordinary task recall; abrupt death cannot be counted as a completed capture. Python shared-engine tests do not prove TS execution. |
+| Hermes owner-turn recall, completed-turn and pre-compaction capture | Run the actual required Python provider/registration objects; observe request-copy context, confirmed capture and `cairn_status`, retaining host return values and disposal. | Wrong profile/session, failed capture, delayed prior turn and shutdown must not cross homes, lose pending capture or leak registrations. Engine timeout cleanup is not public request-cancel attestation. |
+| Codex/Claude `/2` required inbox recall | Observe exact native turn/channel ownership, leased source, required-context bytes and stable grant accounting through both hook orders. Check each host's exact JSON/refusal outcome. | Changed pin, wrong owner/turn, missing source or lost lease must refuse without exposing an assignment or renewing optional credit. Other harnesses do not gain this bridge. |
+| Supported coordination hooks for each harness | Observe exact-session admission/presence and the applicable host context frame; normal CLI hook JSON/exit 0. Agy `PreInvocation`/idle Stop, OpenCode transform and Hermes middleware keep their distinct host contracts. | Privacy/child/busy/wrong-session guards must not claim another session. Intentional required native refusal and ordinary exit-1 failures remain distinct. |
+| Issued complete/ack/respond/finish-reply and compact commands | Execute the issued argv as fresh processes; observe durable intent before send, exact API result/reference and reply causation. Preserve pass-through CLI bytes/status; confirmed finish-reply is exit 0, final refusal 4, uncertainty 7. Compact inspect renews a lease. | Mismatched body/reference/context, invalid handle, stale owner or lease cannot settle another delivery. Compact inspect is not effect-free inspection. |
+| Supported idle wake | Observe the same eligible idle conversation receive the exact queued/channel/bridge delivery with composer/owner work preserved, then its matching native admission. | Busy/focused/unknown/stale peers and uncertain submissions cannot trigger fallback or duplicate submission. Agy subagents cannot borrow a parent's pane identity. |
+| Recovery and unchanged explicit retries | Observe the retained request identity, recovered committed result and one corresponding reply. Ordinary automatic replay remains pending-only, plus the narrow missing-result finish-reply exception. | Other-session, held/failed, settled/refused or unverifiable native work cannot become arbitrary automatic replay. Preserve each reader's characterized uncertainty. |
+
+Agy ordinary lifecycle memory remains unsupported. Public Store native
+cancellation remains unsupported except for the qualified opt-in OpenCode
+trial; its exact capability/turn/tool-custody checks are required. The accepted
+141-test selection does not run those cancellation fixtures, Hermes
+coordination/cancellation, Agy subagent presence/wake, wake-refusal, Codex native
+refusal/ended-turn recovery or the OpenCode TS fixture. These are explicit R-01
+coverage gaps, not passing rows. Each runner result includes the selected IDs
+and their evidence labels. The private execution plan also records a 5×5
+harness/operation table with the remaining gaps.
+
+## Selection, lanes and live-session freshness
+
+Inventory selection schema and executable shape independently: historical `/1`,
+historical two-file pins and complete `/2` bundles are separate facts.
+[check_effective_recall_deployment.py](../../scripts/check_effective_recall_deployment.py)
+recognizes historical selections. Reading their metadata does not rerun frozen
+trials or qualify them for migration. `/2` never authenticates a Go executable.
+
+An observation lane is host × harness × account/binding, plus a semantic lane
+per shared database/job queue. Each row records selected configuration and
+code hashes, source support, fixture effect, installed observation and live
+session evidence separately. Each supported installed memory event and
+request/reply/recovery path needs its own observed cycle; include idle, busy,
+restart, refusal and cancellation only where supported. The downstream
+24-hour window starts again after the lane's last relevant change; a shared
+semantic change affects dependent lanes. A full semantic rebuild is separate.
+
+The private session map correlates native-session and Cairn agent/execution
+metadata with installed binding/account selectors where observed. Unknown
+accounts, uninspected sessions, active connections, cached hooks and issued-argv
+references stay unknown. Process parentage and a reported memory
+`implementation_id` cannot attest the session's executing hook.
+
+For Codex, use the exact-thread [loaded-hook procedure](../codex-lifecycle.md#existing-conversations):
+capture the verified Unix peer, loaded thread set, configuration version/hash
+and expected hook keys/definitions. A cwd-based helper's trust result is not
+loaded-thread evidence. The guarded no-edit `config/batchWrite` refresh affects
+**all loaded threads**, including skills/plugins/MCP; each affected thread
+needs expected-hook readback and a natural Stop → newer Cairn idle → eligible
+wake cycle. R-01 sends no refresh. The later
+[single-conversation observation](../recall-dispatch.md) at `62ca67e9` proves
+that cycle for that conversation only, not every loaded thread or lane.
+
+Claude settings load at session start; the
+[dispatcher guide](../recall-dispatch.md) requires restart/resume for existing
+targeted sessions. OpenCode needs a fresh process; Hermes needs fresh CLI
+processes or the affected gateway restart. Those documented mechanisms are
+not evidence that a particular continuing conversation refreshed. Unsupported
+or unobserved refresh remains a transition/retirement gap; do not replace a
+conversation or force a production restart to manufacture proof.
+
+Installed timeout rows are classified by owner, lane and event. Cairn memory
+uses the observed 13/150-second rows; Claude/Codex coordination uses 2/15 and
+Agy's listed hooks use 15. Foreign 10-second SessionStart/Stop hooks, including
+git hygiene, do not alter Cairn's timeout selection. Disk rows do not prove a
+loaded thread's effective deadline.
+
+Available reference/lease/drain observables include selected files, native
+session/attempt correspondence, authenticated wake/delivery status and the
+read-only journal fact seam. `settled_journal_index` does not alone dispose of
+delivery-free `reply_possible` entries. Journal flush/compact inspect and some
+legacy `--check-only` forms can mutate state or probe native RPC; they are not
+inventory shortcuts. D1–D7 barrier/drain qualification and the unresolved D3/D6
+policy gates remain later work. No production database or another agent's
+delivery is a test fixture.
+
+The accepted `/3` invalid-code preflight expectation is empty stdout, its fixed
+role diagnostic and exit **1**, with no token/API/ledger/refusal-record effect
+and **no native-prompt veto**. Reserved wake text may therefore reach the model
+without required context, where report-and-stop remains the guard. This is
+specified behavior for new compatibility code, not an observed installed or
+live result of the legacy runner.
