@@ -300,16 +300,54 @@ Overall decision `0ba29009-f422-4a11-a94b-018f1d3139b0` version 1 selects the
 following conditional route for **only this sealed case**. It grants bounded
 experiments; it establishes no completed evidence or general equivalence rule.
 
-1. Reproduce the sealed wrapper W prefix exactly, allowing only declared
-   read-only tool/input binds. Before inference, prove real network isolation
+1. Derive the execution prefix from sealed wrapper W under Overall's
+   construction amendment `b8bde736-20e4-4957-88f3-2acc7109e4fb` version 1.
+   W is the bwrap argv before `--` in the sealed
+   `oracle-attempt.json`; it must match `sandbox_prefix` in
+   `inventory/experiment-manifest.json` and the corresponding prefix in
+   `preflight/full-isolation-command.json` under the seal above.
+   Replace only the existing RW bind's host-source operand with a freshly
+   created empty owned `0700` scratch directory outside the frozen artifact
+   root. The original argv positions are `33: --bind`, `34: host source`,
+   `35: /sandbox`; keep the flag and guest destination unchanged. Apart from
+   that operand and declared read-only tool/input additions, preserve all
+   original arguments, guest paths, namespaces/settings, environment and mount
+   flags. Call the result a **declared derivation**, never byte-identical W.
+   Record original/derived argv and their exact diff. Resolve and verify the
+   backing's owner/mode/emptiness without symlink substitution or overlap/alias
+   with the seal or protected live model/home/cache/telemetry trees. Do not
+   recreate the old disposable directory beneath the frozen root. Keep every
+   old file/directory unchanged, including unsealed delivery material; all new
+   logs/results/receipts stay outside it and old evidence is mounted read-only.
+   Record before/after seal and ownership/mode checks and final cleanup; remove
+   only the newly owned scratch after workers/descendants are joined.
+   This host-path change establishes no numerical equivalence. Preflight and
+   the 294-text raw proof apply to this **derived construction**. It grants no
+   new attempt, budget reset or retry.
+   Before inference, prove real network isolation
    and disposable mapped OS-home/cache protection, including `getpwuid` and
    `expanduser` with HOME absent in the relevant namespace. Keep frozen sources,
    assets, interpreter/provider, batch 1, ORT settings and tensor
    shapes/masks/type IDs. A failed isolation, digest or runtime check stops the
-   experiment; uncertain or failed attempts never retry automatically.
+   experiment and retains the gap. Every actual experiment attempt, including
+   its preflight, is recorded. A failed proof or a failed, uncertain or
+   interrupted attempt ends that experiment; further execution requires a new
+   Overall decision. Avoiding an automatic retry does not grant a manual one.
 2. Pin the complete pre-decision 294-text baseline digests before executing
    the already-scoped baseline capture. Require exact matches for int64 input
-   IDs, lengths and raw float32 CLS. The accepted digest basis from S-R1's
+   IDs, lengths and raw float32 CLS. The recipe is the first 19 cases of
+   `scripts/compare_semantic_workers.py` at `d3c255a`: the 17 queries of
+   `core/testdata/retrieval-quality.json` in file order, then its long-tail and
+   64-short cases, excluding the two repeat-storage cases. Pin workload SHA-256
+   `30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0`.
+   For each case, use the exact query prefix specified above plus the query,
+   followed by every frozen `semantic_rank.chunks` occurrence in note/chunk
+   order, including duplicates. Use FastEmbed's own tokenizer `encode_batch`,
+   one text at a time, masks of ones, type IDs of zeros and its own session.
+   CLS is output 0, `[:,0]`; concatenate arrays little-endian in text order.
+   Match the input-ID and length digests from tokenization **before any model
+   inference**, so a recipe error cannot consume a model attempt.
+   The accepted digest basis from S-R1's
    `b31016f5` version 1 is:
 
    | Baseline bytes | SHA-256 |
@@ -318,6 +356,7 @@ experiments; it establishes no completed evidence or general equivalence rule.
    | 294 lengths, little-endian int64 | `a81f2c9f819d10049549d14dcdb38983febf0a41cbfe314421e4f70bba8ded33` |
    | Raw CLS, little-endian float32, 294 by 384 | `1f7ba8c969c2053385ce6e89528d2decea78b627e9fb6ef40cfc322fd760b623` |
 
+   The reported 33395-token count comes from S-R1's `378ded83` version 1.
    Those earlier arrays were unsealed volatile scratch, not retained artifacts.
    A match is corpus-bounded wrapper evidence, not proof for every input.
 3. After that match, perform exactly two additional passage-level executions:
@@ -327,8 +366,16 @@ experiments; it establishes no completed evidence or general equivalence rule.
    A to rows `0..254`, B to row `255`. Require normalized row hashes
    `18f797c69cbe3aa177a9ea7c93accca95ef30124adc8fbedfd5ce807f164c907`
    and `ebaa34e553e0e36d1b60b31f485f48b831353d1ab1091042d2ee0e173e06b632`,
-   respectively. Read `/proc/self/maps` in the actual Python worker and hash
-   its loaded ORT, NumPy and OpenBLAS images against the frozen S-01 runtime.
+   respectively. Each row hash covers 384 little-endian float32 components,
+   exactly 1536 bytes. Read `/proc/self/maps` in the actual Python worker and
+   hash its loaded images against these pinned reference digests:
+
+   | Loaded image | SHA-256 |
+   | --- | --- |
+   | ORT Python extension | `a434baf53b7eba95c0c819eb67505099d9c8027e1fce4f3e25a0a368bc01045b` |
+   | NumPy `_multiarray_umath` | `1535fbed1e9ac6b717e72ad9bd5c20b9f0536a21084fcadc40c00255a8f35d1d` |
+   | OpenBLAS | `05c9f9eb89ee68a4b9d673184fa91c99587e736392c0c2d49180a8aa5303d080` |
+
    These raw values and mappings are **new references and observations**;
    never describe them as reconstructed historical evidence.
 4. Reusing A's row for 255 passages requires the exact retained row mapping
@@ -337,33 +384,74 @@ experiments; it establishes no completed evidence or general equivalence rule.
    contradiction defeats the disposition. Source-equivalence arguments for
    the old request bytes, environment and launcher remain explicit and
    input-specific. They do not become literal compliance or apply generally.
-5. Once the preceding proof and the independently reviewed S-01b
-   isolation/recording harness are ready, execute **one** synthetic maximum
-   document request through the unchanged Go `CommandEmbedder`, real fixed
-   Python launcher, actual Go-generated frame and sanitized environment, with
+   Fixture provenance enumerates and reviews each concrete O-4 through O-6
+   difference with source commit and file:line proof before counting coverage:
+   Go's compact UUID-ID/newline frame versus the oracle's Python serialization
+   (`semantic/embedding_command.go:111-128`); the oracle's omitted
+   `CAIRN_SEMANTIC_STREAM_CACHE=1` and added HOME/XDG/TMPDIR/cache/bytecode/PWD
+   settings versus Go's launch environment (`semantic/stream.go:174`); and its
+   remapped direct `python -B` command versus the fixed installed launcher.
+   The old 90-second run, specifically, lacks a full inherited-environment
+   record; the oracle's environment is recorded. Unknowns remain explicit.
+5. Once steps 1-3 all pass and the exact S-01b isolation/recording harness
+   candidate is independently accepted, execute **one** request whose operation
+   is `document` and text is exactly `"!" * 65536` (65536 UTF-8 bytes), through
+   the unchanged Go `CommandEmbedder`, selected installed pre-repair embed
+   launcher, actual Go-generated frame and sanitized environment, with
    the existing 90-second deadline. Normal startup/identity exchange is allowed;
    no extra model/document probe or repeated request is implied. Keep the
    external isolation boundary and report its overhead separately; it cannot
-   replace or extend Go's timer. Record the actual child identity, cleanup,
+   replace or extend Go's timer. The selected launcher is the installed
+   `semantic/worker-embeddings`, SHA-256
+   `f63e0a943e1607e0b24e960206e67d9161290115c9999447bd133305b56b5aa8`;
+   its exact absolute host path and argv are pinned in the external S-01
+   experiment plan. It is never S-04R's staged telemetry-disabled selection.
+   Mount the selected runtime read-only and verify launcher/source/interpreter
+   digests before and after. Operational paths/manifests remain outside git.
+   Before this request, repeat network and HOME-absent OS-home/cache preflight
+   in the actual Go child's namespace. Record namespace/UID correspondence
+   with the observed model child; identical prefixes alone are not that proof.
+   Failure ends the experiment with the gap retained.
+   Record Go source/binary identity, interpreter digest, launcher argv/digest
+   and externally sampled actual-child ORT/NumPy/OpenBLAS mappings and hashes.
+   Also record the exact Go frame hash, UUID, decoded operation/text matching
+   the sealed input, and Go's four environment variables plus
+   `CAIRN_SEMANTIC_STREAM_CACHE=1`; distinguish runtime-added entries. An
+   inference-free recording stub may establish the frame/environment facts.
+   Record cleanup,
    cancellation and whichever result occurs. A timeout is bounded isolated
    real-Go evidence; a successful reply is a separate immutable artifact.
    Compare a reply with the sealed oracle and escalate differences rather
    than replacing either reference. The old direct-supervisor failure never
    becomes an observed real-Go timeout by relabelling it.
+   Seal both the new B1 reference sets and B2 record with digest manifests.
 6. Obtain exact S-R1 and R-R1 review of this criteria amendment and Release's
    corresponding delta. Send accepted revisions and proposed shared-index
    wording to Overall before counting numerical coverage. Review the actual
    experiment evidence separately. No new 180-second oracle, deadline
-   inflation, production action, source-oracle repair or automatic retry is
-   authorized by this route.
+   inflation, production action, source-oracle repair, backend/tolerance/role
+   change or automatic retry is authorized by this route. Escalations go to
+   Overall, which owns population dispositions with Semantic/Release review.
 
 Keep all 256 Rust vectors and spans, the raw-output gate, pairwise `<=1e-6`,
 exact score/order and unchanged real-Go 90-second execution mandatory. The
-Python real-Go failure population remains unmeasured until the authorized run;
-record a differing Rust/Python population and obtain its disposition. A faster
+oracle vectors alone do not make the source embeddable or covered for Python.
+Experiment outputs, including a B2 reply, are reference artifacts and never
+index coverage. Until the authorized Python real-Go run returns a valid
+successful document reply, treat a Rust reply within 90 seconds as a population
+difference requiring Overall's disposition with Semantic/Release review.
+Blocked, failed or unmeasured Python runs never establish equal populations.
+Record and obtain a disposition for any other differing population. A faster
 Rust reply need not mimic the old direct capture's slowness. Retain every
 unresolved cell until its specified evidence exists; this authorization does
 not pass a coverage, runtime or deployment gate.
+
+For Rust comparisons, the retained spans are `raw/oracle-spans.json`, SHA-256
+`485076a424b842c3634c1f6bd0ce70968b91aa5ff428ce0d05e8b462df37dd4b`;
+normalized rows come from `raw/oracle-vectors-f32le.bin`, SHA-256
+`e29bf3eb56c889c7fcd9a4592179a7fd783e2a587c785152ab2704136e86e64f`,
+through the A/B mapping. Raw values come from the new sealed B1 references,
+subject to the conditional evidence gates above.
 
 ### Required acceptance inventory
 
