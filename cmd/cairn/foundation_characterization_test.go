@@ -333,6 +333,18 @@ func TestFoundationCharacterizationCallerStatePolicies(t *testing.T) {
 							(!bytes.Equal(after, raw) || !os.SameFile(before, info)) {
 							t.Fatal("failed/no-write persistence changed prior bytes or inode")
 						}
+						if name == "callback-error" && profile.name == "send-journal" {
+							var persisted sendJournal
+							if err := json.Unmarshal(after, &persisted); err != nil || persisted.IntentSHA256 != strings.Repeat("1", 64) {
+								t.Fatalf("callback-error journal next state: %s, parse error: %v", after, err)
+							}
+						}
+						if name == "callback-error" && profile.name == "delivery-alerts" {
+							var persisted deliveryAlertState
+							if err := json.Unmarshal(after, &persisted); err != nil || persisted.Alerts["fixture"].Ref != "changed" {
+								t.Fatalf("callback-error alerts next state: %s, parse error: %v", after, err)
+							}
+						}
 						if name == "large-next" {
 							if len(after) <= profile.maxBytes {
 								t.Fatal("write was unexpectedly size-capped")
