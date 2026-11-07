@@ -186,20 +186,49 @@ func TestByteDetectionAndExplicitUTF8TextAreSeparate(t *testing.T) {
 }
 
 func TestReaderMechanicsUseHeapStack(t *testing.T) {
-	// This proves decoder mechanics only. The caller's production depth/domain
-	// policy and trusted profile handoff remain separate root decisions.
+	// Mechanics only: neither a production depth/domain policy nor its trusted
+	// profile handoff is selected by these generated inputs.
 	const depth = 100000
-	v, err := DecodeBytes([]byte(strings.Repeat("[", depth)+"0"+strings.Repeat("]", depth)), 4300)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range depth {
-		if v.Kind != Array || len(v.Items) != 1 {
-			t.Fatal("deep array structure lost")
-		}
-		v = v.Items[0]
-	}
-	if v.Kind != Int || v.Integer != "0" {
-		t.Fatal("deep leaf changed")
+	for _, shape := range []string{"arrays", "objects", "mixed"} {
+		t.Run(shape, func(t *testing.T) {
+			arrayAt := func(i int) bool { return shape == "arrays" || shape == "mixed" && i%2 == 0 }
+			var raw strings.Builder
+			raw.Grow(depth*7 + 1)
+			for i := range depth {
+				if arrayAt(i) {
+					raw.WriteByte('[')
+				} else {
+					raw.WriteString(`{"x":`)
+				}
+			}
+			raw.WriteByte('0')
+			for i := depth - 1; i >= 0; i-- {
+				if arrayAt(i) {
+					raw.WriteByte(']')
+				} else {
+					raw.WriteByte('}')
+				}
+			}
+			v, err := DecodeBytes([]byte(raw.String()), 4300)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range depth {
+				if arrayAt(i) {
+					if v.Kind != Array || len(v.Items) != 1 {
+						t.Fatal("deep array structure lost")
+					}
+					v = v.Items[0]
+				} else {
+					if v.Kind != Object || len(v.Members) != 1 || string(v.Members[0].Key) != "x" {
+						t.Fatal("deep object structure lost")
+					}
+					v = v.Members[0].Value
+				}
+			}
+			if v.Kind != Int || v.Integer != "0" {
+				t.Fatal("deep leaf changed")
+			}
+		})
 	}
 }
