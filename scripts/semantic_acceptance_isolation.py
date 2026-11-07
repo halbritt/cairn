@@ -30,8 +30,9 @@ WORKER_ENV = dict(
 
 
 class IsolationError(RuntimeError):
-    def __init__(self, message, *, evidence=None):
+    def __init__(self, message, *, code="configuration", evidence=None):
         super().__init__(message)
+        self.code = code
         self.evidence = evidence or {}
 
 
@@ -108,6 +109,43 @@ def derive_w_prefix(prefix, old_backing, new_backing):
     derived = list(prefix)
     derived[34] = str(new_backing)
     return derived
+
+
+def task_scratch_identity(path):
+    """Explicit campaign roots and named disposable test tasks, never broad caches."""
+    path = Path(path).absolute()
+    owner = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    campaign = owner / ".cache/cairn-hybrid-execution-1249"
+    allowed_parents = (campaign / "semantic-S-B1", campaign / "semantic-S-B2")
+    named_test = (
+        len(path.parts) >= 3
+        and path.parts[1] == "tmp"
+        and path.parts[2].startswith("cairn-semantic-")
+    )
+    if not named_test and not any(base in path.parents for base in allowed_parents):
+        raise IsolationError(
+            "scratch root is outside the dedicated semantic task allowlist"
+        )
+    if (
+        path.is_symlink()
+        or any(p.is_symlink() for p in path.parents)
+        or path.resolve() != path
+    ):
+        raise IsolationError("scratch root has a symlink or alias")
+    info = path.stat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.getuid()
+        or stat.S_IMODE(info.st_mode) != 0o700
+    ):
+        raise IsolationError("scratch root must be an owned private task directory")
+    return dict(
+        path=str(path),
+        inode=info.st_ino,
+        device=info.st_dev,
+        owner=info.st_uid,
+        mode=stat.S_IMODE(info.st_mode),
+    )
 
 
 class DisposableBacking:
@@ -274,20 +312,50 @@ def bounded_communicate(process, data, *, timeout, stdout_limit, stderr_limit=65
                         limit = stdout_limit if name == "stdout" else stderr_limit
                         if len(chunk) > limit - len(output[name]):
                             output[name].extend(chunk[: limit - len(output[name])])
-                            raise IsolationError(f"worker {name} exceeds limit")
+                            raise IsolationError(
+                                f"worker {name} exceeds limit", code=name + "_limit"
+                            )
                         output[name].extend(chunk)
             process.wait(timeout=max(0, deadline - time.monotonic()))
         return bytes(output["stdout"]), bytes(output["stderr"])
     except BaseException as error:
-        stop_process(process)
+        cleanup_error = None
+        try:
+            stop_process(process)
+        except Exception as failure:
+            cleanup_error = failure
         evidence = dict(
             argv=process.args,
             exit_code=process.returncode,
             stdout=bytes(output["stdout"]),
             stderr=bytes(output["stderr"]),
+            processes_joined=cleanup_error is None,
+            cleanup_error=None
+            if cleanup_error is None
+            else dict(type=type(cleanup_error).__name__, message=str(cleanup_error)),
+            invocation=process._semantic_invocation,
+            timeout_seconds=timeout
+            if isinstance(error, subprocess.TimeoutExpired)
+            else None,
         )
         if isinstance(error, (IsolationError, subprocess.TimeoutExpired)):
-            raise IsolationError(str(error), evidence=evidence) from error
+            code = (
+                "timeout"
+                if isinstance(error, subprocess.TimeoutExpired)
+                else error.code
+            )
+            evidence["failure_code"] = code
+            if cleanup_error is not None:
+                raise IsolationError(
+                    "command failed and process cleanup failed",
+                    code="cleanup",
+                    evidence=evidence,
+                ) from error
+            raise IsolationError(str(error), code=code, evidence=evidence) from error
+        if cleanup_error is not None:
+            raise IsolationError(
+                "interrupted command cleanup failed", code="cleanup", evidence=evidence
+            ) from error
         raise
 
 
@@ -329,7 +397,8 @@ finally:
     sock.close()
 print(json.dumps(dict(network_namespace=os.readlink('/proc/self/ns/net'),
                      uid=os.getuid(),getpwuid_home=str(home),expanduser_home=os.path.expanduser('~'),
-                     home=str(home),home_probe_inode=probe.stat().st_ino)))
+                     home=str(home),home_probe_inode=probe.stat().st_ino,
+                     read_only_mounts=[dict(path=p,read_only=bool(os.statvfs(p).f_flag & os.ST_RDONLY)) for p in json.loads(sys.argv[2]) ])))
 """
 
 
@@ -339,7 +408,7 @@ class SemanticIsolation:
         self.output_dir = Path(output_dir).absolute()
         self.owner_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
         self.home_dir = self.output_dir / "mapped-home"
-        self.proof = None
+        self._proof = None
         self._processes = []
         self._observed = {}
         self._observation_errors = []
@@ -352,11 +421,22 @@ class SemanticIsolation:
         self._original_prefix = None
         self._seal_before = None
         self._invocations = []
+        self._invocation_bindings = {}
         self._sealed_environment = None
         self._closed = False
+        self._cwd = "/"
+        self._proof_digest = None
+        self._contract_digests = {}
+        self._task_scratch_roots = []
+
+    @property
+    def proof(self):
+        return None if self._proof is None else json.loads(json.dumps(self._proof))
 
     @classmethod
-    def sealed_oracle(cls, *, sealed_root, backing, read_only_paths, output_dir):
+    def sealed_oracle(
+        cls, *, sealed_root, backing, read_only_paths, output_dir, task_scratch_roots=()
+    ):
         """W only: caller creates the exclusive backing; this context removes it.
 
         No model is imported by construction or preflight. The sealed environment
@@ -373,14 +453,29 @@ class SemanticIsolation:
         manifest = json.loads((root / "inventory/experiment-manifest.json").read_text())
         attempt = json.loads((root / "oracle-attempt.json").read_text())
         prefix = manifest["sandbox_prefix"]
+        preflight = json.loads(
+            (root / "preflight/full-isolation-command.json").read_text()
+        )
         if (
             attempt["command"][: len(prefix)] != prefix
             or attempt["command"][len(prefix)] != "--"
             or manifest["sandbox_environment"] != attempt["sandbox_environment"]
+            or preflight["command"][: len(prefix)] != prefix
+            or preflight["command"][len(prefix)] != "--"
         ):
             raise IsolationError("sealed W prefix/environment records disagree")
         derived = derive_w_prefix(prefix, root / "disposable", backing.path)
         instance = cls(read_only_paths=read_only_paths, output_dir=output_dir)
+        instance._task_scratch_roots = [
+            task_scratch_identity(p) for p in task_scratch_roots
+        ]
+        if not any(
+            Path(p["path"]) in backing.path.parents
+            for p in instance._task_scratch_roots
+        ):
+            raise IsolationError(
+                "external backing must be below an explicit private task scratch root"
+            )
         protected = [
             root,
             instance.owner_home / ".cache/Microsoft",
@@ -393,6 +488,16 @@ class SemanticIsolation:
             for i, arg in enumerate(prefix)
             if arg == "--ro-bind"
         ]
+        protected_identities = {
+            (p.stat().st_dev, p.stat().st_ino) for p in protected if p.exists()
+        }
+        if any(
+            (item["device"], item["inode"]) in protected_identities
+            for item in instance._task_scratch_roots
+        ):
+            raise IsolationError(
+                "task scratch root aliases sealed or protected live state"
+            )
         if (
             backing.path == instance.owner_home
             or backing.path in instance.owner_home.parents
@@ -415,6 +520,7 @@ class SemanticIsolation:
         instance._original_prefix = prefix
         instance._sealed_prefix = derived
         instance._sealed_environment = manifest["sandbox_environment"]
+        instance._cwd = prefix[prefix.index("--chdir") + 1]
         instance._backing = backing
         instance.home_dir = backing.path / "home"
         return instance
@@ -477,6 +583,7 @@ class SemanticIsolation:
                 self._backing = DisposableBacking(self.home_dir)
             else:
                 self._backing.verify(empty=True)
+                self._verify_scratch_roots()
                 check_sealed_oracle(self._sealed_root)
                 for name in (
                     "home",
@@ -516,6 +623,13 @@ class SemanticIsolation:
             "-c",
             _PREFLIGHT,
             str(self.owner_home),
+            json.dumps(
+                [
+                    self._prefix[i + 2]
+                    for i, arg in enumerate(self._prefix)
+                    if arg == "--ro-bind"
+                ]
+            ),
         ]
         if self._sealed_root is not None:
             # This HOME removal is a nonmodel diagnostic only, not a W env rewrite.
@@ -526,6 +640,9 @@ class SemanticIsolation:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            role="preflight",
+            mode="preflight",
+            diagnostic_home_absent=bool(self._sealed_root),
         )
         stdout, stderr = bounded_communicate(
             process, b"", timeout=10, stdout_limit=65536
@@ -536,20 +653,21 @@ class SemanticIsolation:
                 "isolation preflight failed: " + stderr.decode(errors="replace")
             )
         try:
-            self.proof = json.loads(stdout)
+            self._proof = json.loads(stdout)
         except (ValueError, UnicodeDecodeError) as error:
             raise IsolationError(
                 "isolation preflight returned no valid proof"
             ) from error
         expected_home = "/sandbox/home" if self._sealed_root else str(self.owner_home)
         if (
-            self.proof["network_namespace"] == self._owner_network
-            or self.proof["home"] != expected_home
-            or self.proof["home_probe_inode"]
+            self._proof["network_namespace"] == self._owner_network
+            or not all(item["read_only"] for item in self._proof["read_only_mounts"])
+            or self._proof["home"] != expected_home
+            or self._proof["home_probe_inode"]
             != (self.home_dir / ".semantic-isolation-probe").stat().st_ino
         ):
             raise IsolationError("network/home isolation proof mismatch")
-        self.proof.update(
+        self._proof.update(
             wrapper_sha256=digest(__file__),
             profile="derived-W" if self._sealed_root else "default",
             original_prefix=self._original_prefix,
@@ -577,7 +695,8 @@ class SemanticIsolation:
             sealed_oracle=check_sealed_oracle(self._sealed_root)
             if self._sealed_root
             else None,
-            model_environment=self._sealed_environment or WORKER_ENV,
+            environment_contract=self.command_contract(),
+            task_scratch_roots=self._task_scratch_roots,
         )
         if self._sealed_root:
             files = [p for p in self.read_only_paths if p.is_file()]
@@ -588,13 +707,14 @@ class SemanticIsolation:
                 for child in sorted(p.rglob("*"))
                 if child.is_file()
             ]
-            self.proof["additional_read_only_files"] = [
+            self._proof["additional_read_only_files"] = [
                 dict(path=str(p), sha256=digest(p)) for p in files
             ]
-            self.proof["canary_sha256"] = digest(probe)
-        (self.output_dir / "isolation-proof.json").write_text(
-            json.dumps(self.proof, indent=2) + "\n"
-        )
+            self._proof["canary_sha256"] = digest(probe)
+        proof_path = self.output_dir / "isolation-proof.json"
+        proof_path.write_text(json.dumps(self._proof, indent=2) + "\n")
+        proof_path.chmod(0o444)
+        self._proof_digest = digest(proof_path)
         return self
 
     def _prepare_default_prefix(self, bubblewrap, probe):
@@ -704,9 +824,38 @@ class SemanticIsolation:
                             executable_digest = hashlib.file_digest(
                                 stream, "sha256"
                             ).hexdigest()
+                        invocation = next(
+                            item
+                            for item in self._invocations
+                            if item["pid"] == parent
+                            and item["start_ticks"] == start_ticks
+                        )
+                        observed_environment = dict(
+                            part.split("=", 1)
+                            for part in (process / "environ")
+                            .read_bytes()
+                            .decode("utf-8")
+                            .split("\0")
+                            if part
+                        )
+                        contract = invocation["contract"]
+                        expected = [contract["environment"]]
+                        if Path(executable).name.startswith("python"):
+                            expected.append(contract["cpython_environment"])
+                        environment_match = observed_environment in expected
                         entry = dict(
                             pid=pid,
                             launcher_pid=parent,
+                            launcher_start_ticks=start_ticks,
+                            invocation_id=invocation["id"],
+                            role=invocation["role"],
+                            mode=invocation["mode"],
+                            exec_environment=observed_environment
+                            if environment_match
+                            else None,
+                            environment_matches_contract=environment_match,
+                            environment_keys=sorted(observed_environment),
+                            environment_source="proc-exec-block; CPython later coercion is separately declared",
                             process_start_ticks=observed_start,
                             uid=[
                                 int(v)
@@ -764,7 +913,13 @@ class SemanticIsolation:
                             entry["libraries"].append(library)
                 except (FileNotFoundError, ProcessLookupError):
                     continue  # A child can exit between procfs observations.
-                except (OSError, IsolationError) as error:
+                except (
+                    OSError,
+                    IsolationError,
+                    ValueError,
+                    KeyError,
+                    StopIteration,
+                ) as error:
                     with self._lock:
                         self._observation_errors.append(f"{pid}: {error}")
                     return
@@ -789,18 +944,131 @@ class SemanticIsolation:
                 for lib in p["libraries"]
             )
         ]
-        if require_ort and (
-            not evidence["model_workers"]
-            or evidence["errors"]
-            or any(
-                p["network_namespace"] == self._owner_network
-                for p in evidence["model_workers"]
+        if require_ort:
+            selected = [i for i in self._invocations if i["mode"] != "preflight"]
+            if not selected:
+                raise IsolationError(
+                    "no actual ORT invocations", code="runtime_evidence"
+                )
+            for invocation in selected:
+                self.invocation_runtime(invocation, [], evidence=evidence)
+        return evidence
+
+    def invocation_runtime(self, invocation, library_pins, *, evidence=None):
+        """One launcher cannot supply missing runtime evidence for another command."""
+        self._verify_receipts()
+        encoded = json.dumps(invocation, sort_keys=True, separators=(",", ":"))
+        if self._invocation_bindings.get(invocation.get("id")) != encoded:
+            raise IsolationError(
+                "invocation identity/role/mode/declaration changed",
+                code="runtime_evidence",
             )
+        evidence = self.runtime_evidence() if evidence is None else evidence
+        matches = [
+            p
+            for p in evidence["model_workers"]
+            if p["launcher_pid"] == invocation["pid"]
+            and p["launcher_start_ticks"] == invocation["start_ticks"]
+            and p["pid"] != invocation["pid"]
+        ]
+        if len(matches) != 1 or evidence["errors"]:
+            raise IsolationError(
+                "missing or ambiguous actual ORT descendant for invocation",
+                code="runtime_evidence",
+                evidence=dict(invocation=invocation, matches=matches),
+            )
+        worker = matches[0]
+        if worker["role"] != invocation["role"] or worker["mode"] != invocation["mode"]:
+            raise IsolationError(
+                "actual worker role/mode correlation mismatch", code="runtime_evidence"
+            )
+        if (
+            worker["network_namespace"] == self._owner_network
+            or not worker["environment_matches_contract"]
         ):
             raise IsolationError(
-                "missing or incomplete actual ORT worker mapping evidence"
+                "actual worker environment/namespace differs from declaration",
+                code="environment_mismatch",
+                evidence=dict(invocation=invocation, worker=worker),
             )
-        return evidence
+        loaded = {
+            (library["path"], library["sha256"]) for library in worker["libraries"]
+        }
+        if any((pin["path"], pin["sha256"]) not in loaded for pin in library_pins):
+            raise IsolationError(
+                "actual worker runtime differs from pinned manifest libraries",
+                code="runtime_evidence",
+                evidence=dict(invocation=invocation, worker=worker),
+            )
+        return worker
+
+    def command_contract(self, *, env=None):
+        """Exact exec environment and CPython's C-locale coercion, never inherited."""
+        if self._sealed_root is not None:
+            if env is not None:
+                raise IsolationError("derived-W environment overrides are forbidden")
+            environment = dict(self._sealed_environment)
+        else:
+            environment = dict(WORKER_ENV if env is None else env)
+            if any(
+                key in environment
+                for key in (
+                    "LANG",
+                    "LC_ALL",
+                    "LC_CTYPE",
+                    "PYTHONCOERCE_C_LOCALE",
+                    "PYTHONUTF8",
+                    "PYTHONHOME",
+                    "PYTHONPATH",
+                )
+            ):
+                raise IsolationError(
+                    "locale/interpreter environment overrides are outside the reviewed command contract"
+                )
+        if any(
+            not isinstance(key, str)
+            or not key
+            or not isinstance(value, str)
+            or "\0" in key + value
+            or "=" in key
+            for key, value in environment.items()
+        ):
+            raise IsolationError("environment names and values must be valid strings")
+        environment["PWD"] = self._cwd
+        cpython = dict(environment)
+        additions = {}
+        if not any(environment.get(key) for key in ("LC_ALL", "LANG", "LC_CTYPE")):
+            cpython["LC_CTYPE"] = "C.UTF-8"
+            additions["LC_CTYPE"] = dict(
+                value="C.UTF-8",
+                reason="CPython C-locale coercion; only when LC_ALL, LANG and LC_CTYPE are absent/empty",
+            )
+        return dict(
+            schema="cairn.semantic-command-environment/1",
+            profile="derived-W" if self._sealed_root else "default",
+            cwd=self._cwd,
+            environment=environment,
+            cpython_environment=cpython,
+            runtime_additions=additions,
+        )
+
+    def _verify_receipts(self):
+        self._verify_scratch_roots()
+        if (
+            self._proof_digest is not None
+            and digest(self.output_dir / "isolation-proof.json") != self._proof_digest
+        ):
+            raise IsolationError("isolation proof changed", code="proof_changed")
+        for path, expected in self._contract_digests.items():
+            if digest(path) != expected:
+                raise IsolationError(
+                    "command declaration changed", code="proof_changed"
+                )
+
+    def _verify_scratch_roots(self):
+        for recorded in self._task_scratch_roots:
+            if task_scratch_identity(recorded["path"]) != recorded:
+                raise IsolationError("task scratch root identity changed")
 
     def _command(self, argv, env):
         command = list(self._prefix)
@@ -814,9 +1082,32 @@ class SemanticIsolation:
             command += ["--setenv", key, str(value)]
         return command + ["--", *map(str, argv)]
 
-    def _spawn(self, argv, *, env, **kwargs):
+    def _spawn(
+        self,
+        argv,
+        *,
+        env,
+        role="tool",
+        mode="tool",
+        diagnostic_home_absent=False,
+        **kwargs,
+    ):
+        contract = self.command_contract(env=env)
+        if diagnostic_home_absent:
+            contract["environment"].pop("HOME", None)
+            contract["cpython_environment"].pop("HOME", None)
+        invocation = dict(
+            id=len(self._invocations) + 1, role=role, mode=mode, contract=contract
+        )
+        declaration = self.output_dir / f"command-{invocation['id']:04d}.json"
+        declaration.write_text(json.dumps(invocation, indent=2) + "\n")
+        declaration.chmod(0o444)
+        invocation["declaration_sha256"] = digest(declaration)
+        self._contract_digests[declaration] = invocation["declaration_sha256"]
         process = subprocess.Popen(
-            self._command(argv, env), start_new_session=True, **kwargs
+            self._command(argv, None if self._sealed_root else contract["environment"]),
+            start_new_session=True,
+            **kwargs,
         )
         try:
             process._semantic_tree = _ProcessTree(process)
@@ -825,13 +1116,14 @@ class SemanticIsolation:
             process.wait(timeout=5)
             raise
         self._processes.append(process)
-        self._invocations.append(
-            dict(
-                pid=process.pid,
-                argv=process.args,
-                start_ticks=process._semantic_tree.start,
-            )
+        invocation.update(
+            pid=process.pid, argv=process.args, start_ticks=process._semantic_tree.start
         )
+        process._semantic_invocation = invocation
+        self._invocation_bindings[invocation["id"]] = json.dumps(
+            invocation, sort_keys=True, separators=(",", ":")
+        )
+        self._invocations.append(invocation)
         stop = threading.Event()
         observer = threading.Thread(
             target=self._observe,
@@ -847,38 +1139,66 @@ class SemanticIsolation:
         observer.start()
         return process
 
-    def popen(self, argv, *, env=None, **kwargs):
-        if self.proof is None or self._closed:
+    def popen(self, argv, *, env=None, role="tool", mode="tool", **kwargs):
+        if self._proof is None or self._closed:
             raise IsolationError("preflight must succeed before launching a worker")
-        return self._spawn(argv, env=env, **kwargs)
+        self._verify_receipts()
+        return self._spawn(argv, env=env, role=role, mode=mode, **kwargs)
 
-    def run(self, argv, *, input=None, timeout, env=None, stdout_limit=4 * 1024 * 1024):
+    def run(
+        self,
+        argv,
+        *,
+        input=None,
+        timeout,
+        env=None,
+        stdout_limit=4 * 1024 * 1024,
+        role="tool",
+        mode="tool",
+    ):
         process = self.popen(
             argv,
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            role=role,
+            mode=mode,
         )
         stdout, stderr = bounded_communicate(
             process, input, timeout=timeout, stdout_limit=stdout_limit
         )
-        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+        result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+        result.invocation = json.loads(json.dumps(process._semantic_invocation))
+        return result
 
     def _cleanup(self):
         if self._closed:
             return
         self._closed = True
         errors = []
+        joined = True
+        ownership = True
+        try:
+            self._verify_scratch_roots()
+        except (IsolationError, OSError) as error:
+            ownership = False
+            errors.append(str(error))
+        try:
+            self._verify_receipts()
+        except (IsolationError, OSError) as error:
+            errors.append(str(error))
         for process in self._processes:
             try:
                 stop_process(process)
             except (IsolationError, OSError, subprocess.TimeoutExpired) as error:
+                joined = False
                 errors.append(str(error))
         for stop, observer in self._observers:
             stop.set()
             observer.join(timeout=5)
             if observer.is_alive():
+                joined = False
                 errors.append("runtime observer did not stop")
         (self.output_dir / "runtime-observations.json").write_text(
             json.dumps(self.runtime_evidence(), indent=2) + "\n"
@@ -910,7 +1230,7 @@ class SemanticIsolation:
         )
         for process in self._processes:
             process._semantic_tree.close()
-        if self._backing is not None and not errors:
+        if self._backing is not None and joined and ownership:
             try:
                 self._backing.remove()
             except (IsolationError, OSError) as error:
@@ -928,10 +1248,11 @@ class SemanticIsolation:
         (self.output_dir / "cleanup.json").write_text(
             json.dumps(
                 dict(
-                    all_observed_processes_exited=not errors,
+                    all_observed_processes_exited=joined,
                     errors=errors,
                     launcher_exit_codes=[p.returncode for p in self._processes],
                     invocations=self._invocations,
+                    isolation_proof_sha256=self._proof_digest,
                     backing_removed=self._backing.removed if self._backing else True,
                     sealed_oracle_after=seal_after,
                 )
@@ -939,10 +1260,17 @@ class SemanticIsolation:
             + "\n"
         )
         if errors:
-            raise IsolationError("isolation cleanup failed: " + "; ".join(errors))
+            raise IsolationError(
+                "isolation cleanup failed: " + "; ".join(errors), code="cleanup"
+            )
 
     def __exit__(self, exc_type, exc, traceback):
-        self._cleanup()
+        try:
+            self._cleanup()
+        except IsolationError as error:
+            if isinstance(exc, IsolationError):
+                error.evidence = dict(exc.evidence, context_cleanup_error=str(error))
+            raise
         return False
 
 

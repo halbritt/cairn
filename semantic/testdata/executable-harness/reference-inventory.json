@@ -1,6 +1,6 @@
 {
   "schema": "cairn.semantic-acceptance-inventory/1",
-  "contract": "semantic/3",
+  "contract": "semantic/4",
   "rank_ids": [
     "storage-topic",
     "storage-location",
@@ -238,5 +238,23 @@
   "fixture_sha256": {
     "rank": "ebeecaa4a508ec4cd735ae6f6844f3c96dd30f4d48ef85e7caadbc4cdc9420ba",
     "embedding": "feb24e50fd6b37b7405afd8f972ec6bf57c086820db22d8ee96381c4f26e44a2"
+  },
+  "go_entrypoint_scope": {
+    "kind": "smoke-only",
+    "rank_cases": [
+      "storage-topic"
+    ],
+    "stream_cases": [
+      "storage-topic cold/warm plus unchanged idle expiry"
+    ],
+    "embedding_cases": [
+      "query-ascii",
+      "document-ascii"
+    ],
+    "cross_role_comparison": false,
+    "full_inventory_owner": "S-01/S-02/S-03 acceptance remains separate from smoke entry points"
+  },
+  "future_gates": {
+    "S-03/unit-norm": "Worker normalization/unit-norm correctness belongs to S-03; this comparator checks finite/nonzero and angle/pairwise gates, not a new Go unit-norm rejection interval."
   }
 }

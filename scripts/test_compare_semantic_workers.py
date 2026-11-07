@@ -4,12 +4,133 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import compare_semantic_workers as comparison
 from semantic_acceptance_isolation import SemanticIsolation
 
 
 class ExecutableComparisonTest(unittest.TestCase):
+    def test_pinned_json_cannot_relabel_a_rejected_reviewer_record_as_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = hashlib.sha256(
+                Path(__file__)
+                .with_name("semantic_acceptance_isolation.py")
+                .read_bytes()
+            ).hexdigest()
+            binding = dict(
+                status="accepted",
+                source_commit="a" * 40,
+                module_sha256=module,
+                catalog_sha256="b" * 64,
+                raw_qualification_sha256="c" * 64,
+            )
+            rejected = dict(schema="cairn.semantic-comparison-verdict/1", **binding)
+            rejected["status"] = "changes-required"
+            body = json.dumps(rejected)
+            receipt = dict(
+                schema="cairn.semantic-comparison-review/1",
+                **binding,
+                review_record=dict(
+                    record_id="fixture-only",
+                    version=1,
+                    body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+                ),
+            )
+            path = root / "receipt.json"
+            path.write_text(json.dumps(receipt))
+            pin = hashlib.sha256(path.read_bytes()).hexdigest()
+            with self.assertRaises(comparison.ComparisonFailure):
+                comparison.checked_json_artifact(path, "0" * 64, "receipt")
+            args = SimpleNamespace(
+                review_receipt=path,
+                review_receipt_sha256=pin,
+                reference_catalog_sha256=binding["catalog_sha256"],
+                raw_qualification_sha256=binding["raw_qualification_sha256"],
+            )
+            response = dict(
+                ok=True,
+                data=dict(
+                    current_version=1,
+                    current_lifecycle="active",
+                    versions=[
+                        dict(
+                            version=1,
+                            payload_available=True,
+                            observed_writer="agent/e1061fdd-091a-4360-80b5-d7c77bd4ee07",
+                            body=body,
+                        )
+                    ],
+                ),
+            )
+            # Cairn history is the external boundary, never a fabricated accepted model gate.
+            with (
+                patch(
+                    "compare_semantic_workers.shutil.which",
+                    return_value="/fixture/cairn",
+                ),
+                patch(
+                    "compare_semantic_workers.subprocess.run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, json.dumps(response).encode(), b""
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    comparison.ComparisonFailure, "actual reviewer verdict"
+                ):
+                    comparison.require_review_receipt(args)
+
+    def test_malformed_manifest_attribute_error_leaves_a_failed_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bad = root / "bad.json"
+            bad.write_text("[]")
+            result = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-B",
+                    str(Path(__file__).with_name("compare_semantic_workers.py")),
+                    "--phase",
+                    "mechanics",
+                    "--output",
+                    str(root / "out"),
+                    "--baseline-manifest",
+                    str(bad),
+                    "--candidate-manifest",
+                    str(bad),
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            report = json.loads((root / "out/report.json").read_text())
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["failures"][0]["error_type"], "AttributeError")
+
+    def test_legacy_resource_measurement_is_in_the_writable_host_mount(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = self.compile_worker(root, "native", 1, "a" * 64)
+            with SemanticIsolation(
+                read_only_paths=[worker], output_dir=root / "isolation"
+            ) as boundary:
+                completed, stats = comparison.measure_legacy_worker(
+                    boundary, [str(worker)], b"{}", "fixture"
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                path = Path(stats["measurement"])
+                self.assertTrue(boundary.output_dir in path.parents)
+                self.assertGreater(stats["max_rss_kib"], 0)
+            self.assertTrue(path.is_file())
+
+    def test_stream_limit_measures_original_bytes_instead_of_compacting_them(self):
+        frame = b'{"id":' + b" " * 65536 + b'"1","result":{},"cache":{}}\n'
+        with self.assertRaises(comparison.ComparisonFailure):
+            comparison.stream_response_limits(frame, json.loads(frame))
+
     def test_native_metadata_span_and_projection_mismatches_fail(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -268,8 +389,28 @@ class ExecutableComparisonTest(unittest.TestCase):
             result = run(root / "missing-cells", ("--reference-catalog", str(catalog)))
             self.assertNotEqual(result.returncode, 0)
             report = json.loads((root / "missing-cells/report.json").read_text())
-            self.assertIn("incomplete reference cells", report["failures"][0]["error"])
+            self.assertIn("pinned runtime libraries", report["failures"][0]["error"])
             self.assertFalse((root / "missing-cells/isolation").exists())
+            inventory = json.loads(
+                (
+                    Path(__file__).resolve().parents[1]
+                    / "semantic/testdata/executable-harness/reference-inventory.json"
+                ).read_text()
+            )
+            for cells in (
+                [],
+                [
+                    dict(id=name, status="unqualified")
+                    for name in inventory["required_reference_cells"]
+                ],
+            ):
+                with self.assertRaisesRegex(
+                    comparison.ComparisonFailure, "incomplete reference cells"
+                ):
+                    comparison.require_reference_cells(
+                        dict(schema="cairn.semantic-reference-catalog/1", cells=cells),
+                        inventory,
+                    )
             legacy = subprocess.run(
                 [
                     "/usr/bin/python3",

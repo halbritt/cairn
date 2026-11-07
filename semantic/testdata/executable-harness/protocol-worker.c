@@ -15,7 +15,7 @@
 #define SCORE 42
 #endif
 #ifndef BODY_HASH
-#define BODY_HASH "230d8358dc8e8890b4c58deeb62912ee2f20357ae2a5cc861b98e68fe31acb5"
+#define BODY_HASH "230d8358dc8e8890b4c58deeb62912ee2f20357ae92a5cc861b98e68fe31acb5"
 #endif
 #ifndef QUERY_HASH
 #define QUERY_HASH "ignored"
@@ -57,6 +57,7 @@ static void rank_result(void) {
 int main(int argc, char **argv) {
     (void)argv;
     if (argc != 1) return 91;
+    if (MODE==3 && (!getenv("CAIRN_SEMANTIC_STREAM_CACHE") || strcmp(getenv("CAIRN_SEMANTIC_STREAM_CACHE"),"1"))) return 92;
     if (MODE==1) {
         while (getchar()!=EOF) {}
         rank_result();puts("");return 0;

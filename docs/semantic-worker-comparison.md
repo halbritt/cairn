@@ -1,5 +1,8 @@
 # Semantic worker comparison
 
+This tooling follows the `semantic/4` evidence boundaries. Its own code review,
+reference qualification and full S-01 acceptance are separate gates.
+
 `scripts/compare_semantic_workers.py` compares fixed executable workers without
 passing a Python interpreter or arbitrary arguments to the candidate. It runs
 one-shot rank, streaming rank and embedding protocols. Each worker's reported
@@ -12,12 +15,15 @@ runtime observations and qualification records belong outside the repository.
 
 ## Process mechanics
 
-On Linux with `bwrap`, `gcc` and Python installed, run from the repository root:
+On Linux with `bwrap`, `gcc` and Python installed, run from the repository root.
+Keep ambient worker/database selectors absent for Go mechanics:
 
 ```sh
 python3 -B scripts/test_semantic_acceptance_isolation.py
 python3 -B scripts/test_compare_semantic_workers.py
-go test -race ./semantic
+env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
+  -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
+  go test -race -count=1 -v ./semantic
 make check
 python3 -B scripts/verify_docs.py --tier 1,3
 ```
@@ -35,6 +41,10 @@ duplicate named test inventories.
 Normal Go tests skip the three opt-in `TestWorkerAcceptance*` model tests. Those
 skips are visible and do not count as model coverage. The strict comparator runs
 the named tests and rejects every skip, failure, missing test and zero-test run.
+The three Go entry points are smoke checks: rank/stream use case 0, and embedding
+uses `query-ascii` and `document-ascii`. They do not compare the two roles through
+Go or execute the full input inventory. Direct-worker comparisons and later
+Go-path acceptance remain distinct.
 
 ## Fixed workers and evidence gates
 
@@ -47,9 +57,9 @@ Each manifest has this shape; paths and hashes must name existing prepared files
   "schema": "cairn.semantic-comparison-worker/1",
   "kind": "model",
   "workers": {
-    "rank": {"path": "/prepared/rank", "sha256": "...", "model_sha256": "..."},
-    "stream": {"path": "/prepared/stream", "sha256": "...", "model_sha256": "..."},
-    "embed": {"path": "/prepared/embed", "sha256": "...", "model_sha256": "..."}
+    "rank": {"path": "/prepared/rank", "sha256": "...", "model_sha256": "...", "runtime_libraries": [{"path": "/prepared/runtime/libonnxruntime.so", "sha256": "..."}]},
+    "stream": {"path": "/prepared/stream", "sha256": "...", "model_sha256": "...", "runtime_libraries": [{"path": "/prepared/runtime/libonnxruntime.so", "sha256": "..."}]},
+    "embed": {"path": "/prepared/embed", "sha256": "...", "model_sha256": "...", "runtime_libraries": [{"path": "/prepared/runtime/libonnxruntime.so", "sha256": "..."}]}
   },
   "assets": [{"path": "/prepared/model/tokenizer.json", "sha256": "..."}],
   "read_only_paths": ["/prepared/runtime"]
@@ -61,6 +71,10 @@ The JSON illustrates the schema, not a runnable asset set. Hashes are SHA-256;
 digest. A mechanics manifest uses `kind: "protocol-fixture"`, compiled ELF
 executables and an empty asset list. Model manifests require an asset inventory;
 include all source/model/runtime files that the selected workers depend on.
+Each model worker entry also requires `runtime_libraries`, a nonempty list of
+`{path, sha256}` entries for its actual loaded images. Pin ORT per mode; a Python
+ORT extension also requires the NumPy `_multiarray_umath` and OpenBLAS images.
+Every comparison invocation is checked against its own manifest's pins.
 Declare only narrow runtime roots that the isolation wrapper can mount safely.
 Additional roots must be selected subtrees of the OS home, `/usr` or `/tmp`;
 the wrapper supplies its own restricted system mounts.
@@ -77,6 +91,24 @@ none bypasses a gate. Model phases additionally require:
   `manifest_sha256`, all three executable digests in `workers`, and retained
   `arrays.ids`, `arrays.lengths`, `arrays.cls` paths/digests matching the frozen
   ordinary 294-text baseline. This is corpus-bounded evidence.
+  A default capture with 242 executed rows expanded to 294 logical occurrences
+  is not the conditional semantic/4 B1 proof. That proof requires its separately
+  reviewed derived-W vehicle, pre-inference ID/length checks and the specified
+  exact executions. This comparator does not supply that vehicle or promote an
+  ordinary capture into it.
+- `--reference-catalog-sha256` and `--raw-qualification-sha256`: caller-pinned
+  digests of those exact artifacts. Missing or changed bytes refuse.
+- `--review-receipt` and `--review-receipt-sha256`: a pinned
+  `cairn.semantic-comparison-review/1` receipt binding `status: "accepted"`,
+  `source_commit`, `module_sha256`, `catalog_sha256`,
+  `raw_qualification_sha256` and `review_record {record_id, version, body_sha256}`.
+  The parent runner reads the exact Cairn source using the existing hosted
+  token-file selector without reading the token. The source must be published
+  by the campaign's independent S-R1 reviewer and contain a JSON
+  `cairn.semantic-comparison-verdict/1` with the same accepted bindings. The
+  source commit's module bytes must also match. A local JSON `qualified` or
+  `accepted` field cannot replace this record. No such accepted evidence receipt
+  is created by the harness; missing qualification stays a failure.
 - `--python`: the prepared Python interpreter; `--go-test-binary`: a semantic
   test binary compiled with `go test -c`; `--go-test2json`: the installed Go
   `test2json` executable. The prepared tokenizer must be a uniquely named
@@ -111,6 +143,8 @@ Vectors must have 384 finite components and a finite nonzero norm. The harness
 does not impose a unit-norm interval. Each corresponding vector must satisfy
 `1 - cosine <= 1e-6`; independently, every query/passage cosine difference must
 be at most `1e-6`. Norms and maximum component differences are diagnostics.
+Worker normalization/unit-norm correctness is an explicit S-03-owned gate in
+the inventory; it is not a new rejection interval in Go.
 
 `report.json` records passed modes and failures. Raw bytes are retained in
 `raw-*.bin`, with length, hash and a bounded base64 prefix in the report. Refusals
@@ -146,24 +180,54 @@ for framed exchanges; the context owns all processes it starts. `run()` bounds
 input/output progress, elapsed time and retained stdout/stderr. There is no
 unisolated fallback.
 
+`command_contract(env=None)` returns the exact declaration for the same `env`
+argument used by `run()`/`popen()`: schema, profile, cwd, `environment`,
+`cpython_environment` and justified `runtime_additions`. Default execution has
+the four sanitized worker values plus bwrap's `PWD` equal to the declared cwd.
+CPython's C-locale coercion adds exactly `LC_CTYPE=C.UTF-8`; its complete
+in-process environment must equal `cpython_environment`. Custom locale or
+interpreter-control variables are refused. Derived-W retains its literal
+HOME/XDG/TMPDIR/cache/bytecode settings and cwd, with no overrides. Stream and
+direct embedding lanes declare `CAIRN_SEMANTIC_STREAM_CACHE=1`.
+
+Each command owns a copied declaration in `command-*.json`, with a recorded
+digest. `proof.environment_contract` describes the profile default;
+`CompletedProcess.invocation` (or the Popen `_semantic_invocation` record) holds
+the command's authoritative contract, role/mode, launcher PID/start and
+declaration digest. The ambiguous `proof.model_environment` field is absent.
+The proof accessor returns a copy. Proof/declaration files are read-only and
+their digests are checked before another launch and during cleanup.
+
+The public timeout form is `IsolationError` with `code == "timeout"`, not
+`TimeoutExpired`. Its `evidence` contains `failure_code`, bounded partial
+`stdout`/`stderr` bytes, actual argv/exit code, `timeout_seconds`, invocation
+metadata and `processes_joined`. Output bounds use `stdout_limit` or
+`stderr_limit`. Context exit separately records cleanup; it must not be inferred
+from a missing path or a caught exception.
+
 Before worker launch, a nonmodel probe verifies a different network namespace,
 no external network interface/reachability, a read-only root/canary, and a new
 mapped OS home. With `HOME` absent, `getpwuid` and `expanduser` must resolve that
 mapping, and its probe inode must match the host-owned disposable directory.
 The owner token and telemetry-store paths must be absent. Runtime mounts are
-read-only; broad owner state, host `/proc` and escaping symlinks are refused.
+read-only, with `ST_RDONLY` checked for every declared destination; broad owner
+state, host `/proc`, writable shadows and escaping symlinks are refused.
 Runtime dependencies and declared mounts still require review.
 
-Default worker environments contain the four production sanitized values;
-stream exchanges add `CAIRN_SEMANTIC_STREAM_CACHE=1`. Opt-in Go tests execute
-inside this outer boundary, then launch the unchanged production commands with
+Opt-in Go smoke tests execute inside this outer boundary, then launch the unchanged production commands with
 their normal sanitized environments and 25/90-second request deadlines. Go's
 supervision source and the two-second index retrieval timeout are unchanged.
 
 The observer follows actual descendants and records executable and mapped
-library inodes/device IDs/hashes. A bwrap process alone cannot satisfy
-`runtime_evidence(require_ort=True)`. Short-lived processes may evade sampling;
-missing evidence fails the requirement. Numerical qualification also requires
+library inodes/device IDs/hashes, correlated by role/mode and launcher PID/start.
+`invocation_runtime(invocation, runtime_libraries)` requires exactly one actual
+ORT-mapped descendant for that invocation and matches its loaded digests to the
+pins. One worker cannot qualify a missing role/mode. The observer also checks
+the actual child's proc exec-environment block against the declaration; that
+block is distinct from CPython's later in-process locale coercion. A bwrap
+process alone cannot satisfy `runtime_evidence(require_ort=True)`.
+Short-lived processes may evade sampling; missing evidence fails.
+Numerical qualification also requires
 the actual Python worker's self-maps and the frozen runtime identities.
 PID descriptors tie cleanup to observed processes after launcher exit. The
 context kills, waits for and reaps launchers, verifies observed descendants have
@@ -171,9 +235,15 @@ exited, joins observers, and removes only its exclusively created backing.
 Namespace teardown also terminates unobserved namespace descendants. Telemetry
 payloads are never read. Failed preflight removes its disposable home; existing
 output or backing directories are preserved.
+Read `disposable-home.json` for the actual backing path and initial
+inode/device/owner/mode. `cleanup.json` records `all_observed_processes_exited`,
+`backing_removed`, `errors`, invocations and `isolation_proof_sha256`. Require
+both booleans and an empty error list; process joining is separate from overall
+success or a seal/proof failure. Never guess a `mapped-home` path.
 
 `SemanticIsolation.sealed_oracle(...)` is a separate, pinned construction path
-for the one sealed W oracle. It checks the authorized 31-file seal and constructs
+for the one sealed W oracle. It checks the authorized 31-file seal and all three
+original prefix records, then constructs
 the authorized `derived-W` profile by replacing only host-source operand 34 with
 a fresh external private backing. The `--bind` flag, guest `/sandbox`, remaining
 prefix/environment and sealed files stay pinned; declared additional tool/input
@@ -181,9 +251,18 @@ binds are read-only. Receipts include the original/effective prefix, exact
 replacement/insertion, backing ownership/mode and before/after seal metadata.
 This declared derivation needs its own raw/runtime qualification and independent
 review. It never borrows the default wrapper's qualification. The
-`DisposableBacking` caller owns exclusive creation; after entering, the context
+caller passes `task_scratch_roots` explicitly. Each root must be owned `0700`,
+resolved without symlinks/aliases, and below the campaign's dedicated
+`semantic-S-B1`/`semantic-S-B2` task roots. Named `/tmp/cairn-semantic-*`
+disposable task directories support synthetic tests. The whole owner cache or
+`~/.local/share/cairn` is not an allowlist. Backing must be a fresh child of a
+declared root and cannot overlap/alias sealed or live state. Root identity is
+checked again at launch/cleanup. The `DisposableBacking` caller owns exclusive creation; after entering, the context
 owns removal. New evidence belongs outside the frozen oracle root and bounded
 pipe output is captured there.
+An end-to-end test uses manufactured 31-file evidence and a 97-argument prefix;
+only the seal pin is patched inside the test. It exercises unchanged and
+tampered seal outcomes without executing the real W preflight or any model.
 
 The module also has a nonmodel CLI: `--read-only` (repeatable), `--output-dir`,
 `--timeout`, optional `--require-ort`, then `-- COMMAND ...`. The CLI is a test
@@ -197,7 +276,13 @@ and `--candidate` script mode, with two repeated storage cases after the shared
 time and RSS under its exploratory 20-second inner deadline. Wall time now
 includes the isolation launch overhead; it is not a production-latency claim.
 
-Legacy model execution also requires `--raw-qualification`. Besides the common
+Legacy measurements are written beneath the actual writable isolation output,
+so `/usr/bin/time` files remain host-visible after home cleanup. The measurement
+plumbing has a compiled-fixture test that requires no fake model qualification.
+
+Legacy model execution also requires `--raw-qualification`, its pinned digest
+and the bound review receipt (with a null catalog digest for this exploratory
+mode). Besides the common
 schema/state/review/wrapper fields, `legacy_roles.baseline`/`candidate` bind the
 exact `argv`, `script_sha256`, `python_sha256`, nonempty `model_assets` paths and
 digests, and the three retained frozen-baseline arrays. Missing qualification

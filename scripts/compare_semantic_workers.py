@@ -12,6 +12,9 @@ import base64
 import selectors
 import math
 import sys
+import stat
+import pwd
+import shutil
 
 from semantic_acceptance_isolation import (
     IsolationError,
@@ -33,7 +36,7 @@ def paired_worker_runs(commands, identities, run):
         ("reference", "candidate"), commands, identities
     ):
         try:
-            outcomes[role] = run(command, identity)
+            outcomes[role] = run(command, identity, role)
         except (ComparisonFailure, IsolationError) as error:
             raise ComparisonFailure(
                 str(error),
@@ -51,15 +54,18 @@ def fixed_executable(path):
     return [str(path)]
 
 
-def worker_result(isolation, argv, request, *, timeout=25, limit=65536):
+def worker_result(isolation, argv, request, *, timeout=25, limit=65536, role="tool"):
     raw = json.dumps(request, separators=(",", ":")).encode()
-    completed = isolation.run(argv, input=raw, timeout=timeout, stdout_limit=limit)
+    completed = isolation.run(
+        argv, input=raw, timeout=timeout, stdout_limit=limit, role=role, mode="rank"
+    )
     outcome = dict(
         argv=list(argv),
         exit_code=completed.returncode,
         request=raw,
         stdout=completed.stdout,
         stderr=completed.stderr,
+        invocation=completed.invocation,
     )
     if completed.returncode:
         raise ComparisonFailure(
@@ -118,7 +124,7 @@ def compare_rank_case(
             commands,
             (reference_identity, candidate_identity),
         ):
-            outcomes[role] = worker_result(isolation, command, request)
+            outcomes[role] = worker_result(isolation, command, request, role=role)
             validate_rank(outcomes[role]["reply"], request, identity)
         if (
             outcomes["reference"]["reply"]["scores"]
@@ -133,7 +139,9 @@ def compare_rank_case(
 
 
 class JsonLineProcess:
-    def __init__(self, isolation, command, *, limit, cache=False):
+    def __init__(
+        self, isolation, command, *, limit, cache=False, role="tool", mode="stream"
+    ):
         env = dict(WORKER_ENV)
         if cache:
             env["CAIRN_SEMANTIC_STREAM_CACHE"] = "1"
@@ -144,6 +152,8 @@ class JsonLineProcess:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            role=role,
+            mode=mode,
         )
         for pipe in (self.process.stdin, self.process.stdout, self.process.stderr):
             os.set_blocking(pipe.fileno(), False)
@@ -244,6 +254,7 @@ class JsonLineProcess:
             stdout_pending=bytes(self.pending),
             stderr=bytes(self.stderr),
             exit_code=self.process.returncode,
+            invocation=self.process._semantic_invocation,
         )
 
 
@@ -254,7 +265,9 @@ def stream_response_limits(frame, reply):
     decoder = json.JSONDecoder()
     position = text.index("{") + 1
     fields = {}
+    ordinary_members = []
     while True:
+        member_start = position
         position += len(text[position:]) - len(text[position:].lstrip())
         if text[position] == "}":
             break
@@ -265,22 +278,26 @@ def stream_response_limits(frame, reply):
         _, position = decoder.raw_decode(text, position)
         fields[key] = text[start:position].encode("utf-8")
         position += len(text[position:]) - len(text[position:].lstrip())
+        if key != "cache":
+            ordinary_members.append(text[member_start:position])
         if text[position] == ",":
             position += 1
     cache = fields.get("cache", b"null")
-    ordinary = json.dumps(
-        dict(id=reply["id"], result=reply.get("result")), separators=(",", ":")
-    ).encode()
+    ordinary = (
+        text[: text.index("{") + 1] + ",".join(ordinary_members) + text[position:]
+    ).encode("utf-8")
     if (
-        len(ordinary) + 1 > 65536
+        len(ordinary) > 65536
         or (cache != b"null" and len(cache) > 600 * 1024)
         or (cache == b"null" and len(frame) > 65536)
     ):
         raise ComparisonFailure("stream ordinary/cache response exceeds Go limits")
 
 
-def stream_rounds(isolation, command, request, identity, restore):
-    worker = JsonLineProcess(isolation, command, limit=600 * 1024 + 65536, cache=True)
+def stream_rounds(isolation, command, request, identity, restore, role="tool"):
+    worker = JsonLineProcess(
+        isolation, command, limit=600 * 1024 + 65536, cache=True, role=role
+    )
     replies = []
     failure = None
     try:
@@ -306,7 +323,7 @@ def stream_rounds(isolation, command, request, identity, restore):
     executions = [worker.evidence()]
     if restore:
         fresh = JsonLineProcess(
-            isolation, command, limit=600 * 1024 + 65536, cache=True
+            isolation, command, limit=600 * 1024 + 65536, cache=True, role=role
         )
         try:
             envelope = dict(id="3", request=request)
@@ -351,8 +368,8 @@ def compare_stream_case(
     outcomes = paired_worker_runs(
         commands,
         (reference_identity, candidate_identity),
-        lambda command, identity: stream_rounds(
-            isolation, command, request, identity, restore
+        lambda command, identity, role: stream_rounds(
+            isolation, command, request, identity, restore, role=role
         ),
     )
     if any(
@@ -491,8 +508,10 @@ def validate_embedding(reply, case, identity):
             vector_norm(passage.get("vector"))
 
 
-def embedding_rounds(isolation, command, cases, identity):
-    worker = JsonLineProcess(isolation, command, limit=4 * 1024 * 1024)
+def embedding_rounds(isolation, command, cases, identity, role="tool"):
+    worker = JsonLineProcess(
+        isolation, command, limit=4 * 1024 * 1024, cache=True, role=role, mode="embed"
+    )
     replies = []
     failure = None
     try:
@@ -528,7 +547,9 @@ def compare_embedding_cases(
     outcomes = paired_worker_runs(
         commands,
         (reference_identity, candidate_identity),
-        lambda command, identity: embedding_rounds(isolation, command, cases, identity),
+        lambda command, identity, role: embedding_rounds(
+            isolation, command, cases, identity, role=role
+        ),
     )
     diagnostics = []
     query_pairs = []
@@ -642,6 +663,34 @@ def checked_worker_manifest(path, phase):
             or len(worker["model_sha256"]) != 64
         ):
             raise ComparisonFailure("missing own-manifest derivation identity")
+        if phase != "mechanics":
+            runtime = worker.get("runtime_libraries")
+            if not isinstance(runtime, list) or not runtime:
+                raise ComparisonFailure(
+                    "each model mode requires pinned runtime libraries"
+                )
+            names = [Path(library["path"]).name for library in runtime]
+            if not any(
+                "onnxruntime_pybind11_state" in name
+                or name.startswith("libonnxruntime.so")
+                for name in names
+            ):
+                raise ComparisonFailure("the actual ORT image must be pinned per mode")
+            if any("onnxruntime_pybind11_state" in name for name in names) and not (
+                any("_multiarray_umath" in name for name in names)
+                and any("openblas" in name.lower() for name in names)
+            ):
+                raise ComparisonFailure(
+                    "Python runtime pins must include NumPy and OpenBLAS"
+                )
+            for library in runtime:
+                if (
+                    not Path(library["path"]).is_absolute()
+                    or file_digest(library["path"]) != library["sha256"]
+                ):
+                    raise ComparisonFailure(
+                        "runtime library missing or digest mismatch"
+                    )
     assets = manifest.get("assets")
     if not isinstance(assets, list) or (phase != "mechanics" and not assets):
         raise ComparisonFailure("model/runtime asset inventory required")
@@ -653,6 +702,130 @@ def checked_worker_manifest(path, phase):
             raise ComparisonFailure("missing or mismatched model/runtime asset")
     manifest["_manifest_sha256"] = file_digest(path)
     return manifest
+
+
+def checked_json_artifact(path, pin, label):
+    if (
+        path is None
+        or not isinstance(pin, str)
+        or len(pin) != 64
+        or any(c not in "0123456789abcdef" for c in pin)
+    ):
+        raise ComparisonFailure(f"caller-pinned {label} path and SHA-256 required")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ComparisonFailure(f"{label} must be a regular file")
+        raw = stream.read(16 * 1024 * 1024 + 1)
+    if len(raw) > 16 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != pin:
+        raise ComparisonFailure(f"{label} digest/size mismatch")
+    return json.loads(raw)
+
+
+def require_review_receipt(args):
+    receipt = checked_json_artifact(
+        args.review_receipt, args.review_receipt_sha256, "comparison review receipt"
+    )
+    module = file_digest(Path(__file__).with_name("semantic_acceptance_isolation.py"))
+    binding = dict(
+        status="accepted",
+        source_commit=receipt["source_commit"],
+        module_sha256=module,
+        catalog_sha256=args.reference_catalog_sha256,
+        raw_qualification_sha256=args.raw_qualification_sha256,
+    )
+    if len(binding["source_commit"]) != 40 or any(
+        c not in "0123456789abcdef" for c in binding["source_commit"]
+    ):
+        raise ComparisonFailure("review source_commit must be an immutable commit SHA")
+    if receipt.get("schema") != "cairn.semantic-comparison-review/1" or any(
+        receipt.get(k) != v for k, v in binding.items()
+    ):
+        raise ComparisonFailure(
+            "review receipt does not bind this module/catalog/raw proof"
+        )
+    ref = receipt["review_record"]
+    cairn = shutil.which("cairn")
+    if not cairn:
+        raise ComparisonFailure("Cairn exact review source verification unavailable")
+    token = (
+        Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local/share/cairn/hosted-agent.token"
+    )
+    result = subprocess.run(
+        [cairn, "agent", "--token-file", str(token), "history"],
+        input=json.dumps(
+            dict(record_id=ref["record_id"], version=ref["version"])
+        ).encode(),
+        capture_output=True,
+        timeout=10,
+    )
+    if result.returncode:
+        raise ComparisonFailure("exact review record unavailable")
+    envelope = json.loads(result.stdout)
+    current = envelope.get("data", {})
+    if (
+        current.get("current_version") != ref["version"]
+        or current.get("current_lifecycle") != "active"
+    ):
+        raise ComparisonFailure("selected review source is no longer current/active")
+    versions = (
+        envelope.get("data", {}).get("versions", []) if envelope.get("ok") else []
+    )
+    selected = [v for v in versions if v.get("version") == ref["version"]]
+    if (
+        len(selected) != 1
+        or selected[0].get("observed_writer")
+        != "agent/e1061fdd-091a-4360-80b5-d7c77bd4ee07"
+    ):
+        raise ComparisonFailure(
+            "review record is not the selected independent reviewer source"
+        )
+    record = selected[0]
+    if (
+        not record.get("payload_available")
+        or hashlib.sha256(record["body"].encode()).hexdigest() != ref["body_sha256"]
+    ):
+        raise ComparisonFailure("review source body digest mismatch")
+    verdict = json.loads(record["body"])
+    if verdict.get("schema") != "cairn.semantic-comparison-verdict/1" or any(
+        verdict.get(k) != v for k, v in binding.items()
+    ):
+        raise ComparisonFailure(
+            "actual reviewer verdict did not accept these exact bindings"
+        )
+    source = subprocess.check_output(
+        [
+            "git",
+            "show",
+            binding["source_commit"] + ":scripts/semantic_acceptance_isolation.py",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    if hashlib.sha256(source).hexdigest() != module:
+        raise ComparisonFailure(
+            "accepted review source commit has different module bytes"
+        )
+    return receipt
+
+
+def require_comparison_runtimes(isolation, comparison, mode, manifests):
+    evidence = {}
+    for role, manifest in zip(("reference", "candidate"), manifests):
+        outcome = comparison[role]
+        executions = (
+            [outcome]
+            if mode == "rank"
+            else outcome["executions"]
+            if mode == "stream"
+            else [outcome["execution"]]
+        )
+        evidence[role] = [
+            isolation.invocation_runtime(
+                item["invocation"], manifest["workers"][mode]["runtime_libraries"]
+            )
+            for item in executions
+        ]
+    comparison["runtime_evidence"] = evidence
 
 
 def require_reference_cells(catalog, inventory):
@@ -684,10 +857,10 @@ RAW_BASELINE = dict(
 )
 
 
-def require_raw_qualification(path, manifests):
+def require_raw_qualification(path, manifests, *, sha256=None):
     if path is None:
         raise ComparisonFailure("reviewed raw-output invariance proof is required")
-    proof = json.loads(Path(path).read_text())
+    proof = checked_json_artifact(path, sha256, "raw qualification")
     if (
         proof.get("schema") != "cairn.semantic-raw-qualification/1"
         or proof.get("state") != "qualified"
@@ -911,10 +1084,20 @@ def acceptance_main(args):
         if args.phase != "mechanics":
             if args.reference_catalog is None:
                 raise ComparisonFailure("qualified reference catalog is required")
+            require_review_receipt(args)
             require_reference_cells(
-                json.loads(args.reference_catalog.read_text()), inventory
+                checked_json_artifact(
+                    args.reference_catalog,
+                    args.reference_catalog_sha256,
+                    "reference catalog",
+                ),
+                inventory,
             )
-            require_raw_qualification(args.raw_qualification, (reference, candidate))
+            require_raw_qualification(
+                args.raw_qualification,
+                (reference, candidate),
+                sha256=args.raw_qualification_sha256,
+            )
             if any(
                 value is None
                 for value in (args.python, args.go_test_binary, args.go_test2json)
@@ -966,6 +1149,12 @@ def acceptance_main(args):
             for manifest in (reference, candidate)
             for path in manifest.get("read_only_paths", [])
         )
+        mounts.update(
+            Path(pin["path"])
+            for manifest in (reference, candidate)
+            for worker in manifest["workers"].values()
+            for pin in worker.get("runtime_libraries", [])
+        )
         if args.phase != "mechanics":
             (root / "go-inputs.json").write_text(
                 json.dumps(dict(rank=rank_cases, embedding=embed_cases)) + "\n"
@@ -1013,6 +1202,13 @@ def acceptance_main(args):
                                     ),
                                 )
                             )
+                            if args.phase != "mechanics":
+                                require_comparison_runtimes(
+                                    isolation,
+                                    compared[-1],
+                                    mode,
+                                    (reference, candidate),
+                                )
                     else:
                         compared = compare_embedding_cases(
                             a["path"],
@@ -1023,6 +1219,10 @@ def acceptance_main(args):
                             candidate_identity=b["model_sha256"],
                         )
                     report["comparisons"][mode] = compared
+                    if mode == "embed" and args.phase != "mechanics":
+                        require_comparison_runtimes(
+                            isolation, compared, mode, (reference, candidate)
+                        )
                     report["passed_modes"].append(mode)
                 except (
                     ComparisonFailure,
@@ -1034,6 +1234,8 @@ def acceptance_main(args):
                         dict(
                             mode=mode,
                             error=str(error),
+                            error_type=type(error).__name__,
+                            failure_code=getattr(error, "code", "comparison"),
                             evidence=getattr(error, "evidence", {}),
                         )
                     )
@@ -1046,7 +1248,6 @@ def acceptance_main(args):
                         reason="comparison failed; no automatic further model execution",
                     )
                 else:
-                    isolation.runtime_evidence(require_ort=True)
                     report["required_tests"] = run_required_tests(
                         args, inventory, isolation, reference, candidate, root
                     )
@@ -1058,11 +1259,14 @@ def acceptance_main(args):
         KeyError,
         TypeError,
         ImportError,
+        AttributeError,
     ) as error:
         report["failures"].append(
             dict(
                 mode="preflight",
                 error=str(error),
+                error_type=type(error).__name__,
+                failure_code=getattr(error, "code", "comparison"),
                 evidence=getattr(error, "evidence", {}),
             )
         )
@@ -1086,6 +1290,39 @@ def acceptance_main(args):
     return 1 if report["failures"] else 0
 
 
+def measure_legacy_worker(isolation, command, request, label):
+    if Path(label).name != label:
+        raise ComparisonFailure("invalid resource measurement label")
+    measure = isolation.output_dir / (label + "-resources.json")
+    invocation = [
+        "/usr/bin/time",
+        "-f",
+        '{"user_seconds":%U,"system_seconds":%S,"max_rss_kib":%M}',
+        "-o",
+        str(measure),
+        "/usr/bin/timeout",
+        "--kill-after=1",
+        "20",
+        *command,
+    ]
+    started = time.monotonic()
+    completed = isolation.run(
+        invocation,
+        input=request,
+        timeout=25,
+        stdout_limit=65536,
+        role=label,
+        mode="legacy",
+    )
+    stats = json.loads(measure.read_text().splitlines()[-1])
+    stats.update(
+        wall_seconds=time.monotonic() - started,
+        exit_code=completed.returncode,
+        measurement=str(measure),
+    )
+    return completed, stats
+
+
 def legacy_main(args):
     """Preserved exploratory Python-script mode, now behind the same test boundary."""
     root = args.output.absolute()
@@ -1107,7 +1344,10 @@ def legacy_main(args):
         raise ComparisonFailure(
             "legacy model runs require reviewed wrapper raw-output qualification"
         )
-    proof = json.loads(args.raw_qualification.read_text())
+    require_review_receipt(args)
+    proof = checked_json_artifact(
+        args.raw_qualification, args.raw_qualification_sha256, "raw qualification"
+    )
     if (
         proof.get("schema") != "cairn.semantic-raw-qualification/1"
         or proof.get("state") != "qualified"
@@ -1195,32 +1435,18 @@ def legacy_main(args):
                 else ("candidate", "baseline")
             )
             for role in order:
-                measure = root / (case["id"] + "-" + role + "-resources.json")
-                invocation = [
-                    "/usr/bin/time",
-                    "-f",
-                    '{"user_seconds":%U,"system_seconds":%S,"max_rss_kib":%M}',
-                    "-o",
-                    str(measure),
-                    "/usr/bin/timeout",
-                    "--kill-after=1",
-                    "20",
-                    *commands[role],
-                ]
-                started = time.monotonic()
-                completed = isolation.run(
-                    invocation, input=raw, timeout=25, stdout_limit=65536
+                completed, stats = measure_legacy_worker(
+                    isolation, commands[role], raw, case["id"] + "-" + role
+                )
+                isolation.invocation_runtime(
+                    completed.invocation,
+                    proof["legacy_roles"][role]["runtime_libraries"],
                 )
                 (root / (case["id"] + "-" + role + ".stdout")).write_bytes(
                     completed.stdout
                 )
                 (root / (case["id"] + "-" + role + ".stderr")).write_bytes(
                     completed.stderr
-                )
-                stats = json.loads(measure.read_text().splitlines()[-1])
-                stats.update(
-                    wall_seconds=time.monotonic() - started,
-                    exit_code=completed.returncode,
                 )
                 if completed.returncode == 0:
                     stats["result"] = json.loads(completed.stdout)
@@ -1263,6 +1489,10 @@ def main():
     parser.add_argument("--candidate-manifest", type=Path)
     parser.add_argument("--reference-catalog", type=Path)
     parser.add_argument("--raw-qualification", type=Path)
+    parser.add_argument("--reference-catalog-sha256")
+    parser.add_argument("--raw-qualification-sha256")
+    parser.add_argument("--review-receipt", type=Path)
+    parser.add_argument("--review-receipt-sha256")
     parser.add_argument("--go-test-binary", type=Path)
     parser.add_argument("--go-test2json", type=Path)
     args = parser.parse_args()
@@ -1288,6 +1518,7 @@ def main():
         ValueError,
         KeyError,
         ImportError,
+        AttributeError,
     ) as error:
         print("semantic comparison refused: " + str(error), file=sys.stderr)
         return 1

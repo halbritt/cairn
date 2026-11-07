@@ -19,6 +19,9 @@ import (
 
 // These opt-in model tests run inside the external acceptance namespace. Normal
 // Go tests report their skips; the strict runner requires every selected test.
+// These are smoke entry points: rank/stream use case 0; embed uses query-ascii
+// and document-ascii. Complete case and cross-role parity belong to the external
+// comparison inventory, not these three Go tests.
 type acceptanceInputs struct {
 	Rank []struct {
 		ID string `json:"id"`
