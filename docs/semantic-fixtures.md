@@ -291,13 +291,16 @@ The existing real-tokenizer/model tests require the reviewed
 isolation boundary and remain a separately counted 23-test obligation.
 
 The committed collector integration suite exercises the actual adapter and
-whole shared isolation module for default and synthetic W profiles. It requires
-Linux and working bubblewrap; missing isolation is a failure. Run it separately:
+whole shared isolation module for default and synthetic W profiles. `make test`
+automatically discovers this suite. It requires Linux, working bubblewrap and
+the default `/tmp` temporary directory (`TMPDIR` unset or `/tmp`); missing
+isolation is a failure. For the focused campaign validation, unset all six
+worker/database selectors and select `/tmp` explicitly:
 
 ```sh
 env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
   -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
-  python3 -B -S scripts/test_semantic_collector_integration.py -v
+  TMPDIR=/tmp python3 -B -S scripts/test_semantic_collector_integration.py -v
 ```
 
 Only synthetic seal pins and B1's parent-side home lookup are substituted in

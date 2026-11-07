@@ -82,7 +82,6 @@ class _ParentHomeLookup:
 
 class CollectorIntegrationTest(unittest.TestCase):
     def setUp(self):
-        self.assertFalse(set(SELECTORS).intersection(os.environ), 'model/DB selectors must be absent, even if empty')
         self.enterContext(_without_model_imports())
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='cairn-semantic-collector-')))
         self.read_only = [Path(collector.__file__), Path(cases.__file__)]
@@ -155,11 +154,21 @@ class CollectorIntegrationTest(unittest.TestCase):
                     self.assertEqual(facts['interfaces'], ['lo'])
                     self.assertFalse(set(SELECTORS).intersection(facts['environment']))
                     self.assertEqual(observed.invocation['contract'], contract)
-                    refused = boundary.run(['/usr/bin/env', 'CAIRN_N1_UNDECLARED=refuse',
-                        *_observation_command(proof, contract, profile)], timeout=10,
-                        role='collector-integration', mode='preflight')
-                    self.assertEqual(refused.returncode, 2)
-                    self.assertIn(b'environment', refused.stderr)
+                    invocations = [observed.invocation]
+                    other_profile = 'derived-W' if profile == 'default' else 'default'
+                    wrong_probe = dict(proof, home_probe_inode=proof['home_probe_inode'] + 1)
+                    controls = (
+                        ('environment', ['/usr/bin/env', 'CAIRN_N1_UNDECLARED=refuse',
+                            *_observation_command(proof, contract, profile)]),
+                        ('profile', _observation_command(proof, contract, other_profile)),
+                        ('home', _observation_command(wrong_probe, contract, profile)),
+                    )
+                    for reason, command in controls:
+                        with self.subTest(refusal=reason):
+                            refused = boundary.run(command, timeout=10, role='collector-integration', mode='preflight')
+                            invocations.append(refused.invocation)
+                            self.assertEqual(refused.returncode, 2)
+                            self.assertIn(reason.encode(), refused.stderr)
                     if profile == 'derived-W':
                         prefix = json.loads((fixture['frozen'] / 'inventory/experiment-manifest.json').read_text())['sandbox_prefix']
                         self.assertEqual(len(prefix), 97)
@@ -170,15 +179,16 @@ class CollectorIntegrationTest(unittest.TestCase):
                         self.assertEqual(proof['effective_prefix'], expected)
                         self.assertEqual(proof['backing_argument_diff'], [
                             {'index': 34, 'original': prefix[34], 'derived': expected[34]}])
-                self._assert_cleanup(fixture, [observed.invocation, refused.invocation])
+                self._assert_cleanup(fixture, invocations)
 
     def test_w_setup_refusals_leave_no_child_or_frozen_changes(self):
         with self._profile_inputs('derived-W') as fixture:
             frozen = fixture['frozen']
             self.assertEqual(frozen.stat().st_mode & 0o777, 0o700)
-            for changes, reason in (({'task_root': frozen, 'name': 'disposable'}, 'overlaps'),
-                                    ({'output_dir': frozen / 'forbidden-output'}, 'outside')):
-                with self.subTest(reason=reason), self.assertRaisesRegex(isolation.IsolationError, reason):
+            for changes, reason in (
+                    ({'task_root': frozen, 'name': 'disposable'}, 'task scratch root overlaps sealed or protected live state'),
+                    ({'output_dir': frozen / 'forbidden-output'}, 'new W evidence must be outside the frozen oracle root')):
+                with self.subTest(reason=reason), self.assertRaisesRegex(isolation.IsolationError, f'^{reason}$'):
                     with collector._collector_isolation(isolation, **dict(fixture['arguments'], **changes)):
                         pass
                 self.assertFalse((frozen / 'disposable').exists())
