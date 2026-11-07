@@ -18,6 +18,7 @@ import contextlib
 import shutil
 import socket
 import copy
+import pwd
 from unittest import mock
 from pathlib import Path
 
@@ -258,6 +259,90 @@ def manufactured_reference(trace_root):
 
 
 class CaptureSemanticFixturesTest(unittest.TestCase):
+    def test_profile_adapter_uses_keyword_factory_and_transfers_cleanup_ownership(self):
+        """Mocked API plumbing only; exported-module tests check real allocation."""
+        calls = []
+        backing = mock.Mock()
+        task = Path(pwd.getpwuid(os.getuid()).pw_dir) / '.cache/cairn-hybrid-execution-1249/semantic-S-B1/manufactured-task'
+
+        class IsolationError(RuntimeError):
+            def __init__(self, message, *, code='configuration', evidence=None):
+                super().__init__(message)
+                self.code, self.evidence = code, evidence or {}
+
+        class Boundary:
+            def __init__(self, **kwargs):
+                calls.append(('default', kwargs))
+
+            @classmethod
+            def sealed_oracle(cls, **kwargs):
+                calls.append(('derived-W', kwargs))
+                return cls.__new__(cls)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                calls.append(('context-cleanup', None))
+
+        factory = mock.Mock(return_value=backing)
+        module = types.SimpleNamespace(SemanticIsolation=Boundary, IsolationError=IsolationError,
+                                       DisposableBacking=types.SimpleNamespace(create=factory))
+        with capture._collector_isolation(module, profile='default', read_only_paths=[], output_dir=Path('/manufactured/out')):
+            pass
+        factory.assert_not_called()
+        with self.assertRaisesRegex(RuntimeError, 'manufactured body'):
+            with capture._collector_isolation(module, profile='derived-W', read_only_paths=[Path('/manufactured/tool')],
+                    output_dir=Path('/manufactured/out'), sealed_root=Path('/manufactured/frozen'), task_root=task, name='fresh'):
+                raise RuntimeError('manufactured body')
+        factory.assert_called_once_with(sealed_root=Path('/manufactured/frozen'), task_root=task, name='fresh')
+        self.assertEqual(calls[-2][0], 'derived-W')
+        self.assertEqual(calls[-2][1]['task_scratch_roots'], [task])
+        backing.remove.assert_not_called()  # The entered context is the sole cleanup owner.
+
+    def test_profile_adapter_retains_setup_and_failed_empty_child_release(self):
+        task = Path(pwd.getpwuid(os.getuid()).pw_dir) / '.cache/cairn-hybrid-execution-1249/semantic-S-B1/manufactured-task'
+        for identity_changed in (False, True):
+            with self.subTest(identity_changed=identity_changed):
+                class IsolationError(RuntimeError):
+                    def __init__(self, message, *, code='configuration', evidence=None):
+                        super().__init__(message)
+                        self.code, self.evidence = code, evidence or {}
+                backing = mock.Mock()
+                if identity_changed:
+                    backing.verify.side_effect = IsolationError('manufactured changed identity')
+                setup = IsolationError('manufactured construction refusal', evidence={'setup_marker': 'retained'})
+                module = types.SimpleNamespace(IsolationError=IsolationError,
+                    DisposableBacking=types.SimpleNamespace(create=mock.Mock(return_value=backing)),
+                    SemanticIsolation=types.SimpleNamespace(sealed_oracle=mock.Mock(side_effect=setup)))
+                with self.assertRaises(IsolationError) as caught:
+                    with capture._collector_isolation(module, profile='derived-W', read_only_paths=[],
+                            output_dir=Path('/manufactured/out'), sealed_root=Path('/manufactured/frozen'),
+                            task_root=task, name='fresh'):
+                        self.fail('refused setup entered')
+                backing.verify.assert_called_once_with(empty=True)
+                if identity_changed:
+                    self.assertEqual(caught.exception.code, 'cleanup')
+                    self.assertEqual(caught.exception.evidence['setup_marker'], 'retained')
+                    self.assertIn('consumer_setup_failure', caught.exception.evidence)
+                    self.assertIn('consumer_allocation_cleanup_failure', caught.exception.evidence)
+                    backing.remove.assert_not_called()
+                else:
+                    self.assertIs(caught.exception, setup)
+                    backing.remove.assert_called_once_with()
+
+    def test_profile_adapter_refuses_mixed_profiles_and_foreign_task_roots(self):
+        module = mock.Mock()
+        for profile, kwargs in (('default', {'name': 'unexpected'}), ('derived-W', {}),
+                ('derived-W', {'sealed_root': Path('/manufactured/frozen'), 'task_root': Path('/tmp/cairn-semantic-foreign'), 'name': 'fresh'}),
+                ('unknown', {})):
+            with self.subTest(profile=profile, kwargs=kwargs), self.assertRaises(capture.EvidenceError):
+                with capture._collector_isolation(module, profile=profile, read_only_paths=[],
+                                                  output_dir=Path('/manufactured/out'), **kwargs):
+                    self.fail('invalid profile entered')
+        module.DisposableBacking.create.assert_not_called()
+        module.SemanticIsolation.assert_not_called()
+
     def test_command_environment_uses_the_exact_declared_cpython_contract(self):
         contract = manufactured_command_contract()
         capture._validate_declared_environment(contract, contract['cpython_environment'], '/')
@@ -375,6 +460,19 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                     (isolation / 'cleanup.json').write_text(json.dumps(dict(final, **{field: value})))
                     with self.assertRaises(capture.EvidenceError):
                         capture._cleanup_evidence(output)
+            proof['profile'] = home['profile'] = 'derived-W'
+            proof['sealed_oracle'] = {'sha256': 'a' * 64, 'files': 31, 'metadata': {'manufactured': {'inode': 77}}}
+            (isolation / 'isolation-proof.json').write_text(json.dumps(proof))
+            (isolation / 'disposable-home.json').write_text(json.dumps(home))
+            final['isolation_proof_sha256'] = capture._digest(isolation / 'isolation-proof.json')
+            final['sealed_oracle_after'] = proof['sealed_oracle']
+            (isolation / 'cleanup.json').write_text(json.dumps(final))
+            self.assertTrue(capture._cleanup_evidence(output)['sealed_oracle_unchanged'])
+            changed = copy.deepcopy(final)
+            changed['sealed_oracle_after']['metadata']['manufactured']['inode'] += 1
+            (isolation / 'cleanup.json').write_text(json.dumps(changed))
+            with self.assertRaisesRegex(capture.EvidenceError, 'sealed-profile metadata'):
+                capture._cleanup_evidence(output)
 
     def test_runtime_binding_refuses_another_invocation_or_changed_child_facts(self):
         """Manufactured metadata; these files and libraries do not exist."""

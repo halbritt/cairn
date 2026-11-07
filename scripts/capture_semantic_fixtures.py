@@ -938,9 +938,17 @@ def _cleanup_evidence(output, invocations=()):
             or not isinstance(final.get('invocations'), list)
             or any(invocation not in final['invocations'] for invocation in invocations)):
         raise EvidenceError('shared wrapper did not prove joined cleanup')
-    return {'backing': backing, 'initial_identity': identity, 'backing_absent_observed': True,
+    result = {'backing': backing, 'initial_identity': identity, 'backing_absent_observed': True,
             'isolation_proof_sha256': proof_digest,
             'home_receipt': 'isolation/disposable-home.json', 'final_receipt': 'isolation/cleanup.json'}
+    if proof.get('profile') == 'derived-W':
+        before = proof.get('sealed_oracle')
+        if (not isinstance(before, dict) or before.get('files') != 31 or not before.get('metadata')
+                or not re.fullmatch('[0-9a-f]{64}', before.get('sha256', ''))
+                or final.get('sealed_oracle_after') != before):
+            raise EvidenceError('derived-W cleanup did not preserve the exact sealed-profile metadata')
+        result['sealed_oracle_unchanged'] = True
+    return result
 
 
 def _capture_file_inventory(output, cases):
@@ -968,6 +976,53 @@ def _capture_file_inventory(output, cases):
 def _exception_record(error):
     return {'type': type(error).__name__, 'message': str(error),
             'traceback': ''.join(traceback.format_exception(type(error), error, error.__traceback__))}
+
+
+@contextlib.contextmanager
+def _collector_isolation(module, *, profile, read_only_paths, output_dir,
+                         sealed_root=None, task_root=None, name=None):
+    """Own only pre-entry allocation; an entered shared context owns all cleanup."""
+    if profile == 'default':
+        if any(value is not None for value in (sealed_root, task_root, name)):
+            raise EvidenceError('default collector cannot consume sealed-profile backing inputs')
+        with module.SemanticIsolation(read_only_paths=read_only_paths, output_dir=output_dir) as isolation:
+            yield isolation
+        return
+    if profile != 'derived-W' or any(value is None for value in (sealed_root, task_root, name)):
+        raise EvidenceError('derived-W collector requires explicit sealed root, task root and fresh name')
+    task_root = Path(task_root).absolute()
+    owner = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    task_base = owner / '.cache/cairn-hybrid-execution-1249/semantic-S-B1'
+    if task_base not in task_root.parents:
+        raise EvidenceError('B1 collector task root must be a dedicated semantic-S-B1 child')
+    # The one published factory validates the profile, roots and fresh basename
+    # before mkdir. Never create a directory or normalize an alias on its behalf.
+    backing = module.DisposableBacking.create(sealed_root=sealed_root, task_root=task_root, name=name)
+    entered = False
+    try:
+        manager = module.SemanticIsolation.sealed_oracle(sealed_root=sealed_root, backing=backing,
+            task_scratch_roots=[task_root], read_only_paths=read_only_paths, output_dir=output_dir)
+        with manager as isolation:
+            entered = True
+            yield isolation
+    except BaseException as error:
+        if not entered:
+            try:
+                # verify checks the root identity before looking up the child.
+                # A context that already removed its child reports FileNotFound.
+                try:
+                    backing.verify(empty=True)
+                except FileNotFoundError:
+                    pass
+                else:
+                    backing.remove()
+            except BaseException as cleanup_error:
+                evidence = dict(error.evidence) if isinstance(error, module.IsolationError) else {}
+                evidence.update(consumer_setup_failure=_exception_record(error),
+                                consumer_allocation_cleanup_failure=_exception_record(cleanup_error))
+                raise module.IsolationError('collector setup failed and owned empty-child release refused',
+                                            code='cleanup', evidence=evidence) from error
+        raise
 
 
 def _capture_failure(error, isolation_error, output, case_output):
@@ -1034,10 +1089,8 @@ def _validate_declared_environment(contract, environment, actual_cwd):
         raise EvidenceError('collector environment/cwd differs from its exact CPython declaration')
 
 
-def _isolation_guard(proof_path, contract_path, parent_namespace):
+def _isolation_guard(proof, contract, parent_namespace, *, profile='default'):
     """Refuse before any model import; a caller flag alone is not confinement."""
-    proof = _strict_json(Path(proof_path).read_bytes())
-    contract = _strict_json(Path(contract_path).read_bytes())
     namespace = os.readlink('/proc/self/ns/net')
     if namespace == parent_namespace:
         raise EvidenceError('collector requires a distinct, preflighted network namespace')
@@ -1052,18 +1105,21 @@ def _isolation_guard(proof_path, contract_path, parent_namespace):
                 raise EvidenceError('collector network isolation probe failed') from error
         else:
             raise EvidenceError('collector namespace has an external network route')
-    if proof.get('profile') != 'default':
-        raise EvidenceError('ordinary collector requires the declared default profile; it cannot qualify derived-W')
+    if profile not in ('default', 'derived-W') or proof.get('profile') != profile:
+        raise EvidenceError('collector requires its explicitly selected profile; ordinary capture remains default only')
     if contract.get('profile') != proof['profile']:
         raise EvidenceError('collector command profile differs from isolation proof')
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
-    if ('HOME' in os.environ or home.as_posix() != proof.get('home')
+    if ((profile == 'default' and 'HOME' in os.environ)
+            or (profile == 'derived-W' and contract['environment'].get('HOME') != proof.get('home'))
+            or home.as_posix() != proof.get('home')
             or os.path.expanduser('~') != home.as_posix() or
             (home / '.semantic-isolation-probe').stat().st_ino != proof.get('home_probe_inode')):
         raise EvidenceError('collector OS home lookup is not the preflighted disposable home')
     _validate_declared_environment(contract, dict(os.environ), os.getcwd())
     return dict(proof, collector_network_namespace=namespace,
-                collector_getpwuid_home=str(home), collector_expanduser_home=os.path.expanduser('~'))
+                collector_getpwuid_home=str(home), collector_expanduser_home=os.path.expanduser('~'),
+                collector_cwd=os.getcwd(), collector_environment=dict(os.environ))
 
 
 def _native_images(mapped):
@@ -1496,7 +1552,8 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
         isolation_error = module.IsolationError
         if not isinstance(isolation_error, type) or not issubclass(isolation_error, Exception):
             raise EvidenceError('shared wrapper has no canonical IsolationError class')
-        with _capture_context(module.SemanticIsolation(read_only_paths=read_only, output_dir=isolation_output),
+        with _capture_context(_collector_isolation(module, profile='default',
+                              read_only_paths=read_only, output_dir=isolation_output),
                               manifest, record_failure) as isolation:
             if isolation.proof.get('profile') != 'default':
                 raise EvidenceError('ordinary capture cannot consume a derived-W construction or claim B1 proof')
@@ -1638,7 +1695,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == '_collect':
-            proof = _isolation_guard(args.isolation_proof, args.command_contract, args.parent_net_namespace)
+            # Ordinary capture always selects default; the explicit derived-W
+            # guard is exercised only by separate model-free profile callers.
+            proof = _isolation_guard(_strict_json(args.isolation_proof.read_bytes()),
+                                     _strict_json(args.command_contract.read_bytes()), args.parent_net_namespace)
             if args.preflight_only:
                 print(json.dumps({'status': 'ordinary-preflight-observed', 'model_imported': False,
                                   'network_namespace': proof['collector_network_namespace']}))

@@ -172,11 +172,33 @@ Wrapper-owned `command-*.json`, `isolation-proof.json`, `cleanup.json`,
 `disposable-home.json`, `runtime-observations.json` and `read-only-probe` are
 retained under their original names; collector artifacts use separate names.
 
-This consumer preparation adds no W backing constructor or compatibility
-adapter. The separate conditional B1 vehicle still needs the corrected,
-reviewed factory that validates an owned S-B1 task root and frozen/protected
-overlap before creating a fresh child. Its exact B1/B2 source pair and synthetic
-seam require independent review before any actual execution admission.
+`_collector_isolation` is the consumer context manager used by ordinary
+orchestration and by the model-free profile seam. `profile="default"` refuses
+sealed-root/task-root/name arguments. An explicitly selected `derived-W` call
+requires all three and uses only
+`DisposableBacking.create(sealed_root=..., task_root=..., name=...)`, followed
+by `SemanticIsolation.sealed_oracle(..., task_scratch_roots=[task_root])`.
+The task root must be a dedicated child of the B1 campaign task directory;
+the shared factory validates its resolved ownership/mode, frozen/protected
+overlaps and fresh basename before allocation. The consumer does not create
+or resolve a backing path for the factory.
+
+Until context entry succeeds, the consumer owns that allocation. Construction
+or entry failure releases only the verified empty child. A changed root or
+backing identity refuses removal and retains both setup and cleanup failures.
+If the shared context already removed the child, its identity check precedes
+the missing-child observation. Once entry succeeds, the shared context alone
+owns process joining and backing cleanup, including body exceptions.
+
+The shared in-child guard accepts explicit proof/command dictionaries and a
+selected profile. The ordinary `_collect` CLI always selects `default`.
+Synthetic W controls select `derived-W`, preserve its literal HOME and other
+exec variables, and check the actual passwd/expanduser/probe boundary and cwd.
+The wrapper's separate HOME-absent preflight is not relabelled as an observation
+of that later command. W cleanup must also retain identical 31-file seal and
+metadata receipts before and after the context. These are preparation and
+protocol checks; the conditional B1 proof vehicle, pretoken gate and independent
+review remain required before actual execution admission.
 
 Frozen worker Python is compiled from the exact verified bytes; adjacent pyc
 is not executed or altered. The manufactured tests exercise that behavior.
@@ -259,5 +281,11 @@ Prepared NumPy runs the frozen scorer, normalization and ONNX input preparation
 with a mocked session and synthetic tokenizer data. ORT, FastEmbed package and
 tokenizer-model imports are blocked in those children; no inference occurs.
 These manufactured observations establish mechanics only.
+When a preparation task excludes NumPy fixtures, report the three original
+NumPy-backed trace/import tests as unrun. A stdlib-only manufactured parser
+control does not replace the frozen arithmetic checks or imply a full standing
+suite pass. Synthetic W seal-pin substitutions belong only in tests; test
+roots, namespace observations and protocol replies do not qualify the actual
+future B1 environment.
 The existing real-tokenizer/model tests require the reviewed
 isolation boundary and remain a separately counted 23-test obligation.
