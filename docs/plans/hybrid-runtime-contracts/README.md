@@ -1,14 +1,15 @@
 # Hybrid runtime shared contracts
 
-Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/1`,
-draft for cross-team acceptance on 2026-11-06. The overall lead owns this
+Campaign: CAIRN-301. Setup gate: X-01 / CAIRN-302. Revision: `shared/2`,
+accepted for implementation on 2026-11-06. The overall lead owns this
 index. Domain leads own their area documents and independent reviewers assess
 the criteria against source before new implementation consumes them.
 
-X-01 is **open**. Publishing a contract does not accept an implementation or
-authorize a production cutover. Read-only discovery and characterization of
-existing behavior can proceed. The overall lead sends an explicit X-01
-completion notice after the closure checklist below is satisfied.
+X-01 is **closed for specification and coordination setup**. The overall lead
+has reconciled the reviewed area contracts, consumer agreements and dependency
+map below. Teams may implement ready work under their assigned ownership and
+individual predecessor gates. This does not accept a runtime implementation or
+authorize a production cutover; the later review and release gates still apply.
 
 The [implementation plan](../hybrid-runtime-implementation.md) supplies the
 full delivery sequence. Its tables remain authoritative for dependencies;
@@ -27,10 +28,9 @@ cannot certify running clients or model coverage.
 | Installation, pins, drain and rollback | Release | Foundation bindings, Coordination native state, Semantic package and installed clients | Immutable `/2` versus `/3` selections, actual drain, staged activation, unrelated-config preservation, races/crashes, supported live refresh, reverse lifecycle selection and semantic reverse rebuild. |
 
 The area specifications are `foundation.md`, `coordination.md`, `semantic.md`
-and `release.md` in this directory. Their exact accepted revisions and commits
-will be recorded here after independent review. No draft revision is silently
-promoted to accepted. A changed boundary must name every consumer, updated
-fixture and review before dependent code lands.
+and `release.md` in this directory. Their independently accepted revisions and
+commits are recorded below. A subsequent boundary change must name every
+consumer, updated fixture and review before dependent code lands.
 
 ## Shared-file allocation
 
@@ -123,16 +123,32 @@ runtime work.
 
 ## Acceptance record
 
-The following area criteria have landed with independent review. Pending
-cross-team deltas remain prerequisites to X-01 closure, even when an earlier
-area revision was accepted.
+The following area criteria have landed with independent review. Required
+cross-team deltas and consumer agreements are closed for specification scope.
 
-| Area | Accepted revision and landed commit | Remaining agreement |
+| Area | Accepted revision and landed commit | Consumer agreement |
 | --- | --- | --- |
-| Foundation | `foundation/v4`, `8b7686496e78224cfedbccdde4ffde34c0f900c0` | Release and Coordination mirror the short trusted launcher and complete issued-command contract. |
-| Coordination | `coordination/v5`, `a6ff2a9125ef56d37e2c2d15e5dd5237f7523ad4` | Its narrow caller-slot, compact-selection and `L`-to-`V` delta needs exact review and landing. |
-| Semantic | `semantic/3`, `ac3dee7a45592312782e3d8724fa9193f77d2a31` | Release rollback/S-04R criteria agreement and R-06 prerequisite readback. |
-| Release | `release/2`, `aa0c26fa1a8ab8faeb93c183c112f21dcbfa7ab9` | Compatibility receipt/launcher delta and Semantic rollback agreement. |
+| Foundation | `foundation/v4`, `8b7686496e78224cfedbccdde4ffde34c0f900c0` | Release/Coordination mirror the short launcher, full issued-command scope and sequenced caller slot; Foundation accepted the complete final Release delta. |
+| Coordination | `coordination/v6`, `c9a1908bacac65806f233d040bd0656c8b43f97e` | Both independent reviewers accepted the compact/L delta, selected-config root, caller/thread custody and source error policy; Release found no conflict. |
+| Semantic | `semantic/3`, `ac3dee7a45592312782e3d8724fa9193f77d2a31` | Release accepted the exact rollback, S-04R, native-package/ABI, fixed-launcher and database-wide fence criteria; R-06's named prerequisite was read back. |
+| Release | `release/3`, `a02da07c372c6418ff329da267473888bf97a781` | Independent final review and Foundation whole-contract agreement cover the receipt/L contract and five updated item bodies; Semantic confirmed the rollback dependency. |
+
+Root's final reconciliation checked current contract blobs, exact review and
+consumer receipts, native parents, stable plan-key identities and body/map
+dependencies. CAIRN-276 retains characterization; CAIRN-277/278 explicitly
+supersede their Python implementation scopes into J-02/J-03 without discarding
+history. Native blocking relations remain unavailable and unverified; the
+recorded body/map edges remain mandatory. Current source/installation inventory
+and subscription observations identify their scope and gaps. They do not claim
+completed runtime qualification.
+
+The initial six builders may proceed on ready work. Leads direct their existing
+teams through implementation, exact-candidate independent review and complete
+trunk integration. The four reserved builder roles may be activated within the
+planned ten-builder maximum only when their named predecessors are accepted,
+owned files do not overlap, and fresh subscription checks permit their routes.
+No extra team or routing fallback is authorized. Shared CLI, Makefile and
+installer writer transfers remain explicit.
 
 Release setup criteria `release/2` were independently accepted at candidate
 `58a83eb91d1693b06a7c44c5d725bb3c318ea9a2` and landed as
@@ -169,7 +185,8 @@ missing isolation stops the experiment. Another timeout remains a model-evidence
 gap, without repeated deadline inflation. Candidate numerical comparison and
 execution through the unchanged real supervisor remain separate requirements.
 
-The table's cross-team deltas and final tracker/consumer reconciliation remain pending.
-X-01 / CAIRN-302 remains open.
+X-01 closes setup only. S-01 and J-01 evidence, each implementation's tests and
+review, remaining release-policy gates, actual runtime/ABI qualification and
+production acceptance remain with their downstream items.
 No runtime implementation, production switch, burn-in or retirement has been
 accepted by this record.
