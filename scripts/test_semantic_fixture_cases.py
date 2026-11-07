@@ -24,8 +24,15 @@ class SemanticFixtureCasesTest(unittest.TestCase):
         self.assertEqual(len(cases), 15)
         self.assertEqual(sum(case['operation'] == 'query' for case in cases), 9)
         self.assertEqual(sum(case['operation'] == 'document' for case in cases), 6)
-        self.assertTrue(all(set(case) == {'id', 'operation', 'text', 'expected_disposition'} for case in cases))
-        self.assertTrue(all(case['expected_disposition'] == 'result' for case in cases))
+        self.assertTrue(all(set(case) == {'id', 'operation', 'text', 'expected'} for case in cases))
+        self.assertTrue(all(case['expected'] == 'accepted' for case in cases))
+        canonical = json.dumps(cases, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        self.assertEqual(hashlib.sha256(canonical).hexdigest(),
+                         'feb24e50fd6b37b7405afd8f972ec6bf57c086820db22d8ee96381c4f26e44a2')
+        wire = [{key: case[key] for key in ('id', 'operation', 'text')} for case in cases]
+        wire_bytes = json.dumps(wire, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        self.assertEqual(hashlib.sha256(wire_bytes).hexdigest(),
+                         '6e1bafddc5a00b061ca56281845a09b58766cf4f97e53bcc0da15a2f350062cf')
         by_id = {case['id']: case for case in cases}
         self.assertEqual(len(by_id['query-4096-bytes']['text'].encode('utf-8')), 4096)
         for case_id in ('document-maximum-latin', 'document-maximum-cjk'):
@@ -60,7 +67,8 @@ assert len(semantic_fixture_cases.embedding_cases())==15
 
     def test_blank_and_overflow_failures_do_not_enter_the_positive_inventory(self):
         failures = semantic_fixture_cases.embedding_failure_cases()
-        self.assertTrue(all(case['expected_disposition'] == 'refusal' for case in failures))
+        self.assertTrue(all(set(case) == {'id', 'operation', 'text', 'expected'} for case in failures))
+        self.assertTrue(all(case['expected'] == 'refused' for case in failures))
         for codepoint in semantic_fixture_cases.PYTHON_WHITESPACE_CODEPOINTS:
             for operation in ('query', 'document'):
                 self.assertTrue(any(case['operation'] == operation and case['text'] == chr(codepoint) for case in failures))

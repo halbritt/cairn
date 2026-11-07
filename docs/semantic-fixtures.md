@@ -26,13 +26,25 @@ digest of all 19 cases is
 `ebeecaa4a508ec4cd735ae6f6844f3c96dd30f4d48ef85e7caadbc4cdc9420ba`.
 The workload file itself is hash pinned; changed input refuses.
 
-Embedding inputs contain `id`, `operation`, `text` and
-`expected_disposition`. Remove the last field when forming a worker request.
+Positive and typed-negative embedding inputs contain `id`, `operation`,
+`text` and `expected`. Positives use exactly `"accepted"`; typed negatives
+use exactly `"refused"`. Form worker requests using only `id`, `operation`
+and `text`. No permissive expectation alias is supported.
 Query IDs are `query-ascii`, `query-cjk`, `query-emoji`, `query-combining`,
 `query-special-tokens`, `query-exact-512`, `query-over-512`,
 `query-4096-bytes` and `query-token-empty`. Document IDs are `document-ascii`,
 `document-cjk`, `document-mixed-unicode`, `document-trailing-decision`,
 `document-maximum-latin` and `document-maximum-cjk`.
+
+The canonical sorted-key, compact UTF-8 JSON digest of the 15 positive embedding
+cases, including expectation metadata, is
+`feb24e50fd6b37b7405afd8f972ec6bf57c086820db22d8ee96381c4f26e44a2`.
+The corresponding three-field worker-request projection has digest
+`6e1bafddc5a00b061ca56281845a09b58766cf4f97e53bcc0da15a2f350062cf`;
+the metadata correction leaves those worker inputs unchanged.
+The separate import-only punctuation observation retains
+`expected_disposition: "timeout"` outside this executable-case schema.
+It is absent from both positive and typed-negative embedding inventories.
 
 The WordPiece builder never loads a tokenizer. Supply the prepared tokenizer
 inside the reviewed isolation boundary, freeze the returned input and tokenizer

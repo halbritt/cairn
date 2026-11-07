@@ -36,8 +36,8 @@ def ranking_cases():
     return cases
 
 
-def _embedding(identifier, operation, text, disposition='result'):
-    return {'id': identifier, 'operation': operation, 'text': text, 'expected_disposition': disposition}
+def _embedding(identifier, operation, text, expected='accepted'):
+    return {'id': identifier, 'operation': operation, 'text': text, 'expected': expected}
 
 
 def embedding_cases():
@@ -63,21 +63,24 @@ def embedding_cases():
 
 def embedding_failure_cases():
     """Typed-text failures; wire/decoder/process faults belong to S-01b's inventory."""
-    cases = [_embedding(f'blank-{operation}-u{codepoint:04x}', operation, chr(codepoint), 'refusal')
+    cases = [_embedding(f'blank-{operation}-u{codepoint:04x}', operation, chr(codepoint), 'refused')
              for codepoint in PYTHON_WHITESPACE_CODEPOINTS for operation in ('query', 'document')]
     cases.extend([
-        _embedding('query-empty', 'query', '', 'refusal'),
-        _embedding('document-empty', 'document', '', 'refusal'),
-        _embedding('query-byte-overflow', 'query', 'a ' * 2048 + 'a', 'refusal'),
-        _embedding('document-byte-overflow', 'document', '!' * 65537, 'refusal'),
-        _embedding('document-token-empty', 'document', '\u200b\u200d\ufeff', 'refusal'),
+        _embedding('query-empty', 'query', '', 'refused'),
+        _embedding('document-empty', 'document', '', 'refused'),
+        _embedding('query-byte-overflow', 'query', 'a ' * 2048 + 'a', 'refused'),
+        _embedding('document-byte-overflow', 'document', '!' * 65537, 'refused'),
+        _embedding('document-token-empty', 'document', '\u200b\u200d\ufeff', 'refused'),
     ])
     return cases
 
 
 def consumed_punctuation_case():
     """Import-only input: the single longer oracle is consumed and unqualified."""
-    return _embedding('document-maximum-punctuation', 'document', '!' * 65536, 'timeout')
+    # Separate import-only legacy observation, outside the accepted/refused
+    # executable-case schema and never included in either embedding inventory.
+    return {'id': 'document-maximum-punctuation', 'operation': 'document',
+            'text': '!' * 65536, 'expected_disposition': 'timeout'}
 
 
 def wordpiece_boundary_case(tokenizer):
