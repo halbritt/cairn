@@ -103,7 +103,44 @@ remain distinct `last_start` values and retain the existing exact-item retry
 rule. None authorizes another queue add. Offset-paged queue listings are not an
 atomic absence proof and are not used by this diagnostic. An ordinary owner
 prompt does not claim work when the Codex native queue owns inbox admission.
-This diagnosis does not provide an operator reconciliation command.
+An old retained marker can block later deliveries even after its delivery has
+been handled. The session can be idle with trusted hooks while this fence
+remains. A later delivery can therefore have an `unknown` host diagnosis when
+the marker belongs to an earlier delivery.
+
+#### Reconcile a completed retained wake
+
+Use the installed coordination binding and the exact native session, delivery
+and queue submission IDs retained in host state. From this checkout, first
+check the expected outcome without clearing the marker:
+
+```bash
+python3 integrations/lifecycle/coordination.py reconcile-codex-queue-wake \
+  --config /path/to/installed-binding.json \
+  --native-session-id NATIVE_SESSION_ID \
+  --delivery-id RETAINED_DELIVERY_UUID \
+  --queued-submission-id RETAINED_QUEUE_SUBMISSION_ID \
+  --outcome completed --check-only
+```
+
+Replace the binding path and IDs before running the command. For this command,
+without rollout records, `eligible` with outcome `completed` requires the
+store to confirm that the retained delivery was already handled or completed.
+An active admission or a submission still present in the native queue takes
+precedence. Missing queue membership alone does not prove completion.
+
+After the check confirms that outcome, run the same command without
+`--check-only`, retaining `--outcome completed` and the same IDs. It rechecks
+the evidence under the session lock and returns `reconciled` with outcome
+`completed`. It clears the stale wake and refusal markers and records
+`wake_reconciled`; it does not claim or replay the delivery. An outcome mismatch
+refuses reconciliation, so inspect the current evidence before continuing.
+
+Verify that the next distinct pending delivery reaches the original session
+through normal native delivery. A reconciliation result releases the fence;
+the recipient's explicit completion or acknowledgement still establishes
+handling. Other outcomes, including `unknown`, require their own evidence and
+are not covered by this completed-delivery procedure.
 
 ## Opt-in attention on the operator review
 

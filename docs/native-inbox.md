@@ -102,6 +102,12 @@ uncertain outcome, and run drain again for the next item. The OpenCode coordinat
 to a completed native tool's output or an MCP result's text content. This enters
 the next model continuation without submitting a user prompt or claiming work.
 
+A drain can finish handling while a protected Codex wake marker still refers
+to that delivery. If later work remains pending while the original session is
+idle, inspect [retained wake reconciliation](delivery-health.md#reconcile-a-completed-retained-wake).
+Successful handling alone does not prove that the host's retained marker was
+reconciled.
+
 The cue is a hint, not delivery:
 
 - At each supported tool boundary the hook makes one `session-inbox-pending`
