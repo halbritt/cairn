@@ -153,6 +153,18 @@ class ReaderKernelProcessTests(unittest.TestCase):
             with self.subTest(size=len(raw), prefix=raw[:20]):
                 self.compare(raw)
 
+    def test_integer_limit_precedes_incomplete_number_suffix(self):
+        # json.loads converts the longest complete numeric prefix before it
+        # diagnoses trailing syntax. A failed decimal conversion can win.
+        integer = b"1" * 4301
+        for suffix in (b".", b".x", b"e", b"e+", b"E-", b".e1"):
+            with self.subTest(suffix=suffix):
+                self.compare(integer + suffix)
+        self.compare(b'{"x":[' + integer + b"e+]}")
+        for suffix in (b".0e+", b".0", b"e+0"):
+            with self.subTest(complete_float_prefix=suffix):
+                self.compare(integer + suffix)
+
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--reader-oracle"]:
