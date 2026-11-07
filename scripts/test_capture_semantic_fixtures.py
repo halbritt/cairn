@@ -38,6 +38,14 @@ def sealed_bundle(root, files):
     return hashlib.sha256(raw).hexdigest()
 
 
+def manufactured_command_contract():
+    environment = {'PATH': '/usr/bin:/bin', 'HF_HUB_OFFLINE': '1',
+        'HF_HUB_DISABLE_TELEMETRY': '1', 'TOKENIZERS_PARALLELISM': 'false', 'PWD': '/'}
+    return {'schema': 'cairn.semantic-command-environment/1', 'profile': 'default', 'cwd': '/',
+        'environment': environment, 'cpython_environment': dict(environment, LC_CTYPE='C.UTF-8'),
+        'runtime_additions': {'LC_CTYPE': {'value': 'C.UTF-8', 'reason': 'manufactured CPython coercion declaration'}}}
+
+
 def manufactured_case():
     notes = []
     for index, body in enumerate(('red blue', 'red blue', 'green blue')):
@@ -183,42 +191,59 @@ def manufactured_reference(trace_root):
                          'version': 1, 'body_sha256': 'b' * 64}, 'manufactured': True}
     files['reference/tooling/isolation-review.json'] = raw_json(review)
     identity = {'inode': 303, 'device': 1, 'owner': os.getuid(), 'mode': 0o700}
-    home = {'backing': '/manufactured/private-backing', 'initial_identity': identity}
-    final = {'all_observed_processes_exited': True, 'backing_removed': True, 'errors': []}
+    home = {'backing': '/manufactured/private-backing', 'initial_identity': identity,
+            'profile': 'default', 'payload_inspected': False}
     files['isolation/disposable-home.json'] = raw_json(home)
-    files['isolation/cleanup.json'] = raw_json(final)
     cleanup = dict(home, backing_absent_observed=True, home_receipt='isolation/disposable-home.json',
                    final_receipt='isolation/cleanup.json')
-    environment = {'PATH': '/usr/bin:/bin', 'HF_HUB_OFFLINE': '1', 'HF_HUB_DISABLE_TELEMETRY': '1',
-                   'TOKENIZERS_PARALLELISM': 'false'}
+    contract = manufactured_command_contract()
     proof = {'wrapper_sha256': review['module_sha256'], 'profile': 'default', 'home': '/fixture-home',
-        'home_probe_inode': 77, 'model_environment': environment, 'effective_prefix': ['bwrap', '--chdir', '/']}
+        'home_probe_inode': 77, 'environment_contract': contract, 'effective_prefix': ['bwrap', '--chdir', '/']}
+    files['isolation/isolation-proof.json'] = raw_json(proof)
+    declaration = {'id': 1, 'role': 'python-reference', 'mode': 'rank', 'contract': contract}
+    files['isolation/command-0001.json'] = raw_json(declaration)
+    invocation = dict(declaration, pid=3101, start_ticks='12345', argv=['manufactured-bwrap', '--', 'manufactured-collector'],
+        declaration_sha256=digest(files['isolation/command-0001.json']))
+    final = {'all_observed_processes_exited': True, 'backing_removed': True, 'errors': [],
+        'invocations': [invocation], 'isolation_proof_sha256': digest(files['isolation/isolation-proof.json'])}
+    files['isolation/cleanup.json'] = raw_json(final)
+    cleanup['isolation_proof_sha256'] = final['isolation_proof_sha256']
     runtime = {'schema': 'cairn.semantic-python-runtime/1', 'network_namespace': 'child-ns',
+        'process_start_ticks': '12346', 'pid_namespace': 'child-pid',
         'passwd_home': '/fixture-home', 'expanduser_home': '/fixture-home', 'home_probe_inode': 77,
         'executable': {'inode': 55, 'sha256': 'e' * 64}, 'mapped_libraries': libraries,
-        'effective_environment': dict(environment, PWD='/', LC_CTYPE='C.UTF-8'), 'cwd': '/',
+        'effective_environment': contract['cpython_environment'], 'cwd': '/',
         'cpu_kernel_class': capture.cpu_kernel_class({'architecture': 'manufactured', 'byte_order': 'little',
             'pointer_bits': 64, 'effective_isa': ['synthetic'], 'os_vector_state': ['synthetic'],
             'blas_core': 'synthetic', 'blas_config': 'synthetic'})}
     worker = {'executable_inode': 55, 'executable_sha256': 'e' * 64, 'network_namespace': 'child-ns',
-              'libraries': [dict(path=path, **info) for path, info in libraries.items()]}
+        'pid': 3102, 'launcher_pid': 3101, 'launcher_start_ticks': '12345', 'invocation_id': 1,
+        'role': 'python-reference', 'mode': 'rank', 'process_start_ticks': '12346', 'pid_namespace': 'child-pid',
+        'environment_matches_contract': True, 'exec_environment': contract['environment'],
+        'libraries': [dict(path=path, **info) for path, info in libraries.items()]}
     case = json.loads((trace_root / 'case.json').read_text())
     prefix = 'isolation/raw/' + case['id'] + '/'
     artifacts = {'request': prefix + 'request.stdin', 'stdout': prefix + 'wire.stdout', 'stderr': prefix + 'wire.stderr',
-                 'trace': prefix + 'trace.json', 'arrays': prefix + 'trace-arrays.npz', 'runtime': prefix + 'runtime.json'}
+        'trace': prefix + 'trace.json', 'arrays': prefix + 'trace-arrays.npz', 'runtime': prefix + 'runtime.json',
+        'command_contract': prefix + 'collector-command.json', 'invocation': prefix + 'invocation.json',
+        'runtime_binding': prefix + 'runtime-binding.json'}
     files[artifacts['request']] = raw_json({key: case[key] for key in ('query', 'notes')})
     files[artifacts['stdout']] = (trace_root / 'result.json').read_bytes()
     files[artifacts['stderr']] = b''
     files[artifacts['trace']] = (trace_root / 'trace.json').read_bytes()
     files[artifacts['arrays']] = (trace_root / 'arrays.npz').read_bytes()
     files[artifacts['runtime']] = raw_json(runtime)
+    files[artifacts['command_contract']] = raw_json(contract)
+    files[artifacts['invocation']] = raw_json(invocation)
+    files[artifacts['runtime_binding']] = raw_json(worker)
     aggregates = {}
     for name in capture.REVIEWER_RAW_BASELINE:
         raw = (trace_root / (name + '.bin')).read_bytes()
         files[name + '.bin'] = raw
         aggregates[name] = digest(raw)
     observation = {'cell': 'rank/' + case['id'], 'status': 'observed', 'exit_code': 0, 'skipped': 0,
-        'logical_occurrences': 4, 'observed_model_executions': 3, 'mapped_duplicate_rows': 1, 'artifacts': artifacts}
+        'logical_occurrences': 4, 'observed_model_executions': 3, 'mapped_duplicate_rows': 1, 'artifacts': artifacts,
+        'command': ['manufactured-collector'], 'invocation': invocation}
     provenance = {'kind': 'python-reference', 'manufactured': True, 'capture_scope': 'ordinary-default-reference',
         'conditional_b1_proof': False, 'wrapper_review': review, 'source_commit': 'c' * 40,
         'capture_source_sha256': digest(files['reference/tooling/capture_semantic_fixtures.py']),
@@ -233,6 +258,149 @@ def manufactured_reference(trace_root):
 
 
 class CaptureSemanticFixturesTest(unittest.TestCase):
+    def test_command_environment_uses_the_exact_declared_cpython_contract(self):
+        contract = manufactured_command_contract()
+        capture._validate_declared_environment(contract, contract['cpython_environment'], '/')
+        variants = []
+        for environment in (contract['environment'], dict(contract['cpython_environment'], EXTRA='refuse')):
+            variants.append((contract, environment, '/'))
+        variants.append((contract, contract['cpython_environment'], '/wrong-cwd'))
+        for field in ('runtime_additions', 'cpython_environment'):
+            changed = copy.deepcopy(contract)
+            changed[field]['EXTRA'] = 'not a permitted runtime addition'
+            variants.append((changed, changed['cpython_environment'], '/'))
+        for value in variants:
+            with self.subTest(value=value), self.assertRaises(capture.EvidenceError):
+                capture._validate_declared_environment(*value)
+
+    def test_canonical_timeout_keeps_partial_bytes_and_merged_context_cleanup(self):
+        """Manufactured wrapper protocol only; no process or model is launched."""
+        for failure_code, context_failure in (('timeout', False), ('stdout_limit', False),
+                                              ('stderr_limit', False), ('timeout', True)):
+            with self.subTest(code=failure_code, context_failure=context_failure), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'capture'
+
+                class IsolationError(RuntimeError):
+                    def __init__(self, message, *, code, evidence):
+                        super().__init__(message)
+                        self.code, self.evidence = code, evidence
+
+                class Wrapper:
+                    def __init__(self, *, read_only_paths, output_dir):
+                        self.output = output_dir
+                        self.proof = {'profile': 'default', 'manufactured': True}
+
+                    def __enter__(self):
+                        self.output.mkdir(mode=0o700)
+                        self.backing = self.output / 'actual-backing'
+                        self.backing.mkdir(mode=0o700)
+                        self.identity = self.backing.stat()
+                        (self.backing / 'private-payload').write_bytes(b'never inspect')
+                        (self.output / 'isolation-proof.json').write_text(json.dumps(self.proof))
+                        return self
+
+                    def command_contract(self):
+                        return manufactured_command_contract()
+
+                    def run(self, command, *, timeout, role, mode, stdout_limit):
+                        declaration = {'id': 1, 'role': role, 'mode': mode, 'contract': self.command_contract()}
+                        raw = json.dumps(declaration).encode()
+                        (self.output / 'command-0001.json').write_bytes(raw)
+                        self.invocation = dict(declaration, pid=3101, start_ticks='12345',
+                            argv=['manufactured-bwrap', '--', *command], declaration_sha256=hashlib.sha256(raw).hexdigest())
+                        raise IsolationError('manufactured ' + failure_code, code=failure_code, evidence={
+                            'failure_code': failure_code, 'stdout': b'partial\x00stdout', 'stderr': b'partial\xffstderr',
+                            'argv': self.invocation['argv'], 'exit_code': -9, 'timeout_seconds': timeout,
+                            'invocation': self.invocation, 'processes_joined': True, 'cleanup_error': None})
+
+                    def __exit__(self, kind, error, tb):
+                        if not context_failure:
+                            shutil.rmtree(self.backing)
+                        (self.output / 'disposable-home.json').write_text(json.dumps({
+                            'backing': str(self.backing), 'profile': 'default', 'payload_inspected': False,
+                            'initial_identity': {'inode': self.identity.st_ino, 'device': self.identity.st_dev,
+                                'owner': self.identity.st_uid, 'mode': 0o700}}))
+                        (self.output / 'cleanup.json').write_text(json.dumps({
+                            'all_observed_processes_exited': not context_failure,
+                            'backing_removed': not context_failure, 'errors': ['manufactured cleanup failure'] if context_failure else [],
+                            'isolation_proof_sha256': capture._digest(self.output / 'isolation-proof.json'),
+                            'invocations': [self.invocation]}))
+                        if context_failure:
+                            raise IsolationError('manufactured context cleanup', code='cleanup',
+                                evidence=dict(error.evidence, context_cleanup_error='manufactured context cleanup'))
+
+                module = types.SimpleNamespace(SemanticIsolation=Wrapper, IsolationError=IsolationError)
+                with self.assertRaisesRegex(capture.EvidenceError, 'retained as failed'):
+                    capture._run_reference_capture(module=module, output=output, phase='embed',
+                        cases=[{'id': 'manufactured', 'operation': 'query', 'text': 'red'}], python=Path(sys.executable),
+                        sources=Path(directory), assets=Path(directory), read_only=[], provenance={'manufactured': True})
+                manifest = json.loads((output / 'capture-manifest.json').read_bytes())
+                failure = manifest['failure']
+                self.assertEqual(failure['code'], 'cleanup' if context_failure else failure_code)
+                self.assertEqual(failure['evidence']['failure_code'], failure_code)
+                self.assertEqual((output / 'isolation/raw/manufactured/wire.stdout').read_bytes(), b'partial\x00stdout')
+                self.assertEqual((output / 'isolation/raw/manufactured/wire.stderr').read_bytes(), b'partial\xffstderr')
+                self.assertEqual(manifest['failed_attempt']['status'], failure_code)
+                self.assertEqual(manifest['observations'], [])
+                if context_failure:
+                    self.assertEqual(failure['evidence']['context_cleanup_error'], 'manufactured context cleanup')
+                    self.assertEqual(manifest['primary_failure']['code'], 'timeout')
+                    self.assertIn('cleanup_failure', manifest)
+                seal = capture._digest(output / 'SHA256SUMS')
+                entries = capture.verify_sealed_bundle(output, seal)
+                self.assertIn('isolation/command-0001.json', entries)
+                self.assertFalse(any('private-payload' in path for path in entries))
+
+    def test_cleanup_requires_the_named_proof_digest_and_joined_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            isolation = output / 'isolation'
+            isolation.mkdir()
+            backing = output / 'actual-backing'
+            backing.mkdir(mode=0o700)
+            info = backing.stat()
+            backing.rmdir()
+            proof = {'profile': 'default', 'manufactured': True}
+            (isolation / 'isolation-proof.json').write_text(json.dumps(proof))
+            home = {'backing': str(backing), 'profile': 'default', 'payload_inspected': False,
+                'initial_identity': {'inode': info.st_ino, 'device': info.st_dev, 'owner': info.st_uid, 'mode': 0o700}}
+            (isolation / 'disposable-home.json').write_text(json.dumps(home))
+            final = {'all_observed_processes_exited': True, 'backing_removed': True, 'errors': [], 'invocations': [],
+                'isolation_proof_sha256': capture._digest(isolation / 'isolation-proof.json')}
+            (isolation / 'cleanup.json').write_text(json.dumps(final))
+            self.assertEqual(capture._cleanup_evidence(output)['isolation_proof_sha256'], final['isolation_proof_sha256'])
+            for field, value in (('isolation_proof_sha256', '0' * 64), ('all_observed_processes_exited', False),
+                                 ('backing_removed', False), ('errors', ['manufactured failure'])):
+                with self.subTest(field=field):
+                    (isolation / 'cleanup.json').write_text(json.dumps(dict(final, **{field: value})))
+                    with self.assertRaises(capture.EvidenceError):
+                        capture._cleanup_evidence(output)
+
+    def test_runtime_binding_refuses_another_invocation_or_changed_child_facts(self):
+        """Manufactured metadata; these files and libraries do not exist."""
+        contract = manufactured_command_contract()
+        invocation = {'id': 7, 'role': 'python-reference', 'mode': 'rank', 'pid': 3101,
+            'start_ticks': '12345', 'contract': contract}
+        libraries = {'/manufactured/' + marker + '.so': {'inode': index + 100, 'device': '00:01', 'sha256': sha}
+            for index, (marker, sha) in enumerate(capture.NATIVE_DIGESTS.items())}
+        runtime = {'effective_environment': contract['cpython_environment'], 'cwd': '/',
+            'executable': {'inode': 55, 'sha256': 'e' * 64}, 'mapped_libraries': libraries,
+            'network_namespace': 'child-net', 'pid_namespace': 'child-pid', 'process_start_ticks': '12346'}
+        worker = {'pid': 3102, 'launcher_pid': 3101, 'launcher_start_ticks': '12345', 'invocation_id': 7,
+            'role': 'python-reference', 'mode': 'rank', 'process_start_ticks': '12346', 'pid_namespace': 'child-pid',
+            'network_namespace': 'child-net', 'executable_inode': 55, 'executable_sha256': 'e' * 64,
+            'environment_matches_contract': True, 'exec_environment': contract['environment'],
+            'libraries': [dict(path=path, **info) for path, info in libraries.items()]}
+        self.assertEqual(len(capture._validate_runtime_binding(invocation, worker, runtime, {'profile': 'default'}, 'host-net')), 3)
+        for field, value in (('launcher_pid', 3103), ('launcher_start_ticks', '12347'), ('invocation_id', 8),
+                             ('role', 'another-role'), ('mode', 'embed'), ('process_start_ticks', '12347'),
+                             ('pid_namespace', 'another-pid'), ('executable_inode', 56),
+                             ('network_namespace', 'host-net'), ('environment_matches_contract', False),
+                             ('exec_environment', {}), ('libraries', [])):
+            with self.subTest(field=field), self.assertRaises(capture.EvidenceError):
+                capture._validate_runtime_binding(invocation, dict(worker, **{field: value}), runtime,
+                                                  {'profile': 'default'}, 'host-net')
+
     def test_manufactured_python_reference_stays_unqualified_and_every_gate_refuses(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -245,7 +413,9 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
             variants = ['valid', 'scope', 'profile', 'netns', 'home', 'expanduser', 'home-inode', 'environment',
                         'replay', 'mapping', 'ordinal', 'owner', 'count', 'mask', 'aggregate', 'aggregate-bytes',
                         'cleanup', 'cleanup-identity', 'backing-observation', 'outer-child',
-                        'missing-executable-hash', 'skipped', 'zero-observations', 'missing-runtime']
+                        'missing-executable-hash', 'skipped', 'zero-observations', 'missing-runtime',
+                        'command-contract', 'invocation', 'declaration-hash', 'cleanup-proof',
+                        'borrowed-worker', 'cleanup-invocation']
             variants += ['native-' + name for name in native]
             variants += ['missing-native-' + name for name in native]
             for index, variant in enumerate(variants):
@@ -301,6 +471,26 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                         manifest['observations'] = []
                     elif variant == 'missing-runtime':
                         provenance.pop('actual_worker_observation')
+                    elif variant == 'command-contract':
+                        contract = json.loads(changed[artifacts['command_contract']])
+                        contract['cpython_environment']['UNDECLARED'] = 'bad'
+                        changed[artifacts['command_contract']] = json.dumps(contract)
+                    elif variant == 'invocation':
+                        manifest['observations'][0]['invocation']['id'] += 1
+                    elif variant == 'declaration-hash':
+                        changed['isolation/command-0001.json'] += ' '
+                    elif variant == 'cleanup-proof':
+                        final = json.loads(changed['isolation/cleanup.json'])
+                        final['isolation_proof_sha256'] = '0' * 64
+                        changed['isolation/cleanup.json'] = json.dumps(final)
+                    elif variant == 'borrowed-worker':
+                        worker = json.loads(changed[artifacts['runtime_binding']])
+                        worker['launcher_pid'] += 1
+                        changed[artifacts['runtime_binding']] = json.dumps(worker)
+                    elif variant == 'cleanup-invocation':
+                        final = json.loads(changed['isolation/cleanup.json'])
+                        final['invocations'] = []
+                        changed['isolation/cleanup.json'] = json.dumps(final)
                     elif variant.startswith('missing-native-'):
                         marker = variant[len('missing-native-'):]
                         path = next(path for path in runtime['mapped_libraries'] if marker in path)
@@ -344,35 +534,53 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                         self.backing.mkdir(mode=0o700)
                         self.identity = self.backing.stat()
                         (self.backing / 'private-payload').write_text('never copy or inspect this fixture payload')
+                        (self.output / 'isolation-proof.json').write_text(json.dumps(self.proof))
                         return self
 
-                    def run(self, command, **kwargs):
+                    def command_contract(self):
+                        return manufactured_command_contract()
+
+                    def run(self, command, *, role, mode, **kwargs):
                         target = Path(command[command.index('--output') + 1])
                         (target / 'trace.json').write_text(json.dumps({
                             'logical_occurrences': 1, 'observed_model_executions': 1, 'mapped_duplicate_rows': 0}))
-                        return subprocess.CompletedProcess(command, 0, b'{}', b'')
+                        libraries = {'/manufactured/' + marker + '.so': {'inode': index + 100, 'device': '00:01', 'sha256': sha}
+                            for index, (marker, sha) in enumerate(capture.NATIVE_DIGESTS.items())}
+                        (target / 'runtime.json').write_text(json.dumps({'mapped_libraries': libraries}))
+                        declaration = {'id': 1, 'role': role, 'mode': mode, 'contract': self.command_contract()}
+                        raw = json.dumps(declaration).encode()
+                        (self.output / 'command-0001.json').write_bytes(raw)
+                        self.invocation = dict(declaration, pid=3101, start_ticks='12345',
+                            argv=['manufactured-bwrap', '--', *command], declaration_sha256=hashlib.sha256(raw).hexdigest())
+                        result = subprocess.CompletedProcess(command, 0, b'{}', b'')
+                        result.invocation = self.invocation
+                        return result
 
                     def __exit__(self, *exception):
                         if not leave_backing:
                             shutil.rmtree(self.backing)
                         (self.output / 'disposable-home.json').write_text(json.dumps({
+                            'profile': 'default', 'payload_inspected': False,
                             'backing': str(self.backing), 'initial_identity': {
                                 'inode': self.identity.st_ino, 'device': self.identity.st_dev,
                                 'owner': self.identity.st_uid, 'mode': 0o700}}))
                         (self.output / 'cleanup.json').write_text(json.dumps({
-                            'backing_removed': not leave_backing, 'all_observed_processes_exited': True, 'errors': []}))
+                            'backing_removed': not leave_backing, 'all_observed_processes_exited': True, 'errors': [],
+                            'isolation_proof_sha256': capture._digest(self.output / 'isolation-proof.json'),
+                            'invocations': [self.invocation]}))
 
                 def run_fake(**kwargs):
-                    return capture._run_reference_capture(module=types.SimpleNamespace(SemanticIsolation=MissingRuntimeWrapper),
+                    return capture._run_reference_capture(module=types.SimpleNamespace(
+                        SemanticIsolation=MissingRuntimeWrapper, IsolationError=type('IsolationError', (RuntimeError,), {})),
                         output=output, phase='embed',
                         cases=[{'id': 'manufactured', 'operation': 'query', 'text': 'red', 'expected': 'accepted'}],
                         python=Path(sys.executable), sources=Path(directory), assets=Path(directory),
                         read_only=[], provenance={'kind': 'mechanics', 'manufactured': True})
 
                 if failure_type is not AttributeError:
-                    def failed_runtime(self, **kwargs):
+                    def failed_runtime(self, *args, **kwargs):
                         raise failure_type('manufactured runtime interface error')
-                    MissingRuntimeWrapper.runtime_evidence = failed_runtime
+                    MissingRuntimeWrapper.invocation_runtime = failed_runtime
 
                 with mock.patch.object(capture, 'capture_reference', side_effect=run_fake), \
                         contextlib.redirect_stderr(io.StringIO()):
@@ -384,7 +592,7 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
                 manifest = json.loads((output / 'capture-manifest.json').read_bytes())
                 self.assertEqual(manifest['failure']['type'], failure_type.__name__)
                 if failure_type is AttributeError:
-                    self.assertIn('runtime_evidence', manifest['failure']['message'])
+                    self.assertIn('invocation_runtime', manifest['failure']['message'])
                 self.assertEqual(output.stat().st_mode & 0o777, 0o700)
                 entries = capture.verify_sealed_bundle(output, hashlib.sha256((output / 'SHA256SUMS').read_bytes()).hexdigest())
                 self.assertIn('failure.json', entries)
@@ -655,6 +863,8 @@ class CaptureSemanticFixturesTest(unittest.TestCase):
             proof = Path(directory) / 'proof.json'
             proof.write_text(json.dumps({'network_namespace': os.readlink('/proc/self/ns/net'),
                                          'home_probe_inode': 0}))
+            contract = Path(directory) / 'command.json'
+            contract.write_text(json.dumps(manufactured_command_contract()))
             script = """
 import sys
 class NoModel:
@@ -668,7 +878,8 @@ raise SystemExit(capture_semantic_fixtures.main(sys.argv[1:]))
             result = subprocess.run([sys.executable, '-B', '-S', '-c', script, '_collect',
                 '--mode', 'rank', '--case-id', 'storage-location', '--request', directory,
                 '--sources', directory, '--assets', directory, '--output', directory,
-                '--isolation-proof', str(proof), '--parent-net-namespace', os.readlink('/proc/self/ns/net')],
+                '--isolation-proof', str(proof), '--command-contract', str(contract),
+                '--parent-net-namespace', os.readlink('/proc/self/ns/net')],
                 capture_output=True, text=True, timeout=10,
                 env=dict(os.environ, PYTHONPATH=str(Path(capture.__file__).parent)))
             self.assertEqual(result.returncode, 2, result.stderr)
@@ -703,9 +914,15 @@ raise SystemExit(capture_semantic_fixtures.main(sys.argv[1:]))
                 '--bind', str(home), '/fixture-home',
                 '--ro-bind', str(Path(capture.__file__).parent), str(Path(capture.__file__).parent)]
             proof = root / 'proof.json'
-            prefix += ['--ro-bind', str(proof), '/fixture-proof.json', '--chdir', '/', '--remount-ro', '/']
+            contract_path = root / 'command.json'
+            prefix += ['--ro-bind', str(proof), '/fixture-proof.json', '--ro-bind', str(contract_path), '/fixture-command.json',
+                '--chdir', '/', '--remount-ro', '/']
             proof.write_text(json.dumps({'profile': 'default', 'home': '/fixture-home',
-                'home_probe_inode': probe.stat().st_ino, 'model_environment': environment, 'effective_prefix': prefix}))
+                'home_probe_inode': probe.stat().st_ino, 'effective_prefix': prefix}))
+            contract = manufactured_command_contract()
+            contract['environment'] = dict(environment, PWD='/')
+            contract['cpython_environment'] = dict(contract['environment'], LC_CTYPE='C.UTF-8')
+            contract_path.write_text(json.dumps(contract))
             command = [
                 'import sys',
                 'class NoModel:',
@@ -717,7 +934,7 @@ raise SystemExit(capture_semantic_fixtures.main(sys.argv[1:]))
                 'import capture_semantic_fixtures as capture',
                 "raise SystemExit(capture.main(['_collect','--preflight-only','--mode','rank','--case-id','manufactured',"
                 "'--request','/absent','--sources','/absent','--assets','/absent','--output','/absent',"
-                "'--isolation-proof','/fixture-proof.json','--parent-net-namespace',"
+                "'--isolation-proof','/fixture-proof.json','--command-contract','/fixture-command.json','--parent-net-namespace',"
                 + repr(os.readlink('/proc/self/ns/net')) + ']))']
             for extra in (False, True):
                 env_args = [part for key, value in environment.items() for part in ('--setenv', key, value)]

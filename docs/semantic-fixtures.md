@@ -126,22 +126,57 @@ These are provenance pointers, not authentication. The external pre-run installe
 reference selection is not an isolation-review receipt or a qualification.
 
 The wrapper interface is `SemanticIsolation(read_only_paths=..., output_dir=...)`,
-a context manager exposing `run(argv, timeout=..., stdout_limit=...)`, `proof`,
-and `runtime_evidence(require_ort=True)`. The reviewed wrapper owns child reaping
-and disposable-home cleanup. The preflight-only collector checks the declared
-`model_environment` and unique `--chdir` in `effective_prefix`. It permits
-bwrap's `PWD` only at that cwd and CPython's optional `LC_CTYPE=C.UTF-8`;
-undeclared variables refuse. HOME must be absent, with actual `getpwuid`,
+a context manager exposing `command_contract()`, `run(argv, timeout=...,
+stdout_limit=..., role=..., mode=...)`, `invocation_runtime(invocation, pins)`,
+`proof`, and `runtime_evidence(require_ort=True)`. The shared wrapper owns child
+reaping and disposable-home cleanup. The collector calls `command_contract()`
+without overrides, saves the declaration as its own `collector-command.json`,
+and passes it to the child with `--command-contract`. The returned
+`result.invocation.contract` must equal that input. Its declaration file and
+digest, role, mode, launcher identity and command must agree. The wrapper's
+profile-default `proof.environment_contract` does not replace a command's
+authoritative contract.
+
+The preflight-only collector compares its own environment and cwd exactly with
+`cpython_environment` and `cwd`. The separate exec `environment` includes `PWD`
+at that cwd. CPython's `LC_CTYPE=C.UTF-8` addition must be explicitly declared
+and justified in `runtime_additions` when locale variables are absent or empty;
+there is no optional-variable allowance. HOME must be absent, with actual `getpwuid`,
 `expanduser` and probe inode matching the declared home. Network checks occur
 in the actual collector namespace. Preflight is not model admission.
 
+Each successful model command must pass `invocation_runtime` with all three
+pinned native-library paths and hashes. Its own runtime observation is joined
+to that invocation's launcher PID/start, role/mode, child process start and PID
+namespace, executable and native-library identities. The child's in-process
+environment and the observer's proc exec block remain separate observations.
+A worker observed for one command cannot supply another command's evidence.
+
 Ordinary outputs are created privately with mode `0700`. Cleanup uses the
 shared module's `disposable-home.json` declared backing and initial inode/device/
-owner/mode, its final `cleanup.json` joined-process receipt, and observed backing
-absence. A guessed path's absence never proves cleanup. Unexpected interface,
+owner/mode and payload exclusion, its final `cleanup.json` joined-process/removal/
+errors receipt, the exact `isolation-proof.json` digest and invocation bindings,
+and observed backing absence. A guessed path's absence never proves cleanup.
+Successful cleanup does not establish successful capture.
+
+The sole wrapper timeout is `IsolationError` with `code: "timeout"`; output caps
+use `stdout_limit` and `stderr_limit`. A `cleanup` error can retain the command's
+`failure_code` plus both process and context cleanup errors. The collector
+retains the bounded byte-valued stdout/stderr as binary artifacts and retains
+the structured invocation, exit and failure evidence. It does not interpret
+`TimeoutExpired` as a second public wrapper contract. Unexpected interface,
 collector and cleanup exceptions are retained and sealed, then exit nonzero.
 Failure sealing includes only explicit public artifacts and never traverses a
 private backing or copies telemetry payloads. FIFOs and sockets refuse.
+Wrapper-owned `command-*.json`, `isolation-proof.json`, `cleanup.json`,
+`disposable-home.json`, `runtime-observations.json` and `read-only-probe` are
+retained under their original names; collector artifacts use separate names.
+
+This consumer preparation adds no W backing constructor or compatibility
+adapter. The separate conditional B1 vehicle still needs the corrected,
+reviewed factory that validates an owned S-B1 task root and frozen/protected
+overlap before creating a fresh child. Its exact B1/B2 source pair and synthetic
+seam require independent review before any actual execution admission.
 
 Frozen worker Python is compiled from the exact verified bytes; adjacent pyc
 is not executed or altered. The manufactured tests exercise that behavior.
@@ -207,7 +242,9 @@ not claimed model observations.
 Run the model-free tests and repository checks:
 
 ```sh
-PYTHONPATH=scripts "$S01_PREPARED_PYTHON" -B -S -m unittest \
+env -u CAIRN_EMBEDDING_WORKER -u CAIRN_SEMANTIC_WORKER -u CAIRN_SEMANTIC_STREAM_WORKER \
+  -u CAIRN_SEMANTIC_ACCEPTANCE_REQUIRED -u CAIRN_TEST_DATABASE_URL -u CAIRN_DATABASE_URL \
+  PYTHONPATH=scripts "$S01_PREPARED_PYTHON" -B -S -m unittest \
   scripts/test_semantic_fixture_cases.py scripts/test_capture_semantic_fixtures.py
 make check
 python3 -B scripts/verify_docs.py --tier 1,3
@@ -215,7 +252,8 @@ python3 -B scripts/verify_docs.py --tier 1,3
 
 The tests cover comparator-derived golden inputs, dependency-free imports,
 real bwrap with blocked model imports, declared environment refusal, source-pyc
-resistance, sealed failure/cleanup, typed arrays, finite float32 values, exact
+resistance, canonical timeout/cap partial bytes, merged cleanup failures,
+per-invocation binding refusals, proof-digest cleanup, typed arrays, finite float32 values, exact
 wire objects, UTF-8 boundaries and manufactured python-reference import gates.
 Prepared NumPy runs the frozen scorer, normalization and ONNX input preparation
 with a mocked session and synthetic tokenizer data. ORT, FastEmbed package and

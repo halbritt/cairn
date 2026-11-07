@@ -332,7 +332,11 @@ def _python_capture(bundle, document):
         raise EvidenceError('missing/mismatched declared backing identity or joined cleanup receipt')
     proof = provenance.get('isolation_proof', {})
     if (proof.get('wrapper_sha256') != review['module_sha256'] or not proof.get('home_probe_inode')
-            or proof.get('profile') != 'default'):
+            or proof.get('profile') != 'default' or bundle.json('isolation/isolation-proof.json') != proof
+            or final_receipt.get('isolation_proof_sha256') != bundle.files.get('isolation/isolation-proof.json')
+            or cleanup.get('isolation_proof_sha256') != final_receipt['isolation_proof_sha256']
+            or home_receipt.get('profile') != proof['profile'] or home_receipt.get('payload_inspected') is not False
+            or not isinstance(final_receipt.get('invocations'), list)):
         raise EvidenceError('missing reviewed-wrapper confinement preflight')
     result = []
     aggregate = {name: bytearray() for name in REVIEWER_RAW_BASELINE}
@@ -341,7 +345,8 @@ def _python_capture(bundle, document):
         if observation.get('exit_code') != 0 or observation.get('status') != 'observed' or observation.get('skipped', 0) != 0:
             raise EvidenceError('failed/skipped positive reference observation')
         artifacts = observation.get('artifacts', {})
-        if not all(key in artifacts for key in ('request', 'stdout', 'stderr', 'trace', 'arrays', 'runtime')):
+        if not all(key in artifacts for key in ('request', 'stdout', 'stderr', 'trace', 'arrays', 'runtime',
+                                               'command_contract', 'invocation', 'runtime_binding')):
             raise EvidenceError('missing positive reference artifacts')
         for relative in artifacts.values():
             bundle.raw(relative)
@@ -362,20 +367,22 @@ def _python_capture(bundle, document):
                 runtime.get('expanduser_home') != proof.get('home') or
                 runtime.get('home_probe_inode') != proof['home_probe_inode']):
             raise EvidenceError('model child did not retain the network/OS-home boundary')
-        _validate_declared_environment(proof, runtime.get('effective_environment'), runtime.get('cwd'))
-        own_exe = runtime.get('executable', {})
-        libraries = runtime.get('mapped_libraries', {})
-        native = _native_images(libraries)
-        if (type(own_exe.get('inode')) is not int or own_exe['inode'] <= 0
-                or not isinstance(own_exe.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', own_exe['sha256'])):
-            raise EvidenceError('missing actual Python executable inode/hash')
-        if not any(worker.get('executable_inode') == own_exe['inode']
-                and worker.get('executable_sha256') == own_exe.get('sha256')
-                and worker.get('network_namespace') == runtime.get('network_namespace')
-                and all(any(lib.get('inode') == info['inode'] and lib.get('sha256') == info['sha256']
-                            and lib.get('device') == info['device'] for lib in worker.get('libraries', []))
-                        for _, info in native.values()) for worker in workers):
-            raise EvidenceError('runtime observation does not identify the actual model child')
+        invocation = bundle.json(artifacts['invocation'])
+        declaration_path, declaration = _invocation_receipt(invocation)
+        if (invocation != observation.get('invocation') or invocation not in final_receipt['invocations']
+                or invocation['mode'] != phase
+                or invocation['contract'] != bundle.json(artifacts['command_contract'])
+                or not observation.get('command')
+                or invocation['argv'][-len(observation['command']):] != observation['command']
+                or bundle.json(declaration_path) != declaration
+                or bundle.files.get(declaration_path) != invocation['declaration_sha256']):
+            raise EvidenceError('missing/mismatched command-specific invocation declaration')
+        worker = bundle.json(artifacts['runtime_binding'])
+        matching = [item for item in workers if item.get('launcher_pid') == invocation['pid']
+                    and item.get('launcher_start_ticks') == invocation['start_ticks']]
+        if matching != [worker]:
+            raise EvidenceError('missing/ambiguous per-invocation actual worker observation')
+        _validate_runtime_binding(invocation, worker, runtime, proof, provenance.get('host_network_namespace'))
         trace = bundle.json(artifacts['trace'])
         if (trace.get('case_id') != case['id'] or trace.get('mode') != phase
                 or trace.get('scope') != 'ordinary-default-reference' or trace.get('conditional_b1_proof') is not False
@@ -854,7 +861,51 @@ def _seal_output(output, relatives=None):
         path.chmod(0o444)
 
 
-def _cleanup_evidence(output):
+def _invocation_receipt(invocation):
+    """The wrapper owns this declaration name and its pre-launch bytes."""
+    if (not isinstance(invocation, dict) or type(invocation.get('id')) is not int or invocation['id'] <= 0
+            or type(invocation.get('pid')) is not int or invocation['pid'] <= 1
+            or not isinstance(invocation.get('start_ticks'), str) or not invocation['start_ticks'].isdigit()
+            or not isinstance(invocation.get('argv'), list) or not invocation['argv']
+            or not all(isinstance(value, str) for value in invocation['argv'])
+            or not re.fullmatch('[0-9a-f]{64}', invocation.get('declaration_sha256', ''))):
+        raise EvidenceError('missing exact wrapper invocation identity/declaration')
+    declaration = {key: invocation[key] for key in ('id', 'role', 'mode', 'contract')}
+    return f"isolation/command-{invocation['id']:04d}.json", declaration
+
+
+def _validate_runtime_binding(invocation, worker, runtime, proof, host_namespace):
+    """Join one command declaration to its actual model child's two observations."""
+    contract = invocation['contract']
+    if contract['profile'] != proof.get('profile') or invocation['role'] != 'python-reference':
+        raise EvidenceError('reference invocation profile/role mismatch')
+    _validate_declared_environment(contract, runtime.get('effective_environment'), runtime.get('cwd'))
+    native = _native_images(runtime.get('mapped_libraries', {}))
+    own_exe = runtime.get('executable', {})
+    if (type(own_exe.get('inode')) is not int or own_exe['inode'] <= 0
+            or not isinstance(own_exe.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', own_exe['sha256'])
+            or type(worker.get('pid')) is not int or worker['pid'] <= 1 or worker['pid'] == invocation['pid']
+            or worker.get('launcher_pid') != invocation['pid']
+            or worker.get('launcher_start_ticks') != invocation['start_ticks']
+            or worker.get('invocation_id') != invocation['id']
+            or worker.get('role') != invocation['role'] or worker.get('mode') != invocation['mode']
+            or not runtime.get('process_start_ticks')
+            or worker.get('process_start_ticks') != runtime['process_start_ticks']
+            or not runtime.get('pid_namespace') or worker.get('pid_namespace') != runtime['pid_namespace']
+            or worker.get('executable_inode') != own_exe['inode']
+            or worker.get('executable_sha256') != own_exe['sha256']
+            or not runtime.get('network_namespace') or runtime['network_namespace'] == host_namespace
+            or worker.get('network_namespace') != runtime['network_namespace']
+            or worker.get('environment_matches_contract') is not True
+            or worker.get('exec_environment') not in (contract['environment'], contract['cpython_environment'])
+            or any(not any(lib.get('path') == path and lib.get('inode') == info['inode']
+                          and lib.get('sha256') == info['sha256'] and lib.get('device') == info['device']
+                          for lib in worker.get('libraries', [])) for path, info in native.values())):
+        raise EvidenceError('runtime observation does not identify this invocation\'s actual model child')
+    return [{'path': path, 'sha256': info['sha256']} for path, info in native.values()]
+
+
+def _cleanup_evidence(output, invocations=()):
     """Consume the shared wrapper's named backing identity and final receipt."""
     def read(relative):
         with _sealed_file(output, relative) as stream:
@@ -864,8 +915,12 @@ def _cleanup_evidence(output):
         return value
     home = read('isolation/disposable-home.json')
     final = read('isolation/cleanup.json')
+    proof = read('isolation/isolation-proof.json')
+    with _sealed_file(output, 'isolation/isolation-proof.json') as stream:
+        proof_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     identity, backing = home.get('initial_identity'), home.get('backing')
     if (not isinstance(backing, str) or not Path(backing).is_absolute()
+            or home.get('profile') != proof.get('profile') or home.get('payload_inspected') is not False
             or not isinstance(identity, dict) or set(identity) != {'inode', 'device', 'owner', 'mode'}
             or not all(type(value) is int for value in identity.values())
             or identity['inode'] <= 0 or identity['device'] < 0
@@ -879,13 +934,16 @@ def _cleanup_evidence(output):
         same = (current.st_ino, current.st_dev) == (identity['inode'], identity['device'])
         raise EvidenceError('declared backing still present' if same else 'declared backing identity changed')
     if (final.get('backing_removed') is not True or final.get('all_observed_processes_exited') is not True
-            or final.get('errors') != []):
+            or final.get('errors') != [] or final.get('isolation_proof_sha256') != proof_digest
+            or not isinstance(final.get('invocations'), list)
+            or any(invocation not in final['invocations'] for invocation in invocations)):
         raise EvidenceError('shared wrapper did not prove joined cleanup')
     return {'backing': backing, 'initial_identity': identity, 'backing_absent_observed': True,
+            'isolation_proof_sha256': proof_digest,
             'home_receipt': 'isolation/disposable-home.json', 'final_receipt': 'isolation/cleanup.json'}
 
 
-def _capture_file_inventory(cases):
+def _capture_file_inventory(output, cases):
     # Explicit public artifacts only. Never walk a failed wrapper's private backing.
     paths = ['capture-manifest.json', 'failure.json', 'cleanup-failure.json']
     paths += [name + '.bin' for name in REVIEWER_RAW_BASELINE]
@@ -895,9 +953,14 @@ def _capture_file_inventory(cases):
               'retrieval-quality.json', 'semantic_acceptance_isolation.py', 'isolation-review.json')]
     paths += ['isolation/' + name for name in ('isolation-proof.json', 'runtime-observations.json',
               'disposable-home.json', 'cleanup.json', 'read-only-probe')]
+    # Only the wrapper's documented flat declaration namespace, never its backing.
+    paths += [path.relative_to(output).as_posix() for path in (output / 'isolation').glob('command-*.json')
+              if re.fullmatch(r'command-[0-9]{4,}\.json', path.name)]
+    paths += ['failure.stdout', 'failure.stderr']
     for case in cases:
         paths += ['isolation/raw/' + case['id'] + '/' + name for name in (
             'request.stdin', 'wire.stdout', 'wire.stderr', 'trace.json', 'trace-arrays.npz', 'runtime.json',
+            'collector-command.json', 'invocation.json', 'runtime-binding.json',
             'ids_i64le.bin', 'lengths_i64le.bin', 'cls_f32le.bin')]
     return paths
 
@@ -907,45 +970,74 @@ def _exception_record(error):
             'traceback': ''.join(traceback.format_exception(type(error), error, error.__traceback__))}
 
 
+def _capture_failure(error, isolation_error, output, case_output):
+    record = _exception_record(error)
+    if isolation_error is None or not isinstance(error, isolation_error):
+        return record
+    record['code'] = error.code
+    try:
+        evidence = dict(error.evidence)
+        for name, limit in (('stdout', 4 * 1024 * 1024), ('stderr', 65536)):
+            if name not in evidence:
+                continue
+            raw = evidence[name]
+            if not isinstance(raw, bytes) or len(raw) > limit:
+                raise EvidenceError('wrapper failure ' + name + ' violates the bounded bytes contract')
+            path = case_output / ('wire.' + name) if case_output else output / ('failure.' + name)
+            path.write_bytes(raw)
+            evidence[name] = {'artifact': path.relative_to(output).as_posix(), 'bytes': len(raw),
+                              'sha256': hashlib.sha256(raw).hexdigest()}
+        # Other canonical fields, including invocation and both cleanup errors,
+        # stay structured. Invalid API evidence is itself an explicit failure.
+        record['evidence'] = _strict_json(json.dumps(evidence, allow_nan=False))
+    except (TypeError, ValueError, OSError) as retention_error:
+        record['evidence_retention_failure'] = _exception_record(retention_error)
+    return record
+
+
 @contextlib.contextmanager
-def _capture_context(manager, manifest):
+def _capture_context(manager, manifest, record_failure):
     with manager as isolation:
         try:
             yield isolation
         except BaseException as error:
-            manifest['primary_failure'] = _exception_record(error)
+            manifest['primary_failure'] = record_failure(error)
             raise
 
 
-def _validate_declared_environment(proof, environment, actual_cwd):
-    expected = proof.get('model_environment')
-    prefix = proof.get('effective_prefix')
-    if (not isinstance(expected, dict) or not expected or 'HOME' in expected
-            or not all(isinstance(key, str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_]*', key)
-                       and isinstance(value, str) and '\0' not in value for key, value in expected.items())
-            or not isinstance(prefix, list) or not all(isinstance(arg, str) for arg in prefix)
-            or prefix.count('--chdir') != 1):
-        raise EvidenceError('missing declared construction environment/cwd')
-    position = prefix.index('--chdir')
-    if position + 1 >= len(prefix) or not prefix[position + 1].startswith('/'):
-        raise EvidenceError('missing declared absolute cwd')
-    cwd = prefix[position + 1]
-    expected = dict(expected)
-    if actual_cwd != cwd or ('PWD' in expected and expected['PWD'] != cwd):
-        raise EvidenceError('collector cwd differs from declared construction')
-    expected['PWD'] = cwd  # bwrap adds this even under --clearenv.
-    if not isinstance(environment, dict):
-        raise EvidenceError('missing observed collector environment')
-    # The sole optional CPython addition; no wildcard environment allowance.
-    if 'LC_CTYPE' not in expected and environment.get('LC_CTYPE') == 'C.UTF-8':
+def _validate_declared_environment(contract, environment, actual_cwd):
+    if (not isinstance(contract, dict) or set(contract) != {
+            'schema', 'profile', 'cwd', 'environment', 'cpython_environment', 'runtime_additions'}
+            or contract.get('schema') != 'cairn.semantic-command-environment/1'
+            or contract.get('profile') not in ('default', 'derived-W')):
+        raise EvidenceError('missing exact per-command environment contract')
+    declared, cpython, additions = (contract[name] for name in (
+        'environment', 'cpython_environment', 'runtime_additions'))
+    cwd = contract['cwd']
+    if (not isinstance(declared, dict) or not declared or not isinstance(cpython, dict)
+            or not isinstance(additions, dict) or not isinstance(cwd, str) or not cwd.startswith('/')
+            or '\0' in cwd or declared.get('PWD') != cwd
+            or not all(isinstance(key, str) and key and '=' not in key and isinstance(value, str)
+                       and '\0' not in key + value for key, value in declared.items())):
+        raise EvidenceError('invalid declared exec environment/cwd')
+    expected = dict(declared)
+    if not any(declared.get(key) for key in ('LANG', 'LC_ALL', 'LC_CTYPE')):
+        addition = additions.get('LC_CTYPE')
+        if (set(additions) != {'LC_CTYPE'} or not isinstance(addition, dict)
+                or set(addition) != {'value', 'reason'} or addition['value'] != 'C.UTF-8'
+                or not isinstance(addition['reason'], str) or not addition['reason']):
+            raise EvidenceError('missing exact justified CPython locale addition')
         expected['LC_CTYPE'] = 'C.UTF-8'
-    if environment != expected:
-        raise EvidenceError('collector environment differs from reviewed sanitized settings')
+    elif additions:
+        raise EvidenceError('undeclared CPython runtime additions')
+    if cpython != expected or environment != cpython or actual_cwd != cwd:
+        raise EvidenceError('collector environment/cwd differs from its exact CPython declaration')
 
 
-def _isolation_guard(proof_path, parent_namespace):
+def _isolation_guard(proof_path, contract_path, parent_namespace):
     """Refuse before any model import; a caller flag alone is not confinement."""
     proof = _strict_json(Path(proof_path).read_bytes())
+    contract = _strict_json(Path(contract_path).read_bytes())
     namespace = os.readlink('/proc/self/ns/net')
     if namespace == parent_namespace:
         raise EvidenceError('collector requires a distinct, preflighted network namespace')
@@ -962,12 +1054,14 @@ def _isolation_guard(proof_path, parent_namespace):
             raise EvidenceError('collector namespace has an external network route')
     if proof.get('profile') != 'default':
         raise EvidenceError('ordinary collector requires the declared default profile; it cannot qualify derived-W')
+    if contract.get('profile') != proof['profile']:
+        raise EvidenceError('collector command profile differs from isolation proof')
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     if ('HOME' in os.environ or home.as_posix() != proof.get('home')
             or os.path.expanduser('~') != home.as_posix() or
             (home / '.semantic-isolation-probe').stat().st_ino != proof.get('home_probe_inode')):
         raise EvidenceError('collector OS home lookup is not the preflighted disposable home')
-    _validate_declared_environment(proof, dict(os.environ), os.getcwd())
+    _validate_declared_environment(contract, dict(os.environ), os.getcwd())
     return dict(proof, collector_network_namespace=namespace,
                 collector_getpwuid_home=str(home), collector_expanduser_home=os.path.expanduser('~'))
 
@@ -1062,6 +1156,8 @@ def _mapped_runtime(scorer):
     usage = resource.getrusage(resource.RUSAGE_SELF)
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     return {'schema': 'cairn.semantic-python-runtime/1', 'pid': os.getpid(), 'executable': executable,
+        'process_start_ticks': Path('/proc/self/stat').read_text().rsplit(') ', 1)[1].split()[19],
+        'pid_namespace': os.readlink('/proc/self/ns/pid'),
         'network_namespace': os.readlink('/proc/self/ns/net'),
         'passwd_home': str(home), 'expanduser_home': os.path.expanduser('~'),
         'home_probe_inode': (home / '.semantic-isolation-probe').stat().st_ino,
@@ -1389,14 +1485,22 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
                 'observations': [], 'failure': None}
     isolation_output = output / 'isolation'
     raw_gate = {name: bytearray() for name in REVIEWER_RAW_BASELINE}
-    primary = None
+    isolation_error = None
+    case_output = None
+    invocations = []
+    def record_failure(error):
+        return _capture_failure(error, isolation_error, output, case_output)
     try:
         if prepare is not None:
             prepare()
+        isolation_error = module.IsolationError
+        if not isinstance(isolation_error, type) or not issubclass(isolation_error, Exception):
+            raise EvidenceError('shared wrapper has no canonical IsolationError class')
         with _capture_context(module.SemanticIsolation(read_only_paths=read_only, output_dir=isolation_output),
-                              manifest) as isolation:
+                              manifest, record_failure) as isolation:
             if isolation.proof.get('profile') != 'default':
                 raise EvidenceError('ordinary capture cannot consume a derived-W construction or claim B1 proof')
+            manifest['provenance']['isolation_proof'] = isolation.proof
             for case in cases:
                 mode = 'rank' if phase == 'rank' else 'embed'
                 case_output = isolation_output / 'raw' / case['id']
@@ -1409,33 +1513,54 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
                 if mode == 'embed':
                     request_raw += b'\n'
                 (case_output / 'request.stdin').write_bytes(request_raw)
+                contract = isolation.command_contract()  # The same no-override environment used by run().
+                _validate_declared_environment(contract, contract['cpython_environment'], contract['cwd'])
+                if contract['profile'] != 'default':
+                    raise EvidenceError('ordinary collector command requires the default profile')
+                contract_path = case_output / 'collector-command.json'
+                contract_path.write_text(json.dumps(contract, indent=2) + '\n')
                 command = [str(python), '-B', str(script), '_collect', '--mode', mode,
                     '--request', str(case_output / 'request.stdin'), '--case-id', case['id'],
                     '--sources', str(sources), '--assets', str(assets), '--output', str(case_output),
                     '--isolation-proof', str(isolation_output / 'isolation-proof.json'),
+                    '--command-contract', str(contract_path),
                     '--parent-net-namespace', os.readlink('/proc/self/ns/net')]
                 timeout = 90 if mode == 'embed' and request['operation'] == 'document' else 25
                 started = time.monotonic()
                 try:
-                    completed = isolation.run(command, timeout=timeout, stdout_limit=4 * 1024 * 1024)
-                except subprocess.TimeoutExpired as error:
+                    completed = isolation.run(command, timeout=timeout, stdout_limit=4 * 1024 * 1024,
+                                              role='python-reference', mode=mode)
+                except isolation_error as error:
+                    failure_code = error.code
+                    if error.code == 'cleanup':
+                        failure_code = error.evidence.get('failure_code', 'cleanup')
                     manifest['failed_attempt'] = dict(case_id=case['id'], command=command, timeout_seconds=timeout,
-                        elapsed_seconds=time.monotonic() - started, status='timeout',
-                        output_retained_by_wrapper=error.output is not None, stderr_retained_by_wrapper=error.stderr is not None)
-                    if error.output is not None:
-                        (case_output / 'wire.stdout').write_bytes(error.output)
-                    if error.stderr is not None:
-                        (case_output / 'wire.stderr').write_bytes(error.stderr)
+                        elapsed_seconds=time.monotonic() - started, status=failure_code,
+                        wrapper_code=error.code)
                     raise
                 (case_output / 'wire.stdout').write_bytes(completed.stdout)
                 (case_output / 'wire.stderr').write_bytes(completed.stderr)
+                invocation = completed.invocation
+                declaration_path, declaration = _invocation_receipt(invocation)
+                with _sealed_file(output, declaration_path) as stream:
+                    declaration_raw = stream.read(1024 * 1024 + 1)
+                if (invocation['contract'] != contract or invocation['mode'] != mode
+                        or invocation['role'] != 'python-reference'
+                        or invocation['argv'][-len(command):] != command
+                        or hashlib.sha256(declaration_raw).hexdigest() != invocation['declaration_sha256']
+                        or _strict_json(declaration_raw) != declaration):
+                    raise EvidenceError('returned invocation differs from the collector command/declaration')
+                invocations.append(invocation)
+                (case_output / 'invocation.json').write_text(json.dumps(invocation, indent=2) + '\n')
                 cell = mode + '/' + case['id']
                 observation = {'cell': cell, 'status': 'observed' if completed.returncode == 0 else 'failed',
                     'command': command, 'timeout_seconds': timeout, 'elapsed_seconds': time.monotonic() - started,
-                    'exit_code': completed.returncode,
+                    'exit_code': completed.returncode, 'invocation': invocation,
                     'artifacts': {key: (case_output / filename).relative_to(output).as_posix() for key, filename in (
                         ('request', 'request.stdin'), ('stdout', 'wire.stdout'), ('stderr', 'wire.stderr'),
-                        ('trace', 'trace.json'), ('arrays', 'trace-arrays.npz'), ('runtime', 'runtime.json'))}}
+                        ('trace', 'trace.json'), ('arrays', 'trace-arrays.npz'), ('runtime', 'runtime.json'),
+                        ('command_contract', 'collector-command.json'), ('invocation', 'invocation.json'),
+                        ('runtime_binding', 'runtime-binding.json'))}}
                 manifest['observations'].append(observation)
                 (output / 'capture-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
                 if completed.returncode != 0:
@@ -1447,13 +1572,14 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
                 observation['logical_occurrences'] = trace['logical_occurrences']
                 observation['observed_model_executions'] = trace['observed_model_executions']
                 observation['mapped_duplicate_rows'] = trace['mapped_duplicate_rows']
-            try:
-                runtime_evidence = isolation.runtime_evidence(require_ort=True)
-                manifest['provenance']['actual_worker_observation'] = runtime_evidence
-                manifest['provenance']['isolation_proof'] = isolation.proof
-            except BaseException as error:
-                primary = _exception_record(error)
-                raise
+                runtime = _strict_json((case_output / 'runtime.json').read_bytes())
+                pins = [{'path': path, 'sha256': info['sha256']}
+                        for path, info in _native_images(runtime.get('mapped_libraries', {})).values()]
+                worker = isolation.invocation_runtime(invocation, pins)
+                _validate_runtime_binding(invocation, worker, runtime, isolation.proof,
+                                          provenance['host_network_namespace'])
+                (case_output / 'runtime-binding.json').write_text(json.dumps(worker, indent=2) + '\n')
+            manifest['provenance']['actual_worker_observation'] = isolation.runtime_evidence(require_ort=True)
         if phase == 'rank':
             digests = {name: hashlib.sha256(raw).hexdigest() for name, raw in raw_gate.items()}
             for name, raw in raw_gate.items():
@@ -1468,11 +1594,9 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
             'ordinary default construction only; observed executions and mapped duplicate rows are separate; '
             'expanded digest equality establishes neither executed duplicate rows nor the semantic/4 B1 proof')
     except BaseException as error:
-        manifest['failure'] = _exception_record(error)
-        if primary is not None:
-            manifest['primary_failure'] = primary
+        manifest['failure'] = record_failure(error)
     try:
-        manifest['provenance']['cleanup_evidence'] = _cleanup_evidence(output)
+        manifest['provenance']['cleanup_evidence'] = _cleanup_evidence(output, invocations)
     except BaseException as error:
         cleanup = _exception_record(error)
         manifest['cleanup_failure'] = cleanup
@@ -1482,7 +1606,7 @@ def _run_reference_capture(*, module, output, phase, cases, python, sources, ass
     if manifest['failure'] is not None:
         (output / 'failure.json').write_text(json.dumps(manifest['failure'], indent=2) + '\n')
     (output / 'capture-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    _seal_output(output, _capture_file_inventory(cases))
+    _seal_output(output, _capture_file_inventory(output, cases))
     if manifest['failure']:
         raise EvidenceError('capture retained as failed/incomplete: ' + manifest['failure']['type']
                             + ': ' + manifest['failure']['message'])
@@ -1508,13 +1632,13 @@ def main(argv=None):
     collector.add_argument('--mode', choices=('rank', 'embed'), required=True)
     collector.add_argument('--case-id', required=True)
     collector.add_argument('--preflight-only', action='store_true', help='validate declared facts without model imports')
-    for option in ('request', 'sources', 'assets', 'output', 'isolation-proof'):
+    for option in ('request', 'sources', 'assets', 'output', 'isolation-proof', 'command-contract'):
         collector.add_argument('--' + option, type=Path, required=True)
     collector.add_argument('--parent-net-namespace', required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == '_collect':
-            proof = _isolation_guard(args.isolation_proof, args.parent_net_namespace)
+            proof = _isolation_guard(args.isolation_proof, args.command_contract, args.parent_net_namespace)
             if args.preflight_only:
                 print(json.dumps({'status': 'ordinary-preflight-observed', 'model_imported': False,
                                   'network_namespace': proof['collector_network_namespace']}))
