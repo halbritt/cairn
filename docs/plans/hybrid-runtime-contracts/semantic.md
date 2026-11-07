@@ -1,14 +1,15 @@
 # Semantic worker contract
 
-Revision: `semantic/3`, proposed for X-01 acceptance after independent reviews
-of `semantic/1` and `semantic/2`. Characterization baseline:
+Revision: `semantic/4`, proposed maximum-document evidence amendment to the
+accepted `semantic/3`. Characterization baseline:
 `d3c255a4bb75438e93527eaa1d83da780fd11eea` (2026-11-06).
 The semantic team owns this file. Overall owns the shared contract index;
 Release consumes the packaging, service-switch and rebuild requirements.
 This document records acceptance criteria, not implementation or deployment
-acceptance. Shared-contract implementation waits for Overall's X-01 completion
-notice. Read-only inventory and characterization of the existing Python worker
-may proceed before that notice.
+acceptance. X-01 specification setup is closed under `shared/2`; implementation
+still follows each item's predecessor, review and evidence gates. The bounded
+amendment below requires exact S-R1 and R-R1 review and Release's corresponding
+criteria before numerical coverage is counted.
 
 The [shared contract index](README.md) records cross-team decisions and the
 X-01 gate. The [implementation plan](../hybrid-runtime-implementation.md) controls where
@@ -275,29 +276,94 @@ assets, launchers or required model tests fail the acceptance run; skips do
 not count as parity. Cargo build/test/acceptance commands are dedicated targets
 allocated through Overall, so ordinary Go checks continue without Cargo.
 
-The initial capture retains one maximum-document model gap: exactly 65536
-punctuation bytes reached the 90-second document budget without a reply.
-Tokenizer-only evidence for its 256 spans is not vector evidence. Overall's
-selected disposition permits one separately labelled offline numerical-oracle
-experiment with the identical frozen source/assets/input and an external
-deadline of at most 180 seconds. This neither changes nor passes the 90-second
-production supervision requirement. Record runtime-versus-oracle commands,
-timings, environment/isolation differences, hashes and outcomes separately.
-Only the external deadline and isolation wrapper may differ: interpreter/venv,
-worker source bytes, model snapshot, launcher command, sanitized environment,
-ORT 2/2 thread/session settings and the exact Go-generated request bytes match
-the production path. Any vector-affecting difference invalidates the oracle.
-If that bounded oracle also fails, retain the numerical gap without further
-deadline inflation. Independent review must agree this distinction before
-the case is counted as numerically covered. A faster Rust reply need not
-mimic Python's slowness, but needs both oracle numerical/span comparison and
-actual execution through the unchanged real supervisor. Never drop the case
-or substitute source-only geometry for a model reply.
-The Python 90-second timeout remains in its failure population; oracle vectors
-do not make that source embeddable or covered for Python. A Rust reply within
-90 seconds changes the failure population and therefore requires the recorded
-disposition below, plus raw-output and exact-span comparison for all 256
-passages.
+### Conditional maximum-document reference
+
+The exact `"!" * 65536` Python capture reached its external 90-second budget
+without a reply. This is **direct-supervisor characterization**, not an
+observed real-Go or production timeout. Its full inherited environment was not
+recorded. The one separately authorized, isolated, at-most-180-second oracle
+attempt is consumed: it returned 256 normalized vectors in 100.394107 seconds.
+Neither run used the actual Go supervisor. Preserve both immutable observations;
+token geometry, file integrity and a matching identity do not qualify vectors.
+
+S-R1's artifact verdict `378ded83-462a-47f1-82d8-f5243bef82db` version 1
+verified the 31-file oracle seal
+`ef04e09d5bb7d906740da0f6406b14b4de3d14a6dfe664d313ce8ebb87815a4d`
+and report digest
+`24c2b513af3cdd4076d8a1a1a5ed4b354d30bbe2b9c307fe96758c4ebb0e701f`,
+while leaving numerical qualification open. The original bytes, environment
+and remapped direct-Python command do not literally match Go's frame,
+sanitized environment and fixed launcher. Normalized vectors do not recover
+historical raw CLS or loaded-library mappings: normalization is non-injective.
+
+Overall decision `0ba29009-f422-4a11-a94b-018f1d3139b0` version 1 selects the
+following conditional route for **only this sealed case**. It grants bounded
+experiments; it establishes no completed evidence or general equivalence rule.
+
+1. Reproduce the sealed wrapper W prefix exactly, allowing only declared
+   read-only tool/input binds. Before inference, prove real network isolation
+   and disposable mapped OS-home/cache protection, including `getpwuid` and
+   `expanduser` with HOME absent in the relevant namespace. Keep frozen sources,
+   assets, interpreter/provider, batch 1, ORT settings and tensor
+   shapes/masks/type IDs. A failed isolation, digest or runtime check stops the
+   experiment; uncertain or failed attempts never retry automatically.
+2. Pin the complete pre-decision 294-text baseline digests before executing
+   the already-scoped baseline capture. Require exact matches for int64 input
+   IDs, lengths and raw float32 CLS. The accepted digest basis from S-R1's
+   `b31016f5` version 1 is:
+
+   | Baseline bytes | SHA-256 |
+   | --- | --- |
+   | 33395 token IDs, little-endian int64 | `1762a94e5b785ffcfa300f404252994026b18a71f763086f297f89a9809394a9` |
+   | 294 lengths, little-endian int64 | `a81f2c9f819d10049549d14dcdb38983febf0a41cbfe314421e4f70bba8ded33` |
+   | Raw CLS, little-endian float32, 294 by 384 | `1f7ba8c969c2053385ce6e89528d2decea78b627e9fb6ef40cfc322fd760b623` |
+
+   Those earlier arrays were unsealed volatile scratch, not retained artifacts.
+   A match is corpus-bounded wrapper evidence, not proof for every input.
+3. After that match, perform exactly two additional passage-level executions:
+   A is `"!" * 288`, B is `"!" * 256`. Capture raw CLS and FastEmbed's normalized
+   output from **each same execution**; calling `embed` and then a second raw
+   `session.run` is forbidden. Retain per-input tensors and the mapping
+   A to rows `0..254`, B to row `255`. Require normalized row hashes
+   `18f797c69cbe3aa177a9ea7c93accca95ef30124adc8fbedfd5ce807f164c907`
+   and `ebaa34e553e0e36d1b60b31f485f48b831353d1ab1091042d2ee0e173e06b632`,
+   respectively. Read `/proc/self/maps` in the actual Python worker and hash
+   its loaded ORT, NumPy and OpenBLAS images against the frozen S-01 runtime.
+   These raw values and mappings are **new references and observations**;
+   never describe them as reconstructed historical evidence.
+4. Reusing A's row for 255 passages requires the exact retained row mapping
+   and frozen batch-1/stateless-source analysis. It is not empirical proof of
+   255-repeat determinism. Any stateful, batch-dependent or vector-affecting
+   contradiction defeats the disposition. Source-equivalence arguments for
+   the old request bytes, environment and launcher remain explicit and
+   input-specific. They do not become literal compliance or apply generally.
+5. Once the preceding proof and the independently reviewed S-01b
+   isolation/recording harness are ready, execute **one** synthetic maximum
+   document request through the unchanged Go `CommandEmbedder`, real fixed
+   Python launcher, actual Go-generated frame and sanitized environment, with
+   the existing 90-second deadline. Normal startup/identity exchange is allowed;
+   no extra model/document probe or repeated request is implied. Keep the
+   external isolation boundary and report its overhead separately; it cannot
+   replace or extend Go's timer. Record the actual child identity, cleanup,
+   cancellation and whichever result occurs. A timeout is bounded isolated
+   real-Go evidence; a successful reply is a separate immutable artifact.
+   Compare a reply with the sealed oracle and escalate differences rather
+   than replacing either reference. The old direct-supervisor failure never
+   becomes an observed real-Go timeout by relabelling it.
+6. Obtain exact S-R1 and R-R1 review of this criteria amendment and Release's
+   corresponding delta. Send accepted revisions and proposed shared-index
+   wording to Overall before counting numerical coverage. Review the actual
+   experiment evidence separately. No new 180-second oracle, deadline
+   inflation, production action, source-oracle repair or automatic retry is
+   authorized by this route.
+
+Keep all 256 Rust vectors and spans, the raw-output gate, pairwise `<=1e-6`,
+exact score/order and unchanged real-Go 90-second execution mandatory. The
+Python real-Go failure population remains unmeasured until the authorized run;
+record a differing Rust/Python population and obtain its disposition. A faster
+Rust reply need not mimic the old direct capture's slowness. Retain every
+unresolved cell until its specified evidence exists; this authorization does
+not pass a coverage, runtime or deployment gate.
 
 ### Required acceptance inventory
 
@@ -317,7 +383,7 @@ The tested inventory changes only with the owning item and independent review.
 | Phase / owner | Required inventory and expected positive counts |
 | --- | --- |
 | Reference / S-01 | Prepared-Python `PassageContractTest` 5, `SemanticStreamTest` 4, `SemanticCacheTest` 9 and `SemanticResumeTest` 5: 23 tests, no skips. Run the actual tokenizer test. Capture all three real Python worker modes. The 17 retrieval-quality queries plus long-tail and 64-short cases give 19 rank requests / 269 note scores; stream cold/warm repeats give 38 successful replies plus a separately counted idle-restore case. Every failure-family case has its own inventory ID and expected refusal tuple. |
-| Reference embeddings / S-01 | Nine named positive query cases: ASCII, CJK, emoji, combining marks, special tokens, exact-512 tokens, over-512 tokens, exact-4096 UTF-8 bytes and tokenizer-empty/nonblank. Six named positive documents: ASCII, CJK, mixed Unicode/combining, trailing decision, maximum Latin and maximum CJK. Exact projection/span/vector counts are frozen per input. The maximum-punctuation production timeout is separately retained; numerical coverage requires the explicitly qualified offline oracle above. |
+| Reference embeddings / S-01 | Nine named positive query cases: ASCII, CJK, emoji, combining marks, special tokens, exact-512 tokens, over-512 tokens, exact-4096 UTF-8 bytes and tokenizer-empty/nonblank. Six named positive documents: ASCII, CJK, mixed Unicode/combining, trailing decision, maximum Latin and maximum CJK. Exact projection/span/vector counts are frozen per input. The maximum-punctuation direct-supervisor timeout is retained separately; its conditional raw-reference and one real-Go experiment gates above remain open until evidenced. |
 | Rank / S-02 | Reference/candidate arithmetic fixtures, all 19 exact-score cases, all 38 stream replies and the idle/cache-restart case; real `Command` and `StreamCommand` supervisor runs, not only script doubles. Add those native-model process tests; no real-model rank/stream Go test currently exists. The 21 current non-DB/non-real-model semantic tests remain separately required process/unit coverage. |
 | Embed and index / S-03 | All nine query and six document comparisons; the two configured real tests `TestRealMaximumDocumentEmbeddingCompletes` and `TestRealProjectedLongQuery`; `TestRealPersistentPassageDiscovery` and the three remaining index/store tests with a disposable DSN. Add the sequential Python/Rust indexed-comparison matrix above, with all 17 workload queries and the nine query-boundary cases. |
 | Package / S-04 | For `N >= 1` supported CPU classes, all three modes run both as clean offline artifacts and through real Go supervision: `6*N` positive runs. Separately count live-staging rerun, wrong/missing library, wrong/missing asset, digest mismatch and shadow-system-library cases per class. Inventory must cover every managed host running a semantic service; an empty list cannot pass. |
