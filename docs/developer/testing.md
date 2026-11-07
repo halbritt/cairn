@@ -124,6 +124,8 @@ uses the verified Unix client functions in `procpeer`.
 | `internal/procpeer/client_test.go` | Client credential/identity checks before payload, caller-selected timing, line bounds and a cumulative connection read budget, using Go-only private fixtures. |
 | `internal/procpeer/process_test.go` | Measurement identity and the separate Go/Python zombie policies; the zombie comparison invokes the retained Python helper. |
 | `internal/claudechannel/claudechannel_test.go` | Retained bridge protocol, publication, ownership and refusal behavior. |
+| `internal/lifecycle/binding/binary_linux_test.go` | Staged image ownership, safe paths, digest/inode identity, deleted/replaced images and descriptor metadata changes. |
+| `scripts/test_foundation_f01_dispatch.py` | Retained Python client against the real Claude bridge and checked-image fixtures. |
 
 Select the tests for the affected consumer explicitly when a Go-only check is
 required. Client tests have the `TestClient` prefix; the zombie comparison is a
@@ -131,6 +133,8 @@ separate test with a Python dependency. Socket fixtures use private temporary
 paths; process-control fixtures act only on children they created. These checks
 cover source behavior. Installed lifecycle selection and runtime qualification
 remain separate.
+
+F-01 process and image fixtures require Go and Python and act only on their own staged files and child processes. They establish source behavior when executed; they do not qualify an installed lifecycle selection. Campaign tests await the coordinator-approved isolation wrapper that hides production homes, sockets, network and host processes. Build and vet results alone are not parity acceptance.
 
 ## Exercise backup and recovery
 

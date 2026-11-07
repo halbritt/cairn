@@ -64,6 +64,8 @@ Installed `/2` pins continue to authenticate their selected Python bytes.
 See the [capability map](reference/lifecycle-slices.md) and
 [primitive test boundaries](developer/testing.md#shared-go-lifecycle-primitives).
 
+The internal `/3` [binary validator](../internal/lifecycle/binding/binary_linux.go) compares the pinned executable and running image, including digests, safe staging policy and device/inode identity. Identical copies at another inode refuse; a safe hard-link alias of the same image can pass. This helper neither extends `/2` trust to Go nor activates a lifecycle consumer.
+
 ## Upgrade and rollback
 
 Existing installed copies keep their existing behavior until explicitly
