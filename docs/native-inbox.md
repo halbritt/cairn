@@ -281,13 +281,28 @@ For a response/notice, `acknowledgement` records handling without creating anoth
 request. Completion request UUIDs remain stable after an uncertain response.
 Handling is a report; neither zero exit nor acknowledgment proves task success.
 
-The `completion`, `acknowledgement` and `response` argv run the lifecycle
-helper's `inbox` command. It builds the exact Cairn command from the context's
+The context's `completion`, `acknowledgement`, and (for a request) `response`
+and `finish_reply` argv run the lifecycle helper's `inbox` command (`complete`,
+`ack`, `respond`, and `finish-reply`). The context supplies no `settle` argv
+and `coordination.py inbox` rejects `settle`; compact `notice` and `response`
+handles use the separate `cairn-inbox settle <handle> <disposition> [--code ...]`
+command ([compact native inbox](compact-inbox.md)), which validates the handle
+and disposition before delegating to `coordination.py inbox --context ... ack`.
+`coordination.py inbox` builds the exact Cairn command from the context's
 `commands` and `request_ids`, so the agent chooses only which command to run,
-its stdin, and a reply's `--version`. Before anything leaves the host, the
-helper writes an owner-only intent file, `STATE_DIR/intents/ATTEMPT.json`
-(mode 0600, fsynced). It holds the command, request UUID and stdin body; token
-values are never stored. It then records the outcome:
+its stdin, and a reply's `--version`. Lock acquisition and subprocess send
+timeouts are separate (there is no composite end-to-end deadline): `inbox`
+waits up to 30 seconds for the journal lock and applies a 30-second timeout per
+`send_intent` subprocess call, so a `finish-reply` invocation that sends both
+`completion` and `response` uses a separate 30-second timeout for each send
+(while background watcher flushing uses a non-blocking journal lock and a
+10-second timeout per send). For a request, `finish-reply` journals both
+`completion` and the `finish_reply` intent before sending either, then binds
+`response` to the committed completion's exact `{record_id, version}` result.
+Before anything leaves the host, the helper writes an owner-only intent file,
+`STATE_DIR/intents/ATTEMPT.json` (mode 0600, fsynced). It holds the command,
+request UUID and stdin body; token values are never stored. It then records the
+outcome:
 
 - `committed`, with the response;
 - `refused`, for a refusal that proves nothing committed (for example
@@ -295,9 +310,14 @@ values are never stored. It then records the outcome:
 - `pending`, when the outcome is uncertain (transport failure, timeout or an
   unknown status).
 
-Running the same command again with the same input returns the committed
-response, or retries the same request UUID. A different body or command for
-the same attempt is refused locally with `IDEMPOTENCY_CONFLICT`.
+Running an ordinary `complete`, `ack` or `respond` command again with the same
+input still sends the recorded request UUID through the authenticated API
+(recording `replay_code` on an already-settled slot), so a restore fence or
+replaced execution is refused by the store rather than masked by a local copy;
+`finish-reply` re-sends `completion` only when `completion` is still `pending`
+or lacks a committed `{record_id, version}` reference, and otherwise reuses
+that committed completion reference while sending `response`. A different body
+or command for the same attempt is refused locally with `IDEMPOTENCY_CONFLICT`.
 
 Intent files are not removed when the attempt is reconciled, so a refused
 result is never silently discarded. The owner can read it there.
@@ -562,12 +582,14 @@ registration resumes the conversation only after reconciliation.
 ### Journaled commands settle first
 
 Before any reconciliation, and before `agent-leave`, the host replays each
-`pending` intent with its identical argv and stdin. This happens at Stop or
-idle, in the watcher's cycle, and in presence finish. If an outcome is still
-uncertain, the host reconciles nothing and keeps the hold, the local state and
-any `ending` marker. It retries on the next hook or watcher cycle. A turn that
-ends during a partition is remembered (`inbox_turn_ended`). After the replay
-settles, it is reconciled as `turn_ended`.
+`pending` intent with its identical argv and stdin (using a non-blocking
+journal-lock attempt and a 10-second send timeout per command). This happens at
+Stop or idle, in the watcher's cycle, and in presence finish. If the lock is
+busy or an outcome is still uncertain, the host reconciles nothing and keeps
+the hold, the local state and any `ending` marker. It retries on the next hook
+or watcher cycle. A turn that ends during a partition is remembered
+(`inbox_turn_ended`). After the replay settles, it is reconciled as
+`turn_ended`.
 
 Journals outlive their attempt. Each context adds its attempt to the
 conversation's persisted `inbox_journals` list before the agent can act. For
@@ -611,10 +633,16 @@ What recovery cannot do:
 
 - It cannot recover a result that no command journaled. If the agent never
   ran completion, the ended turn fails the delivery as before.
-- A reply exists only after the agent runs `response` with the completion's
-  result version. If the host or agent stops after completion commits but
-  before that, the requester sees `handled` with the result reference through
-  `event-status`, but no reply is published.
+- When the agent runs standalone `completion` without journaling `response` or
+  `finish-reply`, a reply exists only after the agent runs `response` with the
+  completion's result version. If the host or agent stops after completion
+  commits but before `response` is journaled, the requester sees `handled` with
+  the result reference through `event-status`, but no reply is published. By
+  contrast, `finish_reply` (`finish-reply`) journals both `completion` and the
+  selected reply intent before completion can commit, so watcher reconciliation
+  can recover the committed completion reference, bind that already-selected
+  reply intent to `{record_id, version}`, and send `response` without replaying
+  task work.
 - A host that never returns needs the operator's `native-hold-release`
   ([operator recovery](event-recovery.md)).
 - Reconnection of the transport is automatic; replay of work never is.

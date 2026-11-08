@@ -58,8 +58,11 @@ Ordinary event commands accept both session-selection flags. Without them, the
 profile's original inbox and producer identity remain in use. Ordinary memory
 clients continue using their existing profile by default.
 
-`agents context` replaces metadata with `--expected-revision` and a request UUID.
-A stale revision fails with `VERSION_CONFLICT`; refresh context before retrying.
+`agents context` replaces the session's metadata struct in full: supply
+`--agent-id`, `--execution-id`, `--expected-revision`, `--request-id`,
+`--harness`, `--project`, and `--workspace` (when omitted, `--state` defaults to
+`idle` and `--delivery-mode` to `existing-session`). A stale revision fails with
+`VERSION_CONFLICT`; refresh context before retrying.
 Heartbeats update only presence, never context. Use a heartbeat every 30 seconds;
 expiry is 90 seconds by database time. Leaving marks the execution stopped and
 requires registration to resume. These operations do not themselves install a

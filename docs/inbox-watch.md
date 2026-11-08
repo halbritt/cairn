@@ -35,7 +35,11 @@ with the same cursor. A slow stdout consumer prevents the next fetch. SIGINT or
 SIGTERM interrupts a blocked output pipe. API restart preserves cursor progress.
 
 A cursor file is replaced atomically with owner-only permissions and synced only
-after successful page output. One process holds its companion `.lock` file while
+after successful page output: the checkpoint writes and syncs a `0600` sibling
+temporary file, renames it over the cursor path, and syncs the parent directory
+(a temporary-file write, sync, close or rename failure leaves the prior cursor
+in place; a parent-directory sync error is returned after the cursor path is
+updated). One process holds its companion `.lock` file while
 watching. The directory must already exist. Do not remove the lock file while a
 watch is running. A crash after output but before checkpoint can repeat delivery
 IDs; consumers must tolerate duplicates. Successful output does not establish

@@ -114,9 +114,17 @@ cairn agent --token-file "$token_file" \
 
 Choose a new journal path for each intended send and retain it for retries.
 Run the same command with the same stdin after a connection failure or process
-restart. The helper writes distinct source and publication UUIDs before its
-first API call, saves under `coordination/<publication-request-UUID>`, and
-publishes the exact returned version. The journal stores a digest and IDs, not
+restart. The helper persists the initial journal intent (`SourceRequestID`,
+`PublicationRequestID`, and intent digest) before its first API call, saves the
+source under `coordination/<publication-request-UUID>`, and publishes the exact
+returned version. Each journal save writes and syncs a `0600` sibling temporary
+file, renames it over the journal path, and syncs the parent directory: a
+temporary-file write, sync, close or rename failure on the initial intent save
+stops before any API call, whereas a later journal save failure after `create`
+or `event-publish` (or a parent-directory sync error after file replacement) can
+follow a committed source or published event and must be recovered by retrying
+with the same journal path and persisted request UUIDs rather than starting a
+new journal. The journal stores a digest and IDs, not
 the assignment body or token. A different body, destination, shareability,
 session or other selected intent with the same journal refuses with
 `IDEMPOTENCY_CONFLICT`.
