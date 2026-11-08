@@ -4,21 +4,19 @@
 package claudechannel
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/halbritt/cairn/internal/procpeer"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -38,54 +36,19 @@ const (
 	// uses legacy initialize.
 	discoverMethod = "server/discover"
 	// One JSON request line excluding its newline, and bounded socket waits.
-	maxLine        = 8192
-	socketDeadline = 2 * time.Second
+	maxLine        = procpeer.MaxLine
+	socketDeadline = procpeer.SocketDeadline
 	// ioConn.Write checks its context only before the raw write, so a blocked
 	// writer is unbounced by closing the connection when this timer fires.
 	writeTimeout = 2 * time.Second
 )
 
-// ProcessRef identifies one operating-system process across PID reuse.
-type ProcessRef struct {
-	PID   int    `json:"pid"`
-	Start uint64 `json:"start"`
-	Boot  string `json:"boot"`
-}
+// ProcessRef retains the bridge wire shape and public source API.
+type ProcessRef = procpeer.ProcessRef
 
-// ProcessRefOf measures a live process, or returns an error when it is gone.
-func ProcessRefOf(pid int) (ProcessRef, error) {
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return ProcessRef{}, err
-	}
-	text := string(raw)
-	fields := strings.Fields(text[strings.LastIndexByte(text, ')')+1:])
-	if len(fields) < 20 {
-		return ProcessRef{}, fmt.Errorf("short /proc/%d/stat", pid)
-	}
-	start, err := strconv.ParseUint(fields[19], 10, 64)
-	if err != nil {
-		return ProcessRef{}, err
-	}
-	boot, err := bootID()
-	if err != nil {
-		return ProcessRef{}, err
-	}
-	return ProcessRef{PID: pid, Start: start, Boot: boot}, nil
-}
+func ProcessRefOf(pid int) (ProcessRef, error) { return procpeer.ProcessRefOf(pid) }
 
-func bootID() (string, error) {
-	raw, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(raw)), nil
-}
-
-func liveProcess(ref ProcessRef) bool {
-	current, err := ProcessRefOf(ref.PID)
-	return err == nil && current == ref
-}
+func liveProcess(ref ProcessRef) bool { return procpeer.Live(ref) }
 
 type channelMeta struct {
 	NativeSessionID string `json:"native_session_id"`
@@ -331,21 +294,13 @@ func (b *bridge) handle(conn net.Conn, captured *capturingTransport) {
 	if err != nil {
 		return
 	}
-	_ = conn.SetWriteDeadline(time.Now().Add(socketDeadline))
-	_, _ = conn.Write(append(data, '\n'))
+	_ = procpeer.WriteLine(conn, data)
 }
 
 func (b *bridge) handleLine(conn net.Conn, captured *capturingTransport) string {
-	if err := conn.SetReadDeadline(time.Now().Add(socketDeadline)); err != nil {
-		return "unavailable"
-	}
-	line, err := bufio.NewReader(io.LimitReader(conn, maxLine+1)).ReadBytes('\n')
-	if err != nil || len(line) > maxLine+1 {
+	line, err := procpeer.ReadLine(conn)
+	if err != nil {
 		return "unavailable" // malformed or oversized input; nothing was sent.
-	}
-	line = line[:len(line)-1]
-	if len(line) > maxLine {
-		return "unavailable"
 	}
 	var request channelRequest
 	if err := json.Unmarshal(line, &request); err != nil {
