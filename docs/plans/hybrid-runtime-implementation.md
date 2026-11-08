@@ -2,6 +2,10 @@
 
 Status: implementation is in progress under campaign CAIRN-301. X-01 / CAIRN-302 is complete: the [shared contract index](hybrid-runtime-contracts/README.md) revision `shared/2` was accepted and pushed in `a24637e0846df89f9429defcbecdb18fb6b67669`, and ready implementation work was released to the four existing domain leads. CAIRN-314, CAIRN-315 and CAIRN-331 are Done. Runtime acceptance, qualification and deployment gates remain open. The original plan was prepared against `ff262da8d5caf9bc4a75f76c745b9bff3dcaaba6`; execution began from `d3c255a4bb75438e93527eaa1d83da780fd11eea`.
 
+See the [current code inventory and remaining work](hybrid-runtime-campaign-status.md)
+for the published operations implementation, its test command and the distinction
+between source publication and completed runtime migration.
+
 The [architecture proposal](hybrid-runtime-consolidation.md) defines the destination: Go owns the operational runtime and lifecycle, Rust supplies an isolated semantic worker, and host-required adapters remain thin. This companion defines ownership, delivery order, and prompts for the agents who will execute that work. Existing project instructions and the execution request govern authority.
 
 ## Organization

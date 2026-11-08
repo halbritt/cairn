@@ -1,4 +1,4 @@
-.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-node-owner test-sdk-peer test-integration test-lifecycle check contract
+.PHONY: build test test-sdk-spawn test-sdk-ipc test-sdk-native-ipc test-sdk-native-process-owner test-sdk-node-owner test-sdk-peer test-integration test-lifecycle test-hybrid-runtime-operations check contract
 build:
 	go build -o bin/cairn ./cmd/cairn
 test:
@@ -32,6 +32,8 @@ test-integration:
 	bash scripts/test-postgres.sh
 test-lifecycle: build
 	bash scripts/test-local-lifecycle.sh
+test-hybrid-runtime-operations:
+	python3 -I -B scripts/test_hybrid_runtime_operations.py
 contract:
 	go run ./internal/apicontract/cmd/cairn-contract
 check:

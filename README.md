@@ -67,6 +67,7 @@ account. It then links to authenticated agent setup.
 | Inspect work and deliverables | [Work coordination](docs/operator/work-coordination.md) |
 | Run a shared service | [Deployment](docs/operator/deployment.md) |
 | Understand or extend Cairn | [Architecture](docs/developer/architecture.md) and [contributing](docs/developer/contributing.md) |
+| Inspect the hybrid runtime campaign | [Code inventory and remaining work](docs/plans/hybrid-runtime-campaign-status.md) |
 
 Use the [documentation index](docs/README.md) for reference material and advanced
 features. The [glossary](GLOSSARY.md) explains terms used in the API and design.

@@ -12,6 +12,7 @@ and test scripts define the checks that run for this checkout.
 | Store or database behavior | `make test-integration` and `make check` |
 | Backup, restore, or lifecycle recovery | `make test-lifecycle` plus affected integration tests |
 | Python lifecycle hooks | Relevant Python tests and affected native integration fixtures |
+| Inactive hybrid runtime operations | `make test-hybrid-runtime-operations` |
 | OpenCode adapter | Node checks and affected integration fixtures |
 | Documentation | `python3 scripts/verify_docs.py` plus manual source/example review |
 
