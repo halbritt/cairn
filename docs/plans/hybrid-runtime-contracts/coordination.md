@@ -502,7 +502,7 @@ Reference source: [`native_session.py`](../../../integrations/lifecycle/native_s
    symlinks without `O_NOFOLLOW` and lock the resolved inode) across all 5
    coordination lifecycle lock families (adjacent non-lifecycle locks are Claude
    bridge publish `<claude_channel_dir>/.publish.<parent_pid>.lock` in
-   `claudechannel.go:302-313`, owned by `J-04` if ported, and Hermes blocking
+   `claudechannel.go:265-276`, owned by `J-04` if ported, and Hermes blocking
    `flock` `<home>/cairn/conversations/<sha256>.lock` in
    `integrations/hermes/controls.py:39-44`, owned by `R-03`):
    - **Session lock (`native_session.open_session`, `native_session.py:490-496`):**
@@ -597,8 +597,10 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
 [`claude_channel.py`](../../../integrations/lifecycle/claude_channel.py) (`lines 51-70`),
 [`opencode_queue.py`](../../../integrations/lifecycle/opencode_queue.py) (`lines 92-99, 150-158`),
 [`hermes_queue.py`](../../../integrations/lifecycle/hermes_queue.py) (`lines 54-61, 149-168`),
-[`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 261-300, 1031-1190, 3084-3099`), and
-[`claudechannel.go`](../../../internal/claudechannel/claudechannel.go).
+[`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 261-300, 1031-1190, 3084-3099`),
+[`claudechannel.go`](../../../internal/claudechannel/claudechannel.go),
+[`frame.go`](../../../internal/procpeer/frame.go) (`lines 13-41`), and
+[`process.go`](../../../internal/procpeer/process.go) (`lines 13-54`).
 
 1. **Per-Mode `SO_PEERCRED` & Per-Harness Endpoint Matrix (`foundation/v4` `8b768649`, `## Shared process and peer contract`):**
    Transports consume `internal/procpeer` (`F-01` extracts bridge/measurement
@@ -609,7 +611,7 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
    unless `expected_uid` is passed; `uid` mode checks `peer_uid == os.geteuid()` and
    re-measures the recorded target `ProcessRef` `(start, boot)`) and reading/writing
    bounded frames **under each consumer's deadline**:
-   - **Claude channel (`coordination.py:1031-1047`, `claude_channel.py`, `claudechannel.go`):**
+   - **Claude channel (`coordination.py:1031-1047`, `claude_channel.py`, `claudechannel.go`, `internal/procpeer/{frame.go,process.go}`):**
      watcher reads `<claude_channel_dir>/<claude_pid>.json` (`cairn.claude-channel/1`),
      verifies `process_identity(record.parent) == process_identity(session_process)`
      and Python `process_alive(record.process)` (excludes `Z`/`X`), and connects in
@@ -617,15 +619,15 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
      with **`4s` connect + `4s` reply** client timeouts (`claude_channel.py:33, 61-84`).
      Bridge (`0700` dir, `0600` socket; server-side `SO_PEERCRED` is optional
      hardening) verifies `request.parent == bridge.parent`, `os.Getppid() == parent.pid`,
-     and Go `liveProcess` (`(pid, start, boot)` without `Z`/`X` exclusion, pinned
+     and Go `liveProcess` / `procpeer.Live` (`claudechannel.go:49-51`, `internal/procpeer/process.go:20-39, 51-54` — `(pid, start, boot)` without `Z`/`X` exclusion, pinned
      separately per consumer), frame limit `<= 8192` bytes **excluding** `\n`, and
      **`socketDeadline = 2s` on request read and reply write plus `writeTimeout = 2s`
-     on MCP notification emit** (`claudechannel.go:42, 45, 334, 339, 388` — server
+     on MCP notification emit** (`claudechannel.go:39-43, 297, 301, 337-354`, `internal/procpeer/frame.go:13-34, 37-41` — server
      bounds MUST stay strictly below the client's `4s` reply timeout so bridge
      verdicts arrive before client `"uncertain; do not resend"`). **Only
      `server/discover` is refused (`MethodNotFound`)**;
      Claude's fallback legacy MCP **`initialize` MUST succeed** for readiness and
-     registry publication (`claudechannel.go:33-39, 160-172, 225-232`).
+     registry publication (`claudechannel.go:31-37, 123-135, 188-195`).
    - **OpenCode queue & cancel (`opencode_queue.py`, `/tmp/cairn-opencode-<pid>.sock`):**
      `process` mode requiring **exact** `peer_pid == session_process.pid` + `(start, boot)`
      (descendants MUST be refused to defeat `/tmp` squatting); **`4s`** deadline on
@@ -664,7 +666,7 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
      `WAKE_CLOSING` and `LEGACY_WAKE_CLOSING` (current first).
    - Claude channel envelopes MUST preserve `source="cairn-events"` and exact struct
      attribute order `native_session_id`, `agent_id`, `execution_id`, `delivery_id`
-     (`claudechannel.go:29, 90-95, 360-363`).
+     (`claudechannel.go:27, 53-58, 315-318`).
 
 ## Offline transcript recovery and health modes (`J-06`)
 
@@ -782,7 +784,7 @@ runtime qualification or deployment acceptance. See the
 | --- | --- | --- |
 | `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes, `C3`/`C1` `CompatibilityPreflightError` exit `1` with zero journal/lock/lease/refusal-record/API effects across `hook`, `inbox --context`, `inbox drain`, and `inbox compact` vs `NATIVE_PROMPT_REFUSED` exit `2`, plus joined Claude channel wake preflight exit `1` leaving no claim, pending delivery, and explicit wake custody state); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `/2` bare `cairn-inbox` launcher + `C1` `L`/`V` shell-executed compact `read\|inspect\|settle\|advance` (including non-default root with `CAIRN_INBOX_ROOT` unset succeeding via `V`'s `--config` grandparent, mismatched `CAIRN_INBOX_ROOT` / wrong-config / post-validation config-swap refusing before `load_config`/effects, out-of-tree caller and in-tree mismatched `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID` refusing with `NOT_THIS_SESSION` exit `7` before effects, `inspect` lease renewal, and `advance` `next`-cue rendering) + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, direct `cairn renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real explicit `30s` lock/`30s` send vs watcher `0s` lock/`10s` send deadlines (no hook timeout imposed on `inbox` modes) |
 | `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3184-3199, 3724-3829`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
-| `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
+| `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go`, `internal/procpeer/{frame.go,process.go}` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
 | `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4093-4516` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
 | `J-F5`: Offline transcript recovery & health | `transcript_recovery.py`, `coordination.py:3271-3576, 4381-4464` | FIFO non-blocking refusal (`O_NONBLOCK`), symlink (`O_NOFOLLOW`), wrong UID, `1.0` float vs int, `NaN`, lone surrogate, invalid UTF-8, 3-mode per-path JSONL strictness (`plain`: `101-118, 133-141` and refusal discovery; `strict-skip`: `335-338`; `strict-raise`: `65-98` & `461`), `recover-daemon-start-claim` (`0` or `2` workers, outside daemon's `bg-pty-host`, valid worker `state["process"]` rebind), historical bounded scan caps (`256/16/8/64 MiB`) plus labelled CAIRN-423 whole-snapshot refusal discovery with bounded buffers/eligible records, one-second cooperative budget and unknown-on-exhaustion/change/partial-EOF, live-owner `/proc/<pid>/fd` Codex derivation, normal `reconcile-codex-queue-wake` wake-custody mutations vs 4 honoring `--check-only` modes + `inspect-held-refusal` non-persistence (`0s` `session_lock`), and `/2` `recover-refused-wake --check-only` / `recover-native-refused-wake --check-only` / `check-codex-native-health --check-only` ignoring `--check-only` and settling/persisting vs selected `/3` parity or labelled repair |
 
