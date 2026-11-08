@@ -36,7 +36,8 @@ def stage(suite, destination):
             target.chmod(0o700)
             for name in names:
                 private_copy(origin / name, target / name)
-        private_copy(source / 'test_f1.py', destination / 'test_f1.py')
+        for name in ('test_f1.py', 'executor.py', 'test_executor.py'):
+            private_copy(source / name, destination / name)
     else:
         for name in F3_MODULES:
             private_copy(source / name, destination / name)
@@ -60,7 +61,8 @@ def namespace_argv(source, command):
 
 def main():
     commands = {
-        'f1': ['/work/test_f1.py'],
+        'f1': ['-m', 'unittest', 'discover', '-s', '/work',
+               '-p', 'test_*.py', '-v'],
         'f3': ['-m', 'unittest', 'discover', '-s', '/work/tests', '-v'],
     }
     with tempfile.TemporaryDirectory(prefix='cairn-operations-tests-') as temporary:
