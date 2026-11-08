@@ -217,14 +217,14 @@ classified as a dial failure. Trusted Go callers can still inspect the original
 OS or cancellation cause with `errors.Is`/`errors.As`; rendered messages omit it.
 
 Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise`, `append` and `event-complete`,
-1 MiB for `replace`, 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
+1 MiB for `replace` and `set-sections`, 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
 accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,
 including JSON escaping and metadata. They do not increase stored source sizes
 or retrieval budgets. The agent CLI, API client and server share these limits;
 the store still validates size, repository and sensitivity. `agent remember`
 uses `create`; native capture/edit tools use these same operations. Trusted local
 JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes;
-`replace` accepts 1 MiB for its two text fields.
+`replace` and `set-sections` accept 1 MiB envelopes.
 Update both API and CLI before sending larger requests. Existing accepted requests
 and their retry identities retain their behavior. Oversized envelopes, including
 excess trailing whitespace, are refused before a write or retry reservation.

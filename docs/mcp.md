@@ -386,7 +386,7 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 4. **`cairn_remember`**: Captures explicitly selected knowledge note under authenticated profile.
    - *Parameters*: `body` (1–65536 bytes UTF-8), `kind` (default `note`), `scope` (`repository`, `task`, `run`), `entities` (array), `pins` (object), `shareable` (boolean), `request_id` (UUID).
 5. **`cairn_edit`**: Atomically updates active Class A note, enforcing version locks and optimistic concurrency.
-   - *Parameters*: `record_id` (UUID), `expected_version` (integer), `request_id` (UUID), and exactly one exclusive edit mode: `body` (string), `append` (string), `replace` (`{old_text, new_text}`), `set_sections` (map of heading title to content), `draft` (object), or `evidence_citations` (array of UUIDs).
+   - *Parameters*: `record_id` (UUID), `expected_version` (integer), `request_id` (UUID), and exactly one exclusive edit mode: `body` (string), `append` (string), `replace` (`{old_text, new_text}`), `set_sections` (map of heading title to content), `draft` (object), or `evidence_citations` (array of `{evidence_id, expected_sha256, spans}` citation objects; `[]` clears references).
 6. **`cairn_prepare_note`**: Searches candidate predecessors to inform knowledge capture without writing a note.
    - *Parameters*: `query` (string), `entities` (array), `context` (object), `available_tokens` (integer), `memory_budget_bytes` (integer), `min_pull_bytes` (integer), `inspection_policy` (string), `request_id` (UUID).
 7. **`cairn_client_info`**: Read-only inspection of running MCP facade build identity, active `search_view`, active `tool_profile`, source opening bindings, and budget allowances.
@@ -403,7 +403,7 @@ Cairn implements ten standard MCP tools across discovery, expansion, capture, mu
 - **Tool Profiles (`--tool-profile`)**:
   - Default: Full verbose tool descriptions and JSON schemas for maximum self-describing capability.
   - `compact/1`: Shortened descriptions for `cairn_search` and `cairn_pull`, reducing schema token overhead.
-  - `compact/2`: Shortens descriptions across all ten MCP tools, reducing prompt overhead by ~27% (~1,350 proxy tokens) for context-constrained models.
+  - `compact/2`: Shortens descriptions across all ten MCP tools. In the recorded [declaration-size comparison](verification/claude-compact-all-tools-2026-10-25.md) the serialized declaration array was 29.6% smaller than the full profile (7,432 bytes, 1,358 `o200k_base` proxy tokens); this is a serialized-declaration measurement, not provider tokens or task savings.
 - **Search View Compaction (`--search-view compact/1`)**:
   - Emits `cairn.mcp-search-compact/1` instead of `cairn.mcp-search/1`. Retains required instructions, preview passages, handles, `pull_arguments`, paging, and budget fields while stripping repeated query text, ranking scores, and tokenizer debug metadata.
 - **Token Budgeting (`--tokens` and `--max-tokens`)**:
@@ -468,7 +468,7 @@ args = [
 enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
   "cairn_remember", "cairn_prepare_note", "cairn_edit", "cairn_history",
-  "cairn_assessments", "cairn_assess",
+  "cairn_assessments", "cairn_assess", "cairn_client_info",
 ]
 required = false
 startup_timeout_sec = 15

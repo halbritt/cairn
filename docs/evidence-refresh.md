@@ -101,8 +101,8 @@ JSON escaping. The decoded 1 MiB limit remains enforced. Oversized sources or
 envelopes return `INVALID_REQUEST`; neither truncates data or reserves a capture
 request ID. Repeat a successful capture with the same ID and content to retain
 its original identity. Ordinary note `create`, `edit`, `revise` and `append`,
-and `event-complete`, use 512 KiB envelopes; `replace` uses 1 MiB. Other API
-operations keep 128 KiB. See the [local API limits](local-api.md).
+and `event-complete`, use 512 KiB envelopes; `replace` and `set-sections` use
+1 MiB. Other API operations keep 128 KiB. See the [local API limits](local-api.md).
 The [transport verification](verification/evidence-limit-2026-09-09.md) covers
 exact bytes, retries, limits and the actual agent CLI.
 

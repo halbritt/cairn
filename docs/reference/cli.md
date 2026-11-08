@@ -181,7 +181,7 @@ cairn work show --project SLUG --item ITEM_UUID
 cairn work associate --project SLUG --item ITEM_UUID --target-type execution --target-id AGENT/EXEC
 cairn work progress add --project SLUG --item ITEM_UUID --text "Progress update"
 cairn work blocker add --project SLUG --item ITEM_UUID --text "Blocker description"
-cairn work blocker resolve --project SLUG --annotation-id ANNOTATION_UUID
+cairn work blocker resolve --project SLUG --item ITEM_UUID --annotation-id ANNOTATION_UUID --expected-revision N
 cairn work metadata purge --project SLUG --pattern "sensitive text"
 cairn work serve --project SLUG
 ```

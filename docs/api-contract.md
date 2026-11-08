@@ -47,6 +47,7 @@ inventory is involved.
   - `x-cairn-remote`: the live remote allowlist, read through
     `localapi.RemoteOperation`.
   - `x-cairn-remote-roles`: the roles a remote profile may call it with.
+  - `x-cairn-local-roles`: the roles a local (non-remote) profile may call it with.
   - `x-cairn-requires-local-destination`: the entry's `RequiresLocalDestination`
     guard, enforced before its handler runs.
   - `x-cairn-session-headers`: whether session headers are optional or
