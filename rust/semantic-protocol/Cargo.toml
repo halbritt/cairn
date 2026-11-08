@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 cairn-semantic-text = { path = "../semantic-text" }
+sha2 = { version = "=0.10.9", default-features = false, features = ["force-soft"] }
+base64 = { version = "=0.22.1" }

@@ -2,9 +2,13 @@
 //! logical projections. There is no decoder, serializer or initialized backend.
 //!
 //! `Value` equality compares IR representations, including float bits and value
-//! tags. It is not Python numeric equality or the future body-hash comparison.
+//! tags. It is not Python numeric equality. Hash and cache comparisons implement
+//! their selected Python inequality rules separately.
 
 use cairn_semantic_text::is_python_blank;
+
+pub mod cache;
+pub mod hash;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IrError {
@@ -186,11 +190,14 @@ pub enum Site {
     RankBodyLookup(usize),
     RankBodyEncode(usize),
     RankBodyTotal,
+    RankExpectedHashLookup(usize),
+    RankBodyHashMismatch(usize),
     StreamKeySet,
     StreamKeys,
     StreamIdLookup,
     StreamIdGuard,
     StreamRequestLookup,
+    StreamLateCache,
     EmbedKeys,
     EmbedIdLookup,
     EmbedOperationLookup,
@@ -238,8 +245,8 @@ pub enum RemainingRankBoundary {
     HashBodyThenLookupExpectedThenPythonInequality,
 }
 
-/// Stops before hashes. For each note, the future stage must hash body_i, look
-/// up body_sha256_i (missing is a lookup failure), then compare with Python !=.
+/// Stops before hashes. For each note, `hash::admit_rank_hashes` hashes body_i, looks
+/// up body_sha256_i (missing is a lookup failure), then compares with Python !=.
 /// A non-equal Value, including a non-string, is a mismatch, not a type refusal.
 /// The first failing note wins. This type has no completion/readiness method.
 #[derive(Debug)]
