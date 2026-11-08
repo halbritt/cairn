@@ -625,7 +625,7 @@ def find_codex_refusal_locators(config, state, turn, *, coord=None):
         matches = []
         offset = line_number = 0
         skipping = False
-        with os.fdopen(fd, 'rb', closefd=False) as source:
+        with os.fdopen(fd, 'rb', buffering=NATIVE_RECORD_LIMIT + 1, closefd=False) as source:
             while offset < info.st_size:
                 if time.monotonic() >= deadline:
                     return None

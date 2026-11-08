@@ -674,33 +674,33 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
 1. **Path Derivation, File Safety, Bounded Scans, & JSON Decoding:**
    - **Never accept caller-supplied transcript paths or filename globs:** Claude
      derives `<transcript>` from binding `config_home` + held `workspace` +
-     `native_session_id` (`lines 55-61`); Codex derives `<rollout>` from the **live**
+     `native_session_id` (`lines 56-62`); Codex derives `<rollout>` from the **live**
      owner's single `/proc/<pid>/fd` `rollout-*-<native>.jsonl` under
      `<config_home>/sessions` with zero symlink components, `(dev, ino)` equality
      between `fd` and path, and `process_alive` verified before and after
-     (`lines 282-309` — live-owner proof only, not post-death recovery).
+     (`lines 283-310` — live-owner proof only, not post-death recovery).
    - **FIFO & non-regular file safety:** Python's `O_RDONLY | O_NOFOLLOW` blocks on
-     a FIFO before `fstat` (`line 65`, baseline discrepancy); Go `J-06` MUST open
+     a FIFO before `fstat` (`line 66`, baseline discrepancy); Go `J-06` MUST open
      with `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` (clearing `O_NONBLOCK` after regular
      file + `uid == os.Getuid()` `fstat` succeeds) so FIFOs, symlinks, sockets, and
      devices refuse immediately without hanging.
    - **Pinned `OFFSET:LENGTH:SHA256`, per-path JSONL strictness & bounded scan limits:**
      pinned locators enforce `\n`-framed JSONL boundaries, exact raw-byte SHA-256,
-     and valid UTF-8 (`lines 64-97`). JSONL duplicate-key strictness MUST match
+     and valid UTF-8 (`lines 65-98`). JSONL duplicate-key strictness MUST match
      each path's exact source policy (unless an explicit repair is labelled):
-     - **Plain `json.loads`:** `last_jsonl_record` (`lines 100-117`),
-       `daemon_start_claim_evidence` (`lines 132-140`), and
+     - **Plain `json.loads`:** `last_jsonl_record` (`lines 101-118`),
+       `daemon_start_claim_evidence` (`lines 133-141`), and
        `find_codex_refusal_locators` (including the explicitly labelled
        [CAIRN-423 repair](../../native-inbox.md#end-and-recovery) below).
      - **`strict_native_line` skipping failing lines (`strict-skip`):**
-       `latest_codex_turn_end` (`lines 312-351`, `334-337`).
+       `latest_codex_turn_end` (`lines 313-352`, `335-338`).
      - **`strict_native_line` raising on duplicate/invalid keys (`strict-raise`):**
-       pinned `OFFSET:LENGTH:SHA256` records (`lines 64-97`) and the
-       `codex_ended_turn_proof` bounded region (`lines 446-462`, `line 460`).
-     Bounded scan caps: Claude transcript `<= 256 MiB` (`lines 120-151`), Codex
-     locator search historically `<= 16 MiB` (`lines 611-643`), Codex latest turn end `<= 8 MiB`
-     (`lines 312-351`), and Codex ended-turn region `<= 8 MiB` + tail `<= 64 MiB`
-     (`lines 446-457`).
+       pinned `OFFSET:LENGTH:SHA256` records (`lines 65-98`) and the
+       `codex_ended_turn_proof` bounded region (`lines 447-463`, `line 461`).
+     Bounded scan caps: Claude transcript `<= 256 MiB` (`lines 121-152`), Codex
+     locator search historically `<= 16 MiB` (`f15fbc91:integrations/lifecycle/transcript_recovery.py:611-643`), Codex latest turn end `<= 8 MiB`
+     (`lines 313-352`), and Codex ended-turn region `<= 8 MiB` + tail `<= 64 MiB`
+     (`lines 447-458`).
      **Labelled J-06 repair, CAIRN-423:** automatic refusal locator discovery
      scans the whole captured finite snapshot with bounded reads (at most
      65537 bytes) and at most three retained matching locators, without a file-size
@@ -717,25 +717,25 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
    - **Token-level numeric & UTF-8 parity:** validate raw UTF-8 before decode and
      use token-level number parsing (`UseNumber`) so `1.0` vs integer `1`
      (`type(x) is int`), large integers, lone-surrogate escapes, and `NaN`/`Infinity`
-     match Python's exact rejection/acceptance rules (`lines 366-372, 392-395, 466-467, 553-558`).
+     match Python's exact rejection/acceptance rules (`lines 367-373, 393-396, 467-468, 554-559`).
    - **Inode & size rechecks:** open Codex rollouts recheck `(dev, ino)` across reads
-     (`lines 304-305, 397-399, 501-503, 566-568`); note `codex_queue_rollout_proof`
-     (`lines 550-607`) decides `never_admitted` from `stat_before.st_size` and
+     (`lines 305-306, 398-400, 502-504, 567-569`); note `codex_queue_rollout_proof`
+     (`lines 551-608`) decides `never_admitted` from `stat_before.st_size` and
      rechecks only `(dev, ino)` (characterize baseline race; adding `st_size`
      recheck is a labelled hardening).
 2. **Exact Recovery & Health Mode Grouping:**
    - **Host-diagnostic mode (no transcript read):** `recover-refused-wake` settles
-     from host-recorded `wake_refusal_diagnostic` (`lines 186-210`).
+     from host-recorded `wake_refusal_diagnostic` (`lines 187-211`).
    - **Claude transcript & worker-rebind modes:** `recover-native-refused-wake` binds
      wake envelope, `--config` path, `<= 15s` chronology, and single leased claim
-     (no `native_turn_id`, `lines 213-256`). `recover-daemon-start-claim`
-     (`transcript_recovery.py:154-183`, `coordination.py:1447-1455, 3270-3287`)
+     (no `native_turn_id`, `lines 214-257`). `recover-daemon-start-claim`
+     (`transcript_recovery.py:155-184`, `coordination.py:1447-1455, 3270-3287`)
      verifies the bound Claude `daemon` is live (`supervisor_role == "daemon"`),
      locates **exactly one** worker (`find_daemon_worker` / `daemon_worker_of`: `exe`
      under `claude_exe_dirs`, `argv` `--resume <transcript>`, running under a
      `bg-pty-host` parented by that exact `daemon`), scans the bounded Claude
      transcript (`<= 256 MiB`), and **rebinds `state["process"] = worker`**
-     (`line 180`) before settling.
+     (`line 181`) before settling.
    - **Codex rollout, RPC & inspection modes:** `recover-codex-refused-wake`,
      `recover-codex-ended-turn`, and `reconcile-codex-queue-wake` verify live-owner
      rollout records and `CODEX_QUEUE_OUTCOMES`. Normal `reconcile-codex-queue-wake`
@@ -760,7 +760,7 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
      never persist state or call store reconciliation, **but** they acquire the `0s`
      `session_lock` (`coordination.py:3451+, 3709-3712`, so concurrent hooks can observe
      `SESSION_BUSY`), and `recover-codex-ended-turn --check-only`
-     (`transcript_recovery.py:525`) and `reconcile-codex-queue-wake --check-only`
+     (`transcript_recovery.py:526`) and `reconcile-codex-queue-wake --check-only`
      perform live Codex RPC probes under that lock.
 
 ## Source-backed fixture matrix and verification gates
@@ -771,7 +771,7 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
 | `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3183-3198, 3722-3827`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
 | `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
 | `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4088-4511` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
-| `J-F5`: Offline transcript recovery & health | `transcript_recovery.py`, `coordination.py:3270-3575, 4376-4459` | FIFO non-blocking refusal (`O_NONBLOCK`), symlink (`O_NOFOLLOW`), wrong UID, `1.0` float vs int, `NaN`, lone surrogate, invalid UTF-8, 3-mode per-path JSONL strictness (`plain`: `100-117, 132-140` and refusal discovery; `strict-skip`: `334-337`; `strict-raise`: `64-97` & `460`), `recover-daemon-start-claim` (`0` or `2` workers, outside daemon's `bg-pty-host`, valid worker `state["process"]` rebind), historical bounded scan caps (`256/16/8/64 MiB`) plus labelled CAIRN-423 whole-snapshot refusal discovery with bounded buffers/eligible records, one-second cooperative budget and unknown-on-exhaustion/change/partial-EOF, live-owner `/proc/<pid>/fd` Codex derivation, normal `reconcile-codex-queue-wake` wake-custody mutations vs 4 honoring `--check-only` modes + `inspect-held-refusal` non-persistence (`0s` `session_lock`), and `/2` `recover-refused-wake --check-only` / `recover-native-refused-wake --check-only` / `check-codex-native-health --check-only` ignoring `--check-only` and settling/persisting vs selected `/3` parity or labelled repair |
+| `J-F5`: Offline transcript recovery & health | `transcript_recovery.py`, `coordination.py:3270-3575, 4376-4459` | FIFO non-blocking refusal (`O_NONBLOCK`), symlink (`O_NOFOLLOW`), wrong UID, `1.0` float vs int, `NaN`, lone surrogate, invalid UTF-8, 3-mode per-path JSONL strictness (`plain`: `101-118, 133-141` and refusal discovery; `strict-skip`: `335-338`; `strict-raise`: `65-98` & `461`), `recover-daemon-start-claim` (`0` or `2` workers, outside daemon's `bg-pty-host`, valid worker `state["process"]` rebind), historical bounded scan caps (`256/16/8/64 MiB`) plus labelled CAIRN-423 whole-snapshot refusal discovery with bounded buffers/eligible records, one-second cooperative budget and unknown-on-exhaustion/change/partial-EOF, live-owner `/proc/<pid>/fd` Codex derivation, normal `reconcile-codex-queue-wake` wake-custody mutations vs 4 honoring `--check-only` modes + `inspect-held-refusal` non-persistence (`0s` `session_lock`), and `/2` `recover-refused-wake --check-only` / `recover-native-refused-wake --check-only` / `check-codex-native-health --check-only` ignoring `--check-only` and settling/persisting vs selected `/3` parity or labelled repair |
 
 Required local validation before any Coordination slice is marked `Done`:
 - `python3 -B -m unittest scripts/test_inbox_recovery.py scripts/test_inbox_drain.py integrations/lifecycle/test_native_session.py`

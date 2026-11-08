@@ -71,7 +71,7 @@ class CodexBase(Base):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.ops, [])
 
-    def prepend_history(self, minimum_bytes, *, leading=b'', trailing=b''):
+    def prepend_history(self, minimum_bytes, *, leading=b'', trailing=b'', minimum_tail_bytes=0):
         history = b'{"type":"fixture_metadata","payload":{"padding":"' + b'x' * 4096 + b'"}}\n'
         count = minimum_bytes // len(history) + 1
         records = self.rollout.read_bytes()
@@ -80,6 +80,9 @@ class CodexBase(Base):
             for _ in range(count):
                 output.write(history)
             output.write(records)
+            if minimum_tail_bytes:
+                for _ in range(minimum_tail_bytes // len(history) + 1):
+                    output.write(history)
             output.write(trailing)
         for locator in self.locators:
             locator['offset'] += len(leading) + count * len(history)
@@ -125,14 +128,26 @@ class CodexRecoveryTests(CodexBase):
 
     def test_duplicate_matching_record_anywhere_in_large_history_keeps_hold(self):
         duplicate = json.dumps(self.records[0]).encode() + b'\n'
-        for placement in ('before', 'after'):
+        initial_state = self.path.read_text()
+        for placement in ('control', 'before', 'after'):
             with self.subTest(placement=placement):
+                self.state = json.loads(initial_state)
+                self.save()
                 self.write_records()
                 self.prepend_history(17 * 1024 * 1024,
                     leading=duplicate if placement == 'before' else b'',
-                    trailing=duplicate if placement == 'after' else b'')
+                    trailing=duplicate if placement == 'after' else b'',
+                    minimum_tail_bytes=17 * 1024 * 1024)
                 self.ops.clear()
-                self.assert_watcher_keeps_hold()
+                with patch.object(coord._transcript_recovery.time, 'monotonic', return_value=0):
+                    if placement == 'control':
+                        with self.patched(), patch.object(coord, 'process_alive', return_value=True):
+                            coord.watch_inbox(self.cc, self.load(), self.path)
+                        self.assertEqual(self.load()['wake_refusal_diagnostic']['settlement'], 'turn_ended')
+                        self.assertNotIn('inbox_attempt', self.load())
+                        self.assertEqual([r['reason'] for r in self.reconciles()], ['turn_ended'])
+                    else:
+                        self.assert_watcher_keeps_hold()
 
     def test_unrelated_malformed_and_oversized_lines_do_not_hide_valid_proof(self):
         records = self.rollout.read_bytes()
