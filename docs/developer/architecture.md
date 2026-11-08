@@ -43,6 +43,28 @@ schema migrations with `cairn migrate` during an operator-managed upgrade.
 Migration files, rather than a copied schema number in this guide, define the
 current schema.
 
+## Host runtime and semantic workers
+
+The current lifecycle entrypoints are Python: `memory.py` handles memory hooks,
+and `coordination.py` handles native inbox commands, hooks and the presence
+watcher under `integrations/lifecycle/`. The bundle loader stages their complete
+module set and validates pinned bytes before loading it. Upgrading the Go CLI
+alone does not upgrade those installed files. See
+[lifecycle bundles](../lifecycle-bundles.md) for the installation contract.
+
+The Go `semantic/` package supervises external scoring and embedding processes.
+`scripts/install-semantic.sh` prepares Python workers and their model assets;
+`cairn serve` selects a worker through an explicit command flag. The Go
+supervisor's presence does not mean inference runs in Go or that a Rust worker
+has been selected.
+
+The [hybrid runtime plan](../plans/hybrid-runtime-consolidation.md) specifies
+moving lifecycle policy to Go and inference to a separate Rust worker. Read its
+[implementation dependencies](../plans/hybrid-runtime-implementation.md) and
+[release contract](../plans/hybrid-runtime-contracts/release.md) as transition
+requirements. Source inspection, staging and documentation checks do not qualify
+the complete watcher, its bindings and shared-state users for cutover.
+
 ## Preserve the boundaries
 
 Ordinary notes, qualified claims, and authorized instructions have different

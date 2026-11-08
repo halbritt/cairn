@@ -24,11 +24,15 @@ git clone https://github.com/halbritt/cairn.git
 cd cairn
 make build
 export PATH="$PWD/bin:$PATH"
-export CAIRN_HOME="$HOME/.local/share/cairn"
+export CAIRN_HOME="$HOME/.local/share/cairn-quickstart"
 export CAIRN_COLLECTION="$PWD"
 bash scripts/local-store.sh start
 cairn version
 ```
+
+This example uses a separate `cairn-quickstart` state directory. Choose another
+unused directory if that path already holds a store you need to preserve:
+`start` also migrates an existing store at the selected path.
 
 The store script creates a dedicated PostgreSQL cluster under `CAIRN_HOME`,
 listening on a private Unix socket, and applies Cairn's migrations. It does not

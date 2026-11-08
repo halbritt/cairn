@@ -35,6 +35,14 @@ and continuity around session boundaries. An installed bundle must be upgraded
 explicitly. A client that can call memory tools does not thereby have automatic
 recall, inbox delivery, or every lifecycle hook enabled.
 
+The current source uses Python lifecycle modules and prepares Python semantic
+workers, with semantic process supervision in Go. The
+[architecture guide](developer/architecture.md#host-runtime-and-semantic-workers)
+identifies these boundaries. The planned Go lifecycle and Rust inference
+transition has separate implementation, parity, installation and whole-unit
+qualification gates. A documentation audit or a staged binary does not close
+them; see the [release contract](plans/hybrid-runtime-contracts/release.md).
+
 ## Coordination
 
 The [event system](agent-event-fabric.md) stores requests, notices, and responses

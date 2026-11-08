@@ -41,6 +41,17 @@ for budgeting, quarantine, restore detection, and runtime mediation are bounded
 parts of these workflows. Their existence does not establish end-to-end
 integration or deployment.
 
+The [hybrid runtime campaign](plans/hybrid-runtime-implementation.md) plans to
+move lifecycle policy to Go and semantic inference to a separate Rust worker.
+Its release sequence keeps staging, complete-unit qualification, production
+cutover and retirement separate. R-06 includes the documentation audit, but also
+requires R-03, R-04, R-05, S-05 and S-04R and qualification of drain, switch,
+restart and rollback for each complete watcher unit. Documentation preparation
+alone leaves those requirements open. R-07 performs the production transition;
+R-08 waits for its observation and rollback gates before retirement. The
+[release contract](plans/hybrid-runtime-contracts/release.md#work-items-and-release-gates)
+retains the full criteria, including source/model identity and native evidence.
+
 ## Assess task value without narrowing it to an evaluator
 
 Evaluate whether memory helps agents finish useful work and reduces repeated

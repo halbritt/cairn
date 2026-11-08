@@ -13,6 +13,20 @@ See the [implementation log](docs/history/implementation-log.md) for dated deplo
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-11-07
+
+- Clarified the current Python lifecycle and semantic-worker implementation and
+  the Go supervisor boundary. The architecture, status and roadmap now link to
+  the hybrid transition requirements without treating documentation preparation
+  as whole-unit qualification or production cutover.
+- The quickstart uses a separate state directory and explains that `start`
+  migrates an existing selected store. Deployment instructions distinguish that
+  example directory from the service defaults. Backup instructions now state
+  the Python 3.11 requirement for catalog checksums.
+- Documented the limits of source-only example review and the four local
+  documentation-check tiers. No setup examples or runtime qualification jobs
+  were executed for these documentation changes.
+
 ## 2026-11-06
 
 - Added [event admission policies](docs/event-admission.md) for topic fanout,

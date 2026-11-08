@@ -31,7 +31,8 @@ Validate changes locally using disposable databases, as described in
 
 ## Back up a managed local store
 
-For a cluster managed by `scripts/local-store.sh`, run from the matching checkout:
+For a cluster managed by `scripts/local-store.sh`, use Python 3.11 or newer and
+run from the matching checkout. The catalog writer uses `hashlib.file_digest`:
 
 ```sh
 bash scripts/local-store.sh backup

@@ -5,6 +5,12 @@ its agent clients. Start with the [quickstart](../quickstart.md) to verify that
 capture, search, and pull work before adding persistent services or remote
 machines.
 
+The quickstart selects `~/.local/share/cairn-quickstart`; the defaults in this
+guide use `~/.local/share/cairn`. Choose the intended `CAIRN_HOME` before starting
+the store, and use that same directory for profiles, clients and services. A
+systemd service needs its own configuration for a nondefault directory; it does
+not inherit the exports from your terminal.
+
 ## Choose a PostgreSQL setup
 
 The repository's `scripts/local-store.sh` manages a dedicated cluster under
@@ -12,6 +18,8 @@ The repository's `scripts/local-store.sh` manages a dedicated cluster under
 redirects to the system PostgreSQL service. It requires Linux, Bash, `flock`,
 Python 3, and PostgreSQL server/client tools. PostgreSQL 17 is used by lifecycle
 validation; building Cairn requires Go 1.25 or newer.
+The script's backup command requires Python 3.11 or newer for
+`hashlib.file_digest`; see [backup maintenance](maintenance.md#back-up-a-managed-local-store).
 
 From your Cairn checkout:
 

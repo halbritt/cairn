@@ -46,8 +46,10 @@ reports the error, what it means, and the appropriate next step.
 ## Verify claims
 
 Check command names and flags against the parser or built CLI. Check API routes
-and fields against the generated contract and implementation. Run changed setup
-examples using a disposable store. Link to a canonical reference for details
+and fields against the generated contract and implementation. Exercise changed
+setup examples in a disposable store when execution is within the task's scope.
+For a source-only audit, inspect their parser and callers and report that the
+examples were not executed. Link to a canonical reference for details
 that would otherwise be duplicated across clients.
 
 Distinguish a library function that calculates a report from a caller that
@@ -56,9 +58,11 @@ configuration, and observed live behavior. A successful retrieval is not proof
 of improved task outcomes, and a migration number does not prove feature
 acceptance.
 
-For documentation changes, check local links and anchors, run `make check`, and
-exercise affected examples. Broaden validation when a claim depends on behavior
-that those checks do not establish. Record what was actually tested.
+For documentation changes, run `python3 -B scripts/verify_docs.py --tier 1,2,3,4`
+and `make check`. The documentation checker covers links, CLI syntax, JSON and
+shell syntax, and required-guide presence; it does not execute examples or prove
+behavior. Broaden validation within the task's scope when a claim depends on
+behavior that those checks do not establish. Record what was actually tested.
 
 Historical records retain their original evidence and qualifications. If an old
 claim is wrong, add a dated correction or a clear link to the current contract;
