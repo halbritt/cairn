@@ -93,25 +93,47 @@ func TestWakeWordingAndRecognizers(t *testing.T) {
 			t.Fatalf("BindCodexQueuedWake[%d] accepted ASCII separator-only TurnID", i)
 		}
 
+		strPtr := func(s string) *string { return &s }
 		hermesWake := WakeEnvelope{Session: session, DeliveryID: testDeliveryID, Transport: TransportHermesQueue, NativeID: "hermes-sess-1"}
+		for _, turnID := range []string{"t2", "other-sess:t2"} {
+			bound, ok = BindHermesQueuedWake(session, hermesWake, PromptEvent{
+				HookEventName: "TurnStart",
+				Prompt:        body,
+				TurnID:        turnID,
+			})
+			if !ok || bound != (BoundWake{DeliveryID: testDeliveryID, NativeTurnID: turnID}) {
+				t.Fatalf("BindHermesQueuedWake[%d] absent session (%s) = (%#v, %v)", i, turnID, bound, ok)
+			}
+		}
 		bound, ok = BindHermesQueuedWake(session, hermesWake, PromptEvent{
 			HookEventName: "TurnStart",
 			Prompt:        body,
 			TurnID:        "hermes-sess-1:t2",
-			SessionID:     "hermes-sess-1",
+			SessionID:     strPtr("hermes-sess-1"),
 		})
 		if !ok || bound != (BoundWake{DeliveryID: testDeliveryID, NativeTurnID: "hermes-sess-1:t2"}) {
 			t.Fatalf("BindHermesQueuedWake[%d] = (%#v, %v)", i, bound, ok)
 		}
 		for _, badEvt := range []PromptEvent{
-			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: ""},
-			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: "\x1c\x1f"},
-			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: "other-sess"},
-			{HookEventName: "TurnStart", Prompt: body, TurnID: "other-sess:t2", SessionID: "hermes-sess-1"},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: strPtr("")},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: strPtr("\x1c\x1f")},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: strPtr("other-sess")},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "other-sess:t2", SessionID: strPtr("hermes-sess-1")},
 		} {
 			if _, ok := BindHermesQueuedWake(session, hermesWake, badEvt); ok {
 				t.Fatalf("BindHermesQueuedWake[%d] accepted invalid session custody %#v", i, badEvt)
 			}
+		}
+		var nullSessionEvt PromptEvent
+		if err := json.Unmarshal([]byte(fmt.Sprintf(`{"hook_event_name":"TurnStart","prompt":%q,"turn_id":"t2","session_id":null}`, body)), &nullSessionEvt); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := BindHermesQueuedWake(session, hermesWake, nullSessionEvt); !ok {
+			t.Fatalf("BindHermesQueuedWake[%d] rejected JSON null session_id", i)
+		}
+		var nonStringSessionEvt PromptEvent
+		if err := json.Unmarshal([]byte(fmt.Sprintf(`{"hook_event_name":"TurnStart","prompt":%q,"turn_id":"t2","session_id":123}`, body)), &nonStringSessionEvt); err == nil {
+			t.Fatalf("json.Unmarshal accepted non-string session_id")
 		}
 
 		claudeWake := WakeEnvelope{Session: session, DeliveryID: testDeliveryID, Transport: TransportClaudeChannel}
@@ -309,6 +331,8 @@ func serveClaudeStandinOnce(t *testing.T, listener *net.UnixListener, mode strin
 			_, _ = io.WriteString(conn, `{"status":"written"}}`+"\n")
 		case "trailing_token":
 			_, _ = io.WriteString(conn, `{"status":"written"} x`+"\n")
+		case "oversized_int":
+			_, _ = io.WriteString(conn, `{"status":"written","n":`+strings.Repeat("9", 4301)+`}`+"\n")
 		case "overflow":
 			_, _ = io.WriteString(conn, strings.Repeat("x", ClaudeMaxLineBytes+1)+"\n")
 		case "drip":
@@ -365,8 +389,8 @@ func TestClaudeChannelClientWriteAndErrors(t *testing.T) {
 		t.Fatalf("expected ClaudeChannelUnavailable on unavailable status, got %v", err)
 	}
 
-	// 3. Uncertain, drop, malformed, trailing-token/brace, overflow, and drip replies are uncertain (never unavailable).
-	for _, mode := range []string{"uncertain", "drop", "garbage", "array", "nostatus", "trailing_brace", "trailing_token", "overflow"} {
+	// 3. Uncertain, drop, malformed, trailing-token/brace, >4300-digit int, overflow, and drip replies are uncertain (never unavailable).
+	for _, mode := range []string{"uncertain", "drop", "garbage", "array", "nostatus", "trailing_brace", "trailing_token", "oversized_int", "overflow"} {
 		_ = serveClaudeStandinOnce(t, listener, mode)
 		err := WriteClaudeChannel(context.Background(), sockPath, selfRef, selfRef, "wake content", meta)
 		if err == nil || IsClaudeChannelUnavailable(err) || !IsClaudeChannelError(err) {
@@ -382,10 +406,14 @@ func TestClaudeChannelClientWriteAndErrors(t *testing.T) {
 		t.Fatalf("drip timeout: %v", err)
 	}
 
-	// 5. Pre-send refusals: oversized line (ASCII and ensure_ascii=True non-ASCII), wrong PID, changed start, absent socket.
+	// 5. Pre-send refusals: oversized line (ASCII, DEL 0x7f, and ensure_ascii=True non-ASCII), wrong PID, changed start, absent socket.
 	err = WriteClaudeChannel(context.Background(), sockPath, selfRef, selfRef, strings.Repeat("a", ClaudeMaxLineBytes), meta)
 	if !IsClaudeChannelUnavailable(err) || !strings.Contains(err.Error(), "exceeds the line limit") {
 		t.Fatalf("oversized request: %v", err)
+	}
+	err = WriteClaudeChannel(context.Background(), filepath.Join(t.TempDir(), "never-dialed-del.sock"), selfRef, selfRef, strings.Repeat("\x7f", 1400), meta)
+	if !IsClaudeChannelUnavailable(err) || !strings.Contains(err.Error(), "exceeds the line limit") {
+		t.Fatalf("oversized DEL (0x7f) ensure_ascii=True request: %v", err)
 	}
 	err = WriteClaudeChannel(context.Background(), filepath.Join(t.TempDir(), "never-dialed.sock"), selfRef, selfRef, strings.Repeat("雪", 2000), meta)
 	if !IsClaudeChannelUnavailable(err) || !strings.Contains(err.Error(), "exceeds the line limit") {
@@ -934,12 +962,12 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 		}
 	}
 
-	// 2c. Per-read handshake timeout (T1): 3 chunks at 60ms each (180ms total) succeed under 100ms ConnectTimeout; single 180ms stall fails.
+	// 2c. Per-read handshake timeout (T1): 3 chunks at 60ms each (180ms total) succeed under 150ms ConnectTimeout; single 260ms stall fails.
 	dribbleOK := defaultCodexStandinOptions()
 	dribbleOK.upgradeChunks = 3
 	dribbleOK.upgradeChunkDelay = 60 * time.Millisecond
 	_ = serveCodexStandinOnce(t, listener, dribbleOK)
-	dribbleClient := CodexQueueClient{ConnectTimeout: 100 * time.Millisecond, RPCTimeout: time.Second}
+	dribbleClient := CodexQueueClient{ConnectTimeout: 150 * time.Millisecond, RPCTimeout: time.Second}
 	qID, started, err := dribbleClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
 	if err != nil || qID != "queued-one" || !started {
 		t.Fatalf("dribbled 101 handshake under per-read timeout: (%q, %v, %v)", qID, started, err)
@@ -947,7 +975,7 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 
 	dribbleStall := defaultCodexStandinOptions()
 	dribbleStall.upgradeChunks = 1
-	dribbleStall.upgradeChunkDelay = 180 * time.Millisecond
+	dribbleStall.upgradeChunkDelay = 260 * time.Millisecond
 	_ = serveCodexStandinOnce(t, listener, dribbleStall)
 	_, _, err = dribbleClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
 	if !IsCodexQueueUnavailable(err) || !strings.Contains(err.Error(), "native queue endpoint is unavailable") {
@@ -957,9 +985,9 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 	// 2d. Socket read timeout during thread/queue/add recv (T2) -> "native queue outcome is uncertain; do not automatically resend".
 	stallAdd := defaultCodexStandinOptions()
 	stallAdd.stallMethod = "thread/queue/add"
-	stallAdd.stallDelay = 200 * time.Millisecond
+	stallAdd.stallDelay = 300 * time.Millisecond
 	_ = serveCodexStandinOnce(t, listener, stallAdd)
-	shortRPCClient := CodexQueueClient{ConnectTimeout: time.Second, RPCTimeout: 80 * time.Millisecond}
+	shortRPCClient := CodexQueueClient{ConnectTimeout: time.Second, RPCTimeout: 150 * time.Millisecond}
 	_, _, err = shortRPCClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
 	if err == nil || IsCodexQueueUnavailable(err) || err.Error() != "native queue outcome is uncertain; do not automatically resend" {
 		t.Fatalf("stalled thread/queue/add recv timeout: %v", err)

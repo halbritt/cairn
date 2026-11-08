@@ -74,12 +74,14 @@ type BoundWake struct {
 }
 
 // PromptEvent carries the hook fields inspected by wake recognizers and binders.
+// SessionID is nil when session_id is absent or JSON null, matching Python
+// event.get("session_id") is None in coordination.py.
 type PromptEvent struct {
-	HookEventName string `json:"hook_event_name"`
-	Prompt        string `json:"prompt"`
-	TurnID        string `json:"turn_id,omitempty"`
-	PromptID      string `json:"prompt_id,omitempty"`
-	SessionID     string `json:"session_id,omitempty"`
+	HookEventName string  `json:"hook_event_name"`
+	Prompt        string  `json:"prompt"`
+	TurnID        string  `json:"turn_id,omitempty"`
+	PromptID      string  `json:"prompt_id,omitempty"`
+	SessionID     *string `json:"session_id,omitempty"`
 }
 
 const hexUUIDPattern = `[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}`
@@ -220,15 +222,20 @@ func BindClaudeChannelWake(agent SessionRef, idleWake WakeEnvelope, event Prompt
 // across current and legacy closing wordings.
 func BindHermesQueuedWake(agent SessionRef, idleWake WakeEnvelope, event PromptEvent) (BoundWake, bool) {
 	if idleWake.Transport != TransportHermesQueue || idleWake.Session != agent ||
-		event.HookEventName != "TurnStart" || !validTurnIdentifier(event.TurnID) ||
-		pythonStrip(event.SessionID) == "" {
+		event.HookEventName != "TurnStart" || !validTurnIdentifier(event.TurnID) {
 		return BoundWake{}, false
 	}
-	if idleWake.NativeID != "" && event.SessionID != idleWake.NativeID {
-		return BoundWake{}, false
-	}
-	if strings.Contains(event.TurnID, ":") && !strings.HasPrefix(event.TurnID, event.SessionID+":") {
-		return BoundWake{}, false
+	if event.SessionID != nil {
+		sessionID := *event.SessionID
+		if pythonStrip(sessionID) == "" {
+			return BoundWake{}, false
+		}
+		if idleWake.NativeID != "" && sessionID != idleWake.NativeID {
+			return BoundWake{}, false
+		}
+		if strings.Contains(event.TurnID, ":") && !strings.HasPrefix(event.TurnID, sessionID+":") {
+			return BoundWake{}, false
+		}
 	}
 	msgs := WakeMessages(idleWake.Session, idleWake.DeliveryID)
 	if event.Prompt != msgs[0] && event.Prompt != msgs[1] {
@@ -337,7 +344,7 @@ func escapeNonASCII(src []byte) []byte {
 	var out bytes.Buffer
 	out.Grow(len(src))
 	for i := 0; i < len(src); {
-		if src[i] < 0x80 {
+		if src[i] < 0x7f {
 			out.WriteByte(src[i])
 			i++
 			continue
@@ -352,6 +359,31 @@ func escapeNonASCII(src []byte) []byte {
 		i += size
 	}
 	return out.Bytes()
+}
+
+const pythonMaxIntStrDigits = 4300
+
+func checkJSONIntDigits(v any) error {
+	switch val := v.(type) {
+	case json.Number:
+		s := val.String()
+		if !strings.ContainsAny(s, ".eE") && len(strings.TrimPrefix(s, "-")) > pythonMaxIntStrDigits {
+			return fmt.Errorf("integer literal exceeds %d digits", pythonMaxIntStrDigits)
+		}
+	case map[string]any:
+		for _, elem := range val {
+			if err := checkJSONIntDigits(elem); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, elem := range val {
+			if err := checkJSONIntDigits(elem); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func decodeStrictJSONValue(raw []byte) (any, error) {
@@ -372,6 +404,9 @@ func decodeStrictJSONValue(raw []byte) (any, error) {
 		if err == nil {
 			return nil, fmt.Errorf("unexpected trailing JSON value")
 		}
+		return nil, err
+	}
+	if err := checkJSONIntDigits(parsed); err != nil {
 		return nil, err
 	}
 	return parsed, nil
