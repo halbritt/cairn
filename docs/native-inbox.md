@@ -464,6 +464,28 @@ handled or automatically replayed. Store failure retains the ended-turn proof fo
 reconciliation retry. This command is explicit recovery, not an automatic Codex refusal detector.
 Post-claim diagnostics retain allowlisted cause codes and reasons when available, never raw error text.
 
+Newly recorded bridge refusals can also include `refusal_stage` and `refusal_reason`.
+The stage names the operation reached; a reason names an explicit validation guard.
+An unexpected exception keeps a known stage with reason `unknown`. Neither exception
+text nor its class is used to infer a guard. The finite stage/reason pairs are defined
+by `INBOX_REFUSAL_REASONS` in `integrations/lifecycle/grant_ledger.py`; the same filter
+applies when retaining the diagnostic and exposing the held-attempt observation.
+These fields are diagnostic metadata, not authentication, delivery evidence or a
+reason to retry failed work. Older records without them remain unknown; the fields
+do not establish the cause of a historical refusal.
+
+Budget guards may retain `configured_budget_bytes`, `budget_bytes`,
+`prior_charge_bytes` and `native_allowance_bytes` from the existing decision.
+Only actual nonnegative integers are retained: the configuration, remaining budget
+and native allowance are bounded by 9500 bytes. Prior charges allow the existing
+conservative wire conversion: twice the 65536-byte Codex ledger limit plus its
+serialized hook-envelope framing. Booleans, strings, floats and out-of-range
+values are omitted, never coerced or clamped. A negative remaining budget is omitted;
+the guard and prior/configured charges still describe the refusal. Missing fields
+do not mean zero. No prompts, source bodies, paths, exception messages or API payloads
+are added to the diagnostic. Diagnostic/reporting failure cannot turn the existing
+refusal into success or authorize settlement, a new claim, completion or replay.
+
 Automatic discovery of those three locators scans the live owner's whole captured
 rollout snapshot, including histories larger than 16 or 64 MiB. It retains only
 three matching locators and reads at most 65537 bytes at a time. Proof records

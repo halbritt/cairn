@@ -27,6 +27,65 @@ WAKE_CLOSINGS = (
     "Do not register, manually claim an inbox, or launch a replacement conversation.",
 )
 
+# A known stage does not establish which validation failed. Only explicit guard
+# sites assign a reason; unexpected exceptions retain the stage with "unknown".
+INBOX_REFUSAL_REASONS = {
+    'bridge': frozenset(),
+    'loader': frozenset(('member_shape', 'member_owner', 'member_changed', 'descriptor', 'member_hash',
+                         'role', 'entrypoint_path', 'entrypoint_hash')),
+    'binding': frozenset(('manifest_owner', 'config_owner', 'config_hash', 'schema', 'disabled',
+                          'coordination_count', 'config_homes', 'profile', 'engine_contract')),
+    'identity': frozenset(('project', 'native_session', 'native_turn', 'claude_owner', 'claude_envelope',
+                           'wake_session', 'attempt_live', 'attempt_session', 'attempt_owner', 'wake_delivery')),
+    'inbox_ledger': frozenset(('marker', 'missing', 'shape', 'required_status', 'refresh_counter',
+                              'pending_charge', 'active_grant', 'folded', 'delivery_identity', 'consumed')),
+    'required_search': frozenset(('hosted_destination',)),
+    'task_source': frozenset(('source_identity', 'source_version')),
+    'turn_budget': frozenset(('retired_turn',)),
+    'command_context': frozenset(('source_identity', 'compact_fallback')),
+    'required_render': frozenset(('required_context',)),
+    'optional_search': frozenset(('hosted_destination',)),
+    'optional_render': frozenset(('task_context',)),
+    'final_render': frozenset(('output_budget', 'allowance_budget')),
+    'lease_revalidation': frozenset(),
+    'grant_persistence': frozenset(),
+}
+
+
+def inbox_refusal_details(raw):
+    if not isinstance(raw, dict):
+        return {}
+    stage, reason = raw.get('refusal_stage'), raw.get('refusal_reason')
+    if type(stage) is not str or stage not in INBOX_REFUSAL_REASONS:
+        return {}
+    if type(reason) is not str or reason not in INBOX_REFUSAL_REASONS[stage] | {'unknown'}:
+        reason = 'unknown'
+    result = dict(refusal_stage=stage, refusal_reason=reason)
+    if (stage, reason) not in (('required_render', 'required_context'), ('optional_render', 'task_context'),
+                              ('final_render', 'output_budget'), ('final_render', 'allowance_budget')):
+        return result
+    # Bounds follow bound-inbox configuration and retained Codex turn-ledger limits.
+    for key, maximum in (('configured_budget_bytes', 9500), ('budget_bytes', 9500),
+                         ('prior_charge_bytes', codex_emitted_wire_bytes(dict(emitted_hook_bytes=65536))), ('native_allowance_bytes', 9500)):
+        value = raw.get(key)
+        if type(value) is int and 0 <= value <= maximum:
+            result[key] = value
+    return result
+
+
+def annotate_inbox_refusal(exc, stage):
+    try:
+        if not inbox_refusal_details(getattr(exc, 'cairn_inbox_refusal', None)):
+            exc.cairn_inbox_refusal = dict(refusal_stage=stage, refusal_reason='unknown')
+    except Exception:  # Diagnostic metadata cannot replace the original refusal.
+        pass
+
+
+def inbox_refusal(message, stage, reason, **details):
+    error = ValueError(message)
+    error.cairn_inbox_refusal = dict(refusal_stage=stage, refusal_reason=reason, **details)
+    return error
+
 
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -276,18 +335,18 @@ def load_grants(path, session):
     path = Path(path)
     marker = path.with_suffix('.initialized')
     if marker.exists() and json.loads(marker.read_text()) != dict(schema=INBOX_INIT_SCHEMA, session=session):
-        raise ValueError('inbox recall initialization marker corrupt')
+        raise inbox_refusal('inbox recall initialization marker corrupt', 'inbox_ledger', 'marker')
     if marker.exists() and not path.exists():
-        raise ValueError('inbox recall grant ledger missing')
+        raise inbox_refusal('inbox recall grant ledger missing', 'inbox_ledger', 'missing')
     ledger = json.loads(path.read_text()) if path.exists() else dict(schema=INBOX_LEDGER_SCHEMA, session=session, grants={})
     if ledger.get('schema') != INBOX_LEDGER_SCHEMA or ledger.get('session') != session or not isinstance(ledger.get('grants'), dict):
-        raise ValueError('inbox recall grant ledger corrupt')
+        raise inbox_refusal('inbox recall grant ledger corrupt', 'inbox_ledger', 'shape')
     for key, grant in ledger['grants'].items():
         if (not re.fullmatch('[0-9a-f]{64}', key) or not isinstance(grant, dict)
                 or not isinstance(grant.get('identity'), dict)
                 or any(type(grant.get(k)) is not int or grant[k] < 0 for k in ('limit_bytes', 'output_bytes', 'native_allowance_bytes'))
                 or grant['output_bytes'] + grant['native_allowance_bytes'] > grant['limit_bytes']):
-            raise ValueError('inbox recall grant ledger corrupt')
+            raise inbox_refusal('inbox recall grant ledger corrupt', 'inbox_ledger', 'shape')
     for grant in [ledger, *ledger['grants'].values()]:
         required = grant.get('required')
         if required is not None and (not isinstance(required, dict)
@@ -295,18 +354,18 @@ def load_grants(path, session):
                 or type(required.get('pending')) is not bool
                 or not isinstance(required.get('selection_sha256'), str)
                 or (required['selection_sha256'] != '' and not re.fullmatch('[0-9a-f]{64}', required['selection_sha256']))):
-            raise ValueError('inbox required-context status corrupt')
+            raise inbox_refusal('inbox required-context status corrupt', 'inbox_ledger', 'required_status')
         if type(grant.get('required_refresh_bytes', 0)) is not int or grant.get('required_refresh_bytes', 0) < 0:
-            raise ValueError('inbox required refresh counter corrupt')
+            raise inbox_refusal('inbox required refresh counter corrupt', 'inbox_ledger', 'refresh_counter')
     if type(ledger.get('pending_bytes', 0)) is not int or not 0 <= ledger.get('pending_bytes', 0) <= 9500:
-        raise ValueError('inbox recall pending charge corrupt')
+        raise inbox_refusal('inbox recall pending charge corrupt', 'inbox_ledger', 'pending_charge')
     if ledger.get('active') is not None and ledger['active'] not in ledger['grants']:
-        raise ValueError('inbox recall active grant missing')
+        raise inbox_refusal('inbox recall active grant missing', 'inbox_ledger', 'active_grant')
     folded = ledger.get('folded')
     if folded is not None and (not isinstance(folded, dict) or set(folded) != {'count', 'tokens'}
             or type(folded['count']) is not int or folded['count'] < 0 or not isinstance(folded['tokens'], list)
             or any(not isinstance(t, str) or not re.fullmatch('[0-9a-f]{16}', t) for t in folded['tokens'])):
-        raise ValueError('inbox recall folded grants corrupt')
+        raise inbox_refusal('inbox recall folded grants corrupt', 'inbox_ledger', 'folded')
     return ledger
 
 

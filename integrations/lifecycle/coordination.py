@@ -3145,6 +3145,7 @@ def refusal_cause_details(cause, wrapper=None):
     for source in (cause, wrapper):
         if source is not None:
             result.update(sanitize_recall_failure_meta(getattr(source, 'cairn_recall_failure', None)))
+            result.update(_grant_ledger.inbox_refusal_details(getattr(source, 'cairn_inbox_refusal', None)))
     return result
 
 
@@ -3703,6 +3704,7 @@ def held_attempt_refusal_observation(config, state, now=None):
     if recorded.get('cause_reason') in CAUSE_REASONS:
         obs['cause_reason'] = recorded['cause_reason']
     obs.update(sanitize_recall_failure_meta(recorded))
+    obs.update(_grant_ledger.inbox_refusal_details(recorded))
     return obs
 
 
@@ -4063,13 +4065,16 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 if (renewed.get('delivery_id') != delivery['delivery_id'] or renewed.get('lease_id') != delivery['lease_id']
                         or renewed.get('state') != 'leased' or renewed.get('event') != delivery.get('event')):
                     raise CoordinationError('STALE_LEASE', 'inbox recall delivery changed')
+            refusal_stage = 'loader'
             try:
                 bridge = load_inbox_recall(config)
                 telemetry = ({'reports': recall_reports}
                              if getattr(bridge, 'RECALL_OBSERVATION_VERSION', None) == 1 else {})
+                refusal_stage = 'bridge'
                 message = bridge.output(config, event, observation, state, message,
                                         revalidate=revalidate, outer_deadline=bridge_deadline, **telemetry)
             except (ValueError, KeyError, TypeError, OSError, CoordinationError) as exc:
+                _grant_ledger.annotate_inbox_refusal(exc, refusal_stage)
                 if state.get('inbox_intent'):
                     try:
                         settle_refused_claude_wake(config, state, path, observation.get('native_turn_id'), exc)

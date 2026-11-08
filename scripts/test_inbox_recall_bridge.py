@@ -56,6 +56,7 @@ if op=='search':
  if fixture.get('fail_task_search') and len([x for x in (root/'calls.jsonl').read_text().splitlines() if json.loads(x)['op']=='search'])>1:
   print(json.dumps(dict(ok=False,status=fixture['fail_task_search'])));sys.exit(7)
  result=fixture.get('search_pages',{}).get(args[args.index('--offset')+1],fixture['search']) if '--offset' in args else fixture['search']
+ if fixture.get('task_search') is not None and len([x for x in (root/'calls.jsonl').read_text().splitlines() if json.loads(x)['op']=='search'])>1: result=fixture['task_search']
 elif op=='history':
  if fixture.get('fail_history'): print(json.dumps(dict(ok=False,status=fixture['fail_history'])));sys.exit(7)
  result=fixture['history']
@@ -167,10 +168,12 @@ class InboxRecallBridgeTests(unittest.TestCase):
         p=self.root/'calls.jsonl'
         return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
 
-    def invoke(self, *, lease_failure=False, main=False):
+    def invoke(self, *, lease_failure=False, main=False, on_renew=None):
         def api(config,op,request,**kwargs):
             if op=='event-renew':
                 if lease_failure: raise coord.CoordinationError('STALE_LEASE','fixture refusal')
+                if on_renew is not None:
+                    on_renew()
                 return self.delivery
             if op=='history': return self.fixture['history']
             if op=='agent-context': return self.state['agent']

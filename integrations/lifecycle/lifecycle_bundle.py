@@ -22,6 +22,13 @@ MODULE_FILES = (
 )
 
 
+def _refusal(message, reason):
+    # Bootstrap has no dependency on a member it has not validated yet.
+    error = ValueError(message)
+    error.cairn_inbox_refusal = dict(refusal_stage='loader', refusal_reason=reason)
+    return error
+
+
 def _digest(files):
     raw = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(raw).hexdigest()
@@ -32,15 +39,15 @@ def _read(path, *, controlled=False):
     with os.fdopen(fd, "rb") as source:
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_size > MEMBER_BYTES:
-            raise ValueError("lifecycle bundle member is not a bounded regular file")
+            raise _refusal("lifecycle bundle member is not a bounded regular file", 'member_shape')
         if controlled and (info.st_uid != os.getuid() or info.st_mode & 0o022):
-            raise ValueError("lifecycle bundle member is not owner-controlled")
+            raise _refusal("lifecycle bundle member is not owner-controlled", 'member_owner')
         raw = source.read(MEMBER_BYTES + 1)
         after = os.fstat(source.fileno())
         identity = lambda value: (value.st_dev, value.st_ino, value.st_size,
                                   value.st_mtime_ns, value.st_ctime_ns)
         if len(raw) != info.st_size or identity(info) != identity(after):
-            raise ValueError("lifecycle bundle member changed during read")
+            raise _refusal("lifecycle bundle member changed during read", 'member_changed')
         return raw
 
 
@@ -153,29 +160,29 @@ def checked_sources(root, descriptor):
     """Read a pinned byte snapshot without executing any member."""
     root = Path(root)
     if not isinstance(descriptor, dict):
-        raise ValueError("invalid lifecycle bundle descriptor")
+        raise _refusal("invalid lifecycle bundle descriptor", 'descriptor')
     files = descriptor.get("files")
     if (descriptor.get("schema") != SCHEMA or not isinstance(files, dict)
             or set(files) != set(MODULE_FILES) or descriptor.get("sha256") != _digest(files)):
-        raise ValueError("invalid lifecycle bundle descriptor")
+        raise _refusal("invalid lifecycle bundle descriptor", 'descriptor')
     sources = {}
     for filename, digest in files.items():
         raw = _read(root / filename, controlled=True)
         if hashlib.sha256(raw).hexdigest() != digest:
-            raise ValueError("pinned lifecycle bundle changed")
+            raise _refusal("pinned lifecycle bundle changed", 'member_hash')
         sources[filename] = raw
     return sources
 
 
 def pinned_sources(descriptor, role):
     if role not in ("memory", "inbox_recall"):
-        raise ValueError("unsupported pinned lifecycle role")
+        raise _refusal("unsupported pinned lifecycle role", 'role')
     path = Path(descriptor["path"])
     if not path.is_absolute():
-        raise ValueError("pinned lifecycle entrypoint must be absolute")
+        raise _refusal("pinned lifecycle entrypoint must be absolute", 'entrypoint_path')
     sources = checked_sources(path.parent, descriptor["bundle"])
     raw = sources[role + ".py"] if path.name == role + ".py" else _read(path, controlled=True)
     if (hashlib.sha256(raw).hexdigest() != descriptor["sha256"]
             or raw != sources[role + ".py"]):
-        raise ValueError("pinned lifecycle entrypoint differs from its bundle")
+        raise _refusal("pinned lifecycle entrypoint differs from its bundle", 'entrypoint_hash')
     return path, sources

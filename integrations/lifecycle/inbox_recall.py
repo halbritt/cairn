@@ -328,31 +328,35 @@ def load_grants(path, session):
     return _grant_ledger.load_grants(path, session)
 
 
-def hosted(result):
+def hosted(result, stage='required_search'):
     destination = result.get('destination', {})
     if destination.get('name') != 'hosted' or destination.get('allow_local') is not False:
-        raise ValueError('inbox recall requires authenticated hosted search destination')
+        raise _grant_ledger.inbox_refusal('inbox recall requires authenticated hosted search destination', stage, 'hosted_destination')
 
 
 def source_body(history, ref):
     versions = history.get('versions')
     if (history.get('record_id') != ref['record_id'] or history.get('historical') is not True
             or not isinstance(versions, list) or len(versions) != 1):
-        raise ValueError('inbox source identity mismatch')
+        raise _grant_ledger.inbox_refusal('inbox source identity mismatch', 'task_source', 'source_identity')
     record = versions[0]
     body = record.get('body')
     if (record.get('version') != ref['version'] or record.get('payload_available') is not True
             or not isinstance(body, str) or record.get('span') is not None
             or record.get('body_bytes') != len(body.encode())
             or record.get('body_sha256') != hashlib.sha256(body.encode()).hexdigest()):
-        raise ValueError('inbox source is not a checked whole version')
+        raise _grant_ledger.inbox_refusal('inbox source is not a checked whole version', 'task_source', 'source_version')
     return body
 
 
 def output(config, event, observation, state, control, *, revalidate, outer_deadline, reports=None):
     """Called with coordination lock held; reports flush only after its release."""
     started = time.monotonic()
-    engine, memory_config = binding(config)
+    try:
+        engine, memory_config = binding(config)
+    except Exception as exc:
+        _grant_ledger.annotate_inbox_refusal(exc, 'binding')
+        raise
     metrics = {}
     result = None
     failure = None
@@ -362,8 +366,10 @@ def output(config, event, observation, state, control, *, revalidate, outer_dead
         return result
     except Exception as exc:
         failure = exc
+        _grant_ledger.annotate_inbox_refusal(exc, metrics.get('refusal_stage', 'identity'))
         if isinstance(exc, engine.HookError):
             wrapped = ValueError('required/source inbox memory operation unavailable')
+            wrapped.cairn_inbox_refusal = getattr(exc, 'cairn_inbox_refusal', {})
             if hasattr(exc, 'cairn_recall_failure'):
                 wrapped.cairn_recall_failure = dict(exc.cairn_recall_failure)
             raise wrapped from exc
@@ -396,41 +402,43 @@ def output(config, event, observation, state, control, *, revalidate, outer_dead
 
 
 def deliver(engine, memory_config, config, event, observation, state, control, *, revalidate, outer_deadline, metrics=None):
+    metrics = {} if metrics is None else metrics
+    metrics['refusal_stage'] = 'identity'
     if not reserved(engine, event):
         return control
     project = event.get('project_path')
     if project is not None and (not isinstance(project, str) or not Path(project).is_absolute() or not Path(project).is_dir()):
-        raise ValueError('invalid explicit host project directory')
+        raise _grant_ledger.inbox_refusal('invalid explicit host project directory', 'identity', 'project')
     for workspace in (event['cwd'], engine.project_for(event['cwd']), engine.project_root(event),
                       state.get('workspace'), state.get('agent', {}).get('metadata', {}).get('workspace')):
         if workspace and any((p / '.cairn-no-memory').exists() for p in [Path(workspace).resolve(), *Path(workspace).resolve().parents]):
             return control
     session = event['session_id']
     if not engine.native_uuid(session):
-        raise ValueError('inbox recall requires canonical native session identity')
+        raise _grant_ledger.inbox_refusal('inbox recall requires canonical native session identity', 'identity', 'native_session')
     attempt = state.get('inbox_attempt')
     native = observation.get('native_turn_id', '')
     if config['harness'] == 'codex' and not engine.native_uuid(native):
-        raise ValueError('inbox recall requires actual Codex native turn UUID')
+        raise _grant_ledger.inbox_refusal('inbox recall requires actual Codex native turn UUID', 'identity', 'native_turn')
     if config['harness'] == 'claude':
         if native != claude_owner(event):
-            raise ValueError('inbox recall Claude prompt owner differs')
+            raise _grant_ledger.inbox_refusal('inbox recall Claude prompt owner differs', 'identity', 'claude_owner')
         if not event['prompt'].startswith(f'<channel source="cairn-events" native_session_id="{session}" '):
-            raise ValueError('inbox recall requires this session channel envelope')
+            raise _grant_ledger.inbox_refusal('inbox recall requires this session channel envelope', 'identity', 'claude_envelope')
     wake_ids = re.search(r'Current agent ([0-9a-f-]+), execution ([0-9a-f-]+)\. Wake delivery ([0-9a-f-]+)\.', event['prompt'])
     if not wake_ids or wake_ids.group(1, 2) != (state['agent']['agent_id'], state['agent']['execution_id']):
-        raise ValueError('reserved wake belongs to another registered execution')
+        raise _grant_ledger.inbox_refusal('reserved wake belongs to another registered execution', 'identity', 'wake_session')
     admitted = bool(attempt and not attempt.get('finished_at'))
     if admitted:
         if attempt.get('lease_lapsed') or attempt.get('cancel'):
-            raise ValueError('inbox recall attempt is not live')
+            raise _grant_ledger.inbox_refusal('inbox recall attempt is not live', 'identity', 'attempt_live')
         if attempt['session'] != dict(agent_id=state['agent']['agent_id'], execution_id=state['agent']['execution_id']):
-            raise ValueError('inbox recall attempt session differs')
+            raise _grant_ledger.inbox_refusal('inbox recall attempt session differs', 'identity', 'attempt_session')
         if not attempt.get('native_turn_id') or attempt['native_turn_id'] != native:
-            raise ValueError('inbox recall native owner differs')
+            raise _grant_ledger.inbox_refusal('inbox recall native owner differs', 'identity', 'attempt_owner')
         delivery = attempt['delivery']
         if delivery['delivery_id'] != wake_ids.group(3):
-            raise ValueError('reserved wake belongs to another delivery')
+            raise _grant_ledger.inbox_refusal('reserved wake belongs to another delivery', 'identity', 'wake_delivery')
         publication = delivery['event']
         identity = dict(attempt_id=attempt['attempt_id'], delivery_id=delivery['delivery_id'],
                         event_id=publication['event_id'], session=attempt['session'],
@@ -445,6 +453,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
     wake_hash = hashlib.sha256(event['prompt'].encode()).hexdigest()
     key_identity = {k: identity[k] for k in ('session', 'attempt_id', 'delivery_id') if k in identity} if admitted else identity
     key = hashlib.sha256(engine.encoded(key_identity).encode()).hexdigest()
+    metrics['refusal_stage'] = 'inbox_ledger'
     directory = Path(memory_config['state_dir'])
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (directory / (session + '.lock')).open('a') as lock:
@@ -453,23 +462,25 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         marker = path.with_suffix('.initialized')
         ledger = load_grants(path, session)
         if key in ledger['grants'] and ledger['grants'][key]['identity'] != identity:
-            raise ValueError('inbox recall delivery identity changed')
+            raise _grant_ledger.inbox_refusal('inbox recall delivery identity changed', 'inbox_ledger', 'delivery_identity')
         if key in ledger['grants'] or any(g.get('wake_sha256') == wake_hash
                 or (config['harness'] == 'claude' and g['identity'].get('native_owner') == native)
                 for g in ledger['grants'].values()) or folded_conflict(
                     ledger, key=key, wake_sha256=wake_hash, owner=native if config['harness'] == 'claude' else None):
-            raise ValueError('inbox source/memory grant already consumed; no repeated read or new optional allowance')
+            raise _grant_ledger.inbox_refusal('inbox source/memory grant already consumed; no repeated read or new optional allowance', 'inbox_ledger', 'consumed')
         # Persist the empty ledger and its marker before any lookup can refuse.
         # A refusal at any later phase then leaves positive, lock-read evidence
         # that this session holds no grant, instead of missing files that a
         # recovery must treat as doubt. The ledger is written before the marker:
         # an interrupted pair is a ledger without marker, which load_grants
         # accepts and the next delivery completes, never a marker that refuses.
+        metrics['refusal_stage'] = 'grant_persistence'
         pristine = dict(schema='cairn.inbox-recall-grants/1', session=session, grants={})
         if not path.exists():
             engine.save_codex_budget(path, ledger)
         if not marker.exists():
             engine.save_codex_budget(marker, dict(schema='cairn.inbox-recall-initialized/1', session=session))
+        metrics['refusal_stage'] = 'required_search'
         started = time.monotonic()
         deadline = min(started + 5, outer_deadline)
         required_deadline = required_search_deadline(started, outer_deadline)
@@ -517,6 +528,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         if metrics is not None:
             metrics['memory'] = memory
         engine.trace_phase(memory, 'task_source') if hasattr(engine, 'trace_phase') else None
+        metrics['refusal_stage'] = 'task_source'
         body = None
         source = None
         label = 'required_only'
@@ -545,6 +557,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 if hasattr(engine, 'trace_observe'):
                     engine.trace_observe(memory, 'task', source)
                 label = 'task_source'
+        metrics['refusal_stage'] = 'turn_budget'
         budget = memory_config['context_bytes']
         codex_path = directory / (session + '.memory-budget.json')
         codex_ledger = None
@@ -553,19 +566,20 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         if config['harness'] == 'codex':
             codex_ledger = engine.codex_budget_ledger(codex_path, session, memory_config['context_bytes'])
             if native in codex_ledger['turns'] and native != codex_ledger['active_turn_id']:
-                raise ValueError('retired native turn cannot receive inbox memory')
+                raise _grant_ledger.inbox_refusal('retired native turn cannot receive inbox memory', 'turn_budget', 'retired_turn')
             grant = codex_ledger['turns'].get(native, codex_ledger['pending'])
             # Current bound counters are already serialized. An older writer
             # changes the counter without its stamp, requiring conservative conversion.
             prior_emitted = engine.codex_emitted_wire_bytes(grant)
             prior_bytes = prior_emitted + grant['reserved_native_bytes']
             budget = min(memory_config['context_bytes'], grant['limit_bytes']) - prior_bytes
+        metrics['refusal_stage'] = 'command_context'
         fallback_control = control
         if source is not None:
             context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')).read_text())
             if (context['delivery_id'] != identity['delivery_id'] or context['event_id'] != identity['event_id']
                     or context['source'] != identity['source']):
-                raise ValueError('inbox command context changed')
+                raise _grant_ledger.inbox_refusal('inbox command context changed', 'command_context', 'source_identity')
             if (config['harness'] == 'codex' and memory_config.get('context_lifecycle') == 'compact/1'
                     and isinstance(context.get('finish_reply'), list)):
                 control = ('Cairn request from ' + publication['from'] + '. Read the task data below. '
@@ -584,6 +598,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         def cost(text):
             return 1 + len(engine.encoded(dict(hookSpecificOutput=dict(hookEventName=observation['event'],
                                                         additionalContext=compose(text)))).encode())
+        metrics['refusal_stage'] = 'required_render'
         selected = required.get('selected', [])
         required_text = engine.render_recall(selected, []) if selected else ''
         if (publication and publication['kind'] in ('notice', 'response') and
@@ -593,7 +608,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                     context.get('event_id') != identity['event_id'] or
                     context.get('source') != identity['source'] or
                     not isinstance(context.get('compact_fallback_control'), str)):
-                raise ValueError('compact inbox fallback differs from admitted source')
+                raise _grant_ledger.inbox_refusal('compact inbox fallback differs from admitted source', 'command_context', 'compact_fallback')
             control = context['compact_fallback_control']
         if cost(required_text) > budget and source is not None:
             # Whole oversized task keeps its exact-source read workflow. No
@@ -606,13 +621,15 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 return control + '\n' + prefix + engine.encoded(data) + '\n' + text
             body = None
         if cost(required_text) > budget:
-            raise ValueError('whole required inbox context exceeds delivery budget')
+            raise _grant_ledger.inbox_refusal('whole required inbox context exceeds delivery budget', 'required_render', 'required_context',
+                configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
         text = required_text
         status = dict(rejected={})
         if body is not None:
             # Only retrieval sees this text. Original event/owner dialogue and
             # capture state are never rewritten with sender-authored task data.
             engine.trace_phase(memory, 'intent') if hasattr(engine, 'trace_phase') else None
+            metrics['refusal_stage'] = 'optional_search'
             semantic = bool(memory_config.get('semantic_fallback'))
             intent = engine.retrieval_intent(dict(event, prompt=body), {}, semantic=semantic)
             engine.trace_phase(memory, 'optional_search') if hasattr(engine, 'trace_phase') else None
@@ -620,7 +637,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 found = memory.search(intent['query'], room=engine.RECALL_SEARCH_ROOM, entities=intent['files'],
                                       semantic=semantic,
                                       timeout=engine.recall_timeout(deadline, 2))
-                hosted(found)
+                hosted(found, 'optional_search')
             except engine.HookError as exc:
                 if exc.code not in ('TIMEOUT', 'API_UNAVAILABLE', 'API_CONNECTION_FAILED'):
                     failure_meta = dict(recall_phase='optional_search', recall_operation='search',
@@ -632,13 +649,16 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                     raise
                 label = 'optional_recall_unavailable'
             else:
+                metrics['refusal_stage'] = 'optional_render'
                 selected = found.get('selected', [])
                 if cost(engine.render_recall(selected, [])) > budget:
-                    raise ValueError('whole required task context exceeds delivery budget')
+                    raise _grant_ledger.inbox_refusal('whole required task context exceeds delivery budget', 'optional_render', 'task_context',
+                        configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
                 engine.trace_phase(memory, 'expansion') if hasattr(engine, 'trace_phase') else None
                 text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost)
                 if status.get('outcome') != 'delegated':
                     label = 'optional_recall_unavailable'
+        metrics['refusal_stage'] = 'final_render'
         engine.trace_phase(memory, 'final_persistence') if hasattr(engine, 'trace_phase') else None
         if status.get('outcome') != 'delegated':
             prefix_text = text + '\nAutomatic exact-source read allowance: '
@@ -652,16 +672,22 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             text = prefix_text + str(allowance) + suffix
             status['native_allowance_bytes'] = allowance
         if cost(text) > budget:
-            raise ValueError('inbox output exceeds combined budget')
+            raise _grant_ledger.inbox_refusal('inbox output exceeds combined budget', 'final_render', 'output_budget',
+                configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes)
         if admitted:
+            metrics['refusal_stage'] = 'lease_revalidation'
             revalidate(attempt)
+        metrics['refusal_stage'] = 'final_render'
         output = compose(text)
         grant = dict(identity=identity, wake_sha256=wake_hash, limit_bytes=budget, output_bytes=cost(text), coordination_bytes=len(control.encode()),
                      native_allowance_bytes=status.get('native_allowance_bytes', 0),
                      pull_calls=status.get('candidate_inspection', {}).get('pull_calls', 0),
                      prior_hook_charge_bytes=prior_bytes, status=label, at=time.time())
         if grant['output_bytes'] + grant['native_allowance_bytes'] > budget:
-            raise ValueError('inbox output allowance exceeds combined budget')
+            raise _grant_ledger.inbox_refusal('inbox output allowance exceeds combined budget', 'final_render', 'allowance_budget',
+                configured_budget_bytes=memory_config['context_bytes'], budget_bytes=budget, prior_charge_bytes=prior_bytes,
+                native_allowance_bytes=grant['native_allowance_bytes'])
+        metrics['refusal_stage'] = 'grant_persistence'
         if codex_ledger is not None:
             if native not in codex_ledger['turns']:
                 startup = codex_ledger['pending']

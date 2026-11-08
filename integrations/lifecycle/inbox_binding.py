@@ -9,10 +9,16 @@ import uuid
 SCHEMA = 'cairn.inbox-recall-binding/2'
 
 
+def _refusal(message, reason):
+    error = ValueError(message)
+    error.cairn_inbox_refusal = dict(refusal_stage='binding', refusal_reason=reason)
+    return error
+
+
 def _owner_manifest(config):
     path = Path(config['inbox_recall_binding'])
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
-        raise ValueError('inbox recall binding must be owner-only')
+        raise _refusal('inbox recall binding must be owner-only', 'manifest_owner')
     manifest = json.loads(path.read_text())
     return path, manifest
 
@@ -20,10 +26,10 @@ def _owner_manifest(config):
 def _checked_file(spec):
     path = Path(spec['path'])
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o022:
-        raise ValueError('inbox recall requires owner-controlled absolute paths')
+        raise _refusal('inbox recall requires owner-controlled absolute paths', 'config_owner')
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != spec['sha256']:
-        raise ValueError('inbox recall binding changed')
+        raise _refusal('inbox recall binding changed', 'config_hash')
     return path, raw
 
 
@@ -66,29 +72,33 @@ class InboxBinding:
         """Execute only the complete, explicitly pinned inbox recall bundle."""
         _, manifest = _owner_manifest(config)
         if manifest.get('schema') != SCHEMA:
-            raise ValueError('unsupported inbox recall binding; restage its complete lifecycle bundle')
+            raise _refusal('unsupported inbox recall binding; restage its complete lifecycle bundle', 'schema')
         module = self._bundle.load_pinned(manifest["bridge"], "inbox_recall")
         if validate:
-            module.binding(config)
+            try:
+                module.binding(config)
+            except Exception as exc:
+                self._ledger.annotate_inbox_refusal(exc, 'binding')
+                raise
         return module
 
     def validate(self, config, *, require_enabled=False):
         path, manifest = _owner_manifest(config)
         if manifest.get('schema') != SCHEMA or type(manifest.get('enabled')) is not bool:
-            raise ValueError('unknown inbox recall binding')
+            raise _refusal('unknown inbox recall binding', 'schema')
         if require_enabled and not manifest['enabled']:
-            raise ValueError('inbox recall binding is disabled')
+            raise _refusal('inbox recall binding is disabled', 'disabled')
         # The role snapshots own code validation; _checked_file is for configuration bytes.
         self._bundle.check_pinned(manifest['bridge'], 'inbox_recall')
         memory = json.loads(_checked_file(manifest['memory_config'])[1])
         descriptors = manifest.get('coordination_configs')
         if not isinstance(descriptors, list) or not 1 <= len(descriptors) <= 8:
-            raise ValueError('one to eight explicit coordination configurations required')
+            raise _refusal('one to eight explicit coordination configurations required', 'coordination_count')
         coordinators = [json.loads(_checked_file(item)[1]) for item in descriptors]
         profiles = [memory, *coordinators]
         homes = [str(Path(c['config_home']).resolve()) if c.get('config_home') else None for c in coordinators]
         if len(coordinators) > 1 and (None in homes or len(homes) != len(set(homes))):
-            raise ValueError('shared memory binding requires distinct explicit configuration homes')
+            raise _refusal('shared memory binding requires distinct explicit configuration homes', 'config_homes')
         if (config.get('harness') not in ('codex', 'claude') or memory.get('recall_mode') != 'agent_tools'
                 or any(not c.get('native_delivery') for c in coordinators)
                 or any(c.get('inbox_recall_binding') != str(path) for c in profiles)
@@ -97,10 +107,10 @@ class InboxBinding:
                 or any(Path(memory['state_dir']).resolve() == Path(c['state_dir']).resolve() for c in coordinators)
                 or any(c.get('config_home') and not Path(c['config_home']).is_absolute() for c in coordinators)
                 or type(memory.get('context_bytes')) is not int or not 1000 <= memory['context_bytes'] <= 9500):
-            raise ValueError('incompatible inbox recall profile binding')
+            raise _refusal('incompatible inbox recall profile binding', 'profile')
         engine = self._bundle.load_pinned(manifest['engine'], 'memory')
         if getattr(engine, 'INBOX_RECALL_VERSION', None) != 1:
-            raise ValueError('pinned memory engine lacks the inbox recall contract')
+            raise _refusal('pinned memory engine lacks the inbox recall contract', 'engine_contract')
         return engine, memory
 
     def activation_decision(self, config, event, enabled):

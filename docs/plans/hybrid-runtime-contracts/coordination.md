@@ -73,7 +73,7 @@ commits from separate lenses before any slice lands:
 ## Complete CLI and issued-command compatibility grammar
 
 Reference source: [`coordination.py`](../../../integrations/lifecycle/coordination.py)
-(`lines 2020-2305, 2611-2625, 2848-2869, 2955-2964, 4284-4515`) and
+(`lines 2020-2305, 2611-2625, 2848-2869, 2955-2964, 4289-4520`) and
 [`install-agent-coordination.py`](../../../scripts/install-agent-coordination.py) (`lines 37-48`).
 Both the proposed Go `cairn lifecycle coordination` surface and retained `/2`
 entrypoints must preserve every live session command, issued prompt cue, and
@@ -82,13 +82,13 @@ multi-binding watcher entrypoint:
 1. **Hook & Multi-Binding Presence Watcher:**
    - `cairn lifecycle coordination hook --config <path> [--event <name>]`:
      reads up to `1048576` **bytes** (`1 MiB`) of raw `stdin` (`> 1 MiB` raises
-     `INVALID_HOST`, `line 4463`); internal store `call()` defaults to `4s` timeout
+     `INVALID_HOST`, `line 4468`); internal store `call()` defaults to `4s` timeout
      (`line 1502`). When `inbox_recall_binding` is configured and the event matches
      `inbox_recall_wake(event)`, prints `json.dumps(result, ensure_ascii=False, separators=(',', ':'))`
-     plus `\n` (`lines 4481-4483`); all other hook paths print default `json.dumps(result)`
-     plus `\n` (`line 4485`). Activation failure emits `phase=activation` diagnostic,
+     plus `\n` (`lines 4486-4488`); all other hook paths print default `json.dumps(result)`
+     plus `\n` (`line 4490`). Activation failure emits `phase=activation` diagnostic,
      calls `record_activation_refusal`, and exits `2` (`NATIVE_PROMPT_REFUSED`) so
-     Claude erases only the joined channel message (`lines 4471-4479, 4503-4505`).
+     Claude erases only the joined channel message (`lines 4476-4484, 4508-4510`).
      Under the `F-04` compatibility caller (`C3`, [`f04-consumer-decision.md`](f04-consumer-decision.md)
      `8f7357b1`/`88b77474`, [`foundation.md`](foundation.md) `8b768649`), code/receipt
      trust precedes binding-data reads: missing, unsafe, or tampered receipt, Python
@@ -105,13 +105,13 @@ multi-binding watcher entrypoint:
      run full `F-01` `/3` binding/image/config checks before state effects.
    - `cairn lifecycle coordination watch --config-dir <dir> [--once]`:
      `watch` accepts **only** `--config-dir` (omitting `--config-dir` exits `2` via
-     `parser.error("watch requires --config-dir")`; `lines 4487-4488`, matching live
+     `parser.error("watch requires --config-dir")`; `lines 4492-4493`, matching live
      `cairn-presence.service`). Acquires non-blocking BSD `flock` on
      `<config-dir>/.watch.lock` (`SESSION_BUSY` -> stderr + exit `1`), discovers
      sorted `<config-dir>/*.json` bindings on every cycle (`claude-one`,
      `claude-two`, `codex-one`, `agy-one`, etc.), runs `watch_once` per binding
      (any malformed binding or unhandled exception aborts the loop with exit `1` for
-     service restart; `lines 4492-4510`), and waits up to `WATCH_INTERVAL`.
+     service restart; `lines 4497-4515`), and waits up to `WATCH_INTERVAL`.
 2. **Explicit Journaled Inbox Commands, Drain, Compact Operations, and `C1` Authenticated Launch Closure:**
    - `inbox --context <context.json> {complete|ack|respond|finish-reply} [--disposition {handled|ignored|failed}] [--code {unsupported_kind|source_unavailable|processing_failed}] [--version V RECORD_UUID]`:
      reads up to `1048576` **decoded UTF-8 characters** on `stdin` (`> 1 MiB` chars
@@ -124,13 +124,13 @@ multi-binding watcher entrypoint:
      Turn-end reminder texts (`lines 2611-2625`) embed `context` argv and cover
      `request`, `response`, and `notice`.
    - `inbox drain --config <path> --agent-id <uuid> --execution-id <uuid> [--lease-seconds 900]`:
-     `--lease-seconds` defaults to `900` (`60..3600`, `line 4284`), checks live
+     `--lease-seconds` defaults to `900` (`60..3600`, `line 4289`), checks live
      non-ending session ownership (`NOT_THIS_SESSION`) and absence of `inbox_intent`
      / `inbox_attempt` (`NATIVE_ACTIVE`) before contacting the store, claims at most
      one item, writes owner-only `drain-<lease_uuid>.json` (`attempt_id = "drain-<lease_uuid>"`,
-     `route = "drain"`, and **no** `finish_reply` or `renew` field; `lines 4336-4339`)
+     `route = "drain"`, and **no** `finish_reply` or `renew` field; `lines 4341-4344`)
      before printing `cairn.inbox-drain/1` (which carries the direct `cairn renew` argv
-     at `lines 4344-4345`), or prints `delivery_id: null` (`lines 4299-4353`). Drain
+     at `lines 4349-4350`), or prints `delivery_id: null` (`lines 4304-4358`). Drain
      journals are not added to `inbox_journals` (watcher, `settled_journal_index`,
      and leave gating ignore them, except legacy seeding of a state lacking
      `inbox_journals` adopts matching `agent_id` files). Legacy `/2` drain cues embed
@@ -211,7 +211,7 @@ multi-binding watcher entrypoint:
      `CLAUDE_SESSION_ID` (`lines 2206-2208`, fail-open when unset and required to
      distinguish sibling Codex threads sharing one `codex app-server` owner tree).**
      Direct `context.read` (`cairn agent ... history`, `lines 2679-2680`), `drain` `renew`
-     (`cairn renew ...`, `lines 4344-4345`), and inner `commands.{complete,ack,respond}`
+     (`cairn renew ...`, `lines 4349-4350`), and inner `commands.{complete,ack,respond}`
      Store CLI argv remain **unchanged** (no invented Python `read` verb). Fresh issued
      processes revalidate their pinned receipt/closure/binding/config selection before
      running existing command authority checks (failing preflight with fixed
@@ -228,14 +228,14 @@ multi-binding watcher entrypoint:
      `send_intent(..., 10)` timeout under `session_lock` at `lines 2365, 2372, 2381`;
      default `4s` API `call(..., timeout=4)` timeout at `line 1502` plus explicit
      caller/outer deadlines; and `90s`/`900s` lease deadlines at `native_session.py:37`
-     and `lines 2251, 4284, 4305`). Existing immutable `/2` copies, bare `PATH`
+     and `lines 2251, 4289, 4310`). Existing immutable `/2` copies, bare `PATH`
      `cairn-inbox` launchers, `cairn.compact-inbox-handle/1` handles, and already-issued
      `/2` argv remain untouched and executable until qualified retirement (`R-08`).
 3. **Offline Recovery & Inspection Subcommands (`J-06`, excluded from `V`/`L`):**
    - `recover-refused-wake`, `recover-native-refused-wake`,
      `recover-codex-refused-wake`, `recover-codex-ended-turn`,
      `recover-daemon-start-claim`, `check-codex-native-health`,
-     `reconcile-codex-queue-wake`, and `inspect-held-refusal` (`lines 4376-4459`).
+     `reconcile-codex-queue-wake`, and `inspect-held-refusal` (`lines 4381-4464`).
      Together with `watch --config-dir`, these modes are **not** admitted through `V`/`L`
      (`codex_queue.py:_open` lazily imports `websocket`, unavailable under `-I -S`) and
      remain on their explicit retained `/2` route until `J-05`/`J-06`/`R-06` qualify
@@ -248,16 +248,16 @@ multi-binding watcher entrypoint:
 | `argparse` usage error (any mode, including `watch` without `--config-dir` or `hook` without `--config`) | empty | usage / error text | `2` |
 | `inbox` (`complete\|ack\|respond`) pass-through (`2134-2136`, including non-JSON exit `0` or `ok:true` nonzero exit) | inner CLI `stdout` verbatim | inner CLI `stderr` verbatim | inner `returncode` |
 | `inbox` inline slot conflict (`complete\|ack\|respond`, `2081-2083, 2115-2119`) | JSON `IDEMPOTENCY_CONFLICT` | empty | `4` |
-| `inbox finish-reply` intent mismatch in `journal_finish_reply` (`1988-1991, 4370`) | JSON `IDEMPOTENCY_CONFLICT` | empty | `7` |
+| `inbox finish-reply` intent mismatch in `journal_finish_reply` (`1988-1991, 4375`) | JSON `IDEMPOTENCY_CONFLICT` | empty | `7` |
 | `inbox finish-reply` (`2000-2010, 2101-2103`): `status` picked in order (non-`OK` `replay_code`, uncommitted `completion.code`, `response.code`, else `RESULT_UNCONFIRMED`; `OK` when both committed & no `replay_code`); `ok` / `status in INTENT_FINAL_REFUSALS` (even if both committed on e.g. `STALE_SESSION` replay) / other | `cairn.finish-reply/1` JSON | empty | `0` / `4` / `7` |
-| `inbox` / `drain` / `compact`: `CoordinationError("INVALID_REQUEST")` (`2045-2064, 2106-2110, 4368-4370`) | JSON `INVALID_REQUEST` | empty | `2` |
+| `inbox` / `drain` / `compact`: `CoordinationError("INVALID_REQUEST")` (`2045-2064, 2106-2110, 4373-4375`) | JSON `INVALID_REQUEST` | empty | `2` |
 | `inbox` / `drain` / `compact`: other `CoordinationError` (`SESSION_BUSY`, `NOT_THIS_SESSION`, `NATIVE_ACTIVE`, `STALE_LEASE`, etc.) | JSON `<CODE>` | empty | `7` |
 | `inbox` subprocess `OSError` / `TimeoutExpired` (`2130-2133`) | JSON `API_CONNECTION_FAILED` | empty | `7` |
-| `inbox` / `drain` / `compact`: `OSError\|ValueError\|KeyError\|TypeError` (e.g. invalid UUID or missing `result["version"]` on `respond`, `2051, 2109, 4371-4374`) | JSON `INVALID_HOST` | empty | `7` |
+| `inbox` / `drain` / `compact`: `OSError\|ValueError\|KeyError\|TypeError` (e.g. invalid UUID or missing `result["version"]` on `respond`, `2051, 2109, 4376-4379`) | JSON `INVALID_HOST` | empty | `7` |
 | `compact settle` (`2293-2305`): confirmed `ack` / inner nonzero (`1\|2\|3\|4\|7`) / unconfirmed inner `0` (`CONFIRMATION_MISMATCH` printed directly at `2300-2302`) | `cairn.compact-inbox/1` JSON | empty | `0` / inner (`1\|2\|3\|4\|7`, fallback `7`) / `7` |
 | `hook` (`C3`) **or** fresh `L`/`V`-launched `inbox` / `drain` / `compact` (`C1`) compatibility preflight failure before role dispatch: missing/unsafe/tampered receipt, Python closure, or Go executable, or invalid `--role`/`--entrypoint`/tail `--config` (even on excluded callbacks; `/2` unchanged; **zero** journal write-before-send, lock, state, refusal-record, lease, token, or API effect) | empty | `Cairn coordination diagnostic: phase=compatibility_preflight error_class=CompatibilityPreflightError\n` | `1` |
-| `hook`: normal / `NATIVE_PROMPT_REFUSED` (`4503-4505`) / any other error (`4506-4510`, or unhandled traceback on escaping `AttributeError` in `record_activation_refusal`) | JSON + `\n` / empty / empty | optional diag / rejection line / unavailable line (or traceback on escaping `AttributeError`) | `0` / `2` / `1` |
-| `watch --config-dir`: `.watch.lock` `SESSION_BUSY` or malformed binding / unhandled error (`4492-4510`, or escaping `AttributeError` in `watch_once`) | empty | unavailable line / traceback | `1` |
+| `hook`: normal / `NATIVE_PROMPT_REFUSED` (`4508-4510`) / any other error (`4511-4515`, or unhandled traceback on escaping `AttributeError` in `record_activation_refusal`) | JSON + `\n` / empty / empty | optional diag / rejection line / unavailable line (or traceback on escaping `AttributeError`) | `0` / `2` / `1` |
+| `watch --config-dir`: `.watch.lock` `SESSION_BUSY` or malformed binding / unhandled error (`4497-4515`, or escaping `AttributeError` in `watch_once`) | empty | unavailable line / traceback | `1` |
 
 Serialization parity across `/2` and `/3`:
 - **Exact byte parity** is required on: `wake_message` (`WAKE_CLOSING` and
@@ -279,11 +279,11 @@ Serialization parity across `/2` and `/3`:
 ## Journal execution, recovery, and inspection contract (`J-01`–`J-03`)
 
 Reference source: [`coordination.py`](../../../integrations/lifecycle/coordination.py)
-(`lines 1470-1487, 1829-2136, 2255-2268, 2308-2460, 3183-3198, 3722-3827`) and
+(`lines 1470-1487, 1829-2136, 2255-2268, 2308-2460, 3184-3199, 3724-3829`) and
 [`test_inbox_recovery.py`](../../../scripts/test_inbox_recovery.py).
 `internal/lifecycle/journal` is the **sole** Go execution and transition owner for
 `cairn.inbox-intent/1` at `<state_dir>/intents/<attempt_id>.json` (`0600`, lock at
-`<state_dir>/intents/<attempt_id>.lock`, directory `0700`):
+`<state_dir>/intents/<attempt_id>.lock`, directory `700`):
 
 1. **Schema, Two `response` Slot Shapes, & Durable Write-Before-Send Ordering:**
    - Top-level fields: `schema: "cairn.inbox-intent/1"`, `attempt_id`,
@@ -335,15 +335,15 @@ Reference source: [`coordination.py`](../../../integrations/lifecycle/coordinati
      recovery exception when `finish_reply` exists, `response` is absent,
      `completion.status == "committed"`, and `finish_reply_ref(completion)` is `nil`
      (`lines 2369-2374`). Corrupt/unreadable indexed journals (`ValueError`/`OSError`
-     at `line 2366`) abort that session's `watch_inbox` cycle (`lines 4113-4134`)
+     at `line 2366`) abort that session's `watch_inbox` cycle (`lines 4118-4139`)
      and make `Stop` exit `1`; a **non-object JSON** journal raises escaping
-     `AttributeError` (`lines 2325, 2375`), uncaught by `watch_once` (`lines 4129-4134`)
-     and `main` (`lines 4502-4510`), exiting `1` for the entire shared watcher (which
+     `AttributeError` (`lines 2325, 2375`), uncaught by `watch_once` (`lines 4134-4139`)
+     and `main` (`lines 4507-4515`), exiting `1` for the entire shared watcher (which
      under `cairn-presence.service` `Restart=on-failure` crash-loops the daemon and
      starves other sessions/bindings: `J-01` classifies this as a verified baseline
      defect, and any per-session containment in `J-05` requires an explicitly
      labelled repair) and turning hook `NATIVE_PROMPT_REFUSED` (exit `2`) into exit
-     `1` (`lines 4474-4477`).
+     `1` (`lines 4479-4482`).
    - **Final Refusal Set (`INTENT_FINAL_REFUSALS`, `lines 1829-1832`):**
      `STALE_LEASE`, `STALE_SESSION`, `HOLD_RELEASED`, `REQUEST_CANCELLED`,
      `DEADLINE_EXCEEDED`, `IDEMPOTENCY_CONFLICT`, `INVALID_REQUEST`, `NOT_FOUND`,
@@ -382,25 +382,25 @@ Reference source: [`coordination.py`](../../../integrations/lifecycle/coordinati
    | `session_journals` seeding (`2316-2329`) | N/A (glob) | skip file (`continue`) | **escaping `AttributeError`** (also non-dict `session`/ownerless slot; missing `attempt_id` -> `KeyError`) | Adopts **every** journal where `Session.AgentID == agent_id` or `ArgvMentionsAgent(agent_id)` (including final `notice`/`response`, pruned on next flush; reads no `DeliveryKind` or slot status) |
    | `journal_committed` (`2434-2443`) | `false, nil` | **propagate `OSError`/`ValueError`** | **escaping `AttributeError`** (or non-dict `completion`) | `CompletionStatus == "committed"` on active `inbox_attempt` |
    | `journal_completion_state` (`2446-2459`) | `'absent'` | `'unknown'` | `'absent'` (falsy non-dict `completion` -> `'absent'`; truthy non-dict `completion` -> **escaping `AttributeError`**, `2457-2458`) | `CompletionStatus` in `('committed', 'pending', 'refused')` else `'absent'` |
-   | `attempt_commands_absent` (`3183-3198`) | `true` | `false` (`OSError`/`ValueError`/`KeyError`/`TypeError`) | `false` | `ClaimOnly`: `isinstance(journal, dict) and set(journal) <= {'schema', 'attempt_id', 'delivery_id', 'kind', 'session'} and journal.get('attempt_id', attempt_id) == attempt_id` (any extension key -> `false`) |
-   | `settled_journal_index` (`3722-3750`) | **skip (`continue`, counts as settled!)** | `false` | `false` | Non-list `inbox_journals` or non-string entry -> `false`; no `schema` check; `false` if truthy `completion`/`response` is non-dict or `status not in ('committed', 'refused')`, else `true` |
-   | `reconcile_rejected_wake` legacy unindexed (`3784-3788`, `'inbox_journals' not in state`) | ok (glob) | **propagate `OSError`/`ValueError`** | **escaping `AttributeError`** | Calls `session_journals(config, dict(state))`: returns `false` if **any** `agent_id`-matched journal exists at all |
+   | `attempt_commands_absent` (`3184-3199`) | `true` | `false` (`OSError`/`ValueError`/`KeyError`/`TypeError`) | `false` | `ClaimOnly`: `isinstance(journal, dict) and set(journal) <= {'schema', 'attempt_id', 'delivery_id', 'kind', 'session'} and journal.get('attempt_id', attempt_id) == attempt_id` (any extension key -> `false`) |
+   | `settled_journal_index` (`3724-3752`) | **skip (`continue`, counts as settled!)** | `false` | `false` | Non-list `inbox_journals` or non-string entry -> `false`; no `schema` check; `false` if truthy `completion`/`response` is non-dict or `status not in ('committed', 'refused')`, else `true` |
+   | `reconcile_rejected_wake` legacy unindexed (`3786-3790`, `'inbox_journals' not in state`) | ok (glob) | **propagate `OSError`/`ValueError`** | **escaping `AttributeError`** | Calls `session_journals(config, dict(state))`: returns `false` if **any** `agent_id`-matched journal exists at all |
 
 4. **`settled_journal_index` vs `finish_reply` Discrepancy Across Both Call Sites (`J-01` -> `J-03`):**
    - `flush_journal` (`lines 2390-2392`) marks `journal.get("finish_reply") and not journal.get("response") and completion.status != "refused"`
      as pending (`pending.add("response")`), whereas `settled_journal_index`
-     (`lines 3722-3750`) walks `state.get("inbox_journals")` (`lines 3731-3734`) and
+     (`lines 3724-3752`) walks `state.get("inbox_journals")` (`lines 3733-3736`) and
      checks only `("completion", "response")`, returning `True` even when a
      historical journal in `inbox_journals` has `completion.status == "committed"`
      and an unmaterialized `finish_reply`. (`reconcile_rejected_wake` requires
      absent `inbox_attempt`, `inbox_intent`, `inbox_result_policy`, `inbox_close`,
-     and `active_prompt` at `lines 3778-3779`, so only historical `inbox_journals`
+     and `active_prompt` at `lines 3780-3781`, so only historical `inbox_journals`
      apply.)
    - **Two distinct call sites:** (a) watcher `prepare_idle_wake` (`line 825`) runs
-     *after* `watch_inbox`'s `flush_inbox_intents` in the same cycle (`lines 4113-4116`),
+     *after* `watch_inbox`'s `flush_inbox_intents` in the same cycle (`lines 4118-4121`),
      reaching the state only if that flush hit `SESSION_BUSY` or if
      `finish_reply_ref(completion)` remains `None`; (b) hook
-     `record_activation_refusal` (`line 3869`) runs with **no** prior flush, so a
+     `record_activation_refusal` (`line 3871`) runs with **no** prior flush, so a
      late `finish-reply` crashing between `line 2095` and `line 1996` followed by an
      activation refusal before the next watcher cycle immediately sees
      `settled_journal_index == True`. Furthermore, if `finish_reply_ref` is
@@ -491,7 +491,7 @@ type JournalBoundary interface {
 Reference source: [`native_session.py`](../../../integrations/lifecycle/native_session.py),
 [`grant_ledger.py`](../../../integrations/lifecycle/grant_ledger.py),
 [`process_scan.py`](../../../integrations/lifecycle/process_scan.py), and
-[`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 1315-1351, 1490-1499, 1614-1813, 2990-3001, 3812-3814, 4088-4136`).
+[`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 1315-1351, 1490-1499, 1614-1813, 2990-3001, 3814-3816, 4093-4141`).
 
 1. **Coordination Lifecycle 5-Family BSD `flock(2)` Inventory, Coexistence & Hierarchy:**
    Go MUST use `syscall.Flock` (BSD `flock(2)`, never `fcntl`/OFD locks) and adopt
@@ -509,30 +509,30 @@ Reference source: [`native_session.py`](../../../integrations/lifecycle/native_s
      `<coordination.state_dir>/<sha256(binding + "\0" + native_session_id)>.lock`
      guarding `<sha256(binding + "\0" + native_session_id)>.json` (`cairn.native-session/1`),
      non-blocking `LOCK_EX|LOCK_NB` (`0s` wait -> `SESSION_BUSY`; `coordination.py:1490-1499, 1614-1616`).
-   - **Grant-ledger lock (`grant_ledger.py:16, 44-57, 88-99`, `inbox_recall.py:450-451`):**
+   - **Grant-ledger lock (`grant_ledger.py:16, 103-116, 147-158`, `inbox_recall.py:459-460`):**
      `<memory.state_dir>/<native_session_id>.lock` guarding
      `<native_session_id>.{inbox-recall,memory-budget}.json` and `.initialized` (no
-     `GrantLedger.open_session` exists). Activation (`grant_ledger.py:80-91`) runs
-     **outside** `session_lock` (`coordination.py:4470-4480`, `<= 1.5s`). **Nested
-     acquisitions under `session_lock`:** (i) hook `_handle` (`lines 3901, 3928`)
-     calls `bridge.output(..., outer_deadline=bridge_deadline)` (`lines 4056-4071`,
+     `GrantLedger.open_session` exists). Activation (`grant_ledger.py:139-150`) runs
+     **outside** `session_lock` (`coordination.py:4475-4485`, `<= 1.5s`). **Nested
+     acquisitions under `session_lock`:** (i) hook `_handle` (`lines 3903, 3930`)
+     calls `bridge.output(..., outer_deadline=bridge_deadline)` (`lines 4058-4075`,
      `bridge_deadline = now + 12s`), which waits **up to `1.5s`** on `<native_id>.lock`
-     (`inbox_recall.py:450-451`) while holding `session_lock` so concurrent memory
-     and wake hooks serialize cleanly; (ii) `coordination.py:3812-3814`,
-     `grant_ledger.py:476-478` (`recall_grant_evidence`), and `grant_ledger.py:523-525`
+     (`inbox_recall.py:459-460`) while holding `session_lock` so concurrent memory
+     and wake hooks serialize cleanly; (ii) `coordination.py:3814-3816`,
+     `grant_ledger.py:535-537` (`recall_grant_evidence`), and `grant_ledger.py:582-584`
      (`codex_pre_grant_ledger_absent`) use `0s` try-locks.
    - **Intent journal lock (`coordination.py:1901-1913`):**
      `<coordination.state_dir>/intents/<attempt_id>.lock` (`30s` wait only in
      standalone `inbox_command` / `compact settle` with no other lock held; `0s`
      try-lock in watcher/hook `flush_journal` under `session_lock`).
-   - **Watcher lock (`coordination.py:4492`):** `<config_dir>/.watch.lock`, `0s` try-lock.
+   - **Watcher lock (`coordination.py:4497`):** `<config_dir>/.watch.lock`, `0s` try-lock.
    - **Cue lock (`coordination.py:2990-3001`):** `<stem>.cuelock`, `0s` try-lock.
    - **Strict one-way lock hierarchy (`V2-1`):** deadlock freedom is guaranteed by
      strict one-way ordering (`session_lock` -> `ledger_lock` / `0s` `intent_lock`)
      plus bounded waits (`<= 1.5s` on `ledger_lock`). Go memory/ledger holders
      (`memory`, `inbox_recall`, `grant_ledger`, `inbox_binding`, `recall_dispatch`)
      **MUST NEVER** acquire coordination `session`, `intent`, `watch`, or `cue` locks.
-   - **Bounded probes under `session_lock` vs lock-free submission/cancel (`lines 764-889, 1315-1351, 1789-1813, 4095-4126`):**
+   - **Bounded probes under `session_lock` vs lock-free submission/cancel (`lines 764-889, 1315-1351, 1789-1813, 4100-4131`):**
      `prepare_idle_wake` runs **under `session_lock`** and executes bounded (`<= 4s`)
      read-only probes there: Codex `probe_codex_native_health` -> `queue.inspect_thread`
      (`lines 459, 786, 820`), OpenCode capability probes (`supports_idle`,
@@ -550,7 +550,7 @@ Reference source: [`native_session.py`](../../../integrations/lifecycle/native_s
      (`status = "uncertain"`) before sending bytes, releasing `session_lock`, running
      submission/cancel I/O, and re-acquiring `session_lock` with compare-and-set
      while tolerating `SESSION_BUSY`.
-2. **`owner_process` Trust Anchor (`state["process"]`, `lines 1378-1433`, callers `3033, 3839, 3923`), Custody, Reminders, & Shutdown:**
+2. **`owner_process` Trust Anchor (`state["process"]`, `lines 1378-1433`, callers `3033, 3841, 3925`), Custody, Reminders, & Shutdown:**
    - **`owner_process` derivation:** `state["process"]` anchors process-mode peer
      equality, liveness, compact `caller_descends_from`, `herdr_environment`, and
      Codex `fd` lookup. A declared `host_pid` MUST be `int >= 2` (else `INVALID_HOST`)
@@ -658,7 +658,7 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
      same `pane_id` and `terminal_id`.
 2. **Wake Envelope & Closing Protocol Constants:**
    - Producers emit `wake_message(wake)` with `WAKE_CLOSING`; all recognizers
-     (`coordination.py:1159-1190, 1278-1295, 3084-3099`, `grant_ledger.py:25-28, 137-184`,
+     (`coordination.py:1159-1190, 1278-1295, 3084-3099`, `grant_ledger.py:25-28, 196-243`,
      `transcript_recovery.py:223-232, 594-605`, including `hermes_wake_binding` and
      `codex_queue_rollout_proof` `never_admitted` markers) accept **both**
      `WAKE_CLOSING` and `LEGACY_WAKE_CLOSING` (current first).
@@ -669,7 +669,7 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
 ## Offline transcript recovery and health modes (`J-06`)
 
 Reference source: [`transcript_recovery.py`](../../../integrations/lifecycle/transcript_recovery.py)
-and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 523, 3393-3406, 4376-4459`).
+and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines 523, 3394-3407, 4381-4464`).
 
 1. **Path Derivation, File Safety, Bounded Scans, & JSON Decoding:**
    - **Never accept caller-supplied transcript paths or filename globs:** Claude
@@ -729,7 +729,7 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
    - **Claude transcript & worker-rebind modes:** `recover-native-refused-wake` binds
      wake envelope, `--config` path, `<= 15s` chronology, and single leased claim
      (no `native_turn_id`, `lines 214-257`). `recover-daemon-start-claim`
-     (`transcript_recovery.py:155-184`, `coordination.py:1447-1455, 3270-3287`)
+     (`transcript_recovery.py:155-184`, `coordination.py:1447-1455, 3271-3288`)
      verifies the bound Claude `daemon` is live (`supervisor_role == "daemon"`),
      locates **exactly one** worker (`find_daemon_worker` / `daemon_worker_of`: `exe`
      under `claude_exe_dirs`, `argv` `--resume <transcript>`, running under a
@@ -739,39 +739,52 @@ and [`coordination.py`](../../../integrations/lifecycle/coordination.py) (`lines
    - **Codex rollout, RPC & inspection modes:** `recover-codex-refused-wake`,
      `recover-codex-ended-turn`, and `reconcile-codex-queue-wake` verify live-owner
      rollout records and `CODEX_QUEUE_OUTCOMES`. Normal `reconcile-codex-queue-wake`
-     (`coordination.py:3557-3575`) **persists wake custody state** under
+     (`coordination.py:3558-3576`) **persists wake custody state** under
      `session_lock` (records `native_health`; for `never_admitted`, `completed`, or
      `cancelled` pops `idle_wake`, `wake_refusal`, and `wake_reconciliation` and sets
      `wake_reconciled`; for `admitted_active` clears `idle_wake` or re-marks it
      queued; otherwise marks `idle_wake` refused with `reconciliation_required`).
      `check-codex-native-health` is a live RPC probe persisting `native_health` under
-     `session_lock` (`coordination.py:523, 3393-3406`), not a transcript proof.
-     `--check-only` is a global `argparse` flag (`coordination.py:4397`), **honored only
-     by four modes**: `reconcile-codex-queue-wake` (`4413`, `3555-3556`),
-     `recover-daemon-start-claim` (`4426`), `recover-codex-ended-turn` (`4435`), and
-     `recover-codex-refused-wake` (`4444`). `inspect-held-refusal` (`4416-4421`) is
+     `session_lock` (`coordination.py:523, 3394-3407`), not a transcript proof.
+     `--check-only` is a global `argparse` flag (`coordination.py:4402`), **honored only
+     by four modes**: `reconcile-codex-queue-wake` (`4418`, `3556-3557`),
+     `recover-daemon-start-claim` (`4431`), `recover-codex-ended-turn` (`4440`), and
+     `recover-codex-refused-wake` (`4449`). `inspect-held-refusal` (`4421-4426`) is
      read-only by design (ignoring `--check-only`). In `/2`, **`recover-native-refused-wake`
-     (`4447-4453`), `recover-refused-wake` (`4454-4458`), and `check-codex-native-health`
-     (`4400-4405`) accept `--check-only` and ignore it**, settling through
+     (`4452-4458`), `recover-refused-wake` (`4459-4463`), and `check-codex-native-health`
+     (`4405-4410`) accept `--check-only` and ignore it**, settling through
      `settle_refused_claude_wake` or persisting `native_health` (never safe as `/2` dry
      runs); any `/3` Go change (rejecting `--check-only` on those 3 modes or honoring it
      for the two Claude refusal modes) requires an explicitly labelled, reviewer-approved
      `J-06` repair. Only the four honoring `--check-only` forms and `inspect-held-refusal`
      never persist state or call store reconciliation, **but** they acquire the `0s`
-     `session_lock` (`coordination.py:3451+, 3709-3712`, so concurrent hooks can observe
+     `session_lock` (`coordination.py:3452+, 3711-3714`, so concurrent hooks can observe
      `SESSION_BUSY`), and `recover-codex-ended-turn --check-only`
      (`transcript_recovery.py:526`) and `reconcile-codex-queue-wake --check-only`
      perform live Codex RPC probes under that lock.
 
 ## Source-backed fixture matrix and verification gates
 
+**Labelled diagnostic extension, CAIRN-424:** new post-claim bridge refusals carry
+closed `refusal_stage`/`refusal_reason` pairs from explicit validation guards;
+unexpected exceptions retain a known stage with reason `unknown`. The definition
+and consumer filter are `INBOX_REFUSAL_REASONS` and `inbox_refusal_details` in
+`grant_ledger.py`. Pinned-loader validation annotates locally without importing a
+not-yet-validated member. Keep existing exception classes/chained causes, recall
+metadata, public exit/refusal, grant/hold and no-replay semantics. Unknown metadata
+is not authority. The selected synthetic fixture is
+`scripts/test_native_refusal_diagnostics.py`, using temporary pinned bundles and
+a fake CLI; it does not establish a historical refusal's cause, Go parity, native
+runtime qualification or deployment acceptance. See the
+[diagnostic fields and byte limits](../../native-inbox.md#end-and-recovery).
+
 | Fixture family | Reference source & tests | Required positive, negative, and crash cases |
 | --- | --- | --- |
 | `J-F1`: Journal `Execute`, CLI, streams & compact | `coordination.py`, `test_inbox_recovery.py`, `test_inbox_drain.py` | Exit/stream table (`4` vs `7` `IDEMPOTENCY_CONFLICT`, `finish-reply` both committed + `STALE_SESSION` replay -> exit `4` (`Q9`), `1 MiB` chars vs bytes, `C3`/`C1` `CompatibilityPreflightError` exit `1` with zero journal/lock/lease/refusal-record/API effects across `hook`, `inbox --context`, `inbox drain`, and `inbox compact` vs `NATIVE_PROMPT_REFUSED` exit `2`, plus joined Claude channel wake preflight exit `1` leaving no claim, pending delivery, and explicit wake custody state); explicit `respond` (`--version 01` vs `1` -> `INVALID_REQUEST`/2 (`Q7`), missing `"version"` -> `INVALID_HOST`/7 (`Q8`), no `expected_ref`) vs `finish-reply` (`expected_ref` + `SCHEMA_MISMATCH`); `/2` bare `cairn-inbox` launcher + `C1` `L`/`V` shell-executed compact `read\|inspect\|settle\|advance` (including non-default root with `CAIRN_INBOX_ROOT` unset succeeding via `V`'s `--config` grandparent, mismatched `CAIRN_INBOX_ROOT` / wrong-config / post-validation config-swap refusing before `load_config`/effects, out-of-tree caller and in-tree mismatched `CODEX_THREAD_ID`/`CLAUDE_SESSION_ID` refusing with `NOT_THIS_SESSION` exit `7` before effects, `inspect` lease renewal, and `advance` `next`-cue rendering) + `STALE_LEASE` re-raise on missing/corrupt settle journal + `CONFIRMATION_MISMATCH` + inner `1\|2\|3\|4\|7`; `drain-<lease>` (no `renew` in file, direct `cairn renew` in stdout); `inbox_recall_wake` raw `U+2028`/`U+2029` + `<>&` + float + key order; real explicit `30s` lock/`30s` send vs watcher `0s` lock/`10s` send deadlines (no hook timeout imposed on `inbox` modes) |
-| `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3183-3198, 3722-3827`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
+| `J-F2`: `Recover`, `Inspect` (7 readers), `JournalBoundary` & discrepancy | `coordination.py:2255-2496, 3184-3199, 3724-3829`, `native_session.py:376-485` | `0s` lock (`Busy` -> unsettled), `agent_id`-only seeding adopting final `notice`/`response` then pruning on flush, all 7 `Inspect` reader missing/malformed/non-object/sub-field/extension-key policies (`Q1` missing -> settled `True`, `Q4`/`R2` non-object / non-dict `session` / ownerless non-dict slot / missing `attempt_id` `KeyError` seeding escapes, `Q5`/`R1` falsy vs truthy non-dict `completion`, `Q6` extension key `ClaimOnly==false`, `Q10` indexed non-object `watch_once`/hook exit `1`), `Flush("attempt"\|"all")`, `finish_reply` exact-result exception, 3-way `settle` taxonomy across `strict=true\|false`, and both `settled_journal_index` call sites + persistent `None` ref |
 | `J-F3`: Peer verification & wake adapters | `unix_peer_transport.py`, `wake_transport.py`, `codex_queue.py`, `claude_channel.py`, `opencode_queue.py`, `hermes_queue.py`, `claudechannel.go` | Exact PID equality on OpenCode/Hermes (`4s` wake/capabilities/status, `35s`/`30s` cancel/abort; child squatter refused); Claude `<pid>.json` (`4s` connect + `4s` reply client vs `2s` read / `2s` emit / `2s` reply-write bridge server) + `server/discover` refused + `initialize` succeeds + `channelMeta` order; Codex `unix://`-only, `uid` vs `process` mode, `Host: localhost`, `1 MiB` cumulative cap / `4s` RPC, exact `-32600` strings; Herdr `focused==false` + `revision`/`state_change_seq` re-get; `WAKE_CLOSING` + `LEGACY_WAKE_CLOSING` across all recognizers (`hermes_wake_binding`, `codex_queue_rollout_proof`) |
-| `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4088-4511` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
-| `J-F5`: Offline transcript recovery & health | `transcript_recovery.py`, `coordination.py:3270-3575, 4376-4459` | FIFO non-blocking refusal (`O_NONBLOCK`), symlink (`O_NOFOLLOW`), wrong UID, `1.0` float vs int, `NaN`, lone surrogate, invalid UTF-8, 3-mode per-path JSONL strictness (`plain`: `101-118, 133-141` and refusal discovery; `strict-skip`: `335-338`; `strict-raise`: `65-98` & `461`), `recover-daemon-start-claim` (`0` or `2` workers, outside daemon's `bg-pty-host`, valid worker `state["process"]` rebind), historical bounded scan caps (`256/16/8/64 MiB`) plus labelled CAIRN-423 whole-snapshot refusal discovery with bounded buffers/eligible records, one-second cooperative budget and unknown-on-exhaustion/change/partial-EOF, live-owner `/proc/<pid>/fd` Codex derivation, normal `reconcile-codex-queue-wake` wake-custody mutations vs 4 honoring `--check-only` modes + `inspect-held-refusal` non-persistence (`0s` `session_lock`), and `/2` `recover-refused-wake --check-only` / `recover-native-refused-wake --check-only` / `check-codex-native-health --check-only` ignoring `--check-only` and settling/persisting vs selected `/3` parity or labelled repair |
+| `J-F4`: Presence watcher, 5 BSD `flock` families, `owner_process` & cancel scan | `native_session.py`, `grant_ledger.py`, `process_scan.py`, `coordination.py:1315-1813, 4093-4516` | `watch` without `--config-dir` exits `2`; `.watch.lock` `SESSION_BUSY` & malformed binding exit `1`; `/2`<->`/3` `syscall.Flock` contention (`0644`/`0664` & symlinked locks) + nested `1.5s` ledger wait (held `< 1.5s` wake succeeds, `> 1.5s` wake refuses); bounded probes under `session_lock` vs submission/cancel outside `session_lock` (concurrent hook + `kill -9` between send & persist); `owner_process` (non-ancestor `host_pid`, `< 2`, supervisor skip, `claude_exe_dirs`, `128` bound, mid-walk exit); `process_scan.markers` (`setsid`/double-fork escapee, non-dumpable `unknown`, zombie, process death -> `retire` + `CLEANUP_UNCONFIRMED`) |
+| `J-F5`: Offline transcript recovery & health | `transcript_recovery.py`, `coordination.py:3271-3576, 4381-4464` | FIFO non-blocking refusal (`O_NONBLOCK`), symlink (`O_NOFOLLOW`), wrong UID, `1.0` float vs int, `NaN`, lone surrogate, invalid UTF-8, 3-mode per-path JSONL strictness (`plain`: `101-118, 133-141` and refusal discovery; `strict-skip`: `335-338`; `strict-raise`: `65-98` & `461`), `recover-daemon-start-claim` (`0` or `2` workers, outside daemon's `bg-pty-host`, valid worker `state["process"]` rebind), historical bounded scan caps (`256/16/8/64 MiB`) plus labelled CAIRN-423 whole-snapshot refusal discovery with bounded buffers/eligible records, one-second cooperative budget and unknown-on-exhaustion/change/partial-EOF, live-owner `/proc/<pid>/fd` Codex derivation, normal `reconcile-codex-queue-wake` wake-custody mutations vs 4 honoring `--check-only` modes + `inspect-held-refusal` non-persistence (`0s` `session_lock`), and `/2` `recover-refused-wake --check-only` / `recover-native-refused-wake --check-only` / `check-codex-native-health --check-only` ignoring `--check-only` and settling/persisting vs selected `/3` parity or labelled repair |
 
 Required local validation before any Coordination slice is marked `Done`:
 - `python3 -B -m unittest scripts/test_inbox_recovery.py scripts/test_inbox_drain.py integrations/lifecycle/test_native_session.py`
