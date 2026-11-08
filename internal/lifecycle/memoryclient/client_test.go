@@ -632,6 +632,22 @@ func TestMemoryClientFailuresAndDeadline(t *testing.T) {
 			t.Fatalf("transport cause or replay: %v", err)
 		}
 	})
+	t.Run("truncated-http-body-remains-a-transport-failure", func(t *testing.T) {
+		api, seen := fixture(t, func(w http.ResponseWriter, _ *http.Request, _ requestCapture) {
+			w.Header().Set("Content-Length", "200")
+			if _, err := io.WriteString(w, `{"schema":"cairn.response/1"`); err != nil {
+				t.Error(err)
+			}
+		})
+		c := client(t, api, memoryclient.Options{})
+		_, err := c.Pull(context.Background(), request, time.Second)
+		if !errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, memoryclient.ErrNotConfirmed) {
+			t.Fatalf("HTTP body-read failure was classified as a malformed envelope: %v", err)
+		}
+		if got := c.Accounting(); got.OperationCalls["pull"] != 1 || got.PullCalls[receiptID] != 1 || len(got.ReceiptCredits) != 0 || len(seen.snapshot()) != 1 {
+			t.Fatal("truncated reply changed credits or retried")
+		}
+	})
 	t.Run("dialer-classification-and-redaction", func(t *testing.T) {
 		// A private missing socket exercises the SDK dialer's typed refusal.
 		dir := t.TempDir()

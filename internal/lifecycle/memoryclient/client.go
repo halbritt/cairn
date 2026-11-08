@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
+	"net"
 	"net/url"
 	"slices"
 	"strconv"
@@ -200,7 +202,8 @@ func classifyCallError(err error) error {
 		return err
 	}
 	var transport *url.Error
-	if errors.As(err, &transport) {
+	var network net.Error
+	if errors.As(err, &transport) || errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return &responseError{reason: errTransport, cause: err}
 	}
 	return &responseError{reason: ErrNotConfirmed, cause: err}
