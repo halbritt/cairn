@@ -659,7 +659,7 @@ Reference source: [`unix_peer_transport.py`](../../../integrations/lifecycle/uni
 2. **Wake Envelope & Closing Protocol Constants:**
    - Producers emit `wake_message(wake)` with `WAKE_CLOSING`; all recognizers
      (`coordination.py:1159-1190, 1278-1295, 3084-3099`, `grant_ledger.py:25-28, 137-184`,
-     `transcript_recovery.py:222-231, 593-604`, including `hermes_wake_binding` and
+     `transcript_recovery.py:223-232, 594-605`, including `hermes_wake_binding` and
      `codex_queue_rollout_proof` `never_admitted` markers) accept **both**
      `WAKE_CLOSING` and `LEGACY_WAKE_CLOSING` (current first).
    - Claude channel envelopes MUST preserve `source="cairn-events"` and exact struct
