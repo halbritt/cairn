@@ -320,7 +320,7 @@ To correct a saved note, search and pull its current body first. For a text-only
 correction, call `cairn_edit` with `record_id`, `expected_version`, a stable
 `request_id` UUID and the new `body`. Cairn preserves kind, scope, sensitivity,
 pins, relations and delegation attribution from that exact version. The new
-version records the authenticated writer. Supply exactly one of `body`, `append`, `replace`, `draft` or `evidence_citations`.
+version records the authenticated writer. Supply exactly one of `body`, `append`, `replace`, `set_sections`, `draft` or `evidence_citations`.
 For a selected additive update, use `append` with the suffix and any separating
 whitespace; existing text is preserved. The combined body must fit 65,536 bytes.
 See [append selected guidance](local-api.md#append-selected-guidance).
