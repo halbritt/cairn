@@ -60,6 +60,16 @@ class NativeRefusalDiagnosticsTests(unittest.TestCase):
         self.freeze()
         self.refused('identity', 'attempt_session', inspect=False)
 
+    def test_postclaim_configuration_hash_refusal_names_the_binding_guard(self):
+        config = self.root / 'memory.json'
+        def changed_config():
+            value = json.loads(config.read_text())
+            value['private_fixture'] = 'PRIVATE_SENTINEL'
+            config.write_text(json.dumps(value))
+        diagnostic = self.refused('binding', 'config_hash', on_renew=changed_config)
+        self.assertEqual((diagnostic['error_class'], diagnostic['cause_class']), ('ValueError', None))
+        self.assertEqual(self.calls(), [])
+
     def test_invalid_inbox_accounting_names_its_guard(self):
         directory = self.root / 'memory'
         directory.mkdir(mode=0o700)
