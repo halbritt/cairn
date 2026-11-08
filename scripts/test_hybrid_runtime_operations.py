@@ -11,7 +11,10 @@ F1_CLOSURES = {
     'helper-code': ('metadata_helper.py', 'parsers.py', 'read_process.py'),
 }
 F3_MODULES = ('claims.py', 'domains.py', 'effects.py', 'journal.py',
-              'runner.py', 'sequence.py', 'transport.py')
+              'runner.py', 'sequence.py', 'transport.py',
+              'backend_binding.py', 'backend_entry.py', 'backend_files.py',
+              'backend_process.py', 'backend_proof.py', 'backend_wire.py',
+              'remote_executor.py', 'root_launcher.py')
 
 
 def private_copy(source, destination):

@@ -19,11 +19,13 @@ Start with [inactive runtime operations](../../integrations/lifecycle/operations
 | F1 metadata helper | [metadata_helper.py](../../integrations/lifecycle/operations/f1/helper-code/metadata_helper.py) | Selected socket/process/image checks, exact code closures and the fixed privilege-tool alias chain |
 | Effect custody | [effects.py](../../integrations/lifecycle/operations/f3/effects.py) | Exclusive durable intent, fixed actions, causal outcomes and stop uncertainty |
 | Local transport | [transport.py](../../integrations/lifecycle/operations/f3/transport.py) | Bounded request/output handling, validated clock samples and retained child custody |
+| Fixed SSH launcher | [root_launcher.py](../../integrations/lifecycle/operations/f3/root_launcher.py) | Intent and pin checks, SIGNAL-only admission and one consumed transport session per request; operational inputs remain unbound |
+| Fixed remote executor | [remote_executor.py](../../integrations/lifecycle/operations/f3/remote_executor.py) | Reserved actions, fixed commands, guarded exit observation and causal outcomes; the entry remains disabled |
 | Handoff sequencing | [sequence.py](../../integrations/lifecycle/operations/f3/sequence.py) | Separate physical join and claim qualification, fresh proof before subsequent effects |
 | Journal projection | [journal.py](../../integrations/lifecycle/operations/f3/journal.py) | Bounded structural validation; complete journal collection remains unimplemented |
 
-The F1 entries retain `ENACTED=False`. The F3 entry refuses `REFUSED_UNBOUND`;
-its operational launcher and evidence inputs remain unbound. Adding this source
+The F1 entries retain `ENACTED=False`. Both F3 entries refuse `REFUSED_UNBOUND`;
+the concrete adapters' operational configuration and evidence inputs remain unbound. Adding this source
 does not wire it into installed services or activate the migration.
 
 ## Run the checks
@@ -34,7 +36,7 @@ From the repository root, on Linux with Python and Bubblewrap installed:
 make test-hybrid-runtime-operations
 ```
 
-The target runs 168 F1 tests and 53 F3 tests in isolated namespaces. They use
+The target runs 168 F1 tests and 87 F3 tests in isolated namespaces. They use
 synthetic observations, fake effects and fixed disposable children. Source is
 mounted read-only, with private temporary storage and no production home,
 profiles, sockets, network or host process filesystem exposed. These tests
@@ -46,9 +48,10 @@ verify the implemented boundaries; live handoff qualification remains separate.
   acceptance work tracked by the implementation plan.
 - Review exact runtime bindings and source-to-artifact assurance. Machine-bound
   activation drafts and operational evidence are outside this source bundle.
-- Implement and review the installation executor, remote launcher/executor,
-  complete owner census and controls, host recipe, current clock evidence and
-  complete journal collection.
+- Implement and review the installation executor and assemble the disabled remote
+  adapters with complete owner census and controls, host recipe, current clock
+  evidence and complete journal collection. The repository layout is not the
+  future installed bootstrap closure.
 - Qualify installation and live behavior, then finish the supported-host rollout,
   full verification, 24-hour burn-in and retirement of replaced components.
 
