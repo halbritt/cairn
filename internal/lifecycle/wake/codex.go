@@ -2,7 +2,6 @@ package wake
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
@@ -197,8 +196,31 @@ type CodexQueueClient struct {
 	BeforeCall     func(method string, rpc *codexRPC)
 }
 
+type perOpTimeoutConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *perOpTimeoutConn) Read(p []byte) (int, error) {
+	if c.timeout > 0 {
+		if err := c.Conn.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Read(p)
+}
+
+func (c *perOpTimeoutConn) Write(p []byte) (int, error) {
+	if c.timeout > 0 {
+		if err := c.Conn.SetWriteDeadline(time.Now().Add(c.timeout)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Write(p)
+}
+
 type codexWSConn struct {
-	conn   net.Conn
+	conn   *perOpTimeoutConn
 	reader *bufio.Reader
 }
 
@@ -206,8 +228,8 @@ func (c *codexWSConn) Close() error {
 	return c.conn.Close()
 }
 
-func (c *codexWSConn) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
+func (c *codexWSConn) setTimeout(d time.Duration) {
+	c.conn.timeout = d
 }
 
 func (c CodexQueueClient) connectTimeout() time.Duration {
@@ -280,7 +302,8 @@ func (c CodexQueueClient) open(ctx context.Context, endpoint string, process Pro
 		return nil, ProcessRef{}, &CodexQueueUnavailable{Message: "native queue endpoint is unavailable", Cause: err}
 	}
 
-	ws, err := wsHandshake(limitedConn, c.now().Add(c.connectTimeout()))
+	opConn := &perOpTimeoutConn{Conn: limitedConn, timeout: c.connectTimeout()}
+	ws, err := wsHandshake(opConn)
 	if err != nil {
 		_ = limitedConn.Close()
 		var queueErr *CodexQueueError
@@ -292,10 +315,7 @@ func (c CodexQueueClient) open(ctx context.Context, endpoint string, process Pro
 	return ws, peer, nil
 }
 
-func wsHandshake(conn net.Conn, deadline time.Time) (*codexWSConn, error) {
-	if err := conn.SetDeadline(deadline); err != nil {
-		return nil, err
-	}
+func wsHandshake(conn *perOpTimeoutConn) (*codexWSConn, error) {
 	var keyBytes [16]byte
 	if _, err := io.ReadFull(rand.Reader, keyBytes[:]); err != nil {
 		return nil, err
@@ -451,18 +471,19 @@ type codexRPC struct {
 	beforeCall func(method string, rpc *codexRPC)
 }
 
-func (r *codexRPC) remaining(sent bool) error {
+func (r *codexRPC) remaining(sent bool) (time.Duration, error) {
 	now := time.Now()
 	if r.now != nil {
 		now = r.now()
 	}
-	if !now.Before(r.Deadline) {
+	left := r.Deadline.Sub(now)
+	if left <= 0 {
 		if sent {
-			return &CodexQueueError{Message: "native queue response timed out"}
+			return 0, &CodexQueueError{Message: "native queue response timed out"}
 		}
-		return &CodexQueueUnavailable{Message: "native queue deadline expired before request send"}
+		return 0, &CodexQueueUnavailable{Message: "native queue deadline expired before request send"}
 	}
-	return r.ws.SetDeadline(r.Deadline)
+	return left, nil
 }
 
 func (r *codexRPC) call(method string, params map[string]any, busyOK bool) (map[string]any, error) {
@@ -470,9 +491,11 @@ func (r *codexRPC) call(method string, params map[string]any, busyOK bool) (map[
 		r.beforeCall(method, r)
 	}
 	r.sequence++
-	if err := r.remaining(false); err != nil {
+	left, err := r.remaining(false)
+	if err != nil {
 		return nil, err
 	}
+	r.ws.setTimeout(left)
 	reqBytes, err := json.Marshal(map[string]any{
 		"id":     r.sequence,
 		"method": method,
@@ -485,24 +508,17 @@ func (r *codexRPC) call(method string, params map[string]any, busyOK bool) (map[
 		return nil, err
 	}
 	for {
-		if err := r.remaining(true); err != nil {
+		left, err := r.remaining(true)
+		if err != nil {
 			return nil, err
 		}
+		r.ws.setTimeout(left)
 		raw, err := r.ws.recvText()
 		if err != nil {
-			var netErr net.Error
-			if errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
-				return nil, &CodexQueueError{Message: "native queue response timed out", Cause: err}
-			}
 			return nil, err
 		}
-		if !utf8.Valid(raw) {
-			return nil, fmt.Errorf("invalid UTF-8 websocket response")
-		}
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.UseNumber()
-		var parsed any
-		if err := dec.Decode(&parsed); err != nil || dec.More() {
+		parsed, err := decodeStrictJSONValue(raw)
+		if err != nil {
 			return nil, err
 		}
 		msg, ok := parsed.(map[string]any)
@@ -562,9 +578,6 @@ func (r *codexRPC) admit(nativeID string) error {
 		"clientInfo":   map[string]any{"name": "cairn-idle-wakeup", "version": "1"},
 		"capabilities": map[string]any{"experimentalApi": true},
 	}, false); err != nil {
-		return err
-	}
-	if err := r.remaining(false); err != nil {
 		return err
 	}
 	if err := r.ws.sendText([]byte(`{"method":"initialized"}`)); err != nil {

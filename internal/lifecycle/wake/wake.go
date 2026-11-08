@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/procpeer"
@@ -76,6 +79,7 @@ type PromptEvent struct {
 	Prompt        string `json:"prompt"`
 	TurnID        string `json:"turn_id,omitempty"`
 	PromptID      string `json:"prompt_id,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
 }
 
 const hexUUIDPattern = `[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}`
@@ -172,8 +176,14 @@ func matchesClaudeChannelEnvelope(prompt string, session SessionRef, deliveryID,
 	return rest[36:] == expectedTail
 }
 
+func pythonStrip(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
+	})
+}
+
 func validTurnIdentifier(id string) bool {
-	return strings.TrimSpace(id) != "" && len(id) <= MaxTurnIDBytes && !strings.ContainsRune(id, '\x00')
+	return pythonStrip(id) != "" && len(id) <= MaxTurnIDBytes && !strings.ContainsRune(id, '\x00')
 }
 
 // BindCodexQueuedWake binds a UserPromptSubmit event to a pending codex-queue wake.
@@ -210,7 +220,14 @@ func BindClaudeChannelWake(agent SessionRef, idleWake WakeEnvelope, event Prompt
 // across current and legacy closing wordings.
 func BindHermesQueuedWake(agent SessionRef, idleWake WakeEnvelope, event PromptEvent) (BoundWake, bool) {
 	if idleWake.Transport != TransportHermesQueue || idleWake.Session != agent ||
-		event.HookEventName != "TurnStart" || !validTurnIdentifier(event.TurnID) {
+		event.HookEventName != "TurnStart" || !validTurnIdentifier(event.TurnID) ||
+		pythonStrip(event.SessionID) == "" {
+		return BoundWake{}, false
+	}
+	if idleWake.NativeID != "" && event.SessionID != idleWake.NativeID {
+		return BoundWake{}, false
+	}
+	if strings.Contains(event.TurnID, ":") && !strings.HasPrefix(event.TurnID, event.SessionID+":") {
 		return BoundWake{}, false
 	}
 	msgs := WakeMessages(idleWake.Session, idleWake.DeliveryID)
@@ -293,6 +310,71 @@ func CompactJSONLine(payload any, maxBytes int, tooLargeErr error) ([]byte, erro
 		return nil, tooLargeErr
 	}
 	return append(encoded, '\n'), nil
+}
+
+// CompactASCIIJSONLine serializes payload as a compact ASCII-escaped JSON line
+// matching Python json.dumps(..., separators=(",", ":")) with default
+// ensure_ascii=True, enforcing maxBytes on the encoded line before '\n'.
+func CompactASCIIJSONLine(payload any, maxBytes int, tooLargeErr error) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(payload); err != nil {
+		return nil, err
+	}
+	raw := bytes.TrimSuffix(buf.Bytes(), []byte{'\n'})
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("invalid UTF-8 JSON payload")
+	}
+	encoded := escapeNonASCII(raw)
+	if maxBytes > 0 && len(encoded) > maxBytes {
+		return nil, tooLargeErr
+	}
+	return append(encoded, '\n'), nil
+}
+
+func escapeNonASCII(src []byte) []byte {
+	var out bytes.Buffer
+	out.Grow(len(src))
+	for i := 0; i < len(src); {
+		if src[i] < 0x80 {
+			out.WriteByte(src[i])
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(src[i:])
+		if r <= 0xffff {
+			_, _ = fmt.Fprintf(&out, `\u%04x`, r)
+		} else {
+			r1, r2 := utf16.EncodeRune(r)
+			_, _ = fmt.Fprintf(&out, `\u%04x\u%04x`, r1, r2)
+		}
+		i += size
+	}
+	return out.Bytes()
+}
+
+func decodeStrictJSONValue(raw []byte) (any, error) {
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("invalid UTF-8 JSON payload")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var parsed any
+	if err := dec.Decode(&parsed); err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimLeft(raw[dec.InputOffset():], " \t\r\n")) != 0 {
+		return nil, fmt.Errorf("unexpected trailing JSON data")
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("unexpected trailing JSON value")
+		}
+		return nil, err
+	}
+	return parsed, nil
 }
 
 // unescapeLineSeparators restores raw UTF-8 U+2028 and U+2029 when not preceded

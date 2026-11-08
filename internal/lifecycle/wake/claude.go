@@ -1,7 +1,6 @@
 package wake
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/halbritt/cairn/internal/procpeer"
 )
@@ -91,13 +89,15 @@ func selectClaudeChannelEndpointAt(procRoot, harness, channelDir string, session
 		return nil, false
 	}
 	raw, err := os.ReadFile(filepath.Join(channelDir, fmt.Sprintf("%d.json", sessionProcess.PID)))
-	if err != nil || !utf8.Valid(raw) {
+	if err != nil {
 		return nil, false
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var record map[string]any
-	if err := dec.Decode(&record); err != nil || record == nil {
+	parsed, err := decodeStrictJSONValue(raw)
+	if err != nil {
+		return nil, false
+	}
+	record, ok := parsed.(map[string]any)
+	if !ok || record == nil {
 		return nil, false
 	}
 	schema, ok := record["schema"].(string)
@@ -199,7 +199,7 @@ func (c ClaudeChannelClient) Write(ctx context.Context, endpoint string, bridge,
 		replyTimeout = ClaudeReplyTimeout
 	}
 
-	framed, err := CompactJSONLine(
+	framed, err := CompactASCIIJSONLine(
 		claudeChannelRequest{Parent: parent, Content: content, Meta: meta},
 		ClaudeMaxLineBytes,
 		&ClaudeChannelUnavailable{Message: "claude channel request exceeds the line limit"},
@@ -251,13 +251,8 @@ func (c ClaudeChannelClient) Write(ctx context.Context, endpoint string, bridge,
 		return &ClaudeChannelError{Message: "claude channel outcome is uncertain; do not resend", Cause: err}
 	}
 
-	if !utf8.Valid(line) {
-		return &ClaudeChannelError{Message: "claude channel outcome is uncertain; do not resend"}
-	}
-	var parsed any
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.UseNumber()
-	if err := dec.Decode(&parsed); err != nil || dec.More() {
+	parsed, err := decodeStrictJSONValue(line)
+	if err != nil {
 		return &ClaudeChannelError{Message: "claude channel outcome is uncertain; do not resend", Cause: err}
 	}
 	obj, ok := parsed.(map[string]any)

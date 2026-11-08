@@ -85,14 +85,33 @@ func TestWakeWordingAndRecognizers(t *testing.T) {
 			t.Fatalf("BindCodexQueuedWake[%d] = (%#v, %v)", i, bound, ok)
 		}
 
-		hermesWake := WakeEnvelope{Session: session, DeliveryID: testDeliveryID, Transport: TransportHermesQueue}
+		if _, ok := BindCodexQueuedWake(session, codexWake, PromptEvent{
+			HookEventName: "UserPromptSubmit",
+			Prompt:        body,
+			TurnID:        "\x1c\x1d\x1e\x1f",
+		}); ok {
+			t.Fatalf("BindCodexQueuedWake[%d] accepted ASCII separator-only TurnID", i)
+		}
+
+		hermesWake := WakeEnvelope{Session: session, DeliveryID: testDeliveryID, Transport: TransportHermesQueue, NativeID: "hermes-sess-1"}
 		bound, ok = BindHermesQueuedWake(session, hermesWake, PromptEvent{
 			HookEventName: "TurnStart",
 			Prompt:        body,
-			TurnID:        "t2",
+			TurnID:        "hermes-sess-1:t2",
+			SessionID:     "hermes-sess-1",
 		})
-		if !ok || bound != (BoundWake{DeliveryID: testDeliveryID, NativeTurnID: "t2"}) {
+		if !ok || bound != (BoundWake{DeliveryID: testDeliveryID, NativeTurnID: "hermes-sess-1:t2"}) {
 			t.Fatalf("BindHermesQueuedWake[%d] = (%#v, %v)", i, bound, ok)
+		}
+		for _, badEvt := range []PromptEvent{
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: ""},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: "\x1c\x1f"},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "t2", SessionID: "other-sess"},
+			{HookEventName: "TurnStart", Prompt: body, TurnID: "other-sess:t2", SessionID: "hermes-sess-1"},
+		} {
+			if _, ok := BindHermesQueuedWake(session, hermesWake, badEvt); ok {
+				t.Fatalf("BindHermesQueuedWake[%d] accepted invalid session custody %#v", i, badEvt)
+			}
 		}
 
 		claudeWake := WakeEnvelope{Session: session, DeliveryID: testDeliveryID, Transport: TransportClaudeChannel}
@@ -229,6 +248,21 @@ func TestClaudeChannelRegistrySelection(t *testing.T) {
 		t.Fatal("accepted relative socket path")
 	}
 
+	// Trailing '}' or ' x' in registry file must be rejected.
+	writeRegistry(ClaudeChannelSchema, parent, bridge, sockPath)
+	rawValid, err := os.ReadFile(regPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"}", " x"} {
+		if err := os.WriteFile(regPath, append(slices.Clone(rawValid), suffix...), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := selectClaudeChannelEndpointAt(procRoot, HarnessClaude, channelDir, parent); ok {
+			t.Fatalf("accepted registry with trailing %q", suffix)
+		}
+	}
+
 	// Zombie (Z) and dead (X) bridge processes must be rejected by ProcessAlive.
 	writeRegistry(ClaudeChannelSchema, parent, bridge, sockPath)
 	for _, state := range []string{"Z", "X"} {
@@ -271,6 +305,10 @@ func serveClaudeStandinOnce(t *testing.T, listener *net.UnixListener, mode strin
 			_, _ = io.WriteString(conn, "[1,2,3]\n")
 		case "nostatus":
 			_, _ = io.WriteString(conn, `{"other":1}`+"\n")
+		case "trailing_brace":
+			_, _ = io.WriteString(conn, `{"status":"written"}}`+"\n")
+		case "trailing_token":
+			_, _ = io.WriteString(conn, `{"status":"written"} x`+"\n")
 		case "overflow":
 			_, _ = io.WriteString(conn, strings.Repeat("x", ClaudeMaxLineBytes+1)+"\n")
 		case "drip":
@@ -327,8 +365,8 @@ func TestClaudeChannelClientWriteAndErrors(t *testing.T) {
 		t.Fatalf("expected ClaudeChannelUnavailable on unavailable status, got %v", err)
 	}
 
-	// 3. Uncertain, drop, malformed, overflow, and drip replies are uncertain (never unavailable).
-	for _, mode := range []string{"uncertain", "drop", "garbage", "array", "nostatus", "overflow"} {
+	// 3. Uncertain, drop, malformed, trailing-token/brace, overflow, and drip replies are uncertain (never unavailable).
+	for _, mode := range []string{"uncertain", "drop", "garbage", "array", "nostatus", "trailing_brace", "trailing_token", "overflow"} {
 		_ = serveClaudeStandinOnce(t, listener, mode)
 		err := WriteClaudeChannel(context.Background(), sockPath, selfRef, selfRef, "wake content", meta)
 		if err == nil || IsClaudeChannelUnavailable(err) || !IsClaudeChannelError(err) {
@@ -344,10 +382,14 @@ func TestClaudeChannelClientWriteAndErrors(t *testing.T) {
 		t.Fatalf("drip timeout: %v", err)
 	}
 
-	// 5. Pre-send refusals: oversized line, wrong PID, changed start, absent socket.
+	// 5. Pre-send refusals: oversized line (ASCII and ensure_ascii=True non-ASCII), wrong PID, changed start, absent socket.
 	err = WriteClaudeChannel(context.Background(), sockPath, selfRef, selfRef, strings.Repeat("a", ClaudeMaxLineBytes), meta)
 	if !IsClaudeChannelUnavailable(err) || !strings.Contains(err.Error(), "exceeds the line limit") {
 		t.Fatalf("oversized request: %v", err)
+	}
+	err = WriteClaudeChannel(context.Background(), filepath.Join(t.TempDir(), "never-dialed.sock"), selfRef, selfRef, strings.Repeat("雪", 2000), meta)
+	if !IsClaudeChannelUnavailable(err) || !strings.Contains(err.Error(), "exceeds the line limit") {
+		t.Fatalf("oversized non-ASCII ensure_ascii=True request: %v", err)
 	}
 
 	wrongPID := selfRef
@@ -373,19 +415,25 @@ func TestClaudeChannelClientWriteAndErrors(t *testing.T) {
 }
 
 type codexStandinOptions struct {
-	loaded           []string
-	add              string
-	start            string
-	malformedLoaded  bool
-	requestCollision bool
-	oversizedMethod  string
-	oversizedUpgrade bool
-	malformedMethod  string
-	startError       map[string]any
-	threadStatus     any
-	updatedAt        any
-	queuedItems      []any
-	nextCursor       any
+	loaded            []string
+	add               string
+	start             string
+	malformedLoaded   bool
+	requestCollision  bool
+	oversizedMethod   string
+	oversizedUpgrade  bool
+	malformedMethod   string
+	trailingMethod    string
+	trailingSuffix    string
+	upgradeChunkDelay time.Duration
+	upgradeChunks     int
+	stallMethod       string
+	stallDelay        time.Duration
+	startError        map[string]any
+	threadStatus      any
+	updatedAt         any
+	queuedItems       []any
+	nextCursor        any
 }
 
 func defaultCodexStandinOptions() codexStandinOptions {
@@ -496,7 +544,25 @@ func serveCodexStandinOnce(t *testing.T, listener *net.UnixListener, opts codexS
 			_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+accept+"\r\nX-Pad: "+strings.Repeat("p", CodexMaxPeerBytes)+"\r\n\r\n")
 			return
 		}
-		_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+accept+"\r\n\r\n")
+		upgradeResp := "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n"
+		if opts.upgradeChunks > 1 {
+			chunkLen := len(upgradeResp) / opts.upgradeChunks
+			for i := 0; i < opts.upgradeChunks; i++ {
+				time.Sleep(opts.upgradeChunkDelay)
+				part := upgradeResp[i*chunkLen : (i+1)*chunkLen]
+				if i == opts.upgradeChunks-1 {
+					part = upgradeResp[i*chunkLen:]
+				}
+				if _, err := io.WriteString(conn, part); err != nil {
+					return
+				}
+			}
+		} else {
+			if opts.upgradeChunkDelay > 0 {
+				time.Sleep(opts.upgradeChunkDelay)
+			}
+			_, _ = io.WriteString(conn, upgradeResp)
+		}
 		for {
 			raw, err := readWSClientFrame(reader)
 			if err != nil {
@@ -593,7 +659,14 @@ func serveCodexStandinOnce(t *testing.T, listener *net.UnixListener, opts codexS
 			if method == opts.malformedMethod {
 				result = []any{}
 			}
+			if method == opts.stallMethod {
+				time.Sleep(opts.stallDelay)
+				return
+			}
 			body, _ := json.Marshal(map[string]any{"id": req["id"], "result": result})
+			if method == opts.trailingMethod {
+				body = append(body, opts.trailingSuffix...)
+			}
 			_ = writeWSServerFrame(conn, body)
 		}
 	}()
@@ -703,6 +776,18 @@ func TestCodexQueueEnqueueAndStartOutcomes(t *testing.T) {
 		{"unknown-string-code", func() codexStandinOptions {
 			o := defaultCodexStandinOptions()
 			o.startError = map[string]any{"code": "-32600", "message": "queued submission not found: queued-one"}
+			return o
+		}(), CodexStartUnknown, false},
+		{"trailing-token-on-start", func() codexStandinOptions {
+			o := defaultCodexStandinOptions()
+			o.trailingMethod = "thread/queue/start"
+			o.trailingSuffix = " x"
+			return o
+		}(), CodexStartUnknown, false},
+		{"trailing-brace-on-start", func() codexStandinOptions {
+			o := defaultCodexStandinOptions()
+			o.trailingMethod = "thread/queue/start"
+			o.trailingSuffix = "}"
 			return o
 		}(), CodexStartUnknown, false},
 	} {
@@ -828,6 +913,58 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 		t.Fatalf("oversized add: %v", err)
 	}
 
+	// 2b. Trailing tokens/braces on initialize -> QueueUnavailable; on thread/queue/add -> uncertain QueueError.
+	for _, suffix := range []string{" x", "}"} {
+		trailInit := defaultCodexStandinOptions()
+		trailInit.trailingMethod = "initialize"
+		trailInit.trailingSuffix = suffix
+		_ = serveCodexStandinOnce(t, listener, trailInit)
+		_, _, err = CodexEnqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+		if !IsCodexQueueUnavailable(err) || !strings.Contains(err.Error(), "native queue is not ready:") {
+			t.Fatalf("trailing %q on initialize: %v", suffix, err)
+		}
+
+		trailAdd := defaultCodexStandinOptions()
+		trailAdd.trailingMethod = "thread/queue/add"
+		trailAdd.trailingSuffix = suffix
+		_ = serveCodexStandinOnce(t, listener, trailAdd)
+		_, _, err = CodexEnqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+		if err == nil || IsCodexQueueUnavailable(err) || !strings.Contains(err.Error(), "native queue outcome is uncertain; do not automatically resend") {
+			t.Fatalf("trailing %q on thread/queue/add: %v", suffix, err)
+		}
+	}
+
+	// 2c. Per-read handshake timeout (T1): 3 chunks at 60ms each (180ms total) succeed under 100ms ConnectTimeout; single 180ms stall fails.
+	dribbleOK := defaultCodexStandinOptions()
+	dribbleOK.upgradeChunks = 3
+	dribbleOK.upgradeChunkDelay = 60 * time.Millisecond
+	_ = serveCodexStandinOnce(t, listener, dribbleOK)
+	dribbleClient := CodexQueueClient{ConnectTimeout: 100 * time.Millisecond, RPCTimeout: time.Second}
+	qID, started, err := dribbleClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+	if err != nil || qID != "queued-one" || !started {
+		t.Fatalf("dribbled 101 handshake under per-read timeout: (%q, %v, %v)", qID, started, err)
+	}
+
+	dribbleStall := defaultCodexStandinOptions()
+	dribbleStall.upgradeChunks = 1
+	dribbleStall.upgradeChunkDelay = 180 * time.Millisecond
+	_ = serveCodexStandinOnce(t, listener, dribbleStall)
+	_, _, err = dribbleClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+	if !IsCodexQueueUnavailable(err) || !strings.Contains(err.Error(), "native queue endpoint is unavailable") {
+		t.Fatalf("stalled 101 handshake: %v", err)
+	}
+
+	// 2d. Socket read timeout during thread/queue/add recv (T2) -> "native queue outcome is uncertain; do not automatically resend".
+	stallAdd := defaultCodexStandinOptions()
+	stallAdd.stallMethod = "thread/queue/add"
+	stallAdd.stallDelay = 200 * time.Millisecond
+	_ = serveCodexStandinOnce(t, listener, stallAdd)
+	shortRPCClient := CodexQueueClient{ConnectTimeout: time.Second, RPCTimeout: 80 * time.Millisecond}
+	_, _, err = shortRPCClient.Enqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+	if err == nil || IsCodexQueueUnavailable(err) || err.Error() != "native queue outcome is uncertain; do not automatically resend" {
+		t.Fatalf("stalled thread/queue/add recv timeout: %v", err)
+	}
+
 	// 3. Deadline expired before thread/queue/add send is retryable QueueUnavailable with 0 add sends.
 	reqsCh = serveCodexStandinOnce(t, listener, defaultCodexStandinOptions())
 	expiringClient := CodexQueueClient{
@@ -851,7 +988,7 @@ func TestCodexQueueRefusalsLimitsAndInspect(t *testing.T) {
 	collision := defaultCodexStandinOptions()
 	collision.requestCollision = true
 	_ = serveCodexStandinOnce(t, listener, collision)
-	qID, started, err := CodexEnqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
+	qID, started, err = CodexEnqueue(context.Background(), sockPath, selfRef, "native-one", "wake", "d1", procpeer.ProcessOwner)
 	if err != nil || qID != "queued-one" || !started {
 		t.Fatalf("collision: (%q, %v, %v)", qID, started, err)
 	}
