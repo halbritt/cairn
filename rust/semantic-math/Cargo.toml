@@ -1,0 +1,12 @@
+[package]
+name = "cairn-semantic-math"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[dependencies]
+sha2 = { version = "=0.10.9", default-features = false, features = ["force-soft"] }
+
+[build-dependencies]
+cc = "=1.11.1"
