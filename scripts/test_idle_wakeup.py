@@ -1230,6 +1230,7 @@ time.sleep(30)
                      turn_id='turn-one', host_pid=host)
         with mock.patch.object(coordination, 'call', fake_call):
             result = coordination.handle(config, event)
+        self.assertEqual(result, {}, 'Codex Interrupt rejects hookSpecificOutput/additionalContext')
         self.assertEqual(recorded, ['agent-heartbeat', 'agent-context'])
         updated = json.loads(path.read_text())
         self.assertEqual(updated['agent']['metadata']['state'], 'idle', 'interrupt did not restore idle presence')

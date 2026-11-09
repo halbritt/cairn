@@ -4012,6 +4012,8 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
         associate_wake(config, state, path, observation)
         # Interrupt only restores actual presence; it must not claim, release
         # or reconcile inbox work, whose interrupted tools can still be running.
+        if observation["phase"] == "interrupted":
+            return {}  # Codex Interrupt cannot accept additional context.
         inbox = ''
         joined = False
         if config['harness'] == 'claude':
@@ -4023,11 +4025,10 @@ def _handle(config, event, event_name=None, *, recall_reports=None):
                 # the joined channel message natively before it reaches the
                 # model. The owner prompt and any other hook output continue.
                 raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
-        if observation["phase"] != "interrupted":
-            binding = wake_binding(config, state, event, joined)
-            if config['harness'] == 'claude' and binding:
-                refuse_conflicting_claude_wake(config, state, path, binding)
-            inbox = inbox_context(config, state, path, observation, binding)
+        binding = wake_binding(config, state, event, joined)
+        if config['harness'] == 'claude' and binding:
+            refuse_conflicting_claude_wake(config, state, path, binding)
+        inbox = inbox_context(config, state, path, observation, binding)
         if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
                 state.get('inbox_attempt', {}).get('turn_exclusive') and
                 state['inbox_attempt'].get('native_turn_id') == observation['native_turn_id']):
