@@ -316,7 +316,7 @@ fn graph_assignment_json(
         "observed":true,
         "api":"OrtApi29.Session_GetEpGraphAssignmentInfo",
         "recording_setting":{"key":"session.record_ep_graph_assignment_info","value":"1"},
-        "collection_stage":"partition assignment after BASIC/minimal required optimization, before higher optimization and cast/copy insertion",
+        "collection_stage":"API29 documents BASIC/minimal-stage assignment; retained implementation records partitioning after Level1/basic and any InsertCastTransformer assignment callbacks during optimization loops after Level2/3; this event history does not certify the complete final graph or executable dispatch after all transformations",
         "coverage":"API-returned subgraphs/nodes only; not complete final executable provider/node dispatch",
         "subgraphs":assignment.subgraphs().iter().map(|subgraph| json!({
             "provider_hex":hex(subgraph.provider()),

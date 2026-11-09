@@ -264,9 +264,12 @@ similarity/strict integer, production and FIRST holds remain unchanged.
 The actual typed session observations now serialize `ep_graph_assignment`
 under `session.partial_observations`. Provider and node name/domain/operator
 bytes use hex. Subgraphs and their node arrays retain API order, grouping and
-duplicates. The record identifies API29 `Session_GetEpGraphAssignmentInfo`,
-the owning recording option, and the collection stage after BASIC/minimal
-optimization but before higher optimization and cast/copy insertion.
+duplicates. The record identifies API29 `Session_GetEpGraphAssignmentInfo` and
+the owning recording option. API29 documents BASIC/minimal-stage assignments;
+the retained implementation records partitioning after Level1/basic and any
+`InsertCastTransformer` assignment callbacks during optimization loops after
+Level2/3. This event history does not certify the complete final graph or
+executable dispatch after all transformations.
 
 This snapshot describes API-returned assignments, not complete final executable
 provider/node dispatch. `effective_provider`, `cpu_arena` and

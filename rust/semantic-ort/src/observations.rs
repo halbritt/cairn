@@ -115,8 +115,10 @@ impl AssignedSubgraph {
         &self.nodes
     }
 }
-/// API29 partition-assignment snapshot after BASIC/minimal optimization, before
-/// higher optimizations and cast/copy insertion. Not final executable dispatch.
+/// API29 documents BASIC/minimal-stage assignments. The retained implementation
+/// records partitioning after Level1/basic and any InsertCastTransformer callbacks
+/// during optimization loops after Level2/3. This event history does not certify
+/// the complete final graph or executable dispatch after all transformations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GraphAssignmentObservations {
     subgraphs: Vec<AssignedSubgraph>,

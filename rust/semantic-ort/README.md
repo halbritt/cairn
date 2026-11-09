@@ -257,10 +257,12 @@ ready session identity or runtime qualification.
 The owning options now set `session.record_ep_graph_assignment_info=1`.
 Retained `inference_session.cc:1486-1537` shows that this adds a callback which
 copies provider/subgraph/node metadata; the selected numerical settings are
-unchanged. API29 `Session_GetEpGraphAssignmentInfo` reports partition assignment
-after BASIC optimization (minimal required optimization if disabled), before
-higher optimizations and cast/copy insertion. It does not establish complete
-final executable dispatch. Collection remains runtime-held.
+unchanged. API29 `Session_GetEpGraphAssignmentInfo` documents assignment after
+BASIC optimization (minimal required optimization if disabled). Retained
+`inference_session.cc:1765-1820` also exposes `InsertCastTransformer` assignment
+callbacks during optimization loops after Level2/3, in addition to partitioning
+after Level1/basic. This event history does not certify the complete final graph
+or executable dispatch after all transformations. Collection remains runtime-held.
 
 The C owner copies each provider and node name/domain/operator byte string and
 the nested array structure before exposing cached views. It preserves API order,
