@@ -36,7 +36,8 @@ activate the migration on supported hosts.
 | Rust ORT runtime and raw CLS inference | [runtime/session owners](../../rust/semantic-ort/src/lib.rs), [native bridge](../../rust/semantic-ort/native/bridge.c), [boundary](../../rust/semantic-ort/README.md); [`2cdedfbf`](https://github.com/halbritt/cairn/commit/2cdedfbf56d67848f1921cd5ed81253b2539eaf2) | ORT 1.29 C-API runtime/session ownership, batch-one int64 feeds and raw 384-component CLS bits from the named output | Semantic: actual model/session execution and raw-bit parity, numerical backend, worker and Go supervisor; component tests do not load ORT or run a model |
 | Rust full-occurrence matrix-vector stage | [layout](../../rust/semantic-math/src/layout.rs), [runtime owner](../../rust/semantic-math/src/lib.rs), [native computation](../../rust/semantic-math/native/compute.c), [boundary](../../rust/semantic-math/README.md); [`4b54d04e`](https://github.com/halbritt/cairn/commit/4b54d04ef03dd8ffbbf9b09b57abb307d7857741), accepted lock [`dc6a066d`](https://github.com/halbritt/cairn/commit/dc6a066d76e58d0222cb8e8234c0ba1a29c70651) | Preserves all passage occurrences in source order at width 384; selects empty output, one native dot product, or one full-matrix GEMV using the pinned OpenBLAS bridge | Semantic: actual native loading and numerical parity, complete rank backend, worker and Go supervisor; no BLAS computation was exercised by the component tests |
 | Rust first-pass and full-occurrence normalization | [stage owners](../../rust/semantic-math/src/normalization.rs), [native arithmetic](../../rust/semantic-math/native/normalization.c), [boundary](../../rust/semantic-math/README.md); [`11f1395e`](https://github.com/halbritt/cairn/commit/11f1395ebae685a72a05ee4541c7f2d91790d6eb) | Normalizes raw 384-component CLS rows with epsilon, preserves immutable first-pass cache rows, reconstructs all occurrences, then checks every second-pass norm before division | Semantic: rank/cache composition is published below; actual NumPy, CPU and floating-environment correspondence, exact numerical parity and initialized backend/worker acceptance remain open |
-| Rust owning native rank backend | [composition](../../rust/semantic-backend/src/lib.rs), [cache/arithmetic binding](../../rust/semantic-backend/src/arithmetic.rs), [initialization boundary](../../rust/semantic-backend/README.md); [`5b6f1f31`](https://github.com/halbritt/cairn/commit/5b6f1f310635b9384d199f9869f22cbab39561b1) | Connects the prepared tokenizer, ORT session, first-pass cache rows and full-occurrence normalization/matrix computation under one session owner; restored rows retain their bits without repeating first normalization | Semantic and Release: six initialization-observation gaps still prevent a usable factory; actual assets/model/math parity, worker, Go supervisor and runtime qualification remain open |
+| Rust owning native rank backend | [composition](../../rust/semantic-backend/src/lib.rs), [cache/arithmetic binding](../../rust/semantic-backend/src/arithmetic.rs), [initialization boundary](../../rust/semantic-backend/README.md); [`5b6f1f31`](https://github.com/halbritt/cairn/commit/5b6f1f310635b9384d199f9869f22cbab39561b1) | Connects the prepared tokenizer, ORT session, first-pass cache rows and full-occurrence normalization/matrix computation under one session owner; restored rows retain their bits without repeating first normalization | Semantic and Release: missing initialization observations still prevent a usable factory; actual assets/model/math parity, worker, Go supervisor and runtime qualification remain open |
+| Rust typed session-observation serializer fixtures | [serializer](../../rust/semantic-backend/src/identity.rs); tested source `d0ad8f82` | Private read-only traits let owner-created ORT records and private typed fixtures use the same serializers; four selected fixture checks passed with independent expected values | Semantic and Release: concrete ORT getter forwarding and the original actual-session T1 comparison remain owed; required observations, NULL globals, numerical/runtime and FIRST holds remain unchanged |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -89,10 +90,31 @@ component run and met the existing primary source review condition. The run
 validated the combined build graph and compiled the native units; its synthetic
 inputs and test-only collaborators did not load an actual ORT/model or execute
 OpenBLAS. Landing preserved all 76 source/input pins and the reviewed diff, and
-passed one `make check` without repeating the component tests. Six missing
-initialization-observation groups still prevent the factory from returning a
+passed one `make check` without repeating the component tests. Missing
+initialization observations still prevent the factory from returning a
 usable session; publication does not establish an executable worker or runtime
 qualification.
+The typed session-observation serializer extension (`d0ad8f82`) met its source
+review condition after the two-literal zero-padding correction. One isolated,
+offline, locked backend-only `p2_t1_source_` invocation passed four selected
+tests with 31 prior tests filtered out. The checks exercised the shared
+`session_observations_json` and `graph_assignment_json` bodies through private
+typed fixtures. Independent expected values cover exact bytes and zero-padding,
+optional versus empty values, ordering, grouping, duplicates, API/setting/stage
+provenance and unchanged readiness refusal. No public observation constructor,
+fixture feature/dependency or native bridge/ABI change was added.
+
+That run compiled the inherited native units but did not execute concrete ORT
+forwarding implementations, construct an actual session or call native getters,
+ORT, BLAS, a model or a worker. The original actual-session T1 comparison remains
+owed. `REQUIRED` declares 11 observation rows; this is a declaration count, not
+a measured count of missing observations. Those rows and the existing missing
+observations remain unchanged. `effective_provider`, `cpu_arena` and
+`remaining_defaults` remain NULL. Full backend initialization, readiness,
+numerical parity and campaign acceptance remain open, with the current strict
+score policy and all294-before-model, numerical/runtime/resource/production and
+actual-worker FIRST holds unchanged.
+
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
 dependency, and both transcript reviewers accepted the source and fixture delta.
