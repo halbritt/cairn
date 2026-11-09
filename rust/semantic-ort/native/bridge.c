@@ -18,7 +18,7 @@ _Static_assert(ORT_API_VERSION == 29, "selected API29 header");
 _Static_assert(sizeof(void *) == 8 && sizeof(size_t) == 8 && sizeof(int) == 4, "selected x86_64 GNU ABI");
 _Static_assert(sizeof(OrtErrorCode) == 4 && sizeof(ONNXTensorElementDataType) == 4 && sizeof(ExecutionMode) == 4, "ORT enum ABI; reject short-enum compiler settings");
 _Static_assert(sizeof(CairnOrtError) == 32 && offsetof(CairnOrtError,stage) == 8, "bridge error ABI");
-_Static_assert(sizeof(CairnOrtNode) == 32 && sizeof(CairnOrtMapping) == 32 && sizeof(CairnOrtOptions) == 8 && sizeof(CairnOrtOutput) == 40, "bridge record ABI");
+_Static_assert(sizeof(CairnOrtNode) == 32 && sizeof(CairnOrtMapping) == 32 && sizeof(CairnOrtOptions) == 8 && sizeof(CairnOrtOutput) == 48, "bridge record ABI");
 _Static_assert(sizeof(float) == 4 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128, "IEEE binary32 required");
 struct CairnOrtRuntime { void *library; int fd; const OrtApi *api; OrtEnv *env; };
 typedef struct { char *name; int32_t kind; int32_t ort_type; size_t rank; int64_t *dimensions; } OwnedNode;

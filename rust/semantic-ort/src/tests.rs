@@ -96,7 +96,7 @@ fn owned_tensor_lengths_batch_shape_and_zero_type_ids_are_enforced() {
     assert!(m.validate_batch(&b).is_err());
 }
 #[test]
-fn last_hidden_state_is_selected_by_name_with_exact_type_rank_and_width() {
+fn first_output_is_selected_in_metadata_order_with_exact_type_rank_and_width() {
     let mut m = metadata(&["input_ids"]);
     m.outputs.insert(
         0,
@@ -106,27 +106,49 @@ fn last_hidden_state_is_selected_by_name_with_exact_type_rank_and_width() {
             dimensions: vec![1, 384],
         },
     );
+    // Pinned FastEmbed onnx_text_model.py:18,96-98 requests run(None),
+    // ORT Python inference_collection.py:323-326 expands metadata order,
+    // then onnx_embedding.py:311-322 consumes [0], rank2 direct/rank3 CLS.
+    // A later named/duplicate output cannot retarget the selected first one.
     assert!(m.validate().is_ok());
+    assert_eq!(m.selected_output().unwrap(), &m.outputs[0]);
     m.outputs.push(m.outputs[1].clone());
-    assert!(m.validate().is_err());
-    m.outputs.pop();
+    assert!(m.validate().is_ok());
     m.outputs[1].element_type = ElementType::Int64;
-    assert!(m.validate().is_err());
-    m.outputs[1].element_type = ElementType::Float32;
+    m.outputs[1].dimensions = vec![2, 4, 383];
+    m.outputs[1].name = "unselected_output".into();
+    assert!(m.validate_batch(&batch(3)).is_ok());
+    assert_eq!(m.selected_output().unwrap().name, "pooler_output");
+
+    // Rejections apply to the selected first output even if a later valid
+    // last_hidden_state is still advertised (the duplicate at index two).
+    for element_type in [ElementType::Int64, ElementType::Other(10)] {
+        m.outputs[0].element_type = element_type;
+        assert!(m.validate().is_err());
+    }
+    m.outputs[0].element_type = ElementType::Float32;
     for shape in [
-        vec![1, 384],
+        vec![],
+        vec![384],
+        vec![1, 3, 384, 1],
+        vec![2, 384],
+        vec![1, 383],
         vec![2, 3, 384],
         vec![1, 3, 383],
         vec![1, 0, 384],
     ] {
-        m.outputs[1].dimensions = shape;
-        assert!(m.validate().is_err());
+        m.outputs[0].dimensions = shape;
+        assert!(m.validate().is_err(), "{:?}", m.outputs[0]);
     }
-    m.outputs[1].dimensions = vec![1, 4, 384];
+    m.outputs[0].dimensions = vec![1, 4, 384];
     assert!(m.validate_batch(&batch(3)).is_err());
-    m.outputs[1].name = "wrong_output".into();
-    assert!(m.validate().is_err());
+    m.outputs[0].dimensions = vec![1, 3, 384];
+    assert_eq!(m.validate_batch(&batch(3)).unwrap(), 3);
+    m.outputs[0].name = "another_first_output".into();
+    assert!(m.validate().is_ok());
+    assert_eq!(m.selected_output().unwrap().name, "another_first_output");
 }
+
 #[test]
 fn cls_is_exact_first_token_bits_with_no_arithmetic_or_finiteness_rewrite() {
     let mut bits = vec![0x3f80_0000; 2 * DIMENSIONS];

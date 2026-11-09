@@ -101,7 +101,9 @@ impl SessionMetadata {
         Ok(plan)
     }
 
-    pub(crate) fn validate_batch(&self, batch: &BatchOneTensors) -> Result<usize, Error> {
+    /// Validate owned tensor data against this metadata without native execution.
+    /// This pure shape/type check grants no session, model or identity admission.
+    pub fn validate_batch(&self, batch: &BatchOneTensors) -> Result<usize, Error> {
         self.validate()?;
         let n = batch.input_ids.len();
         if n == 0
