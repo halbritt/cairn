@@ -13,7 +13,7 @@ acceptance remain open.
 ## Inspect the implementation
 
 The following slices are published through
-[`872fdaa5`](https://github.com/halbritt/cairn/commit/872fdaa5e256eb5d680394cf30d31e8d753883d7)
+[`2cdedfbf`](https://github.com/halbritt/cairn/commit/2cdedfbf56d67848f1921cd5ed81253b2539eaf2)
 on 2026-11-09. The Go libraries are callable source; the Rust libraries have no
 executable worker or initialized model backend. Their publication does not
 activate the migration on supported hosts.
@@ -32,6 +32,7 @@ activate the migration on supported hosts.
 | Rust JSON input and reply codecs | [codec](../../rust/semantic-protocol/src/json.rs), [boundary](../../rust/semantic-protocol/README.md); [`b244e26b`](https://github.com/halbritt/cairn/commit/b244e26b85673d15308f7fbac9f36c311beaad23), corrected in [`114cf677`](https://github.com/halbritt/cairn/commit/114cf677082af2729e0e744a3c83fee6eb40bceb) | Byte framing, Unicode/JSON decoding, reply serialization and shared cache measurement over lossless values | Semantic: inputs deeper than 64 containers remain pending; actual worker, model, runtime policy and transport qualification remain open |
 | Rust rank and stream engine | [request engine](../../rust/semantic-rank/src/rank.rs), [bounded I/O](../../rust/semantic-rank/src/stream.rs), [backend interface](../../rust/semantic-rank/src/backend.rs), [boundary](../../rust/semantic-rank/README.md); [`d1c78f8c`](https://github.com/halbritt/cairn/commit/d1c78f8cbffc01a19bbc5469f4fca0e65210e9f6) | Joins protocol, hash admission, cache and score components; orders backend calls and flushes each stream reply before reading the next request | Semantic: actual tokenizer/model/numerical backend, executable and Go supervisor; component control-flow evidence does not qualify those implementations |
 | Rust prepared tokenizer and input tensors | [preparation](../../rust/semantic-tokenizer/src/prepared.rs), [tensors](../../rust/semantic-tokenizer/src/tensors.rs), [boundary](../../rust/semantic-tokenizer/README.md); [`d732f5fe`](https://github.com/halbritt/cairn/commit/d732f5fe292aff17cfc54b580c1ada433ac795e2), fixture correction [`37a50424`](https://github.com/halbritt/cairn/commit/37a50424872d8b3229ad97b80dd3ed8aa0e4888a) | Uses Tokenizers 0.23.2 with supplied model configuration; maintains separate model/rank policies and produces batch-one int64 IDs, attention masks and zero model token-type rows | Semantic: prepared-asset comparison of all 294 token IDs/lengths, actual model/ORT and numerical backend, executable and Go supervisor remain unqualified |
+| Rust ORT runtime and raw CLS inference | [runtime/session owners](../../rust/semantic-ort/src/lib.rs), [native bridge](../../rust/semantic-ort/native/bridge.c), [boundary](../../rust/semantic-ort/README.md); [`2cdedfbf`](https://github.com/halbritt/cairn/commit/2cdedfbf56d67848f1921cd5ed81253b2539eaf2) | ORT 1.29 C-API runtime/session ownership, batch-one int64 feeds and raw 384-component CLS bits from the named output | Semantic: actual model/session execution and raw-bit parity, numerical backend, worker and Go supervisor; component tests do not load ORT or run a model |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
 | Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
@@ -61,6 +62,11 @@ reviewed source/input pins and both reviewed diffs, and ran `make check` once
 without repeating the Cargo component tests. The tests use a synthetic tokenizer
 through the real Tokenizers API; they do not establish prepared-model parity or
 run an ORT session.
+The ORT component passed seven pure-data tests in one isolated offline, locked
+Cargo run and its primary source review. The run compiled the C bridge but did
+not load an ORT library, construct a model session or perform inference. Landing
+preserved all 47 source/input pins and passed one `make check`; actual runtime
+qualification remains open.
 The paired value/transcript component passed formatting, build, vet and scoped
 race checks for those two packages. Foundation cleared the exact four-file value
 dependency, and both transcript reviewers accepted the source and fixture delta.

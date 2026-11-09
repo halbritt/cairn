@@ -34,8 +34,11 @@ native bridge/build-script edge to the existing tokenizer closure.
 The accepted Cargo-produced `Cargo.lock` is provided unchanged. It preserves all
 116 existing dependency records and adds only this crate (117 packages:
 111 registry, 6 local). Existing manifests and locks remain unchanged.
-Compilation, tests and runtime execution remain unexecuted and require
-separately selected validation.
+The selected isolated offline, locked component run compiled the C bridge and
+passed all seven pure-data tests. Primary source review accepted the candidate;
+landing preserved all 47 source/input pins and passed one `make check`. These
+checks did not load the ORT library, construct a model session or run inference.
+Actual runtime execution and qualification remain outstanding.
 
 ## Runtime ownership and binding
 
@@ -56,7 +59,7 @@ provenance. The runtime must report exactly `1.29.0` and supply API 29.
 This mechanism still requires Release's supported-host qualification: executable
 memfd/seal and procfs availability, dynamic dependencies and their actual maps,
 ABI/CPU dispatch, and the external mapped-library observation required by
-[semantic/4](../../../docs/plans/hybrid-runtime-contracts/semantic.md).
+[semantic/4](../../docs/plans/hybrid-runtime-contracts/semantic.md).
 A sealed payload does not bind every dependent library. The reference executes
 a different static ORT inside its Python extension; same version is not raw-bit
 equivalence. There is no alternate/default/system runtime fallback.
@@ -152,5 +155,6 @@ FastEmbed float32 L2 epsilon1e-12 and NumPy/OpenBLAS rank arithmetic, preserving
 operation order and exact scores. P4 actual host/library/egress/resources and
 P5 actual CLI/Go supervision remain open, together with the campaign's existing
 C2/D1-A/D2/RTERM/P/W/uv/runtime/production holds. The actual-worker FIRST gate
-is unconsumed. No author build/test, native library load, model run, protected
-Python import, service, database or deployment is established here.
+is unconsumed. The component checks above do not establish native library load,
+model execution, protected Python import, service behavior, database behavior or
+deployment.
