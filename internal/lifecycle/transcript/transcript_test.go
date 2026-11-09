@@ -187,7 +187,7 @@ func TestPinnedRecordsAndLastJSONL(t *testing.T) {
 		}
 	}
 	mustWrite(t, p, []byte("{\"a\":1}\n{\"a\":1,\"a\":2}\n\n"))
-	if lastFixture(t, p)["a"] != json.Number("2") {
+	if !hasInteger(field(lastFixture(t, p), "a"), 2) {
 		t.Fatal("plain policy lost")
 	}
 	for _, raw := range []string{"", "{\"a\":", "[]\n", strings.Repeat(" ", NativeRecordLimit) + `{"a":1}`} {
