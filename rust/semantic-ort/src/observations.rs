@@ -84,6 +84,48 @@ pub struct IoObservation {
     memory: Option<MemoryObservation>,
     ep_device: Option<EpDeviceObservation>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssignedNode {
+    name: Vec<u8>,
+    domain: Vec<u8>,
+    operator_type: Vec<u8>,
+}
+impl AssignedNode {
+    pub fn name(&self) -> &[u8] {
+        &self.name
+    }
+    pub fn domain(&self) -> &[u8] {
+        &self.domain
+    }
+    pub fn operator_type(&self) -> &[u8] {
+        &self.operator_type
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssignedSubgraph {
+    provider: Vec<u8>,
+    nodes: Vec<AssignedNode>,
+}
+impl AssignedSubgraph {
+    pub fn provider(&self) -> &[u8] {
+        &self.provider
+    }
+    pub fn nodes(&self) -> &[AssignedNode] {
+        &self.nodes
+    }
+}
+/// API29 partition-assignment snapshot after BASIC/minimal optimization, before
+/// higher optimizations and cast/copy insertion. Not final executable dispatch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphAssignmentObservations {
+    subgraphs: Vec<AssignedSubgraph>,
+}
+impl GraphAssignmentObservations {
+    pub fn subgraphs(&self) -> &[AssignedSubgraph] {
+        &self.subgraphs
+    }
+}
 impl IoObservation {
     pub fn ordinal(&self) -> usize {
         self.ordinal
@@ -106,8 +148,12 @@ pub struct SessionObservations {
     options_config_entries: Vec<ConfigEntry>,
     inputs: Vec<IoObservation>,
     outputs: Vec<IoObservation>,
+    graph_assignment: GraphAssignmentObservations,
 }
 impl SessionObservations {
+    pub fn graph_assignment(&self) -> &GraphAssignmentObservations {
+        &self.graph_assignment
+    }
     pub fn options_config_entries(&self) -> &[ConfigEntry] {
         &self.options_config_entries
     }
@@ -256,6 +302,67 @@ fn decode_io(
     Ok(owned)
 }
 
+fn decode_assigned_nodes(raw: &ffi::AssignedSubgraph) -> Result<Vec<AssignedNode>, Error> {
+    if raw.node_count
+        > isize::MAX as usize
+            / std::mem::size_of::<AssignedNode>().max(std::mem::size_of::<ffi::AssignedNode>())
+        || (raw.node_count != 0 && raw.nodes.is_null())
+    {
+        return Err(contract("invalid assignment node array/count"));
+    }
+    let rows = if raw.node_count == 0 {
+        &[][..]
+    } else {
+        // Views borrow a live bridge cache, or owned buffers in private tests.
+        unsafe { std::slice::from_raw_parts(raw.nodes, raw.node_count) }
+    };
+    let mut nodes = Vec::new();
+    nodes
+        .try_reserve_exact(rows.len())
+        .map_err(|e| contract(format!("assignment node allocation: {e}")))?;
+    for node in rows {
+        nodes.push(AssignedNode {
+            name: copy_required_bytes(node.name)?,
+            domain: copy_required_bytes(node.domain)?,
+            operator_type: copy_required_bytes(node.operator_type)?,
+        });
+    }
+    Ok(nodes)
+}
+
+fn decode_graph_assignment(
+    raw: &ffi::AssignmentView,
+) -> Result<GraphAssignmentObservations, Error> {
+    if raw.observed != 1
+        || raw.reserved != 0
+        || raw.count
+            > isize::MAX as usize
+                / std::mem::size_of::<AssignedSubgraph>()
+                    .max(std::mem::size_of::<ffi::AssignedSubgraph>())
+        || (raw.count != 0 && raw.subgraphs.is_null())
+    {
+        return Err(contract(
+            "assignment snapshot not observed or invalid array/count",
+        ));
+    }
+    let rows = if raw.count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(raw.subgraphs, raw.count) }
+    };
+    let mut subgraphs = Vec::new();
+    subgraphs
+        .try_reserve_exact(rows.len())
+        .map_err(|e| contract(format!("assignment subgraph allocation: {e}")))?;
+    for subgraph in rows {
+        subgraphs.push(AssignedSubgraph {
+            provider: copy_required_bytes(subgraph.provider)?,
+            nodes: decode_assigned_nodes(subgraph)?,
+        });
+    }
+    Ok(GraphAssignmentObservations { subgraphs })
+}
+
 pub(crate) fn read(
     pointer: NonNull<ffi::Session>,
     metadata: &SessionMetadata,
@@ -266,6 +373,13 @@ pub(crate) fn read(
         unsafe { ffi::cairn_ort_config_observation(pointer.as_ptr(), &mut raw, &mut error) };
     error.result(status)?;
     let options_config_entries = decode_config(&raw)?;
+    let mut assignment = ffi::AssignmentView::default();
+    let mut error = ffi::NativeError::new();
+    let status = unsafe {
+        ffi::cairn_ort_assignment_observation(pointer.as_ptr(), &mut assignment, &mut error)
+    };
+    error.result(status)?;
+    let graph_assignment = decode_graph_assignment(&assignment)?;
     let read_io = |input, nodes: &[NodeMetadata]| -> Result<Vec<IoObservation>, Error> {
         if nodes.len() > 64 {
             return Err(contract("IO observation count bound"));
@@ -292,9 +406,12 @@ pub(crate) fn read(
     };
     Ok(SessionObservations {
         options_config_entries,
+        graph_assignment,
         inputs: read_io(1, &metadata.inputs)?,
         outputs: read_io(0, &metadata.outputs)?,
     })
 }
+#[cfg(test)]
+mod dispatch_tests;
 #[cfg(test)]
 mod tests;

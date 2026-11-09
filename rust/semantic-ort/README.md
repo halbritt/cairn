@@ -206,8 +206,8 @@ I/O memory placement, an arena allocator kind, or a CPU EP name for an I/O node
 is partial evidence; none establishes global CPU-arena enablement, complete
 provider/node dispatch, or all effective defaults.
 
-All session-returned MemoryInfo/EpDevice pointers borrow the live session; this
-bridge never releases those borrowed objects. It releases only the newly owned
+MemoryInfo pointers borrow the session; EpDevice pointers are environment-owned.
+The bridge never releases either borrowed object. It releases only the newly owned
 options KeyValuePairs and its own byte copies. On any status/allocation failure,
 the original error propagates and partial cache allocations are freed by session
 cleanup. Getter failures are not silently converted to an observed empty list.
@@ -251,3 +251,31 @@ Actual invocation remains separately held, including all294-before-model,
 P1-P5, both normalization stages, strict integers, host/runtime/resource gates
 and actual-worker FIRST. This source supplies partial observations, not a
 ready session identity or runtime qualification.
+
+## S-P2-DISPATCH-1 assignment-stage snapshot
+
+The owning options now set `session.record_ep_graph_assignment_info=1`.
+Retained `inference_session.cc:1486-1537` shows that this adds a callback which
+copies provider/subgraph/node metadata; the selected numerical settings are
+unchanged. API29 `Session_GetEpGraphAssignmentInfo` reports partition assignment
+after BASIC optimization (minimal required optimization if disabled), before
+higher optimizations and cast/copy insertion. It does not establish complete
+final executable dispatch. Collection remains runtime-held.
+
+The C owner copies each provider and node name/domain/operator byte string and
+the nested array structure before exposing cached views. It preserves API order,
+grouping, duplicates and empty strings. Required NULL strings/objects, invalid
+array counts and getter errors fail construction; an observed empty snapshot is
+distinct from collection failure. Bounds are finite C/Rust addressability and
+allocation checks, not invented graph-size limits. Every partial allocation is
+freed through the same session cleanup path; no borrowed ORT object is freed.
+Rust owns the copies behind private construction and read-only getters.
+
+Six new `p2_dispatch1_` pure-data ORT tests are authored, UNEXECUTED. They cover
+missing/empty snapshots, required text, array bounds independent of NULL,
+ownership after mutation/drop, exact bytes, order, grouping and multiplicity.
+The carried SESSION1 oversized-config fixture now uses a dangling non-NULL
+pointer before its oversized count; the closed test has not been rerun. Added
+ABI offsets cover all fields of the new 48/32/24-byte records and the previously
+unguarded same-width fields at the touched observation boundary. No dependency,
+feature, header, native unit or numerical setting was changed.

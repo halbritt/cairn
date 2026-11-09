@@ -46,6 +46,7 @@ fn p2_session1_observed_empty_config_is_not_missing_or_malformed() {
     raw.count = 1;
     raw.entries = std::ptr::null();
     assert!(decode_config(&raw).is_err());
+    raw.entries = NonNull::<ffi::ConfigEntry>::dangling().as_ptr();
     raw.count = usize::MAX;
     assert!(decode_config(&raw).is_err());
 }

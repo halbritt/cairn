@@ -110,7 +110,7 @@ fn required_observations(inputs: &Value) -> Vec<MissingObservation> {
         ("/compilation/linked_input_attestation", "compilation.linked_input_attestation", "bind complete local+registry source, rustc/target/features, per-unit Rust/C flags and actual link receipts to this observed binary; runtime source snapshot alone is insufficient"),
         ("/session/cpu_arena", "session.cpu_arena", "B1 must establish actual global arena-enabled evidence; I/O MemoryInfo allocator type is not this session option"),
         ("/session/remaining_defaults", "session.remaining_defaults", "B1 must establish remaining effective vector-affecting defaults; options config entries and existing two getters are only partial"),
-        ("/session/effective_provider", "session.effective_provider", "B1 must establish complete provider/node dispatch evidence; optional I/O EpDevice names or internal C++ provider getters do not certify it"),
+        ("/session/effective_provider", "session.effective_provider", "B1 must establish complete final provider/node dispatch evidence; assignment-stage snapshots, optional I/O EpDevice names and internal C++ getters do not certify it"),
         ("/native/ort_dependency_inventory", "native.ort_dependency_inventory", "extend ORT mapped dependency provenance beyond the existing OrtGetApiBase mapping"),
         ("/native/cpu_kernel_class", "native.cpu_os_complete_class", "bind complete effective ISA/OS vector state and selected kernels to actual library getters; bounded feature observations are partial"),
         ("/assets_model_external_data_closure", "assets.model_external_data_closure", "establish self-contained optimized ONNX/complete actually consumed assets; existing session interface retains model bytes only"),
@@ -304,8 +304,27 @@ fn session_observations_json(
             json!({"key_hex":hex(e.key()),"value_hex":hex(e.value())})).collect::<Vec<_>>()},
         "options_stage":"after explicit setters, before CreateSessionFromArray",
         "session_io_stage":"fully initialized owning session, metadata ordinal order",
+        "ep_graph_assignment":graph_assignment_json(observations.graph_assignment()),
         "inputs":io(observations.inputs()),"outputs":io(observations.outputs()),
-        "scope":"partial I/O placement and optional EP-device evidence; not global defaults or complete node dispatch"
+        "scope":"partial I/O placement, optional EP devices and assignment-stage subgraphs; not global defaults or complete final dispatch"
+    })
+}
+fn graph_assignment_json(
+    assignment: &cairn_semantic_ort::observations::GraphAssignmentObservations,
+) -> Value {
+    json!({
+        "observed":true,
+        "api":"OrtApi29.Session_GetEpGraphAssignmentInfo",
+        "recording_setting":{"key":"session.record_ep_graph_assignment_info","value":"1"},
+        "collection_stage":"partition assignment after BASIC/minimal required optimization, before higher optimization and cast/copy insertion",
+        "coverage":"API-returned subgraphs/nodes only; not complete final executable provider/node dispatch",
+        "subgraphs":assignment.subgraphs().iter().map(|subgraph| json!({
+            "provider_hex":hex(subgraph.provider()),
+            "nodes":subgraph.nodes().iter().map(|node| json!({
+                "name_hex":hex(node.name()),"domain_hex":hex(node.domain()),
+                "operator_type_hex":hex(node.operator_type())
+            })).collect::<Vec<_>>()
+        })).collect::<Vec<_>>()
     })
 }
 fn session_inputs(
@@ -606,5 +625,40 @@ mod session_observation_tests {
         changed["partial_observations"]["options_config_entries"]["entries"][0]["value_hex"] =
             json!("ff");
         assert_ne!(canonical(&inputs).unwrap(), canonical(&changed).unwrap());
+    }
+
+    #[test]
+    fn p2_dispatch1_assignment_snapshot_cannot_fill_global_identity() {
+        let metadata = cairn_semantic_ort::SessionMetadata {
+            inputs: vec![],
+            outputs: vec![],
+        };
+        let partial = json!({"ep_graph_assignment":{
+            "observed":true,"api":"OrtApi29.Session_GetEpGraphAssignmentInfo",
+            "recording_setting":{"key":"session.record_ep_graph_assignment_info","value":"1"},
+            "subgraphs":[{"provider_hex":"435055","nodes":[{"name_hex":"61","domain_hex":"","operator_type_hex":"416464"}]}],
+            "effective_provider":"CPU","cpu_arena":true,"remaining_defaults":{"complete":true},"complete_final_dispatch":true
+        }});
+        let inputs = json!({"session":session_inputs(&settings(), &metadata, partial)});
+        for field in ["cpu_arena", "remaining_defaults", "effective_provider"] {
+            assert!(inputs["session"][field].is_null());
+            assert!(required_observations(&inputs)
+                .iter()
+                .any(|missing| missing.field == format!("session.{field}")));
+        }
+        assert_eq!(
+            required_observations(&inputs).len(),
+            required_observations(
+                &json!({"session":session_inputs(&settings(), &metadata, Value::Null)})
+            )
+            .len()
+        );
+        let report = ConstructionReport {
+            missing: vec![],
+            inputs,
+            provenance: vec![],
+            running_image: None,
+        };
+        assert!(report.rank_identity().is_err());
     }
 }

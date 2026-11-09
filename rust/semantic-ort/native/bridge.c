@@ -25,7 +25,7 @@ _Static_assert(sizeof(OrtAllocatorType)==4 && sizeof(OrtMemType)==4 && sizeof(Or
 _Static_assert(sizeof(float) == 4 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128, "IEEE binary32 required");
 struct CairnOrtRuntime { void *library; int fd; const OrtApi *api; OrtEnv *env; };
 typedef struct { char *name; int32_t kind; int32_t ort_type; size_t rank; int64_t *dimensions; CairnOrtIoObservation observation; } OwnedNode;
-struct CairnOrtSession { CairnOrtRuntime *runtime; OrtSession *session; OwnedNode *inputs; OwnedNode *outputs; size_t input_count; size_t output_count; CairnOrtConfigEntry *config_entries; size_t config_count; int config_observed; };
+struct CairnOrtSession { CairnOrtRuntime *runtime; OrtSession *session; OwnedNode *inputs; OwnedNode *outputs; size_t input_count; size_t output_count; CairnOrtConfigEntry *config_entries; size_t config_count; int config_observed; CairnOrtAssignedSubgraph *assigned_subgraphs; size_t assigned_count; int assignment_observed; };
 
 static int error_add(CairnOrtError *e, int code, const char *stage, const char *message) {
     if (!e->stage) { e->stage = stage; e->code = code; }
@@ -146,6 +146,14 @@ static void node_free(OwnedNode *node) {
     bytes_free(&node->observation.memory.name);
     bytes_free(&node->observation.ep.name); bytes_free(&node->observation.ep.vendor);
 }
+static void assignment_free(CairnOrtAssignedSubgraph *subgraph) {
+    bytes_free(&subgraph->provider);
+    CairnOrtAssignedNode *nodes=(CairnOrtAssignedNode *)subgraph->nodes;
+    for (size_t i=0;i<subgraph->node_count;i++) {
+        bytes_free(&nodes[i].name); bytes_free(&nodes[i].domain); bytes_free(&nodes[i].operator_type);
+    }
+    free(nodes);
+}
 void cairn_ort_session_close(CairnOrtSession *s) {
     if (!s) return;
     if (s->session) s->runtime->api->ReleaseSession(s->session);
@@ -154,7 +162,8 @@ void cairn_ort_session_close(CairnOrtSession *s) {
     if (s->config_entries) for (size_t i=0;i<s->config_count;i++) {
         bytes_free(&s->config_entries[i].key); bytes_free(&s->config_entries[i].value);
     }
-    free(s->config_entries); free(s->inputs); free(s->outputs); free(s);
+    for (size_t i=0;i<s->assigned_count;i++) assignment_free(&s->assigned_subgraphs[i]);
+    free(s->assigned_subgraphs); free(s->config_entries); free(s->inputs); free(s->outputs); free(s);
 }
 
 static int read_node(CairnOrtSession *s, int input, size_t index, OrtAllocator *allocator, OwnedNode *out, CairnOrtError *error) {
@@ -280,8 +289,66 @@ static int collect_io_observations(CairnOrtSession *s, int input, CairnOrtError 
     }
     result=0;
 done:
-    /* MemoryInfo/EpDevice pointers borrow the live session; only our copies free. */
+    /* MemoryInfo borrows the session; EpDevice is environment-owned. Neither is freed here. */
     return result;
+}
+
+static int copy_assigned_node(const OrtApi *api, const OrtEpAssignedNode *node, CairnOrtAssignedNode *out, CairnOrtError *error) {
+    const char *text=NULL; int result=-1;
+    if (!node) return error_add(error,-1,"assignment node","null node in returned array");
+    CALL(api,api->EpAssignedNode_GetName(node,&text));
+    if (copy_observed_text(text,&out->name,error)) goto done;
+    CALL(api,api->EpAssignedNode_GetDomain(node,&text));
+    if (copy_observed_text(text,&out->domain,error)) goto done;
+    CALL(api,api->EpAssignedNode_GetOperatorType(node,&text));
+    if (copy_observed_text(text,&out->operator_type,error)) goto done;
+    result=0;
+done:
+    return result;
+}
+
+static int copy_assigned_subgraph(const OrtApi *api, const OrtEpAssignedSubgraph *subgraph, CairnOrtAssignedSubgraph *out, CairnOrtError *error) {
+    const char *provider=NULL; const OrtEpAssignedNode *const *nodes=NULL;
+    size_t count=0; int result=-1;
+    if (!subgraph) return error_add(error,-1,"assignment subgraph","null subgraph in returned array");
+    CALL(api,api->EpAssignedSubgraph_GetEpName(subgraph,&provider));
+    if (copy_observed_text(provider,&out->provider,error)) goto done;
+    CALL(api,api->EpAssignedSubgraph_GetNodes(subgraph,&nodes,&count));
+    if (count>(size_t)PTRDIFF_MAX/sizeof(CairnOrtAssignedNode) || (count && !nodes)) {
+        error_add(error,-1,"assignment nodes","invalid array pointer/count or allocation bound"); goto done;
+    }
+    CairnOrtAssignedNode *owned=count ? calloc(count,sizeof(*owned)) : NULL;
+    if (count && !owned) { error_add(error,ENOMEM,"assignment nodes allocation","out of memory"); goto done; }
+    out->nodes=owned; out->node_count=count;
+    for (size_t i=0;i<count;i++) if (copy_assigned_node(api,nodes[i],&owned[i],error)) goto done;
+    result=0;
+done:
+    return result;
+}
+
+static int collect_graph_assignment(CairnOrtSession *s, CairnOrtError *error) {
+    const OrtApi *api=s->runtime->api; const OrtEpAssignedSubgraph *const *subgraphs=NULL;
+    size_t count=0; int result=-1;
+    CALL(api,api->Session_GetEpGraphAssignmentInfo(s->session,&subgraphs,&count));
+    if (count>(size_t)PTRDIFF_MAX/sizeof(CairnOrtAssignedSubgraph) || (count && !subgraphs)) {
+        error_add(error,-1,"assignment subgraphs","invalid array pointer/count or allocation bound"); goto done;
+    }
+    if (count) {
+        s->assigned_subgraphs=calloc(count,sizeof(*s->assigned_subgraphs));
+        if (!s->assigned_subgraphs) { error_add(error,ENOMEM,"assignment subgraphs allocation","out of memory"); goto done; }
+    }
+    s->assigned_count=count;
+    for (size_t i=0;i<count;i++) if (copy_assigned_subgraph(api,subgraphs[i],&s->assigned_subgraphs[i],error)) goto done;
+    s->assignment_observed=1; result=0;
+done:
+    /* API29 supplies borrowed arrays/strings. Only bridge-owned copies are released. */
+    return result;
+}
+
+int cairn_ort_assignment_observation(const CairnOrtSession *s, CairnOrtAssignmentView *out, CairnOrtError *error) {
+    if (!s->assignment_observed) return error_add(error,-1,"graph assignment observation","not collected");
+    memset(out,0,sizeof(*out)); out->observed=1;
+    out->count=s->assigned_count; out->subgraphs=s->assigned_subgraphs; return 0;
 }
 
 int cairn_ort_config_observation(const CairnOrtSession *s, CairnOrtConfigView *out, CairnOrtError *error) {
@@ -310,6 +377,8 @@ int cairn_ort_session_open(CairnOrtRuntime *runtime, const uint8_t *model, size_
     /* API29 header5195 documents false as the native deterministic-compute default. */
     CALL(api,api->SetDeterministicCompute(options,false));
     CALL(api,api->DisableProfiling(options));
+    /* Retained TransformGraph callback copies assignment metadata only; numerical settings stay unchanged. */
+    CALL(api,api->AddSessionConfigEntry(options,"session.record_ep_graph_assignment_info","1"));
     /* Preserve the native defaults Python leaves untouched, and read the available getters. */
     CALL(api,api->GetSessionExecutionMode(options,&execution));
     CALL(api,api->GetMemPatternEnabled(options,&pattern));
@@ -328,6 +397,7 @@ int cairn_ort_session_open(CairnOrtRuntime *runtime, const uint8_t *model, size_
     for (size_t i=0;i<s->input_count;i++) if (read_node(s,1,i,allocator,&s->inputs[i],error)) goto done;
     for (size_t i=0;i<s->output_count;i++) if (read_node(s,0,i,allocator,&s->outputs[i],error)) goto done;
     if (collect_io_observations(s,1,error) || collect_io_observations(s,0,error)) goto done;
+    if (collect_graph_assignment(s,error)) goto done;
     *out=s; s=NULL; result=0;
 done:
     if (options) api->ReleaseSessionOptions(options);

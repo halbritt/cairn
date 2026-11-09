@@ -258,3 +258,23 @@ construction does not establish actual getter behavior, default/provider
 completeness, model execution or numerical/runtime acceptance. Full P1-P5,
 all294-before-model, both norms/cache occurrences/NumPy iterator, raw-bit
 similarity/strict integer, production and FIRST holds remain unchanged.
+
+## S-P2-DISPATCH-1 partial graph-assignment provenance
+
+The actual typed session observations now serialize `ep_graph_assignment`
+under `session.partial_observations`. Provider and node name/domain/operator
+bytes use hex. Subgraphs and their node arrays retain API order, grouping and
+duplicates. The record identifies API29 `Session_GetEpGraphAssignmentInfo`,
+the owning recording option, and the collection stage after BASIC/minimal
+optimization but before higher optimization and cast/copy insertion.
+
+This snapshot describes API-returned assignments, not complete final executable
+provider/node dispatch. `effective_provider`, `cpu_arena` and
+`remaining_defaults` remain NULL, and all ten required identity gaps remain.
+The new `p2_dispatch1_` backend test uses synthetic partial JSON to check
+global-gap refusal even when a snapshot asserts final-dispatch completeness.
+It is authored and UNEXECUTED; it does not execute the typed serializer.
+The carried T1 requirement to compare typed records against the first separately
+admitted actual-session serialization remains owed. No public fixture constructor
+or feature was added. All full P1-P5, numerical, resource, production and
+actual-worker FIRST holds remain; source construction is not runtime readiness.
