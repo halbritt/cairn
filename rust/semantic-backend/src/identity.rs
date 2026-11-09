@@ -283,15 +283,163 @@ pub(crate) fn observe(
         running_image,
     })
 }
-fn session_observations_json(
-    observations: &cairn_semantic_ort::observations::SessionObservations,
-) -> Value {
-    let io = |rows: &[cairn_semantic_ort::observations::IoObservation]| -> Vec<Value> {
+// Private read-only seam: production forwards owner-constructed ORT records;
+// cfg(test) fixtures supply owned values without constructing ORT observations.
+trait ConfigEntrySource {
+    fn key(&self) -> &[u8];
+    fn value(&self) -> &[u8];
+}
+trait MemoryObservationSource {
+    fn name(&self) -> &[u8];
+    fn device_type(&self) -> i32;
+    fn device_id(&self) -> i32;
+    fn allocator_type(&self) -> i32;
+    fn memory_type(&self) -> i32;
+    fn device_memory_type(&self) -> i32;
+    fn vendor_id(&self) -> u32;
+}
+trait EpDeviceSource {
+    fn name(&self) -> Option<&[u8]>;
+    fn vendor(&self) -> Option<&[u8]>;
+}
+trait IoObservationSource {
+    type Memory: MemoryObservationSource;
+    type EpDevice: EpDeviceSource;
+    fn ordinal(&self) -> usize;
+    fn node_name(&self) -> &str;
+    fn memory(&self) -> Option<&Self::Memory>;
+    fn ep_device(&self) -> Option<&Self::EpDevice>;
+}
+trait AssignedNodeSource {
+    fn name(&self) -> &[u8];
+    fn domain(&self) -> &[u8];
+    fn operator_type(&self) -> &[u8];
+}
+trait AssignedSubgraphSource {
+    type Node: AssignedNodeSource;
+    fn provider(&self) -> &[u8];
+    fn nodes(&self) -> &[Self::Node];
+}
+trait GraphAssignmentSource {
+    type Subgraph: AssignedSubgraphSource;
+    fn subgraphs(&self) -> &[Self::Subgraph];
+}
+trait SessionObservationSource {
+    type Entry: ConfigEntrySource;
+    type Io: IoObservationSource;
+    type Assignment: GraphAssignmentSource;
+    fn options_config_entries(&self) -> &[Self::Entry];
+    fn inputs(&self) -> &[Self::Io];
+    fn outputs(&self) -> &[Self::Io];
+    fn graph_assignment(&self) -> &Self::Assignment;
+}
+
+impl ConfigEntrySource for cairn_semantic_ort::observations::ConfigEntry {
+    fn key(&self) -> &[u8] {
+        cairn_semantic_ort::observations::ConfigEntry::key(self)
+    }
+    fn value(&self) -> &[u8] {
+        cairn_semantic_ort::observations::ConfigEntry::value(self)
+    }
+}
+impl MemoryObservationSource for cairn_semantic_ort::observations::MemoryObservation {
+    fn name(&self) -> &[u8] {
+        cairn_semantic_ort::observations::MemoryObservation::name(self)
+    }
+    fn device_type(&self) -> i32 {
+        cairn_semantic_ort::observations::MemoryObservation::device_type(self).code()
+    }
+    fn device_id(&self) -> i32 {
+        cairn_semantic_ort::observations::MemoryObservation::device_id(self)
+    }
+    fn allocator_type(&self) -> i32 {
+        cairn_semantic_ort::observations::MemoryObservation::allocator_type(self).code()
+    }
+    fn memory_type(&self) -> i32 {
+        cairn_semantic_ort::observations::MemoryObservation::memory_type(self).code()
+    }
+    fn device_memory_type(&self) -> i32 {
+        cairn_semantic_ort::observations::MemoryObservation::device_memory_type(self).code()
+    }
+    fn vendor_id(&self) -> u32 {
+        cairn_semantic_ort::observations::MemoryObservation::vendor_id(self)
+    }
+}
+impl EpDeviceSource for cairn_semantic_ort::observations::EpDeviceObservation {
+    fn name(&self) -> Option<&[u8]> {
+        cairn_semantic_ort::observations::EpDeviceObservation::name(self)
+    }
+    fn vendor(&self) -> Option<&[u8]> {
+        cairn_semantic_ort::observations::EpDeviceObservation::vendor(self)
+    }
+}
+impl IoObservationSource for cairn_semantic_ort::observations::IoObservation {
+    type Memory = cairn_semantic_ort::observations::MemoryObservation;
+    type EpDevice = cairn_semantic_ort::observations::EpDeviceObservation;
+    fn ordinal(&self) -> usize {
+        cairn_semantic_ort::observations::IoObservation::ordinal(self)
+    }
+    fn node_name(&self) -> &str {
+        cairn_semantic_ort::observations::IoObservation::node_name(self)
+    }
+    fn memory(&self) -> Option<&Self::Memory> {
+        cairn_semantic_ort::observations::IoObservation::memory(self)
+    }
+    fn ep_device(&self) -> Option<&Self::EpDevice> {
+        cairn_semantic_ort::observations::IoObservation::ep_device(self)
+    }
+}
+impl AssignedNodeSource for cairn_semantic_ort::observations::AssignedNode {
+    fn name(&self) -> &[u8] {
+        cairn_semantic_ort::observations::AssignedNode::name(self)
+    }
+    fn domain(&self) -> &[u8] {
+        cairn_semantic_ort::observations::AssignedNode::domain(self)
+    }
+    fn operator_type(&self) -> &[u8] {
+        cairn_semantic_ort::observations::AssignedNode::operator_type(self)
+    }
+}
+impl AssignedSubgraphSource for cairn_semantic_ort::observations::AssignedSubgraph {
+    type Node = cairn_semantic_ort::observations::AssignedNode;
+    fn provider(&self) -> &[u8] {
+        cairn_semantic_ort::observations::AssignedSubgraph::provider(self)
+    }
+    fn nodes(&self) -> &[Self::Node] {
+        cairn_semantic_ort::observations::AssignedSubgraph::nodes(self)
+    }
+}
+impl GraphAssignmentSource for cairn_semantic_ort::observations::GraphAssignmentObservations {
+    type Subgraph = cairn_semantic_ort::observations::AssignedSubgraph;
+    fn subgraphs(&self) -> &[Self::Subgraph] {
+        cairn_semantic_ort::observations::GraphAssignmentObservations::subgraphs(self)
+    }
+}
+impl SessionObservationSource for cairn_semantic_ort::observations::SessionObservations {
+    type Entry = cairn_semantic_ort::observations::ConfigEntry;
+    type Io = cairn_semantic_ort::observations::IoObservation;
+    type Assignment = cairn_semantic_ort::observations::GraphAssignmentObservations;
+    fn options_config_entries(&self) -> &[Self::Entry] {
+        cairn_semantic_ort::observations::SessionObservations::options_config_entries(self)
+    }
+    fn inputs(&self) -> &[Self::Io] {
+        cairn_semantic_ort::observations::SessionObservations::inputs(self)
+    }
+    fn outputs(&self) -> &[Self::Io] {
+        cairn_semantic_ort::observations::SessionObservations::outputs(self)
+    }
+    fn graph_assignment(&self) -> &Self::Assignment {
+        cairn_semantic_ort::observations::SessionObservations::graph_assignment(self)
+    }
+}
+
+fn session_observations_json<S: SessionObservationSource>(observations: &S) -> Value {
+    let io = |rows: &[S::Io]| -> Vec<Value> {
         rows.iter().map(|row| {
             let memory = row.memory().map(|m| json!({
-                "name_hex":hex(m.name()),"device_type":m.device_type().code(),"device_id":m.device_id(),
-                "allocator_type":m.allocator_type().code(),"memory_type":m.memory_type().code(),
-                "device_memory_type":m.device_memory_type().code(),"vendor_id":m.vendor_id()
+                "name_hex":hex(m.name()),"device_type":m.device_type(),"device_id":m.device_id(),
+                "allocator_type":m.allocator_type(),"memory_type":m.memory_type(),
+                "device_memory_type":m.device_memory_type(),"vendor_id":m.vendor_id()
             }));
             let ep = row.ep_device().map(|ep| json!({
                 "name_hex":ep.name().map(hex),"vendor_hex":ep.vendor().map(hex)
@@ -309,9 +457,7 @@ fn session_observations_json(
         "scope":"partial I/O placement, optional EP devices and assignment-stage subgraphs; not global defaults or complete final dispatch"
     })
 }
-fn graph_assignment_json(
-    assignment: &cairn_semantic_ort::observations::GraphAssignmentObservations,
-) -> Value {
+fn graph_assignment_json<G: GraphAssignmentSource>(assignment: &G) -> Value {
     json!({
         "observed":true,
         "api":"OrtApi29.Session_GetEpGraphAssignmentInfo",
@@ -657,6 +803,363 @@ mod session_observation_tests {
             missing: vec![],
             inputs,
             provenance: vec![],
+            running_image: None,
+        };
+        assert!(report.rank_identity().is_err());
+    }
+}
+
+#[cfg(test)]
+mod typed_serializer_tests {
+    use super::*;
+
+    type FixtureEntry = (Vec<u8>, Vec<u8>);
+    type FixtureEp = (Option<Vec<u8>>, Option<Vec<u8>>);
+    type FixtureNode = (Vec<u8>, Vec<u8>, Vec<u8>);
+    type FixtureSubgraph = (Vec<u8>, Vec<FixtureNode>);
+    struct FixtureMemory {
+        name: Vec<u8>,
+        device_type: i32,
+        device_id: i32,
+        allocator_type: i32,
+        memory_type: i32,
+        device_memory_type: i32,
+        vendor_id: u32,
+    }
+    struct FixtureIo {
+        ordinal: usize,
+        node_name: String,
+        memory: Option<FixtureMemory>,
+        ep_device: Option<FixtureEp>,
+    }
+    #[derive(Default)]
+    struct FixtureSession {
+        entries: Vec<FixtureEntry>,
+        inputs: Vec<FixtureIo>,
+        outputs: Vec<FixtureIo>,
+        assignment: Vec<FixtureSubgraph>,
+    }
+    impl ConfigEntrySource for FixtureEntry {
+        fn key(&self) -> &[u8] {
+            &self.0
+        }
+        fn value(&self) -> &[u8] {
+            &self.1
+        }
+    }
+    impl MemoryObservationSource for FixtureMemory {
+        fn name(&self) -> &[u8] {
+            &self.name
+        }
+        fn device_type(&self) -> i32 {
+            self.device_type
+        }
+        fn device_id(&self) -> i32 {
+            self.device_id
+        }
+        fn allocator_type(&self) -> i32 {
+            self.allocator_type
+        }
+        fn memory_type(&self) -> i32 {
+            self.memory_type
+        }
+        fn device_memory_type(&self) -> i32 {
+            self.device_memory_type
+        }
+        fn vendor_id(&self) -> u32 {
+            self.vendor_id
+        }
+    }
+    impl EpDeviceSource for FixtureEp {
+        fn name(&self) -> Option<&[u8]> {
+            self.0.as_deref()
+        }
+        fn vendor(&self) -> Option<&[u8]> {
+            self.1.as_deref()
+        }
+    }
+    impl IoObservationSource for FixtureIo {
+        type Memory = FixtureMemory;
+        type EpDevice = FixtureEp;
+        fn ordinal(&self) -> usize {
+            self.ordinal
+        }
+        fn node_name(&self) -> &str {
+            &self.node_name
+        }
+        fn memory(&self) -> Option<&Self::Memory> {
+            self.memory.as_ref()
+        }
+        fn ep_device(&self) -> Option<&Self::EpDevice> {
+            self.ep_device.as_ref()
+        }
+    }
+    impl AssignedNodeSource for FixtureNode {
+        fn name(&self) -> &[u8] {
+            &self.0
+        }
+        fn domain(&self) -> &[u8] {
+            &self.1
+        }
+        fn operator_type(&self) -> &[u8] {
+            &self.2
+        }
+    }
+    impl AssignedSubgraphSource for FixtureSubgraph {
+        type Node = FixtureNode;
+        fn provider(&self) -> &[u8] {
+            &self.0
+        }
+        fn nodes(&self) -> &[Self::Node] {
+            &self.1
+        }
+    }
+    impl GraphAssignmentSource for Vec<FixtureSubgraph> {
+        type Subgraph = FixtureSubgraph;
+        fn subgraphs(&self) -> &[Self::Subgraph] {
+            self
+        }
+    }
+    impl SessionObservationSource for FixtureSession {
+        type Entry = FixtureEntry;
+        type Io = FixtureIo;
+        type Assignment = Vec<FixtureSubgraph>;
+        fn options_config_entries(&self) -> &[Self::Entry] {
+            &self.entries
+        }
+        fn inputs(&self) -> &[Self::Io] {
+            &self.inputs
+        }
+        fn outputs(&self) -> &[Self::Io] {
+            &self.outputs
+        }
+        fn graph_assignment(&self) -> &Self::Assignment {
+            &self.assignment
+        }
+    }
+
+    fn full_fixture() -> FixtureSession {
+        FixtureSession {
+            entries: vec![
+                (b"a".to_vec(), vec![254]),
+                (b"a".to_vec(), vec![254]),
+                (vec![255], b"z".to_vec()),
+            ],
+            inputs: vec![
+                FixtureIo {
+                    ordinal: 0,
+                    node_name: "z-in".into(),
+                    memory: Some(FixtureMemory {
+                        name: vec![254, 255],
+                        device_type: 37,
+                        device_id: -9,
+                        allocator_type: -1,
+                        memory_type: -2,
+                        device_memory_type: 23,
+                        vendor_id: 4660,
+                    }),
+                    ep_device: None,
+                },
+                FixtureIo {
+                    ordinal: 1,
+                    node_name: "β-in".into(),
+                    memory: None,
+                    ep_device: Some((None, Some(vec![]))),
+                },
+                FixtureIo {
+                    ordinal: 2,
+                    node_name: "a-in".into(),
+                    memory: Some(FixtureMemory {
+                        name: vec![],
+                        device_type: -13,
+                        device_id: 7,
+                        allocator_type: 2,
+                        memory_type: -4,
+                        device_memory_type: 99,
+                        vendor_id: 57,
+                    }),
+                    ep_device: Some((Some(vec![]), None)),
+                },
+            ],
+            outputs: vec![
+                FixtureIo {
+                    ordinal: 0,
+                    node_name: "z-out".into(),
+                    memory: None,
+                    ep_device: Some((Some(vec![255]), Some(vec![254]))),
+                },
+                FixtureIo {
+                    ordinal: 1,
+                    node_name: "a-out".into(),
+                    memory: None,
+                    ep_device: None,
+                },
+                FixtureIo {
+                    ordinal: 2,
+                    node_name: "null-out".into(),
+                    memory: None,
+                    ep_device: Some((None, None)),
+                },
+            ],
+            assignment: vec![
+                (
+                    vec![255],
+                    vec![
+                        (b"z".to_vec(), vec![], b"Add".to_vec()),
+                        (b"z".to_vec(), vec![], b"Add".to_vec()),
+                    ],
+                ),
+                (
+                    b"CPU".to_vec(),
+                    vec![(vec![254], b"ai.onnx".to_vec(), b"Mul".to_vec())],
+                ),
+                (vec![], vec![]),
+            ],
+        }
+    }
+
+    #[test]
+    fn p2_t1_source_typed_fixture_matches_independent_full_contract() {
+        let actual = session_observations_json(&full_fixture());
+        let expected = json!({
+            "options_config_entries":{"observed":true,"entries":[
+                {"key_hex":"61","value_hex":"fe"}, {"key_hex":"61","value_hex":"fe"},
+                {"key_hex":"ff","value_hex":"7a"}
+            ]},
+            "options_stage":"after explicit setters, before CreateSessionFromArray",
+            "session_io_stage":"fully initialized owning session, metadata ordinal order",
+            "inputs":[
+                {"ordinal":0,"node_name":"z-in","memory":{"name_hex":"feff","device_type":37,"device_id":-9,"allocator_type":-1,"memory_type":-2,"device_memory_type":23,"vendor_id":4660},"ep_device":null},
+                {"ordinal":1,"node_name":"β-in","memory":null,"ep_device":{"name_hex":null,"vendor_hex":""}},
+                {"ordinal":2,"node_name":"a-in","memory":{"name_hex":"","device_type":-13,"device_id":7,"allocator_type":2,"memory_type":-4,"device_memory_type":99,"vendor_id":57},"ep_device":{"name_hex":"","vendor_hex":null}}
+            ],
+            "outputs":[
+                {"ordinal":0,"node_name":"z-out","memory":null,"ep_device":{"name_hex":"ff","vendor_hex":"fe"}},
+                {"ordinal":1,"node_name":"a-out","memory":null,"ep_device":null},
+                {"ordinal":2,"node_name":"null-out","memory":null,"ep_device":{"name_hex":null,"vendor_hex":null}}
+            ],
+            "ep_graph_assignment":{
+                "observed":true,
+                "api":"OrtApi29.Session_GetEpGraphAssignmentInfo",
+                "recording_setting":{"key":"session.record_ep_graph_assignment_info","value":"1"},
+                "collection_stage":"API29 documents BASIC/minimal-stage assignment; retained implementation records partitioning after Level1/basic and any InsertCastTransformer assignment callbacks during optimization loops after Level2/3; this event history does not certify the complete final graph or executable dispatch after all transformations",
+                "coverage":"API-returned subgraphs/nodes only; not complete final executable provider/node dispatch",
+                "subgraphs":[
+                    {"provider_hex":"ff","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"}]},
+                    {"provider_hex":"435055","nodes":[{"name_hex":"fe","domain_hex":"61692e6f6e6e78","operator_type_hex":"4d756c"}]},
+                    {"provider_hex":"","nodes":[]}
+                ]
+            },
+            "scope":"partial I/O placement, optional EP devices and assignment-stage subgraphs; not global defaults or complete final dispatch"
+        });
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn p2_t1_source_empty_collections_stay_observed_and_present() {
+        let actual = session_observations_json(&FixtureSession::default());
+        assert_eq!(
+            actual.get("options_config_entries"),
+            Some(&json!({"observed":true,"entries":[]}))
+        );
+        assert_eq!(actual.get("inputs"), Some(&json!([])));
+        assert_eq!(actual.get("outputs"), Some(&json!([])));
+        assert_eq!(
+            actual["ep_graph_assignment"].get("observed"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            actual["ep_graph_assignment"].get("subgraphs"),
+            Some(&json!([]))
+        );
+    }
+
+    #[test]
+    fn p2_t1_source_order_grouping_and_duplicates_are_not_canonicalized_away() {
+        let mut fixture = FixtureSession::default();
+        fixture.assignment = vec![
+            (
+                b"C".to_vec(),
+                vec![
+                    (b"z".to_vec(), vec![], b"Add".to_vec()),
+                    (b"a".to_vec(), vec![], b"Add".to_vec()),
+                    (b"z".to_vec(), vec![], b"Add".to_vec()),
+                ],
+            ),
+            (
+                b"C".to_vec(),
+                vec![(b"b".to_vec(), vec![], b"Mul".to_vec())],
+            ),
+        ];
+        let actual = session_observations_json(&fixture);
+        assert_eq!(
+            actual["ep_graph_assignment"]["subgraphs"],
+            json!([
+                {"provider_hex":"43","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"61","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"}]},
+                {"provider_hex":"43","nodes":[{"name_hex":"62","domain_hex":"","operator_type_hex":"4d756c"}]}
+            ])
+        );
+        fixture.assignment.reverse();
+        let actual = session_observations_json(&fixture);
+        assert_eq!(
+            actual["ep_graph_assignment"]["subgraphs"],
+            json!([
+                {"provider_hex":"43","nodes":[{"name_hex":"62","domain_hex":"","operator_type_hex":"4d756c"}]},
+                {"provider_hex":"43","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"61","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"}]}
+            ])
+        );
+        fixture.assignment.reverse();
+        let tail = fixture.assignment.pop().unwrap().1;
+        fixture.assignment[0].1.extend(tail);
+        let actual = session_observations_json(&fixture);
+        assert_eq!(
+            actual["ep_graph_assignment"]["subgraphs"],
+            json!([
+                {"provider_hex":"43","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"61","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"62","domain_hex":"","operator_type_hex":"4d756c"}]}
+            ])
+        );
+    }
+
+    #[test]
+    fn p2_t1_source_shared_serializer_preserves_global_readiness_refusal() {
+        use cairn_semantic_ort::{NativeDefault, SessionMetadata, SessionSettings};
+        let settings = SessionSettings {
+            intra_op_threads: 2,
+            inter_op_threads: 2,
+            graph_optimization: "ORT_ENABLE_ALL",
+            deterministic_compute: false,
+            profiling: false,
+            execution_mode: 0,
+            memory_pattern_enabled: true,
+            cpu_arena: NativeDefault::NotExposedBySelectedCapi,
+            remaining_defaults: NativeDefault::NotExposedBySelectedCapi,
+        };
+        let fixture = full_fixture();
+        let nodes = |rows: &[FixtureIo]| {
+            rows.iter()
+                .map(|row| cairn_semantic_ort::NodeMetadata {
+                    name: row.node_name.clone(),
+                    element_type: cairn_semantic_ort::ElementType::Float32,
+                    dimensions: vec![1, 384],
+                })
+                .collect::<Vec<_>>()
+        };
+        let metadata = SessionMetadata {
+            inputs: nodes(&fixture.inputs),
+            outputs: nodes(&fixture.outputs),
+        };
+        let partial = session_observations_json(&fixture);
+        let inputs = json!({"session":session_inputs(&settings,&metadata,partial)});
+        for field in ["cpu_arena", "remaining_defaults", "effective_provider"] {
+            assert_eq!(inputs["session"].get(field), Some(&Value::Null));
+            assert!(required_observations(&inputs)
+                .iter()
+                .any(|gap| gap.field == format!("session.{field}")));
+        }
+        let report = ConstructionReport {
+            inputs,
+            provenance: vec![],
+            missing: vec![],
             running_image: None,
         };
         assert!(report.rank_identity().is_err());
