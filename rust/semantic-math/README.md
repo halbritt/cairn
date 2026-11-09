@@ -229,3 +229,16 @@ IO_NOT_ESTABLISHED/D2 HOLD/RTERM/P/W/uv/failed-runtime/production holds remain.
 Actual-worker FIRST is unconsumed. No author build/test/compiler, native
 load/getter/BLAS/probe, Python/NumPy/FastEmbed import, model run, Go reference,
 service, database or deployment is established by this source unit.
+
+## Rank cache bit admission
+
+`FirstPassOccurrences::from_rank_first_pass_bits` accepts the rank owner's
+already admitted first-pass occurrence payload, including restored cache rows.
+It checks shape/storage and copies float32 bits without doing first
+normalization again. It creates no `FirstNormalizedRow` and invents no first
+norm or denominator observation. The rank/cache codec owns model identity,
+finite/nonzero admission, request order and atomic cache replacement. A restored
+payload is data admitted under that contract; its bits are not proof of prior
+inference or normalization. Both fresh typed rows and admitted cache bits enter
+the same second-pass owner, zero decision and actual matvec path. No C numerical
+algorithm or runtime loading behavior changes at this boundary.

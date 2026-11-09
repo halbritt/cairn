@@ -1,6 +1,6 @@
-//! Source-only backend seam. There is deliberately no production implementation.
-//! A future native factory must validate complete assets/manifest, loaded runtime,
-//! tokenizer settings and rank arithmetic before returning an owning session.
+//! Rank core backend seam; the separate semantic-backend crate owns native composition.
+//! A native factory must validate complete observed identity inputs, loaded runtime,
+//! tokenizer settings and rank arithmetic before returning an initialized session.
 //! Trait success alone is not an initialized-worker qualification attestation.
 
 use cairn_semantic_protocol::PyString;
@@ -19,7 +19,25 @@ pub enum DecodeTokens {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BackendError {
     Unavailable(String),
-    Operation { stage: &'static str, detail: String },
+    /// Preserve the actual Python-text bridge failure without converting all
+    /// backend/native errors into an invented Python exception family.
+    TextUtf8 {
+        stage: &'static str,
+        source: cairn_semantic_protocol::Utf8Error,
+    },
+    Operation {
+        stage: &'static str,
+        detail: String,
+    },
+}
+
+impl BackendError {
+    pub fn source_kind(&self) -> Option<cairn_semantic_protocol::FailureKind> {
+        match self {
+            Self::TextUtf8 { .. } => Some(cairn_semantic_protocol::FailureKind::UnicodeEncodeError),
+            _ => None,
+        }
+    }
 }
 
 /// Explicit supplied float32 bits and declared two-dimensional shape. The core

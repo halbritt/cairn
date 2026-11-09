@@ -52,6 +52,24 @@ pub struct FirstPassOccurrences {
     values: Vec<f32>,
 }
 impl FirstPassOccurrences {
+    /// Rank owns prefix/model/cache/snapshot admission. This boundary copies
+    /// its first-pass payload bits, preserving them exactly; it does NOT claim
+    /// that cached/restored bytes prove prior inference or normalization.
+    /// In particular it creates no FirstNormalizedRow or fabricated norm data.
+    pub fn from_rank_first_pass_bits(
+        full_rows: usize,
+        columns: usize,
+        bits: Vec<u32>,
+    ) -> Result<Self, Error> {
+        let layout = Layout::new(full_rows)?;
+        if columns != WIDTH || bits.len() != layout.elements {
+            return Err(Error::Shape(
+                "rank first-pass storage/shape mismatch".into(),
+            ));
+        }
+        let values = bits.into_iter().map(f32::from_bits).collect();
+        Ok(Self { layout, values })
+    }
     pub fn reconstruct(
         query: &FirstNormalizedRow,
         passages: &[&FirstNormalizedRow],
