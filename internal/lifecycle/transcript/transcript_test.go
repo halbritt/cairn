@@ -2,20 +2,26 @@ package transcript
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/halbritt/cairn/internal/lifecycle/coordination"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
 	"github.com/halbritt/cairn/internal/lifecycle/wake"
 	"github.com/halbritt/cairn/internal/procpeer"
 )
@@ -419,7 +425,7 @@ func codexFixture(t *testing.T) codexFiles {
 	r := NewReader(fixtureProfile(t))
 	r.ProcRoot = root
 	r.Alive = func(ref procpeer.ProcessRef) bool { return ref == state.Process }
-	return codexFiles{CodexConfig{Harness: "codex", ConfigHome: home}, state, r, p, dir}
+	return codexFiles{CodexConfig{Harness: "codex", ConfigHome: home, Runtime: r.Runtime}, state, r, p, dir}
 }
 func TestCodexLiveOwnerRollout(t *testing.T) {
 	f := codexFixture(t)
@@ -819,4 +825,285 @@ func TestCAIRN423WholeSnapshotDiscovery(t *testing.T) {
 	if got := findFixture(t, f.reader, f.cfg, f.state, turnID); got != nil {
 		t.Fatal("accepted changed snapshot size")
 	}
+}
+
+// This provider qualifies only synthetic fixture operations. It is not an
+// isolated-launch/runtime profile, locale or timezone selection for production.
+func (f fixtureRoutes) TranscriptRuntime() *SourceRuntime {
+	return &SourceRuntime{ParseClaim: fixtureClaimInstant, Filesystem: fixtureFilesystem{}}
+}
+func fixtureClaimInstant(site ClaimSite, raw *value.Value) (ClaimInstant, error) {
+	if raw == nil {
+		return ClaimInstant{}, &value.Error{Class: "KeyError", Message: "created_at"}
+	}
+	if raw.Kind != value.String {
+		class := "TypeError"
+		if site != ClaimNative {
+			class = "AttributeError"
+		}
+		return ClaimInstant{}, &value.Error{Class: class, Message: "synthetic datetime input"}
+	}
+	s := string(raw.String)
+	if site != ClaimNative {
+		s = strings.ReplaceAll(s, "Z", "+00:00")
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05Z07:00", "2006-01-02T15:04:05-0700"} {
+		if at, err := time.Parse(layout, s); err == nil {
+			return ClaimInstant{Seconds: epoch(at), Aware: true}, nil
+		}
+	}
+	if at, err := time.ParseInLocation("2006-01-02T15:04:05", s, time.UTC); err == nil {
+		return ClaimInstant{Seconds: epoch(at), Aware: false}, nil
+	}
+	return ClaimInstant{}, &value.Error{Class: "ValueError", Message: "invalid synthetic ISO timestamp"}
+}
+
+type fixtureFilesystem struct{ cwd string }
+
+func (f fixtureFilesystem) Encode(points []rune) (string, error) {
+	var raw []byte
+	for _, r := range points {
+		if r >= 0xdc80 && r <= 0xdcff {
+			raw = append(raw, byte(r-0xdc00))
+		} else if !utf8.ValidRune(r) {
+			return "", &value.Error{Class: "UnicodeEncodeError", Message: "synthetic surrogateescape filesystem"}
+		} else {
+			raw = utf8.AppendRune(raw, r)
+		}
+	}
+	return string(raw), nil
+}
+func (f fixtureFilesystem) Decode(raw string) ([]rune, error) {
+	var points []rune
+	for len(raw) > 0 {
+		r, n := utf8.DecodeRuneInString(raw)
+		if r == utf8.RuneError && n == 1 {
+			points = append(points, rune(0xdc00+uint16(raw[0])))
+		} else {
+			points = append(points, r)
+		}
+		raw = raw[n:]
+	}
+	return points, nil
+}
+func (f fixtureFilesystem) Resolve(v *value.Value) ([]rune, error) {
+	if v == nil || v.Kind != value.String {
+		return nil, &value.Error{Class: "TypeError", Message: "synthetic path"}
+	}
+	p, err := f.Encode(v.String)
+	if err != nil {
+		return nil, err
+	}
+	if strings.IndexByte(p, 0) >= 0 {
+		return nil, &value.Error{Class: "ValueError", Message: "embedded null byte"}
+	}
+	if !strings.HasPrefix(p, "/") {
+		cwd := f.cwd
+		if cwd == "" {
+			cwd, err = os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+		}
+		p = cwd + "/" + p
+	}
+	todo := strings.Split(p, "/")
+	var parts []string
+	links := 0
+	for len(todo) > 0 {
+		part := todo[0]
+		todo = todo[1:]
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(parts) > 0 {
+				parts = parts[:len(parts)-1]
+			}
+			continue
+		}
+		candidate := "/" + strings.Join(append(append([]string(nil), parts...), part), "/")
+		info, err := os.Lstat(candidate)
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			links++
+			if links > 40 {
+				return nil, &os.PathError{Op: "resolve", Path: candidate, Err: syscall.ELOOP}
+			}
+			target, err := os.Readlink(candidate)
+			if err != nil {
+				return nil, err
+			}
+			if strings.HasPrefix(target, "/") {
+				parts = nil
+			}
+			todo = append(strings.Split(target, "/"), todo...)
+			continue
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		parts = append(parts, part)
+	}
+	return f.Decode("/" + strings.Join(parts, "/"))
+}
+func (f fixtureFilesystem) IsDir(points []rune) (bool, error) {
+	p, e := f.Encode(points)
+	if e != nil {
+		return false, e
+	}
+	st, e := os.Stat(p)
+	if os.IsNotExist(e) {
+		return false, nil
+	}
+	return e == nil && st.IsDir(), e
+}
+func (f fixtureFilesystem) Exists(points []rune) (bool, error) {
+	p, e := f.Encode(points)
+	if e != nil {
+		return false, e
+	}
+	_, e = os.Stat(p)
+	if os.IsNotExist(e) {
+		return false, nil
+	}
+	return e == nil, e
+}
+func (f fixtureFilesystem) Home() ([]rune, error) { return nil, &value.ProfileUnavailable{} }
+
+func TestStage2TranscriptReadAndByteStrip(t *testing.T) {
+	for _, tail := range [][]byte{[]byte("\xc2\x85"), []byte("\xc2\xa0"), []byte("\xe2\x80\x83")} {
+		p := filepath.Join(t.TempDir(), "record")
+		mustWrite(t, p, append([]byte("{\"a\":1}\n"), tail...))
+		v, e := LastJSONLRecord(p, fixtureProfile(t))
+		if e != nil || v != nil {
+			t.Fatal("bytes.strip broadened", v, e)
+		}
+	}
+	raw, e := readAtFrom(0, 8, func(b []byte, _ int64) (int, error) { copy(b, "short"); return 5, io.EOF })
+	if e != nil || string(raw) != "short" {
+		t.Fatal(raw, e)
+	}
+	actual := &os.PathError{Op: "pread", Path: "synthetic", Err: syscall.EIO}
+	_, e = readAtFrom(0, 8, func([]byte, int64) (int, error) { return 0, actual })
+	if e != actual {
+		t.Fatal("I/O error became a short read", e)
+	}
+	p := filepath.Join(t.TempDir(), "missing")
+	_, e = ReadNativeRecord(p, pin([]byte("{}\n"), 0), fixtureProfile(t))
+	var path *os.PathError
+	var errno syscall.Errno
+	if !errors.As(e, &path) && !errors.As(e, &errno) {
+		t.Fatal("open OSError was remapped", e)
+	}
+	cfg, state, p := claudeFixture(t)
+	if e = os.Remove(p); e != nil {
+		t.Fatal(e)
+	}
+	_, e = DaemonStartClaimEvidence(cfg, state, Attempt{CreatedAt: stamp(2)}, fixtureProfile(t))
+	if !errors.As(e, &path) && !errors.As(e, &errno) {
+		t.Fatal("claim open OSError was remapped", e)
+	}
+}
+func TestStage2TranscriptClaimSites(t *testing.T) {
+	runtime := fixtureRoutes{}.TranscriptRuntime()
+	for _, site := range []ClaimSite{ClaimDaemon, ClaimCodexRefused, ClaimCodexEnded} {
+		_, e := claimTime(runtime, site, nil)
+		if value.ErrorClass(e) != "KeyError" {
+			t.Fatal(site, e)
+		}
+		_, e = claimTime(runtime, site, "invalid")
+		if value.ErrorClass(e) != "ValueError" {
+			t.Fatal(site, e)
+		}
+		_, e = claimTime(runtime, site, &value.Value{Kind: value.Null})
+		if value.ErrorClass(e) != "AttributeError" {
+			t.Fatal(site, e)
+		}
+	}
+	_, e := claimTime(runtime, ClaimNative, nil)
+	requireError(t, e, "held attempt has no claim time")
+	_, e = claimTime(runtime, ClaimNative, &value.Value{Kind: value.Bool, Boolean: true})
+	requireError(t, e, "held attempt has no claim time")
+	naive := "2026-11-08T12:00:02"
+	_, e = claimTime(runtime, ClaimNative, naive)
+	requireError(t, e, "native chronology does not bracket the single claim of this delivery")
+	_, e = claimTime(runtime, ClaimDaemon, naive)
+	if value.ErrorClass(e) != "TypeError" {
+		t.Fatal(e)
+	}
+	if _, e = claimTime(runtime, ClaimCodexRefused, naive); e != nil {
+		t.Fatal("synthetic local timestamp route rejected", e)
+	}
+	if _, e = claimTime(runtime, ClaimNative, "2026-11-08 12:00:02+00:00"); e != nil {
+		t.Fatal(e)
+	}
+	_, e = claimTime(nil, ClaimNative, stamp(2))
+	requireProfileUnavailable(t, e)
+}
+func TestStage2TranscriptResolvedPaths(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "outside/inside")
+	if e := os.MkdirAll(destination, 0700); e != nil {
+		t.Fatal(e)
+	}
+	link := filepath.Join(root, "link")
+	mustLink(t, destination, link)
+	runtime := &SourceRuntime{Filesystem: fixtureFilesystem{cwd: root}}
+	got, e := resolveLoose(link+"/../missing", runtime)
+	want := filepath.Join(root, "outside/missing")
+	if e != nil || got != want {
+		t.Fatal("symlink must be resolved before ..", got, want, e)
+	}
+	got, e = resolveLoose("link/../missing", runtime)
+	if e != nil || got != want {
+		t.Fatal("relative resolution", got, e)
+	}
+	rawName := filepath.Join(root, "raw-\xff")
+	mustWrite(t, rawName, []byte("{}\n"))
+	got, e = resolveLoose(rawName, runtime)
+	if e != nil || got != rawName {
+		t.Fatal("filesystem surrogateescape lost bytes", got, e)
+	}
+	slug, e := claudeProjectSlugPoints([]rune{'/', 'x', '/', 0xd800})
+	if e != nil || slug != "-x--" {
+		t.Fatal(slug, e)
+	}
+	_, e = resolveLoose("relative", nil)
+	requireProfileUnavailable(t, e)
+}
+
+func TestStage2TranscriptEvidenceAdapter(t *testing.T) {
+	f := codexFixture(t)
+	ls := writeRecords(t, f.path, codexRefusalRecords(t))
+	agent := value.Mapping(value.Field("native_session_id", value.Text(nativeID)), value.Field("agent_id", value.Text(turnID)), value.Field("execution_id", value.Text(nativeID)))
+	state := value.Mapping(value.Field("agent", agent), value.Field("workspace", value.Text(f.state.Workspace)), value.Field("process", processRecord(f.state.Process)))
+	cfg := value.Mapping(value.Field("harness", value.Text("codex")), value.Field("config_home", value.Text(f.cfg.ConfigHome)))
+	attempt := value.Mapping(value.Field("created_at", value.Text(stamp(2))), value.Field("native_turn_id", value.Text(turnID)))
+	req := coordination.EvidenceRequest{Config: cfg, State: state, Attempt: attempt, Recorded: value.Mapping(value.Field("at", value.IntegerText(strconv.FormatInt(epochStamp(t, stamp(2)), 10)))), Locators: locatorsRecord(ls)}
+	evidence := f.reader.RecoveryEvidence()
+	proof, e := evidence.Read(context.Background(), coordination.EvidenceCodexRefusal, req)
+	if e != nil || !stringIs(field(proof, "schema"), "cairn.codex-refused-turn/1") {
+		t.Fatal(proof, e)
+	}
+	order := []string{"schema", "records", "native_session_id", "native_turn_id"}
+	for i, key := range order {
+		if !slices.Equal(proof.Members[i].Key, []rune(key)) {
+			t.Fatal("Source proof order lost", proof)
+		}
+	}
+	latest, e := evidence.Read(context.Background(), coordination.EvidenceCodexLatest, req)
+	if e != nil || latest == nil || latest.Kind != value.Array || len(latest.Items) != 2 || !hasInteger(field(latest.Items[1], "offset"), ls[2].Offset) {
+		t.Fatal(latest, e)
+	}
+	// A latest-end scan never indexes workspace; the refusal proof does, only
+	// after its pinned record shape checks have succeeded.
+	req.State = state.Without("workspace")
+	if _, e = evidence.Read(context.Background(), coordination.EvidenceCodexLatest, req); e != nil {
+		t.Fatal("unused workspace required", e)
+	}
+	_, e = evidence.Read(context.Background(), coordination.EvidenceCodexRefusal, req)
+	if value.ErrorClass(e) != "KeyError" {
+		t.Fatal("missing workspace lost Source exception class", e)
+	}
+
 }

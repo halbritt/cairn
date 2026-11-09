@@ -101,14 +101,21 @@ func (r Reader) CodexRefusalProof(cfg CodexConfig, state SessionState, attempt A
 	}
 	first, middle, last := object(field(records[0], "payload")), object(field(records[1], "payload")), object(field(records[2], "payload"))
 	attr := object(field(first, "turn_attribution"))
-	if !keys(first, "type", "turn_attribution", "turn_id", "root_turn_id", "started_at", "model_context_window", "collaboration_mode_kind") || !hasText(first, "type", "task_started") || !keys(attr, "turn_id", "turn_trigger", "parent_turn_id", "initiating_agent_path", "root_turn_id") || !hasText(attr, "turn_id", turn) || !hasText(attr, "turn_trigger", "queue") || !isNull(field(attr, "parent_turn_id")) || !isNull(field(attr, "initiating_agent_path")) || !hasText(attr, "root_turn_id", turn) || !keys(last, "type", "turn_id", "root_turn_id", "last_agent_message", "started_at", "completed_at", "duration_ms") || !hasText(last, "type", "task_complete") || !isNull(field(last, "last_agent_message")) || !hasText(middle, "cwd", state.Workspace) {
+	if !keys(first, "type", "turn_attribution", "turn_id", "root_turn_id", "started_at", "model_context_window", "collaboration_mode_kind") || !hasText(first, "type", "task_started") || !keys(attr, "turn_id", "turn_trigger", "parent_turn_id", "initiating_agent_path", "root_turn_id") || !hasText(attr, "turn_id", turn) || !hasText(attr, "turn_trigger", "queue") || !isNull(field(attr, "parent_turn_id")) || !isNull(field(attr, "initiating_agent_path")) || !hasText(attr, "root_turn_id", turn) || !keys(last, "type", "turn_id", "root_turn_id", "last_agent_message", "started_at", "completed_at", "duration_ms") || !hasText(last, "type", "task_complete") || !isNull(field(last, "last_agent_message")) {
+		return nil, invalid("Codex records do not prove an empty completed queue turn")
+	}
+	matches, e := workspaceMatches(field(middle, "cwd"), state)
+	if e != nil {
+		return nil, e
+	}
+	if !matches {
 		return nil, invalid("Codex records do not prove an empty completed queue turn")
 	}
 	times, e := recordTimes(records)
 	if e != nil {
 		return nil, e
 	}
-	claimed, e := claimTime(attempt.CreatedAt)
+	claimed, e := claimTime(r.Runtime, ClaimCodexRefused, attempt.CreatedAt)
 	if e != nil {
 		return nil, e
 	}
@@ -146,7 +153,7 @@ func (r Reader) CodexEndedTurnProof(cfg CodexConfig, state SessionState, attempt
 	}
 	f, info, e := openOwner(p, r.ExpectedUID)
 	if e != nil {
-		return nil, invalid("Codex rollout is not an owner-controlled regular file", e)
+		return nil, ownerRefusal(e, "Codex rollout is not an owner-controlled regular file")
 	}
 	defer f.Close()
 	if info.Size < stop {
@@ -156,8 +163,11 @@ func (r Reader) CodexEndedTurnProof(cfg CodexConfig, state SessionState, attempt
 		return nil, invalid("Codex rollout tail exceeds its read limit")
 	}
 	region, e := readAt(f, begin, stop-begin)
-	if e != nil || !bytes.HasSuffix(region, []byte{'\n'}) {
-		return nil, invalid("Codex ended turn span changed while reading", e)
+	if e != nil {
+		return nil, e
+	}
+	if int64(len(region)) != stop-begin || !bytes.HasSuffix(region, []byte{'\n'}) {
+		return nil, invalid("Codex ended turn span changed while reading")
 	}
 	tail, e := readAt(f, stop, info.Size-stop)
 	if e != nil {
@@ -198,7 +208,7 @@ func (r Reader) CodexEndedTurnProof(cfg CodexConfig, state SessionState, attempt
 	if bytes.Contains(tail, []byte(turn)) {
 		return nil, invalid("Codex rollout records this turn again after its end")
 	}
-	claimed, e := claimTime(attempt.CreatedAt)
+	claimed, e := claimTime(r.Runtime, ClaimCodexEnded, attempt.CreatedAt)
 	if e != nil {
 		return nil, e
 	}
@@ -265,16 +275,22 @@ func (r Reader) CodexQueueRolloutProof(cfg CodexConfig, state SessionState, w Wa
 		first, middle, last := object(field(records[0], "payload")), object(field(records[1], "payload")), object(field(records[2], "payload"))
 		turn := field(first, "turn_id")
 		attr := object(field(first, "turn_attribution"))
-		if nonemptyString(turn) && hasText(first, "type", "task_started") && hasText(attr, "turn_trigger", "queue") && sameRecord(field(middle, "turn_id"), turn) && hasText(middle, "cwd", state.Workspace) && sameRecord(field(last, "turn_id"), turn) && times[0] >= attempted {
-			if hasText(last, "type", "task_complete") && nonblankString(field(last, "last_agent_message")) {
-				result["outcome"] = "completed"
-				result["native_turn_id"] = turn
-				return result, nil
+		if nonemptyString(turn) && hasText(first, "type", "task_started") && hasText(attr, "turn_trigger", "queue") && sameRecord(field(middle, "turn_id"), turn) {
+			matches, e := workspaceMatches(field(middle, "cwd"), state)
+			if e != nil {
+				return nil, e
 			}
-			if hasText(last, "type", "task_complete") && isNull(field(last, "last_agent_message")) || hasText(last, "type", "turn_aborted") {
-				result["outcome"] = "cancelled"
-				result["native_turn_id"] = turn
-				return result, nil
+			if matches && sameRecord(field(last, "turn_id"), turn) && times[0] >= attempted {
+				if hasText(last, "type", "task_complete") && nonblankString(field(last, "last_agent_message")) {
+					result["outcome"] = "completed"
+					result["native_turn_id"] = turn
+					return result, nil
+				}
+				if hasText(last, "type", "task_complete") && isNull(field(last, "last_agent_message")) || hasText(last, "type", "turn_aborted") {
+					result["outcome"] = "cancelled"
+					result["native_turn_id"] = turn
+					return result, nil
+				}
 			}
 		}
 	}
@@ -321,7 +337,35 @@ func (r Reader) queueMarkerPresent(records []*Record, w Wake) (bool, error) {
 		return false, e
 	}
 	markers := []string{w.DeliveryID, w.QueuedSubmissionID}
-	messages := wake.WakeMessages(w.Session, w.DeliveryID)
+	session := w.Session
+	if w.Raw != nil {
+		sessionRaw := w.Raw.Get("session")
+		var err error
+		session.AgentID, err = sourceFieldText(sessionRaw, "agent_id", false)
+		if err != nil {
+			return false, err
+		}
+		session.ExecutionID, err = sourceFieldText(sessionRaw, "execution_id", false)
+		if err != nil {
+			return false, err
+		}
+		markers = nil
+		for _, key := range []string{"delivery_id", "queued_submission_id"} {
+			node := w.Raw.Get(key)
+			if !value.Truth(node) {
+				continue
+			}
+			if node.Kind != value.String {
+				return false, &value.Error{Class: "TypeError", Message: "queue marker must be a string"}
+			}
+			markers = append(markers, text(node))
+		}
+	}
+	messages := wake.WakeMessages(session, w.DeliveryID)
+	if w.Raw != nil {
+		delivery := w.Raw.Get("delivery_id")
+		messages = wake.WakeMessages(session, text(delivery))
+	}
 	markers = append(markers, messages[:]...)
 	for _, marker := range markers {
 		if marker != "" && bytes.Contains(serialized.Bytes(), []byte(marker)) {

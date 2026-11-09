@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -55,12 +54,13 @@ func posixParent(s string) string {
 	return s[:i]
 }
 func ClaudeProjectSlug(workspace string) (string, error) {
-	if !strings.HasPrefix(workspace, "/") {
+	return claudeProjectSlugPoints([]rune(workspace))
+}
+func claudeProjectSlugPoints(workspace []rune) (string, error) {
+	if len(workspace) == 0 || workspace[0] != '/' {
 		return "", invalid("native session file cannot be derived from the binding")
 	}
 	var b strings.Builder
-	// The pinned source applies re.sub to the original workspace string,
-	// including repeated slashes and dot components, without Path normalization.
 	for _, c := range workspace {
 		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
 			b.WriteRune(c)
@@ -71,14 +71,35 @@ func ClaudeProjectSlug(workspace string) (string, error) {
 	return b.String(), nil
 }
 func claudePath(cfg ClaudeConfig, state SessionState) (string, error) {
+	if state.Raw != nil {
+		workspace := state.Raw.Get("workspace")
+		if workspace == nil || workspace.Kind != value.String {
+			return "", invalid("native session file cannot be derived from the binding")
+		}
+	}
 	if !strings.HasPrefix(cfg.ConfigHome, "/") || !uuidPattern.MatchString(state.NativeSessionID) {
 		return "", invalid("native session file cannot be derived from the binding")
 	}
-	slug, e := ClaudeProjectSlug(state.Workspace)
+	points := state.WorkspacePoints
+	if points == nil {
+		points = []rune(state.Workspace)
+	}
+	slug, e := claudeProjectSlugPoints(points)
 	if e != nil {
 		return "", e
 	}
-	return strings.TrimRight(posixPath(cfg.ConfigHome), "/") + "/projects/" + slug + "/" + state.NativeSessionID + ".jsonl", nil
+	home := cfg.ConfigHome
+	if cfg.ConfigHomePoints != nil {
+		if cfg.Runtime == nil || cfg.Runtime.Filesystem == nil {
+			return "", &value.ProfileUnavailable{}
+		}
+		var err error
+		home, err = cfg.Runtime.Filesystem.Encode(cfg.ConfigHomePoints)
+		if err != nil {
+			return "", err
+		}
+	}
+	return strings.TrimRight(posixPath(home), "/") + "/projects/" + slug + "/" + state.NativeSessionID + ".jsonl", nil
 }
 
 // ClaudeTranscriptPath derives the path; no directory enumeration or caller
@@ -145,16 +166,22 @@ func DaemonStartClaimEvidence(cfg ClaudeConfig, state SessionState, attempt Atte
 	return NewReader(profile).DaemonStartClaimEvidence(cfg, state, attempt)
 }
 func (r Reader) DaemonStartClaimEvidence(cfg ClaudeConfig, state SessionState, attempt Attempt) (map[string]any, error) {
+	if cfg.Runtime == nil {
+		cfg.Runtime = r.Runtime
+	}
 	return DaemonStartClaimEvidenceAt(cfg, state, attempt, r.ExpectedUID, r.Profile)
 }
 func DaemonStartClaimEvidenceAt(cfg ClaudeConfig, state SessionState, attempt Attempt, uid uint32, profile *value.SourceReaderProfile) (map[string]any, error) {
+	if cfg.Runtime == nil {
+		cfg.Runtime = NewReader(profile).Runtime
+	}
 	p, e := claudePath(cfg, state)
 	if e != nil {
 		return nil, e
 	}
 	f, st, e := openOwner(p, uid)
 	if e != nil {
-		return nil, invalid("native transcript is not a readable bounded owner file", e)
+		return nil, ownerRefusal(e, "native transcript is not a readable bounded owner file")
 	}
 	defer f.Close()
 	if st.Size > ClaudeTranscriptLimit {
@@ -162,9 +189,9 @@ func DaemonStartClaimEvidenceAt(cfg ClaudeConfig, state SessionState, attempt At
 	}
 	raw, e := readAt(f, 0, st.Size)
 	if e != nil {
-		return nil, invalid("native transcript has an unreadable record", e)
+		return nil, e
 	}
-	claimed, e := claimTime(attempt.CreatedAt)
+	claimed, e := claimTime(cfg.Runtime, ClaimDaemon, attempt.CreatedAt)
 	if e != nil {
 		return nil, e
 	}
@@ -214,40 +241,93 @@ func DaemonStartClaimEvidenceAt(cfg ClaudeConfig, state SessionState, attempt At
 	return map[string]any{"last_turn_record_at": field(records[last], "timestamp"), "records_after": len(records) - last - 1, "transcript_bytes": len(raw)}, nil
 }
 
-var refusalCommand = regexp.MustCompile(`^(/[^\s\]]+) (/[^\s\]]+/coordination\.py) hook --config (/[^\s\]]+)$`)
-
-func resolveLoose(p string) (string, error) {
-	p, e := filepath.Abs(p)
-	if e != nil {
-		return "", e
+func resolveLoose(p string, runtime *SourceRuntime) (string, error) {
+	if runtime == nil || runtime.Filesystem == nil {
+		return "", &value.ProfileUnavailable{}
 	}
-	rest := []string{}
-	for {
-		resolved, e := filepath.EvalSymlinks(p)
-		if e == nil {
-			for i := len(rest) - 1; i >= 0; i-- {
-				resolved = filepath.Join(resolved, rest[i])
+	points, err := runtime.Filesystem.Decode(p)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := runtime.Filesystem.Resolve(&value.Value{Kind: value.String, String: points})
+	if err != nil {
+		return "", err
+	}
+	return runtime.Filesystem.Encode(resolved)
+}
+func resolvePoints(points []rune, runtime *SourceRuntime) ([]rune, error) {
+	if runtime == nil || runtime.Filesystem == nil {
+		return nil, &value.ProfileUnavailable{}
+	}
+	return runtime.Filesystem.Resolve(&value.Value{Kind: value.String, String: points})
+}
+func indexPoints(s, needle []rune) int {
+	for i := 0; i+len(needle) <= len(s); i++ {
+		if slices.Equal(s[i:i+len(needle)], needle) {
+			return i
+		}
+	}
+	return -1
+}
+func nativeCommand(content *Record) (command []rune, paths [3][]rune, ok bool) {
+	if content == nil || content.Kind != value.String {
+		return
+	}
+	prefix := []rune("UserPromptSubmit operation blocked by hook:\n[")
+	i := indexPoints(content.String, prefix)
+	if i < 0 {
+		return
+	}
+	rest := content.String[i+len(prefix):]
+	end := indexPoints(rest, []rune("]: "))
+	if end < 0 {
+		command = rest
+	} else {
+		command = rest[:end]
+	}
+	parts := [][]rune{}
+	start := 0
+	for i, r := range command {
+		if r == ' ' {
+			parts = append(parts, command[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, command[start:])
+	if len(parts) != 5 || !slices.Equal(parts[2], []rune("hook")) || !slices.Equal(parts[3], []rune("--config")) {
+		return
+	}
+	paths = [3][]rune{parts[0], parts[1], parts[4]}
+	for _, p := range paths {
+		if len(p) < 2 || p[0] != '/' {
+			return
+		}
+		for _, r := range p {
+			if r == ']' || pythonWhitespace(r) {
+				return
 			}
-			return resolved, nil
 		}
-		if !os.IsNotExist(e) {
-			return "", e
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return "", e
-		}
-		rest = append(rest, filepath.Base(p))
-		p = parent
 	}
+	suffix := []rune("/coordination.py")
+	if len(paths[1]) < len(suffix) || !slices.Equal(paths[1][len(paths[1])-len(suffix):], suffix) {
+		return
+	}
+	ok = true
+	return
 }
 func NativeRefusalProof(cfg ClaudeConfig, state SessionState, attempt Attempt, ls []Locator, profile *value.SourceReaderProfile) (map[string]any, error) {
 	return NewReader(profile).NativeRefusalProof(cfg, state, attempt, ls)
 }
 func (r Reader) NativeRefusalProof(cfg ClaudeConfig, state SessionState, attempt Attempt, ls []Locator) (map[string]any, error) {
+	if cfg.Runtime == nil {
+		cfg.Runtime = r.Runtime
+	}
 	return NativeRefusalProofAt(cfg, state, attempt, ls, r.ExpectedUID, r.Profile)
 }
 func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt, ls []Locator, uid uint32, profile *value.SourceReaderProfile) (map[string]any, error) {
+	if cfg.Runtime == nil {
+		cfg.Runtime = NewReader(profile).Runtime
+	}
 	if len(ls) != 3 || !contiguous(ls) {
 		return nil, invalid("native records are not one contiguous enqueue, dequeue, refusal sequence")
 	}
@@ -263,6 +343,17 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 		}
 	}
 	first, second, third := records[0], records[1], records[2]
+	if state.Raw != nil {
+		agent := state.Raw.Get("agent")
+		state.AgentID, e = sourceFieldText(agent, "agent_id", false)
+		if e != nil {
+			return nil, e
+		}
+		state.ExecutionID, e = sourceFieldText(agent, "execution_id", false)
+		if e != nil {
+			return nil, e
+		}
+	}
 	channel := ""
 	for _, message := range wake.WakeMessages(wake.SessionRef{AgentID: state.AgentID, ExecutionID: state.ExecutionID}, attempt.Delivery.DeliveryID) {
 		candidate := wake.FormatClaudeChannelPrompt(wake.ClaudeChannelMeta{NativeSessionID: state.NativeSessionID, AgentID: state.AgentID, ExecutionID: state.ExecutionID, DeliveryID: attempt.Delivery.DeliveryID}, message)
@@ -276,24 +367,32 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 	if !keys(second, "type", "operation", "timestamp", "sessionId") || !stringIs(field(second, "type"), "queue-operation") || !stringIs(field(second, "operation"), "dequeue") || !stringIs(field(second, "sessionId"), state.NativeSessionID) {
 		return nil, invalid("native dequeue record shape is unknown")
 	}
-	_, after, hasPrefix := strings.Cut(text(field(third, "content")), "UserPromptSubmit operation blocked by hook:\n[")
-	command, _, _ := strings.Cut(after, "]: ")
-	match := refusalCommand.FindStringSubmatch(command)
-	validCommand := hasPrefix && match != nil
+	command, paths, validCommand := nativeCommand(field(third, "content"))
 	if validCommand {
-		for _, path := range match[1:] {
-			if strings.ContainsFunc(path, pythonWhitespace) {
-				validCommand = false
-				break
+		configPoints := cfg.ConfigPathPoints
+		if configPoints == nil {
+			if cfg.Runtime == nil || cfg.Runtime.Filesystem == nil {
+				return nil, &value.ProfileUnavailable{}
+			}
+			configPoints, e = cfg.Runtime.Filesystem.Decode(cfg.ConfigPath)
+			if e != nil {
+				return nil, e
 			}
 		}
+		a, err := resolvePoints(paths[2], cfg.Runtime)
+		if err != nil {
+			return nil, err
+		}
+		b, err := resolvePoints(configPoints, cfg.Runtime)
+		if err != nil {
+			return nil, err
+		}
+		validCommand = slices.Equal(a, b)
 	}
-	if validCommand {
-		a, ea := resolveLoose(match[3])
-		b, eb := resolveLoose(cfg.ConfigPath)
-		validCommand = ea == nil && eb == nil && a == b
-	}
-	if !keys(third, NativeRefusalKeys...) || !stringIs(field(third, "type"), "system") || !stringIs(field(third, "subtype"), "informational") || !stringIs(field(third, "level"), "warning") || !isBool(field(third, "preventContinuation"), true) || !isBool(field(third, "isSidechain"), false) || !isBool(field(third, "isMeta"), false) || !stringIs(field(third, "sessionId"), state.NativeSessionID) || !validCommand || !stringIs(field(third, "content"), "UserPromptSubmit operation blocked by hook:\n["+command+"]: "+NativeRefusalMessage+"\n\n\nOriginal prompt: "+channel) {
+	expected := append([]rune("UserPromptSubmit operation blocked by hook:\n["), command...)
+	expected = append(expected, []rune("]: "+NativeRefusalMessage+"\n\n\nOriginal prompt: "+channel)...)
+	content := field(third, "content")
+	if !keys(third, NativeRefusalKeys...) || !stringIs(field(third, "type"), "system") || !stringIs(field(third, "subtype"), "informational") || !stringIs(field(third, "level"), "warning") || !isBool(field(third, "preventContinuation"), true) || !isBool(field(third, "isSidechain"), false) || !isBool(field(third, "isMeta"), false) || !stringIs(field(third, "sessionId"), state.NativeSessionID) || !validCommand || content == nil || content.Kind != value.String || !slices.Equal(content.String, expected) {
 		return nil, invalid("native refusal record is not this binding's post-claim refusal of this wake")
 	}
 	times := make([]float64, 3)
@@ -304,7 +403,7 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 		}
 		times[i] = epoch(t)
 	}
-	claimed, e := claimTime(attempt.CreatedAt)
+	claimed, e := claimTime(cfg.Runtime, ClaimNative, attempt.CreatedAt)
 	if e != nil {
 		return nil, e
 	}

@@ -20,6 +20,9 @@ func CodexRolloutPath(cfg CodexConfig, state SessionState) (string, error) {
 	return r.CodexRolloutPath(cfg, state)
 }
 func (r Reader) CodexRolloutPath(cfg CodexConfig, state SessionState) (string, error) {
+	if cfg.Runtime == nil {
+		cfg.Runtime = r.Runtime
+	}
 	return CodexRolloutPathAt(r.ProcRoot, cfg, state, r.ExpectedUID, r.Alive)
 }
 func CodexRolloutPathAt(root string, cfg CodexConfig, state SessionState, uid uint32, alive func(procpeer.ProcessRef) bool) (string, error) {
@@ -29,14 +32,14 @@ func codexRolloutPathAt(procRoot string, cfg CodexConfig, state SessionState, ui
 	if !filepath.IsAbs(cfg.ConfigHome) || !uuidPattern.MatchString(state.NativeSessionID) || state.Process.PID < 2 || alive == nil || !alive(state.Process) {
 		return "", invalid("Codex rollout owner is unavailable")
 	}
-	root, e := resolveLoose(filepath.Join(cfg.ConfigHome, "sessions"))
+	root, e := resolveLoose(strings.TrimRight(posixPath(cfg.ConfigHome), "/")+"/sessions", cfg.Runtime)
 	if e != nil {
-		return "", invalid("Codex rollout owner is unavailable", e)
+		return "", e
 	}
 	dir := filepath.Join(procRoot, strconv.Itoa(state.Process.PID), "fd")
 	entries, e := os.ReadDir(dir)
 	if e != nil {
-		return "", invalid("Codex owner does not hold exactly one matching rollout", e)
+		return "", e
 	}
 	paths := map[string]bool{}
 	for _, entry := range entries {
@@ -46,25 +49,29 @@ func codexRolloutPathAt(procRoot string, cfg CodexConfig, state SessionState, ui
 			continue
 		}
 		if e != nil {
-			return "", invalid("Codex rollout owner is unavailable", e)
+			return "", e
 		}
 		target = posixPath(target)
 		name := filepath.Base(target)
 		if !strings.HasPrefix(name, "rollout-") || !strings.HasSuffix(name, "-"+state.NativeSessionID+".jsonl") {
 			continue
 		}
+		resolved, err := resolveLoose(target, cfg.Runtime)
+		if err != nil {
+			return "", err
+		}
 		rel, e := filepath.Rel(root, target)
-		if !filepath.IsAbs(target) || e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || !noSymlinkComponents(target) {
+		if !filepath.IsAbs(target) || e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || resolved != target || !noSymlinkComponents(target) {
 			return "", invalid("Codex rollout is outside its configured session directory")
 		}
 		f, info, e := openOwner(target, uid)
 		if e != nil {
-			return "", invalid("Codex rollout is not an owner-controlled regular file", e)
+			return "", ownerRefusal(e, "Codex rollout is not an owner-controlled regular file")
 		}
 		f.Close()
 		opened, e := fdStat(descriptor)
 		if e != nil {
-			return "", invalid("Codex rollout path no longer names its open file", e)
+			return "", e
 		}
 		st, ok := opened.Sys().(*syscall.Stat_t)
 		if !ok || !sameInode(info, *st) {
@@ -107,7 +114,10 @@ func (r Reader) recheck(cfg CodexConfig, state SessionState, path string, before
 		return e
 	}
 	after, e := statOwner(path, r.ExpectedUID)
-	if e != nil || p != path || !sameInode(before, after) {
+	if e != nil {
+		return e
+	}
+	if p != path || !sameInode(before, after) {
 		return invalid("Codex rollout owner changed during verification", e)
 	}
 	return nil
@@ -119,7 +129,7 @@ func (r Reader) records(cfg CodexConfig, state SessionState, ls []Locator) (stri
 	}
 	st, e := statOwner(p, r.ExpectedUID)
 	if e != nil {
-		return "", st, nil, invalid("Codex rollout is not an owner-controlled regular file", e)
+		return "", st, nil, ownerRefusal(e, "Codex rollout is not an owner-controlled regular file")
 	}
 	records := make([]*Record, len(ls))
 	for i, l := range ls {
@@ -141,7 +151,7 @@ func (r Reader) LatestCodexTurnEnd(cfg CodexConfig, state SessionState) (*Native
 	}
 	f, st, e := openOwner(p, r.ExpectedUID)
 	if e != nil {
-		return nil, invalid("Codex rollout is not an owner-controlled regular file", e)
+		return nil, ownerRefusal(e, "Codex rollout is not an owner-controlled regular file")
 	}
 	defer f.Close()
 	base := max(int64(0), st.Size-CodexTurnEndLimit)
@@ -208,6 +218,10 @@ func (r Reader) FindCodexRefusalLocators(cfg CodexConfig, state SessionState, tu
 	deadline := r.Now().Add(r.ScanDuration)
 	p, e := r.CodexRolloutPath(cfg, state)
 	if e != nil {
+		var profile *value.ProfileUnavailable
+		if errors.As(e, &profile) {
+			return nil, e
+		}
 		return nil, nil
 	}
 	f, before, e := openOwner(p, r.ExpectedUID)
@@ -268,7 +282,14 @@ func (r Reader) FindCodexRefusalLocators(cfg CodexConfig, state SessionState, tu
 		return nil, nil
 	}
 	rechecked, e := r.CodexRolloutPath(cfg, state)
-	if e != nil || rechecked != p {
+	if e != nil {
+		var profile *value.ProfileUnavailable
+		if errors.As(e, &profile) {
+			return nil, e
+		}
+		return nil, nil
+	}
+	if rechecked != p {
 		return nil, nil
 	}
 	after, e = statOwner(p, r.ExpectedUID)
