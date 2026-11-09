@@ -205,11 +205,20 @@ fn special_map_order_and_complete_added_token_flags_survive() {
         .unwrap();
     assert_eq!(n["normalized"], true);
     assert_eq!(n["special"], true);
+    // 0.23.2 caches normalized added-token text for matching AND decoding
+    // (AddedVocabulary::add_tokens/simple_id_to_token). Original content <N>
+    // remains in metadata, but its normalized=true form is <n>; D stays raw.
+    assert_eq!(
+        tokenizer
+            .rank_encode(&text("<D> <N> <n>"), SpecialTokens::Disabled)
+            .unwrap(),
+        [18, 19, 19]
+    );
     assert_eq!(
         tokenizer
             .rank_decode(&[16, 17, 18, 19], DecodeTokens::KeepSpecialTokens)
             .unwrap(),
-        text("<Z> <A> <D> <N>")
+        text("<Z> <A> <D> <n>")
     );
 }
 
