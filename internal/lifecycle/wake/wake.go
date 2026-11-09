@@ -65,12 +65,15 @@ type WakeEnvelope struct {
 	NativeID           string     `json:"native_id,omitempty"`
 	QueuedSubmissionID string     `json:"queued_submission_id,omitempty"`
 	Status             string     `json:"status,omitempty"`
+	RequestID          string     `json:"request_id,omitempty"`
+	CancelCapable      bool       `json:"cancel_capable,omitempty"`
 }
 
 // BoundWake pairs a claimed delivery ID with its harness-scoped native turn ID.
 type BoundWake struct {
-	DeliveryID   string `json:"delivery_id"`
-	NativeTurnID string `json:"native_turn_id"`
+	DeliveryID    string `json:"delivery_id"`
+	NativeTurnID  string `json:"native_turn_id"`
+	TurnExclusive bool   `json:"turn_exclusive,omitempty"`
 }
 
 // PromptEvent carries the hook fields inspected by wake recognizers and binders.
@@ -82,6 +85,20 @@ type PromptEvent struct {
 	TurnID        string  `json:"turn_id,omitempty"`
 	PromptID      string  `json:"prompt_id,omitempty"`
 	SessionID     *string `json:"session_id,omitempty"`
+	RequestID     string  `json:"request_id,omitempty"`
+	DeliveryID    string  `json:"delivery_id,omitempty"`
+}
+
+// BindOpenCodeQueuedWake binds only the observed request and delivery on the
+// exact execution that accepted the idle-only submission.
+func BindOpenCodeQueuedWake(agent SessionRef, idleWake WakeEnvelope, event PromptEvent) (BoundWake, bool) {
+	if idleWake.Transport != TransportOpenCodeQueue || idleWake.Session != agent ||
+		event.HookEventName != "TurnStart" || !validTurnIdentifier(event.TurnID) ||
+		idleWake.RequestID == "" || idleWake.DeliveryID == "" ||
+		event.RequestID != idleWake.RequestID || event.DeliveryID != idleWake.DeliveryID {
+		return BoundWake{}, false
+	}
+	return BoundWake{DeliveryID: idleWake.DeliveryID, NativeTurnID: event.TurnID, TurnExclusive: idleWake.CancelCapable}, true
 }
 
 const hexUUIDPattern = `[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}`
