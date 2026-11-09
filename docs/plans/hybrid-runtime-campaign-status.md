@@ -13,7 +13,7 @@ acceptance remain open.
 ## Inspect the implementation
 
 The following slices are published through
-[`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a)
+[`5a6364a9`](https://github.com/halbritt/cairn/commit/5a6364a9a2b2d9ed49c4c330cfafa96c44ba94f2)
 on 2026-11-08. The Go libraries are callable source; the Rust libraries have no
 executable worker or initialized model backend. Their publication does not
 activate the migration on supported hosts.
@@ -21,6 +21,7 @@ activate the migration on supported hosts.
 | Component | Source and publication | Implemented behavior | Remaining acceptance and area owner |
 | --- | --- | --- | --- |
 | Go journal execution, recovery and inspection | [journal](../../internal/lifecycle/journal/journal.go), [execute](../../internal/lifecycle/journal/execute.go), [recover](../../internal/lifecycle/journal/recover.go), [inspect](../../internal/lifecycle/journal/inspect.go); [`4eb9c41c`](https://github.com/halbritt/cairn/commit/4eb9c41c017086e5012420747dcbb48158ea76fa) | Durable inbox intents, command/reply recovery and distinct journal-reader policies | Coordination: native caller/session integration, watcher and recovery command surfaces; the caller still supplies validated context |
+| Go coordination locks and process observations | [locks](../../internal/lifecycle/coordination/locks.go), [owner lookup](../../internal/lifecycle/coordination/owner.go), [process scan](../../internal/lifecycle/coordination/process_scan.go); [`5a6364a9`](https://github.com/halbritt/cairn/commit/5a6364a9a2b2d9ed49c4c330cfafa96c44ba94f2) | Callable session/ledger/intent/watcher/cue locks, owner ancestry lookup and process-marker scans with unknown-coverage reporting | Coordination: native caller orchestration, cross-runtime locking and state-writer compatibility; full J-05/J-06 and installed behavior remain open |
 | Shared Unix peer client and wake consumers | [client](../../internal/procpeer/client.go), [wake envelope](../../internal/lifecycle/wake/wake.go), [Claude channel](../../internal/lifecycle/wake/claude.go), [Codex queue](../../internal/lifecycle/wake/codex.go), [OpenCode](../../internal/lifecycle/wake/opencode.go), [Hermes](../../internal/lifecycle/wake/hermes.go), [Herdr](../../internal/lifecycle/wake/herdr.go); [`0ad5b419`](https://github.com/halbritt/cairn/commit/0ad5b419edd12a6dd757a185fbd7c83fa6468c03), extended by [`f6f0e427`](https://github.com/halbritt/cairn/commit/f6f0e42784d0e1eefc0c211d8a4b80b054f2ddab) | Peer verification before payload, bounded framing, wake binding and callable transport consumers | Foundation: shared primitive integration; Coordination: native turn/custody integration and installed behavior |
 | Rust blank-text predicate | [library](../../rust/semantic-text/src/lib.rs), [boundary](../../rust/semantic-text/README.md); [`0c5cd5e3`](https://github.com/halbritt/cairn/commit/0c5cd5e3e0da570da369aa8a01f610021d5a88a0) | Fixed Python 3.11 whitespace classification over supplied strings | Semantic: caller binding and full rank/embed worker acceptance |
 | Rust single-note score reduction | [library](../../rust/semantic-score/src/lib.rs), [boundary](../../rust/semantic-score/README.md); [`94cf6685`](https://github.com/halbritt/cairn/commit/94cf66857e7c96602f9dc3bc4b3a1d0984091c1c) | Ordered maximum over supplied chunk similarities, final clamp, scaling and ties-to-even rounding | Semantic: tokenizer/model execution, matrix arithmetic and actual worker/caller qualification |
@@ -37,7 +38,9 @@ selector; the retained output records a package PASS, without measured per-test
 or subcase execution counts. The checkpoint-refresh extension passed all 40
 frozen test names, required static checks and independent source review; its
 unchanged candidate and inputs allowed those checks to be reused for landing.
-These checks do not establish actual model/native
+The coordination primitives passed the three selected race-test roots and
+`make check` on the landing base, following source review and review of the
+required corrections. These checks do not establish actual model/native
 execution, installed hook behavior, full design acceptance or measured usefulness.
 
 The [lifecycle source map](../reference/lifecycle-slices.md),
