@@ -16,6 +16,10 @@ import (
 // Result streams pass through verbatim for single-slot commands. Error carries
 // the public exit mapping, while NonObjectError remains separately inspectable.
 func Execute(ctx context.Context, native Context, request Request, options Options) (Result, error) {
+	return ExecuteRaw(ctx, native.raw(), request, options)
+}
+
+func ExecuteRaw(ctx context.Context, native RawContext, request Request, options Options) (Result, error) {
 	result, err := execute(ctx, native, request, options)
 	var public *Error
 	var nonObject *NonObjectError
@@ -56,7 +60,15 @@ func digits(s string) bool {
 	return true
 }
 
-func prepare(native Context, request Request) ([]string, string, string, error) {
+// ReplyVersion validates the pre-stdin reply guard shared with text frontends.
+func ReplyVersion(version []string) (string, error) {
+	if len(version) != 2 || !digits(version[0]) {
+		return "", invalid("a reply requires --version RESULT_VERSION RESULT_RECORD_UUID")
+	}
+	return canonicalUUID(version[1])
+}
+
+func prepare(native RawContext, request Request) ([]any, string, string, error) {
 	commandKind, name := request.Kind, "completion"
 	switch request.Kind {
 	case "complete", "ack":
@@ -67,18 +79,22 @@ func prepare(native Context, request Request) ([]string, string, string, error) 
 	default:
 		return nil, "", "", invalid("unknown inbox command")
 	}
-	command := append([]string(nil), native.Commands[commandKind]...)
-	if len(command) == 0 {
+	commands, err := object(native.Values["commands"], "commands")
+	if err != nil {
+		return nil, "", "", err
+	}
+	if !truth(commands[commandKind]) {
 		return nil, "", "", invalid("this inbox context has no " + request.Kind + " command")
 	}
-	if request.Kind == "finish-reply" && (native.Kind != "request" || len(native.Commands["respond"]) == 0) {
+	command, err := native.Command(commandKind)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if request.Kind == "finish-reply" && (!equal(native.Values["kind"], "request") || !truth(commands["respond"])) {
 		return nil, "", "", invalid("finish-reply requires a request and its explicit reply command")
 	}
 	if request.Kind == "respond" {
-		if len(request.Version) != 2 || !digits(request.Version[0]) {
-			return nil, "", "", invalid("a reply requires --version RESULT_VERSION RESULT_RECORD_UUID")
-		}
-		id, err := canonicalUUID(request.Version[1])
+		id, err := ReplyVersion(request.Version)
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -109,7 +125,7 @@ func prepare(native Context, request Request) ([]string, string, string, error) 
 	}
 	body := ""
 	for _, arg := range command {
-		if arg == "--stdin" {
+		if equal(arg, "--stdin") {
 			body = request.Input
 			break
 		}
@@ -123,7 +139,7 @@ func prepare(native Context, request Request) ([]string, string, string, error) 
 	return command, body, name, nil
 }
 
-func execute(ctx context.Context, native Context, request Request, options Options) (Result, error) {
+func execute(ctx context.Context, native RawContext, request Request, options Options) (Result, error) {
 	command, body, name, err := prepare(native, request)
 	if err != nil {
 		return Result{}, err
@@ -139,8 +155,22 @@ func execute(ctx context.Context, native Context, request Request, options Optio
 	}
 	var v any
 	if !exists(target) {
-		v = map[string]any{"schema": Schema, "attempt_id": native.AttemptID, "delivery_id": native.DeliveryID,
-			"kind": native.Kind, "session": map[string]any{"agent_id": native.Session.AgentID, "execution_id": native.Session.ExecutionID}}
+		created := map[string]any{"schema": Schema}
+		for _, key := range []string{"attempt_id", "delivery_id", "kind"} {
+			created[key], err = required(native.Values, key)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+		session := map[string]any{}
+		for _, key := range []string{"agent_id", "execution_id"} {
+			session[key], err = required(native.Values, key)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+		created["session"] = session
+		v = created
 	} else {
 		v, err = load(target)
 		if err != nil {
@@ -155,7 +185,7 @@ func execute(ctx context.Context, native Context, request Request, options Optio
 		return executeFinish(ctx, native, journal, command, body, target, options)
 	}
 	if request.Kind == "respond" {
-		if err := validateResponse(journal, request.Version[0], command[len(command)-1]); err != nil {
+		if err := validateResponse(journal, request.Version[0], text(command[len(command)-1])); err != nil {
 			return Result{}, err
 		}
 	}
@@ -175,9 +205,9 @@ func execute(ctx context.Context, native Context, request Request, options Optio
 			return Result{}, conflict(4, "this attempt already journaled a different "+name)
 		}
 	} else {
-		id, ok := native.RequestIDs[name]
-		if !ok {
-			return Result{}, &KeyError{name}
+		id, err := native.requestID(name)
+		if err != nil {
+			return Result{}, err
 		}
 		slot = newSlot(request.Kind, id, command, body)
 		journal[name] = slot
@@ -203,7 +233,7 @@ func execute(ctx context.Context, native Context, request Request, options Optio
 	return *result, nil
 }
 
-func newSlot(kind, requestID string, command []string, input string) map[string]any {
+func newSlot(kind string, requestID any, command []any, input string) map[string]any {
 	return map[string]any{"kind": kind, "request_id": requestID, "argv": command, "input": input,
 		"status": "pending", "recorded_at": float64(time.Now().UnixNano()) / 1e9}
 }
@@ -393,7 +423,7 @@ func materialize(journal map[string]any, target string, options Options) (map[st
 	if err != nil {
 		return nil, err
 	}
-	command, err := stringList(v, "finish_reply.argv")
+	command, err := rawList(v)
 	if err != nil {
 		return nil, err
 	}
@@ -416,18 +446,22 @@ func materialize(journal map[string]any, target string, options Options) (map[st
 		}
 		return response, nil
 	}
-	response := newSlot("respond", text(requestID), command, "")
+	response := newSlot("respond", requestID, command, "")
 	response["expected_ref"] = ref
 	journal["response"] = response
 	return response, write(target, journal, options)
 }
 
-func executeFinish(ctx context.Context, native Context, journal map[string]any, command []string, body, target string, options Options) (Result, error) {
-	id, ok := native.RequestIDs["response"]
-	if !ok {
-		return Result{}, &KeyError{"response"}
+func executeFinish(ctx context.Context, native RawContext, journal map[string]any, command []any, body, target string, options Options) (Result, error) {
+	reply, err := native.Command("respond")
+	if err != nil {
+		return Result{}, err
 	}
-	intent := map[string]any{"argv": native.Commands["respond"], "request_id": id}
+	id, err := native.requestID("response")
+	if err != nil {
+		return Result{}, err
+	}
+	intent := map[string]any{"argv": reply, "request_id": id}
 	old := journal["finish_reply"]
 	if truth(old) && !equal(old, intent) {
 		return Result{}, conflict(4, "this attempt already owns a different completion or reply intent")
@@ -436,14 +470,20 @@ func executeFinish(ctx context.Context, native Context, journal map[string]any, 
 	if err != nil {
 		return Result{}, err
 	}
-	completionID, ok := native.RequestIDs["completion"]
-	if !ok {
-		return Result{}, &KeyError{"completion"}
-	}
 	if len(completion) != 0 {
-		matched, err := matchFields(completion, fieldMatch{"kind", "complete"}, fieldMatch{"argv", command}, fieldMatch{"request_id", completionID}, fieldMatch{"input", body})
+		matched, err := matchFields(completion, fieldMatch{"kind", "complete"}, fieldMatch{"argv", command})
 		if err != nil {
 			return Result{}, err
+		}
+		if matched {
+			completionID, e := native.requestID("completion")
+			if e != nil {
+				return Result{}, e
+			}
+			matched, err = matchFields(completion, fieldMatch{"request_id", completionID}, fieldMatch{"input", body})
+			if err != nil {
+				return Result{}, err
+			}
 		}
 		if !matched {
 			return Result{}, conflict(4, "this attempt already owns a different completion or reply intent")
@@ -456,6 +496,10 @@ func executeFinish(ctx context.Context, native Context, journal map[string]any, 
 		journal["finish_reply"] = intent
 	}
 	if len(completion) == 0 {
+		completionID, err := native.requestID("completion")
+		if err != nil {
+			return Result{}, err
+		}
 		completion = newSlot("complete", completionID, command, body)
 		journal["completion"] = completion
 	}

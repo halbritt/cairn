@@ -73,6 +73,11 @@ type ValueError struct{ Message string }
 
 func (e *ValueError) Error() string { return e.Message }
 
+type UnicodeDecodeError struct{ Message string }
+
+func (e *UnicodeDecodeError) Error() string { return e.Message }
+func (e *UnicodeDecodeError) Unwrap() error { return &ValueError{e.Message} }
+
 // Classified identifies errors caught by the legacy session/hook boundaries.
 func Classified(err error) bool {
 	var path *os.PathError
@@ -101,6 +106,56 @@ type Context struct {
 	Session    Session
 	Commands   map[string][]string
 	RequestIDs map[string]string
+}
+
+// RawContext keeps Source values untyped until their use. Command preserves the
+// frontend's ordered iterable semantics; it must not validate argv item types.
+type RawContext struct {
+	StateDir  string
+	AttemptID string
+	Values    map[string]any
+	Command   func(string) ([]any, error)
+}
+
+func (n Context) raw() RawContext {
+	commands := make(map[string]any, len(n.Commands))
+	for k, args := range n.Commands {
+		commands[k] = args
+	}
+	ids := make(map[string]any, len(n.RequestIDs))
+	for k, id := range n.RequestIDs {
+		ids[k] = id
+	}
+	return RawContext{StateDir: n.StateDir, AttemptID: n.AttemptID,
+		Values: map[string]any{"state_dir": n.StateDir, "attempt_id": n.AttemptID, "delivery_id": n.DeliveryID,
+			"kind": n.Kind, "agent_id": n.Session.AgentID, "execution_id": n.Session.ExecutionID, "commands": commands, "request_ids": ids},
+		Command: func(name string) ([]any, error) { return rawList(n.Commands[name]) }}
+}
+
+func rawList(v any) ([]any, error) {
+	switch v := value(v).(type) {
+	case []any:
+		return append([]any{}, v...), nil
+	case []string:
+		out := make([]any, len(v))
+		for i, s := range v {
+			out[i] = s
+		}
+		return out, nil
+	}
+	return nil, &TypeError{"command"}
+}
+
+func (n RawContext) requestID(name string) (any, error) {
+	v, err := required(n.Values, "request_ids")
+	if err != nil {
+		return nil, err
+	}
+	ids, ok := v.(map[string]any)
+	if !ok {
+		return nil, &TypeError{"request_ids"}
+	}
+	return required(ids, name)
 }
 
 type Request struct {
@@ -149,11 +204,15 @@ func (CommandRunner) Run(ctx context.Context, argv []string, input string) (Resu
 	if errors.Is(err, exec.ErrWaitDelay) {
 		return Result{}, err
 	}
-	if !utf8.Valid(stdout.Bytes()) || !utf8.Valid(stderr.Bytes()) {
-		return Result{}, &ValueError{"command output is not UTF-8"}
+	return commandResult(stdout.Bytes(), stderr.Bytes(), err)
+}
+
+func commandResult(stdout, stderr []byte, err error) (Result, error) {
+	if !utf8.Valid(stdout) || !utf8.Valid(stderr) {
+		return Result{}, &UnicodeDecodeError{"command output is not UTF-8"}
 	}
 	newlines := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n") }
-	result := Result{Stdout: newlines(stdout.String()), Stderr: newlines(stderr.String())}
+	result := Result{Stdout: newlines(string(stdout)), Stderr: newlines(string(stderr))}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		result.ExitCode = exit.ExitCode()
@@ -243,7 +302,7 @@ func value(v any) any {
 
 func decode(data []byte) (any, error) {
 	if !utf8.Valid(data) {
-		return nil, &ValueError{"journal is not UTF-8"}
+		return nil, &UnicodeDecodeError{"journal is not UTF-8"}
 	}
 	var raw json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -707,9 +766,17 @@ func equal(a, b any) bool {
 		}
 		return true
 	}
-	if aa, err := stringList(a, "comparison"); err == nil {
-		ba, err := stringList(b, "comparison")
-		return err == nil && reflect.DeepEqual(aa, ba)
+	if aa, err := rawList(a); err == nil {
+		ba, err := rawList(b)
+		if err != nil || len(aa) != len(ba) {
+			return false
+		}
+		for i, v := range aa {
+			if !equal(v, ba[i]) {
+				return false
+			}
+		}
+		return true
 	}
 	return reflect.DeepEqual(a, b)
 }

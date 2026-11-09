@@ -292,7 +292,7 @@ func callRunnerUnavailable(err error) bool {
 }
 
 // NewRecoveryEngine binds the concrete file/journal owner and transcript side
-// without an import cycle. External grant/native-health services stay explicit.
+// without an import cycle. Service defaults preserve explicit bridge and transport seams.
 func NewRecoveryEngine(host *Host, evidence TranscriptEvidence, hooks RecoveryHooks, procRoot string) *RecoveryEngine {
 	proc := NewProcessHooks(procRoot)
 	if hooks.Alive == nil {

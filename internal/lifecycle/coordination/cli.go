@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
@@ -350,6 +351,39 @@ func (a cliArgs) get(k string) string {
 }
 func (a cliArgs) has(k string) bool { _, ok := a.values[k]; return ok }
 
+func optionalCLI(arg string) bool {
+	if !strings.HasPrefix(arg, "-") || arg == "-" || strings.Contains(arg, " ") {
+		return false
+	}
+	// argparse's negative-number exception accepts integers and decimals, but
+	// neither exponent notation nor a decimal point with no fractional digits.
+	negative := []rune(strings.TrimPrefix(arg, "-"))
+	dot, digits := false, 0
+	for i, r := range negative {
+		if r == '.' && !dot && i < len(negative)-1 {
+			dot = true
+			continue
+		}
+		if !unicode.IsDigit(r) {
+			return true
+		}
+		digits++
+	}
+	return digits == 0
+}
+
+func optionCLI(arg string, spec map[string]int) bool {
+	key, _, _ := strings.Cut(arg, "=")
+	if strings.HasPrefix(key, "-") && key != "-" {
+		for name := range spec {
+			if strings.HasPrefix(name, key) {
+				return true
+			}
+		}
+	}
+	return optionalCLI(arg)
+}
+
 // parseCLI retains repeatable --record, option=value, option abbreviation and
 // options interspersed with positional arguments, as argparse accepts them.
 func parseCLI(argv []string, prog string, spec map[string]int) (cliArgs, error) {
@@ -368,7 +402,7 @@ func parseCLI(argv []string, prog string, spec map[string]int) (cliArgs, error) 
 			options = false
 			continue
 		}
-		if !options || !strings.HasPrefix(arg, "-") || arg == "-" {
+		if !options || !optionCLI(arg, spec) {
 			a.position = append(a.position, arg)
 			continue
 		}
@@ -408,7 +442,7 @@ func parseCLI(argv []string, prog string, spec map[string]int) (cliArgs, error) 
 			vals = append(vals, eq)
 		}
 		for len(vals) < n {
-			if i+1 >= len(argv) || strings.HasPrefix(argv[i+1], "--") {
+			if i+1 >= len(argv) || optionCLI(argv[i+1], spec) {
 				suffix := "expected one argument"
 				if n != 1 {
 					suffix = fmt.Sprintf("expected %d arguments", n)
@@ -442,11 +476,7 @@ func choiceCLI(prog, name, v string, choices []string) error {
 	if nativeContains(choices, v) {
 		return nil
 	}
-	quoted := make([]string, len(choices))
-	for i, c := range choices {
-		quoted[i] = "'" + c + "'"
-	}
-	return parseFail(prog, "argument "+name+": invalid choice: '"+v+"' (choose from "+strings.Join(quoted, ", ")+")")
+	return parseFail(prog, "argument "+name+": invalid choice: '"+v+"' (choose from "+strings.Join(choices, ", ")+")")
 }
 
 func cliCaught(err error) bool {
@@ -455,7 +485,7 @@ func cliCaught(err error) bool {
 }
 
 func sourceReadCaught(err error) bool {
-	return nativeContains([]string{"OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError"}, sourceErrorName(err))
+	return sourceOSError(err) || nativeContains([]string{"ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError"}, sourceErrorName(err))
 }
 
 // RunCLI reports handled Source failures using its stdout/stderr and exit
@@ -542,9 +572,12 @@ func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (in
 		return 0, parseFail(prog, "unrecognized arguments: "+strings.Join(a.position[1:], " "))
 	}
 	mode := a.position[0]
-	modes := []string{"recover-refused-wake", "recover-native-refused-wake", "recover-codex-refused-wake", "recover-codex-ended-turn", "recover-daemon-start-claim", "check-codex-native-health", "reconcile-codex-queue-wake", "inspect-held-refusal"}
+	modes := []string{"hook", "watch", "recover-refused-wake", "recover-native-refused-wake", "recover-codex-refused-wake", "recover-codex-ended-turn", "recover-daemon-start-claim", "check-codex-native-health", "reconcile-codex-queue-wake", "inspect-held-refusal"}
 	if err = choiceCLI(prog, "mode", mode, modes); err != nil {
 		return 0, err
+	}
+	if mode == "hook" || mode == "watch" {
+		return 0, &value.ProfileUnavailable{}
 	}
 	if a.has("--outcome") {
 		if err = choiceCLI(prog, "--outcome", a.get("--outcome"), cliOutcomes); err != nil {

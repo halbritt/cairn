@@ -206,7 +206,8 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	candidates := []string{}
 	stateRoot := sourceJoin(root, "state")
 	bindings, err := os.ReadDir(stateRoot)
-	if errors.Is(err, os.ErrNotExist) {
+	if sourceOSError(err) {
+		bindings = nil
 		err = nil
 	}
 	if err != nil {
@@ -215,7 +216,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	for _, binding := range bindings {
 		candidate := sourceJoin(sourceJoin(sourceJoin(stateRoot, binding.Name()), "compact"), handle+".json")
 		exists, e := sourceExists(candidate, false)
-		if e != nil {
+		if e != nil && !sourceOSError(e) {
 			return 0, e
 		}
 		if exists {
@@ -224,7 +225,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	}
 	direct := sourceJoin(sourceJoin(stateRoot, "compact"), handle+".json")
 	exists, err := sourceExists(direct, false)
-	if err != nil {
+	if err != nil && !sourceOSError(err) {
 		return 0, err
 	}
 	if exists {
@@ -311,10 +312,6 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	if state == nil || state.Kind != value.Object || native == nil || native.Kind != value.Object {
 		return 0, nativeRefusal("INVALID_HOST", "compact inbox state or context is malformed")
 	}
-	attempt, err := nativeObj(state.Get("inbox_attempt"), "inbox_attempt")
-	if err != nil {
-		return 0, err
-	}
 	agent, err := nativeObj(state.Get("agent"), "agent")
 	if err != nil {
 		return 0, err
@@ -350,7 +347,14 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 	if err != nil {
 		return 0, err
 	}
-	if !nativeEqual(nativeID, boundNative) || !value.SameText(native.Get("compact_handle"), handle) || !nativeEqual(native.Get("compact_issued_at"), issued) || !nativeEqual(attempt.Get("attempt_id"), native.Get("attempt_id")) {
+	if !nativeEqual(nativeID, boundNative) || !value.SameText(native.Get("compact_handle"), handle) || !nativeEqual(native.Get("compact_issued_at"), issued) {
+		return stale()
+	}
+	attempt, err := nativeObj(state.Get("inbox_attempt"), "inbox_attempt")
+	if err != nil {
+		return 0, err
+	}
+	if !nativeEqual(attempt.Get("attempt_id"), native.Get("attempt_id")) {
 		return stale()
 	}
 	session, err := (&NativeSession{Host: c.Host}).sessionRef(agent)
@@ -428,6 +432,9 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 			}
 		}
 		slot := saved.Get("completion")
+		if slot == nil || slot.Kind != value.Object || !value.SameText(saved.Get("schema"), "cairn.inbox-intent/1") || !nativeEqual(saved.Get("attempt_id"), attempt.Get("attempt_id")) || !nativeEqual(saved.Get("delivery_id"), delivery.Get("delivery_id")) || !nativeEqual(saved.Get("session"), attempt.Get("session")) || !value.SameText(slot.Get("kind"), "ack") {
+			return 0, err
+		}
 		ids, e := nativeRequired(native, "request_ids")
 		if e != nil {
 			return 0, e
@@ -436,7 +443,7 @@ func (c *CLI) CompactCommand(ctx context.Context, argv []string, out, errOut io.
 		if e != nil {
 			return 0, e
 		}
-		if slot == nil || slot.Kind != value.Object || !value.SameText(saved.Get("schema"), "cairn.inbox-intent/1") || !nativeEqual(saved.Get("attempt_id"), attempt.Get("attempt_id")) || !nativeEqual(saved.Get("delivery_id"), delivery.Get("delivery_id")) || !nativeEqual(saved.Get("session"), attempt.Get("session")) || !value.SameText(slot.Get("kind"), "ack") || !nativeEqual(slot.Get("request_id"), completionID) || !value.SameText(slot.Get("status"), "committed") {
+		if !nativeEqual(slot.Get("request_id"), completionID) || !value.SameText(slot.Get("status"), "committed") {
 			return 0, err
 		}
 	} else {

@@ -218,7 +218,11 @@ func (g GrantBindings) directory(config *value.Value) (string, error) {
 	if g.MemoryStateDir != nil {
 		dir, err = g.MemoryStateDir(config)
 	} else {
-		dir, err = nativeRequired(config, "state_dir")
+		binding := config.Get("inbox_recall_binding")
+		if binding == nil || binding.Kind != value.String {
+			return "", &journal.KeyError{Key: "inbox_recall_binding"}
+		}
+		return "", &value.ProfileUnavailable{}
 	}
 	if err != nil {
 		return "", err
@@ -289,7 +293,7 @@ func (g GrantBindings) evidence(_ context.Context, config, state, attempt, owner
 	}
 	if !requireFiles && strings.HasPrefix(dir, "/") {
 		exists, err := sourceExists(dir, true)
-		if err != nil {
+		if err != nil && !sourceOSError(err) {
 			return "", nil, err
 		}
 		if !exists {
@@ -317,7 +321,7 @@ func (g GrantBindings) evidence(_ context.Context, config, state, attempt, owner
 	path := sourceJoin(dir, name+".inbox-recall.json")
 	for _, required := range []string{path, strings.TrimSuffix(path, ".json") + ".initialized"} {
 		info, err := os.Lstat(required)
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || !requireFiles && sourceOSError(err) {
 			if requireFiles {
 				return "unknown", value.Text("unknown"), nil
 			}
@@ -451,7 +455,7 @@ func (g GrantBindings) preGrant(config, state, turn *value.Value) (bool, error) 
 	}
 	for _, path := range []string{sourceJoin(dir, name+".inbox-recall.json"), sourceJoin(dir, name+".inbox-recall.initialized")} {
 		exists, err := sourceExists(path, true)
-		if err != nil {
+		if err != nil && !sourceOSError(err) {
 			return false, err
 		}
 		if exists {

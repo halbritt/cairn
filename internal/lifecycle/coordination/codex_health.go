@@ -3,6 +3,7 @@ package coordination
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"reflect"
 	"strconv"
@@ -91,14 +92,14 @@ func (b CodexHealthBindings) inspect(ctx context.Context, endpoint, process, nat
 	if err != nil {
 		return nil, err
 	}
-	if pid.Kind != value.Int || start.Kind != value.Int || boot.Kind != value.String || native == nil || native.Kind != value.String {
+	if pid.Kind != value.Int || boot.Kind != value.String || native == nil || native.Kind != value.String {
 		return nil, &journal.TypeError{Field: "Codex process reference"}
 	}
 	p, err := strconv.Atoi(pid.Integer)
 	if err != nil {
 		return nil, err
 	}
-	s, err := strconv.ParseUint(start.Integer, 10, 64)
+	s, err := codexPeerStart(start)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +132,45 @@ func (b CodexHealthBindings) inspect(ctx context.Context, endpoint, process, nat
 	return nativeMap("status_type", inspection.StatusType, "updated_at", updated, "queue_count", inspection.QueueCount, "queued_ids", ids, "queued_present", qp, "peer", nativeMap("pid", inspection.Peer.PID, "start", value.IntegerText(strconv.FormatUint(inspection.Peer.Start, 10)), "boot", inspection.Peer.Boot)), nil
 }
 func sourceErrorName(err error) string {
+	var decode *journal.UnicodeDecodeError
+	if errors.As(err, &decode) {
+		return "UnicodeDecodeError"
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.EAGAIN, syscall.EALREADY, syscall.EINPROGRESS:
+			return "BlockingIOError"
+		case syscall.ECHILD:
+			return "ChildProcessError"
+		case syscall.EPIPE, syscall.ESHUTDOWN:
+			return "BrokenPipeError"
+		case syscall.ECONNABORTED:
+			return "ConnectionAbortedError"
+		case syscall.ECONNREFUSED:
+			return "ConnectionRefusedError"
+		case syscall.ECONNRESET:
+			return "ConnectionResetError"
+		case syscall.EEXIST:
+			return "FileExistsError"
+		case syscall.ENOENT:
+			return "FileNotFoundError"
+		case syscall.EINTR:
+			return "InterruptedError"
+		case syscall.EISDIR:
+			return "IsADirectoryError"
+		case syscall.ENOTDIR:
+			return "NotADirectoryError"
+		case syscall.EACCES, syscall.EPERM:
+			return "PermissionError"
+		case syscall.ESRCH:
+			return "ProcessLookupError"
+		case syscall.ETIMEDOUT:
+			return "TimeoutError"
+		default:
+			return "OSError"
+		}
+	}
 	if class := value.ErrorClass(err); class != "GoError" && class != "" {
 		return class
 	}
@@ -139,7 +179,6 @@ func sourceErrorName(err error) string {
 	var object *journal.NonObjectError
 	var path *os.PathError
 	var call *os.SyscallError
-	var errno syscall.Errno
 	if errors.As(err, &key) {
 		return "KeyError"
 	}
@@ -160,6 +199,27 @@ func sourceErrorName(err error) string {
 		return "Exception"
 	}
 	return t.Name()
+}
+
+func sourceOSError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var path *os.PathError
+	var call *os.SyscallError
+	var errno syscall.Errno
+	return errors.As(err, &path) || errors.As(err, &call) || errors.As(err, &errno) ||
+		sourceClass(err, "OSError", "BlockingIOError", "ChildProcessError", "BrokenPipeError", "ConnectionError", "ConnectionAbortedError", "ConnectionRefusedError", "ConnectionResetError", "FileExistsError", "FileNotFoundError", "InterruptedError", "IsADirectoryError", "NotADirectoryError", "PermissionError", "ProcessLookupError", "TimeoutError")
+}
+
+func codexPeerStart(start *value.Value) (uint64, error) {
+	if start != nil && start.Kind == value.Float && start.Number >= 0 && start.Number < math.Exp2(64) && math.Trunc(start.Number) == start.Number {
+		return uint64(start.Number), nil
+	}
+	if start == nil || start.Kind != value.Int {
+		return 0, &journal.TypeError{Field: "Codex process reference"}
+	}
+	return strconv.ParseUint(start.Integer, 10, 64)
 }
 func sourceList(v *value.Value) (*value.Value, error) {
 	out := &value.Value{Kind: value.Array}

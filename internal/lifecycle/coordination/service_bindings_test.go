@@ -112,7 +112,7 @@ func stage2GrantFixture(t *testing.T) (GrantBindings, *value.Value, *value.Value
 	ledger := nativeMap("schema", InboxLedgerSchema, "session", stage2Agent, "grants", nativeMap(strings.Repeat("a", 64), grant))
 	stage2WriteValue(t, p, path, ledger)
 	stage2WriteValue(t, p, strings.TrimSuffix(path, ".json")+".initialized", nativeMap("schema", InboxInitSchema, "session", stage2Agent))
-	return GrantBindings{Profile: p}, config, state, path, ledger
+	return GrantBindings{Profile: p, MemoryStateDir: func(*value.Value) (*value.Value, error) { return value.Text(dir), nil }}, config, state, path, ledger
 }
 func TestStage2GrantValidationConcrete(t *testing.T) {
 	for _, tc := range []struct {
@@ -212,7 +212,7 @@ func TestStage2GrantEvidenceConcrete(t *testing.T) {
 	if err != nil || status != "absent" || k != nil {
 		t.Fatal(status, k, err)
 	}
-	g.MemoryStateDir = nil
+	g.MemoryStateDir = func(*value.Value) (*value.Value, error) { return config.Get("state_dir"), nil }
 	_, _, err = g.Evidence(ctx, config, state, value.Text("truthy-nonobject"), nil, true)
 	stage2ErrorClass(t, err, "AttributeError")
 	stage2WriteValue(t, g.Profile, path, ledger)
@@ -222,6 +222,7 @@ func TestStage2GrantEvidenceConcrete(t *testing.T) {
 	if !loaderCalled {
 		t.Fatal("external loader was not reached")
 	}
+	config.Set("inbox_recall_binding", value.Text("/synthetic/binding"))
 	missingProfile := GrantBindings{}
 	_, _, err = missingProfile.GrantEvidence(ctx, config, state, nil)
 	var unavailable *value.ProfileUnavailable
@@ -235,7 +236,7 @@ func TestStage2PreGrantConcrete(t *testing.T) {
 	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	g := GrantBindings{Profile: p}
+	g := GrantBindings{Profile: p, MemoryStateDir: func(*value.Value) (*value.Value, error) { return value.Text(dir), nil }}
 	config := nativeMap("state_dir", dir, "harness", "codex")
 	state := stage2State()
 	attempt := state.Get("inbox_attempt")

@@ -50,60 +50,44 @@ func (c *CLI) ownerOnly(path, message string) error {
 	return nil
 }
 
-func (c *CLI) contextJournal(v *value.Value, kind string) (journal.Context, error) {
-	var out journal.Context
-	commands, err := nativeDefaultObj(v.Get("commands"), "commands")
+func (c *CLI) contextJournal(v *value.Value) (journal.RawContext, error) {
+	var out journal.RawContext
+	stateDir, err := nativeRequired(v, "state_dir")
 	if err != nil {
 		return out, err
 	}
-	out.Commands = map[string][]string{}
-	selected := []string{kind}
-	if kind == "finish-reply" {
-		selected = []string{"complete", "respond"}
-	}
-	for _, name := range selected {
-		items, e := sourceList(commands.Get(name))
-		if e != nil {
-			return out, e
-		}
-		args := []string{}
-		for _, item := range items.Items {
-			if item == nil || item.Kind != value.String {
-				return out, &journal.TypeError{Field: "command argument"}
-			}
-			args = append(args, journalText(item.String))
-		}
-		out.Commands[name] = args
-	}
-	for _, target := range []struct {
-		key  string
-		dest *string
-	}{{"state_dir", &out.StateDir}, {"attempt_id", &out.AttemptID}, {"delivery_id", &out.DeliveryID}, {"kind", &out.Kind}, {"agent_id", &out.Session.AgentID}, {"execution_id", &out.Session.ExecutionID}} {
-		text, e := requiredText(v, target.key)
-		if e != nil {
-			return out, e
-		}
-		*target.dest = text
-	}
-	ids, err := nativeRequired(v, "request_ids")
+	attempt, err := nativeRequired(v, "attempt_id")
 	if err != nil {
 		return out, err
 	}
-	if ids.Kind != value.Object {
-		return out, &journal.TypeError{Field: "request_ids"}
-	}
-	out.RequestIDs = map[string]string{}
-	for _, member := range ids.Members {
-		if member.Value == nil || member.Value.Kind != value.String {
-			return out, &journal.TypeError{Field: "request id"}
-		}
-		out.RequestIDs[string(member.Key)] = nativeText(member.Value)
-	}
-	stateDir, err := sourcePathText(c.profile(), v.Get("state_dir"))
+	out.StateDir, err = sourcePathText(c.profile(), stateDir)
 	if err != nil {
 		return out, err
 	}
-	out.StateDir = stateDir
+	if attempt.Kind != value.String {
+		return out, &journal.TypeError{Field: "attempt_id"}
+	}
+	out.AttemptID = journalText(attempt.String)
+	raw, err := journalGoValue(v)
+	if err != nil {
+		return out, err
+	}
+	out.Values = raw.(map[string]any)
+	out.Command = func(name string) ([]any, error) {
+		commands, err := nativeDefaultObj(v.Get("commands"), "commands")
+		if err != nil {
+			return nil, err
+		}
+		items, err := sourceList(commands.Get(name))
+		if err != nil {
+			return nil, err
+		}
+		raw, err := journalGoValue(items)
+		if err != nil {
+			return nil, err
+		}
+		return raw.([]any), nil
+	}
 	return out, nil
 }
 
@@ -218,6 +202,17 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 	if kind == "finish-reply" && (!value.SameText(native.Get("kind"), "request") || !value.Truth(commands.Get("respond"))) {
 		return 0, nativeRefusal("INVALID_REQUEST", "finish-reply requires a request and its explicit reply command")
 	}
+	if kind == "respond" {
+		id, e := journal.ReplyVersion(request.Version)
+		if e != nil {
+			var public *journal.Error
+			if errors.As(e, &public) {
+				return 0, nativeRefusal(public.Code, public.Message)
+			}
+			return 0, e
+		}
+		request.Version[1] = id
+	}
 	// Validate options before touching stdin or loading the journal, as Source.
 	if kind != "respond" && a.has("--version") {
 		return 0, nativeRefusal("INVALID_REQUEST", "--version applies only to a reply")
@@ -233,6 +228,7 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 	} else if request.Disposition != "" || request.Code != "" {
 		return 0, nativeRefusal("INVALID_REQUEST", "disposition and code apply only to acknowledgement")
 	}
+
 	if stdin {
 		if c.ReadInput == nil {
 			return 0, &value.ProfileUnavailable{}
@@ -242,7 +238,10 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 			return 0, err
 		}
 	}
-	jctx, err := c.contextJournal(native, kind)
+	if utf8.RuneCountInString(request.Input) > 1024*1024 {
+		return 0, nativeRefusal("INVALID_REQUEST", "inbox command input exceeds limit")
+	}
+	jctx, err := c.contextJournal(native)
 	if err != nil {
 		return 0, err
 	}
@@ -252,7 +251,7 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 		base = journal.CommandRunner{}
 	}
 	options.Runner = sourceJournalRunner{c.profile(), base}
-	result, err := journal.Execute(ctx, jctx, request, options)
+	result, err := journal.ExecuteRaw(ctx, jctx, request, options)
 	if err != nil {
 		var public *journal.Error
 		if errors.As(err, &public) {
@@ -286,7 +285,7 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	for _, entry := range []struct {
 		v    *value.Value
 		keys []string
-	}{{config, []string{"state_dir", "cairn", "socket", "token_file"}}, {session, []string{"agent_id", "execution_id"}}, {delivery, []string{"delivery_id", "lease_id"}}, {requestIDs, []string{"completion", "response"}}} {
+	}{{config, []string{"state_dir", "cairn", "socket", "token_file"}}, {session, []string{"agent_id", "execution_id"}}, {delivery, []string{"lease_id"}}, {requestIDs, []string{"completion", "response"}}} {
 		for _, key := range entry.keys {
 			s, e := requiredText(entry.v, key)
 			if e != nil {
@@ -303,10 +302,17 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	common := []string{"--socket", values["socket"], "--token-file", values["token_file"], "--agent-id", values["agent_id"], "--execution-id", values["execution_id"]}
 	leased := append(append([]string{}, common...), "--request-id", values["completion"], "--lease", values["lease_id"])
 	complete := append([]string{values["cairn"], "complete"}, leased...)
-	complete = append(complete, "--shareable", "--stdin", values["delivery_id"])
+	complete = append(complete, "--shareable", "--stdin")
+	deliveryID, err := nativeRequired(delivery, "delivery_id")
+	if err != nil {
+		return "", nil, err
+	}
+	completeArgs := stringArray(complete...)
+	completeArgs.Items = append(completeArgs.Items, deliveryID)
 	ack := append([]string{values["cairn"], "ack"}, leased...)
-	ack = append(ack, values["delivery_id"])
-	commands := nativeMap("complete", stringArray(complete...), "ack", stringArray(ack...))
+	ackArgs := stringArray(ack...)
+	ackArgs.Items = append(ackArgs.Items, deliveryID)
+	commands := nativeMap("complete", completeArgs, "ack", ackArgs)
 	kind, err := nativeRequired(event, "kind")
 	if err != nil {
 		return "", nil, err
@@ -324,19 +330,12 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 		return "", nil, err
 	}
 	if value.SameText(kind, "request") {
-		if sender.Kind != value.String || eventID.Kind != value.String {
-			return "", nil, &journal.TypeError{Field: "event identity"}
-		}
-		respond := append([]string{values["cairn"], "publish"}, common...)
-		respond = append(respond, "--request-id", values["response"], "--to", nativeText(sender), "--kind", "response", "--causation-id", nativeText(eventID))
+		respond := stringArray(append([]string{values["cairn"], "publish"}, common...)...)
+		respond.Items = append(respond.Items, value.Text("--request-id"), value.Text(values["response"]), value.Text("--to"), sender, value.Text("--kind"), value.Text("response"), value.Text("--causation-id"), eventID)
 		if value.Truth(event.Get("correlation_id")) {
-			correlation, err := requiredText(event, "correlation_id")
-			if err != nil {
-				return "", nil, err
-			}
-			respond = append(respond, "--correlation-id", correlation)
+			respond.Items = append(respond.Items, value.Text("--correlation-id"), event.Get("correlation_id"))
 		}
-		commands.Set("respond", stringArray(respond...))
+		commands.Set("respond", respond)
 	}
 	if len(c.Command) == 0 {
 		return "", nil, &value.ProfileUnavailable{}
@@ -382,7 +381,7 @@ func (c *CLI) DrainCommand(ctx context.Context, argv []string, out io.Writer) (i
 		return 0, err
 	}
 	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
+	if sourceOSError(err) {
 		entries = nil
 		err = nil
 	}
@@ -492,11 +491,16 @@ func (c *CLI) resolve(v *value.Value) (string, error) {
 }
 func (c *CLI) compactRoot() (string, error) {
 	root := c.Root
-	if root == "" {
-		root = c.env("CAIRN_INBOX_ROOT")
-	}
 	if root != "" {
 		return c.resolve(value.Text(root))
+	}
+	if c.Env != nil {
+		root = c.Env("CAIRN_INBOX_ROOT")
+		if root != "" {
+			return c.resolve(value.Text(root))
+		}
+	} else if configured, present := os.LookupEnv("CAIRN_INBOX_ROOT"); present {
+		return c.resolve(value.Text(configured))
 	}
 	p := c.profile()
 	if p == nil || p.Routes == nil || p.Routes.Filesystem() == nil {
