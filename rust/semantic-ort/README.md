@@ -31,11 +31,11 @@ The other direct dependencies are the published local tokenizer and
 `sha2 = 0.10.9`, with defaults disabled and `force-soft` enabled. This adds a
 native bridge/build-script edge to the existing tokenizer closure.
 
-No lockfile is fabricated. The finite lock-resolution step is offline Cargo
-lock generation for this manifest, with all existing manifests and locks
-preserved. The designated component runner must select and account for that
-step and the complete build closure before compilation. Source authoring does
-not establish that this candidate compiles or passes its authored tests.
+The accepted Cargo-produced `Cargo.lock` is provided unchanged. It preserves all
+116 existing dependency records and adds only this crate (117 packages:
+111 registry, 6 local). Existing manifests and locks remain unchanged.
+Compilation, tests and runtime execution remain unexecuted and require
+separately selected validation.
 
 ## Runtime ownership and binding
 
