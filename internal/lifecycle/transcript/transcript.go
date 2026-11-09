@@ -114,6 +114,7 @@ type Reader struct {
 	ProcRoot     string
 	ExpectedUID  uint32
 	Alive        func(procpeer.ProcessRef) bool
+	AliveError   func(procpeer.ProcessRef) (bool, error)
 	Now          func() time.Time
 	ScanDuration time.Duration
 }
@@ -126,6 +127,19 @@ func NewReader(profile *value.SourceReaderProfile) Reader {
 		}
 	}
 	return Reader{Profile: profile, Runtime: runtime, ProcRoot: "/proc", ExpectedUID: uint32(os.Getuid()), Alive: wake.ProcessAlive, Now: time.Now, ScanDuration: CodexRefusalScanDuration}
+}
+
+// Evidence is the concrete transcript side of coordination's dependency seam.
+func (r Reader) Evidence() coordination.TranscriptEvidence { return r.RecoveryEvidence() }
+
+// BindRecovery wires this reader, file-backed sessions and the process root.
+// Grant/health/time policies supplied by other Source owners remain explicit.
+func (r Reader) BindRecovery(host *coordination.Host, hooks coordination.RecoveryHooks) *coordination.RecoveryEngine {
+	if hooks.Alive == nil {
+		hooks.Alive = coordination.NewProcessHooks(r.ProcRoot).Alive
+	}
+	r.AliveError = func(ref procpeer.ProcessRef) (bool, error) { return hooks.Alive(processRecord(ref)) }
+	return coordination.NewRecoveryEngine(host, r.Evidence(), hooks, r.ProcRoot)
 }
 
 func ParseLocator(text string) (Locator, error) {

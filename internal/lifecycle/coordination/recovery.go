@@ -40,6 +40,7 @@ type TranscriptEvidence interface {
 type RecoveryHooks struct {
 	Alive                func(*value.Value) (bool, error)
 	Daemon               func(*value.Value) (bool, error)
+	DaemonView           func(*value.Value) (*NativeProcView, error)
 	GrantState           func(context.Context, *value.Value, *value.Value, *value.Value) (string, error)
 	GrantEvidence        func(context.Context, *value.Value, *value.Value, *value.Value) (string, *value.Value, error)
 	PreGrantLedgerAbsent func(context.Context, *value.Value, *value.Value, *value.Value, *value.Value) (bool, error)
@@ -79,7 +80,9 @@ func daemonProcessError(err error) bool {
 	var call *os.SyscallError
 	var errno syscall.Errno
 	var invalidValue *journal.ValueError
-	return errors.As(err, &path) || errors.As(err, &call) || errors.As(err, &errno) || errors.As(err, &invalidValue) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "IndexError")
+	var stat *invalidProcessStat
+	var text *invalidProcessText
+	return errors.As(err, &path) || errors.As(err, &call) || errors.As(err, &errno) || errors.As(err, &invalidValue) || errors.As(err, &stat) || errors.As(err, &text) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "IndexError")
 }
 func (e *RecoveryEngine) grant(ctx context.Context, s *NativeSession, attempt *value.Value) (string, error) {
 	if e.Hooks.GrantState == nil {
@@ -276,10 +279,19 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 		if !untouched {
 			return nil, held
 		}
-		if e.Hooks.Daemon == nil {
+		if e.Hooks.Daemon == nil && e.Hooks.DaemonView == nil {
 			return nil, &value.ProfileUnavailable{}
 		}
-		daemon, err := e.Hooks.Daemon(s.Record.Get("process"))
+		var view *NativeProcView
+		daemon := false
+		if e.Hooks.DaemonView != nil {
+			view, err = e.Hooks.DaemonView(s.Record.Get("process"))
+			if err == nil && view != nil {
+				daemon = ClaudeSupervisorRole(ProcView{Argv: view.Argv}) == "daemon"
+			}
+		} else {
+			daemon, err = e.Hooks.Daemon(s.Record.Get("process"))
+		}
 		if err != nil {
 			if daemonProcessError(err) {
 				return nil, nativeRefusal("INVALID_REQUEST", "bound process is not a live Claude daemon")
@@ -292,6 +304,15 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 		}
 		if !daemon || !alive {
 			return nil, nativeRefusal("INVALID_REQUEST", "bound process is not a live Claude daemon")
+		}
+		if view != nil {
+			same, err := nativeSameProcess(view.Ref, s.Record.Get("process"))
+			if err != nil {
+				return nil, err
+			}
+			if !same {
+				return nil, nativeRefusal("INVALID_REQUEST", "bound process is not a live Claude daemon")
+			}
 		}
 		worker, err := e.evidence(ctx, EvidenceDaemonWorker, s, attempt, nil, nil, nil, "")
 		if err != nil {
@@ -686,11 +707,11 @@ func (e *RecoveryEngine) RecoverCodexEndedTurn(ctx context.Context, config *valu
 }
 func (e *RecoveryEngine) CheckCodexNativeHealth(ctx context.Context, config *value.Value, id string) (*value.Value, error) {
 	return e.withSession(config, id, "INVALID_REQUEST", func(s *NativeSession) (*value.Value, error) {
-		if err := s.mapping(); err != nil {
-			return nil, err
-		}
 		if !value.SameText(config.Get("harness"), "codex") {
 			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
+		}
+		if err := s.mapping(); err != nil {
+			return nil, err
 		}
 		agent, err := nativeDefaultObj(s.Record.Get("agent"), "agent")
 		if err != nil {
@@ -790,19 +811,7 @@ func (e *RecoveryEngine) ReconcileCodexQueueWake(ctx context.Context, config *va
 		if !value.SameText(agent.Get("native_session_id"), r.NativeSessionID) || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired")) {
 			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
 		}
-		wake, err := nativeObj(s.Record.Get("idle_wake"), "idle_wake")
-		if err != nil {
-			return nil, err
-		}
 		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
-		if err != nil {
-			return nil, err
-		}
-		intent, err := nativeObj(s.Intent(), "inbox_intent")
-		if err != nil {
-			return nil, err
-		}
-		ref, err := s.sessionRef(agent)
 		if err != nil {
 			return nil, err
 		}
@@ -810,8 +819,42 @@ func (e *RecoveryEngine) ReconcileCodexQueueWake(ctx context.Context, config *va
 		if err != nil {
 			return nil, err
 		}
-		wakeMatches := value.SameText(wake.Get("transport"), "codex-queue") && nativeEqual(wake.Get("session"), ref) && value.SameText(wake.Get("native_id"), r.NativeSessionID) && value.SameText(wake.Get("delivery_id"), r.DeliveryID) && value.SameText(wake.Get("queued_submission_id"), r.QueuedSubmissionID)
-		attemptMatches := value.SameText(nativeOr(delivery.Get("delivery_id"), intent.Get("delivery_id")), r.DeliveryID) && nativeEqual(nativeOr(attempt.Get("session"), intent.Get("session")), ref)
+		attemptDelivery := delivery.Get("delivery_id")
+		if !value.Truth(attemptDelivery) {
+			intent, err := nativeObj(s.Intent(), "inbox_intent")
+			if err != nil {
+				return nil, err
+			}
+			attemptDelivery = intent.Get("delivery_id")
+		}
+		wake, err := nativeObj(s.Record.Get("idle_wake"), "idle_wake")
+		if err != nil {
+			return nil, err
+		}
+		wakeMatches := false
+		if value.SameText(wake.Get("transport"), "codex-queue") {
+			ref, err := s.sessionRef(agent)
+			if err != nil {
+				return nil, err
+			}
+			wakeMatches = nativeEqual(wake.Get("session"), ref) && value.SameText(wake.Get("native_id"), r.NativeSessionID) && value.SameText(wake.Get("delivery_id"), r.DeliveryID) && value.SameText(wake.Get("queued_submission_id"), r.QueuedSubmissionID)
+		}
+		attemptMatches := false
+		if value.SameText(attemptDelivery, r.DeliveryID) {
+			attemptSession := attempt.Get("session")
+			if !value.Truth(attemptSession) {
+				intent, err := nativeObj(s.Intent(), "inbox_intent")
+				if err != nil {
+					return nil, err
+				}
+				attemptSession = intent.Get("session")
+			}
+			ref, err := s.sessionRef(agent)
+			if err != nil {
+				return nil, err
+			}
+			attemptMatches = nativeEqual(attemptSession, ref)
+		}
 		if !wakeMatches && !attemptMatches {
 			return nil, nativeRefusal("INVALID_REQUEST", "retained Codex wake does not match delivery and queued submission")
 		}
@@ -826,6 +869,10 @@ func (e *RecoveryEngine) ReconcileCodexQueueWake(ctx context.Context, config *va
 		if value.Truth(r.Records) {
 			target := wake
 			if !wakeMatches {
+				ref, err := s.sessionRef(agent)
+				if err != nil {
+					return nil, err
+				}
 				target = nativeMap("delivery_id", r.DeliveryID, "queued_submission_id", r.QueuedSubmissionID, "attempted_at", 0, "session", ref)
 			}
 			rollout, err = e.evidence(ctx, EvidenceCodexQueue, s, nil, nil, target, r.Records, "")

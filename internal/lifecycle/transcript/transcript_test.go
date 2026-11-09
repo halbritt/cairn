@@ -1254,3 +1254,77 @@ func TestStage2NativeRefusalCommandAndContent(t *testing.T) {
 	_, err := nativeRefusalFixture(t, cfg, state, attempt, writeRecords(t, path, records))
 	requireError(t, err, "native refusal record is not this binding's post-claim refusal of this wake")
 }
+
+type stage2BindingRoutes struct{ fixtureRoutes }
+
+func (stage2BindingRoutes) Filesystem() value.FilesystemRoutes { return fixtureFilesystem{} }
+
+func TestStage2ConcreteRecoveryBinding(t *testing.T) {
+	profile := fixtureProfile(t)
+	profile.Routes = stage2BindingRoutes{}
+	profile.Definition.Readers[coordination.SiteSessionRead] = value.ReaderRoute{Input: "text-json", Codec: &value.Codec{Name: "utf-8", Errors: "strict"}, Domain: "synthetic-kernel-fixtures"}
+	yes, no := true, false
+	profile.Definition.Writers[coordination.SiteSessionWrite] = value.WriterRoute{Route: "dump", Codec: &value.Codec{Name: "utf-8", Errors: "strict"}, EnsureASCII: &no, Compact: &no, TrailingLF: &yes, Domain: "synthetic-kernel-fixtures"}
+	cfg, state, path := claudeFixture(t)
+	root := t.TempDir()
+	daemon := writeProc(t, root, 400, 2, 100, "daemon", "/opt/claude/claude", []string{"claude", "daemon"})
+	writeProc(t, root, 401, 400, 101, "bg-pty-host", "/opt/claude/claude", []string{"claude", "bg-pty-host"})
+	writeProc(t, root, 402, 401, 102, "claude", "/opt/claude/claude", []string{"claude", "--resume", path})
+	mustWrite(t, path, []byte("{\"timestamp\":\""+baseStamp+"\"}\n"))
+	config := value.Mapping(value.Field("binding", value.Text("concrete-fixture")), value.Field("state_dir", value.Text(t.TempDir())), value.Field("harness", value.Text("claude")), value.Field("config_home", value.Text(cfg.ConfigHome)), value.Field("process_exe_dirs", &value.Value{Kind: value.Array, Items: []*value.Value{value.Text("/opt/claude")}}))
+	ref := value.Mapping(value.Field("agent_id", value.Text(turnID)), value.Field("execution_id", value.Text(nativeID)))
+	agent := value.Mapping(value.Field("agent_id", value.Text(turnID)), value.Field("execution_id", value.Text(nativeID)), value.Field("native_session_id", value.Text(nativeID)))
+	stateRecord := value.Mapping(value.Field("agent", agent), value.Field("workspace", value.Text(state.Workspace)), value.Field("process", processRecord(daemon)), value.Field("inbox_attempt", value.Mapping(value.Field("attempt_id", value.Text(turnID)), value.Field("session", ref), value.Field("created_at", value.Text(stamp(2))))), value.Field("inbox_intent", value.Mapping(value.Field("request_id", value.Text(turnID)), value.Field("session", ref))))
+	calls := 0
+	host := coordination.NewFileHost(coordination.FileHostOptions{Profile: profile, Log: func(string) error { return nil }, Call: func(_ context.Context, _ *value.Value, operation string, _ *value.Value, _ coordination.NativeCallOptions) (*value.Value, error) {
+		calls++
+		if operation != "session-inbox-reconcile" {
+			t.Fatal(operation)
+		}
+		return nil, nil
+	}})
+	s, release, err := coordination.OpenSession(config, nativeID, host, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Record = stateRecord
+	if err = s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err = release(); err != nil {
+		t.Fatal(err)
+	}
+	intentPath := filepath.Join(text(config.Get("state_dir")), "intents", turnID+".json")
+	mustWrite(t, intentPath, []byte(`{"schema":"cairn.inbox-intent/1","attempt_id":"`+turnID+`","kind":"notice","session":{"agent_id":"`+turnID+`","execution_id":"`+nativeID+`"}}`))
+	r := NewReader(profile)
+	r.ProcRoot = root
+	engine := r.BindRecovery(host, coordination.RecoveryHooks{})
+	request := coordination.RecoveryRequest{NativeSessionID: nativeID, AttemptID: turnID, CheckOnly: true}
+	out, err := engine.RecoverDaemonStartClaim(context.Background(), config, request)
+	if err != nil || !value.SameText(out.Get("status"), "eligible") || calls != 0 {
+		t.Fatal(out, err, calls)
+	}
+	request.CheckOnly = false
+	out, err = engine.RecoverDaemonStartClaim(context.Background(), config, request)
+	if err != nil || out == nil || calls != 1 {
+		t.Fatal(out, err, calls)
+	}
+	stored, err := host.Load(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := stored.Get("process")
+	if len(worker.Members) != 5 || worker.Get("pid").Integer != "402" || worker.Get("parent").Integer != "401" || stored.Get("inbox_attempt") != nil {
+		t.Fatal("concrete recovery did not persist/settle its bound worker", stored)
+	}
+}
+
+func TestStage2BoundReaderAliveErrors(t *testing.T) {
+	f := codexFixture(t)
+	sentinel := &os.PathError{Op: "read", Path: "synthetic-proc", Err: syscall.EIO}
+	f.reader.AliveError = func(procpeer.ProcessRef) (bool, error) { return false, sentinel }
+	_, err := f.reader.CodexRolloutPath(f.cfg, f.state)
+	if err != sentinel {
+		t.Fatal("concrete liveness error became a transcript refusal", err)
+	}
+}

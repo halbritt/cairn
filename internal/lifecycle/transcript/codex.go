@@ -23,6 +23,18 @@ func (r Reader) CodexRolloutPath(cfg CodexConfig, state SessionState) (string, e
 	if cfg.Runtime == nil {
 		cfg.Runtime = r.Runtime
 	}
+	if r.AliveError != nil {
+		var observed error
+		path, err := CodexRolloutPathAt(r.ProcRoot, cfg, state, r.ExpectedUID, func(ref procpeer.ProcessRef) bool {
+			alive, e := r.AliveError(ref)
+			observed = e
+			return alive && e == nil
+		})
+		if observed != nil {
+			return "", observed
+		}
+		return path, err
+	}
 	return CodexRolloutPathAt(r.ProcRoot, cfg, state, r.ExpectedUID, r.Alive)
 }
 func CodexRolloutPathAt(root string, cfg CodexConfig, state SessionState, uid uint32, alive func(procpeer.ProcessRef) bool) (string, error) {

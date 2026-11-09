@@ -1,0 +1,283 @@
+package coordination
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+	"unicode/utf8"
+
+	"github.com/halbritt/cairn/internal/lifecycle/journal"
+	"github.com/halbritt/cairn/internal/lifecycle/value"
+)
+
+const (
+	SiteSessionRead  = "coordination.session.read"
+	SiteSessionWrite = "coordination.session.write"
+	SiteCallRequest  = "coordination.call.request"
+	SiteCallResponse = "coordination.call.response"
+)
+
+// FileHostOptions supplies the Source routes, API transport and durable I/O.
+// SourceReaderProfile owns both Decode and Write in the Foundation interface.
+// Its session writer route covers json.dump followed by the terminating LF.
+type FileHostOptions struct {
+	Profile        *value.SourceReaderProfile
+	Journal        *SessionJournalAdapter
+	JournalOptions journal.Options
+	Runner         journal.Runner
+	Call           func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error)
+	Now            func() time.Time
+	Log            func(string) error
+	IO             journal.IO
+}
+
+type sessionLease struct{ lease *LockLease }
+
+func (l sessionLease) Close() error { return l.lease.Release() }
+
+type stateWriter struct {
+	file  *os.File
+	write func(*os.File, []byte) (int, error)
+}
+
+func (w stateWriter) Write(raw []byte) (int, error) { return w.write(w.file, raw) }
+
+func sourcePathText(profile *value.SourceReaderProfile, v *value.Value) (string, error) {
+	if v == nil || v.Kind != value.String {
+		return "", &journal.TypeError{Field: "path"}
+	}
+	if profile == nil || profile.Routes == nil || profile.Routes.Filesystem() == nil {
+		return "", &value.ProfileUnavailable{}
+	}
+	return profile.Routes.Filesystem().Encode(v.String)
+}
+
+// NewFileHost performs no I/O and selects no production profile or credentials.
+// Every transition uses the existing NativeSession and journal implementations.
+func NewFileHost(options FileHostOptions) *Host {
+	clock := options.Now
+	if clock == nil {
+		clock = time.Now
+	}
+	log := options.Log
+	if log == nil {
+		log = func(message string) error { _, err := io.WriteString(os.Stderr, message+"\n"); return err }
+	}
+	adapter := options.Journal
+	if adapter == nil {
+		adapter = &SessionJournalAdapter{Options: options.JournalOptions, Now: clock, Log: log}
+	}
+	if adapter.PathText == nil {
+		adapter.PathText = func(v *value.Value) (string, error) { return sourcePathText(options.Profile, v) }
+	}
+	h := &Host{Journal: adapter, Log: log}
+	h.Call = options.Call
+	if h.Call == nil {
+		h.Call = sourceCall(options.Profile, options.Runner)
+	}
+	h.Locate = func(config *value.Value, nativeID string) (string, error) {
+		binding, err := nativeRequired(config, "binding")
+		if err != nil {
+			return "", err
+		}
+		if binding.Kind != value.String {
+			return "", &journal.TypeError{Field: "binding"}
+		}
+		for _, r := range binding.String {
+			if !utf8.ValidRune(r) {
+				return "", &value.Error{Class: "UnicodeEncodeError", Message: "session binding is not UTF-8 encodable"}
+			}
+		}
+		if !utf8.ValidString(nativeID) {
+			return "", &value.Error{Class: "UnicodeEncodeError", Message: "native session ID is not UTF-8 encodable"}
+		}
+		dirValue, err := nativeRequired(config, "state_dir")
+		if err != nil {
+			return "", err
+		}
+		dir, err := sourcePathText(options.Profile, dirValue)
+		if err != nil {
+			return "", err
+		}
+		key := sha256.Sum256([]byte(string(binding.String) + "\x00" + nativeID))
+		return filepath.Join(dir, hex.EncodeToString(key[:])+".json"), nil
+	}
+	h.Lock = func(path string) (io.Closer, error) {
+		lease, err := AcquireSessionLock(path)
+		if err != nil {
+			return nil, err
+		}
+		return sessionLease{lease}, nil
+	}
+	h.Exists = func(path string) (bool, error) {
+		if options.Profile == nil || options.Profile.Routes == nil || options.Profile.Routes.Filesystem() == nil {
+			return false, &value.ProfileUnavailable{}
+		}
+		fs := options.Profile.Routes.Filesystem()
+		points, err := fs.Decode(path)
+		if err != nil {
+			return false, err
+		}
+		return fs.Exists(points)
+	}
+	h.Load = func(path string) (*value.Value, error) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return options.Profile.Decode(SiteSessionRead, raw)
+	}
+	h.Persist = func(path string, record *value.Value) (err error) {
+		if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		file, err := os.CreateTemp(filepath.Dir(path), "tmp*")
+		if err != nil {
+			return err
+		}
+		pending := file.Name()
+		closed := false
+		defer func() {
+			if !closed {
+				if e := file.Close(); e != nil {
+					err = e
+				}
+			}
+			if e := os.Remove(pending); e != nil && !errors.Is(e, os.ErrNotExist) {
+				err = e
+			}
+		}()
+		write, sync, close, rename := options.IO.Write, options.IO.Sync, options.IO.Close, options.IO.Rename
+		if write == nil {
+			write = (*os.File).Write
+		}
+		if sync == nil {
+			sync = (*os.File).Sync
+		}
+		if close == nil {
+			close = (*os.File).Close
+		}
+		if rename == nil {
+			rename = os.Rename
+		}
+		if err = options.Profile.Write(SiteSessionWrite, stateWriter{file, write}, record); err != nil {
+			return err
+		}
+		if err = sync(file); err != nil {
+			return err
+		}
+		closed = true
+		if err = close(file); err != nil {
+			return err
+		}
+		if err = rename(pending, path); err != nil {
+			return err
+		}
+		dir, err := os.OpenFile(filepath.Dir(path), os.O_RDONLY|syscall.O_DIRECTORY, 0)
+		if err != nil {
+			return err
+		}
+		err = sync(dir)
+		if e := close(dir); e != nil {
+			return e
+		}
+		return err
+	}
+	return h
+}
+
+func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error) {
+	if runner == nil {
+		runner = journal.CommandRunner{}
+	}
+	return func(ctx context.Context, config *value.Value, operation string, request *value.Value, options NativeCallOptions) (*value.Value, error) {
+		args := []string{}
+		for _, key := range []string{"cairn", "socket", "token_file"} {
+			if !value.Truth(config.Get(key)) {
+				return nil, nativeRefusal("INVALID_CONFIG", "missing "+key+" in config")
+			}
+			text, err := sourcePathText(profile, config.Get(key))
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, text)
+		}
+		command := []string{args[0], "agent", "--socket", args[1], "--token-file", args[2]}
+		if value.Truth(options.Session) {
+			for _, pair := range [][2]string{{"--agent-id", "agent_id"}, {"--execution-id", "execution_id"}} {
+				v, err := nativeRequired(options.Session, pair[1])
+				if err != nil {
+					return nil, err
+				}
+				text, err := sourcePathText(profile, v)
+				if err != nil {
+					return nil, err
+				}
+				command = append(command, pair[0], text)
+			}
+		}
+		command = append(command, operation)
+		var input bytes.Buffer
+		if err := profile.Write(SiteCallRequest, &input, request); err != nil {
+			return nil, err
+		}
+		timeout := options.Timeout
+		if timeout == 0 {
+			timeout = 4 * time.Second
+		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		result, err := runner.Run(callCtx, command, input.String())
+		if err != nil {
+			return nil, &CoordinationError{Code: "API_UNAVAILABLE", Message: "Cairn lifecycle command is unavailable", Cause: err}
+		}
+		response, err := profile.Decode(SiteCallResponse, []byte(result.Stdout))
+		if err != nil {
+			var unavailable *value.ProfileUnavailable
+			if errors.As(err, &unavailable) {
+				return nil, err
+			}
+			return nil, &CoordinationError{Code: "API_UNAVAILABLE", Message: "Cairn did not return a JSON response", Cause: err}
+		}
+		if response.Kind != value.Object || response.Get("ok") == nil || response.Get("ok").Kind != value.Bool {
+			return nil, nativeRefusal("API_UNAVAILABLE", "Cairn returned an invalid response")
+		}
+		if result.ExitCode != 0 || !response.Get("ok").Boolean {
+			code := nativeText(response.Get("status"))
+			if code == "" || code == "OK" {
+				code = "API_UNAVAILABLE"
+			}
+			return nil, nativeRefusal(code, "Cairn refused the lifecycle operation")
+		}
+		return response.Get("data"), nil
+	}
+}
+
+// NewRecoveryEngine binds the concrete file/journal owner and transcript side
+// without an import cycle. External grant/native-health services stay explicit.
+func NewRecoveryEngine(host *Host, evidence TranscriptEvidence, hooks RecoveryHooks, procRoot string) *RecoveryEngine {
+	proc := NewProcessHooks(procRoot)
+	if hooks.Alive == nil {
+		hooks.Alive = proc.Alive
+	}
+	if hooks.Daemon == nil && hooks.DaemonView == nil {
+		hooks.Daemon = proc.Daemon
+		hooks.DaemonView = proc.DaemonView
+	}
+	var adapter *SessionJournalAdapter
+	if host != nil {
+		adapter, _ = host.Journal.(*SessionJournalAdapter)
+	}
+	clock := time.Now
+	if adapter != nil && adapter.Now != nil {
+		clock = adapter.Now
+	}
+	return &RecoveryEngine{Host: host, Journal: adapter, Evidence: evidence, Hooks: hooks, Now: clock}
+}

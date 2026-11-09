@@ -57,6 +57,10 @@ type invalidProcessStat struct {
 	cause error
 }
 
+type invalidProcessText struct{ path string }
+
+func (e *invalidProcessText) Error() string { return e.path + " is not UTF-8" }
+
 func (e *invalidProcessStat) Error() string {
 	return fmt.Sprintf("invalid /proc/%d/stat: %v", e.pid, e.cause)
 }
@@ -129,7 +133,7 @@ func ReadProcViewAt(root string, pid int) (ProcView, error) {
 		return ProcView{}, err
 	}
 	if !utf8.Valid(comm) {
-		return ProcView{}, fmt.Errorf("process %d comm is not UTF-8", pid)
+		return ProcView{}, &invalidProcessText{path: filepath.Join(directory, "comm")}
 	}
 	exe, _ := os.Readlink(filepath.Join(directory, "exe")) // Python treats an unreadable executable as absent.
 	view := ProcView{Ref: procpeer.ProcessRef{PID: pid, Start: stat.start, Boot: boot}, Parent: stat.parent, PGID: stat.pgid, State: stat.state, Comm: pythonStrip(string(comm)), Exe: exe, Argv: []string{}}

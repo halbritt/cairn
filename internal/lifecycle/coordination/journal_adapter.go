@@ -2,7 +2,12 @@ package coordination
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -18,12 +23,178 @@ type JournalStateProjection interface {
 	Project(*value.Value) (map[string]any, error)
 	ApplyJournals(*value.Value, map[string]any) error
 }
+
+// LosslessJournalProjection is the representation adapter, not another journal
+// state machine. Only the journal-owned index is copied back to a native record.
+type LosslessJournalProjection struct{}
+
+func (LosslessJournalProjection) Project(record *value.Value) (map[string]any, error) {
+	if record == nil || record.Kind != value.Object {
+		return nil, &journal.NonObjectError{Field: "state"}
+	}
+	x, err := journalGoValue(record)
+	if err != nil {
+		return nil, err
+	}
+	return x.(map[string]any), nil
+}
+func (LosslessJournalProjection) ApplyJournals(record *value.Value, state map[string]any) error {
+	if record == nil || record.Kind != value.Object {
+		return &journal.NonObjectError{Field: "state"}
+	}
+	x, present := state["inbox_journals"]
+	if !present {
+		nativePop(record, "inbox_journals")
+		return nil
+	}
+	old, err := journalGoValue(record.Get("inbox_journals"))
+	if err != nil {
+		return err
+	}
+	if record.Get("inbox_journals") != nil && reflect.DeepEqual(old, x) {
+		return nil
+	}
+	next, err := journalNativeValue(x)
+	if err != nil {
+		return err
+	}
+	record.Set("inbox_journals", next)
+	return nil
+}
+
+// journal uses WTF-8 for Python code points that are not Unicode scalar values.
+func journalText(points []rune) string {
+	var b strings.Builder
+	for _, r := range points {
+		if r >= 0xd800 && r <= 0xdfff {
+			b.WriteByte(0xe0 | byte(r>>12))
+			b.WriteByte(0x80 | byte(r>>6&63))
+			b.WriteByte(0x80 | byte(r&63))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+func journalPoints(raw string) []rune {
+	var out []rune
+	for len(raw) > 0 {
+		if len(raw) >= 3 && raw[0] == 0xed && raw[1] >= 0xa0 && raw[1] <= 0xbf && raw[2]&0xc0 == 0x80 {
+			out = append(out, rune(raw[0]&15)<<12|rune(raw[1]&63)<<6|rune(raw[2]&63))
+			raw = raw[3:]
+			continue
+		}
+		r, n := utf8.DecodeRuneInString(raw)
+		out = append(out, r)
+		raw = raw[n:]
+	}
+	return out
+}
+func journalGoValue(v *value.Value) (any, error) {
+	if v == nil || v.Kind == value.Null {
+		return nil, nil
+	}
+	switch v.Kind {
+	case value.Bool:
+		return v.Boolean, nil
+	case value.Int:
+		return json.Number(v.Integer), nil
+	case value.Float:
+		return v.Number, nil
+	case value.String:
+		return journalText(v.String), nil
+	case value.Array:
+		out := make([]any, len(v.Items))
+		for i, item := range v.Items {
+			var err error
+			out[i], err = journalGoValue(item)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
+	case value.Object:
+		out := make(map[string]any, len(v.Members))
+		for _, member := range v.Members {
+			x, err := journalGoValue(member.Value)
+			if err != nil {
+				return nil, err
+			}
+			out[journalText(member.Key)] = x
+		}
+		return out, nil
+	default:
+		return nil, &journal.TypeError{Field: "source value"}
+	}
+}
+func journalNativeValue(x any) (*value.Value, error) {
+	switch x := x.(type) {
+	case nil:
+		return &value.Value{Kind: value.Null}, nil
+	case bool:
+		return value.Boolean(x), nil
+	case string:
+		return &value.Value{Kind: value.String, String: journalPoints(x)}, nil
+	case json.Number:
+		if !strings.ContainsAny(string(x), ".eE") {
+			return value.IntegerText(string(x)), nil
+		}
+		n, err := strconv.ParseFloat(string(x), 64)
+		if err != nil {
+			return nil, err
+		}
+		return &value.Value{Kind: value.Float, Number: n}, nil
+	case float64:
+		return &value.Value{Kind: value.Float, Number: x}, nil
+	case []string:
+		out := &value.Value{Kind: value.Array}
+		for _, item := range x {
+			out.Items = append(out.Items, &value.Value{Kind: value.String, String: journalPoints(item)})
+		}
+		return out, nil
+	case []any:
+		out := &value.Value{Kind: value.Array}
+		for _, item := range x {
+			v, err := journalNativeValue(item)
+			if err != nil {
+				return nil, err
+			}
+			out.Items = append(out.Items, v)
+		}
+		return out, nil
+	case map[string]any:
+		out := value.Mapping()
+		keys := make([]string, 0, len(x))
+		for key := range x {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			v, err := journalNativeValue(x[key])
+			if err != nil {
+				return nil, err
+			}
+			out.Members = append(out.Members, value.Member{Key: journalPoints(key), Value: v})
+		}
+		return out, nil
+	default:
+		return nil, &journal.TypeError{Field: "journal projection value"}
+	}
+}
+
 type SessionJournalAdapter struct {
 	Projection JournalStateProjection
 	Options    journal.Options
 	Now        func() time.Time
 	Log        func(string) error
 	PathText   func(*value.Value) (string, error)
+}
+
+func (a *SessionJournalAdapter) projection() JournalStateProjection {
+	if a.Projection != nil {
+		return a.Projection
+	}
+	return LosslessJournalProjection{}
 }
 
 func (a *SessionJournalAdapter) pathText(v *value.Value) (string, error) {
@@ -58,15 +229,12 @@ func (a *SessionJournalAdapter) FlushInboxIntents(ctx context.Context, config, r
 	if dir == "" || !value.Truth(record.Get("agent")) {
 		return true, nil
 	}
-	if a.Projection == nil {
-		return false, &value.ProfileUnavailable{}
-	}
-	projected, e := a.Projection.Project(record)
+	projected, e := a.projection().Project(record)
 	if e != nil {
 		return false, e
 	}
 	settled, e := journal.Flush(ctx, dir, projected, string(scope), a.Options)
-	apply := a.Projection.ApplyJournals(record, projected)
+	apply := a.projection().ApplyJournals(record, projected)
 	if apply != nil {
 		return false, apply
 	}
@@ -177,10 +345,7 @@ func (a *SessionJournalAdapter) SettledJournalIndex(config, record *value.Value)
 	if e != nil {
 		return false, e
 	}
-	if a.Projection == nil {
-		return false, &value.ProfileUnavailable{}
-	}
-	state, e := a.Projection.Project(record)
+	state, e := a.projection().Project(record)
 	if e != nil {
 		return false, e
 	}
