@@ -1003,7 +1003,7 @@ mod typed_serializer_tests {
             ],
             assignment: vec![
                 (
-                    vec![255],
+                    vec![0x00, 0x0a, 0xff],
                     vec![
                         (b"z".to_vec(), vec![], b"Add".to_vec()),
                         (b"z".to_vec(), vec![], b"Add".to_vec()),
@@ -1045,7 +1045,7 @@ mod typed_serializer_tests {
                 "collection_stage":"API29 documents BASIC/minimal-stage assignment; retained implementation records partitioning after Level1/basic and any InsertCastTransformer assignment callbacks during optimization loops after Level2/3; this event history does not certify the complete final graph or executable dispatch after all transformations",
                 "coverage":"API-returned subgraphs/nodes only; not complete final executable provider/node dispatch",
                 "subgraphs":[
-                    {"provider_hex":"ff","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"}]},
+                    {"provider_hex":"000aff","nodes":[{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"},{"name_hex":"7a","domain_hex":"","operator_type_hex":"416464"}]},
                     {"provider_hex":"435055","nodes":[{"name_hex":"fe","domain_hex":"61692e6f6e6e78","operator_type_hex":"4d756c"}]},
                     {"provider_hex":"","nodes":[]}
                 ]
