@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -239,7 +240,7 @@ func TestStage2CRepairParser(t *testing.T) {
 			t.Fatal(text, err)
 		}
 	}
-	for _, text := range []string{"-1", "-.5", "-1.5", "--x y", "-"} {
+	for _, text := range []string{"-1", "-.5", "-1.5", "-1e5", "-1.", "-1abc", "--x y", "-"} {
 		a, err := parseCLI([]string{"--config", text}, "fixture", map[string]int{"--config": 1})
 		if err != nil || a.get("--config") != text {
 			t.Fatal(text, a, err)
@@ -259,6 +260,18 @@ func TestStage2CRepairParser(t *testing.T) {
 		if !errors.As(err, &unavailable) {
 			t.Fatal(mode, err)
 		}
+		_, err = (&CLI{}).runRecovery(context.Background(), []string{mode, "--outcome", "bogus"}, &bytes.Buffer{})
+		if !errors.As(err, &parse) {
+			t.Fatal("invalid outcome must precede unavailable mode", mode, err)
+		}
+	}
+	_, err = (&CLI{}).runRecovery(context.Background(), []string{"-1abc"}, &bytes.Buffer{})
+	if !errors.As(err, &parse) || !strings.Contains(parse.message, "invalid choice") {
+		t.Fatal(err)
+	}
+	code, _, stderr := stage2CLIResult(t, &CLI{}, "reconcile-codex-queue-wake", "--config", "/synthetic", "--native-session-id", "synthetic", "--delivery-id", stage2Delivery, "--queued-submission-id", stage2Turn, "--record", "-1:10:"+strings.Repeat("a", 64))
+	if code != 1 || !strings.Contains(stderr, "INVALID_REQUEST") {
+		t.Fatal(code, stderr)
 	}
 }
 
@@ -301,7 +314,110 @@ func TestStage2CRepairPreGrantLexistsErrors(t *testing.T) {
 	}
 	g.Loader = func(string, *value.Value) (*value.Value, error) { return nativeMap("grants", value.Mapping()), nil }
 	status, kind, err := g.Evidence(context.Background(), config, state, state.Get("inbox_attempt"), nil, false)
-	if err != nil || status != "absent" || kind != nil {
+	if err != nil || status != "unknown" || !value.SameText(kind, "unknown") {
 		t.Fatal(status, kind, err)
+	}
+}
+
+func TestStage2CRepairNonFiniteInbox(t *testing.T) {
+	for _, number := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for _, field := range []string{"kind", "agent_id", "execution_id", "request_id", "argv"} {
+			t.Run(field+"/"+pythonRepr(&value.Value{Kind: value.Float, Number: number}, false), func(t *testing.T) {
+				c, native, path, intent := stage2CRepairInbox(t)
+				n := &value.Value{Kind: value.Float, Number: number}
+				switch field {
+				case "argv":
+					native.Get("commands").Get("ack").Items = append(native.Get("commands").Get("ack").Items, n)
+				case "request_id":
+					native.Get("request_ids").Set("completion", n)
+				default:
+					native.Set(field, n)
+				}
+				stage2WriteValue(t, c.profile(), path, native)
+				for retry := 0; retry < 2; retry++ {
+					code, result, _ := stage2CLIResult(t, c, "inbox", "--context", path, "ack")
+					if field == "argv" {
+						if code != 7 || !strings.Contains(nativeText(result.Get("message")), "TypeError") {
+							t.Fatal(retry, code, result)
+						}
+					} else if code != 0 || !exactTrue(result.Get("ok")) {
+						t.Fatal(retry, code, result)
+					}
+					v, err := c.read(intent, SiteCompactJournalRead)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := "committed"
+					if field == "argv" {
+						want = "pending"
+					}
+					if !value.SameText(v.Get("completion").Get("status"), want) {
+						t.Fatal(v)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestStage2CRepairQuotedCLIValues(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"can't", `"can't"`},
+		{"a'\"b", `'a\'"b'`},
+		{"\t\n\r\\", `'\t\n\r\\'`},
+		{"\x00\x1f\u200b\U000e0001", `'\x00\x1f\u200b\U000e0001'`},
+	} {
+		var parse *cliParseError
+		err := choiceCLI("fixture", "kind", tc.input, []string{"ok"})
+		if !errors.As(err, &parse) || !strings.Contains(parse.message, "invalid choice: "+tc.want+" (choose") {
+			t.Fatal(tc, err)
+		}
+		_, err = parseCLI([]string{"--help=" + tc.input}, "fixture", nil)
+		if !errors.As(err, &parse) || !strings.Contains(parse.message, "ignored explicit argument "+tc.want) {
+			t.Fatal(tc, err)
+		}
+	}
+}
+
+func TestStage2CRepairHandoffLazyRawCommands(t *testing.T) {
+	c, _, _, _ := stage2CRepairInbox(t)
+	config := stage2CLIConfig(t.TempDir())
+	config.Set("cairn", value.Boolean(true))
+	config.Set("socket", value.IntegerText("17"))
+	config.Set("token_file", nativeMap("raw", true))
+	session := nativeMap("agent_id", false, "execution_id", stringArray("raw"))
+	delivery := nativeMap("delivery_id", 17, "lease_id", false, "event", nativeMap("kind", "notice", "event_id", stage2Delivery, "from", "synthetic", "ref", value.Mapping()))
+	_, native, err := c.InboxHandoff(config, session, delivery, stage2Attempt, nativeMap("completion", nativeMap("raw", true)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if native.Get("response") != nil || native.Get("commands").Get("ack").Items[0].Kind != value.Bool || native.Get("read").Items[3].Integer != "17" || native.Get("commands").Get("complete").Items[11].Kind != value.Object {
+		t.Fatal(native)
+	}
+}
+
+func TestStage2CRepairInjectedEmptyRoot(t *testing.T) {
+	c := &CLI{Profile: stage2ServicesProfile(), LookupEnv: func(string) (string, bool) { return "", true }, Env: func(string) string { t.Fatal("lower-precedence environment used"); return "/wrong" }}
+	root, err := c.compactRoot()
+	want, _ := os.Getwd()
+	if err != nil || root != want {
+		t.Fatal(root, want, err)
+	}
+}
+
+func TestStage2CRepairBridgePathErrors(t *testing.T) {
+	g := GrantBindings{Profile: stage2ServicesProfile()}
+	for _, tc := range []struct {
+		config *value.Value
+		class  string
+	}{
+		{value.Text("nonobject"), "AttributeError"},
+		{value.Mapping(), "KeyError"},
+		{nativeMap("inbox_recall_binding", true), "TypeError"},
+		{nativeMap("inbox_recall_binding", "relative"), "ValueError"},
+		{nativeMap("inbox_recall_binding", "/bad\x00path"), "ValueError"},
+	} {
+		_, err := g.directory(tc.config)
+		stage2ErrorClass(t, err, tc.class)
 	}
 }

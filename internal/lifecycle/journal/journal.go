@@ -305,17 +305,20 @@ func decode(data []byte) (any, error) {
 		return nil, &UnicodeDecodeError{"journal is not UTF-8"}
 	}
 	var raw json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(maskConstants(data), &raw); err != nil {
 		return nil, err
 	}
-	return decodeNode(raw)
+	return decodeNode(bytes.TrimSpace(data))
 }
 
 func decodeNode(raw json.RawMessage) (any, error) {
 	raw = bytes.TrimSpace(raw)
+	if constant := defaultConstants[string(raw)]; constant != nil {
+		return jsonAtom{raw, constant}, nil
+	}
 	switch raw[0] {
 	case '{':
-		d := json.NewDecoder(bytes.NewReader(raw))
+		d := json.NewDecoder(bytes.NewReader(maskConstants(raw)))
 		if _, err := d.Token(); err != nil {
 			return nil, err
 		}
@@ -327,11 +330,12 @@ func decodeNode(raw json.RawMessage) (any, error) {
 			}
 			keyToken := raw[start:int(d.InputOffset())]
 			key := decodeKey(keyToken[bytes.IndexByte(keyToken, '"'):])
+			startValue := jsonValueStart(raw, int(d.InputOffset()))
 			var item json.RawMessage
 			if err := d.Decode(&item); err != nil {
 				return nil, err
 			}
-			v, err := decodeNode(item)
+			v, err := decodeNode(raw[startValue:int(d.InputOffset())])
 			if err != nil {
 				return nil, err
 			}
@@ -339,17 +343,22 @@ func decodeNode(raw json.RawMessage) (any, error) {
 		}
 		return object, nil
 	case '[':
-		var fields []json.RawMessage
-		if err := json.Unmarshal(raw, &fields); err != nil {
+		d := json.NewDecoder(bytes.NewReader(maskConstants(raw)))
+		if _, err := d.Token(); err != nil {
 			return nil, err
 		}
-		array := make([]any, len(fields))
-		for i, item := range fields {
-			v, err := decodeNode(item)
+		array := []any{}
+		for d.More() {
+			start := jsonValueStart(raw, int(d.InputOffset()))
+			var item json.RawMessage
+			if err := d.Decode(&item); err != nil {
+				return nil, err
+			}
+			v, err := decodeNode(raw[start:int(d.InputOffset())])
 			if err != nil {
 				return nil, err
 			}
-			array[i] = v
+			array = append(array, v)
 		}
 		return array, nil
 	default:
@@ -507,11 +516,10 @@ func encode(v any) ([]byte, error) {
 		return nil, err
 	}
 	var b bytes.Buffer
-	e := json.NewEncoder(&b)
-	e.SetEscapeHTML(false)
-	if err := e.Encode(v); err != nil {
+	if err := writeJSON(&b, v); err != nil {
 		return nil, err
 	}
+	b.WriteByte('\n')
 	// Encoder still escapes the two JavaScript line separators. Skip escaped
 	// backslashes so a literal "\\u2028" extension remains a literal string.
 	source := b.Bytes()
@@ -688,6 +696,14 @@ func integer(v any) (*big.Int, bool) {
 
 func scalarString(v any) string {
 	switch v := value(v).(type) {
+	case *jsonConstant:
+		if v.token == "NaN" {
+			return "nan"
+		}
+		if v.token == "Infinity" {
+			return "inf"
+		}
+		return "-inf"
 	case string:
 		return v
 	case nil:
@@ -749,6 +765,9 @@ func numeric(v any) (*big.Rat, bool) {
 
 func equal(a, b any) bool {
 	a, b = value(a), value(b)
+	if ac, bc := nonFinite(a), nonFinite(b); ac != "" || bc != "" {
+		return ac != "NaN" && bc != "NaN" && ac == bc
+	}
 	if an, ok := numeric(a); ok {
 		bn, ok := numeric(b)
 		return ok && an.Cmp(bn) == 0
@@ -760,7 +779,7 @@ func equal(a, b any) bool {
 		}
 		for key, v := range am {
 			bv, ok := bm[key]
-			if !ok || !equal(v, bv) {
+			if !ok || !containerEqual(v, bv) {
 				return false
 			}
 		}
@@ -772,7 +791,7 @@ func equal(a, b any) bool {
 			return false
 		}
 		for i, v := range aa {
-			if !equal(v, ba[i]) {
+			if !containerEqual(v, ba[i]) {
 				return false
 			}
 		}

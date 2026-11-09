@@ -181,6 +181,7 @@ type CLI struct {
 	ProcRoot       string
 	UID            *uint32
 	Env            func(string) string
+	LookupEnv      func(string) (string, bool)
 	CallerDescends func(*value.Value) (bool, error)
 	// ReadInput is the selected stdin text codec, bounded in characters. The
 	// frontend must supply it for complete/finish-reply; no locale is inferred.
@@ -355,21 +356,12 @@ func optionalCLI(arg string) bool {
 	if !strings.HasPrefix(arg, "-") || arg == "-" || strings.Contains(arg, " ") {
 		return false
 	}
-	// argparse's negative-number exception accepts integers and decimals, but
-	// neither exponent notation nor a decimal point with no fractional digits.
-	negative := []rune(strings.TrimPrefix(arg, "-"))
-	dot, digits := false, 0
-	for i, r := range negative {
-		if r == '.' && !dot && i < len(negative)-1 {
-			dot = true
-			continue
-		}
-		if !unicode.IsDigit(r) {
-			return true
-		}
-		digits++
+	// Python 3.14 uses an unanchored -\.?\d prefix match.
+	negative := []rune(arg[1:])
+	if len(negative) > 0 && negative[0] == '.' {
+		negative = negative[1:]
 	}
-	return digits == 0
+	return len(negative) == 0 || !unicode.IsDigit(negative[0])
 }
 
 func optionCLI(arg string, spec map[string]int) bool {
@@ -429,7 +421,7 @@ func parseCLI(argv []string, prog string, spec map[string]int) (cliArgs, error) 
 		}
 		if n == 0 {
 			if hasEq {
-				return a, parseFail(prog, "argument "+key+": ignored explicit argument '"+eq+"'")
+				return a, parseFail(prog, "argument "+key+": ignored explicit argument "+pythonRepr(&value.Value{Kind: value.String, String: journalPoints(eq)}, true))
 			}
 			if key == "-h" || key == "--help" {
 				return a, &cliHelp{prog}
@@ -476,7 +468,7 @@ func choiceCLI(prog, name, v string, choices []string) error {
 	if nativeContains(choices, v) {
 		return nil
 	}
-	return parseFail(prog, "argument "+name+": invalid choice: '"+v+"' (choose from "+strings.Join(choices, ", ")+")")
+	return parseFail(prog, "argument "+name+": invalid choice: "+pythonRepr(&value.Value{Kind: value.String, String: journalPoints(v)}, true)+" (choose from "+strings.Join(choices, ", ")+")")
 }
 
 func cliCaught(err error) bool {
@@ -576,14 +568,15 @@ func (c *CLI) runRecovery(ctx context.Context, argv []string, out io.Writer) (in
 	if err = choiceCLI(prog, "mode", mode, modes); err != nil {
 		return 0, err
 	}
-	if mode == "hook" || mode == "watch" {
-		return 0, &value.ProfileUnavailable{}
-	}
 	if a.has("--outcome") {
 		if err = choiceCLI(prog, "--outcome", a.get("--outcome"), cliOutcomes); err != nil {
 			return 0, err
 		}
 	}
+	if mode == "hook" || mode == "watch" {
+		return 0, &value.ProfileUnavailable{}
+	}
+
 	required := []string{"--config", "--native-session-id"}
 	message := mode + " requires --config and --native-session-id"
 	switch mode {

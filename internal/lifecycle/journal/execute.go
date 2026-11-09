@@ -476,11 +476,18 @@ func executeFinish(ctx context.Context, native RawContext, journal map[string]an
 			return Result{}, err
 		}
 		if matched {
+			slotID, e := required(completion, "request_id")
+			if e != nil {
+				return Result{}, e
+			}
 			completionID, e := native.requestID("completion")
 			if e != nil {
 				return Result{}, e
 			}
-			matched, err = matchFields(completion, fieldMatch{"request_id", completionID}, fieldMatch{"input", body})
+			matched = equal(slotID, completionID)
+			if matched {
+				matched, err = matchFields(completion, fieldMatch{"input", body})
+			}
 			if err != nil {
 				return Result{}, err
 			}

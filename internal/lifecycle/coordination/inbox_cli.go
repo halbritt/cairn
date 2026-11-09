@@ -72,7 +72,7 @@ func (c *CLI) contextJournal(v *value.Value) (journal.RawContext, error) {
 	if err != nil {
 		return out, err
 	}
-	out.Values = raw.(map[string]any)
+	out.Values = journal.DefaultJSONConstants(raw).(map[string]any)
 	out.Command = func(name string) ([]any, error) {
 		commands, err := nativeDefaultObj(v.Get("commands"), "commands")
 		if err != nil {
@@ -86,7 +86,7 @@ func (c *CLI) contextJournal(v *value.Value) (journal.RawContext, error) {
 		if err != nil {
 			return nil, err
 		}
-		return raw.([]any), nil
+		return journal.DefaultJSONConstants(raw).([]any), nil
 	}
 	return out, nil
 }
@@ -281,57 +281,66 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 	if err != nil {
 		return "", nil, err
 	}
-	values := map[string]string{}
-	for _, entry := range []struct {
-		v    *value.Value
-		keys []string
-	}{{config, []string{"state_dir", "cairn", "socket", "token_file"}}, {session, []string{"agent_id", "execution_id"}}, {delivery, []string{"lease_id"}}, {requestIDs, []string{"completion", "response"}}} {
-		for _, key := range entry.keys {
-			s, e := requiredText(entry.v, key)
-			if e != nil {
-				return "", nil, e
-			}
-			values[key] = s
-		}
+	stateDir, err := nativeRequired(config, "state_dir")
+	if err != nil {
+		return "", nil, err
 	}
-	dir, err := sourcePathText(c.profile(), config.Get("state_dir"))
+	dir, err := sourcePathText(c.profile(), stateDir)
 	if err != nil {
 		return "", nil, err
 	}
 	target := sourceJoin(sourceJoin(dir, "inbox"), attemptID+".json")
-	common := []string{"--socket", values["socket"], "--token-file", values["token_file"], "--agent-id", values["agent_id"], "--execution-id", values["execution_id"]}
-	leased := append(append([]string{}, common...), "--request-id", values["completion"], "--lease", values["lease_id"])
-	complete := append([]string{values["cairn"], "complete"}, leased...)
-	complete = append(complete, "--shareable", "--stdin")
+	common := stringArray()
+	for _, arg := range []struct {
+		flag, key string
+		object    *value.Value
+	}{
+		{"--socket", "socket", config}, {"--token-file", "token_file", config}, {"--agent-id", "agent_id", session}, {"--execution-id", "execution_id", session},
+	} {
+		x, e := nativeRequired(arg.object, arg.key)
+		if e != nil {
+			return "", nil, e
+		}
+		common.Items = append(common.Items, value.Text(arg.flag), x)
+	}
+	completionID, err := nativeRequired(requestIDs, "completion")
+	if err != nil {
+		return "", nil, err
+	}
+	leaseID, err := nativeRequired(delivery, "lease_id")
+	if err != nil {
+		return "", nil, err
+	}
+	leased := append(append([]*value.Value{}, common.Items...), value.Text("--request-id"), completionID, value.Text("--lease"), leaseID)
+	cairn, err := nativeRequired(config, "cairn")
+	if err != nil {
+		return "", nil, err
+	}
 	deliveryID, err := nativeRequired(delivery, "delivery_id")
 	if err != nil {
 		return "", nil, err
 	}
-	completeArgs := stringArray(complete...)
-	completeArgs.Items = append(completeArgs.Items, deliveryID)
-	ack := append([]string{values["cairn"], "ack"}, leased...)
-	ackArgs := stringArray(ack...)
-	ackArgs.Items = append(ackArgs.Items, deliveryID)
-	commands := nativeMap("complete", completeArgs, "ack", ackArgs)
+	complete := &value.Value{Kind: value.Array, Items: append(append([]*value.Value{cairn, value.Text("complete")}, leased...), value.Text("--shareable"), value.Text("--stdin"), deliveryID)}
+	ack := &value.Value{Kind: value.Array, Items: append(append([]*value.Value{cairn, value.Text("ack")}, leased...), deliveryID)}
+	commands := nativeMap("complete", complete, "ack", ack)
 	kind, err := nativeRequired(event, "kind")
 	if err != nil {
 		return "", nil, err
 	}
-	sender, err := nativeRequired(event, "from")
-	if err != nil {
-		return "", nil, err
-	}
-	eventID, err := nativeRequired(event, "event_id")
-	if err != nil {
-		return "", nil, err
-	}
-	ref, err := nativeRequired(event, "ref")
-	if err != nil {
-		return "", nil, err
-	}
 	if value.SameText(kind, "request") {
-		respond := stringArray(append([]string{values["cairn"], "publish"}, common...)...)
-		respond.Items = append(respond.Items, value.Text("--request-id"), value.Text(values["response"]), value.Text("--to"), sender, value.Text("--kind"), value.Text("response"), value.Text("--causation-id"), eventID)
+		responseID, e := nativeRequired(requestIDs, "response")
+		if e != nil {
+			return "", nil, e
+		}
+		sender, e := nativeRequired(event, "from")
+		if e != nil {
+			return "", nil, e
+		}
+		eventID, e := nativeRequired(event, "event_id")
+		if e != nil {
+			return "", nil, e
+		}
+		respond := &value.Value{Kind: value.Array, Items: append(append([]*value.Value{cairn, value.Text("publish")}, common.Items...), value.Text("--request-id"), responseID, value.Text("--to"), sender, value.Text("--kind"), value.Text("response"), value.Text("--causation-id"), eventID)}
 		if value.Truth(event.Get("correlation_id")) {
 			respond.Items = append(respond.Items, value.Text("--correlation-id"), event.Get("correlation_id"))
 		}
@@ -341,11 +350,24 @@ func (c *CLI) InboxHandoff(config, session, delivery *value.Value, attemptID str
 		return "", nil, &value.ProfileUnavailable{}
 	}
 	journaled := append(append([]string{}, c.Command...), "inbox", "--context", target)
-	context := nativeMap("schema", "cairn.session-inbox/1", "agent_id", session.Get("agent_id"), "execution_id", session.Get("execution_id"), "attempt_id", attemptID, "event_id", eventID, "kind", kind, "sender", sender, "source", ref, "delivery_id", delivery.Get("delivery_id"), "lease_id", delivery.Get("lease_id"), "read", stringArray(values["cairn"], "agent", "--socket", values["socket"], "--token-file", values["token_file"], "history"), "read_input", ref, "completion", stringArray(append(append([]string{}, journaled...), "complete")...), "acknowledgement", stringArray(append(append([]string{}, journaled...), "ack")...), "state_dir", config.Get("state_dir"), "commands", commands, "request_ids", requestIDs)
-	if value.SameText(kind, "request") {
-		context.Set("response", stringArray(append(journaled, "respond")...))
+	eventID, err := nativeRequired(event, "event_id")
+	if err != nil {
+		return "", nil, err
 	}
-	return target, context, nil
+	sender, err := nativeRequired(event, "from")
+	if err != nil {
+		return "", nil, err
+	}
+	ref, err := nativeRequired(event, "ref")
+	if err != nil {
+		return "", nil, err
+	}
+	read := &value.Value{Kind: value.Array, Items: []*value.Value{cairn, value.Text("agent"), value.Text("--socket"), config.Get("socket"), value.Text("--token-file"), config.Get("token_file"), value.Text("history")}}
+	native := nativeMap("schema", "cairn.session-inbox/1", "agent_id", session.Get("agent_id"), "execution_id", session.Get("execution_id"), "attempt_id", attemptID, "event_id", eventID, "kind", kind, "sender", sender, "source", ref, "delivery_id", deliveryID, "lease_id", leaseID, "read", read, "read_input", ref, "completion", stringArray(append(append([]string{}, journaled...), "complete")...), "acknowledgement", stringArray(append(append([]string{}, journaled...), "ack")...), "state_dir", stateDir, "commands", commands, "request_ids", requestIDs)
+	if value.SameText(kind, "request") {
+		native.Set("response", stringArray(append(journaled, "respond")...))
+	}
+	return target, native, nil
 }
 
 func (c *CLI) DrainCommand(ctx context.Context, argv []string, out io.Writer) (int, error) {
@@ -494,7 +516,11 @@ func (c *CLI) compactRoot() (string, error) {
 	if root != "" {
 		return c.resolve(value.Text(root))
 	}
-	if c.Env != nil {
+	if c.LookupEnv != nil {
+		if configured, present := c.LookupEnv("CAIRN_INBOX_ROOT"); present {
+			return c.resolve(value.Text(configured))
+		}
+	} else if c.Env != nil {
 		root = c.Env("CAIRN_INBOX_ROOT")
 		if root != "" {
 			return c.resolve(value.Text(root))
