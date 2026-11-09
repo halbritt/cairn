@@ -186,11 +186,15 @@ func nativeProcessReference(root string, pid *value.Value) (*value.Value, error)
 		return nil, &invalidProcessStat{cause: &value.Error{Class: "IndexError", Message: "missing process command terminator"}}
 	}
 	fields := strings.FieldsFunc(string(raw[end+1:]), func(r rune) bool { return unicode.IsSpace(r) || r >= 0x1c && r <= 0x1f })
-	if len(fields) < 20 {
+	if len(fields) == 0 {
 		return nil, &invalidProcessStat{cause: &value.Error{Class: "IndexError", Message: "short process stat"}}
 	}
+	state := fields[0]
 	var parent, start *value.Value
 	for _, i := range []int{1, 2, 3, 19} {
+		if len(fields) <= i {
+			return nil, &invalidProcessStat{cause: &value.Error{Class: "IndexError", Message: "short process stat"}}
+		}
 		n, e := procInteger(fields[i])
 		if e != nil {
 			return nil, &invalidProcessStat{cause: e}
@@ -209,7 +213,7 @@ func nativeProcessReference(root string, pid *value.Value) (*value.Value, error)
 	if !utf8.Valid(boot) {
 		return nil, &value.Error{Class: "UnicodeDecodeError", Message: "boot ID is not UTF-8"}
 	}
-	return nativeMap("pid", pid, "start", start, "state", fields[0], "parent", parent, "boot", pythonStrip(string(boot))), nil
+	return nativeMap("pid", pid, "start", start, "state", state, "parent", parent, "boot", pythonStrip(string(boot))), nil
 }
 func nativeSameProcess(current, recorded *value.Value) (bool, error) {
 	for _, key := range []string{"pid", "start", "boot"} {

@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -236,12 +238,14 @@ func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(
 		defer cancel()
 		result, err := runner.Run(callCtx, command, input.String())
 		if err != nil {
+			if callValueError(err) || !callRunnerUnavailable(err) {
+				return nil, err
+			}
 			return nil, &CoordinationError{Code: "API_UNAVAILABLE", Message: "Cairn lifecycle command is unavailable", Cause: err}
 		}
 		response, err := profile.Decode(SiteCallResponse, []byte(result.Stdout))
 		if err != nil {
-			var unavailable *value.ProfileUnavailable
-			if errors.As(err, &unavailable) {
+			if !callValueError(err) {
 				return nil, err
 			}
 			return nil, &CoordinationError{Code: "API_UNAVAILABLE", Message: "Cairn did not return a JSON response", Cause: err}
@@ -258,6 +262,20 @@ func sourceCall(profile *value.SourceReaderProfile, runner journal.Runner) func(
 		}
 		return response.Get("data"), nil
 	}
+}
+
+func callValueError(err error) bool {
+	var journalValue *journal.ValueError
+	var syntax *json.SyntaxError
+	return errors.As(err, &journalValue) || errors.As(err, &syntax) || sourceClass(err, "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError")
+}
+func callRunnerUnavailable(err error) bool {
+	var path *os.PathError
+	var call *os.SyscallError
+	var errno syscall.Errno
+	var execution *exec.Error
+	var exit *exec.ExitError
+	return errors.As(err, &path) || errors.As(err, &call) || errors.As(err, &errno) || errors.As(err, &execution) || errors.As(err, &exit) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, exec.ErrWaitDelay) || errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission)
 }
 
 // NewRecoveryEngine binds the concrete file/journal owner and transcript side

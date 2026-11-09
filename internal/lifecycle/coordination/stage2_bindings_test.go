@@ -25,7 +25,7 @@ func TestStage2ConcreteProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projected["numbers"].([]any)[0] != json.Number(big) || projected["numbers"].([]any)[1] != float64(1) {
+	if projected["numbers"].([]any)[0] != json.Number(big) || projected["numbers"].([]any)[1] != json.Number("1.0") {
 		t.Fatal("scalar representation lost", projected["numbers"])
 	}
 	key := string([]byte{0xed, 0xa0, 0x80})
@@ -45,6 +45,126 @@ func TestStage2ConcreteProjection(t *testing.T) {
 		t.Fatal(index)
 	}
 	stage2OrderedKeys(t, record, "before", "extension", "numbers", "after", "inbox_journals")
+}
+
+func TestStage2ProjectionFloatIdentity(t *testing.T) {
+	for _, n := range []float64{0, math.Copysign(0, -1), 1, -1, 1.25, math.SmallestNonzeroFloat64, math.MaxFloat64, math.Inf(1), math.Inf(-1), math.NaN()} {
+		projected, err := journalGoValue(&value.Value{Kind: value.Float, Number: n})
+		if err != nil {
+			t.Fatal(err)
+		}
+		number, ok := projected.(json.Number)
+		if !ok {
+			t.Fatal("float did not use journal's numeric truthiness", projected)
+		}
+		if !strings.ContainsAny(string(number), ".eE") && !strings.Contains(string(number), "NaN") && !strings.Contains(string(number), "Inf") {
+			t.Fatal("float became an integer token", number)
+		}
+		restored, err := journalNativeValue(number)
+		if err != nil || restored.Kind != value.Float || math.Float64bits(restored.Number) != math.Float64bits(n) {
+			t.Fatal("float bits changed", n, number, restored, err)
+		}
+	}
+	integer, err := journalNativeValue(json.Number("1"))
+	if err != nil || integer.Kind != value.Int {
+		t.Fatal("integer became float", integer, err)
+	}
+	for _, text := range []string{"Inf", "+Inf", "-Inf", "Infinity", "-Infinity", "1e400"} {
+		v, err := journalNativeValue(json.Number(text))
+		if err != nil || v.Kind != value.Float || !math.IsInf(v.Number, 0) {
+			t.Fatal(text, v, err)
+		}
+	}
+	// Applying an unchanged projection retains even a pre-existing NaN payload.
+	nan := math.Float64frombits(0xfff8000000000042)
+	record := nativeMap("inbox_journals", &value.Value{Kind: value.Array, Items: []*value.Value{{Kind: value.Float, Number: nan}}})
+	p := LosslessJournalProjection{}
+	projected, err := p.Project(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.ApplyJournals(record, projected); err != nil || math.Float64bits(record.Get("inbox_journals").Items[0].Number) != math.Float64bits(nan) {
+		t.Fatal("unchanged NaN payload normalized", record, err)
+	}
+}
+
+func TestStage2ProjectionZeroTruthiness(t *testing.T) {
+	for _, n := range []float64{0, math.Copysign(0, -1)} {
+		for _, site := range []string{"inbox_attempt", "inbox_intent", "delivery"} {
+			record := stage2State()
+			zero := &value.Value{Kind: value.Float, Number: n}
+			if site == "delivery" {
+				record.Get("inbox_attempt").Set("delivery", zero)
+			} else {
+				record.Set(site, zero)
+			}
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "intents"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if site != "inbox_attempt" {
+				raw := `{"schema":"cairn.inbox-intent/1","attempt_id":"` + stage2Attempt + `","kind":"notice","session":{"agent_id":"` + stage2Agent + `"}}`
+				if err := os.WriteFile(filepath.Join(dir, "intents", stage2Attempt+".json"), []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			a := &SessionJournalAdapter{}
+			ok, err := a.FlushInboxIntents(context.Background(), nativeMap("state_dir", dir), record, FlushAttempt)
+			if err != nil || !ok {
+				t.Fatal("zero was truthy at journal boundary", site, n, ok, err)
+			}
+			projected, err := a.projection().Project(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = journal.SessionJournals(dir, projected)
+			if err != nil {
+				t.Fatal("zero changed SessionJournals predicate", site, err)
+			}
+			ok, err = a.SettledJournalIndex(nativeMap("state_dir", dir), record)
+			if err != nil || !ok {
+				t.Fatal(site, ok, err)
+			}
+			got := record.Get(site)
+			if site == "delivery" {
+				got = record.Get("inbox_attempt").Get("delivery")
+			}
+			if got.Kind != value.Float || math.Float64bits(got.Number) != math.Float64bits(n) {
+				t.Fatal("journal adapter changed zero representation", site, got)
+			}
+		}
+	}
+	for _, n := range []float64{1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		record := stage2State()
+		record.Set("inbox_attempt", &value.Value{Kind: value.Float, Number: n})
+		_, err := (&SessionJournalAdapter{}).FlushInboxIntents(context.Background(), nativeMap("state_dir", t.TempDir()), record, FlushAttempt)
+		var nonObject *journal.NonObjectError
+		if !errors.As(err, &nonObject) {
+			t.Fatal("truthy float became falsy", n, err)
+		}
+	}
+}
+
+func TestStage2ShortStatErrorOrder(t *testing.T) {
+	for _, tc := range []struct{ name, fields, class string }{
+		{"missing_state", "", "IndexError"},
+		{"bad_parent", "S bad", "ValueError"},
+		{"bad_pgid", "S 1 bad", "ValueError"},
+		{"bad_sid", "S 1 2 bad", "ValueError"},
+		{"missing_start", "S 1 2 3", "IndexError"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := procFixtureRoot(t)
+			writeProcessFixture(t, root, processFixture{pid: 900, start: 100})
+			if err := os.WriteFile(filepath.Join(root, "900/stat"), []byte("900 (fixture) "+tc.fields+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := NewProcessHooks(root).Alive(nativeMap("pid", 900, "start", 100, "boot", fixtureBoot))
+			if value.ErrorClass(err) != tc.class {
+				t.Fatal("eager length check masked Source conversion error", tc.fields, err)
+			}
+		})
+	}
 }
 
 func TestStage2ConcreteJournalAdapter(t *testing.T) {

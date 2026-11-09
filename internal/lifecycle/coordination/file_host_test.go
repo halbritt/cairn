@@ -2,12 +2,14 @@ package coordination
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -244,5 +246,109 @@ func TestStage2ConcreteSourceCall(t *testing.T) {
 	stage2Code(t, err, "INVALID_CONFIG")
 	if calls != 1 {
 		t.Fatal(calls)
+	}
+}
+
+type stage2DecodeFailure struct {
+	stage2FileRoutes
+	err   error
+	at    int
+	count *int
+}
+
+func (f stage2DecodeFailure) Decode(site string, raw []byte, route value.ReaderRoute, n int, bytes func([]byte, int) (*value.Value, error), text func([]byte, string, int) (*value.Value, error)) (*value.Value, error) {
+	if site == SiteCallResponse {
+		(*f.count)++
+		if *f.count == f.at {
+			return nil, f.err
+		}
+	}
+	return f.stage2FileRoutes.Decode(site, raw, route, n, bytes, text)
+}
+
+func TestStage2SourceCallErrorFamilies(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		runner bool
+		err    error
+		api    bool
+	}{
+		{"runner_unicode", true, &journal.ValueError{Message: "native command output is not UTF-8"}, false},
+		{"runner_source_value", true, &value.Error{Class: "ValueError"}, false},
+		{"runner_os", true, &os.PathError{Op: "exec", Path: "synthetic", Err: syscall.EIO}, true},
+		{"runner_timeout", true, context.DeadlineExceeded, true},
+		{"runner_other", true, errors.New("selected runner failure"), false},
+		{"decode_depth", false, &value.Error{Class: "RecursionError"}, false},
+		{"decode_syntax", false, &value.Error{Class: "JSONDecodeError"}, true},
+		{"decode_go_syntax", false, &json.SyntaxError{}, true},
+		{"decode_value", false, &value.Error{Class: "ValueError"}, true},
+		{"decode_journal_value", false, &journal.ValueError{Message: "selected decode value error"}, true},
+		{"decode_profile", false, &value.ProfileUnavailable{}, false},
+		{"decode_other", false, &value.Error{Class: "AttributeError"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			makeCall := func(at int) (func(context.Context, *value.Value, string, *value.Value, NativeCallOptions) (*value.Value, error), *value.Value) {
+				profile := stage2FileProfile()
+				count := 0
+				if !tc.runner {
+					profile.Routes = stage2DecodeFailure{err: tc.err, at: at, count: &count}
+				}
+				runs := 0
+				runner := journal.RunnerFunc(func(_ context.Context, argv []string, _ string) (journal.Result, error) {
+					runs++
+					if tc.runner && runs == at {
+						return journal.Result{}, tc.err
+					}
+					if argv[len(argv)-1] == "event-inspect" {
+						return journal.Result{Stdout: `{"ok":true,"data":{"event":{"repo":"fixture"},"deliveries":[]}}`}, nil
+					}
+					return journal.Result{Stdout: `{"ok":true,"data":{"delivery_id":"` + stage2Delivery + `","event_id":"` + stage2Delivery + `"}}`}, nil
+				})
+				config := nativeMap("cairn", "/unrunnable/cairn", "socket", "/synthetic/api.sock", "token_file", "/nonexistent/profile-selector", "repo", "fixture")
+				return sourceCall(profile, runner), config
+			}
+			call, config := makeCall(1)
+			_, err := call(context.Background(), config, "session-inbox-ready", value.Mapping(), NativeCallOptions{})
+			if tc.api {
+				stage2Code(t, err, "API_UNAVAILABLE")
+				if !errors.Is(err, tc.err) {
+					t.Fatal("mapped error lost cause", err)
+				}
+			} else if err != tc.err {
+				t.Fatal("escaping error changed", err, tc.err)
+			}
+			for _, at := range []int{1, 2} {
+				call, config = makeCall(at)
+				e, h, _ := stage2Engine(t, "codex", stage2State())
+				h.Call = call
+				_, _, err = e.codexStoreDelivery(context.Background(), &NativeSession{Config: config, Record: stage2State(), Host: &h.Host}, stage2Delivery, value.Text(stage2Delivery))
+				if tc.api {
+					if err != nil {
+						t.Fatal("Store helper did not contain CoordinationError", err)
+					}
+				} else if err != tc.err {
+					t.Fatal("Store helper contained a non-CoordinationError", at, err, tc.err)
+				}
+			}
+		})
+	}
+}
+
+func TestStage2ReconcileEscapingDecode(t *testing.T) {
+	record := stage2QueueState()
+	e, h, config := stage2Engine(t, "codex", record)
+	for _, key := range []string{"cairn", "socket", "token_file"} {
+		config.Set(key, value.Text("/synthetic/"+key))
+	}
+	sentinel := &value.Error{Class: "RecursionError"}
+	count := 0
+	profile := stage2FileProfile()
+	profile.Routes = stage2DecodeFailure{err: sentinel, at: 2, count: &count}
+	h.Call = sourceCall(profile, journal.RunnerFunc(func(context.Context, []string, string) (journal.Result, error) {
+		return journal.Result{Stdout: `{"ok":true,"data":{"delivery_id":"` + stage2Delivery + `","event_id":"` + stage2Delivery + `"}}`}, nil
+	}))
+	_, err := e.ReconcileCodexQueueWake(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, DeliveryID: stage2Delivery, QueuedSubmissionID: stage2Turn, CheckOnly: true})
+	if err != sentinel || len(h.Persisted) != 0 {
+		t.Fatal("reconciliation contained decoder recursion failure", err, h.Persisted)
 	}
 }

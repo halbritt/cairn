@@ -3,7 +3,9 @@ package coordination
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -100,7 +102,7 @@ func journalGoValue(v *value.Value) (any, error) {
 	case value.Int:
 		return json.Number(v.Integer), nil
 	case value.Float:
-		return v.Number, nil
+		return journalFloat(v.Number), nil
 	case value.String:
 		return journalText(v.String), nil
 	case value.Array:
@@ -136,11 +138,11 @@ func journalNativeValue(x any) (*value.Value, error) {
 	case string:
 		return &value.Value{Kind: value.String, String: journalPoints(x)}, nil
 	case json.Number:
-		if !strings.ContainsAny(string(x), ".eE") {
+		if !strings.ContainsAny(string(x), ".eE") && !strings.Contains(string(x), "NaN") && !strings.Contains(string(x), "Inf") {
 			return value.IntegerText(string(x)), nil
 		}
 		n, err := strconv.ParseFloat(string(x), 64)
-		if err != nil {
+		if err != nil && !(errors.Is(err, strconv.ErrRange) && math.IsInf(n, 0)) {
 			return nil, err
 		}
 		return &value.Value{Kind: value.Float, Number: n}, nil
@@ -180,6 +182,23 @@ func journalNativeValue(x any) (*value.Value, error) {
 	default:
 		return nil, &journal.TypeError{Field: "journal projection value"}
 	}
+}
+
+func journalFloat(n float64) json.Number {
+	if math.IsNaN(n) {
+		return json.Number("NaN")
+	}
+	if math.IsInf(n, 1) {
+		return json.Number("Infinity")
+	}
+	if math.IsInf(n, -1) {
+		return json.Number("-Infinity")
+	}
+	text := strconv.FormatFloat(n, 'g', -1, 64)
+	if !strings.ContainsAny(text, ".eE") {
+		text += ".0"
+	}
+	return json.Number(text)
 }
 
 type SessionJournalAdapter struct {
