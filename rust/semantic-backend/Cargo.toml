@@ -3,6 +3,14 @@ name = "cairn-semantic-backend"
 version = "0.1.0"
 edition = "2021"
 publish = false
+autobins = false
+
+[[bin]]
+name = "cairn-semantic-rank"
+path = "src/bin/rank.rs"
+test = true
+bench = false
+harness = true
 
 [dependencies]
 cairn-semantic-rank = { path = "../semantic-rank" }
