@@ -174,9 +174,10 @@ build dependency cc 1.11.1. Native edges are the two C units, versioned ABI
 headers, GNU/Linux headers, libdl and the explicit runtime dependency graph.
 The selected source target is x86_64-unknown-linux-gnu. No bindgen, libclang,
 Rust downloader or build-time native payload acquisition is included.
-A real Cargo lock must be provided by the designated source-only intake step;
-none is fabricated here. Actual build scripts/compiler probes, linking and
-tests need separately selected component validation.
+The accepted source-only intake provides the real Cargo-produced lock unchanged:
+14 packages (13 registry plus this crate), preserving selected versions/features.
+Actual build scripts/compiler probes, linking and tests still need separately
+selected component validation; compilation/tests/runtime remain unexecuted.
 
 Seven authored pure-data tests exercise production layout/dispatch, zero/one/
 many-row boundaries, duplicate/cache-row preservation, storage/ILP64 bounds,
