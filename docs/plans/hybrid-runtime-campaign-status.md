@@ -13,7 +13,7 @@ acceptance remain open.
 ## Inspect the implementation
 
 The following slices are published through
-[`37a50424`](https://github.com/halbritt/cairn/commit/37a50424872d8b3229ad97b80dd3ed8aa0e4888a)
+[`872fdaa5`](https://github.com/halbritt/cairn/commit/872fdaa5e256eb5d680394cf30d31e8d753883d7)
 on 2026-11-09. The Go libraries are callable source; the Rust libraries have no
 executable worker or initialized model backend. Their publication does not
 activate the migration on supported hosts.
@@ -22,6 +22,7 @@ activate the migration on supported hosts.
 | --- | --- | --- | --- |
 | Go journal execution, recovery and inspection | [journal](../../internal/lifecycle/journal/journal.go), [execute](../../internal/lifecycle/journal/execute.go), [recover](../../internal/lifecycle/journal/recover.go), [inspect](../../internal/lifecycle/journal/inspect.go); [`4eb9c41c`](https://github.com/halbritt/cairn/commit/4eb9c41c017086e5012420747dcbb48158ea76fa) | Durable inbox intents, command/reply recovery and distinct journal-reader policies | Coordination: native caller/session integration, watcher and recovery command surfaces; the caller still supplies validated context |
 | Go coordination locks and process observations | [locks](../../internal/lifecycle/coordination/locks.go), [owner lookup](../../internal/lifecycle/coordination/owner.go), [process scan](../../internal/lifecycle/coordination/process_scan.go); [`5a6364a9`](https://github.com/halbritt/cairn/commit/5a6364a9a2b2d9ed49c4c330cfafa96c44ba94f2) | Callable session/ledger/intent/watcher/cue locks, owner ancestry lookup and process-marker scans with unknown-coverage reporting | Coordination: native caller orchestration, cross-runtime locking and state-writer compatibility; full J-05/J-06 and installed behavior remain open |
+| Go native sessions and recovery orchestration | [sessions](../../internal/lifecycle/coordination/session.go), [journal adapter](../../internal/lifecycle/coordination/journal_adapter.go), [recovery](../../internal/lifecycle/coordination/recovery.go); [`24844752`](https://github.com/halbritt/cairn/commit/24844752d01af1e621b5a3f76673195906c74bf5), corrections through [`872fdaa5`](https://github.com/halbritt/cairn/commit/872fdaa5e256eb5d680394cf30d31e8d753883d7) | Native session state over shared lossless values, delegation to the existing journal, and recovery orchestration using transcript evidence | Coordination: remaining error/type/evaluation-order corrections, concrete host and journal-projection bindings, CLI wiring and runtime qualification; Stage 2A source publication does not complete J-05/J-06 |
 | Go shared values and JSON profiles | [values](../../internal/lifecycle/value/value.go), [profiles](../../internal/lifecycle/value/profile.go), [writer](../../internal/lifecycle/value/encode.go), [operations](../../internal/lifecycle/value/operations.go); [`be67f6e5`](https://github.com/halbritt/cairn/commit/be67f6e58cc2d64b1fb1e45af5a3143418880bca) | Lossless decoded values, explicit reader/writer profiles and selectable duplicate-key handling, shared with the transcript consumer | Foundation: actual interpreter and per-route profile qualification, exact writer behavior and caller integration; source publication does not qualify a runtime profile |
 | Go native transcript readers and proofs | [readers](../../internal/lifecycle/transcript/transcript.go), [Claude](../../internal/lifecycle/transcript/claude.go), [Codex](../../internal/lifecycle/transcript/codex.go), [proofs](../../internal/lifecycle/transcript/proofs.go); [`2ba1b330`](https://github.com/halbritt/cairn/commit/2ba1b33032e7f10af10c606e6424db2b4d684587), fixture correction [`f9ecf5fe`](https://github.com/halbritt/cairn/commit/f9ecf5fe7d52cc215d4060f6ac5625ccac68fbe6) | Pinned record reads, ownership and locator checks, harness-specific transcript evidence and shared profile-based JSON decoding | Coordination: native caller integration, remaining timestamp/path/read parity and Stage 2 serialization; full J-06 and installed behavior remain open |
 | Shared Unix peer client and wake consumers | [client](../../internal/procpeer/client.go), [wake envelope](../../internal/lifecycle/wake/wake.go), [Claude channel](../../internal/lifecycle/wake/claude.go), [Codex queue](../../internal/lifecycle/wake/codex.go), [OpenCode](../../internal/lifecycle/wake/opencode.go), [Hermes](../../internal/lifecycle/wake/hermes.go), [Herdr](../../internal/lifecycle/wake/herdr.go); [`0ad5b419`](https://github.com/halbritt/cairn/commit/0ad5b419edd12a6dd757a185fbd7c83fa6468c03), extended by [`f6f0e427`](https://github.com/halbritt/cairn/commit/f6f0e42784d0e1eefc0c211d8a4b80b054f2ddab) | Peer verification before payload, bounded framing, wake binding and callable transport consumers | Foundation: shared primitive integration; Coordination: native turn/custody integration and installed behavior |
@@ -65,6 +66,14 @@ race checks for those two packages. Foundation cleared the exact four-file value
 dependency, and both transcript reviewers accepted the source and fixture delta.
 Landing retained all 12 reviewed file blobs; intervening changes affected only
 documentation and Rust, so the passing Go checks were reused without rerunning.
+The later native-session/recovery slice passed both reviewers' Stage 2A correction
+reviews and its scoped checks. Coordination race coverage selected only
+`^TestStage2`; the existing child-process fixtures remained held. Landing preserved
+the reviewed coordination and transcript subtrees. The passing correction reviews
+retained follow-up findings: daemon liveness-call order, scalar delivery error
+classification, and session mutation and guard-order differences. These remain
+implementation work, alongside concrete host and journal-projection bindings;
+the review verdict is not a claim of complete behavior equivalence.
 These checks do not establish actual model/native
 execution, installed hook behavior, full design acceptance or measured usefulness.
 
