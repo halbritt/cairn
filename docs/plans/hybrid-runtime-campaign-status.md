@@ -13,7 +13,7 @@ acceptance remain open.
 ## Inspect the implementation
 
 The following slices are published through
-[`b0ff1617`](https://github.com/halbritt/cairn/commit/b0ff16170aa1515e4cdd65b2dae50204d20fa2fd)
+[`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a)
 on 2026-11-08. The Go libraries are callable source; the Rust libraries have no
 executable worker or initialized model backend. Their publication does not
 activate the migration on supported hosts.
@@ -26,6 +26,7 @@ activate the migration on supported hosts.
 | Rust single-note score reduction | [library](../../rust/semantic-score/src/lib.rs), [boundary](../../rust/semantic-score/README.md); [`94cf6685`](https://github.com/halbritt/cairn/commit/94cf66857e7c96602f9dc3bc4b3a1d0984091c1c) | Ordered maximum over supplied chunk similarities, final clamp, scaling and ties-to-even rounding | Semantic: tokenizer/model execution, matrix arithmetic and actual worker/caller qualification |
 | Rust decoded protocol, hash admission and cache payloads | [protocol](../../rust/semantic-protocol/src/lib.rs), [hash](../../rust/semantic-protocol/src/hash.rs), [cache](../../rust/semantic-protocol/src/cache.rs), [boundary](../../rust/semantic-protocol/README.md); [`e4e8e80d`](https://github.com/halbritt/cairn/commit/e4e8e80d93cf5bd2ca43bec817006198d7c05632), extended by [`66dd1540`](https://github.com/halbritt/cairn/commit/66dd15409359d1f28b32fab7896dec3e2c425053) | Lossless decoded values and ordered prefix guards, body hashes, atomic cache restore and payload codecs with a bounded logical size counter | Semantic: raw JSON codec and remaining number/depth measurement, real constructor/model identity, tokenizer and worker/runtime qualification; unsupported measurement remains explicitly pending |
 | Go memory client and checkpoint reader | [client](../../internal/lifecycle/memoryclient/client.go), [checkpoint](../../internal/lifecycle/memoryclient/checkpoint.go), [contract](hybrid-runtime-contracts/f02-memory-client.md); [`2989f834`](https://github.com/halbritt/cairn/commit/2989f83442ba880dd586b807b9cdece5282b67e5) | Direct authenticated SDK search/pull calls, receipt-credit accounting and concrete raw-record checkpoint traversal | Foundation: recall/capture frontends, hook streams/exits/meters, grants and executing-hook identity; full F-02 and HC-03 remain open |
+| Go unfinished checkpoint refresh | [refresh](../../internal/lifecycle/memoryclient/checkpoint_refresh.go), [contract](hybrid-runtime-contracts/f02-checkpoint-refresh.md); [`965c48d6`](https://github.com/halbritt/cairn/commit/965c48d66a397023377110d8be6f27f383d3534a) | Restores at most one current whole unfinished note through bounded authenticated search/pull, with identity/hash/extent checks and shared deadline accounting | Foundation: frontend state, grants and metering integration; runtime and full F-02 acceptance remain open |
 | Go capture selection and ordered writes | [capture](../../internal/lifecycle/memoryclient/capture.go), [contract](hybrid-runtime-contracts/f03-capture-commit.md); [`1497c7dc`](https://github.com/halbritt/cairn/commit/1497c7dc8ac14c776ca4672e28d038976cb21265) | Validates the complete selection before record mutation, performs ordered create/revise calls and retains confirmed writes when a later write fails | Foundation: frontend state commits, hooks, streams/exits/meters, grants and executing-hook identity; full F-03 remains open |
 
 The journal and first wake/client slices passed focused Go fixture checks and
@@ -33,7 +34,10 @@ independent source review before publication. The Rust slices have component
 check and independent review evidence; the hash/cache package pass covers its
 28 selected unit tests. Memory-client integration passed its focused four-name
 selector; the retained output records a package PASS, without measured per-test
-or subcase execution counts. These checks do not establish actual model/native
+or subcase execution counts. The checkpoint-refresh extension passed all 40
+frozen test names, required static checks and independent source review; its
+unchanged candidate and inputs allowed those checks to be reused for landing.
+These checks do not establish actual model/native
 execution, installed hook behavior, full design acceptance or measured usefulness.
 
 The [lifecycle source map](../reference/lifecycle-slices.md),
