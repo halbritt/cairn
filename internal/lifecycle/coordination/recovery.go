@@ -131,11 +131,19 @@ func (e *RecoveryEngine) withSession(config *value.Value, id, missing string, fn
 	}
 	return fn(&NativeSession{config, path, record, e.Host})
 }
-func recoveryState(s *NativeSession, id string) (agent, attempt, intent *value.Value, ended bool, err error) {
+func recoveryIdentity(s *NativeSession, id string) (agent *value.Value, ended bool, err error) {
 	if err = s.mapping(); err != nil {
 		return
 	}
-	agent, err = nativeObj(s.Record.Get("agent"), "agent")
+	agent, err = nativeDefaultObj(s.Record.Get("agent"), "agent")
+	if err != nil {
+		return
+	}
+	ended = !value.SameText(agent.Get("native_session_id"), id) || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired"))
+	return
+}
+func recoveryState(s *NativeSession, id string) (agent, attempt, intent *value.Value, ended bool, err error) {
+	agent, ended, err = recoveryIdentity(s, id)
 	if err != nil {
 		return
 	}
@@ -147,7 +155,6 @@ func recoveryState(s *NativeSession, id string) (agent, attempt, intent *value.V
 	if err != nil {
 		return
 	}
-	ended = !value.SameText(agent.Get("native_session_id"), id) || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired"))
 	return
 }
 func (e *RecoveryEngine) RefusedWakeUnprocessed(s *NativeSession, turn string) (bool, error) {
@@ -155,15 +162,21 @@ func (e *RecoveryEngine) RefusedWakeUnprocessed(s *NativeSession, turn string) (
 	if intent == nil || attempt == nil || intent.Kind != value.Object || attempt.Kind != value.Object {
 		return false, nil
 	}
-	active, err := nativeObj(s.Record.Get("active_prompt"), "active_prompt")
-	if err != nil {
-		return false, err
+	if !value.SameText(intent.Get("native_turn_id"), turn) || !value.SameText(attempt.Get("native_turn_id"), turn) || !nativeEqual(intent.Get("request_id"), attempt.Get("attempt_id")) || !nativeEqual(intent.Get("session"), attempt.Get("session")) {
+		return false, nil
 	}
 	ref, err := s.sessionRef(s.Record.Get("agent"))
 	if err != nil {
 		return false, err
 	}
-	if !value.SameText(intent.Get("native_turn_id"), turn) || !value.SameText(attempt.Get("native_turn_id"), turn) || !nativeEqual(intent.Get("request_id"), attempt.Get("attempt_id")) || !nativeEqual(intent.Get("session"), attempt.Get("session")) || !nativeEqual(attempt.Get("session"), ref) || value.Truth(attempt.Get("finished_at")) || value.Truth(attempt.Get("cancel")) || value.Truth(attempt.Get("lease_lapsed")) || value.Truth(active.Get("joined")) || value.Truth(s.Record.Get("tool_calls")) || value.Truth(attempt.Get("tools")) || value.Truth(s.Record.Get("inbox_close")) || value.Truth(s.Record.Get("inbox_turn_ended")) {
+	if !nativeEqual(attempt.Get("session"), ref) || value.Truth(attempt.Get("finished_at")) || value.Truth(attempt.Get("cancel")) || value.Truth(attempt.Get("lease_lapsed")) {
+		return false, nil
+	}
+	active, err := nativeObj(s.Record.Get("active_prompt"), "active_prompt")
+	if err != nil {
+		return false, err
+	}
+	if value.Truth(active.Get("joined")) || value.Truth(s.Record.Get("tool_calls")) || value.Truth(attempt.Get("tools")) || value.Truth(s.Record.Get("inbox_close")) || value.Truth(s.Record.Get("inbox_turn_ended")) {
 		return false, nil
 	}
 	if e.Journal == nil {
@@ -233,15 +246,36 @@ func (e *RecoveryEngine) SettleRefusedClaudeWake(ctx context.Context, s *NativeS
 }
 func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *value.Value, r RecoveryRequest) (*value.Value, error) {
 	return e.withSession(config, r.NativeSessionID, "", func(s *NativeSession) (*value.Value, error) {
-		_, attempt, intent, ended, err := recoveryState(s, r.NativeSessionID)
+		held := nativeRefusal("INVALID_REQUEST", "held state is not an untouched turn-less start claim")
+		if !value.SameText(config.Get("harness"), "claude") {
+			return nil, held
+		}
+		_, ended, err := recoveryIdentity(s, r.NativeSessionID)
 		if err != nil {
 			return nil, err
+		}
+		if ended {
+			return nil, held
+		}
+		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
+		if err != nil {
+			return nil, err
+		}
+		if !value.SameText(attempt.Get("attempt_id"), r.AttemptID) {
+			return nil, held
+		}
+		intent, err := nativeObj(s.Intent(), "inbox_intent")
+		if err != nil {
+			return nil, err
+		}
+		if !value.SameText(intent.Get("request_id"), r.AttemptID) || value.Truth(attempt.Get("native_turn_id")) || value.Truth(intent.Get("native_turn_id")) {
+			return nil, held
 		}
 		ref, err := s.sessionRef(s.Record.Get("agent"))
 		if err != nil {
 			return nil, err
 		}
-		untouched := value.SameText(config.Get("harness"), "claude") && !ended && value.SameText(attempt.Get("attempt_id"), r.AttemptID) && value.SameText(intent.Get("request_id"), r.AttemptID) && !value.Truth(attempt.Get("native_turn_id")) && !value.Truth(intent.Get("native_turn_id")) && nativeEqual(attempt.Get("session"), ref)
+		untouched := nativeEqual(attempt.Get("session"), ref)
 		for _, v := range []*value.Value{attempt.Get("finished_at"), attempt.Get("cancel"), attempt.Get("tools"), s.Record.Get("tool_calls"), s.Record.Get("active_prompt"), s.Record.Get("inbox_close"), s.Record.Get("inbox_turn_ended")} {
 			untouched = untouched && !value.Truth(v)
 		}
@@ -255,7 +289,7 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 			}
 		}
 		if !untouched {
-			return nil, nativeRefusal("INVALID_REQUEST", "held state is not an untouched turn-less start claim")
+			return nil, held
 		}
 		if e.Hooks.Daemon == nil {
 			return nil, &value.ProfileUnavailable{}
@@ -267,10 +301,7 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 			}
 			return nil, err
 		}
-		alive := false
-		if daemon {
-			alive, err = e.alive(s.Record.Get("process"))
-		}
+		alive, err := e.alive(s.Record.Get("process"))
 		if err != nil {
 			return nil, err
 		}
@@ -307,27 +338,41 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 }
 func (e *RecoveryEngine) RecoverRefusedWake(ctx context.Context, config *value.Value, r RecoveryRequest) (*value.Value, error) {
 	return e.withSession(config, r.NativeSessionID, "", func(s *NativeSession) (*value.Value, error) {
-		_, attempt, _, ended, err := recoveryState(s, r.NativeSessionID)
+		held := nativeRefusal("INVALID_REQUEST", "no host-recorded refusal names this held attempt and prompt")
+		_, ended, err := recoveryIdentity(s, r.NativeSessionID)
 		if err != nil {
 			return nil, err
+		}
+		if ended {
+			return nil, held
+		}
+		alive, err := e.alive(s.Record.Get("process"))
+		if err != nil {
+			return nil, err
+		}
+		if !alive {
+			return nil, held
+		}
+		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
+		if err != nil {
+			return nil, err
+		}
+		if !value.SameText(attempt.Get("attempt_id"), r.AttemptID) {
+			return nil, held
 		}
 		recorded, err := nativeObj(s.Record.Get("wake_refusal_diagnostic"), "wake_refusal_diagnostic")
 		if err != nil {
 			return nil, err
 		}
+		if !value.SameText(recorded.Get("phase"), "bridge_after_claim") || !value.SameText(recorded.Get("origin"), "hook") || !value.SameText(recorded.Get("settlement"), "held") || !value.SameText(recorded.Get("attempt_id"), r.AttemptID) || !value.SameText(recorded.Get("native_turn_id"), r.NativeTurnID) {
+			return nil, held
+		}
 		delivery, err := nativeObj(attempt.Get("delivery"), "delivery")
 		if err != nil {
 			return nil, err
 		}
-		alive := false
-		if !ended {
-			alive, err = e.alive(s.Record.Get("process"))
-		}
-		if err != nil {
-			return nil, err
-		}
-		if ended || !alive || !value.SameText(attempt.Get("attempt_id"), r.AttemptID) || !value.SameText(recorded.Get("phase"), "bridge_after_claim") || !value.SameText(recorded.Get("origin"), "hook") || !value.SameText(recorded.Get("settlement"), "held") || !value.SameText(recorded.Get("attempt_id"), r.AttemptID) || !value.SameText(recorded.Get("native_turn_id"), r.NativeTurnID) || !nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id")) {
-			return nil, nativeRefusal("INVALID_REQUEST", "no host-recorded refusal names this held attempt and prompt")
+		if !nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id")) {
+			return nil, held
 		}
 		eligible, err := e.RefusedClaudeWakeSettleable(s, r.NativeTurnID)
 		if err != nil {
@@ -349,24 +394,39 @@ func (e *RecoveryEngine) RecoverRefusedWake(ctx context.Context, config *value.V
 }
 func (e *RecoveryEngine) RecoverNativeRefusedWake(ctx context.Context, config *value.Value, r RecoveryRequest) (*value.Value, error) {
 	return e.withSession(config, r.NativeSessionID, "", func(s *NativeSession) (*value.Value, error) {
-		_, attempt, intent, ended, err := recoveryState(s, r.NativeSessionID)
+		held := nativeRefusal("INVALID_REQUEST", "held state does not name exactly one finished-owner claim for this attempt")
+		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
 		if err != nil {
 			return nil, err
 		}
 		turn := nativeText(attempt.Get("native_turn_id"))
+		_, ended, err := recoveryIdentity(s, r.NativeSessionID)
+		if err != nil {
+			return nil, err
+		}
+		if ended {
+			return nil, held
+		}
+		alive, err := e.alive(s.Record.Get("process"))
+		if err != nil {
+			return nil, err
+		}
+		if !alive || !value.SameText(attempt.Get("attempt_id"), r.AttemptID) || !strings.HasPrefix(turn, "claude-channel:") {
+			return nil, held
+		}
+		intent, err := nativeObj(s.Intent(), "inbox_intent")
+		if err != nil {
+			return nil, err
+		}
+		if !value.SameText(intent.Get("native_turn_id"), turn) {
+			return nil, held
+		}
 		active, err := nativeObj(s.Record.Get("active_prompt"), "active_prompt")
 		if err != nil {
 			return nil, err
 		}
-		alive := false
-		if !ended {
-			alive, err = e.alive(s.Record.Get("process"))
-		}
-		if err != nil {
-			return nil, err
-		}
-		if ended || !alive || !value.SameText(attempt.Get("attempt_id"), r.AttemptID) || !strings.HasPrefix(turn, "claude-channel:") || !value.SameText(intent.Get("native_turn_id"), turn) || value.SameText(active.Get("id"), turn) {
-			return nil, nativeRefusal("INVALID_REQUEST", "held state does not name exactly one finished-owner claim for this attempt")
+		if value.SameText(active.Get("id"), turn) {
+			return nil, held
 		}
 		proof, err := e.evidence(ctx, EvidenceNativeRefusal, s, attempt, nil, nil, r.Records, turn)
 		if err != nil {
@@ -393,28 +453,44 @@ func (e *RecoveryEngine) RecoverNativeRefusedWake(ctx context.Context, config *v
 var recoveryUUID = regexp.MustCompile(`^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
 
 func (e *RecoveryEngine) codexRefusalReady(s *NativeSession, id, attemptID string) (attempt, recorded *value.Value, ready bool, err error) {
-	_, attempt, _, ended, err := recoveryState(s, id)
-	if err != nil {
-		return
-	}
-	recorded, err = nativeObj(s.Record.Get("wake_refusal_diagnostic"), "wake_refusal_diagnostic")
+	attempt, err = nativeObj(s.Attempt(), "inbox_attempt")
 	if err != nil {
 		return
 	}
 	turn := nativeText(attempt.Get("native_turn_id"))
-	delivery, err := nativeObj(attempt.Get("delivery"), "delivery")
-	if err != nil {
+	if !value.SameText(s.Config.Get("harness"), "codex") {
 		return
 	}
-	ready = value.SameText(s.Config.Get("harness"), "codex") && !ended
-	if !ready {
+	_, ended, identityErr := recoveryIdentity(s, id)
+	if identityErr != nil {
+		err = identityErr
+		return
+	}
+	if ended {
 		return
 	}
 	ready, err = e.alive(s.Record.Get("process"))
 	if !ready || err != nil {
 		return
 	}
-	ready = value.SameText(attempt.Get("attempt_id"), attemptID) && recoveryUUID.MatchString(turn) && value.SameText(recorded.Get("phase"), "bridge_after_claim") && value.SameText(recorded.Get("origin"), "hook") && value.SameText(recorded.Get("settlement"), "held") && value.SameText(recorded.Get("attempt_id"), attemptID) && value.SameText(recorded.Get("native_turn_id"), turn) && nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id"))
+	ready = value.SameText(attempt.Get("attempt_id"), attemptID) && recoveryUUID.MatchString(turn)
+	if !ready {
+		return
+	}
+	recorded, err = nativeObj(s.Record.Get("wake_refusal_diagnostic"), "wake_refusal_diagnostic")
+	if err != nil {
+		return
+	}
+	ready = value.SameText(recorded.Get("phase"), "bridge_after_claim") && value.SameText(recorded.Get("origin"), "hook") && value.SameText(recorded.Get("settlement"), "held") && value.SameText(recorded.Get("attempt_id"), attemptID) && value.SameText(recorded.Get("native_turn_id"), turn)
+	if !ready {
+		return
+	}
+	delivery, deliveryErr := nativeObj(attempt.Get("delivery"), "delivery")
+	if deliveryErr != nil {
+		err = deliveryErr
+		return
+	}
+	ready = nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id"))
 	if !ready {
 		return
 	}
@@ -473,19 +549,37 @@ func (e *RecoveryEngine) RecoverCodexRefusedWake(ctx context.Context, config *va
 	})
 }
 func (e *RecoveryEngine) AutoSettleCodexRefusedWake(ctx context.Context, s *NativeSession) (bool, error) {
-	agent, err := nativeObj(s.Record.Get("agent"), "agent")
-	if err != nil {
-		return false, err
-	}
 	attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
 	if err != nil {
 		return false, err
 	}
-	id := nativeText(attempt.Get("attempt_id"))
-	if id == "" {
+	turn := nativeText(attempt.Get("native_turn_id"))
+	id := attempt.Get("attempt_id")
+	if !value.SameText(s.Config.Get("harness"), "codex") || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired")) {
 		return false, nil
 	}
-	attempt, recorded, ready, err := e.codexRefusalReady(s, nativeText(agent.Get("native_session_id")), id)
+	alive, err := e.alive(nativeOr(s.Record.Get("process"), value.Mapping()))
+	if err != nil {
+		return false, err
+	}
+	if !alive || !value.Truth(id) || !recoveryUUID.MatchString(turn) {
+		return false, nil
+	}
+	recorded, err := nativeObj(s.Record.Get("wake_refusal_diagnostic"), "wake_refusal_diagnostic")
+	if err != nil {
+		return false, err
+	}
+	if !value.SameText(recorded.Get("phase"), "bridge_after_claim") || !value.SameText(recorded.Get("origin"), "hook") || !value.SameText(recorded.Get("settlement"), "held") || !nativeEqual(recorded.Get("attempt_id"), id) || !value.SameText(recorded.Get("native_turn_id"), turn) {
+		return false, nil
+	}
+	delivery, err := nativeObj(attempt.Get("delivery"), "delivery")
+	if err != nil {
+		return false, err
+	}
+	if !nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id")) {
+		return false, nil
+	}
+	ready, err := e.RefusedWakeUnprocessed(s, turn)
 	if err != nil {
 		return false, err
 	}
@@ -499,7 +593,6 @@ func (e *RecoveryEngine) AutoSettleCodexRefusedWake(ctx context.Context, s *Nati
 	if grant != "absent" {
 		return false, nil
 	}
-	turn := nativeText(attempt.Get("native_turn_id"))
 	locators, err := e.evidence(ctx, EvidenceCodexLocators, s, attempt, nil, nil, nil, turn)
 	if err != nil {
 		if nativeCaught(err) {
@@ -527,24 +620,42 @@ func (e *RecoveryEngine) AutoSettleCodexRefusedWake(ctx context.Context, s *Nati
 }
 func (e *RecoveryEngine) RecoverCodexEndedTurn(ctx context.Context, config *value.Value, r RecoveryRequest) (*value.Value, error) {
 	return e.withSession(config, r.NativeSessionID, "", func(s *NativeSession) (*value.Value, error) {
-		_, attempt, intent, ended, err := recoveryState(s, r.NativeSessionID)
+		held := nativeRefusal("INVALID_REQUEST", "held state is not this unsettled Codex attempt")
+		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
 		if err != nil {
 			return nil, err
 		}
 		turn := nativeText(attempt.Get("native_turn_id"))
+		if !value.SameText(config.Get("harness"), "codex") {
+			return nil, held
+		}
+		_, ended, err := recoveryIdentity(s, r.NativeSessionID)
+		if err != nil {
+			return nil, err
+		}
+		if ended {
+			return nil, held
+		}
+		alive, err := e.alive(s.Record.Get("process"))
+		if err != nil {
+			return nil, err
+		}
+		if !alive || !value.SameText(attempt.Get("attempt_id"), r.AttemptID) || !recoveryUUID.MatchString(turn) {
+			return nil, held
+		}
+		intent, err := nativeObj(s.Intent(), "inbox_intent")
+		if err != nil {
+			return nil, err
+		}
+		if !value.SameText(intent.Get("request_id"), r.AttemptID) || !value.SameText(intent.Get("native_turn_id"), turn) {
+			return nil, held
+		}
 		ref, err := s.sessionRef(s.Record.Get("agent"))
 		if err != nil {
 			return nil, err
 		}
-		alive := false
-		if value.SameText(config.Get("harness"), "codex") && !ended {
-			alive, err = e.alive(s.Record.Get("process"))
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !value.SameText(config.Get("harness"), "codex") || ended || !alive || !value.SameText(attempt.Get("attempt_id"), r.AttemptID) || !recoveryUUID.MatchString(turn) || !value.SameText(intent.Get("request_id"), r.AttemptID) || !value.SameText(intent.Get("native_turn_id"), turn) || !nativeEqual(attempt.Get("session"), ref) || value.Truth(attempt.Get("finished_at")) || value.Truth(attempt.Get("cancel")) || value.Truth(s.Record.Get("inbox_close")) || value.Truth(s.Record.Get("inbox_turn_ended")) {
-			return nil, nativeRefusal("INVALID_REQUEST", "held state is not this unsettled Codex attempt")
+		if !nativeEqual(attempt.Get("session"), ref) || value.Truth(attempt.Get("finished_at")) || value.Truth(attempt.Get("cancel")) || value.Truth(s.Record.Get("inbox_close")) || value.Truth(s.Record.Get("inbox_turn_ended")) {
+			return nil, held
 		}
 		if e.Hooks.ProbeCodex == nil {
 			return nil, &value.ProfileUnavailable{}
@@ -650,7 +761,10 @@ func (e *RecoveryEngine) codexStoreDelivery(ctx context.Context, s *NativeSessio
 		return nil, readyID, nil
 	}
 	if deliveries.Kind != value.Array {
-		return nil, readyID, nil
+		if deliveries.Kind == value.Object || deliveries.Kind == value.String {
+			return nil, readyID, nil
+		}
+		return nil, nil, &journal.TypeError{Field: "deliveries"}
 	}
 	var matches []*value.Value
 	for _, d := range deliveries.Items {

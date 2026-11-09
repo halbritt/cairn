@@ -171,6 +171,17 @@ func nativeObj(v *value.Value, field string) (*value.Value, error) {
 	}
 	return v, nil
 }
+
+// nativeDefaultObj models get(key, {}), whose default applies only to absence.
+func nativeDefaultObj(v *value.Value, field string) (*value.Value, error) {
+	if v == nil {
+		return value.Mapping(), nil
+	}
+	if v.Kind != value.Object {
+		return nil, &journal.NonObjectError{Field: field}
+	}
+	return v, nil
+}
 func nativeRequired(v *value.Value, key string) (*value.Value, error) {
 	if v == nil || v.Kind != value.Object {
 		return nil, &journal.TypeError{Field: key}
@@ -454,7 +465,11 @@ func (s *NativeSession) recoverOrganicClaim(ctx context.Context, fresh bool) (*v
 			return nil, nativeRefusal("INVALID_HOST", "signed observation replaced an existing inbox hold")
 		}
 		if !value.Truth(old) {
-			s.adoptAttempt(selected, result.Get("root_id"), "organic")
+			s.Record.Set("inbox_attempt", selected)
+			s.Record.Set("organic_root", result.Get("root_id"))
+			s.Record.Set("inbox_intent", nativeMap("request_id", selected.Get("attempt_id"), "session", request.Get("session"), "native_turn_id", selected.Get("native_turn_id")))
+			s.Record.Set("inbox_intent_kind", value.Text("organic"))
+			s.Record.Set("inbox_result_policy", nativeMap("claim_request_id", selected.Get("attempt_id"), "version", 1))
 		}
 	}
 	nativePop(s.Record, "organic_claim_intent")
@@ -480,24 +495,18 @@ func nativeOrganicOwnership(selected, session, turn, root *value.Value, checkRoo
 	if !value.Truth(selected.Get("attempt_id")) || value.Truth(selected.Get("finished_at")) || value.Truth(selected.Get("turn_exclusive")) {
 		return false, nil
 	}
-	delivery, e := nativeObj(selected.Get("delivery"), "delivery")
+	return nativeNoticeDelivery(selected.Get("delivery"))
+}
+func nativeNoticeDelivery(raw *value.Value) (bool, error) {
+	delivery, e := nativeObj(raw, "delivery")
 	if e != nil {
 		return false, e
 	}
-	event, e := nativeObj(delivery.Get("event"), "event")
+	event, e := nativeDefaultObj(delivery.Get("event"), "event")
 	if e != nil {
 		return false, e
 	}
 	return value.SameText(event.Get("kind"), "notice"), nil
-}
-func (s *NativeSession) adoptAttempt(attempt, root *value.Value, kind string) {
-	s.Record.Set("inbox_attempt", attempt)
-	if root != nil {
-		s.Record.Set("organic_root", root)
-	}
-	s.Record.Set("inbox_intent", nativeMap("request_id", attempt.Get("attempt_id"), "session", attempt.Get("session"), "native_turn_id", attempt.Get("native_turn_id")))
-	s.Record.Set("inbox_intent_kind", value.Text(kind))
-	s.Record.Set("inbox_result_policy", nativeMap("claim_request_id", attempt.Get("attempt_id"), "version", 1))
 }
 func (s *NativeSession) AdvanceOrganicNotice(ctx context.Context, request *value.Value) (*value.Value, error) {
 	if e := s.mapping(); e != nil {
@@ -629,15 +638,24 @@ func (s *NativeSession) AdvanceBatch(ctx context.Context, freshOrganic bool) (*v
 		if e != nil {
 			return nil, e
 		}
-		delivery, _ := nativeObj(next.Get("delivery"), "delivery")
-		event, _ := nativeObj(delivery.Get("event"), "event")
-		if next.Kind != value.Object || !nativeEqual(next.Get("attempt_id"), request.Get("request_id")) || !nativeEqual(next.Get("session"), request.Get("session")) || !nativeEqual(next.Get("native_turn_id"), old.Get("native_turn_id")) || !nativeEqual(next.Get("batch_root"), nativeOr(old.Get("batch_root"), old.Get("attempt_id"))) || !nativeEqual(next.Get("batch_index"), expected) || !nativeEqual(next.Get("batch_limit"), value.IntegerText("3")) || value.Truth(next.Get("finished_at")) || organic && (!value.SameText(next.Get("admission_kind"), "organic") || !nativeEqual(next.Get("organic_root"), request.Get("root_id"))) || !value.SameText(event.Get("kind"), "notice") {
+		if next.Kind != value.Object || !nativeEqual(next.Get("attempt_id"), request.Get("request_id")) || !nativeEqual(next.Get("session"), request.Get("session")) || !nativeEqual(next.Get("native_turn_id"), old.Get("native_turn_id")) || !nativeEqual(next.Get("batch_root"), nativeOr(old.Get("batch_root"), old.Get("attempt_id"))) || !nativeEqual(next.Get("batch_index"), expected) || !nativeEqual(next.Get("batch_limit"), value.IntegerText("3")) || value.Truth(next.Get("finished_at")) || organic && (!value.SameText(next.Get("admission_kind"), "organic") || !nativeEqual(next.Get("organic_root"), request.Get("root_id"))) {
 			return nil, nativeRefusal("INVALID_HOST", "native batch advance changed item ownership")
 		}
-		s.adoptAttempt(next, nil, "ordinary")
-		if organic {
-			s.Record.Set("inbox_intent_kind", value.Text("organic"))
+		notice, e := nativeNoticeDelivery(next.Get("delivery"))
+		if e != nil {
+			return nil, e
 		}
+		if !notice {
+			return nil, nativeRefusal("INVALID_HOST", "native batch advance changed item ownership")
+		}
+		s.Record.Set("inbox_attempt", next)
+		s.Record.Set("inbox_intent", nativeMap("request_id", next.Get("attempt_id"), "session", request.Get("session"), "native_turn_id", next.Get("native_turn_id")))
+		s.Record.Set("inbox_result_policy", nativeMap("claim_request_id", next.Get("attempt_id"), "version", 1))
+		kind := "ordinary"
+		if organic {
+			kind = "organic"
+		}
+		s.Record.Set("inbox_intent_kind", value.Text(kind))
 		nativePop(s.Record, BatchNextKeysCleared...)
 	}
 	nativePop(s.Record, key)
@@ -983,7 +1001,11 @@ func (s *NativeSession) retirementOrganicControl(ctx context.Context) error {
 	if !nativeEqual(old.Get("attempt_id"), selected.Get("attempt_id")) {
 		nativePop(s.Record, BatchNextKeysCleared...)
 	}
-	s.adoptAttempt(selected, selected.Get("organic_root"), "organic")
+	s.Record.Set("inbox_attempt", selected)
+	s.Record.Set("inbox_intent", nativeMap("request_id", selected.Get("attempt_id"), "session", selected.Get("session"), "native_turn_id", selected.Get("native_turn_id")))
+	s.Record.Set("inbox_intent_kind", value.Text("organic"))
+	s.Record.Set("organic_root", selected.Get("organic_root"))
+	s.Record.Set("inbox_result_policy", nativeMap("claim_request_id", selected.Get("attempt_id"), "version", 1))
 	nativePop(s.Record, "organic_claim_intent", "organic_advance_intent")
 	return s.Save()
 }

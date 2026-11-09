@@ -182,9 +182,19 @@ func TestStage2DaemonHookErrorFamily(t *testing.T) {
 		nativePop(record.Get("inbox_intent"), "native_turn_id")
 		e, _, config := stage2Engine(t, "claude", record)
 		e.Hooks.Daemon = func(*value.Value) (bool, error) { return false, nil }
-		e.Hooks.Alive = func(*value.Value) (bool, error) { t.Fatal("Alive after false daemon"); return true, nil }
+		calls := 0
+		e.Hooks.Alive = func(*value.Value) (bool, error) { calls++; return true, nil }
 		_, err := e.RecoverDaemonStartClaim(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt})
 		stage2Code(t, err, "INVALID_REQUEST")
+		if calls != 1 {
+			t.Fatal("Alive must precede daemon role refusal", calls)
+		}
+		sentinel := &journal.KeyError{Key: "start"}
+		e.Hooks.Alive = func(*value.Value) (bool, error) { calls++; return false, sentinel }
+		_, err = e.RecoverDaemonStartClaim(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt})
+		if calls != 2 || err != sentinel {
+			t.Fatal("Alive error hidden by daemon role refusal", calls, err)
+		}
 	})
 }
 
@@ -245,8 +255,197 @@ func TestStage2RecoveryAliveOrder(t *testing.T) {
 	}
 }
 
+func TestStage2RecoveryGuardPrecedence(t *testing.T) {
+	for _, mode := range []string{"daemon", "recorded", "native", "codex_refused", "codex_ended"} {
+		for _, guard := range []string{"identity", "ending", "attempt", "reached_ref"} {
+			if guard == "reached_ref" && mode != "daemon" && mode != "codex_ended" {
+				continue
+			}
+			t.Run(mode+"/"+guard, func(t *testing.T) {
+				record := stage2State()
+				harness, turn := "claude", "claude-channel:fixture"
+				if mode == "codex_refused" || mode == "codex_ended" {
+					harness, turn = "codex", stage2Turn
+				}
+				stage2Recorded(record, turn)
+				if mode == "daemon" {
+					nativePop(record.Get("inbox_attempt"), "native_turn_id")
+					nativePop(record.Get("inbox_intent"), "native_turn_id")
+				}
+				switch guard {
+				case "identity":
+					nativePop(record, "agent")
+				case "ending":
+					record.Set("ending", value.Boolean(true))
+				case "attempt":
+					record.Get("inbox_attempt").Set("attempt_id", value.Text("other"))
+				}
+				if guard != "reached_ref" {
+					record.Set("inbox_intent", value.Text("unreached intent"))
+					record.Set("active_prompt", value.Text("unreached active prompt"))
+					record.Set("wake_refusal_diagnostic", value.Text("unreached diagnostic"))
+				}
+				e, h, config := stage2Engine(t, harness, record)
+				refCalls, aliveCalls := 0, 0
+				sentinel := errors.New("synthetic session_ref error")
+				h.SessionRef = func(*value.Value) (*value.Value, error) { refCalls++; return nil, sentinel }
+				e.Hooks.Alive = func(*value.Value) (bool, error) { aliveCalls++; return true, nil }
+				r := RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt, NativeTurnID: turn, CheckOnly: true}
+				var err error
+				switch mode {
+				case "daemon":
+					_, err = e.RecoverDaemonStartClaim(context.Background(), config, r)
+				case "recorded":
+					_, err = e.RecoverRefusedWake(context.Background(), config, r)
+				case "native":
+					_, err = e.RecoverNativeRefusedWake(context.Background(), config, r)
+				case "codex_refused":
+					_, err = e.RecoverCodexRefusedWake(context.Background(), config, r)
+				case "codex_ended":
+					_, err = e.RecoverCodexEndedTurn(context.Background(), config, r)
+				}
+				if guard == "reached_ref" {
+					if err != sentinel || refCalls != 1 {
+						t.Fatal("session_ref not reached at Source point", err, refCalls)
+					}
+				} else {
+					stage2Code(t, err, "INVALID_REQUEST")
+					if refCalls != 0 {
+						t.Fatal("session_ref preceded a Source short-circuit", refCalls)
+					}
+				}
+				wantAlive := 0
+				if mode != "daemon" && (guard == "attempt" || guard == "reached_ref") {
+					wantAlive = 1
+				}
+				if aliveCalls != wantAlive || len(h.Calls) != 0 || len(h.Persisted) != 0 {
+					t.Fatal(aliveCalls, wantAlive, h.Calls, h.Persisted)
+				}
+			})
+		}
+	}
+	for _, mode := range []string{"daemon", "codex_refused", "codex_ended"} {
+		t.Run(mode+"/wrong_harness", func(t *testing.T) {
+			record := stage2State()
+			record.Set("agent", value.Text("unreached agent"))
+			record.Set("inbox_intent", value.Text("unreached intent"))
+			if mode == "daemon" {
+				record.Set("inbox_attempt", value.Text("unreached attempt"))
+			}
+			e, h, config := stage2Engine(t, "other", record)
+			h.SessionRef = func(*value.Value) (*value.Value, error) { t.Fatal("unreached ref"); return nil, nil }
+			e.Hooks.Alive = func(*value.Value) (bool, error) { t.Fatal("unreached Alive"); return false, nil }
+			r := RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt}
+			var err error
+			switch mode {
+			case "daemon":
+				_, err = e.RecoverDaemonStartClaim(context.Background(), config, r)
+			case "codex_refused":
+				_, err = e.RecoverCodexRefusedWake(context.Background(), config, r)
+			case "codex_ended":
+				_, err = e.RecoverCodexEndedTurn(context.Background(), config, r)
+			}
+			stage2Code(t, err, "INVALID_REQUEST")
+		})
+	}
+}
+
+func TestStage2RefusedWakeSessionRefOrder(t *testing.T) {
+	for _, guard := range []string{"turn", "request", "session", "finished", "reached_ref"} {
+		t.Run(guard, func(t *testing.T) {
+			s, h := stage2Session()
+			e := &RecoveryEngine{}
+			s.Record.Set("active_prompt", value.Text("unreached active prompt"))
+			switch guard {
+			case "turn":
+				s.Intent().Set("native_turn_id", value.Text("other"))
+			case "request":
+				s.Intent().Set("request_id", value.Text("other"))
+			case "session":
+				s.Intent().Set("session", value.Mapping())
+			case "finished":
+				s.Attempt().Set("finished_at", value.Text("done"))
+			}
+			calls := 0
+			sentinel := errors.New("synthetic ref")
+			h.SessionRef = func(*value.Value) (*value.Value, error) {
+				calls++
+				if guard == "finished" {
+					return s.Attempt().Get("session"), nil
+				}
+				return nil, sentinel
+			}
+			ok, err := e.RefusedWakeUnprocessed(s, stage2Turn)
+			if guard == "reached_ref" {
+				if err != sentinel || calls != 1 {
+					t.Fatal(ok, err, calls)
+				}
+			} else {
+				want := 0
+				if guard == "finished" {
+					want = 1
+				}
+				if err != nil || ok || calls != want {
+					t.Fatal(ok, err, calls)
+				}
+			}
+		})
+	}
+}
+
+func TestStage2AutoRefusalNoAgentPrecondition(t *testing.T) {
+	for _, process := range []*value.Value{nil, &value.Value{Kind: value.Null}, value.Boolean(false), value.IntegerText("0"), value.Text(""), &value.Value{Kind: value.Array}} {
+		record := stage2State()
+		nativePop(record, "agent", "process")
+		if process != nil {
+			record.Set("process", process)
+		}
+		e, h, config := stage2Engine(t, "codex", record)
+		calls := 0
+		e.Hooks.Alive = func(got *value.Value) (bool, error) {
+			calls++
+			if got == nil || got.Kind != value.Object || len(got.Members) != 0 {
+				t.Fatal("Source's process or {} was not supplied", got)
+			}
+			return false, nil
+		}
+		h.SessionRef = func(*value.Value) (*value.Value, error) { t.Fatal("unreached ref"); return nil, nil }
+		s := &NativeSession{config, "synthetic", record, &h.Host}
+		ok, err := e.AutoSettleCodexRefusedWake(context.Background(), s)
+		if err != nil || ok || calls != 1 || len(h.Persisted) != 0 {
+			t.Fatal(ok, err, calls)
+		}
+	}
+	for _, guard := range []string{"harness", "ending", "retired", "missing_id"} {
+		t.Run(guard, func(t *testing.T) {
+			record := stage2State()
+			record.Set("agent", value.Text("unused agent"))
+			harness := "codex"
+			switch guard {
+			case "harness":
+				harness = "other"
+			case "missing_id":
+				nativePop(record.Get("inbox_attempt"), "attempt_id")
+			default:
+				record.Set(guard, value.Boolean(true))
+			}
+			e, h, config := stage2Engine(t, harness, record)
+			calls := 0
+			e.Hooks.Alive = func(*value.Value) (bool, error) { calls++; return true, nil }
+			ok, err := e.AutoSettleCodexRefusedWake(context.Background(), &NativeSession{config, "synthetic", record, &h.Host})
+			want := 0
+			if guard == "missing_id" {
+				want = 1
+			}
+			if ok || err != nil || calls != want || len(h.Persisted) != 0 {
+				t.Fatal(ok, err, calls)
+			}
+		})
+	}
+}
+
 func TestStage2CodexStoreNonArrayDeliveries(t *testing.T) {
-	for _, deliveries := range []*value.Value{value.Text("synthetic"), nativeMap("delivery_id", stage2Delivery)} {
+	for _, deliveries := range []*value.Value{value.Text("synthetic"), nativeMap("delivery_id", stage2Delivery), value.IntegerText("1"), &value.Value{Kind: value.Float, Number: 1}, value.Boolean(true), value.IntegerText("0"), &value.Value{Kind: value.Float}, value.Boolean(false)} {
 		e, h, config := stage2Engine(t, "codex", stage2State())
 		h.Responses = map[string]MemoryResponse{
 			"session-inbox-ready": func(*value.Value) (*value.Value, error) {
@@ -258,8 +457,13 @@ func TestStage2CodexStoreNonArrayDeliveries(t *testing.T) {
 		}
 		s := &NativeSession{Config: config, Record: stage2State(), Host: &h.Host}
 		match, ready, err := e.codexStoreDelivery(context.Background(), s, stage2Delivery, nil)
-		if err != nil || match != nil || !value.SameText(ready, stage2Delivery) {
-			t.Fatal("malformed inspection lost ready identity or invented a match", match, ready, err)
+		if value.Truth(deliveries) && (deliveries.Kind == value.Int || deliveries.Kind == value.Float || deliveries.Kind == value.Bool) {
+			var nonIterable *journal.TypeError
+			if !errors.As(err, &nonIterable) || match != nil {
+				t.Fatal("truthy non-iterable must raise TypeError", deliveries, match, err)
+			}
+		} else if err != nil || match != nil || !value.SameText(ready, stage2Delivery) {
+			t.Fatal("iterable or falsy inspection lost ready identity or invented a match", match, ready, err)
 		}
 		if len(h.Calls) != 2 || len(h.Persisted) != 0 {
 			t.Fatal(h.Calls, h.Persisted)

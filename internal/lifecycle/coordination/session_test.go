@@ -499,3 +499,150 @@ func TestStage2NativeSessionLoggingAndMalformedOwnership(t *testing.T) {
 		t.Fatal("ownership AttributeError was reclassified", err)
 	}
 }
+
+func stage2OwnershipFixture(t *testing.T, site string) (*NativeSession, *MemoryHost, *value.Value, *value.Value, func() error) {
+	t.Helper()
+	s, h := stage2Session()
+	// Python equality admits these two sessions, but their serialized scalar
+	// types differ. The intent must retain the session chosen by its Source site.
+	s.Record.Get("agent").Set("agent_id", value.Boolean(true))
+	requestSession := nativeMap("agent_id", true, "execution_id", stage2Execution)
+	old := s.Attempt()
+	old.Set("session", requestSession)
+	selected := nativeClone(old)
+	selected.Set("session", nativeMap("agent_id", 1, "execution_id", stage2Execution))
+	selected.Set("admission_kind", value.Text("organic"))
+	selected.Set("organic_root", value.Text(stage2Agent))
+	nativePop(s.Record, "inbox_intent", "inbox_intent_kind", "inbox_result_policy", "organic_root")
+	var run func() error
+	switch site {
+	case "claim":
+		nativePop(s.Record, "inbox_attempt")
+		s.Record.Set("organic_claim_intent", nativeMap("request_id", stage2Delivery, "session", requestSession, "native_owner_turn_id", stage2Turn))
+		h.Responses = map[string]MemoryResponse{"session-organic-notice-claim": func(*value.Value) (*value.Value, error) {
+			return nativeMap("decision", "admitted", "attempt", selected, "root_id", stage2Agent), nil
+		}}
+		run = func() error { _, err := s.recoverOrganicClaim(context.Background(), false); return err }
+	case "batch":
+		selected.Set("attempt_id", value.Text(stage2Delivery))
+		selected.Set("batch_root", value.Text(stage2Attempt))
+		selected.Set("batch_index", value.IntegerText("2"))
+		selected.Set("batch_limit", value.IntegerText("3"))
+		s.Record.Set("batch_advance_intent", nativeMap("request_id", stage2Delivery, "session", requestSession, "attempt_id", stage2Attempt, "version", 1))
+		h.Responses = map[string]MemoryResponse{"session-inbox-advance": func(*value.Value) (*value.Value, error) {
+			return nativeMap("attempt", selected), nil
+		}}
+		run = func() error { _, err := s.AdvanceBatch(context.Background(), false); return err }
+	case "retirement":
+		h.Responses = map[string]MemoryResponse{"session-inbox-control": func(*value.Value) (*value.Value, error) {
+			return nativeMap("attempt", selected), nil
+		}}
+		run = func() error { return s.retirementOrganicControl(context.Background()) }
+	default:
+		t.Fatal(site)
+	}
+	return s, h, selected, requestSession, run
+}
+
+func TestStage2OwnershipEventAttributeError(t *testing.T) {
+	for _, site := range []string{"claim", "batch", "retirement"} {
+		for _, tc := range []struct {
+			name        string
+			event       *value.Value
+			badDelivery bool
+		}{
+			{"missing", nil, false},
+			{"null", &value.Value{Kind: value.Null}, false},
+			{"array", &value.Value{Kind: value.Array}, false},
+			{"text", value.Text(""), false},
+			{"zero", value.IntegerText("0"), false},
+			{"false", value.Boolean(false), false},
+			{"truthy_delivery", nil, true},
+		} {
+			t.Run(site+"/"+tc.name, func(t *testing.T) {
+				_, h, selected, _, run := stage2OwnershipFixture(t, site)
+				delivery := value.Mapping()
+				if tc.event != nil {
+					delivery.Set("event", tc.event)
+				}
+				if tc.badDelivery {
+					delivery = value.Text("non-dict")
+				}
+				selected.Set("delivery", delivery)
+				err := run()
+				if tc.name == "missing" {
+					code := "INVALID_HOST"
+					if site == "retirement" {
+						code = "INTENT_PENDING"
+					}
+					stage2Code(t, err, code)
+				} else {
+					var nonObject *journal.NonObjectError
+					if !errors.As(err, &nonObject) {
+						t.Fatal("present non-dict did not escape ownership check", err)
+					}
+				}
+				if len(h.Persisted) != 0 {
+					t.Fatal("failed ownership persisted", h.Persisted)
+				}
+			})
+		}
+	}
+	t.Run("earlier_ownership_refusal", func(t *testing.T) {
+		_, _, selected, _, run := stage2OwnershipFixture(t, "batch")
+		selected.Set("attempt_id", value.Text("wrong"))
+		selected.Set("delivery", value.Text("non-dict"))
+		stage2Code(t, run(), "INVALID_HOST")
+	})
+}
+
+func TestStage2AttemptAdoptionOrderAndSession(t *testing.T) {
+	for _, tc := range []struct {
+		site        string
+		keys        []string
+		sessionKind value.Kind
+	}{
+		{"claim", []string{"inbox_attempt", "organic_root", "inbox_intent", "inbox_intent_kind", "inbox_result_policy"}, value.Bool},
+		{"batch", []string{"inbox_attempt", "inbox_intent", "inbox_result_policy", "inbox_intent_kind"}, value.Bool},
+		{"retirement", []string{"inbox_attempt", "inbox_intent", "inbox_intent_kind", "organic_root", "inbox_result_policy"}, value.Int},
+	} {
+		t.Run(tc.site, func(t *testing.T) {
+			s, h, _, _, run := stage2OwnershipFixture(t, tc.site)
+			if err := run(); err != nil {
+				t.Fatal(err)
+			}
+			if len(h.Persisted) != 1 {
+				t.Fatal(h.Persisted)
+			}
+			selectedFields := value.Mapping()
+			for _, member := range h.Persisted[0].Members {
+				for _, key := range tc.keys {
+					if string(member.Key) == key {
+						selectedFields.Members = append(selectedFields.Members, member)
+					}
+				}
+			}
+			stage2OrderedKeys(t, selectedFields, tc.keys...)
+			intent := s.Intent()
+			stage2OrderedKeys(t, intent, "request_id", "session", "native_turn_id")
+			if intent.Get("session").Get("agent_id").Kind != tc.sessionKind {
+				t.Fatal("wrong session representation adopted", intent)
+			}
+		})
+	}
+}
+
+func TestStage2OwnershipErrorEscapesSettlement(t *testing.T) {
+	s, h, selected, requestSession, _ := stage2OwnershipFixture(t, "batch")
+	s.Record.Set("inbox_intent", nativeMap("request_id", stage2Attempt, "session", requestSession, "native_turn_id", stage2Turn))
+	selected.Set("delivery", nativeMap("event", false))
+	h.CommittedResult = true
+	_, err := s.Settle(context.Background(), "proof", nativeMap("settlement", "held"), nil, true)
+	var nonObject *journal.NonObjectError
+	if !errors.As(err, &nonObject) || len(h.Persisted) != 1 {
+		t.Fatal("ownership AttributeError must escape without a pending-settlement save", err, h.Persisted)
+	}
+	if !value.SameText(s.Record.Get("proof").Get("settlement"), "held") || !value.Truth(h.Persisted[0].Get("inbox_turn_ended")) {
+		t.Fatal("settlement persistence boundary changed", s.Record)
+	}
+}
