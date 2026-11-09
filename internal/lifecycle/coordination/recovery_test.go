@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/halbritt/cairn/internal/lifecycle/journal"
 	"github.com/halbritt/cairn/internal/lifecycle/value"
 )
 
@@ -45,7 +48,7 @@ func stage2Engine(t *testing.T, harness string, record *value.Value) (*RecoveryE
 	e.Evidence = stage2Evidence(func(_ context.Context, kind EvidenceKind, _ EvidenceRequest) (*value.Value, error) {
 		switch kind {
 		case EvidenceDaemonWorker:
-			return nativeMap("pid", 901, "start", 101, "boot", stage2Agent), nil
+			return nativeMap("pid", 901, "start", 101, "state", "S", "parent", 900, "boot", stage2Agent), nil
 		case EvidenceDaemonClaim:
 			return nativeMap("last_turn_record_at", "2026-11-09T00:00:00.000Z", "records_after", 0, "transcript_bytes", 100), nil
 		case EvidenceCodexLocators:
@@ -61,6 +64,17 @@ func stage2Recorded(record *value.Value, turn string) {
 	record.Get("inbox_intent").Set("native_turn_id", value.Text(turn))
 	record.Set("wake_refusal_diagnostic", nativeMap("phase", "bridge_after_claim", "origin", "hook", "settlement", "held", "attempt_id", stage2Attempt, "delivery_id", stage2Delivery, "native_turn_id", turn, "at", 100))
 }
+func stage2OrderedKeys(t *testing.T, record *value.Value, keys ...string) {
+	t.Helper()
+	if record == nil || record.Kind != value.Object || len(record.Members) != len(keys) {
+		t.Fatal("unexpected record fields", record, keys)
+	}
+	for i, key := range keys {
+		if string(record.Members[i].Key) != key {
+			t.Fatal("Source field order changed", record, keys)
+		}
+	}
+}
 func TestStage2RecoverDaemonStartClaim(t *testing.T) {
 	record := stage2State()
 	nativePop(record.Get("inbox_attempt"), "native_turn_id")
@@ -71,11 +85,22 @@ func TestStage2RecoverDaemonStartClaim(t *testing.T) {
 	if err != nil || !value.SameText(out.Get("status"), "eligible") || len(h.Persisted) != 0 {
 		t.Fatal(out, err, h.Persisted)
 	}
+	stage2OrderedKeys(t, out.Get("worker"), "pid", "start", "boot")
+	stage2OrderedKeys(t, out.Get("native_record").Get("daemon"), "pid", "start", "boot")
+	stage2OrderedKeys(t, out.Get("native_record").Get("worker"), "pid", "start", "boot")
 	r.CheckOnly = false
 	out, err = e.RecoverDaemonStartClaim(context.Background(), config, r)
 	if err != nil || out == nil || len(h.Persisted) == 0 || !nativeEqual(h.Persisted[0].Get("process").Get("pid"), value.IntegerText("901")) {
 		t.Fatal(out, err, h.Persisted)
 	}
+	process := h.Persisted[0].Get("process")
+	stage2OrderedKeys(t, process, "pid", "start", "state", "parent", "boot")
+	if !nativeEqual(process, nativeMap("pid", 901, "start", 101, "state", "S", "parent", 900, "boot", stage2Agent)) {
+		t.Fatal("first settlement save lost the worker reference", process)
+	}
+	proof := h.Persisted[0].Get("daemon_start_claim")
+	stage2OrderedKeys(t, proof.Get("daemon"), "pid", "start", "boot")
+	stage2OrderedKeys(t, proof.Get("worker"), "pid", "start", "boot")
 	record.Set("tool_calls", value.Boolean(true))
 	e, h, config = stage2Engine(t, "claude", record)
 	_, err = e.RecoverDaemonStartClaim(context.Background(), config, r)
@@ -111,6 +136,135 @@ func TestStage2RecoverRefusedWake(t *testing.T) {
 	e, _, config = stage2Engine(t, "claude", record)
 	_, err = e.RecoverNativeRefusedWake(context.Background(), config, r)
 	stage2Code(t, err, "INVALID_REQUEST")
+}
+
+func TestStage2DaemonHookErrorFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		caught bool
+	}{
+		{"path", &os.PathError{Op: "read", Path: "synthetic", Err: syscall.EIO}, true},
+		{"syscall", &os.SyscallError{Syscall: "read", Err: syscall.EIO}, true},
+		{"errno", syscall.EIO, true},
+		{"source_os", &value.Error{Class: "OSError"}, true},
+		{"source_value", &value.Error{Class: "ValueError"}, true},
+		{"json_value", &value.Error{Class: "JSONDecodeError"}, true},
+		{"journal_value", &journal.ValueError{Message: "synthetic"}, true},
+		{"index", &value.Error{Class: "IndexError"}, true},
+		{"source_key", &value.Error{Class: "KeyError"}, false},
+		{"source_type", &value.Error{Class: "TypeError"}, false},
+		{"journal_key", &journal.KeyError{Key: "process"}, false},
+		{"journal_type", &journal.TypeError{Field: "process"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := stage2State()
+			nativePop(record.Get("inbox_attempt"), "native_turn_id")
+			nativePop(record.Get("inbox_intent"), "native_turn_id")
+			e, h, config := stage2Engine(t, "claude", record)
+			e.Hooks.Daemon = func(*value.Value) (bool, error) { return false, tc.err }
+			calls := 0
+			e.Hooks.Alive = func(*value.Value) (bool, error) { calls++; return true, nil }
+			_, err := e.RecoverDaemonStartClaim(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt})
+			if tc.caught {
+				stage2Code(t, err, "INVALID_REQUEST")
+			} else if err != tc.err {
+				t.Fatal("uncaught Source exception changed", err, tc.err)
+			}
+			if calls != 0 || len(h.Calls) != 0 || len(h.Persisted) != 0 {
+				t.Fatal("failed daemon check reached later effects", calls, h.Calls, h.Persisted)
+			}
+		})
+	}
+	t.Run("not_daemon", func(t *testing.T) {
+		record := stage2State()
+		nativePop(record.Get("inbox_attempt"), "native_turn_id")
+		nativePop(record.Get("inbox_intent"), "native_turn_id")
+		e, _, config := stage2Engine(t, "claude", record)
+		e.Hooks.Daemon = func(*value.Value) (bool, error) { return false, nil }
+		e.Hooks.Alive = func(*value.Value) (bool, error) { t.Fatal("Alive after false daemon"); return true, nil }
+		_, err := e.RecoverDaemonStartClaim(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt})
+		stage2Code(t, err, "INVALID_REQUEST")
+	})
+}
+
+func TestStage2RecoveryAliveOrder(t *testing.T) {
+	for _, mode := range []string{"recorded", "native", "codex_refused", "codex_ended"} {
+		for _, guard := range []string{"ending", "retired", "identity", "harness", "attempt"} {
+			if guard == "harness" && (mode == "recorded" || mode == "native") {
+				continue // Source's Claude refusal guard does not read harness.
+			}
+			t.Run(mode+"/"+guard, func(t *testing.T) {
+				record := stage2State()
+				turn, harness := "claude-channel:fixture", "claude"
+				if mode == "codex_refused" || mode == "codex_ended" {
+					turn, harness = stage2Turn, "codex"
+				}
+				stage2Recorded(record, turn)
+				switch guard {
+				case "ending", "retired":
+					record.Set(guard, value.Boolean(true))
+				case "identity":
+					record.Get("agent").Set("native_session_id", value.Text(stage2Turn))
+				case "harness":
+					harness = "other"
+				case "attempt":
+					record.Get("inbox_attempt").Set("attempt_id", value.Text(stage2Turn))
+				}
+				e, h, config := stage2Engine(t, harness, record)
+				calls := 0
+				sentinel := errors.New("synthetic Alive error")
+				e.Hooks.Alive = func(*value.Value) (bool, error) { calls++; return false, sentinel }
+				r := RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt, NativeTurnID: turn, CheckOnly: true}
+				var err error
+				switch mode {
+				case "recorded":
+					_, err = e.RecoverRefusedWake(context.Background(), config, r)
+				case "native":
+					_, err = e.RecoverNativeRefusedWake(context.Background(), config, r)
+				case "codex_refused":
+					_, err = e.RecoverCodexRefusedWake(context.Background(), config, r)
+				case "codex_ended":
+					_, err = e.RecoverCodexEndedTurn(context.Background(), config, r)
+				}
+				if guard == "attempt" {
+					if calls != 1 || err != sentinel {
+						t.Fatal("attempt guard preceded Source's Alive call", calls, err)
+					}
+				} else {
+					stage2Code(t, err, "INVALID_REQUEST")
+					if calls != 0 {
+						t.Fatal("Alive preceded identity/ended/harness guard", calls)
+					}
+				}
+				if len(h.Calls) != 0 || len(h.Persisted) != 0 {
+					t.Fatal("refused recovery had effects", h.Calls, h.Persisted)
+				}
+			})
+		}
+	}
+}
+
+func TestStage2CodexStoreNonArrayDeliveries(t *testing.T) {
+	for _, deliveries := range []*value.Value{value.Text("synthetic"), nativeMap("delivery_id", stage2Delivery)} {
+		e, h, config := stage2Engine(t, "codex", stage2State())
+		h.Responses = map[string]MemoryResponse{
+			"session-inbox-ready": func(*value.Value) (*value.Value, error) {
+				return nativeMap("delivery_id", stage2Delivery, "event_id", stage2Delivery), nil
+			},
+			"event-inspect": func(*value.Value) (*value.Value, error) {
+				return nativeMap("event", nativeMap("repo", "fixture"), "deliveries", deliveries), nil
+			},
+		}
+		s := &NativeSession{Config: config, Record: stage2State(), Host: &h.Host}
+		match, ready, err := e.codexStoreDelivery(context.Background(), s, stage2Delivery, nil)
+		if err != nil || match != nil || !value.SameText(ready, stage2Delivery) {
+			t.Fatal("malformed inspection lost ready identity or invented a match", match, ready, err)
+		}
+		if len(h.Calls) != 2 || len(h.Persisted) != 0 {
+			t.Fatal(h.Calls, h.Persisted)
+		}
+	}
 }
 func TestStage2RecoverCodexModes(t *testing.T) {
 	record := stage2State()

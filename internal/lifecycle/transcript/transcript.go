@@ -188,7 +188,7 @@ type SourceRuntime struct {
 	Filesystem value.FilesystemRoutes
 }
 
-func claimTime(runtime *SourceRuntime, site ClaimSite, input any) (float64, error) {
+func claimTime(runtime *SourceRuntime, site ClaimSite, input any) (ClaimInstant, error) {
 	var raw *value.Value
 	switch v := input.(type) {
 	case *value.Value:
@@ -197,7 +197,7 @@ func claimTime(runtime *SourceRuntime, site ClaimSite, input any) (float64, erro
 		raw = value.Text(v)
 	case nil:
 	default:
-		return 0, &value.Error{Class: "TypeError", Message: "claim time has an unsupported host representation"}
+		return ClaimInstant{}, &value.Error{Class: "TypeError", Message: "claim time has an unsupported host representation"}
 	}
 	var parsed ClaimInstant
 	var err error
@@ -210,19 +210,16 @@ func claimTime(runtime *SourceRuntime, site ClaimSite, input any) (float64, erro
 	}
 	if err != nil {
 		if site == ClaimNative && sourceReadError(err, "KeyError", "TypeError", "ValueError") {
-			return 0, invalid("held attempt has no claim time", err)
+			return ClaimInstant{}, invalid("held attempt has no claim time", err)
 		}
-		return 0, err
+		return ClaimInstant{}, err
 	}
 	if !parsed.Aware {
 		if site == ClaimNative {
-			return 0, invalid("native chronology does not bracket the single claim of this delivery")
-		}
-		if site == ClaimDaemon {
-			return 0, &value.Error{Class: "TypeError", Message: "can't compare offset-naive and offset-aware datetimes"}
+			return ClaimInstant{}, invalid("native chronology does not bracket the single claim of this delivery")
 		}
 	}
-	return parsed.Seconds, nil
+	return parsed, nil
 }
 func epoch(t time.Time) float64 { return float64(t.Unix()) + float64(t.Nanosecond())/1e9 }
 func exactInt(v any) (int64, bool) {
@@ -586,45 +583,25 @@ func (a readerEvidence) Read(_ context.Context, kind coordination.EvidenceKind, 
 	if err != nil {
 		return nil, err
 	}
-	home, err := sourcePathField(r.Runtime, req.Config, "config_home", false)
-	if err != nil {
-		return nil, err
-	}
-	userHome, err := sourcePathField(r.Runtime, req.Config, "home", true)
-	if err != nil {
-		return nil, err
+	home := ""
+	if raw := req.Config.Get("config_home"); raw != nil && raw.Kind == value.String {
+		home, err = sourcePathField(r.Runtime, req.Config, "config_home", false)
+		if err != nil {
+			return nil, err
+		}
 	}
 	configPath, err := sourcePathField(r.Runtime, req.Config, "config_path", true)
 	if err != nil {
 		return nil, err
 	}
-	claude := ClaudeConfig{Harness: harness, ConfigHome: home, ConfigPath: configPath, HomeDir: userHome, Runtime: r.Runtime}
-	codex := CodexConfig{Harness: harness, ConfigHome: home, HomeDir: userHome, Runtime: r.Runtime}
-	if raw := req.Config.Get("config_home"); raw != nil {
+	claude := ClaudeConfig{Harness: harness, ConfigHome: home, ConfigPath: configPath, Runtime: r.Runtime}
+	codex := CodexConfig{Harness: harness, ConfigHome: home, Runtime: r.Runtime}
+	if raw := req.Config.Get("config_home"); raw != nil && raw.Kind == value.String {
 		claude.ConfigHomePoints = raw.String
 		codex.ConfigHomePoints = raw.String
 	}
 	if raw := req.Config.Get("config_path"); raw != nil {
 		claude.ConfigPathPoints = raw.String
-	}
-	if dirs := req.Config.Get("process_exe_dirs"); dirs != nil {
-		claude.HasProcessExeDirs = true
-		if dirs.Kind != value.Array {
-			return nil, &value.Error{Class: "TypeError", Message: "process_exe_dirs"}
-		}
-		for _, dir := range dirs.Items {
-			if r.Runtime == nil || r.Runtime.Filesystem == nil {
-				return nil, &value.ProfileUnavailable{}
-			}
-			if dir == nil || dir.Kind != value.String {
-				return nil, &value.Error{Class: "TypeError", Message: "process_exe_dirs"}
-			}
-			encoded, err := r.Runtime.Filesystem.Encode(dir.String)
-			if err != nil {
-				return nil, err
-			}
-			claude.ProcessExeDirs = append(claude.ProcessExeDirs, encoded)
-		}
 	}
 	attempt := Attempt{CreatedAt: req.Attempt.Get("created_at")}
 	if req.Attempt != nil {
@@ -653,11 +630,47 @@ func (a readerEvidence) Read(_ context.Context, kind coordination.EvidenceKind, 
 	var result map[string]any
 	switch kind {
 	case coordination.EvidenceDaemonWorker:
-		worker, err := FindDaemonWorkerAt(r.ProcRoot, claude, state, r.ExpectedUID)
+		path, err := claudePath(claude, state)
 		if err != nil {
 			return nil, err
 		}
-		return processRecord(worker), nil
+		if dirs := req.Config.Get("process_exe_dirs"); dirs != nil {
+			claude.HasProcessExeDirs = true
+			if dirs.Kind != value.Array {
+				return nil, &value.Error{Class: "TypeError", Message: "process_exe_dirs"}
+			}
+			for _, dir := range dirs.Items {
+				if r.Runtime == nil || r.Runtime.Filesystem == nil {
+					return nil, &value.ProfileUnavailable{}
+				}
+				if dir == nil || dir.Kind != value.String {
+					return nil, &value.Error{Class: "TypeError", Message: "process_exe_dirs"}
+				}
+				encoded, err := r.Runtime.Filesystem.Encode(dir.String)
+				if err != nil {
+					return nil, err
+				}
+				claude.ProcessExeDirs = append(claude.ProcessExeDirs, encoded)
+			}
+		} else if harness == "claude" {
+			if r.Runtime == nil || r.Runtime.Filesystem == nil {
+				return nil, &value.ProfileUnavailable{}
+			}
+			points, err := r.Runtime.Filesystem.Home()
+			if err != nil {
+				return nil, err
+			}
+			claude.HomeDir, err = r.Runtime.Filesystem.Encode(points)
+			if err != nil {
+				return nil, err
+			}
+		}
+		worker, err := findDaemonWorkerViewAt(r.ProcRoot, claude, state, path)
+		if err != nil {
+			return nil, err
+		}
+		owner := worker.OwnerRecord()
+		return value.Mapping(value.Field("pid", value.IntegerText(strconv.Itoa(owner.PID))), value.Field("start", value.IntegerText(strconv.FormatUint(owner.Start, 10))), value.Field("state", value.Text(owner.State)), value.Field("parent", value.IntegerText(strconv.Itoa(owner.Parent))), value.Field("boot", value.Text(owner.Boot))), nil
 	case coordination.EvidenceDaemonClaim:
 		result, err = r.DaemonStartClaimEvidence(claude, state, attempt)
 	case coordination.EvidenceNativeRefusal:

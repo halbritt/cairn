@@ -127,12 +127,16 @@ func FindDaemonWorkerAt(procRoot string, cfg ClaudeConfig, state SessionState, u
 	if e != nil {
 		return procpeer.ProcessRef{}, e
 	}
+	view, err := findDaemonWorkerViewAt(procRoot, cfg, state, p)
+	return view.Ref, err
+}
+func findDaemonWorkerViewAt(procRoot string, cfg ClaudeConfig, state SessionState, p string) (coordination.ProcView, error) {
 	dirs := coordination.ClaudeExeDirs(cfg.Harness, cfg.HasProcessExeDirs, cfg.ProcessExeDirs, cfg.HomeDir)
 	entries, e := os.ReadDir(procRoot)
 	if e != nil {
-		return procpeer.ProcessRef{}, invalid("daemon process directory is unreadable", e)
+		return coordination.ProcView{}, invalid("daemon process directory is unreadable", e)
 	}
-	found := []procpeer.ProcessRef{}
+	found := []coordination.ProcView{}
 	for _, entry := range entries {
 		pid, e := strconv.Atoi(entry.Name())
 		if e != nil || pid < 2 {
@@ -150,11 +154,11 @@ func FindDaemonWorkerAt(procRoot string, cfg ClaudeConfig, state SessionState, u
 			}
 		}
 		if view.Exe != "" && allowed && len(view.Argv) > 2 && view.Argv[1] == "--resume" && view.Argv[2] == p && coordination.DaemonWorkerOfAt(procRoot, view.Ref, state.Process) {
-			found = append(found, view.Ref)
+			found = append(found, view)
 		}
 	}
 	if len(found) != 1 {
-		return procpeer.ProcessRef{}, invalid(fmt.Sprintf("expected exactly one daemon worker for this conversation, found %d", len(found)))
+		return coordination.ProcView{}, invalid(fmt.Sprintf("expected exactly one daemon worker for this conversation, found %d", len(found)))
 	}
 	return found[0], nil
 }
@@ -229,7 +233,10 @@ func DaemonStartClaimEvidenceAt(cfg ClaudeConfig, state SessionState, attempt At
 	if e != nil {
 		return nil, e
 	}
-	if epoch(t) >= claimed {
+	if !claimed.Aware {
+		return nil, &value.Error{Class: "TypeError", Message: "can't compare offset-naive and offset-aware datetimes"}
+	}
+	if epoch(t) >= claimed.Seconds {
 		return nil, invalid("native transcript records activity at or after the claim")
 	}
 	allowed := map[string]bool{"last-prompt": true, "cost-state": true, "ai-title": true, "agent-name": true, "custom-title": true, "summary": true, "artifact-comment-monitor": true, "artifact-autoreact-ledger": true}
@@ -309,7 +316,7 @@ func nativeCommand(content *Record) (command []rune, paths [3][]rune, ok bool) {
 		}
 	}
 	suffix := []rune("/coordination.py")
-	if len(paths[1]) < len(suffix) || !slices.Equal(paths[1][len(paths[1])-len(suffix):], suffix) {
+	if len(paths[1]) < len(suffix)+2 || !slices.Equal(paths[1][len(paths[1])-len(suffix):], suffix) {
 		return
 	}
 	ok = true
@@ -367,7 +374,11 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 	if !keys(second, "type", "operation", "timestamp", "sessionId") || !stringIs(field(second, "type"), "queue-operation") || !stringIs(field(second, "operation"), "dequeue") || !stringIs(field(second, "sessionId"), state.NativeSessionID) {
 		return nil, invalid("native dequeue record shape is unknown")
 	}
-	command, paths, validCommand := nativeCommand(field(third, "content"))
+	content := field(third, "content")
+	if content != nil && content.Kind != value.String {
+		return nil, &value.Error{Class: "AttributeError", Message: "refusal content has no partition method"}
+	}
+	command, paths, validCommand := nativeCommand(content)
 	if validCommand {
 		configPoints := cfg.ConfigPathPoints
 		if configPoints == nil {
@@ -391,7 +402,6 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 	}
 	expected := append([]rune("UserPromptSubmit operation blocked by hook:\n["), command...)
 	expected = append(expected, []rune("]: "+NativeRefusalMessage+"\n\n\nOriginal prompt: "+channel)...)
-	content := field(third, "content")
 	if !keys(third, NativeRefusalKeys...) || !stringIs(field(third, "type"), "system") || !stringIs(field(third, "subtype"), "informational") || !stringIs(field(third, "level"), "warning") || !isBool(field(third, "preventContinuation"), true) || !isBool(field(third, "isSidechain"), false) || !isBool(field(third, "isMeta"), false) || !stringIs(field(third, "sessionId"), state.NativeSessionID) || !validCommand || content == nil || content.Kind != value.String || !slices.Equal(content.String, expected) {
 		return nil, invalid("native refusal record is not this binding's post-claim refusal of this wake")
 	}
@@ -407,7 +417,7 @@ func NativeRefusalProofAt(cfg ClaudeConfig, state SessionState, attempt Attempt,
 	if e != nil {
 		return nil, e
 	}
-	if !(times[0] <= times[1] && times[1] <= claimed && claimed <= times[2]) || times[2]-times[0] > NativeHookTimeoutSeconds || attempt.Delivery.Attempts != 1 || attempt.Delivery.State != "leased" {
+	if !(times[0] <= times[1] && times[1] <= claimed.Seconds && claimed.Seconds <= times[2]) || times[2]-times[0] > NativeHookTimeoutSeconds || attempt.Delivery.Attempts != 1 || attempt.Delivery.State != "leased" {
 		return nil, invalid("native chronology does not bracket the single claim of this delivery")
 	}
 	return map[string]any{"refusal_uuid": field(third, "uuid"), "refused_at": field(third, "timestamp"), "claude_version": field(third, "version"), "records": ls}, nil

@@ -858,7 +858,10 @@ func fixtureClaimInstant(site ClaimSite, raw *value.Value) (ClaimInstant, error)
 	return ClaimInstant{}, &value.Error{Class: "ValueError", Message: "invalid synthetic ISO timestamp"}
 }
 
-type fixtureFilesystem struct{ cwd string }
+type fixtureFilesystem struct {
+	cwd, home string
+	homeCalls *int
+}
 
 func (f fixtureFilesystem) Encode(points []rune) (string, error) {
 	var raw []byte
@@ -968,7 +971,15 @@ func (f fixtureFilesystem) Exists(points []rune) (bool, error) {
 	}
 	return e == nil, e
 }
-func (f fixtureFilesystem) Home() ([]rune, error) { return nil, &value.ProfileUnavailable{} }
+func (f fixtureFilesystem) Home() ([]rune, error) {
+	if f.homeCalls != nil {
+		(*f.homeCalls)++
+	}
+	if f.home == "" {
+		return nil, &value.ProfileUnavailable{}
+	}
+	return []rune(f.home), nil
+}
 
 func TestStage2TranscriptReadAndByteStrip(t *testing.T) {
 	for _, tail := range [][]byte{[]byte("\xc2\x85"), []byte("\xc2\xa0"), []byte("\xe2\x80\x83")} {
@@ -1027,9 +1038,9 @@ func TestStage2TranscriptClaimSites(t *testing.T) {
 	naive := "2026-11-08T12:00:02"
 	_, e = claimTime(runtime, ClaimNative, naive)
 	requireError(t, e, "native chronology does not bracket the single claim of this delivery")
-	_, e = claimTime(runtime, ClaimDaemon, naive)
-	if value.ErrorClass(e) != "TypeError" {
-		t.Fatal(e)
+	claim, e := claimTime(runtime, ClaimDaemon, naive)
+	if e != nil || claim.Aware {
+		t.Fatal("daemon comparison must retain naive claim", claim, e)
 	}
 	if _, e = claimTime(runtime, ClaimCodexRefused, naive); e != nil {
 		t.Fatal("synthetic local timestamp route rejected", e)
@@ -1078,6 +1089,10 @@ func TestStage2TranscriptEvidenceAdapter(t *testing.T) {
 	agent := value.Mapping(value.Field("native_session_id", value.Text(nativeID)), value.Field("agent_id", value.Text(turnID)), value.Field("execution_id", value.Text(nativeID)))
 	state := value.Mapping(value.Field("agent", agent), value.Field("workspace", value.Text(f.state.Workspace)), value.Field("process", processRecord(f.state.Process)))
 	cfg := value.Mapping(value.Field("harness", value.Text("codex")), value.Field("config_home", value.Text(f.cfg.ConfigHome)))
+	// Neither the supplied home key nor executable directories are read by
+	// non-worker proofs or scans, even when they would fail if reached.
+	cfg.Set("home", value.Mapping())
+	cfg.Set("process_exe_dirs", value.Boolean(true))
 	attempt := value.Mapping(value.Field("created_at", value.Text(stamp(2))), value.Field("native_turn_id", value.Text(turnID)))
 	req := coordination.EvidenceRequest{Config: cfg, State: state, Attempt: attempt, Recorded: value.Mapping(value.Field("at", value.IntegerText(strconv.FormatInt(epochStamp(t, stamp(2)), 10)))), Locators: locatorsRecord(ls)}
 	evidence := f.reader.RecoveryEvidence()
@@ -1106,4 +1121,136 @@ func TestStage2TranscriptEvidenceAdapter(t *testing.T) {
 		t.Fatal("missing workspace lost Source exception class", e)
 	}
 
+}
+
+func TestStage2DaemonNaiveComparisonOrder(t *testing.T) {
+	cfg, state, path := claudeFixture(t)
+	for _, tc := range []struct{ name, raw, message string }{
+		{"unreadable", "{\n", "native transcript has an unreadable record"},
+		{"unstamped", "{}\n", "native transcript has no timestamped turn record"},
+		{"bad_stamp", "{\"timestamp\":\"invalid\"}\n", "native record timestamp shape is unknown"},
+		{"stamped", "{\"timestamp\":\"" + baseStamp + "\"}\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustWrite(t, path, []byte(tc.raw))
+			_, err := DaemonStartClaimEvidence(cfg, state, Attempt{CreatedAt: "2026-11-08T12:00:02"}, fixtureProfile(t))
+			if tc.message != "" {
+				requireError(t, err, tc.message)
+			} else if value.ErrorClass(err) != "TypeError" {
+				t.Fatal("valid timestamp must reach naive/aware comparison", err)
+			}
+		})
+	}
+}
+
+func TestStage2DaemonWorkerEvidence(t *testing.T) {
+	cfg, state, path := claudeFixture(t)
+	root, home := t.TempDir(), t.TempDir()
+	exeDir := filepath.Join(home, ".local/share/claude/versions")
+	state.Process = writeProc(t, root, 400, 2, 100, "daemon", "/opt/claude/claude", []string{"claude", "daemon"})
+	writeProc(t, root, 401, 400, 101, "bg-pty-host", "/opt/claude/claude", []string{"claude", "bg-pty-host"})
+	worker := writeProc(t, root, 402, 401, 102, "claude", exeDir+"/claude", []string{"claude", "--resume", path})
+	stateRecord := value.Mapping(value.Field("agent", value.Mapping(value.Field("native_session_id", value.Text(nativeID)))), value.Field("workspace", value.Text(state.Workspace)), value.Field("process", processRecord(state.Process)))
+	config := value.Mapping(value.Field("harness", value.Text("claude")), value.Field("config_home", value.Text(cfg.ConfigHome)), value.Field("home", value.Mapping()))
+	homeCalls := 0
+	r := NewReader(fixtureProfile(t))
+	r.ProcRoot = root
+	r.Runtime.Filesystem = fixtureFilesystem{home: home, homeCalls: &homeCalls}
+	req := coordination.EvidenceRequest{Config: config, State: stateRecord}
+	got, err := r.RecoveryEvidence().Read(context.Background(), coordination.EvidenceDaemonWorker, req)
+	if err != nil || homeCalls != 1 {
+		t.Fatal(got, err, homeCalls)
+	}
+	want := value.Mapping(value.Field("pid", value.IntegerText(strconv.Itoa(worker.PID))), value.Field("start", value.IntegerText("102")), value.Field("state", value.Text("S")), value.Field("parent", value.IntegerText("401")), value.Field("boot", value.Text(fixtureBoot)))
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("worker must retain the selected view's five ordered fields", got, want)
+	}
+	for _, tc := range []struct {
+		name, harness string
+		dirs          *value.Value
+		found         bool
+	}{
+		{"explicit", "claude", &value.Value{Kind: value.Array, Items: []*value.Value{value.Text(exeDir)}}, true},
+		{"explicit_empty", "claude", &value.Value{Kind: value.Array}, false},
+		{"other_harness", "codex", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			homeCalls = 0
+			req.Config = config.Without("process_exe_dirs")
+			req.Config.Set("harness", value.Text(tc.harness))
+			if tc.dirs != nil {
+				req.Config.Set("process_exe_dirs", tc.dirs)
+			}
+			got, err := r.RecoveryEvidence().Read(context.Background(), coordination.EvidenceDaemonWorker, req)
+			if homeCalls != 0 {
+				t.Fatal("unreached Home called", homeCalls)
+			}
+			if tc.found {
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Fatal(got, err)
+				}
+			} else {
+				requireError(t, err, "expected exactly one daemon worker for this conversation, found 0")
+			}
+		})
+	}
+	// A non-worker site ignores both home and executable-directory settings.
+	req.Config = config.Without("process_exe_dirs")
+	req.Config.Set("process_exe_dirs", value.Boolean(true))
+	req.Attempt = value.Mapping(value.Field("created_at", value.Text(stamp(2))))
+	mustWrite(t, path, []byte("{\"timestamp\":\""+baseStamp+"\"}\n"))
+	homeCalls = 0
+	if _, err := r.RecoveryEvidence().Read(context.Background(), coordination.EvidenceDaemonClaim, req); err != nil || homeCalls != 0 {
+		t.Fatal("non-worker read executable directory inputs", err, homeCalls)
+	}
+}
+
+func TestStage2EvidenceConfigHomeReach(t *testing.T) {
+	f := codexFixture(t)
+	state := value.Mapping(value.Field("agent", value.Mapping(value.Field("native_session_id", value.Text(nativeID)))), value.Field("workspace", value.Text(f.state.Workspace)), value.Field("process", processRecord(f.state.Process)))
+	for _, home := range []*value.Value{nil, value.Boolean(true), value.Mapping()} {
+		config := value.Mapping(value.Field("harness", value.Text("claude")), value.Field("process_exe_dirs", value.Boolean(true)))
+		if home != nil {
+			config.Set("config_home", home)
+		}
+		req := coordination.EvidenceRequest{Config: config, State: state}
+		for _, tc := range []struct {
+			kind                coordination.EvidenceKind
+			contiguity, reached string
+		}{
+			{coordination.EvidenceNativeRefusal, "native records are not one contiguous enqueue, dequeue, refusal sequence", "native session file cannot be derived from the binding"},
+			{coordination.EvidenceCodexRefusal, "Codex refusal records are not contiguous", "Codex rollout owner is unavailable"},
+		} {
+			req.Locators = locatorsRecord(nil)
+			_, err := f.reader.RecoveryEvidence().Read(context.Background(), tc.kind, req)
+			requireError(t, err, tc.contiguity)
+			req.Locators = locatorsRecord([]Locator{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}, {Offset: 2, Length: 1}})
+			_, err = f.reader.RecoveryEvidence().Read(context.Background(), tc.kind, req)
+			requireError(t, err, tc.reached)
+		}
+	}
+}
+
+func TestStage2NativeRefusalCommandAndContent(t *testing.T) {
+	for _, path := range []string{"/coordination.py", "//coordination.py", "/x/coordination.py"} {
+		_, _, ok := nativeCommand(value.Text("UserPromptSubmit operation blocked by hook:\n[/usr/bin/python3 " + path + " hook --config /binding.json]: refused"))
+		if ok != (path == "/x/coordination.py") {
+			t.Fatal(path, ok)
+		}
+	}
+	cfg, state, path := claudeFixture(t)
+	attempt := Attempt{CreatedAt: stamp(2), Delivery: Delivery{DeliveryID: turnID, Attempts: 1, State: "leased"}}
+	for _, content := range []any{nil, true, map[string]any{}} {
+		records := claudeRefusalRecords(state, cfg, attempt)
+		records[2]["content"] = content
+		ls := writeRecords(t, path, records)
+		_, err := nativeRefusalFixture(t, cfg, state, attempt, ls)
+		if value.ErrorClass(err) != "AttributeError" {
+			t.Fatal("present non-string content must fail at partition", content, err)
+		}
+	}
+	records := claudeRefusalRecords(state, cfg, attempt)
+	delete(records[2], "content")
+	_, err := nativeRefusalFixture(t, cfg, state, attempt, writeRecords(t, path, records))
+	requireError(t, err, "native refusal record is not this binding's post-claim refusal of this wake")
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/halbritt/cairn/internal/lifecycle/journal"
@@ -71,6 +73,13 @@ func (e *RecoveryEngine) alive(process *value.Value) (bool, error) {
 		return false, &value.ProfileUnavailable{}
 	}
 	return e.Hooks.Alive(process)
+}
+func daemonProcessError(err error) bool {
+	var path *os.PathError
+	var call *os.SyscallError
+	var errno syscall.Errno
+	var invalidValue *journal.ValueError
+	return errors.As(err, &path) || errors.As(err, &call) || errors.As(err, &errno) || errors.As(err, &invalidValue) || sourceClass(err, "OSError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "UnicodeEncodeError", "IndexError")
 }
 func (e *RecoveryEngine) grant(ctx context.Context, s *NativeSession, attempt *value.Value) (string, error) {
 	if e.Hooks.GrantState == nil {
@@ -253,12 +262,15 @@ func (e *RecoveryEngine) RecoverDaemonStartClaim(ctx context.Context, config *va
 		}
 		daemon, err := e.Hooks.Daemon(s.Record.Get("process"))
 		if err != nil {
-			if nativeCaught(err) || sourceClass(err, "IndexError") {
+			if daemonProcessError(err) {
 				return nil, nativeRefusal("INVALID_REQUEST", "bound process is not a live Claude daemon")
 			}
 			return nil, err
 		}
-		alive, err := e.alive(s.Record.Get("process"))
+		alive := false
+		if daemon {
+			alive, err = e.alive(s.Record.Get("process"))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -307,7 +319,10 @@ func (e *RecoveryEngine) RecoverRefusedWake(ctx context.Context, config *value.V
 		if err != nil {
 			return nil, err
 		}
-		alive, err := e.alive(s.Record.Get("process"))
+		alive := false
+		if !ended {
+			alive, err = e.alive(s.Record.Get("process"))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +358,10 @@ func (e *RecoveryEngine) RecoverNativeRefusedWake(ctx context.Context, config *v
 		if err != nil {
 			return nil, err
 		}
-		alive, err := e.alive(s.Record.Get("process"))
+		alive := false
+		if !ended {
+			alive, err = e.alive(s.Record.Get("process"))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -388,12 +406,16 @@ func (e *RecoveryEngine) codexRefusalReady(s *NativeSession, id, attemptID strin
 	if err != nil {
 		return
 	}
-	ready = value.SameText(s.Config.Get("harness"), "codex") && !ended && value.SameText(attempt.Get("attempt_id"), attemptID) && recoveryUUID.MatchString(turn) && value.SameText(recorded.Get("phase"), "bridge_after_claim") && value.SameText(recorded.Get("origin"), "hook") && value.SameText(recorded.Get("settlement"), "held") && value.SameText(recorded.Get("attempt_id"), attemptID) && value.SameText(recorded.Get("native_turn_id"), turn) && nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id"))
+	ready = value.SameText(s.Config.Get("harness"), "codex") && !ended
 	if !ready {
 		return
 	}
 	ready, err = e.alive(s.Record.Get("process"))
 	if !ready || err != nil {
+		return
+	}
+	ready = value.SameText(attempt.Get("attempt_id"), attemptID) && recoveryUUID.MatchString(turn) && value.SameText(recorded.Get("phase"), "bridge_after_claim") && value.SameText(recorded.Get("origin"), "hook") && value.SameText(recorded.Get("settlement"), "held") && value.SameText(recorded.Get("attempt_id"), attemptID) && value.SameText(recorded.Get("native_turn_id"), turn) && nativeEqual(recorded.Get("delivery_id"), delivery.Get("delivery_id"))
+	if !ready {
 		return
 	}
 	ready, err = e.RefusedWakeUnprocessed(s, turn)
@@ -514,7 +536,10 @@ func (e *RecoveryEngine) RecoverCodexEndedTurn(ctx context.Context, config *valu
 		if err != nil {
 			return nil, err
 		}
-		alive, err := e.alive(s.Record.Get("process"))
+		alive := false
+		if value.SameText(config.Get("harness"), "codex") && !ended {
+			alive, err = e.alive(s.Record.Get("process"))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -625,7 +650,7 @@ func (e *RecoveryEngine) codexStoreDelivery(ctx context.Context, s *NativeSessio
 		return nil, readyID, nil
 	}
 	if deliveries.Kind != value.Array {
-		return nil, nil, &journal.TypeError{Field: "deliveries"}
+		return nil, readyID, nil
 	}
 	var matches []*value.Value
 	for _, d := range deliveries.Items {

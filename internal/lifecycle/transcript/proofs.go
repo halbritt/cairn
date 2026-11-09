@@ -123,7 +123,7 @@ func (r Reader) CodexRefusalProof(cfg CodexConfig, state SessionState, attempt A
 	started, si := exactInt(field(first, "started_at"))
 	completed, ci := exactInt(field(last, "completed_at"))
 	duration, di := exactInt(field(last, "duration_ms"))
-	if !numeric || !(times[0] <= times[1] && times[1] <= claimed && claimed <= refused && refused <= times[2]) || times[2]-times[0] > NativeHookTimeoutSeconds || !si || started != int64(times[0]) || !sameRecord(field(last, "started_at"), field(first, "started_at")) || !ci || completed != int64(times[2]) || !di || duration < 0 || duration > NativeHookTimeoutSeconds*1000 {
+	if !numeric || !(times[0] <= times[1] && times[1] <= claimed.Seconds && claimed.Seconds <= refused && refused <= times[2]) || times[2]-times[0] > NativeHookTimeoutSeconds || !si || started != int64(times[0]) || !sameRecord(field(last, "started_at"), field(first, "started_at")) || !ci || completed != int64(times[2]) || !di || duration < 0 || duration > NativeHookTimeoutSeconds*1000 {
 		return nil, invalid("Codex refusal chronology does not bracket this claim")
 	}
 	if e = r.recheck(cfg, state, p, before); e != nil {
@@ -220,7 +220,7 @@ func (r Reader) CodexEndedTurnProof(cfg CodexConfig, state SessionState, attempt
 	if e != nil {
 		return nil, e
 	}
-	if !(epoch(a) <= claimed && claimed <= epoch(b)) {
+	if !(epoch(a) <= claimed.Seconds && claimed.Seconds <= epoch(b)) {
 		return nil, invalid("Codex turn chronology does not bracket this claim")
 	}
 	if e = r.recheck(cfg, state, p, before); e != nil {
