@@ -50,15 +50,19 @@ func (c *CLI) ownerOnly(path, message string) error {
 	return nil
 }
 
-func (c *CLI) contextJournal(v *value.Value) (journal.Context, error) {
+func (c *CLI) contextJournal(v *value.Value, kind string) (journal.Context, error) {
 	var out journal.Context
 	commands, err := nativeDefaultObj(v.Get("commands"), "commands")
 	if err != nil {
 		return out, err
 	}
 	out.Commands = map[string][]string{}
-	for _, member := range commands.Members {
-		items, e := sourceList(member.Value)
+	selected := []string{kind}
+	if kind == "finish-reply" {
+		selected = []string{"complete", "respond"}
+	}
+	for _, name := range selected {
+		items, e := sourceList(commands.Get(name))
 		if e != nil {
 			return out, e
 		}
@@ -69,7 +73,7 @@ func (c *CLI) contextJournal(v *value.Value) (journal.Context, error) {
 			}
 			args = append(args, journalText(item.String))
 		}
-		out.Commands[string(member.Key)] = args
+		out.Commands[name] = args
 	}
 	for _, target := range []struct {
 		key  string
@@ -238,7 +242,7 @@ func (c *CLI) InboxCommand(ctx context.Context, argv []string, in io.Reader, out
 			return 0, err
 		}
 	}
-	jctx, err := c.contextJournal(native)
+	jctx, err := c.contextJournal(native, kind)
 	if err != nil {
 		return 0, err
 	}

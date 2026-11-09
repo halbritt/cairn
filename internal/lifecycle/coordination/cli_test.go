@@ -178,6 +178,11 @@ func TestStage2DrainAndInboxCLI(t *testing.T) {
 	if err != nil || !value.SameText(native.Get("route"), "drain") || !value.SameText(native.Get("source").Get("record_id"), stage2Turn) || nativeText(native.Get("response").Items[0]) != "/synthetic/coordination-go" {
 		t.Fatal(native, err)
 	}
+	// Source never converts the unselected complete command for an ack.
+	native.Get("commands").Set("complete", value.Boolean(true))
+	if err = host.WriteContext(contextPath, native); err != nil {
+		t.Fatal(err)
+	}
 	// The actual journal observes the immutable command before the fake runner.
 	runs := 0
 	c.Journal.Runner = journal.RunnerFunc(func(_ context.Context, argv []string, input string) (journal.Result, error) {
