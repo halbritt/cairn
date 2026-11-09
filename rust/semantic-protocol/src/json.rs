@@ -1208,9 +1208,18 @@ mod tests {
                 decoded(mode, &hex("000000300000000a")).value(),
                 &integer(false, vec![])
             );
+            // Byte readline selects 00220a. CPython detect_encoding falls
+            // back to UTF8 at unmarked length 3; initial U+0000 fails JSON.
             family(
                 mode,
                 &hex("00220a000022000a"),
+                ExceptionFamily::JsonDecodeError,
+            );
+            // The BOM instead forces UTF16BE for prefix feff00220a; its
+            // three-byte payload has an incomplete code unit before JSON.
+            family(
+                mode,
+                &hex("feff00220a000022000a"),
                 ExceptionFamily::UnicodeDecodeError,
             );
         }
