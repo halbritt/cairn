@@ -2,7 +2,8 @@
 
 This crate owns the selected ORT 1.29.0 C-API runtime, a real environment and
 session, and synchronous batch-one inference. Its result is the **raw float32
-bits** of `last_hidden_state[0, 0, :384]`, before FastEmbed's first L2
+bits** of metadata-ordered output zero (rank-three token zero or rank-two
+direct), before FastEmbed's first L2
 normalization. It does not implement `semantic-rank`'s `BackendSession` or
 `BackendFactory`, supply an initialized-worker identity, normalize vectors,
 compute scores, or qualify the full worker.
@@ -123,13 +124,13 @@ type and shape APIs. There must be exactly one `input_ids`, with optional
 `attention_mask` and `token_type_ids` only when advertised. Unknown or duplicate
 inputs and incompatible dtype/rank/fixed dimensions refuse. The bridge uses
 that session's input order and names, supplies owned int64 tensors of shape
-`[1, sequence]`, and selects `last_hidden_state` by its actual output name.
+`[1, sequence]`, and requests ALL outputs in that metadata order, selecting returned index zero.
 The owned type-ID feed is zero, without rewriting original tokenizer Encoding
 type IDs. Each sequence is 1..512 tokens and each text runs separately; there
 is no padding across passages, deduplication or ordering change.
 
 After synchronous inference the bridge checks tensor status, float32 dtype,
-CPU-addressable memory, exact `[1, sequence, 384]` shape and element count before
+CPU-addressable memory, exact `[1, sequence, 384]` or `[1, 384]` shape and element count before
 copying output storage. Rust checks the returned storage and uses the same
 `extract_cls` function exercised by the pure-data tests to select token zero.
 It copies bits without arithmetic, finiteness rewriting, epsilon, mean pooling,
@@ -141,7 +142,7 @@ no provider fallback, retry or substitute result.
 
 The authored pure-data tests cover actual metadata planning, optional/reordered
 inputs, missing/duplicate/unknown inputs, dtype/rank/fixed-shape errors, owned
-tensor lengths and zero type IDs, named output selection, CLS bounds and raw
+tensor lengths and zero type IDs, ordered first-output selection, CLS bounds and raw
 signed-zero/NaN/subnormal/infinity bits. They use synthetic data and do not
 mock or claim an ORT runtime/session/model. Native ownership, C/Rust ABI,
 compiler/linker disposition and actual runtime errors need separate component
@@ -158,3 +159,28 @@ C2/D1-A/D2/RTERM/P/W/uv/runtime/production holds. The actual-worker FIRST gate
 is unconsumed. The component checks above do not establish native library load,
 model execution, protected Python import, service behavior, database behavior or
 deployment.
+
+## S-P2-OBSERVE-1 output-order continuation
+
+Selected FastEmbed `text/onnx_text_model.py:18,96-98` supplies output names None,
+then consumes result[0]. Selected ORT Python wrapper
+`onnxruntime_inference_collection.py:323-326` expands None to `_outputs_meta`
+names in order. FastEmbed `text/onnx_embedding.py:311-322` selects rank-three
+`[:,0]` and leaves rank-two output direct before first normalization. Accordingly
+the bridge retains ordered names, requests all outputs, validates the first
+float32 tensor, and releases every returned OrtValue on both success and error.
+Auxiliary non-tensor metadata retains its ONNX type without a tensor cast.
+Missing/incompatible first metadata fails before returning the session; a later
+named output does not alter selection. Duplicate names retain their ordinals.
+Batch/width/sequence bounds remain explicit, with sequence checked only for
+rank-three output. The existing C/Rust output ABI adds a rank field and both
+sides assert 48 bytes on the selected x86_64 target. Vendor API29 is unchanged.
+
+Five new backend `p2_observe1_` metadata tests exercise the public pure-data
+validation/extraction functions, including different first/later sentinel bits,
+duplicates, missing outputs, invalid first dtype, rank-two/rank-three shape and
+signed-zero/NaN bit preservation. They are authored, not executed here. Existing
+component receipts precede this changed source and do not validate its ABI.
+No settings/default/provider configuration was changed. The backend's new
+model-closure preflight is conditional; direct ORT callers still require the
+external model-asset admission described above.

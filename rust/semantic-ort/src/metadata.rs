@@ -33,7 +33,39 @@ pub struct SessionMetadata {
 }
 
 impl SessionMetadata {
-    pub(crate) fn validate(&self) -> Result<Vec<Input>, Error> {
+    /// FastEmbed ONNX_OUTPUT_NAMES=None -> ORT metadata order -> returned[0].
+    /// Output names are observed data; last_hidden_state need not be first/named.
+    pub fn selected_output(&self) -> Result<&NodeMetadata, Error> {
+        let first = self
+            .outputs
+            .first()
+            .ok_or_else(|| Error::Contract("missing first model output".into()))?;
+        if first.name.is_empty() {
+            return Err(Error::Contract("missing first model output name".into()));
+        }
+        // Metadata order is authoritative. Duplicate later names do not choose
+        // a different value; ORT owns graph validity and Source run(None) repeats
+        // exactly the advertised names rather than searching by spelling.
+        let dims = &first.dimensions;
+        let valid_shape = match dims.as_slice() {
+            [batch, width] => {
+                (*batch < 0 || *batch == 1) && (*width < 0 || *width == DIMENSIONS as i64)
+            }
+            [batch, sequence, width] => {
+                (*batch < 0 || *batch == 1)
+                    && *sequence != 0
+                    && (*width < 0 || *width == DIMENSIONS as i64)
+            }
+            _ => false,
+        };
+        if first.element_type != ElementType::Float32 || !valid_shape {
+            return Err(Error::Contract(format!(
+                "invalid Source first-output metadata: {first:?}"
+            )));
+        }
+        Ok(first)
+    }
+    pub fn validate(&self) -> Result<Vec<Input>, Error> {
         let mut plan = Vec::new();
         for node in &self.inputs {
             let input = match node.name.as_str() {
@@ -65,27 +97,7 @@ impl SessionMetadata {
                 "session does not advertise input_ids".into(),
             ));
         }
-        let selected: Vec<_> = self
-            .outputs
-            .iter()
-            .filter(|n| n.name == "last_hidden_state")
-            .collect();
-        if selected.len() != 1 {
-            return Err(Error::Contract(
-                "last_hidden_state must occur exactly once".into(),
-            ));
-        }
-        let output = selected[0];
-        if output.element_type != ElementType::Float32
-            || output.dimensions.len() != 3
-            || !(output.dimensions[0] < 0 || output.dimensions[0] == 1)
-            || output.dimensions[1] == 0
-            || !(output.dimensions[2] < 0 || output.dimensions[2] == DIMENSIONS as i64)
-        {
-            return Err(Error::Contract(format!(
-                "invalid last_hidden_state metadata: {output:?}"
-            )));
-        }
+        self.selected_output()?;
         Ok(plan)
     }
 
@@ -111,12 +123,8 @@ impl SessionMetadata {
                 )));
             }
         }
-        let out = self
-            .outputs
-            .iter()
-            .find(|n| n.name == "last_hidden_state")
-            .expect("validated output");
-        if out.dimensions[1] >= 0 && out.dimensions[1] != n as i64 {
+        let out = self.selected_output()?;
+        if out.dimensions.len() == 3 && out.dimensions[1] >= 0 && out.dimensions[1] != n as i64 {
             return Err(Error::Contract(
                 "output sequence length conflicts with input".into(),
             ));
@@ -129,20 +137,21 @@ impl SessionMetadata {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawClsBits(pub [u32; DIMENSIONS]);
 
-pub(crate) fn extract_cls(
-    shape: &[i64],
-    bits: &[u32],
-    sequence: usize,
-) -> Result<RawClsBits, Error> {
-    if sequence == 0 || sequence > MAX_SEQUENCE || shape != [1, sequence as i64, DIMENSIONS as i64]
-    {
-        return Err(Error::Contract(format!(
-            "unexpected last_hidden_state shape {shape:?}"
-        )));
+pub fn extract_cls(shape: &[i64], bits: &[u32], sequence: usize) -> Result<RawClsBits, Error> {
+    if sequence == 0 || sequence > MAX_SEQUENCE {
+        return Err(Error::Contract("invalid batch-one sequence".into()));
     }
-    let count = sequence
-        .checked_mul(DIMENSIONS)
-        .ok_or_else(|| Error::Contract("output element count overflow".into()))?;
+    let count = match shape {
+        [1, width] if *width == DIMENSIONS as i64 => DIMENSIONS,
+        [1, n, width] if *n == sequence as i64 && *width == DIMENSIONS as i64 => sequence
+            .checked_mul(DIMENSIONS)
+            .ok_or_else(|| Error::Contract("output element count overflow".into()))?,
+        _ => {
+            return Err(Error::Contract(format!(
+                "unexpected first model output shape {shape:?}"
+            )))
+        }
+    };
     if bits.len() != count {
         return Err(Error::Contract(
             "output element count differs from shape".into(),

@@ -89,13 +89,16 @@ impl Node {
 }
 #[repr(C)]
 pub(crate) struct Output {
+    pub rank: usize,
     pub dimensions: [i64; 3],
     pub count: usize,
     pub bits: *mut u32,
 }
+const _: [(); 48] = [(); std::mem::size_of::<Output>()];
 impl Output {
     pub fn new() -> Self {
         Self {
+            rank: 0,
             dimensions: [0; 3],
             count: 0,
             bits: std::ptr::null_mut(),

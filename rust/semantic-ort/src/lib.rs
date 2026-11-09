@@ -373,16 +373,20 @@ impl Session {
             )
         };
         error.result(code)?;
-        let expected = sequence
-            .checked_mul(metadata::DIMENSIONS)
-            .ok_or_else(|| contract("output count overflow"))?;
+        let expected = match output.rank {
+            2 => metadata::DIMENSIONS,
+            3 => sequence
+                .checked_mul(metadata::DIMENSIONS)
+                .ok_or_else(|| contract("output count overflow"))?,
+            _ => return Err(contract("invalid Source output rank")),
+        };
         if output.bits.is_null() || output.count != expected {
             return Err(contract("invalid bridge output storage/count"));
         }
         // The bridge owns exactly count u32 objects until Output::drop; shape/count
         // validation bounds the slice before constructing it. No floating arithmetic.
         let bits = unsafe { std::slice::from_raw_parts(output.bits, output.count) };
-        metadata::extract_cls(&output.dimensions, bits, sequence)
+        metadata::extract_cls(&output.dimensions[..output.rank], bits, sequence)
     }
     /// Query first and passage order are the iterator order. No deduplication,
     /// batch coalescing, normalization, or reordering is performed here.

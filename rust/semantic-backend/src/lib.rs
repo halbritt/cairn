@@ -2,7 +2,10 @@
 mod arithmetic;
 pub mod assets;
 pub mod identity;
+mod model_assets;
+mod model_schema;
 mod platform;
+mod running_image;
 
 use arithmetic::{operation, tokenizer_error};
 pub use arithmetic::{Normalized, Norms};
@@ -44,17 +47,28 @@ impl LoadedBackend {
             }),
         }
     }
-    pub fn encode(&self, text: &PyString, policy: SpecialTokens) -> Result<Vec<u32>, BackendError> {
+    pub(crate) fn encode(
+        &self,
+        text: &PyString,
+        policy: SpecialTokens,
+    ) -> Result<Vec<u32>, BackendError> {
         self.tokenizer
             .rank_encode(text, policy)
             .map_err(|e| tokenizer_error("rank encode", e))
     }
-    pub fn decode(&self, tokens: &[u32], policy: DecodeTokens) -> Result<PyString, BackendError> {
+    pub(crate) fn decode(
+        &self,
+        tokens: &[u32],
+        policy: DecodeTokens,
+    ) -> Result<PyString, BackendError> {
         self.tokenizer
             .rank_decode(tokens, policy)
             .map_err(|e| tokenizer_error("rank decode", e))
     }
-    pub fn embed_batch_one(&mut self, texts: &[PyString]) -> Result<RawMatrix, BackendError> {
+    pub(crate) fn embed_batch_one(
+        &mut self,
+        texts: &[PyString],
+    ) -> Result<RawMatrix, BackendError> {
         let mut bits = Vec::new();
         for text in texts {
             // Tokenize then infer then normalize EACH text, query/miss iterator order.
@@ -79,20 +93,23 @@ impl LoadedBackend {
             bits,
         })
     }
-    pub fn norms_keepdims(&self, vectors: &RawMatrix) -> Result<Norms, BackendError> {
+    pub(crate) fn norms_keepdims(&self, vectors: &RawMatrix) -> Result<Norms, BackendError> {
         arithmetic::norms(vectors, &self.owner)
     }
-    pub fn any_zero_norm(&self, norms: &Norms) -> Result<bool, BackendError> {
+    pub(crate) fn any_zero_norm(&self, norms: &Norms) -> Result<bool, BackendError> {
         arithmetic::any_zero(norms, &self.owner)
     }
-    pub fn divide_in_place(
+    pub(crate) fn divide_in_place(
         &self,
         vectors: RawMatrix,
         norms: Norms,
     ) -> Result<Normalized, BackendError> {
         arithmetic::divide(vectors, norms, &self.owner)
     }
-    pub fn matrix_vector(&mut self, normalized: Normalized) -> Result<Vec<f32>, BackendError> {
+    pub(crate) fn matrix_vector(
+        &mut self,
+        normalized: Normalized,
+    ) -> Result<Vec<f32>, BackendError> {
         if !Rc::ptr_eq(&self.owner, &normalized.owner) {
             return Err(operation("matvec owner", "different backend session"));
         }
@@ -166,5 +183,7 @@ impl BackendFactory for NativeFactory {
     }
 }
 
+#[cfg(test)]
+mod observe_tests;
 #[cfg(test)]
 mod tests;

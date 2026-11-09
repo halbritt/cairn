@@ -54,6 +54,10 @@ impl NativeFactory {
         })
         .map_err(|e| operation("prepare consumed tokenizer", e))?;
         let model = read_owned(&self.paths.model)?;
+        // Certify the exact consumed bytes BEFORE allowing ORT to resolve any
+        // external tensor filename through an ambient directory.
+        let closure = crate::model_assets::observe(&model)
+            .map_err(|pending| operation("unresolved consumed model asset closure", pending))?;
         let runtime =
             cairn_semantic_ort::Runtime::load(&self.paths.ort_runtime, self.cleanup.ort.clone())
                 .map_err(|e| operation("load selected ORT", e))?;
@@ -62,7 +66,7 @@ impl NativeFactory {
             .map_err(|e| operation("construct actual ORT session", e))?;
         let math = cairn_semantic_math::Runtime::load(&self.paths.math, self.cleanup.math.clone())
             .map_err(|e| operation("load selected math", e))?;
-        let report = identity::observe(&self.paths, &tokenizer, &ort, &math)?;
+        let report = identity::observe(&self.paths, &tokenizer, &ort, &math, &closure)?;
         Ok(LoadedBackend {
             ort,
             math,

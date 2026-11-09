@@ -18,12 +18,23 @@ pub struct MissingObservation {
     pub owner_action: &'static str,
 }
 /// Partial observed inputs are inspectable, but NEVER published as a complete rank identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunningImageProvenance {
+    pub device: u64,
+    pub inode: u64,
+    pub bytes: usize,
+    pub sha256: String,
+}
 pub struct ConstructionReport {
     inputs: Value,
     provenance: Vec<PathBuf>,
     missing: Vec<MissingObservation>,
+    running_image: Option<RunningImageProvenance>,
 }
 impl ConstructionReport {
+    pub fn running_image(&self) -> Option<&RunningImageProvenance> {
+        self.running_image.as_ref()
+    }
     pub fn inputs(&self) -> &Value {
         &self.inputs
     }
@@ -92,6 +103,10 @@ fn missing(field: &'static str, owner_action: &'static str) -> MissingObservatio
 
 fn required_observations(inputs: &Value) -> Vec<MissingObservation> {
     const REQUIRED: &[(&str, &str, &str)] = &[
+        ("/compilation/rustc", "compilation.rustc", "consume Release binary-bound actual rustc observation"),
+        ("/compilation/target", "compilation.target", "consume Release binary-bound exact target triple"),
+        ("/compilation/enabled_features", "compilation.enabled_features", "consume Release binary-bound per-unit feature sets"),
+        ("/compilation/effective_flags", "compilation.effective_flags", "consume Release binary-bound actual Rust/C effective flags"),
         ("/compilation/linked_input_attestation", "compilation.linked_input_attestation", "bind complete local+registry source, rustc/target/features, per-unit Rust/C flags and actual link receipts to this observed binary; runtime source snapshot alone is insufficient"),
         ("/session/cpu_arena", "session.cpu_arena", "extend selected API29 bridge/SessionSettings observation; NativeDefault::NotExposedBySelectedCapi cannot become an assumed default"),
         ("/session/remaining_defaults", "session.remaining_defaults", "enumerate and observe vector-affecting native defaults through the ORT owner"),
@@ -103,7 +118,7 @@ fn required_observations(inputs: &Value) -> Vec<MissingObservation> {
     REQUIRED
         .iter()
         .filter_map(|(pointer, field, action)| {
-            if inputs.pointer(pointer).is_none_or(Value::is_null) {
+            if !required_shape(pointer, inputs.pointer(pointer), inputs) {
                 Some(missing(field, action))
             } else {
                 None
@@ -112,15 +127,85 @@ fn required_observations(inputs: &Value) -> Vec<MissingObservation> {
         .collect()
 }
 
+fn nonempty_text(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_str).is_some_and(|s| !s.is_empty())
+}
+fn sorted_set(value: &Value) -> bool {
+    value.as_array().is_some_and(|items| {
+        items.iter().all(|v| v.as_str().is_some())
+            && items.windows(2).all(|w| w[0].as_str() < w[1].as_str())
+    })
+}
+fn sha256_text(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_str).is_some_and(|s| {
+        s.len() == 64
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+fn required_shape(pointer: &str, value: Option<&Value>, inputs: &Value) -> bool {
+    let Some(value) = value.filter(|v| !v.is_null()) else {
+        return false;
+    };
+    match pointer {
+        "/compilation/rustc" | "/compilation/target" | "/session/effective_provider" => {
+            nonempty_text(Some(value))
+        }
+        "/compilation/enabled_features" => value
+            .as_object()
+            .is_some_and(|units| !units.is_empty() && units.values().all(sorted_set)),
+        "/compilation/effective_flags" => value.as_object().is_some_and(|units| {
+            !units.is_empty()
+                && units.values().all(|v| {
+                    v.as_array()
+                        .is_some_and(|a| a.iter().all(|v| v.as_str().is_some()))
+                })
+        }),
+        "/compilation/linked_input_attestation" => value.as_object().is_some_and(|record| {
+            sha256_text(record.get("binary_sha256"))
+                && record.get("binary_sha256") == inputs.pointer("/compilation/binary_sha256")
+                && record.get("source_inputs").is_some_and(|v| {
+                    v.as_array().is_some_and(|a| {
+                        !a.is_empty()
+                            && a.iter().all(|entry| {
+                                nonempty_text(entry.get("path")) && sha256_text(entry.get("sha256"))
+                            })
+                    })
+                })
+        }),
+        "/session/cpu_arena" => value.is_boolean(),
+        "/session/remaining_defaults" => value
+            .as_object()
+            .is_some_and(|v| !v.is_empty() && v.values().all(|v| !v.is_null())),
+        "/native/ort_dependency_inventory" => value
+            .as_array()
+            .is_some_and(|v| !v.is_empty() && v.iter().all(|v| sha256_text(v.get("sha256")))),
+        "/native/cpu_kernel_class" => value.as_object().is_some_and(|v| {
+            sha256_text(v.get("sha256")) && v.get("observed_inputs").is_some_and(Value::is_object)
+        }),
+        "/assets_model_external_data_closure" => {
+            value.get("kind").and_then(Value::as_str)
+                == Some("ONNX-v1.22.0-all-TensorProto-paths-self-contained")
+                && value
+                    .get("model_sha256")
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| s.len() == 64)
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn observe(
     paths: &AssetPaths,
     tokenizer: &cairn_semantic_tokenizer::PreparedTokenizer,
     ort: &cairn_semantic_ort::Session,
     math: &cairn_semantic_math::Runtime,
+    closure: &crate::model_assets::Closure,
 ) -> Result<ConstructionReport, BackendError> {
     let implementation = source_snapshot(&paths.source_root)?;
     let executable = std::env::current_exe().map_err(|e| operation("observe current binary", e))?;
-    let executable_bytes = read_owned(&executable)?;
+    let executable_observation = crate::running_image::observe()?;
+    let executable_bytes = &executable_observation.bytes;
     let mut provenance = vec![
         paths.model.clone(),
         paths.config.clone(),
@@ -167,9 +252,9 @@ pub(crate) fn observe(
     let inputs = json!({
         "tag": "cairn.rust-rank-worker/1",
         "implementation": implementation,
-        "compilation": { "binary_sha256": digest(&executable_bytes), "rustc": null,
+        "compilation": { "binary_sha256": digest(executable_bytes), "rustc": null,
             "target": null, "enabled_features": null, "effective_flags": null, "linked_input_attestation": null },
-        "assets": assets, "assets_model_external_data_closure": null, "prepared_model_tokenizer_sha256": digest(prepared.as_bytes()),
+        "assets": assets, "assets_model_external_data_closure": closure.bind(ort.model_bytes()).map_err(|e| operation("model closure binding",e))?, "prepared_model_tokenizer_sha256": digest(prepared.as_bytes()),
         "native": { "ort_dependency_inventory": null, "cpu_kernel_class": null, "ort": { "version": rp.reported_version, "api": rp.api_version,
             "selected_sha256": hex(&rp.selected_file.sha256), "mapped_sha256": hex(&rp.mapped_file.sha256) },
             "math_modules": libraries, "openblas_config_hex": hex(&mp.settings.config),
@@ -183,7 +268,7 @@ pub(crate) fn observe(
             "outputs": nodes(&ort.metadata().outputs) },
         "algorithms": { "prefix": "Represent this sentence for searching relevant passages: ",
             "width": 384, "max_tokens": 512, "window": 384, "stride": 320, "max_passages": 128,
-            "pooling": "CLS output[0][:,0]", "first_epsilon_decimal": "0.000000000001",
+            "pooling": "ORT metadata-ordered run(None) result[0]; rank3 CLS[:,0],rank2 direct", "first_epsilon_decimal": "0.000000000001",
             "dtype": "float32", "normalizations": ["squares/pairwise128x8/+0/sqrt/maximum-epsilon/divide", "full-occurrence-squares/pairwise128x8/+0/sqrt/all-zero-before-divide"],
             "matvec": ["M0-empty", "M1-sdot384-plus-positive-zero", "M>=2-one-sgemv"],
             "rank": "bge-max-chunk/1", "note_reduce": "ordered-max-from-minus-one/f64-clamp-scale/python-ties-even",
@@ -195,10 +280,17 @@ pub(crate) fn observe(
     // These precise gaps are properties of existing interfaces, not configurable
     // user assertions. There is deliberately no API to supply a digest/ready flag.
     let missing = required_observations(&inputs);
+    let running_image = Some(RunningImageProvenance {
+        device: executable_observation.device,
+        inode: executable_observation.inode,
+        bytes: executable_bytes.len(),
+        sha256: digest(executable_bytes),
+    });
     Ok(ConstructionReport {
         inputs,
         provenance,
         missing,
+        running_image,
     })
 }
 fn hex(bytes: &[u8]) -> String {
@@ -290,6 +382,7 @@ mod tests {
         let report = ConstructionReport {
             inputs: json!({"tag":"cairn.rust-rank-worker/1", "session":{"cpu_arena":null}}),
             provenance: vec![PathBuf::from("/synthetic/moved")],
+            running_image: None,
             missing: vec![missing(
                 "session.cpu_arena",
                 "actual API observation required",
@@ -343,5 +436,63 @@ mod tests {
         assert!(!String::from_utf8(canonical(&inputs).unwrap())
             .unwrap()
             .contains("/synthetic"));
+    }
+}
+
+#[cfg(test)]
+mod observe_tests {
+    use super::*;
+    #[test]
+    fn p2_observe1_all_four_compilation_fields_require_real_shapes() {
+        let mut input = json!({"compilation":{"rustc":true,"target":true,"enabled_features":true,"effective_flags":true}});
+        let fields = required_observations(&input);
+        for name in [
+            "compilation.rustc",
+            "compilation.target",
+            "compilation.enabled_features",
+            "compilation.effective_flags",
+        ] {
+            assert!(fields.iter().any(|v| v.field == name));
+        }
+        input["compilation"]["rustc"] = json!("fixture version string");
+        input["compilation"]["target"] = json!("x86_64-unknown-linux-gnu");
+        input["compilation"]["enabled_features"] = json!({"fixture:target":["a","b"]});
+        input["compilation"]["effective_flags"] = json!({"fixture:target":["first","second"]});
+        let fields = required_observations(&input);
+        assert!(!fields.iter().any(|v| [
+            "compilation.rustc",
+            "compilation.target",
+            "compilation.enabled_features",
+            "compilation.effective_flags"
+        ]
+        .contains(&v.field)));
+        assert!(fields
+            .iter()
+            .any(|v| v.field == "compilation.linked_input_attestation"));
+        input["compilation"]["enabled_features"] = json!({"fixture:target":["b","a"]});
+        assert!(required_observations(&input)
+            .iter()
+            .any(|v| v.field == "compilation.enabled_features"));
+    }
+    #[test]
+    fn p2_observe1_generic_ready_blobs_do_not_replace_observed_fields() {
+        for pointer in [
+            "/compilation/linked_input_attestation",
+            "/native/ort_dependency_inventory",
+            "/native/cpu_kernel_class",
+            "/assets_model_external_data_closure",
+        ] {
+            assert!(!required_shape(pointer, Some(&json!(true)), &json!({})));
+            assert!(!required_shape(
+                pointer,
+                Some(&json!({"ready":true})),
+                &json!({})
+            ));
+        }
+        assert!(!required_shape(
+            "/compilation/linked_input_attestation",
+            Some(&json!({"binary_sha256":"different","source_inputs":["x"]})),
+            &json!({"compilation":{"binary_sha256":"actual"}})
+        ));
     }
 }

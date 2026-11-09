@@ -9,7 +9,9 @@ typedef struct { int32_t code; const char *stage; char *message; int32_t copy_fa
 typedef struct { const char *name; int32_t kind; int32_t ort_type; size_t rank; const int64_t *dimensions; } CairnOrtNode;
 typedef struct { int32_t execution_mode; int32_t memory_pattern; } CairnOrtOptions;
 typedef struct { uint64_t device; uint64_t inode; uint64_t bytes; int32_t fd; } CairnOrtMapping;
-typedef struct { int64_t dimensions[3]; size_t count; uint32_t *bits; } CairnOrtOutput;
+typedef struct { size_t rank; int64_t dimensions[3]; size_t count; uint32_t *bits; } CairnOrtOutput;
+
+_Static_assert(sizeof(CairnOrtOutput)==48, "x86_64 Source output ABI size");
 
 void cairn_ort_error_release(CairnOrtError *error);
 int cairn_ort_runtime_open(const uint8_t *bytes, size_t length, CairnOrtRuntime **out, CairnOrtMapping *mapping, CairnOrtError *error);

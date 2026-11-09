@@ -102,14 +102,15 @@ The existing component interfaces cannot yet establish these required inputs:
 | Effective session provider | Existing `SessionSettings` has no effective-provider observation; the ORT owner must expose actual selected-session evidence. |
 | ORT native dependency closure | `RuntimeProvenance` binds the actual OrtGetApiBase file, but exposes no complete mapped dependency inventory. Extend that owner before treating its closure as observed. |
 | Complete CPU/OS/kernel class | The written platform observer collects real Rust CPU/OS-enabled feature detections when separately executed, but labels its subset partial. Complete ISA/vector-state/kernel observations and library getter binding are required before hashing a complete CPU class. |
-| Complete actually consumed model assets | The existing ORT interface retains model bytes, but does not establish the optimized ONNX external-data closure/self-contained status. That asset owner must establish every consumed input. |
+| Actually consumed model tensor assets | New bounded schema observer proves self-contained ONNX tensor closure before native load and binds the exact retained model bytes. External tensors, ORT format, future/unknown schema and observation bounds remain explicit pending cases; owned external-file mapping is not implemented. |
 
 Missing observations are derived from the actual report's missing fields and
 rechecked internally before identity hashing; no public API can replace them
 with asserted observations. The currently written observer leaves those exact
 fields unresolved, so `NativeFactory::construct` does not yet return a usable
 initialized session. Independent actual tokenizer/inference/normalization/math
-operations are implemented on the retained loaded owner. This separation lets
+operations are crate-private on the retained loaded owner; the public production
+composed route remains identity-gated NativeSession. This separation lets
 the owner extend precise observation interfaces without replacing a dummy
 backend or declaring an unknown default qualified. It is not permission to
 execute the loaded owner outside the separately admitted host boundary.
@@ -168,3 +169,52 @@ remain open and actual-worker FIRST remains unconsumed. No tolerance or
 one-unit allowance substitutes for exact proof. Source-only authoring ran no
 Cargo resolver/build/check/test, native load/getter/CPU probe, model/session,
 Python Source/protected import, real worker, service, database or deployment.
+
+## S-P2-OBSERVE-1 source continuation
+
+Output metadata retains actual session order. The ORT bridge requests every
+output in that order, matching Python `run(None)`, and selects returned index
+zero. Rank-three float32 `[1, sequence, 384]` selects token zero; rank-two
+`[1, 384]` passes through. A later output named `last_hidden_state` never
+rescues an incompatible first output. Duplicate output names remain ordered
+metadata; native graph validity stays with ORT. Every returned value is released.
+
+The new private model observer runs on the actual owned bytes before any
+`Runtime::load` or `CreateSessionFromArray`. Its schema-derived traversal covers
+all eight ONNX v1.22.0 message types transitively containing TensorProto,
+including sparse tensors, attributes, nested graphs, functions and training
+graphs. Singular message fragments merge; repeated messages stay separate and
+last scalar wins. The proof binds length and SHA-256 again to ORT's retained
+bytes. See [schema provenance](vendor/onnx-1.22.0/README.md). This proves only
+absence of tensor external-data consumption for accepted self-contained bytes,
+not model validity or runtime I/O safety. No actual selected model was inspected
+or executed. External files require a future owned-byte mapping; unknown fields,
+IR versions, formats, wire errors and explicit depth/field/size bounds produce
+pending observations. These cases remain in campaign scope.
+
+Running-image bytes now come from an owned `/proc/self/exe` descriptor, with
+before/after device, inode, length, mtime and ctime stability checks. The
+installation path is provenance only. The report exposes descriptor identity
+separately and hashes those exact bytes. The identity gate additionally requires
+real compilation rustc, target, per-unit sorted feature sets and ordered flags.
+All report inputs remain private; no generic ready blob supplies observations.
+For a proved self-contained model, ten required observations still remain:
+the four compilation fields, linked-input attestation, CPU arena, remaining
+defaults, effective provider, ORT dependency inventory and CPU/kernel class.
+Release owns binary/build/link, native dependency and CPU/OS evidence; the P2
+owner retains arena/default/provider source work. Initialization stays withheld.
+
+Sixteen new `p2_observe1_` tests are authored and UNEXECUTED: eight synthetic
+wire/schema cases, five ordered-metadata/raw-bit cases, one opened-inode versus
+replaced-path fixture, and two identity-shape cases. Future bounded selection is
+`--lib p2_observe1_ -- --test-threads=1`. The descriptor fixture creates, writes,
+renames, reads and removes owned temporary files; it does not call the actual
+proc observer. None constructs a native/model session or CPU observer. Old
+`backend1_` tests and accepted arithmetic are unchanged and not selected.
+The dependency/feature graph stays 100 contexts, 23 scripts, nine proc macros
+(123 prior artifacts), with no manifest/lock/version changes. Existing ORT C
+bridge changes include the API29 type query and a 48-byte output ABI carrying
+rank. New compile/link/ABI and selected-test disposition belong to SAME B2,
+followed by SAME R1. Only rustfmt, source inspection and whitespace checks were
+authorized for author verification. No component run or runtime acceptance is
+claimed. All existing P1-P5 and actual-worker FIRST holds above remain.

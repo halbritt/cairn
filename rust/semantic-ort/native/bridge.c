@@ -159,8 +159,15 @@ static int read_node(CairnOrtSession *s, int input, size_t index, OrtAllocator *
     if (!name) { error_add(error,-1,"session node name","ORT returned no name"); goto done; }
     out->name=strdup(name);
     if (!out->name) { error_add(error,ENOMEM,"copy session node name","out of memory"); goto done; }
+    enum ONNXType onnx_type;
+    CALL(api,api->GetOnnxTypeFromTypeInfo(type,&onnx_type));
+    if (onnx_type!=ONNX_TYPE_TENSOR) {
+        if (input || index==0) { error_add(error,-1,"session metadata","first output/inputs must be tensors"); goto done; }
+        out->kind=0; out->ort_type=-(int32_t)onnx_type; out->rank=0;
+        result=0; goto done;
+    }
     CALL(api,api->CastTypeInfoToTensorInfo(type,&shape));
-    if (!shape) { error_add(error,-1,"session metadata","non-tensor node"); goto done; }
+    if (!shape) { error_add(error,-1,"session metadata","tensor type has no shape"); goto done; }
     CALL(api,api->GetTensorElementType(shape,&element_type));
     out->ort_type=(int32_t)element_type;
     out->kind=element_type==ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ? 1 : element_type==ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 ? 2 : 0;
@@ -229,14 +236,14 @@ int cairn_ort_node(const CairnOrtSession *s, int input, size_t index, CairnOrtNo
 void cairn_ort_output_release(CairnOrtOutput *out) { free(out->bits); memset(out,0,sizeof(*out)); }
 int cairn_ort_run(CairnOrtSession *s, const int64_t *ids, const int64_t *mask, const int64_t *types, size_t sequence, CairnOrtOutput *out, CairnOrtError *error) {
     const OrtApi *api=s->runtime->api; int result=-1;
-    OrtMemoryInfo *memory=NULL; OrtValue *inputs[3]={NULL,NULL,NULL}; OrtValue *output=NULL;
+    OrtMemoryInfo *memory=NULL; OrtValue *inputs[3]={NULL,NULL,NULL}; OrtValue *outputs[64]={NULL}; OrtValue *output=NULL;
     OrtTensorTypeAndShapeInfo *shape=NULL; const OrtMemoryInfo *output_memory=NULL;
-    const char *names[3]; const char *output_name="last_hidden_state";
+    const char *names[3]; const char *output_names[64];
     const int64_t dimensions[2]={1,(int64_t)sequence};
     ONNXTensorElementDataType element_type; size_t rank,count; int is_tensor;
     OrtMemoryInfoDeviceType device_type; void *data=NULL;
     memset(out,0,sizeof(*out));
-    if (!sequence || sequence>512 || s->input_count>3) { error_add(error,-1,"batch shape","expected batch1 and1..512 tokens"); goto done; }
+    if (!sequence || sequence>512 || s->input_count>3 || !s->output_count || s->output_count>64) { error_add(error,-1,"batch shape","expected batch1 and1..512 tokens"); goto done; }
     CALL(api,api->CreateCpuMemoryInfo(OrtArenaAllocator,OrtMemTypeDefault,&memory));
     for (size_t i=0;i<s->input_count;i++) {
         const int64_t *values=NULL; names[i]=s->inputs[i].name;
@@ -247,29 +254,36 @@ int cairn_ort_run(CairnOrtSession *s, const int64_t *ids, const int64_t *mask, c
         CALL(api,api->CreateTensorWithDataAsOrtValue(memory,(void *)values,sequence*sizeof(int64_t),dimensions,2,ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,&inputs[i]));
     }
     /* All Rust-owned input storage stays alive through this synchronous Run. */
-    CALL(api,api->Run(s->session,NULL,names,(const OrtValue *const *)inputs,s->input_count,&output_name,1,&output));
+    /* Source: run(None) requests ALL outputs in SessionGetOutputName order,
+     * then FastEmbed takes returned[0]. Keep auxiliaries alive through Run. */
+    for (size_t i=0;i<s->output_count;i++) output_names[i]=s->outputs[i].name;
+    CALL(api,api->Run(s->session,NULL,names,(const OrtValue *const *)inputs,s->input_count,output_names,s->output_count,outputs));
+    output=outputs[0];
     CALL(api,api->IsTensor(output,&is_tensor));
-    if (!is_tensor) { error_add(error,-1,"last_hidden_state","output is not a tensor"); goto done; }
+    if (!is_tensor) { error_add(error,-1,"first model output","output is not a tensor"); goto done; }
     CALL(api,api->GetTensorTypeAndShape(output,&shape));
     CALL(api,api->GetTensorElementType(shape,&element_type));
     CALL(api,api->GetDimensionsCount(shape,&rank));
-    if (element_type!=ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || rank!=3) { error_add(error,-1,"last_hidden_state","expected rank3 float32"); goto done; }
-    CALL(api,api->GetDimensions(shape,out->dimensions,3));
+    if (element_type!=ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || (rank!=2 && rank!=3)) { error_add(error,-1,"first model output","expected rank2/3 float32"); goto done; }
+    out->rank=rank;
+    CALL(api,api->GetDimensions(shape,out->dimensions,rank));
     CALL(api,api->GetTensorShapeElementCount(shape,&count));
-    if (out->dimensions[0]!=1 || out->dimensions[1]!=(int64_t)sequence || out->dimensions[2]!=384 || count!=sequence*384) {
-        error_add(error,-1,"last_hidden_state","shape/count must equal[1,sequence,384]"); goto done;
+    if (out->dimensions[0]!=1 ||
+        (rank==3 && (out->dimensions[1]!=(int64_t)sequence || out->dimensions[2]!=384 || count!=sequence*384)) ||
+        (rank==2 && (out->dimensions[1]!=384 || count!=384))) {
+        error_add(error,-1,"first model output","shape/count must equal[1,sequence,384] or[1,384]"); goto done;
     }
     CALL(api,api->GetTensorMemoryInfo(output,&output_memory));
     api->MemoryInfoGetDeviceType(output_memory,&device_type);
-    if (device_type!=OrtMemoryInfoDeviceType_CPU) { error_add(error,-1,"last_hidden_state","output is not CPU-addressable"); goto done; }
+    if (device_type!=OrtMemoryInfoDeviceType_CPU) { error_add(error,-1,"first model output","output is not CPU-addressable"); goto done; }
     CALL(api,api->GetTensorMutableData(output,&data));
-    if (!data) { error_add(error,-1,"last_hidden_state","null tensor storage"); goto done; }
+    if (!data) { error_add(error,-1,"first model output","null tensor storage"); goto done; }
     out->bits=malloc(count*sizeof(uint32_t));
     if (!out->bits) { error_add(error,ENOMEM,"copy output bits","out of memory"); goto done; }
     memcpy(out->bits,data,count*sizeof(uint32_t)); out->count=count; result=0;
 done:
     if (shape) api->ReleaseTensorTypeAndShapeInfo(shape);
-    if (output) api->ReleaseValue(output);
+    for (size_t i=0;i<64;i++) if (outputs[i]) api->ReleaseValue(outputs[i]);
     for (size_t i=0;i<3;i++) if (inputs[i]) api->ReleaseValue(inputs[i]);
     if (memory) api->ReleaseMemoryInfo(memory);
     if (result) cairn_ort_output_release(out);
