@@ -1,0 +1,12 @@
+[package]
+name = "cairn-semantic-tokenizer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cairn-semantic-protocol = { path = "../semantic-protocol" }
+cairn-semantic-rank = { path = "../semantic-rank" }
+serde_json = { version = "=1.0.145", features = ["preserve_order", "unbounded_depth"] }
+sha2 = { version = "=0.10.9", default-features = false, features = ["force-soft"] }
+tokenizers = { version = "=0.23.2", default-features = false, features = ["progressbar", "onig", "esaxx_fast", "parity-aware-bpe"] }
