@@ -626,3 +626,157 @@ func TestStage2NativeHealthAndNonAdmissionGuards(t *testing.T) {
 		t.Fatal("bool store attempts accepted")
 	}
 }
+
+func TestStage2ResidualReconcileGuards(t *testing.T) {
+	cases := []struct {
+		name, harness string
+		change        func(*value.Value)
+	}{
+		{"wrong_harness", "other", func(r *value.Value) { r.Set("agent", value.Text("unreached agent")) }},
+		{"mismatched", "codex", func(r *value.Value) { r.Get("agent").Set("native_session_id", value.Text(stage2Turn)) }},
+		{"ending", "codex", func(r *value.Value) { r.Set("ending", value.Boolean(true)) }},
+		{"retired", "codex", func(r *value.Value) { r.Set("retired", value.Boolean(true)) }},
+		{"absent_agent", "codex", func(r *value.Value) { nativePop(r, "agent") }},
+	}
+	for _, tc := range []struct {
+		name string
+		raw  *value.Value
+	}{
+		{"null", &value.Value{Kind: value.Null}},
+		{"array", &value.Value{Kind: value.Array}},
+		{"text", value.Text("")},
+		{"zero", value.IntegerText("0")},
+		{"false", value.Boolean(false)},
+	} {
+		cases = append(cases, struct {
+			name, harness string
+			change        func(*value.Value)
+		}{
+			"falsy_agent_" + tc.name, "codex", func(r *value.Value) { r.Set("agent", tc.raw) },
+		})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			record := stage2QueueState()
+			record.Set("idle_wake", value.Text("unreached wake"))
+			record.Set("inbox_attempt", value.Text("unreached attempt"))
+			record.Set("inbox_intent", value.Text("unreached intent"))
+			tc.change(record)
+			e, h, config := stage2Engine(t, tc.harness, record)
+			h.SessionRef = func(*value.Value) (*value.Value, error) { t.Fatal("unreached session_ref"); return nil, nil }
+			e.Hooks.ProbeCodex = func(context.Context, *value.Value, *value.Value, bool) (*value.Value, error) {
+				t.Fatal("unreached probe")
+				return nil, nil
+			}
+			_, err := e.ReconcileCodexQueueWake(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, DeliveryID: stage2Delivery, QueuedSubmissionID: stage2Turn})
+			stage2Code(t, err, "INVALID_REQUEST")
+			if len(h.Calls) != 0 || len(h.Persisted) != 0 {
+				t.Fatal("rejected reconciliation had effects", h.Calls, h.Persisted)
+			}
+		})
+	}
+}
+
+func TestStage2ResidualHealthAgentDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name, harness string
+		agent         *value.Value
+		attribute     bool
+	}{
+		{"wrong_harness", "other", value.Text("unreached agent"), false},
+		{"absent", "codex", nil, false},
+		{"null", "codex", &value.Value{Kind: value.Null}, true},
+		{"array", "codex", &value.Value{Kind: value.Array}, true},
+		{"text", "codex", value.Text(""), true},
+		{"zero", "codex", value.IntegerText("0"), true},
+		{"false", "codex", value.Boolean(false), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := stage2State()
+			nativePop(record, "agent")
+			if tc.agent != nil {
+				record.Set("agent", tc.agent)
+			}
+			e, h, config := stage2Engine(t, tc.harness, record)
+			e.Hooks.ProbeCodex = func(context.Context, *value.Value, *value.Value, bool) (*value.Value, error) {
+				t.Fatal("unreached health probe")
+				return nil, nil
+			}
+			_, err := e.CheckCodexNativeHealth(context.Background(), config, stage2Agent)
+			if tc.attribute {
+				var nonObject *journal.NonObjectError
+				if !errors.As(err, &nonObject) || nonObject.Field != "agent" {
+					t.Fatal("present non-object agent lost AttributeError", err)
+				}
+			} else {
+				stage2Code(t, err, "INVALID_REQUEST")
+			}
+			if len(h.Calls) != 0 || len(h.Persisted) != 0 {
+				t.Fatal("rejected health check had effects", h.Calls, h.Persisted)
+			}
+		})
+	}
+}
+
+func TestStage2ResidualRefusalDeliveryDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  *value.Value
+	}{
+		{"null", &value.Value{Kind: value.Null}},
+		{"array", &value.Value{Kind: value.Array}},
+		{"text", value.Text("")},
+		{"zero", value.IntegerText("0")},
+		{"false", value.Boolean(false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := stage2State()
+			stage2Recorded(record, stage2Turn)
+			record.Get("inbox_attempt").Set("delivery", tc.raw)
+			e, h, config := stage2Engine(t, "codex", record)
+			h.SessionRef = func(*value.Value) (*value.Value, error) {
+				t.Fatal("delivery failure must precede unprocessed session_ref")
+				return nil, nil
+			}
+			s := &NativeSession{config, "synthetic", record, &h.Host}
+			_, _, _, err := e.codexRefusalReady(s, stage2Agent, stage2Attempt)
+			var nonObject *journal.NonObjectError
+			if !errors.As(err, &nonObject) || nonObject.Field != "delivery" {
+				t.Fatal("present non-object delivery lost AttributeError", err)
+			}
+			_, err = e.RecoverCodexRefusedWake(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt, CheckOnly: true})
+			if !errors.As(err, &nonObject) || nonObject.Field != "delivery" {
+				t.Fatal("entrypoint hid delivery AttributeError", err)
+			}
+			if len(h.Calls) != 0 || len(h.Persisted) != 0 {
+				t.Fatal(h.Calls, h.Persisted)
+			}
+		})
+	}
+	for _, ready := range []bool{true, false} {
+		t.Run(map[bool]string{true: "absent_match", false: "absent_mismatch"}[ready], func(t *testing.T) {
+			record := stage2State()
+			stage2Recorded(record, stage2Turn)
+			nativePop(record.Get("inbox_attempt"), "delivery")
+			if ready {
+				nativePop(record.Get("wake_refusal_diagnostic"), "delivery_id")
+			}
+			e, h, config := stage2Engine(t, "codex", record)
+			_, _, got, err := e.codexRefusalReady(&NativeSession{config, "synthetic", record, &h.Host}, stage2Agent, stage2Attempt)
+			if err != nil || got != ready {
+				t.Fatal("absent delivery did not default to an empty object", got, err)
+			}
+			out, err := e.RecoverCodexRefusedWake(context.Background(), config, RecoveryRequest{NativeSessionID: stage2Agent, AttemptID: stage2Attempt, CheckOnly: true})
+			if ready {
+				if err != nil || !value.SameText(out.Get("status"), "eligible") {
+					t.Fatal(out, err)
+				}
+			} else {
+				stage2Code(t, err, "INVALID_REQUEST")
+			}
+			if len(h.Calls) != 0 || len(h.Persisted) != 0 {
+				t.Fatal("check-only readiness had effects", h.Calls, h.Persisted)
+			}
+		})
+	}
+}

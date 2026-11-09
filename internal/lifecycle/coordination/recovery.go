@@ -142,21 +142,6 @@ func recoveryIdentity(s *NativeSession, id string) (agent *value.Value, ended bo
 	ended = !value.SameText(agent.Get("native_session_id"), id) || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired"))
 	return
 }
-func recoveryState(s *NativeSession, id string) (agent, attempt, intent *value.Value, ended bool, err error) {
-	agent, ended, err = recoveryIdentity(s, id)
-	if err != nil {
-		return
-	}
-	attempt, err = nativeObj(s.Attempt(), "inbox_attempt")
-	if err != nil {
-		return
-	}
-	intent, err = nativeObj(s.Intent(), "inbox_intent")
-	if err != nil {
-		return
-	}
-	return
-}
 func (e *RecoveryEngine) RefusedWakeUnprocessed(s *NativeSession, turn string) (bool, error) {
 	intent, attempt := s.Intent(), s.Attempt()
 	if intent == nil || attempt == nil || intent.Kind != value.Object || attempt.Kind != value.Object {
@@ -485,7 +470,7 @@ func (e *RecoveryEngine) codexRefusalReady(s *NativeSession, id, attemptID strin
 	if !ready {
 		return
 	}
-	delivery, deliveryErr := nativeObj(attempt.Get("delivery"), "delivery")
+	delivery, deliveryErr := nativeDefaultObj(attempt.Get("delivery"), "delivery")
 	if deliveryErr != nil {
 		err = deliveryErr
 		return
@@ -701,11 +686,17 @@ func (e *RecoveryEngine) RecoverCodexEndedTurn(ctx context.Context, config *valu
 }
 func (e *RecoveryEngine) CheckCodexNativeHealth(ctx context.Context, config *value.Value, id string) (*value.Value, error) {
 	return e.withSession(config, id, "INVALID_REQUEST", func(s *NativeSession) (*value.Value, error) {
-		agent, err := nativeObj(s.Record.Get("agent"), "agent")
+		if err := s.mapping(); err != nil {
+			return nil, err
+		}
+		if !value.SameText(config.Get("harness"), "codex") {
+			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
+		}
+		agent, err := nativeDefaultObj(s.Record.Get("agent"), "agent")
 		if err != nil {
 			return nil, err
 		}
-		if !value.SameText(config.Get("harness"), "codex") || !value.SameText(agent.Get("native_session_id"), id) || value.Truth(s.Record.Get("retired")) {
+		if !value.SameText(agent.Get("native_session_id"), id) || value.Truth(s.Record.Get("retired")) {
 			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
 		}
 		if e.Hooks.ProbeCodex == nil {
@@ -786,14 +777,28 @@ func (e *RecoveryEngine) ReconcileCodexQueueWake(ctx context.Context, config *va
 		return nil, nativeRefusal("INVALID_REQUEST", "unsupported Codex queue reconciliation outcome")
 	}
 	return e.withSession(config, r.NativeSessionID, "INVALID_REQUEST", func(s *NativeSession) (*value.Value, error) {
-		agent, attempt, intent, ended, err := recoveryState(s, r.NativeSessionID)
+		if err := s.mapping(); err != nil {
+			return nil, err
+		}
+		if !value.SameText(config.Get("harness"), "codex") {
+			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
+		}
+		agent, err := nativeObj(s.Record.Get("agent"), "agent")
 		if err != nil {
 			return nil, err
 		}
-		if !value.SameText(config.Get("harness"), "codex") || ended {
+		if !value.SameText(agent.Get("native_session_id"), r.NativeSessionID) || value.Truth(s.Record.Get("ending")) || value.Truth(s.Record.Get("retired")) {
 			return nil, nativeRefusal("INVALID_REQUEST", "state is not an active Codex session for this native ID")
 		}
 		wake, err := nativeObj(s.Record.Get("idle_wake"), "idle_wake")
+		if err != nil {
+			return nil, err
+		}
+		attempt, err := nativeObj(s.Attempt(), "inbox_attempt")
+		if err != nil {
+			return nil, err
+		}
+		intent, err := nativeObj(s.Intent(), "inbox_intent")
 		if err != nil {
 			return nil, err
 		}
