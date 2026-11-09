@@ -1224,7 +1224,7 @@ func TestStage2EvidenceConfigHomeReach(t *testing.T) {
 			req.Locators = locatorsRecord(nil)
 			_, err := f.reader.RecoveryEvidence().Read(context.Background(), tc.kind, req)
 			requireError(t, err, tc.contiguity)
-			req.Locators = locatorsRecord([]Locator{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}, {Offset: 2, Length: 1}})
+			req.Locators = locatorsRecord([]Locator{pin([]byte("{}\n"), 0), pin([]byte("{}\n"), 3), pin([]byte("{}\n"), 6)})
 			_, err = f.reader.RecoveryEvidence().Read(context.Background(), tc.kind, req)
 			requireError(t, err, tc.reached)
 		}
